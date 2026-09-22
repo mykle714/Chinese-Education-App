@@ -1,9 +1,12 @@
 # Beginner Keyboard (Chinese writing input)
 
-> **Status: DESIGN — nothing built.** This file opens the feature and, for now,
-> answers exactly one question: **how small a unit can the existing decomposition
-> system hand us, and what is the complete inventory of those units?** Everything
-> below § 4 is an open question, not a decision.
+> **Status: BUILT and mounted app-wide.** The recognizer (§ 6t), the reverse
+> lookup (§ 6u), the keyboard surface (§ 6v), its appear/dismiss model (§ 6z) and
+> the switch bar (§ 6z-2) all ship. §§ 1–4 are the ORIGINAL investigation — how
+> small a unit the decomposition system can hand us, and the complete inventory of
+> those units — kept because the numbers still describe the corpus; read them as
+> the record of how the design was reached, not as open questions. What genuinely
+> remains open is collected in § 7.
 
 **Goal.** Let a learner *write* Chinese without already knowing pinyin — by
 drawing, not by typing a sound they may not know.
@@ -1827,6 +1830,7 @@ that walk is a passing test.
 | `src/features/beginnerKeyboard/eligibility.ts` | which fields qualify (pure `isEligible` + DOM read) |
 | `src/features/beginnerKeyboard/insertAtCaret.ts` | writes through React's value tracker |
 | `src/features/beginnerKeyboard/insetContext.ts` | `useBeginnerKeyboardInset`, `--beginner-keyboard-inset` |
+| `src/features/beginnerKeyboard/useKeyboardInset.ts` | `useKeyboardInset` / `useKeyboardTransition` — ours ∪ the OS keyboard's occlusion |
 | `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` | the three-region layout; sizes the square canvas |
 | `src/features/beginnerKeyboard/CandidateRow.tsx` | the modal row (§ 6p/§ 6r) |
 | `src/features/beginnerKeyboard/ComponentBuffer.tsx` | the component buffer, one chip per part, tap to remove one |
@@ -1890,7 +1894,8 @@ keyboard **immediately** — no prompt (see § 7a). It sets `inputMode="none"`, 
 both are on screen at once. The field keeps focus throughout (every control
 prevents `mousedown` default), because insertion happens at the caret.
 
-`inputMode` is restored on unmount and when the `ABC` key hands the field back. A
+`inputMode` is restored on unmount and when `ABC` hands the field back (that key
+lives in the switch bar since 2026-09-21 — § 6z-2). A
 field left at `"none"` can never raise a keyboard again — a leak that presents as
 a permanently dead input, long after the learner has left the page.
 
@@ -2205,7 +2210,7 @@ tapping back into the field.
 | focusin on an **eligible field** | opens the keyboard, or **retargets** an open one — `open` never goes false, so there is no exit/enter flicker between two fields |
 | focusin or pointerdown inside **our own surface** | nothing |
 | focusin or pointerdown inside a **`data-beginner-keyboard="keep"`** region | nothing |
-| the **close chevron** in the keyboard's footer | closes |
+| the **close chevron** in the switch bar | closes (it moved out of the keyboard's footer — § 6z-2) |
 | pointerdown or focus **anywhere else** | closes |
 | route change, language switch, target field disconnected | closes immediately, no transition |
 
@@ -2263,6 +2268,10 @@ away but arrive instantly, which reads as a glitch. `prefers-reduced-motion:
 reduce` gets the same two states with a zero-length transition, not a different
 behaviour.
 
+The switch bar (§ 6z-2) rides **inside** that sliding surface rather than beside
+it, and staggers its own short travel on top — see that section for why it is not
+simply given the keyboard's timing.
+
 The exit needs a mounted element with a field to animate against, so the provider
 holds two pieces of state instead of one: `open` drives the transition, `field`
 survives until the host reports `onExited`. **`open`, not `field`, is the answer to
@@ -2280,8 +2289,8 @@ keyboard was still sliding up behind it. Two events, not one surface arriving.
 and a reserving page borrows it:
 
 ```tsx
-const keyboardInset = useBeginnerKeyboardInset();
-const keyboardTransition = useBeginnerKeyboardTransition('padding-bottom');
+const keyboardInset = useKeyboardInset();
+const keyboardTransition = useKeyboardTransition('padding-bottom');
 // …
 contentSx={{ paddingBottom: `${keyboardInset}px`, transition: keyboardTransition }}
 ```
@@ -2298,6 +2307,10 @@ The durations and curves (`BEGINNER_KEYBOARD_SLIDE_MS`, `BEGINNER_KEYBOARD_EASIN
 module because the host, the provider and every reserving page must agree on them.
 `IWPlayPage` is the only consumer today.
 
+`transitionForInset(inset, property)` is the pure function underneath; the two
+hooks (`useBeginnerKeyboardTransition`, `useKeyboardTransition`) are that function
+plus a source, so the timings cannot drift apart between them.
+
 ### Known gap
 
 The composer's quick-dictionary lookup input takes **English or pinyin**, and it is
@@ -2306,6 +2319,112 @@ a field the handwriting keyboard cannot usefully fill. It predates this change (
 old model followed focus there too). Marking it `data-beginner-keyboard="off"`
 would fix it and, under the model above, would also close the keyboard on the way
 in — which is the right behaviour. Not done, because it was not asked for.
+
+## 6z-2. BUILT 2026-09-21 — the switch bar
+
+**The switch belongs to the FIELD, not to either keyboard.** `ABC` used to be a
+key inside our own footer row, which made it a **one-way door**: it was on screen
+only while the handwriting keyboard was up, so a learner who took the system
+keyboard back had no control of ours left anywhere — the only way home was to tap
+out of the field and back into it, and nothing on screen said so.
+
+So the switch, and the dismissal beside it, moved **out** of the keyboard into a
+bar that outlives both. It is the same object in both states.
+
+Code: `KeyboardSwitchBar.tsx` (the row), `BeginnerKeyboardHost` (which mode it is
+in, and where it is anchored), `transition.ts` → `switchBarTransition`,
+`KEYBOARD_SWITCH_BAR_SLIDE_MS`.
+
+### What it holds
+
+```
+┌──────────────────────────────────────────────┐
+│ [ 写 | ABC ]                              ⌄  │   ← the bar, 40px
+├──────────────────────────────────────────────┤
+│  the handwriting keyboard, OR nothing of      │
+│  ours at all (the OS keyboard is up here)     │
+└──────────────────────────────────────────────┘
+```
+
+A **segmented toggle** showing both destinations with the active side filled,
+rather than one key whose label flips. A flipping label is invisible until it is
+read, and it is read as a state ("I am on ABC") exactly as often as an action
+("go to ABC"). The close chevron sits at the **far** edge: the two are different
+kinds of exit — one changes how you type, the other stops you typing — and a
+mis-tap between them is expensive.
+
+`写` is drawn in `FONTS.cjk`, not through `ForeignText`. It is a key **cap**, not a
+word the learner is being taught, and must not carry pinyin above it.
+
+### Where it appears — eligible fields only, both directions
+
+The host mounts exactly where the handwriting keyboard is allowed: a Chinese
+learner, an eligible field, a non-authoring route (§ 7a). Inside that, the bar is
+up in **both** states — over our keyboard, and perched on the OS keyboard after
+`ABC`.
+
+⚠️ **A field that declines the keyboard gets no bar.** On
+`data-beginner-keyboard="off"` (the iw composer's dictionary tray) the OS keyboard
+comes up bare, because there is no second keyboard to switch to there — that field
+is queried in English, and offering a Chinese IME over it would be advertising a
+door into a wall. Same for a Spanish learner and for the two authoring routes.
+
+### The motion — trailing stagger, NOT the keyboard's timing
+
+The bar starts **parked behind the keyboard's top edge** and is pushed out by it:
+`transform: translateY(40px)` inside a slot that clips, moving to `0` after a
+**200 ms delay, over 150 ms** on the keyboard's own `easeOut`. The keyboard's
+slide is 300 ms, so the bar begins as the keyboard is nearly home and lands
+slightly after it.
+
+The two rejected alternatives are worth recording, because both are the obvious
+thing to try:
+
+| | why not |
+|---|---|
+| **same 300 ms as the keyboard** | the bar travels 40 px against the keyboard's ~320, so an equal duration is a bar *crawling* up a surface that is itself still moving. Two speeds, one gesture. |
+| **same velocity** (~40 ms) | the physically truest "same momentum", and it snaps into place a seventh of the way through the keyboard's travel — the bar arrives before the thing it is supposed to be riding. |
+
+Exit has **no delay**: the bar ducks back behind the keyboard first and the
+keyboard leaves over it, which is the entrance played backwards. Reduced motion
+gets both states with no travel, as everywhere else in this feature.
+
+⚠️ **The slot CLIPS — that is the whole effect.** The row is not faded in; it is
+physically inside a `overflow: hidden` slot of its own height and slides out of
+it. Clipping rather than z-index painting because the OS keyboard **is not our
+DOM** and cannot be stacked against, so a z-index approach would have needed two
+different implementations of one effect. Under our keyboard the slot sits directly
+on the surface; under the OS keyboard it is anchored at the measured top edge, so
+the parked row is inside a band the browser is not painting anyway.
+
+⚠️ **The bar rides INSIDE the sliding surface** in handwriting mode. Rendered
+beside it, the parked bar would have been stranded in mid-air over the page for
+the frames before the keyboard arrived underneath it.
+
+### Two things it changed underneath
+
+1. **`source === 'os'` no longer renders nothing.** The host used to return `null`
+   the moment the learner took the system keyboard, which is why there was nothing
+   to come back from. It now renders the bar alone, `position: absolute` at
+   `bottom: osPerch`.
+2. **The OS mode owes `onClosed` too.** There is no `Slide` there — nothing of
+   ours is travelling but the bar — so a dismissal taken while the OS keyboard is
+   up times the callback off the bar's own exit. Without it the provider would
+   hold `field` forever and the host would never unmount.
+
+⚠️ **The perch jitters on the web, and that is § 7a's known cost.** `osPerch` comes
+from `useKeyboardViewport`, which on the web infers the OS keyboard from a
+`visualViewport` shrink and reports nothing until it has actually opened — so
+expect a frame or two of the bar sitting low during the system keyboard's own
+animation. Capacitor's `keyboardWillShow` removes it. On a desktop with no OS
+keyboard at all the perch is 0 and the bar sits at the bottom of the app frame.
+
+### Reserved space
+
+A reserving page (§ 7a) now clears the bar as well: in handwriting mode the
+measured surface **is** bar + keyboard, and in `ABC` mode the host reports the
+bar's height plus the perch. `IWPlayPage` needed no change — it reserves off
+`useKeyboardInset()`, which is a `Math.max` over both answers.
 
 ## 7. Outstanding before we can build
 
@@ -2401,6 +2520,30 @@ from a nominal keyboard height — that is the only number that stays correct
 mid-animation. It is published twice from that one measurement:
 `useBeginnerKeyboardInset()` for React layout, and `--beginner-keyboard-inset` on
 `:root` for plain CSS.
+
+##### ⚠️ A reserving page wants `useKeyboardInset()`, not this one
+
+`useBeginnerKeyboardInset()` reports **our** surface — everything of ours between
+the bottom of the app and the top of whatever is up. Since § 6z-2 that includes
+the `ABC` state: the switch bar stays on screen perched on the OS keyboard, so the
+host reports the bar's height **plus the perch it is sitting on** (`osPerch`,
+gated on `osKeyboardVisible`), which is the distance a reserving page actually has
+to clear.
+
+It is still 0 on a field marked `data-beginner-keyboard="off"` (the iw composer's
+dictionary tray is exactly that, deliberately — it wants a latin keyboard), where
+no host mounts at all and the OS keyboard covers the same pinned controls
+unannounced. So a page reserving off the beginner inset alone still reserves
+**nothing** there.
+
+`useKeyboardInset()` (`useKeyboardInset.ts`) unions the two: our measured inset
+with `useKeyboardViewport()`'s OS occlusion, gated on `osKeyboardVisible` because
+that hook's `height` is a size HINT (it falls back to a default so our surface
+never collapses on a hardware-keyboard desktop), not an occlusion. `Math.max`
+rather than a sum — the two are mutually exclusive by construction, and max is
+what keeps the handover between them from flickering through a doubled or zero
+inset. Reserve off `useKeyboardInset()` unless a page genuinely wants to ignore
+the OS keyboard.
 
 #### ⚠️ Driving a controlled React input from outside React
 

@@ -98,6 +98,15 @@ export const RUNG_FIRST_GLYPH_DEADLINE_MS = 1500;
  *
  * 2.5 s covers the slowest measured `sayDone` (1869 ms on Sonnet 5) with room for a long
  * utterance.
+ *
+ * ⚠️ **THAT MEASUREMENT WAS TAKEN UNDER A 12-CHARACTER CAP, WHICH IS NOW 20** (2026-09-21,
+ * § 5.5 — the cap was raised to buy back the particles that make speech sound spoken). Line 1
+ * can therefore run ~8 glyphs longer than anything in the table above, and `sayDone` moves
+ * out with it. Nothing here was retuned, because the right response is a fresh sweep rather
+ * than a guess: **if turns start arriving truncated, re-measure with `run.js` before touching
+ * this number.** The failure is not silent — a rung that spoke and then hit this deadline
+ * keeps what it said and degrades the action to `none`, so the tell is actions going missing
+ * on long lines, not an error.
  */
 export const RUNG_TOTAL_DEADLINE_MS = 2500;
 

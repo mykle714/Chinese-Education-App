@@ -1171,7 +1171,14 @@ export interface IWNpcOption {
   id: string;
   language: 'zh' | 'es';
   name: string;
+  /** Author-facing, and rendered into prompts. NOT renderable as a reading — see `IWNpc`. */
   romanization: string;
+  /**
+   * The name's reading, one syllable per character (`'mǎ shī fu'`), for the cpcd nametag over
+   * this NPC's head. Empty for a Latin-script cast. See `IWNpc.pinyin` for why this is a
+   * separate field from {@link romanization} rather than a formatting of it.
+   */
+  pinyin: string;
   occupation: string;
   /**
    * Which of the two sprite bodies stands for this NPC. The one COSMETIC field that crosses

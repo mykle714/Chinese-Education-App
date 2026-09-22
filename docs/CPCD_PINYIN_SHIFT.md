@@ -4,6 +4,12 @@ How `CPCDRow` (cpcd) spaces out long pinyin so a row of character + pinyin
 columns stays readable. Layer: **front-end / presentation** — pure layout math
 inside `src/components/CPCDRow.tsx`; no data or API involvement.
 
+> **Scope: the `row` layout only.** The shift exists because each syllable must sit
+> *over its own character*, which is what creates the collision. `CPCDBlock`
+> (`layout="block"`) sets one plain pinyin line under the square, and `CPCDInline`
+> (`layout="inline"`) sets the whole reading *beside* the glyphs as one run of text —
+> neither has columns to collide, so neither runs any of the math below.
+
 ## Goal
 
 Each character in a cpcd row gets a fixed-width **column box** (`COLUMN_WIDTH`

@@ -56,8 +56,6 @@ interface BeginnerKeyboardProps {
   onCommit: (text: string) => void;
   /** Total keyboard height in CSS px — the host decides this from the viewport. */
   height: number;
-  /** Rendered in the corner; the host uses it to hand control back to the OS keyboard. */
-  footer?: React.ReactNode;
   /** Author-only: show the § 6w recognizer debug-dump button in the footer row. */
   debug?: boolean;
 }
@@ -65,7 +63,7 @@ interface BeginnerKeyboardProps {
 /** Padding around the canvas inside its half of the lower region. */
 const CANVAS_INSET = 10;
 
-export default function BeginnerKeyboard({ onCommit, height, footer, debug }: BeginnerKeyboardProps) {
+export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKeyboardProps) {
   const canvasRef = useRef<WritingCanvasHandle>(null);
   const lowerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState(0);
@@ -154,18 +152,21 @@ export default function BeginnerKeyboard({ onCommit, height, footer, debug }: Be
       >
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <ComponentBuffer buffer={composition.buffer} onRemove={composition.removeComponent} />
-          {/* The utility row: the `ABC` escape, the clear key, and for template
-              authors the § 6w debug dump. All of them live here rather than
-              floating over the keyboard, because an overlay covered the very text
-              field the learner is typing into — the one thing that must stay
-              visible. The row is unconditional now that the clear key is always
-              present. Clear sits last so it is the control nearest the canvas it
-              acts on, and so the two escapes (`ABC` + close) stay adjacent. */}
+          {/* The utility row: the clear key, and for template authors the § 6w
+              debug dump. They live here rather than floating over the keyboard,
+              because an overlay covered the very text field the learner is typing
+              into — the one thing that must stay visible.
+
+              ⚠️ The two ESCAPES that used to sit here — `ABC` and the close
+              chevron — moved up into `KeyboardSwitchBar` (2026-09-21, § 6z-2).
+              They belong to the field rather than to this keyboard: reachable
+              only from inside our surface, `ABC` was a door that locked behind
+              the learner. What is left is the one control that acts on this
+              keyboard's own canvas. */}
           <Box
             className="beginner-keyboard__footer"
             sx={{ px: 1.25, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}
           >
-            {footer}
             <Box
               component="button"
               type="button"

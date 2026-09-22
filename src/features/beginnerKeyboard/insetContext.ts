@@ -24,6 +24,16 @@
  *   - `useBeginnerKeyboardInset()` for React layout (a padding, a height calc)
  *   - `--beginner-keyboard-inset` on :root for plain CSS
  * Both are written from the same measurement, so they cannot disagree.
+ *
+ * ⚠️ THIS IS OUR SURFACE ONLY, AND A RESERVING PAGE PROBABLY WANTS MORE. Since the
+ * switch bar (§ 6z-2) this is NOT zero after the `ABC` key: the bar stays up
+ * perched on the OS keyboard, and the host reports its height plus that perch — so
+ * in that state our number happens to be the whole occlusion. But it IS still 0 on
+ * a field the keyboard declines (`data-beginner-keyboard="off"`), where no host
+ * mounts at all and the OS keyboard covers the same pinned controls unannounced.
+ * Reserve off `useKeyboardInset()` (`useKeyboardInset.ts`), which unions the two;
+ * read this one only when a page genuinely means to ignore that case. The CSS
+ * variable carries OUR number, not the union.
  */
 import { createContext, useContext } from 'react';
 
@@ -31,9 +41,10 @@ import { createContext, useContext } from 'react';
 export const INSET_CSS_VARIABLE = '--beginner-keyboard-inset';
 
 /**
- * Occupied height in CSS px: the keyboard's measured height while it is up, and 0
- * when no eligible field is focused or the learner has taken the OS keyboard back
- * with the `ABC` key.
+ * Occupied height in CSS px, measured from the bottom of the app: our whole
+ * surface (switch bar + keyboard) while the handwriting keyboard is up, the bar
+ * plus the OS keyboard it is perched on after the `ABC` key, and 0 when no
+ * eligible field is focused.
  */
 export const BeginnerKeyboardInsetContext = createContext(0);
 

@@ -21,7 +21,7 @@ import { useTTS } from '../../../hooks/useTTS';
 import type { TTSVoice } from '../../../services/tts';
 import {
   actorCells, bodyDrawable, buildSceneBodies,
-  type IWBodyDrawable, type IWSceneBody,
+  type IWBodyDrawable, type IWSceneBody, type IWSpeakerName,
 } from './iwSceneActors';
 import { runAuthoredAction, runInteraction, type IWScriptDeps } from './iwScript';
 import {
@@ -186,8 +186,8 @@ export interface IWSceneRuntime {
   graph: SceneGraph;
   bodies: Map<string, IWSceneBody>;
   /**
-   * npcId → the DISPLAY name for that body: what the stage prints over the head and what a
-   * speech bubble prints above the line.
+   * npcId → the DISPLAY name for that body: what the nametag over the head prints, and what
+   * the same tag prints in its corner once it has grown into a speech bubble.
    *
    * ⚠️ **NOT {@link labelFor}, WHICH NAMES THE SAME BODIES FOR A DIFFERENT AUDIENCE.** That
    * one builds the strings an NPC's *prompt* sees, where the learner is `the customer`
@@ -202,7 +202,7 @@ export interface IWSceneRuntime {
    * has no render-safe identity, so a `useMemo` in a view keyed on it can capture the empty
    * map it held before the scene was built and never recompute.
    */
-  speakerLabels: Record<string, string>;
+  speakerLabels: Record<string, IWSpeakerName>;
   bubbles: IWBubble[];
   /**
    * Tap-to-look-up data for spoken lines, keyed by the line's EXACT text (§ 5.3b).
@@ -312,9 +312,21 @@ export function useIWSceneRuntime(
   // Keyed on `built` (a memo of the scene), so unlike `bodiesRef` this is correct on the very
   // render that first sees the scene rather than one effect later.
   const speakerLabels = useMemo(() => {
-    const labels: Record<string, string> = {};
+    const labels: Record<string, IWSpeakerName> = {};
     for (const [id, body] of built?.bodies ?? []) {
-      if (body.label) labels[id] = body.label;
+      // No label ⇒ no entry, which is what keeps the learner out of this map: they have no
+      // NPC row, so they wear no nametag and a view that names them supplies its own word.
+      if (body.label) {
+        labels[id] = {
+          text: body.label,
+          pinyin: body.pinyin,
+          // ⚠️ `foreign` IS "did we resolve an NPC", not "does the scene speak zh". A body
+          // whose npcId the code no longer defines is labelled with the RAW ID (`wang_shen`),
+          // and an id pushed through a cpcd layout in a `zh` scene becomes one tone-coloured
+          // column per Latin letter. It is chrome; it renders as chrome.
+          foreign: body.npc !== null,
+        };
+      }
     }
     return labels;
   }, [built]);

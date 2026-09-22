@@ -1057,23 +1057,111 @@ The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised again
 > wrap, and read as though it were part of what was said. On its own row it reads as
 > attribution and costs height only when it has something to show.
 >
-> The name is the same string the stage prints over the head (`IWSceneBody.label` → the NPC's
-> `name`), so the two places a speaker is named cannot drift. It matters most exactly where the
-> head label is unavailable: a **docked** bubble has left its speaker behind, and the name is
-> then the only thing that says whose words these are.
+> The name is not a second copy of anything: since 2026-09-21 the head label and the bubble's
+> header are **literally the same element** (see the nametag block below), so the two places a
+> speaker is named cannot drift. It matters most exactly where the tag is no longer over its
+> owner's head: a **docked** bubble has left its speaker behind, and the name is then the only
+> thing that says whose words these are.
 >
-> Wiring: `useIWSceneRuntime` exposes `speakerLabels` (npcId → display name), memoized off the
-> built scene rather than read from the `bodies` REF, which is written from an effect and so has
-> no render-safe identity. `IWPlayPage` adds the learner as `PLAYER_BUBBLE_NAME` (`'You'`) and
-> passes the map down as `IWSpeechBubbles`' `speakerNames`. ⚠️ `speakerLabels` is deliberately
-> **not** the runtime's `labelFor`, which names the same bodies for an NPC's *prompt*, where the
-> learner is `the customer` (§ 14 Q27) — renaming somebody in the UI must not rewrite what the
-> model is told.
+> Wiring: `useIWSceneRuntime` exposes `speakerLabels` (npcId → `IWSpeakerName`: the display
+> name, its per-character `pinyin`, and whether it is an in-world name), memoized off the built scene
+> rather than read from the `bodies` REF, which is written from an effect and so has no
+> render-safe identity. `IWPlayPage` adds the learner as `PLAYER_BUBBLE_NAME` (`'You'`) with
+> `foreign: false` and passes the map down as `IWSpeechBubbles`' `speakerNames`. ⚠️
+> `speakerLabels` is deliberately **not** the runtime's `labelFor`, which names the same bodies
+> for an NPC's *prompt*, where the learner is `the customer` (§ 14 Q27) — renaming somebody in
+> the UI must not rewrite what the model is told.
 >
-> The name is plain DOM text, **not** `ForeignText`, even though it is often Chinese: it is a
-> caption saying who is talking, not a word being taught, and tone colour plus a pinyin row
-> would make it compete with the only line in the bubble worth reading. It is truncated with an
-> ellipsis rather than wrapped, so chrome can never out-height the speech.
+> ### The nametag IS the bubble (2026-09-21)
+>
+> **The in-canvas head label is gone.** It was a monospace `pixiText` drawn by
+> `IWSceneStage` — a second, impoverished CJK renderer that could show 老板 but never its
+> reading, in a scene where every other foreign glyph carries one. `IWSpeechBubbles` now
+> renders **one element per named body**, which is that body's nametag while it is idle and its
+> speech bubble while it talks. The stage no longer `extend`s Pixi's `Text` at all: the canvas
+> draws no words.
+>
+> **Why one element rather than two components.** They occupy the same air above the same head,
+> so as separate components they could only collide, stack, or take turns hiding each other.
+> As one element the change of state is the thing the learner sees: the tag **grows** into the
+> bubble and the name **shrinks into its corner**, where it goes on saying whose words these
+> are. The element is keyed by actor id — never by utterance — precisely so it survives that
+> moment; a remount would make the growth a flicker. (A consequence worth knowing: two
+> consecutive lines from one speaker now reuse one element. The reveal loop keys on the bubble
+> itself, so it still restarts.)
+>
+> **The name is `ForeignText` in both states, in two layouts**, which REVERSES the old rule
+> that the name is plain chrome. Idle it is an ordinary stacked `CPCDRow` of the name — the
+> app's one cpcd renderer, with the account's CJK typeface and nothing bespoke. Speaking, it
+> becomes the new **inline** layout (`ForeignText layout="inline"` →
+> `src/components/CPCDInline.tsx`), which sets a reading *beside* the glyphs rather than above
+> them and is a caption scale by construction: inside a bubble a stacked reading directly above
+> the spoken line's own would be two pronunciations competing for one glance. Both at
+> `size="xs"`, so that is one size key rather than two.
+>
+> **The reading comes from `IWNpc.pinyin`, a field added for this** (2026-09-21) — one
+> syllable per character, space-separated, lowercase with tone marks, i.e. the shape
+> `dictionaryentries_zh` stores and the shape `ForeignText` zips. It travels on `IWNpcOption`
+> beside `name`, so the tag needs no dictionary call: it is drawn every frame and the answer
+> can never change.
+>
+> ⚠️ **`IWNpcOption.romanization` IS NOT THAT FIELD, AND MUST NEVER BE WIRED IN AS ONE.** It is
+> author-facing by contract (`server/types/iwNpc.ts`; `npcPrompt.ts` and `addresseeRouter.ts`
+> render it into prompts) and it is **word-grouped, not character-grouped**, so the
+> one-token-per-character zip mis-assigns it — and the tone colours with it, since the hue is
+> derived from whichever syllable lands in the slot. The first cut of this feature did exactly
+> that and garbled three of the seven NPCs:
+>
+> | NPC | `romanization` | zips as | `pinyin` |
+> |---|---|---|---|
+> | 王婶 · 小陈 · 老周 · 周敏 | `Wáng Shěn` … | correct by luck — 2 tokens, 2 characters | `wáng shěn` |
+> | 马师傅 | `Mǎ Shīfu` | 马←`Mǎ`, 师←`Shīfu`, 傅←*(none)* | `mǎ shī fu` |
+> | 何老师 | `Hé Lǎoshī` | 何←`Hé`, 老←`Lǎoshī`, 师←*(none)* | `hé lǎo shī` |
+> | 迈克尔 | `Michael (Màikè'ěr)` | 迈←`Michael`, 克←`(Màikè'ěr)`, 尔←*(none)* | `mài kè ěr` |
+>
+> Splitting `romanization` at runtime is not an option — nothing in `Shīfu` says where the
+> syllable boundary falls — which is why the two are separate fields rather than one field and
+> a formatter. **The syllable count is a contract**, and a miscount is invisible (no throw, no
+> type error, just a reading missing off the tail characters), so
+> `server/__tests__/iwNpcPinyin.test.ts` asserts one syllable per character, lowercase, and
+> not-a-copy-of-`romanization` for every NPC in the cast.
+>
+> A body whose npcId the code no longer defines carries no reading and is labelled with the raw
+> id, as plain chrome. `CPCDRow` collapses its reserved pinyin band when an item has no
+> syllable, so such a tag is tight rather than carrying an empty row.
+>
+> **A tag does not dock; a bubble does.** Docking exists so a *line* is never lost when its
+> speaker leaves the screen. A name is not a line — nobody needs the name of somebody they
+> cannot see — and a ledge full of off-screen NPCs' names would bury the one bubble docking is
+> for. An idle tag is drawn at its anchor, claims no ledge slot, and is simply clipped by the
+> layer's `overflow: hidden`, exactly like the body it labels.
+>
+> **An idle tag is transparent to taps.** The layer is `pointer-events: none` and each tag
+> re-enables them for itself — but only while it is a *bubble*, which has a word to look up
+> (§ 5.3c) and a replay button to press. A nametag has neither and hovers over board the
+> learner taps to walk (§ 14 Q18), so left tappable it would silently eat every tap aimed at
+> the tile above a head. That reads as the world ignoring you, not as a label being in the way.
+>
+> **The learner wears no tag** (their body IS where they are looking) but still has a
+> `speakerNames` entry, because a docked bubble is detached from every head. That entry is
+> `foreign: false`: `'You'` is an English word the view chose, and run through a cpcd layout in
+> a `zh` scene it would be spelled out as three tone-coloured columns.
+>
+> **Geometry simplified with the merge.** `IWSceneStage` used to carry two offsets above
+> `HEAD_TOP_PX` — `NAME_LABEL_GAP_PX` for the label and `BUBBLE_GAP_PX` for the bubble. One
+> element needs one gap, so only `BUBBLE_GAP_PX` survives and the two can no longer disagree.
+> The material is shared for the same reason: the tag is the bubble's card at a smaller size,
+> so the growth reads as one card changing shape rather than one card replacing another. Only
+> the box's own properties are transitioned (max-width, padding, radius, shadow); the text
+> inside swaps layout in a single frame, since tweening it would mean measuring two cpcd
+> renderings per frame.
+>
+> Code: `src/features/immersiveworld/play/IWSpeechBubbles.tsx` → `IWSpeechBubbles`, `ActorTag`;
+> `src/features/immersiveworld/play/iwSceneActors.ts` → `IWSpeakerName`, `buildSceneBodies`;
+> `server/types/iwNpc.ts` → `IWNpc.pinyin`; `server/config/iwNpcs.ts` (the seven readings);
+> `server/services/iw/npcOptions.ts` → `npcOptionsForLanguage`;
+> `src/components/CPCDInline.tsx`; `src/components/ForeignText.tsx` (the `layout` prop).
+> Guard: `server/__tests__/iwNpcPinyin.test.ts`.
 >
 > Pure geometry lives in `bubbleDock.ts` (`bubbleOverhang`, `bubbleDock`, `bubbleTopFloor`) and is covered by
 > `src/features/immersiveworld/play/__tests__/bubbleDock.test.ts`, including a continuity test
@@ -1751,6 +1839,55 @@ invalidates everything after it):
 > nothing** when it is exhausted, which leaves canned lines with no job. Register — prose,
 > not examples — now carries the voice alone.
 
+> **Why every NPC sounded formal, and what fixed it (2026-09-21).** Every character came out
+> in the same textbook voice — tidy full sentences, no particles — regardless of what their
+> `register` said, including the ones written as fast, clipped and slangy. The cause was in
+> layer 1, not in the cast: the beginner clause asked the NPC to *"keep your grammar simple"*
+> and to say what the character would say *"simply"*. To a model, **simple Chinese means the
+> textbook voice**; simplification and formality are separate axes, but that wording conflated
+> them, and it sat in the frozen prefix with far more emphasis than layer 2's single register
+> line at the far end of the prompt. So the prefix won, every time.
+>
+> The clause now asks for SHORT — which is what the pedagogy wanted all along — and then names
+> the medium: *short is not the same as simplified; you are talking, not writing*, with
+> fragments, dropped subjects, a final particle, a repeated word and a filled pause named as
+> the ordinary state of spoken language rather than as ornament.
+>
+> ⚠️ **This does not violate the rule immediately below, and the distinction is the whole
+> point.** It prescribes no register — 何老师 stays a little formal, 老周 stays unhurried — it
+> says only that all of them are *talking*, which is true of the entire cast and is the one
+> thing none of them were being told. Anything further toward "be casual" **is** the
+> 2026-09-01 mistake with a new adjective on it. Three levers were deliberately **not** pulled
+> in the same pass, and remain available if the register is still too stiff: per-NPC sample
+> utterances rendered under `HOW YOU TALK` (exemplars move a model far more than an adjective
+> does, and would stay inside the cached layer-2 block); an energy-derived length cap; and a
+> vernacular flag in the character bench.
+>
+> **The length cap was the other half of it: 12 → 20, same day.** Colloquial Mandarin spends
+> characters on 语气 — a final particle, a filler, a repeated verb, a half-abandoned clause —
+> and under a tight cap that is the first material a model drops, because it looks like the
+> least load-bearing. What survives is the bare proposition, which reads as clipped *and*
+> formal. So the two edits are one fix: the prompt now asks for speech, and the contract
+> leaves room to pay for it. **20 is a judgement, not a measurement** — it is roughly the
+> particles-and-a-filler surcharge on the old 12, and it is short enough that no NPC can
+> deliver a speech. Revisit it against `character-run.js` output, not against taste.
+>
+> `renderLineContract` moved 12 → 20 with it (it was 14, and nothing recorded why it differed).
+> **A rendered line and a free turn are the same NPC speaking aloud in the same scene**, so a
+> gap between them shows up as a seam — scripted beats sounding stiffer than improvised ones.
+> The two numbers move together from here.
+>
+> ⚠️ **Two known mismatches this leaves open.** First, the cap is still FLAT while the
+> bench's `glyphBudgetFor` derives 14–30 from `energy`, so a high-energy NPC can now legally
+> use room the grader flags as `LONG` — expect that flag to fire more on 小陈 and 王婶, and
+> read it as the grader being stricter than the contract rather than as a bad reply. Second,
+> the bench's `lines` contract in `scenario.js` is a **hand-kept copy** of
+> `renderReplyContract`, not an import (the stem is imported; the contract cannot be, because
+> the bench swaps it for the JSON and schema formats). All three bench formats were raised to
+> 20 by hand in the same pass — holding length constant is what makes the format comparison
+> fair — but until that copy is single-sourced, every future contract edit has to be mirrored
+> there or the bench grades a contract production does not send.
+
 > **Layer 1 must not contain any one character's register.** Until 2026-09-01 the world
 > rules ended *"Stay in register: you are a street vendor, warm and brisk, not a poet"* —
 > written when 王婶 was the only NPC, and applied to every NPC thereafter. It flatly
@@ -1766,13 +1903,20 @@ invalidates everything after it):
 >
 > | NPC | layer 2 | + layer 1 | prefix | Haiku 4.5 (floor 4096) | Sonnet 5 (floor 1024) |
 > |---|---:|---:|---:|---|---|
-> | `michael` | 887 | 347 | **1234** | ❌ 2862 short | ✅ caches |
-> | `wang_shen` | 1221 | 347 | **1568** | ❌ 2528 short | ✅ caches |
-> | `xiao_chen` | 883 | 347 | **1230** | ❌ 2866 short | ✅ caches |
-> | `lao_zhou` | 1028 | 347 | **1375** | ❌ 2721 short | ✅ caches |
-> | `zhou_min` | 1151 | 347 | **1498** | ❌ 2598 short | ✅ caches |
-> | `ma_shifu` | 1079 | 347 | **1426** | ❌ 2670 short | ✅ caches |
-> | `he_laoshi` | 1419 | 347 | **1766** | ❌ 2330 short | ✅ caches |
+> | `michael` | 887 | 457 | **1344** | ❌ 2752 short | ✅ caches |
+> | `wang_shen` | 1221 | 457 | **1678** | ❌ 2418 short | ✅ caches |
+> | `xiao_chen` | 883 | 457 | **1340** | ❌ 2756 short | ✅ caches |
+> | `lao_zhou` | 1028 | 457 | **1485** | ❌ 2611 short | ✅ caches |
+> | `zhou_min` | 1151 | 457 | **1608** | ❌ 2488 short | ✅ caches |
+> | `ma_shifu` | 1079 | 457 | **1536** | ❌ 2560 short | ✅ caches |
+> | `he_laoshi` | 1419 | 457 | **1876** | ❌ 2220 short | ✅ caches |
+>
+> **Fifth census, 2026-09-21 — layer 1 rose 347 → 457**, the largest single jump it has taken,
+> when the beginner clause was rewritten to stop asking for "simple grammar" (see *Why every
+> NPC sounded formal* above). Again no layer 2 moved and every row shifted by the same 110
+> tokens — the layer-1-only signature. **The 110 tokens are paid once per session per NPC, not
+> per turn**, on every model that caches; on Haiku, which has never reached the floor, they are
+> paid on every turn, which is one more thing the Haiku rung costs.
 >
 > **Fourth census, 2026-09-07 — layer 1 rose 331 → 347** when the earshot clause was replaced
 > (§ 4 withdrawn). No layer 2 moved; every row shifted by the same 16 tokens, which is what a
@@ -2612,7 +2756,7 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Playing a script to the end | feature | `play/iwScript.ts` (BUILT) |
 | Scene state: bodies, bubbles, addressee routing, the turn | feature hook | `play/useIWSceneRuntime.ts` (BUILT) — the ONE stateful thing in the play surface |
 | Scene rendering | feature view | `play/IWSceneStage.tsx` (BUILT). Reuses `EditorTerrainLayer`, the app's one mask-driven terrain renderer — NOT `TemplateEditorViewer`, which is an authoring surface |
-| Bubbles | feature view | `play/IWSpeechBubbles.tsx` (BUILT). **DOM, not Pixi**, because the bubble is `ForeignText` — an app-wide rule, not an iw preference. Since 2026-09-07 a line with segmentation renders through the est's `SegmentedSentenceDisplay` instead (§ 5.3b), which is the same rule one step further: iw owns no lookup UI either |
+| Nametags + bubbles | feature view | `play/IWSpeechBubbles.tsx` (BUILT). One element per named body — nametag when idle, speech bubble while speaking (§ 5.3a). **DOM, not Pixi**, because both states are `ForeignText` — an app-wide rule, not an iw preference. Since 2026-09-07 a line with segmentation renders through the est's `SegmentedSentenceDisplay` instead (§ 5.3b), which is the same rule one step further: iw owns no lookup UI either |
 | Reading about a tapped word | feature view (borrowed whole) | `InfoCardSection` + `useEipTabs` + `EipTabStrip`, mounted by `play/IWPlayPage.tsx` (BUILT 2026-09-09, § 5.3c). iw adds no word UI of its own — it adds a `setPaused` hold so the scene does not move while the sheet is up |
 | Spoken-line segmentation | **DAL** | `DictionaryDAL.segmentTexts` (BUILT) — the est's own pipeline, renamed out of its long-definition-only name now that a second surface calls it |
 | Parts → a bubble line | **service helper (pure)** | `server/services/iw/lineSegments.ts` (BUILT). `collectAuthoredLines` lived here and was deleted 2026-09-07 — there are no authored lines left to collect (§ 14 Q42) |
@@ -2637,6 +2781,7 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Which `iw_scene_runs` row a session IS, and when it is finished | **service** | `server/services/iw/sceneTranscript.ts` → `SceneTranscript` (BUILT 2026-09-08). Holds the per-process `sessionId → runId` map, opens the run lazily on the first model call, serializes appends, and can never throw at the turn riding along with it |
 | Reading a run back | **operational script** | `server/scripts/iw-transcript.js` (BUILT 2026-09-08). `--last`, `<runId>`, `--user`, `--self-test` (which exercises the trim SQL against a real database and rolls back) |
 | Camera: follow lock, drag-to-pan, re-centre | feature view | `play/IWSceneStage.tsx` (BUILT 2026-09-07). `useCameraControls` owns zoom only — it says drag-to-pan belongs to each surface's own scene, because that is where it must arbitrate against tapping |
+| Camera: re-centre when a keyboard crops the viewport | feature view + page | `play/IWSceneStage.tsx` (the `ResizeObserver` → `app.queueResize()`) + `play/IWPlayPage.tsx` (`useKeyboardInset` → `paddingBottom`) (BUILT 2026-09-21). No pan maths — centring falls out of the canvas resize |
 | Which thing a pointer selects | **feature helper (pure)** | `play/tapTarget.ts` → `resolveTapTarget` (BUILT 2026-09-07). The ONE hit test: the hover highlight and the click are the same call, so the indicator cannot promise a cell the click does not pick. Replaced Pixi's per-sprite `hitArea` — see Q18 |
 | Is this NPC in this scene? | **service helper (pure)** | `services/iw/sceneCast.ts` → `resolveCastMember` (BUILT 2026-09-07). The stored cast PLUS the derived companion row. `takeNpcTurn` gates on this and never reads `scene.npcCast` — § 14 Q25 |
 | What a legal NPC line is | **contract (pure)** | `server/contracts/iwLineGuard.ts` → `guardNpcLine`. ONE rule, TWO enforcement points: the runtime (before the bubble and the TTS call) and `sceneValidation.validateAuthoredLines` (at save time). Moved out of `src/engine/iw/` on 2026-09-07 so the two cannot drift |
@@ -2891,7 +3036,7 @@ looking at once real session lengths exist, but not worth pre-empting with a rul
 > no Chinese keyboard may have no other way to take one back.
 >
 > **REVERSED 2026-09-07 — it is a pure dictionary now.** Two chip rows were deleted from the
-> assist tray: the hardcoded **openers** (你好 / 请问 / 我要 / 多少钱 / 谢谢 / 我不懂) and a row of
+> tray: the hardcoded **openers** (你好 / 请问 / 我要 / 多少钱 / 谢谢 / 我不懂) and a row of
 > the learner's own `getGameVocabPool` words. Both painted words on screen before the learner
 > had typed anything, which made the tray read as **a menu of things to say** rather than a tool
 > for saying your own thing — Q4c's rejected palette arriving through the back door, and at the
@@ -2947,7 +3092,7 @@ looking at once real session lengths exist, but not worth pre-empting with a rul
 >
 > Two shapes were built and discarded on the way, both for width:
 >
-> - **A three-button segmented group.** Three labelled buttons plus the assist toggle, the
+> - **A three-button segmented group.** Three labelled buttons plus the dictionary toggle, the
 >   field and send do not fit a 360px row without the field collapsing. A cycle chip is one
 >   label wide whatever the state count.
 > - **Three speaker icons.** They read as *one control with three settings* — correct — but not
@@ -2999,7 +3144,8 @@ made the NPC's own vocabulary open-ended guidance rather than a list. A closed i
 otherwise open system would have bounded the whole feature to the palette's imagination.
 
 **Which pieces carried the weight (settled by the 2026-09-06 build, § 14 Q4b).** Of the four
-candidates, three shipped inside one collapsed "assist" tray behind a lightbulb toggle:
+candidates, three shipped inside one collapsed tray behind a toggle button (a **lightbulb**
+until 2026-09-21 — see *The toggle is a book* below):
 **pinyin → hanzi** and the **"how do I say…"** affordance turned out to be the *same* control
 — the **quick dictionary**, a debounced field feeding the ordinary `/api/dictionary/search`,
 which already resolves both English and pinyin (including numbered tones like `jian4 shen1`), so
@@ -3015,6 +3161,23 @@ precisely because they cannot write the word yet. Focusing it therefore drops th
 and raises the OS keyboard. This is what forced `eligibility.ts` to resolve the attribute by
 *nearest declaration* rather than per value — see
 [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § *`data-beginner-keyboard` now has two values*.
+
+**The toggle is a BOOK, and pressing it focuses the field (2026-09-21).** Two changes to the
+same control (`IWComposer` → the `iw-composer__dictionary-toggle` button):
+
+- **The lightbulb became `MenuBookOutlined`, and the tooltip/`aria-label` read "Quick
+  dictionary".** A lightbulb promises a *hint* — a suggestion of what to say — which is
+  precisely what the 2026-09-07 reversal above took out of this tray. The control now names
+  the one thing it does: look a word up. (The state name and CSS class moved with it:
+  `assistOpen` → `dictionaryOpen`, `iw-composer__assistant` → `iw-composer__dictionary`.)
+- **Opening the tray focuses the lookup field**, in an effect keyed on `dictionaryOpen`
+  because the field does not exist until the tray has rendered — React flushes the discrete
+  click synchronously, so the focus still lands inside the user gesture a mobile browser
+  requires before it will raise a keyboard. The rest falls out of the `off` marking described
+  just above: the `focusin` dismisses any handwriting bar raised from the sentence field, and
+  the phone raises its own latin keyboard over the now-focused English/pinyin input. A learner
+  who presses this button wanted a cursor and a latin keyboard; they no longer have to tap
+  twice to get one.
 
 A result is rendered as **the word alone**: a `ForeignText` cpcd row carrying its pinyin, at
 `sm` so the overlay is legible, with **no English beside it**. The learner typed the meaning, so
@@ -3606,7 +3769,8 @@ the companion is male; neither is a per-scene choice, because a companion who lo
 on Wednesday is not the same person.
 
 **The NPC control is a picker**, sourced server-side from `npcsForLanguage()` and projected
-to `IWNpcOption` — id, name, romanization, occupation, `isCompanion`, `canComplete`. **No
+to `IWNpcOption` — id, name, romanization, `pinyin` (the nametag's reading, § 5.3a),
+occupation, `isCompanion`, `canComplete`. **No
 NPC prose crosses the wire**: an author chooses which NPC stands in which stall, and never
 writes NPC text (the § 11 layer-1 boundary). Q2's own advice, made structural — free text
 for an npc id is not a field an author can type into, so the runtime-lookup risk cannot be
@@ -4060,9 +4224,10 @@ to be watched for deliberately.
   rung
 - `src/features/immersiveworld/play/IWSceneStage.tsx` — the Pixi host. Reuses
   `EditorTerrainLayer` (the app's one mask-driven terrain renderer), NOT `TemplateEditorViewer`
-- `src/features/immersiveworld/play/IWSpeechBubbles.tsx` — the DOM bubble layer, because the
-  bubble is `ForeignText` (§ 5.3a). Q41's replay control lives here, and so does the one
-  layer-wide positioning loop that places every bubble each frame
+- `src/features/immersiveworld/play/IWSpeechBubbles.tsx` — the DOM nametag/bubble layer, because
+  both states are `ForeignText` (§ 5.3a). One element per named body: their cpcd nametag, grown
+  into their speech bubble while they talk. Q41's replay control lives here, and so does the one
+  layer-wide positioning loop that places every tag each frame
 - `src/features/immersiveworld/play/bubbleDock.ts` → `bubbleOverhang`, `bubbleDock`,
   `bubbleTopFloor` — the pure
   anchor→top-of-screen blend an off-screen speaker's bubble rides (§ 5.3a)
@@ -4945,6 +5110,27 @@ as the camera is unlocked — its absence is what tells the learner the camera i
 Re-locking does not cut: the tick's existing `CAMERA_EASE` glides home, so the way back is
 legible as movement. The drag accumulates into its own ref rather than reading `panRef`, which
 is written during render and would drop a delta whenever two pointer moves landed in one frame.
+
+**A keyboard crops the viewport, and the scene re-centres into what is left
+(2026-09-21).** The page reserves a keyboard's height as `paddingBottom` on the content box,
+which shrinks the `flex: 1` stage-wrap and carries the composer above the keyboard. That used
+to leave the canvas behind: **Pixi's `resizeTo` is not a resize observer** — `ResizePlugin`
+listens to `window.resize` and nothing else — so an element that changes size on its own kept
+the canvas at its old height, overflowing its box, painting over the composer, and holding the
+board anchored to a centre now hidden behind the keyboard. `IWSceneStage` now observes its own
+box and hands the new size to `app.queueResize()` (coalesced to one frame, because the box
+travels on a 300ms transition).
+
+No pan correction exists, and none should be added: the board is drawn at the CANVAS centre, so
+the world point under the centre is `-pan / zoom` — a quantity that does not mention the
+viewport. Cropping the canvas therefore preserves whatever was centred, in both the follow-lock
+and the panned-away states, with nothing to unwind when the keyboard closes. If the scene ever
+drifts behind a keyboard again, the broken part is the page's padding or that observer.
+
+The inset is `useKeyboardInset()`, which unions **our** keyboard with the **OS** one
+([BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a). Both reach this page: the `ABC` key, and
+the composer's dictionary tray, which is `data-beginner-keyboard="off"` precisely so it raises
+a latin keyboard. Reserving off the beginner inset alone reserved nothing in either.
 
 **Every tap target now MOVES the learner (2026-09-07).** Tapping a person or a place used to
 turn the player on the spot without walking, which made the tap read as ignored whenever the

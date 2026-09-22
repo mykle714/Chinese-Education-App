@@ -116,6 +116,7 @@ const MICHAEL: IWNpc = {
   avatar: 'male',
   name: '迈克尔',
   romanization: "Michael (Màikè'ěr)",
+  pinyin: 'mài kè ěr',
   age: 29,
   occupation:
     'You are building your own Chinese-learning app — your own idea, your own code — and what you want out of it is for learning Chinese to be within reach of anyone who wants it. You talk about it the way other people talk about a child.',
@@ -212,6 +213,7 @@ const WANG_SHEN: IWNpc = {
   avatar: 'female',
   name: '王婶',
   romanization: 'Wáng Shěn',
+  pinyin: 'wáng shěn',
   age: 52,
   occupation: 'You own a small beef-noodle restaurant on the night-market street — one room, six tables, nineteen years.',
 
@@ -288,6 +290,7 @@ const XIAO_CHEN: IWNpc = {
   avatar: 'male',
   name: '小陈',
   romanization: 'Xiǎo Chén',
+  pinyin: 'xiǎo chén',
   age: 23,
   occupation: 'You work the counter at a phone-repair-and-accessories kiosk, and fix screens in the back when it is quiet.',
 
@@ -355,6 +358,7 @@ const LAO_ZHOU: IWNpc = {
   avatar: 'male',
   name: '老周',
   romanization: 'Lǎo Zhōu',
+  pinyin: 'lǎo zhōu',
   age: 68,
   occupation: 'You are retired. You were a bus mechanic for thirty-one years. Now you sit near the market most evenings.',
 
@@ -440,6 +444,7 @@ const ZHOU_MIN: IWNpc = {
   avatar: 'female',
   name: '周敏',
   romanization: 'Zhōu Mǐn',
+  pinyin: 'zhōu mǐn',
   age: 39,
   occupation:
     'You are a ward nurse of sixteen years, and three evenings a week you cover the counter at the pharmacy on the corner because the owner is your aunt. ' +
@@ -527,6 +532,7 @@ const MA_SHIFU: IWNpc = {
   avatar: 'male',
   name: '马师傅',
   romanization: 'Mǎ Shīfu',
+  pinyin: 'mǎ shī fu',
   age: 47,
   occupation:
     'You drive a cab, mostly nights, and you have driven this city for nineteen years. ' +
@@ -636,6 +642,7 @@ const HE_LAOSHI: IWNpc = {
   avatar: 'male',
   name: '何老师',
   romanization: 'Hé Lǎoshī',
+  pinyin: 'hé lǎo shī',
   age: 71,
   occupation:
     'You are retired. You taught 语文 at the middle school down the road for thirty-eight years. ' +

@@ -33,6 +33,34 @@ import { iwLog, iwWarn } from '../iwDebugLog';
 /** Walk-cycle rate. Slower than a run, fast enough that a two-cell walk is not a slideshow. */
 const WALK_FPS = 8;
 
+/**
+ * A body's display name, as the nametag/bubble layer needs it.
+ *
+ * ⚠️ **THE READING TRAVELS WITH THE NAME, rather than being looked up where it is drawn.**
+ * `IWNpcOption` carries `pinyin` beside `name`, so the view never has to ask the dictionary
+ * what 老板 is read as — which matters because the nametag is drawn every frame and the
+ * answer can never change.
+ *
+ * ⚠️ **THAT IS `pinyin`, NEVER `romanization`.** The other field is author-facing prose that
+ * also feeds the prompt: word-grouped rather than character-grouped (`Mǎ Shīfu` is two tokens
+ * for 马师傅's three characters) and sometimes carrying a gloss (`Michael (Màikè'ěr)`).
+ * `ForeignText` zips one whitespace-separated token per character, so that string mis-assigns
+ * syllables and, with them, the tone colours. `server/__tests__/iwNpcPinyin.test.ts` holds the
+ * one-syllable-per-character contract that makes this field safe to hand over.
+ */
+export interface IWSpeakerName {
+  /** What is printed. */
+  text: string;
+  /** The reading of {@link text}, one syllable per character. Empty when it has none. */
+  pinyin: string;
+  /**
+   * Is this an IN-WORLD name (an NPC's), or a word a view supplied for somebody (the
+   * learner's "You")? Only the first is rendered through `ForeignText` — running "You"
+   * through a cpcd layout in a `zh` scene would spell it out as three Chinese columns.
+   */
+  foreign: boolean;
+}
+
 /** One body on the board, with everything a renderer needs and nothing it does not. */
 export interface IWSceneBody {
   /** `player`, or an npcId. Never the literal `companion` — see {@link actorCells}. */
@@ -40,17 +68,31 @@ export interface IWSceneBody {
   /** Null for the learner, who has no NPC entry at all (`IW_PLAYER_AVATAR` is their body). */
   npc: IWNpcOption | null;
   avatar: IWAvatar;
-  /** Display name over the head. The learner's is not drawn, so it is empty for them. */
+  /**
+   * Display name. Empty for the learner, who wears no nametag — their body IS where they
+   * are looking.
+   *
+   * ⚠️ A PLAIN STRING, because this is also what the PROMPT sees (`labelFor`). The reading
+   * lives next to it in {@link pinyin} rather than inside it, so nothing an NPC is told about
+   * who is present can ever gain a pinyin row.
+   */
   label: string;
+  /** {@link label}'s reading, for the nametag. Empty when there is none. */
+  pinyin: string;
 }
 
-/** A body's current pose, recomputed every frame from its actor state. */
+/**
+ * A body's current pose, recomputed every frame from its actor state.
+ *
+ * ⚠️ NO NAME HERE. The head label used to be drawn inside the canvas from a `label` on this
+ * shape; it is DOM now (a cpcd nametag — `IWSpeechBubbles`), fed from `speakerLabels`, which
+ * changes when the cast does rather than 60×/sec.
+ */
 export interface IWBodyDrawable {
   id: string;
   isoX: number;
   isoY: number;
   imagePath: string;
-  label: string;
 }
 
 /** A cell → its `"col,row"` key, guarding an authored value that is off the board. */
@@ -80,7 +122,9 @@ export function buildSceneBodies(
 
   const playerCell = clampedCell(scene.playerStartCol, scene.playerStartRow, graph);
   actors.push(createSceneActor(IW_ACTOR_PLAYER, playerCell, scene.playerStartFacing));
-  bodies.set(IW_ACTOR_PLAYER, { id: IW_ACTOR_PLAYER, npc: null, avatar: IW_PLAYER_AVATAR, label: '' });
+  bodies.set(IW_ACTOR_PLAYER, {
+    id: IW_ACTOR_PLAYER, npc: null, avatar: IW_PLAYER_AVATAR, label: '', pinyin: '',
+  });
 
   for (const member of scene.npcCast ?? []) {
     const npc = byId.get(member.npcId) ?? null;
@@ -92,6 +136,9 @@ export function buildSceneBodies(
       // foreign key — rather than a hole in the scene where somebody was standing.
       avatar: npc?.avatar ?? 'male',
       label: npc?.name ?? member.npcId,
+      // An npcId standing in for a missing NPC has no reading — the nametag then prints the
+      // id alone rather than inventing one.
+      pinyin: npc?.pinyin ?? '',
     });
   }
 
@@ -106,7 +153,8 @@ export function buildSceneBodies(
       scene.companionStartFacing,
     ));
     bodies.set(companion.id, {
-      id: companion.id, npc: companion, avatar: companion.avatar, label: companion.name,
+      id: companion.id, npc: companion, avatar: companion.avatar,
+      label: companion.name, pinyin: companion.pinyin,
     });
   }
 
@@ -177,7 +225,7 @@ export function bodyDrawable(
   const index = walking && frames.length > 0
     ? Math.floor((nowMs * WALK_FPS) / 1000) % frames.length
     : 0;
-  return { id: actor.id, isoX, isoY, imagePath: frames[index] ?? '', label: body.label };
+  return { id: actor.id, isoX, isoY, imagePath: frames[index] ?? '' };
 }
 
 /**

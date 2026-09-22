@@ -66,8 +66,30 @@ export interface IWNpc {
 
   /** What they are called, and what the learner sees. */
   name: string;
-  /** Romanization for the author's benefit; never shown to the learner in-scene. */
+  /**
+   * Romanization for the AUTHOR's benefit, and for the prompt (`npcPrompt`,
+   * `addresseeRouter`). Never shown to the learner in-scene.
+   *
+   * ⚠️ **NOT A PRONUNCIATION THE UI CAN RENDER, AND {@link pinyin} EXISTS BECAUSE OF IT.**
+   * This is free-form: word-grouped rather than character-grouped (`Mǎ Shīfu` — two tokens
+   * for 马师傅's three characters) and sometimes carrying a gloss (`Michael (Màikè'ěr)`).
+   * Every cpcd surface zips ONE whitespace-separated syllable per character, so feeding it
+   * this string mis-assigns the reading and, with it, the tone colours. It also cannot be
+   * split at runtime — nothing in `Shīfu` says where the syllable boundary falls.
+   */
   romanization: string;
+  /**
+   * The name's reading, ONE SYLLABLE PER CHARACTER, space-separated, lowercase, tone marks —
+   * the same shape `dictionaryentries_zh.pinyin` stores, which is what lets `ForeignText`
+   * render a nametag with no special case (docs/IMMERSIVE_WORLD.md § 5.3a).
+   *
+   * ⚠️ **THE COUNT IS A CONTRACT**: `[...name].length` syllables, or the cpcd row silently
+   * drops the reading off the tail characters. `马师傅` is `'mǎ shī fu'`, three tokens — not
+   * `'mǎ shīfu'`, however the word is normally written.
+   *
+   * Empty for a Latin-script cast (`es`), which renders as plain text and has no overlay.
+   */
+  pinyin: string;
   age: number;
   /**
    * WHICH SPRITE STANDS FOR THIS PERSON. The pack ships exactly two bodies — `male` and

@@ -7,21 +7,51 @@ import { revealedText } from '../../../engine/iw/revealSchedule';
 import { clipSegmentsToLength } from './lineReveal';
 import { bubbleDock, bubbleOverhang, DOCK_STACK_GAP_PX } from './bubbleDock';
 import { LEADING, SIZE, TRACKING, WEIGHT } from '../../../theme/scale';
-import type { IWEmote, IWLineSegments } from '../../../../server/contracts/iw';
+import { IW_ACTOR_PLAYER, type IWEmote, type IWLineSegments } from '../../../../server/contracts/iw';
+import type { IWSpeakerName } from './iwSceneActors';
 import type { IWBubble } from './useIWSceneRuntime';
 
 /**
- * IWSpeechBubbles — the DOM layer that floats over the canvas (§ 5.3a).
+ * IWSpeechBubbles — the DOM layer that floats over the canvas (§ 5.3a): ONE element per
+ * named body, which is that body's NAMETAG until they speak and their SPEECH BUBBLE while
+ * they do.
+ *
+ * ⚠️ **THE NAMETAG AND THE BUBBLE ARE THE SAME ELEMENT IN TWO STATES** (2026-09-21), and that
+ * is the whole design rather than an implementation shortcut. They occupy the same place —
+ * the air just above one head — so as two components they could only ever collide, stack or
+ * take turns hiding each other, and all three read as a bug. As one element the transition is
+ * the thing the learner sees: the tag grows into the bubble, and the name it was showing
+ * shrinks into the bubble's corner, where it goes on saying whose words these are. Nothing is
+ * revealed or hidden; a card changes shape.
+ *
+ * ⚠️ **WHICH IS WHY THE NAME IS `ForeignText` NOW, REVERSING THE RULE THIS FILE USED TO
+ * STATE.** The name used to be plain DOM text in both places, on the argument that it is
+ * chrome rather than something the learner is being taught. That still holds INSIDE a bubble,
+ * where a stacked reading would sit directly above the spoken line's own — so the corner
+ * caption uses the INLINE cpcd layout (`layout="inline"`, 老板 lǎobǎn), which costs a row's
+ * width instead of a row's height. Idle, there is no line to compete with: a standing NPC's
+ * name is the one thing on that part of the board, and an unreadable 老板 over a head is a
+ * free reading rep thrown away. So the tag state uses the ordinary stacked layout.
+ *
+ * ⚠️ **A TAG DOES NOT DOCK; A BUBBLE DOES.** Docking exists so a LINE is never lost when its
+ * speaker leaves the screen ({@link bubbleDock}). A name is not a line — nobody needs to be
+ * told the name of somebody they cannot see — and a ledge full of the names of off-screen
+ * NPCs would bury the one bubble docking is for. An idle tag is therefore drawn at its anchor
+ * and simply clipped by the layer, exactly like the body it labels.
+ *
+ * Everything below this line describes the BUBBLE state, and predates the merge.
  *
  * LAYER: view. It owns no speech state: the runtime hook decides what is said, when it starts
  * and how the glyphs are spaced; this component paints the prefix that is due.
  *
- * ⚠️ **IT IS DOM, NOT PIXI, BECAUSE THE BUBBLE IS `ForeignText`.** That is an app-wide rule
+ * ⚠️ **IT IS DOM, NOT PIXI, BECAUSE BOTH STATES ARE `ForeignText`.** That is an app-wide rule
  * rather than an iw preference — foreign words are rendered by one component everywhere, so
  * the CJK typeface setting, tone colour and the pinyin-shift spacing all come for free and
- * cannot drift. Drawing the line with `pixiText` would be a second CJK renderer.
+ * cannot drift. Drawing the line with `pixiText` would be a second CJK renderer — and the
+ * head label WAS exactly that until it moved here, a monospace `pixiText` that could show an
+ * NPC's name but never its reading.
  *
- * ⚠️ **POSITION IS WRITTEN, TEXT IS RENDERED.** Two things change while a bubble is up, at
+ * ⚠️ **POSITION IS WRITTEN, TEXT IS RENDERED.** Two things change while a tag is up, at
  * very different rates: WHERE the speaker is (every frame) and HOW MUCH of the line is
  * revealed (a few glyphs a second). The first is written straight to `style.transform` from
  * an animation frame and never touches React; the second is ordinary state, because it
@@ -83,11 +113,16 @@ export interface IWSpeechBubblesProps {
   /** Tap-to-look-up data by exact line text (§ 5.3b). A miss renders plain text. */
   lineSegments: Record<string, IWLineSegments>;
   /**
-   * actorId → the name printed at the top of that speaker's bubble. Built by the page from
-   * the runtime's bodies (plus the learner's own "You"), so this component never has to know
-   * what an `IWSceneBody` is. A missing id renders an unlabelled bubble rather than an id.
+   * actorId → the name that body wears: over the head while it is idle, in the corner of its
+   * bubble while it speaks. Built by the page from the runtime's `speakerLabels` (plus the
+   * learner's own "You", whom only a view has a word for), so this component never has to
+   * know what an `IWSceneBody` is.
+   *
+   * ⚠️ **THIS IS ALSO THE LIST OF WHO GETS A NAMETAG.** An id absent here is simply not
+   * labelled — which is how the learner stays bare (their body IS where they are looking) and
+   * how an NPC the code no longer defines still gets a plain tag from its id.
    */
-  speakerNames: Record<string, string>;
+  speakerNames: Record<string, IWSpeakerName>;
   /** Live screen positions, written by the stage every frame. */
   positions: React.MutableRefObject<Map<string, { x: number; y: number }>>;
   language: 'zh' | 'es';
@@ -108,17 +143,43 @@ export default function IWSpeechBubbles({
   bubbles, lineSegments, speakerNames, positions, language, onReplay, onSegmentOpen,
 }: IWSpeechBubblesProps) {
   const layerRef = useRef<HTMLDivElement | null>(null);
-  /** Every mounted bubble's root, keyed the same way the list is. Written on mount/unmount. */
+  /** Every mounted tag's root, keyed by ACTOR id. Written on mount/unmount. */
   const nodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
   /** The list order, as a ref: the frame loop needs it without being re-registered per render. */
-  const orderRef = useRef<{ key: string; actorId: string }[]>([]);
-  orderRef.current = bubbles.map(b => ({ key: bubbleKey(b), actorId: b.actorId }));
+  const orderRef = useRef<{ actorId: string; speaking: boolean }[]>([]);
 
   /**
-   * ⚠️ **POSITIONING IS ONE LOOP FOR THE WHOLE LAYER, NOT ONE PER BUBBLE.** Docking is not a
-   * per-bubble decision any more: bubbles that dock at the same moment have to be given
-   * separate slots on the ledge, which can only be decided by something that can see all of
-   * them. Each bubble still runs its own reveal loop, because that IS per-bubble state.
+   * One entry per body that has something to show: everybody with a name, plus anybody
+   * speaking (the learner has no nametag but does get a bubble).
+   *
+   * ⚠️ **KEYED BY ACTOR ID, NOT BY UTTERANCE**, which is what makes the morph possible at all:
+   * the tag element must SURVIVE the moment its owner starts and stops speaking, or React
+   * remounts it and the growth is a flicker. It is also why two consecutive lines from one
+   * speaker now reuse one element — the reveal loop keys on the bubble itself, so it still
+   * restarts.
+   *
+   * ⚠️ **SPEAKERS COME FIRST**, because order is what {@link bubbleDock} hands out ledge slots
+   * by. Idle tags never dock and never claim a slot, so their position in this list is free.
+   */
+  const tags = useMemo(() => {
+    const speaking = new Set(bubbles.map(b => b.actorId));
+    const list: { actorId: string; bubble: IWBubble | null }[] =
+      bubbles.map(bubble => ({ actorId: bubble.actorId, bubble }));
+    for (const actorId of Object.keys(speakerNames)) {
+      // The learner wears no tag. Their name exists only for the bubble state above, where a
+      // docked bubble is the one place their own words need attributing.
+      if (actorId === IW_ACTOR_PLAYER || speaking.has(actorId)) continue;
+      list.push({ actorId, bubble: null });
+    }
+    return list;
+  }, [bubbles, speakerNames]);
+  orderRef.current = tags.map(({ actorId, bubble }) => ({ actorId, speaking: bubble !== null }));
+
+  /**
+   * ⚠️ **POSITIONING IS ONE LOOP FOR THE WHOLE LAYER, NOT ONE PER TAG.** Docking is not a
+   * per-bubble decision: bubbles that dock at the same moment have to be given separate slots
+   * on the ledge, which can only be decided by something that can see all of them. Each
+   * speaking tag still runs its own reveal loop, because that IS per-bubble state.
    *
    * Like the reveal loop, this writes `style.transform` directly and sets no React state.
    */
@@ -131,14 +192,14 @@ export default function IWSpeechBubbles({
       const layer = { width: layerEl.clientWidth, height: layerEl.clientHeight };
 
       // Pass 1 — measure. Anchors and boxes are read before anything is written, so no
-      // bubble's layout is measured against another's half-applied transform.
-      const measured = orderRef.current.map(({ key, actorId }) => {
-        const node = nodesRef.current.get(key);
+      // tag's layout is measured against another's half-applied transform.
+      const measured = orderRef.current.map(({ actorId, speaking }) => {
+        const node = nodesRef.current.get(actorId);
         if (!node) return null;
         const anchor = positions.current.get(actorId);
-        if (!anchor) return { node, anchor: null, size: { width: 0, height: 0 }, overhang: 0 };
+        if (!anchor) return { node, speaking, anchor: null, size: { width: 0, height: 0 }, overhang: 0 };
         const size = { width: node.offsetWidth, height: node.offsetHeight };
-        return { node, anchor, size, overhang: bubbleOverhang(anchor, size, layer) };
+        return { node, speaking, anchor, size, overhang: bubbleOverhang(anchor, size, layer) };
       });
 
       // Pass 2 — place. Docked bubbles claim ledge slots in list order and stack downward by
@@ -146,14 +207,16 @@ export default function IWSpeechBubbles({
       let stackOffset = 0;
       for (const item of measured) {
         if (!item) continue;
-        const { node, anchor, size } = item;
+        const { node, speaking, anchor, size } = item;
         if (!anchor) {
-          // The speaker is not being drawn this frame. Hide rather than leave the bubble at a
-          // stale position, which reads as a line hanging in mid-air.
+          // The body is not being drawn this frame. Hide rather than leave the tag at a stale
+          // position, which reads as a name (or a line) hanging in mid-air.
           node.style.visibility = 'hidden';
           continue;
         }
-        const placed = bubbleDock({ anchor, size, layer, stackOffset });
+        // An idle nametag is drawn at its anchor and nowhere else — see the header's note on
+        // why only a LINE earns a trip to the ledge.
+        const placed = speaking ? bubbleDock({ anchor, size, layer, stackOffset }) : { ...anchor, t: 0 };
         // Only a bubble that has actually started travelling claims ledge space, and it claims
         // it in proportion to how docked it is — so the bubbles below it slide down as this one
         // arrives instead of jumping when it lands.
@@ -171,26 +234,27 @@ export default function IWSpeechBubbles({
   return (
     <Box
       ref={layerRef}
-      className="iw-speech-bubbles"
-      // `none` at the layer, `auto` per bubble: a tap that is not on a bubble must reach the
-      // world surface underneath (§ 14 Q18 — only the world routes taps by hit-test).
+      className="iw-actor-tags"
+      // `none` at the layer, `auto` per SPEAKING tag: a tap that is not on a bubble must
+      // reach the world surface underneath (§ 14 Q18 — only the world routes taps by
+      // hit-test). See the tag's own note for why an idle nametag stays transparent.
       sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}
     >
-      {bubbles.map(bubble => (
-        <Bubble
-          key={bubbleKey(bubble)}
+      {tags.map(({ actorId, bubble }) => (
+        <ActorTag
+          key={actorId}
+          actorId={actorId}
           bubble={bubble}
           // Hand the root up so the layer's single positioning loop can place it (see above).
           register={(node) => {
-            const key = bubbleKey(bubble);
-            if (node) nodesRef.current.set(key, node);
-            else nodesRef.current.delete(key);
+            if (node) nodesRef.current.set(actorId, node);
+            else nodesRef.current.delete(actorId);
           }}
           // Looked up by EXACT text. The line the server segmented is the line before
           // `guardNpcLine` ran, so a sanitized line simply misses and stays plain rather than
           // painting one line's segments over another's characters.
-          line={lineSegments[bubble.text]}
-          speakerName={speakerNames[bubble.actorId] ?? ''}
+          line={bubble ? lineSegments[bubble.text] : undefined}
+          speaker={speakerNames[actorId]}
           language={language}
           onReplay={onReplay}
           onSegmentOpen={onSegmentOpen}
@@ -200,27 +264,41 @@ export default function IWSpeechBubbles({
   );
 }
 
-/** The list key, and therefore the id the layer's positioning loop registers a root under. */
-function bubbleKey(bubble: IWBubble): string {
-  return `${bubble.actorId}:${bubble.startedAt}`;
-}
-
-function Bubble({ bubble, line, speakerName, language, register, onReplay, onSegmentOpen }: {
-  bubble: IWBubble;
+/**
+ * One body's tag: their name over their head, grown into a speech bubble while they talk.
+ *
+ * ⚠️ **THE NAME LIVES IN THE SAME ELEMENT IN BOTH STATES.** The header row is rendered
+ * unconditionally and holds the name in either case — only its cpcd LAYOUT changes (stacked
+ * when idle, inline when speaking). That is what lets the browser animate the move rather
+ * than swapping one component for another: the box the name sits in persists, so its size
+ * change is a transition and the name visibly settles into the corner.
+ */
+function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay, onSegmentOpen }: {
+  actorId: string;
+  /** The line this body is speaking, or null — which is the whole state distinction. */
+  bubble: IWBubble | null;
   line: IWLineSegments | undefined;
-  /** Empty when the speaker has no name to print — the bubble then looks exactly as before. */
-  speakerName: string;
+  /** Undefined when this body has no name at all — only a speaking learner reaches that. */
+  speaker: IWSpeakerName | undefined;
   language: 'zh' | 'es';
   register(node: HTMLDivElement | null): void;
   onReplay(text: string): void;
   onSegmentOpen?(segment: string): void;
 }) {
+  const speaking = bubble !== null;
   const [shown, setShown] = useState('');
 
-  // Reveal only — WHERE this bubble goes is the layer's job now (docking needs to see every
-  // bubble at once). This loop still exists separately because the revealed prefix is React
-  // state on this component and changes a few times a second, not 60×.
+  // Reveal only — WHERE this tag goes is the layer's job (docking needs to see every bubble at
+  // once). This loop still exists separately because the revealed prefix is React state on
+  // this component and changes a few times a second, not 60×.
   useEffect(() => {
+    // Idle: nothing is being said, so there is nothing to reveal and no loop to run. The
+    // emptied string also means a tag that has just stopped speaking does not keep the last
+    // line's prefix in a hidden box, silently holding the element's old width.
+    if (!bubble) {
+      setShown('');
+      return undefined;
+    }
     let raf = 0;
     let painted = '';
     const frame = () => {
@@ -247,7 +325,7 @@ function Bubble({ bubble, line, speakerName, language, register, onReplay, onSeg
    * empty reveal.
    */
   const segmented = useMemo(() => {
-    if (!line || !shown) return null;
+    if (!bubble || !line || !shown) return null;
     // A line whose segmentation was built for DIFFERENT text cannot be trusted to partition
     // this one. Cheaper and safer to fall back than to paint a misaligned popup.
     if (line.foreignText !== bubble.text) return null;
@@ -256,21 +334,27 @@ function Bubble({ bubble, line, speakerName, language, register, onReplay, onSeg
       _segments: clipSegmentsToLength(line.segments, [...shown].length),
       segmentMetadata: line.segmentMetadata,
     };
-  }, [line, shown, bubble.text]);
+  }, [bubble, line, shown]);
 
   return (
     <Box
       ref={register}
-      className={`iw-speech-bubble iw-speech-bubble--${bubble.actorId}`}
+      className={`iw-actor-tag iw-actor-tag--${speaking ? 'speaking' : 'idle'} iw-actor-tag--${actorId}`}
       sx={{
         position: 'absolute', top: 0, left: 0, visibility: 'hidden',
-        pointerEvents: 'auto',
+        // ⚠️ **ONLY A SPEAKING TAG TAKES POINTER EVENTS.** A bubble has things to press — a
+        // word to look up (§ 5.3c), the replay button — so it must. An idle nametag has
+        // nothing, and it hovers over board the learner taps to walk (§ 14 Q18): left `auto`
+        // it would silently eat every tap aimed at the tile above a head, which reads as the
+        // world ignoring you rather than as a label being in the way.
+        pointerEvents: speaking ? 'auto' : 'none',
         // A column: a header row (name + emote + replay) over the spoken line. See the
         // header block below for why the chrome sits above the speech rather than beside it.
         display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0.15,
-        maxWidth: 260,
-        px: 1.2, py: 0.6,
-        borderRadius: 2,
+        maxWidth: speaking ? 260 : 220,
+        px: speaking ? 1.2 : 0.7,
+        py: speaking ? 0.6 : 0.3,
+        borderRadius: speaking ? 2 : 1.5,
         // ⚠️ A BUBBLE IS A LIGHT CARD, FOR THE SAME REASON THE COMPOSER IS. It shipped dark
         // (`rgba(18,18,22,0.88)`) while its contents — `ForeignText`, and now the est's
         // `SegmentedSentenceDisplay` — render in the theme's DARK-on-light text colour, so the
@@ -278,15 +362,22 @@ function Bubble({ bubble, line, speakerName, language, register, onReplay, onSeg
         // the est's own tapped-segment card (`CpcdPopup`) is a white card, and a bubble that
         // opens one has to be the same material or the popup reads as a foreign object landing
         // on top of a different design.
+        //
+        // The nametag is the SAME material at a smaller size, which is what makes the growth
+        // read as one card changing shape rather than one card replacing another.
         bgcolor: 'background.paper',
         border: 1,
         borderColor: 'divider',
-        boxShadow: '0 4px 18px rgba(0,0,0,0.28)',
+        boxShadow: speaking ? '0 4px 18px rgba(0,0,0,0.28)' : '0 2px 8px rgba(0,0,0,0.22)',
+        // The growth itself. Only the box's own properties are transitioned: the text inside
+        // swaps layout in one frame, and trying to tween that would mean measuring two cpcd
+        // renderings per frame to interpolate between them.
+        transition: 'max-width 180ms ease, padding 180ms ease, border-radius 180ms ease, box-shadow 180ms ease',
       }}
     >
       {/**
-        * The header row: WHO is talking, HOW they feel, and the replay button — everything
-        * about the line that is not the line.
+        * The header row: WHO this is, HOW they feel, and the replay button — everything that
+        * is not the line itself. Idle, it is the entire tag.
         *
         * ⚠️ **THE CHROME IS ABOVE THE SPEECH, NOT BESIDE IT.** The emote glyph and the replay
         * icon used to sit at the end of the text row, where they competed for the bubble's
@@ -294,47 +385,75 @@ function Bubble({ bubble, line, speakerName, language, register, onReplay, onSeg
         * own row they cost height only when they have something to say, and they read as what
         * they are: attribution, not words the speaker said.
         *
-        * ⚠️ **THE NAME IS UI CHROME, NOT LEARNABLE TEXT** — which is why it is plain DOM text
-        * and not `ForeignText`. A speaker's `name` is often Chinese (老板), but this line is a
-        * caption identifying who is talking, not a word the learner is being taught: giving it
-        * tone colour and a pinyin row would make it compete with the line underneath. The
-        * stage's own head label (`IWSceneStage` → `LABEL_STYLE`) prints the same string the
-        * same way, so the two places a speaker is named agree.
+        * ⚠️ **THE NAME IS `ForeignText` IN BOTH STATES, IN TWO DIFFERENT LAYOUTS** — see the
+        * file header for why that reverses the old "the name is plain chrome" rule. Stacked
+        * (`row`) while idle, where the name is the only thing on this patch of board; INLINE
+        * while speaking, where a second stacked reading directly above the line's own would be
+        * two pronunciations competing for one glance.
         *
-        * The name matters most exactly when the head label is NOT visible: a docked bubble has
+        * The name matters most exactly when the tag is NOT over its head: a docked bubble has
         * left its speaker behind (see {@link bubbleDock}), and the name is then the only thing
         * that says whose words these are.
         */}
-      {(speakerName || EMOTE_GLYPH[bubble.emote] || bubble.replayable) && (
+      {(speaker || (bubble && (EMOTE_GLYPH[bubble.emote] || bubble.replayable))) && (
         <Box
-          className="iw-speech-bubble__header"
+          className="iw-actor-tag__header"
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}
         >
           <Box
-            className="iw-speech-bubble__speaker"
+            className="iw-actor-tag__name"
             sx={{
               flex: 1,
-              fontSize: SIZE.micro,
-              fontWeight: WEIGHT.semibold,
-              letterSpacing: TRACKING.wide,
+              minWidth: 0,
               lineHeight: LEADING.tight,
-              color: 'text.secondary',
-              // The name never pushes the bubble wider than the line it labels; a long one is
-              // cut rather than wrapped, because two rows of chrome above one row of speech
-              // inverts what the bubble is for.
-              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              // Muted only in the corner. Idle it is the subject of its own card, so it takes
+              // the ordinary text colour — and `CPCDInline` inherits this, which is how the
+              // caption's glyphs go grey without a second colour prop.
+              color: speaking ? 'text.secondary' : 'text.primary',
             }}
           >
-            {speakerName}
+            {speaker?.foreign ? (
+              <ForeignText
+                text={speaker.text}
+                // ⚠️ `pinyin`, NEVER the NPC's `romanization` — see {@link IWSpeakerName}. This
+                // is an ordinary cpcd row taking an ordinary per-character reading; nothing
+                // about a nametag is a special rendering.
+                pronunciation={speaker.pinyin || null}
+                language={language}
+                // Small in both states, and smaller still inline — `CPCDInline` is a caption
+                // scale by construction (see its header), so this is one size key, not two.
+                size="xs"
+                layout={speaking ? 'inline' : 'row'}
+                showPinyin
+                // A tag floats over a canvas that owns dragging, so a text cursor here would
+                // only ever be an accident.
+                selectable={false}
+              />
+            ) : (
+              <Box
+                className="iw-actor-tag__name-plain"
+                sx={{
+                  fontSize: SIZE.micro,
+                  fontWeight: WEIGHT.semibold,
+                  letterSpacing: TRACKING.wide,
+                  // The name never pushes the bubble wider than the line it labels; a long one
+                  // is cut rather than wrapped, because two rows of chrome above one row of
+                  // speech inverts what the bubble is for.
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}
+              >
+                {speaker?.text ?? ''}
+              </Box>
+            )}
           </Box>
-          {EMOTE_GLYPH[bubble.emote] && (
-            <Box className="iw-speech-bubble__emote" sx={{ flexShrink: 0, fontSize: 14, opacity: 0.75 }}>
+          {bubble && EMOTE_GLYPH[bubble.emote] && (
+            <Box className="iw-actor-tag__emote" sx={{ flexShrink: 0, fontSize: 14, opacity: 0.75 }}>
               {EMOTE_GLYPH[bubble.emote]}
             </Box>
           )}
-          {bubble.replayable && (
+          {bubble?.replayable && (
             <IconButton
-              className="iw-speech-bubble__replay"
+              className="iw-actor-tag__replay"
               size="small"
               aria-label="Play this line again"
               onClick={() => onReplay(bubble.text)}
@@ -345,34 +464,36 @@ function Bubble({ bubble, line, speakerName, language, register, onReplay, onSeg
           )}
         </Box>
       )}
-      <Box className="iw-speech-bubble__text">
-        {segmented ? (
-          <SegmentedSentenceDisplay
-            className="iw-speech-bubble__segments"
-            sentence={segmented}
-            language={language}
-            size="sm"
-            flexWrap="wrap"
-            // ⚠️ ON, and worth the height. A bubble is the ONLY place a learner meets a word
-            // they were not taught — the est and the flashcard both show pinyin, and a spoken
-            // line without it is the one surface where an unknown character is unreadable
-            // rather than merely unknown. `ForeignText`/`CPCDRow` render the tone-coloured
-            // pinyin row, so this is the app's one pinyin renderer, not a second one.
-            showPinyin
-            // A bubble floats over a canvas that owns dragging, so a text cursor here would
-            // only ever be an accident.
-            selectable={false}
-            // § 5.3c. The est's own drill-in, on the est's own component: the caption card
-            // gains a chevron and opens the eip for the tapped word. Every bubble gets it,
-            // the learner's echoed line included — one lookup behaviour, no per-speaker rule.
-            onSegmentOpen={onSegmentOpen}
-          />
-        ) : (
-          // Same reasoning as the segmented branch: pinyin is on, so the two paths stay
-          // indistinguishable to the learner (§ 5.3b) rather than differing by a whole row.
-          <ForeignText text={shown} language={language} size="sm" showPinyin flexWrap="wrap" />
-        )}
-      </Box>
+      {bubble && (
+        <Box className="iw-actor-tag__line">
+          {segmented ? (
+            <SegmentedSentenceDisplay
+              className="iw-actor-tag__segments"
+              sentence={segmented}
+              language={language}
+              size="sm"
+              flexWrap="wrap"
+              // ⚠️ ON, and worth the height. A bubble is the ONLY place a learner meets a word
+              // they were not taught — the est and the flashcard both show pinyin, and a spoken
+              // line without it is the one surface where an unknown character is unreadable
+              // rather than merely unknown. `ForeignText`/`CPCDRow` render the tone-coloured
+              // pinyin row, so this is the app's one pinyin renderer, not a second one.
+              showPinyin
+              // A bubble floats over a canvas that owns dragging, so a text cursor here would
+              // only ever be an accident.
+              selectable={false}
+              // § 5.3c. The est's own drill-in, on the est's own component: the caption card
+              // gains a chevron and opens the eip for the tapped word. Every bubble gets it,
+              // the learner's echoed line included — one lookup behaviour, no per-speaker rule.
+              onSegmentOpen={onSegmentOpen}
+            />
+          ) : (
+            // Same reasoning as the segmented branch: pinyin is on, so the two paths stay
+            // indistinguishable to the learner (§ 5.3b) rather than differing by a whole row.
+            <ForeignText text={shown} language={language} size="sm" showPinyin flexWrap="wrap" />
+          )}
+        </Box>
+      )}
     </Box>
   );
 }

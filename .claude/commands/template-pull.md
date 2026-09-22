@@ -43,17 +43,20 @@ migration 115 — one grant, three tools), and PPE is the source of truth for bo
 
 Read [machineEnvironment.md](../../machineEnvironment.md) (gitignored, present on
 every machine) to determine dev vs PPE. A full sync has **two halves that run on
-two different machines**, and you can only run the half for the machine you are on
-— you have no SSH access to the other one. Your job is:
+two different machines**. Your job is:
 
 - **On PPE** → you are the **SOURCE**. Run the [PPE half](#ppe-half--source)
-  yourself (dump → commit → push), then hand the user the
-  [Local half](#local-half--target) commands to run on their dev box.
-- **On DEV/local** → you are the **TARGET**. Hand the user the
-  [PPE half](#ppe-half--source) commands to run on the server first; once they
-  confirm the push landed, run the [Local half](#local-half--target) yourself.
+  yourself (dump → commit → push). The [Local half](#local-half--target) must then
+  run on the dev box, which you cannot reach from PPE — hand the user those commands
+  as a single copy-pasteable block.
+- **On DEV/local** → you are the **TARGET**, and you can run **both** halves. Reach
+  PPE over SSH with [`/ssh-ppe`](./ssh-ppe.md) and run the
+  [PPE half](#ppe-half--source) there yourself (dump → commit → push), then
+  `git pull` and run the [Local half](#local-half--target) locally. Only hand the
+  user a copy-paste block if SSH is unavailable.
 
-Always present the "other machine" commands as a single copy-pasteable block.
+> The direction of reachability is **one-way**: the dev box holds the SSH key
+> (`~/.ssh/id_ed25519_cow_ppe`), so dev → PPE works and PPE → dev does not.
 
 ---
 
@@ -219,8 +222,15 @@ docker exec cow-postgres psql -U cow_user -d cow_db -c \
 > This is the mirror image of the template table's hazard, and worth naming as such.
 > A template's risk is an INBOUND reference (`createdBy` → `users`), so its check runs
 > *before* the overwrite. A scene's risk is an OUTBOUND one (`iw_scene_runs` → scenes),
-> so the database itself enforces it *during* the overwrite — and the scene ids in a
-> PPE dump are per-machine UUIDs that would not match a local run's `sceneId` anyway.
+> so the database itself enforces it *during* the overwrite.
+>
+> ⚠️ **Do not assume the ids will not collide.** An earlier version of this note claimed
+> a PPE dump's scene ids are per-machine UUIDs that could not match a local run's
+> `sceneId`. That is **false**: a scene id is assigned once on PPE and travels with the
+> dump, so every dev box that has pulled before holds PPE's ids, and its local runs point
+> straight at the rows this pull replaces. Observed 2026-09-21 — local had 11 runs against
+> `dc16dd0e…` "Get Dinner", the exact id in the incoming dump. Expect the run pre-check to
+> be non-zero on any dev box that has played a scene, and treat the FK as the real guard.
 
 ```bash
 cd <local repo>

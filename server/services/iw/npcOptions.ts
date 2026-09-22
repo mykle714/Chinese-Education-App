@@ -26,6 +26,8 @@ export function npcOptionsForLanguage(language: 'zh' | 'es'): IWNpcOption[] {
     language: npc.language,
     name: npc.name,
     romanization: npc.romanization,
+    // The reading the nametag renders. `romanization` cannot do this job — see IWNpc.
+    pinyin: npc.pinyin,
     occupation: npc.occupation,
     avatar: npc.avatar,
     isCompanion: npc.id === companionId,

@@ -3,7 +3,7 @@ import { Box, CircularProgress, IconButton, InputBase, Tooltip } from '@mui/mate
 import SendIcon from '@mui/icons-material/Send';
 import SearchIcon from '@mui/icons-material/Search';
 import BackspaceIcon from '@mui/icons-material/Backspace';
-import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import { apiGet } from '../../../api/http';
 import IWLookupResults from './IWLookupResults';
 import IWVolumeChip from './IWVolumeChip';
@@ -110,7 +110,7 @@ export interface IWComposerProps {
 
 export default function IWComposer({ language, disabled, sending, onSend }: IWComposerProps) {
   const [text, setText] = useState('');
-  const [assistOpen, setAssistOpen] = useState(false);
+  const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<DictionaryEntry[]>([]);
   const [looking, setLooking] = useState(false);
@@ -136,6 +136,28 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
    */
   const [volume, setVolume] = useState<IWVolume>('talk');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const lookupRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Opening the quick dictionary FOCUSES its field, which is the whole point of the button:
+   * the learner pressed it because they cannot write the word, so the thing they need next is
+   * a cursor in an English/pinyin field and the OS keyboard under it. Two consequences fall
+   * out of the focus for free (no extra code, and none wanted):
+   *
+   *   • the tray is `data-beginner-keyboard="off"`, and that `off` shadows the composer's
+   *     `keep` (nearest wins — `eligibility.ts`), so the `focusin` DISMISSES any handwriting
+   *     keyboard raised from the sentence field rather than retargeting it at this one;
+   *   • with the handwriting bar gone and a plain text input focused, the phone raises its
+   *     own latin keyboard.
+   *
+   * It runs in an effect rather than in the click handler because the field does not exist
+   * until the tray has rendered. React flushes a discrete click's state synchronously, so the
+   * focus still lands inside the user gesture — which is what mobile browsers require before
+   * they will raise the OS keyboard.
+   */
+  useEffect(() => {
+    if (dictionaryOpen) lookupRef.current?.focus();
+  }, [dictionaryOpen]);
 
   const glyphs = useMemo(() => [...text.trim()].length, [text]);
   const overLimit = glyphs > IW_MAX_UTTERANCE_CHARS;
@@ -158,7 +180,7 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
   useEffect(() => {
     const term = query.trim();
     resetPaging(term);
-    if (!assistOpen || term.length < 2) { setResults([]); return; }
+    if (!dictionaryOpen || term.length < 2) { setResults([]); return; }
     let cancelled = false;
     setLooking(true);
     const timer = setTimeout(() => {
@@ -175,7 +197,7 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
         .finally(() => { if (!cancelled) setLooking(false); });
     }, LOOKUP_DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, language, assistOpen, resetPaging]);
+  }, [query, language, dictionaryOpen, resetPaging]);
 
   /**
    * Append the next page. Fired by the strip when the learner reaches its right edge — the
@@ -261,8 +283,8 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
         borderColor: 'divider',
       }}
     >
-      {assistOpen && (
-        <Box className="iw-composer__assistant" sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      {dictionaryOpen && (
+        <Box className="iw-composer__dictionary" sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
           {/*
             The quick dictionary, and nothing above it. The tray is EMPTY until the learner
             types — no openers, no card list, no standing suggestions of any kind.
@@ -284,6 +306,7 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
             <SearchIcon sx={{ fontSize: 16, opacity: 0.6 }} />
             <InputBase
               className="iw-composer__lookup-input"
+              inputRef={lookupRef}
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder={language === 'zh' ? 'Quick dictionary — english or pinyin' : 'Quick dictionary — english'}
@@ -304,14 +327,20 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
       )}
 
       <Box className="iw-composer__row" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Tooltip title="Help me say something">
+        {/*
+          A BOOK, not a lightbulb. The tray is a dictionary — it looks a word up, it does not
+          suggest what to say (see the header: the suggestion rows were deliberately removed).
+          A lightbulb promised the hint this control has not offered since then.
+        */}
+        <Tooltip title="Quick dictionary">
           <IconButton
-            className="iw-composer__assist-toggle"
+            className="iw-composer__dictionary-toggle"
             size="small"
-            color={assistOpen ? 'primary' : 'default'}
-            onClick={() => setAssistOpen(open => !open)}
+            color={dictionaryOpen ? 'primary' : 'default'}
+            onClick={() => setDictionaryOpen(open => !open)}
+            aria-label="Quick dictionary"
           >
-            <LightbulbOutlinedIcon sx={{ fontSize: 18 }} />
+            <MenuBookOutlinedIcon sx={{ fontSize: 18 }} />
           </IconButton>
         </Tooltip>
         <InputBase
@@ -358,7 +387,7 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
         {/*
           A bare icon, not a pill. The volume group now carries the words, and a labelled
           button beside it would say the same thing twice while spending the width the three
-          labels need — on a phone this row holds the assist toggle, the field, three volumes
+          labels need — on a phone this row holds the dictionary toggle, the field, three volumes
           and this. `aria-label` keeps the verb for anybody not reading the row visually.
         */}
         <Tooltip title={`${IW_VOLUME_LABELS[volume]} it`}>

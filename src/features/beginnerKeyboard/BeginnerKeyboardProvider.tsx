@@ -44,7 +44,7 @@
  * So focusing an eligible field OPENS the keyboard, and after that the keyboard
  * stays up on its own. Dismissal is now its own set of events:
  *
- *   • the close chevron inside the keyboard (the deliberate exit)
+ *   • the close chevron in the switch bar (the deliberate exit — § 6z-2)
  *   • a pointerdown, or a focus move, ANYWHERE that is not kept open
  *   • navigating to another route, or switching learning language
  *   • the target field being removed from the DOM
@@ -57,8 +57,8 @@
  *
  * ⚠️ A DISMISSAL LEAVES NO KEYBOARD BEHIND. Closing blurs the field, which keeps
  * its text and simply stops being focused; the OS keyboard is NOT raised in our
- * place. The one way to reach the OS keyboard is the `ABC` key, which is a
- * different action from closing and does not come through here.
+ * place. The way to reach the OS keyboard is the `ABC` segment of the switch bar,
+ * which is a different action from closing and does not come through here.
  *
  * ⚠️ `field` OUTLIVES `open` BY ONE TRANSITION. The surface slides out rather
  * than vanishing, and it cannot animate against a field it no longer has, so the
@@ -117,6 +117,15 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
     // the field holding whatever was typed and nothing focused.
     fieldRef.current?.blur();
   }, []);
+
+  /**
+   * The exit has finished and the host may be let go.
+   *
+   * Stable on purpose: the host's OS-mode exit TIMES this callback (there is no
+   * `Slide` over the system keyboard — § 6z-2), so an inline arrow here would
+   * restart that timer on every render of this provider.
+   */
+  const release = useCallback(() => setField(null), []);
 
   /** Drop it immediately, no transition — for when the page it belonged to is gone. */
   const closeNow = useCallback(() => {
@@ -224,7 +233,7 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
           field={field}
           open={open}
           onDismiss={close}
-          onClosed={() => setField(null)}
+          onClosed={release}
           onInsetChange={handleInset}
           debug={debug}
         />

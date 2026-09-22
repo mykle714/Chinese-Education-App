@@ -109,7 +109,7 @@ export const FORMATS = {
 {"say": string, "action": string, "emote": string}
 
 - "say" is what you speak aloud, in Simplified Chinese. It MUST come first in the object.
-  Keep it under 12 characters. It may be "" if you choose to act without speaking.
+  Keep it under 20 characters. It may be "" if you choose to act without speaking.
 - "action" is the NAME of one thing you can do, exactly as written here, or "${NO_ACTION}":
   ${actions.map(a => `"${a}"`).join(', ')}.
 - "emote" is one of: "neutral", "curious", "pleased", "confused", "impatient", "amused".
@@ -156,7 +156,7 @@ export const FORMATS = {
   },
 
   schema: {
-    contract: () => `REPLY CONTRACT — reply with one object: "say" (the Chinese you speak, under 12
+    contract: () => `REPLY CONTRACT — reply with one object: "say" (the Chinese you speak, under 20
 characters, or ""), "action" (the name of one thing you can do, or "${NO_ACTION}"), "emote".
 "say" must come first.`,
     closer: 'Reply now.',
@@ -174,9 +174,16 @@ characters, or ""), "action" (the name of one thing you can do, or "${NO_ACTION}
     },
   },
 
+  // ⚠️ THIS `lines` CONTRACT IS A HAND-KEPT COPY OF PRODUCTION'S
+  // `worldRules.renderReplyContract`, and it is exactly the kind of duplication this file's
+  // header warns about for the STEM — which is imported precisely so it cannot drift. The
+  // contract is not imported because the bench has to swap it for the other two formats
+  // below, and the seam is `__CONTRACT__`. Until it is single-sourced, ANY edit to
+  // production's contract has to be mirrored here by hand (the 12 → 20 length cap of
+  // 2026-09-21 was such an edit), or the bench measures a contract production does not send.
   lines: {
     contract: (actions) => `REPLY CONTRACT — reply with exactly three lines, nothing else, no markdown:
-Line 1: the Chinese you speak aloud, under 12 characters (or the single word NOTHING).
+Line 1: the Chinese you speak aloud, under 20 characters (or the single word NOTHING).
 Line 2: the NAME of one thing you can do, exactly as written, or ${NO_ACTION}:
         ${actions.join(' | ')}
 Line 3: one emote — one of: neutral | curious | pleased | confused | impatient | amused

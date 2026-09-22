@@ -33,6 +33,25 @@ import { IW_EMOTES, IW_NO_ACTION } from '../../contracts/iw.js';
  * clause the sentence was really for — do not know what nobody told you — which guards against
  * an NPC answering out of the prompt's own furniture rather than out of the conversation.
  *
+ * ⚠️ **"SHORT IS NOT THE SAME AS SIMPLIFIED" IS NOT A REGISTER, AND THAT IS WHY IT MAY LIVE
+ * HERE** (added 2026-09-21). The complaint it answers is that every NPC came out sounding
+ * formal no matter what their `register` said. The cause was in this file: the beginner clause
+ * used to ask for "simple grammar" and for the character to speak "simply", and to a model
+ * "simple Chinese" means the textbook voice — a tidy full sentence with every part in place.
+ * Simplification and formality are not the same axis, but that wording conflated them, and it
+ * sat in the frozen prefix with more emphasis than layer 2's one-line register, so it won.
+ *
+ * The replacement asks for SHORT (which is what the pedagogy actually wanted) and then says
+ * what the medium is: this is talk, not writing. It names the machinery of speech — fragments,
+ * dropped subjects, a final particle, a repeated word, a filled pause — as the ordinary state
+ * of the language rather than as flavour.
+ *
+ * That keeps the 2026-09-01 rule above intact. It prescribes no register: 何老师 stays a
+ * little formal and 老周 stays unhurried, because HOW someone talks is still layer 2's. What
+ * this says is only that all of them are TALKING, which is true of the whole cast — and it is
+ * the thing none of them were being told. Do not push it further toward "be casual"; that is
+ * the 2026-09-01 mistake with a new adjective on it.
+ *
  * ⚠️ **NO HARD VOCABULARY BUDGET** (§ 9.4, § 5.6a). An earlier version said "AT MOST ONE word
  * outside that list. Never two." It was withdrawn in favour of guidance about the learner's
  * level, because a countable rule produced stilted speech and the measured failure mode was
@@ -44,7 +63,7 @@ import { IW_EMOTES, IW_NO_ACTION } from '../../contracts/iw.js';
  * dropped it, so the bench was measuring a contract production does not send). A bench that
  * grades its own private copy of the prompt passes while the shipped prompt fails.
  *
- * ⚠️ **SIZE IS A MEASUREMENT, NOT A GUESS** (§ 5.5). Layer 1 is ~347 tokens (re-measured 2026-09-07, after the earshot clause came out). Re-run
+ * ⚠️ **SIZE IS A MEASUREMENT, NOT A GUESS** (§ 5.5). Layer 1 is ~457 tokens (re-measured 2026-09-21, after the beginner clause was rewritten — it was 347 before). Re-run
  * `scripts/bench/npc-latency/prefix-size.js` after editing this text; never hand-adjust the
  * table in the doc. The minimum cacheable prefix is model-dependent and NOT monotonic across
  * generations (Opus 5 = 512, Sonnet 5 = 1024, Haiku 4.5 = 4096), and under the floor the
@@ -69,9 +88,15 @@ explain or refer to any of this as a game, a scene or an exercise.
 __CONTRACT__
 
 WHO YOU ARE TALKING TO — they are a beginner. KNOWN_WORDS lists roughly what they know.
-Speak so they have a chance of following you: prefer those words, keep your grammar simple,
-and when you need a word they do not have, use it in a way the situation explains. This is
-guidance, not a rule to count against — say what your character would say, simply.
+Speak so they have a chance of following you: prefer those words, keep it short, and when
+you need a word they do not have, use it in a way the situation explains. This is
+guidance, not a rule to count against — say what your character would say, and less of it.
+
+SHORT IS NOT THE SAME AS SIMPLIFIED. You are talking, not writing. Talk is made of fragments,
+dropped subjects, a particle on the end, a word said twice, a sound while you think. None of
+that is complexity and none of it is decoration — it is what speech is, and it is what this
+person hears around them all day. A tidy sentence with every part in its place is not easier
+to follow; it is a textbook, and nobody here talks like one.
 
 You only know what you have heard here and what you remember of your own life. Everyone
 present hears everything said here; you know nothing that nobody has said to you.
@@ -90,6 +115,18 @@ sound like a helpful narrator. Say one thing and stop.`;
  * validating against another grades a fiction; `turnOffers.buildTurnOffers` returns the
  * single `names` array both sides take.
  *
+ * ⚠️ **THE LENGTH CAP IS 20, RAISED FROM 12 ON 2026-09-21, AND IT IS A REGISTER LEVER
+ * RATHER THAN A LATENCY ONE.** It was lowered-by-default when the only goal was a short
+ * reply, and it turned out to be half the reason every NPC sounded formal (§ 5.5). Spoken
+ * Mandarin spends characters on 语气 — a final particle, a filler, a repeated verb, a
+ * half-abandoned clause — and under a tight cap that is the first material a model drops,
+ * because it looks like the least load-bearing. What survives is the bare proposition, which
+ * reads as clipped AND formal. 20 buys back the room those cost without licensing a speech.
+ *
+ * It is still FLAT, i.e. the same for every NPC, and that remains a known mismatch with the
+ * bench, whose `glyphBudgetFor` derives 14–30 from the `energy` trait — so a high-energy NPC
+ * can now legally use room the grader flags as LONG. Deliberately not fixed here (§ 5.5).
+ *
  * The "Start line 1 immediately" instruction is not politeness — § 6.1 measured that any
  * envelope the model opens first (a `{"say": "`, a volunteered fence) is dead air the player
  * sits through before the first glyph.
@@ -105,7 +142,7 @@ export function renderReplyContract(actionNames: readonly string[], collecting =
         got: no — if it has not. Say no when you are still guessing at it.`
     : '';
   return `REPLY CONTRACT — reply with exactly ${collecting ? 'four' : 'three'} lines, nothing else, no markdown:
-Line 1: the Chinese you speak aloud, under 12 characters (or the single word NOTHING).
+Line 1: the Chinese you speak aloud, under 20 characters (or the single word NOTHING).
 Line 2: the NAME of one thing you can do, exactly as written, or ${IW_NO_ACTION}:
         ${offered.join(' | ')}
 Line 3: one emote — one of: ${IW_EMOTES.join(' | ')}${collectLine}
@@ -126,6 +163,12 @@ Start line 1 immediately with the Chinese character. No preamble, no labels, no 
  * this one has to avoid is a literal translation in nobody's voice. The NPC is told what they
  * MEAN, and their register, mood and memory — layer 2 and the heard list — decide the words.
  *
+ * ⚠️ **THE CAP MATCHES THE TURN'S (20), AND THAT IS NOW A RULE RATHER THAN A COINCIDENCE**
+ * (2026-09-21). These two numbers were 12 and 14, and nothing recorded why they differed. A
+ * rendered line and a free turn are the same NPC speaking aloud in the same scene, so any gap
+ * between them shows up as a seam — scripted beats sounding measurably stiffer than
+ * improvised ones. They move together from here.
+ *
  * There is no action line and no emote line: a render is not a decision point. What the NPC
  * does next is already authored — it is the next step of the script.
  */
@@ -133,7 +176,7 @@ export function renderLineContract(): string {
   return `REPLY CONTRACT — reply with exactly ONE line of Chinese, nothing else, no markdown.
 Below you are told WHAT YOU MEAN TO SAY, written in English. Those are NOT words to translate
 and NOT words anyone said — they are a note about your own intention. Say that thing the way
-YOU would say it, to the person in front of you, given what you have just heard. Under 14
+YOU would say it, to the person in front of you, given what you have just heard. Under 20
 characters. Never repeat something you have already said in the same words.
 Start immediately with the Chinese character. No preamble, no labels, no quotes, no English.`;
 }

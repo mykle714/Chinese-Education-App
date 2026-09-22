@@ -2,6 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import CPCDRow, { type CPCDRowItem, type CPCDSize } from "./CPCDRow";
 import CPCDBlock, { type CPCDBlockItem } from "./CPCDBlock";
+import CPCDInline, { type CPCDInlineItem } from "./CPCDInline";
 import { useAuth } from "../AuthContext";
 import { useFirstTwoAreSegment } from "../hooks/useFirstTwoAreSegment";
 import { applyYiBuSandhi } from "../utils/toneSandhi";
@@ -12,7 +13,7 @@ import { WEIGHT } from "../theme/scale";
 // Re-export so call sites can build items without importing CPCDRow/CPCDBlock
 // directly. ForeignText is the public container; CPCDRow/CPCDBlock are its
 // Chinese-script implementations.
-export type { CPCDRowItem, CPCDBlockItem, CPCDSize };
+export type { CPCDRowItem, CPCDBlockItem, CPCDInlineItem, CPCDSize };
 
 interface ForeignTextBaseProps {
     // Language of the text being rendered. When omitted, falls back to the
@@ -46,9 +47,12 @@ interface ForeignTextBaseProps {
     characterColor?: string;
     // "row" (default): CPCDRow — characters in a line, per-column pinyin. "block":
     // CPCDBlock — up to 4 characters arranged as a square (2x2 grid, or a 3-char
-    // triangle) with one plain pinyin line underneath. Ignored for Latin-script
-    // languages, which always render plain text regardless of layout.
-    layout?: "row" | "block";
+    // triangle) with one plain pinyin line underneath. "inline": CPCDInline — the
+    // caption layout, characters with the whole reading BESIDE them on one line
+    // (老板 lǎobǎn), for a label that must not cost a stacked row's height; it is
+    // deliberately smaller than the other two at the same `size`. Ignored for
+    // Latin-script languages, which always render plain text regardless of layout.
+    layout?: "row" | "block" | "inline";
     // Latin-script only: explicit font size for the plain-text branch, overriding the
     // PLAIN_CHAR_FONT/`size` mapping. Use when a surface is too narrow for the Latin
     // word at the size its Chinese counterpart needs (Spanish words are many glyphs
@@ -145,7 +149,8 @@ function buildCharItems(
  * - Character-based languages (Chinese, etc.): delegates to CPCDRow, which
  *   renders each character with its tone-colored pinyin overlay.
  * - Latin-script languages (Spanish): renders the text as plain, sized text —
- *   no pinyin row and no per-character coloring.
+ *   no pinyin row and no per-character coloring. `layout` is ignored here: every
+ *   layout collapses to the same plain run, since there is no reading to place.
  *
  * Callers pass either `text` (+ optional `pronunciation`) for the common case,
  * or pre-built `items` for advanced per-character control.
@@ -222,6 +227,21 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     // must do because a trigger and its target can straddle a segment boundary
     // (我 / 不 / 去) that this per-segment call site cannot see.
     const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor, sandhi);
+
+    // The caption layout. Checked before the block branch because it has no
+    // character-count limit and no fallback: a caller that asked for one line of
+    // chrome must not be handed a two-row layout because the name got long.
+    if (layout === "inline") {
+        return (
+            <CPCDInline
+                items={resolvedItems as CPCDInlineItem[]}
+                size={size}
+                bold={bold}
+                className={className}
+                characterColor={characterColor}
+            />
+        );
+    }
 
     // CPCDBlock only lays out up to 4 characters; a longer word (idioms, etc.)
     // falls back to the row layout rather than being silently truncated.

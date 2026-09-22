@@ -2,7 +2,7 @@
 import '../../nightmarket/pixiRuntime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Application, extend, useApplication, useTick } from '@pixi/react';
-import { Assets, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Assets, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { FederatedPointerEvent } from 'pixi.js';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
@@ -17,7 +17,9 @@ import { parseCellKey } from '../../../engine/iw/sceneGraph';
 import { resolveTapTarget, type IWTapTarget, type TapBody } from './tapTarget';
 import type { IWBodyDrawable } from './iwSceneActors';
 
-extend({ Container, Sprite, Graphics, Text });
+// No `Text`: the canvas draws no words at all since the head label became a DOM cpcd
+// nametag (2026-09-21). Anything with glyphs in it belongs to the layer above.
+extend({ Container, Sprite, Graphics });
 
 /**
  * IWSceneStage — the Pixi host for a scene the learner is standing in (§ 12 phase 2).
@@ -75,8 +77,8 @@ const CAMERA_EASE = 0.12;
 const BODY_HIT_PAD_PX = 8;
 
 /**
- * WHERE A BODY'S HEAD IS, in world px above the foot anchor — the one number both the name
- * label and the speech bubble hang off.
+ * WHERE A BODY'S HEAD IS, in world px above the foot anchor — the one number the nametag
+ * (and the bubble it grows into) hangs off.
  *
  * ⚠️ **THE TEXTURE BOX IS NOT THE BODY.** The free-farm pack's characters are 48×48 sprites
  * with the figure inked from row 6 to row 46, drawn `anchor={{x:0.5,y:1}}` so the box's BOTTOM
@@ -89,13 +91,19 @@ const BODY_SPRITE_PX = 48;
 const BODY_INK_TOP_PX = 6;
 const HEAD_TOP_PX = BODY_SPRITE_PX - BODY_INK_TOP_PX;
 
-/** The name label's CENTRE above the head, and the bubble's BOTTOM EDGE above it. */
-const NAME_LABEL_GAP_PX = 6;
+/**
+ * The gap between the head and the BOTTOM EDGE of whatever the DOM layer hangs there.
+ *
+ * ⚠️ ONE GAP, NOT TWO, SINCE THE NAMETAG BECAME DOM (2026-09-21). There used to be a second,
+ * smaller one for the in-canvas `pixiText` head label, which sat between the head and the
+ * bubble. The nametag and the bubble are now the same element in two states
+ * (`IWSpeechBubbles`), so they hang off the same anchor by construction and cannot drift
+ * apart or overlap each other.
+ */
 const BUBBLE_GAP_PX = 12;
 
 const PLACE_RING_COLOR = 0xffe1a3;
 const FOCUS_RING_COLOR = 0x8fd6ff;
-const LABEL_STYLE = { fontFamily: 'monospace', fontSize: 8, fill: 0xffffff } as const;
 
 /**
  * The hover highlight, tinted by WHAT the click would select — the same three kinds
@@ -138,9 +146,9 @@ export interface IWSceneStageProps {
    * Where each body is ON SCREEN this frame, in canvas pixels — written into every frame so
    * the DOM bubble layer can sit over the right head.
    *
-   * ⚠️ A REF, NOT A CALLBACK OR STATE, AND THAT IS THE POINT. Bubbles are DOM (§ 5.3a: the
-   * bubble is `ForeignText`, never a bespoke CJK renderer), so something outside the canvas
-   * has to follow a moving sprite at 60fps. Reporting positions through React state would
+   * ⚠️ A REF, NOT A CALLBACK OR STATE, AND THAT IS THE POINT. Nametags and bubbles are DOM
+   * (§ 5.3a: both are `ForeignText`, never a bespoke CJK renderer), so something outside the
+   * canvas has to follow a moving sprite at 60fps. Reporting positions through React state would
    * re-render the page every frame; the bubble layer instead reads this ref from its own
    * animation frame and writes a `transform`, touching no React state at all.
    */
@@ -211,7 +219,7 @@ function SceneContents(props: IWSceneStageProps & {
 
   const bodies = drawables(nowRef.current);
 
-  // Publish this frame's screen positions for the DOM bubble layer (see the prop's note).
+  // Publish this frame's screen positions for the DOM nametag/bubble layer (see the prop's note).
   // Written during render rather than in an effect because the values are only valid for the
   // frame that produced them, and an effect would deliver them one frame late.
   if (app?.screen) {
@@ -223,12 +231,39 @@ function SceneContents(props: IWSceneStageProps & {
       const { screenX, screenY } = isoToScreen(body.isoX, body.isoY);
       map.set(body.id, {
         x: originX + screenX * props.zoom,
-        // A bubble hangs above the HEAD, not at the feet the sprite is anchored by. The DOM
-        // layer treats this as the bubble's BOTTOM edge (it applies `translate(-50%,-100%)`).
+        // A nametag (and the bubble it grows into) hangs above the HEAD, not at the feet the
+        // sprite is anchored by. The DOM layer treats this as that element's BOTTOM edge (it
+        // applies `translate(-50%,-100%)`).
         y: originY + (screenY - (HEAD_TOP_PX + BUBBLE_GAP_PX)) * props.zoom,
       });
     }
   }
+
+  /**
+   * Keep the canvas the size of its box.
+   *
+   * ⚠️ **`resizeTo` IS NOT A RESIZE OBSERVER.** Pixi's `ResizePlugin` listens to
+   * `window.resize` and nothing else, so an element that changes size on its own — which
+   * this one does every time a keyboard opens, because `IWPlayPage` reserves the space by
+   * shrinking this box — leaves the canvas at its old height. It then overflows its box,
+   * paints over the composer, and, since the board is drawn at the CANVAS centre, keeps the
+   * scene anchored to a centre that is now behind the keyboard.
+   *
+   * Handing Pixi the new size fixes all three at once, and the camera needs no help: the
+   * world point under the centre is `-pan / zoom`, which does not mention the viewport, so
+   * whatever was centred before the crop is still centred after it.
+   *
+   * `queueResize` rather than `resize` — it coalesces into one animation frame, which matters
+   * because the box travels on a 300ms transition and this fires for every frame of it.
+   */
+  useEffect(() => {
+    const target = app?.resizeTo;
+    // `resizeTo` may be the window (not ours) or absent before init; neither is observable.
+    if (!target || !(target instanceof HTMLElement) || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => app.queueResize());
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [app, isInitialised]);
 
   // ── Textures ──────────────────────────────────────────────────────────────────────────
   const [textures, setTextures] = useState<Map<string, Texture>>(new Map());
@@ -478,21 +513,6 @@ function SceneContents(props: IWSceneStageProps & {
             // furniture behind it. `resolveTapTarget` now hit-tests every pointer in one
             // place, with an explicit priority — and, being the same call the hover highlight
             // is painted from, it cannot disagree with what the learner was shown.
-            eventMode="none"
-          />
-        );
-      })}
-      {bodies.filter(b => b.label).map(body => {
-        const { screenX, screenY } = isoToScreen(body.isoX, body.isoY);
-        return (
-          <pixiText
-            key={`label:${body.id}`}
-            text={body.label}
-            anchor={0.5}
-            x={screenX}
-            y={screenY - (HEAD_TOP_PX + NAME_LABEL_GAP_PX)}
-            style={LABEL_STYLE}
-            zIndex={computePedestrianZ(body.isoX, body.isoY) + 1}
             eventMode="none"
           />
         );

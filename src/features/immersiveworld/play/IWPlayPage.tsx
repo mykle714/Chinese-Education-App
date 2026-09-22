@@ -19,7 +19,7 @@ import { lookupVocabEntry } from '../../../api/dictionary';
 import { saveSelectedSense } from '../../../utils/vocabApi';
 import { senseLabelForIndex } from '../../../utils/definitionUtils';
 import IWComposer from './IWComposer';
-import { useBeginnerKeyboardInset, useBeginnerKeyboardTransition } from '../../beginnerKeyboard';
+import { useKeyboardInset, useKeyboardTransition } from '../../beginnerKeyboard';
 import IWSceneStage from './IWSceneStage';
 import IWSpeechBubbles from './IWSpeechBubbles';
 import { fetchKnownWords, loadPlayableScene } from './iwPlayApi';
@@ -152,26 +152,38 @@ export default function IWPlayPage() {
   const places = useMemo(() => (scene ? interactivePlaces(scene) : []), [scene]);
 
   /**
-   * actorId → the name a speech bubble prints above the line: the runtime's display labels
-   * (`speakerLabels`, NOT the prompt-facing `labelFor`) plus the learner, whom only a view
-   * has a word for.
+   * actorId → the name that body wears — over the head as a nametag, and in the corner once
+   * the tag has grown into a bubble: the runtime's display labels (`speakerLabels`, NOT the
+   * prompt-facing `labelFor`) plus the learner, whom only a view has a word for.
    *
-   * The stage draws no name over the learner's head — their body IS where they are looking —
-   * but a docked bubble is detached from every head, so an unlabelled one would be the only
-   * bubble whose speaker is unknowable.
+   * ⚠️ THE LEARNER'S ENTRY IS `foreign: false`, and it has to be. "You" is an English word
+   * this view chose, not an in-world name: run through a cpcd layout in a `zh` scene it would
+   * be spelled out as three tone-coloured columns. Their tag is never drawn either (the layer
+   * skips `IW_ACTOR_PLAYER`) — their body IS where they are looking — but a docked bubble is
+   * detached from every head, so an unlabelled one would be the only bubble whose speaker is
+   * unknowable.
    */
   const speakerNames = useMemo(
-    () => ({ ...runtime.speakerLabels, [IW_ACTOR_PLAYER]: PLAYER_BUBBLE_NAME }),
+    () => ({
+      ...runtime.speakerLabels,
+      [IW_ACTOR_PLAYER]: { text: PLAYER_BUBBLE_NAME, pinyin: '', foreign: false },
+    }),
     [runtime.speakerLabels],
   );
   const popupUrl = runtime.popup ? popupImageUrl(runtime.popup.imageId) : undefined;
 
-  // Space the handwriting keyboard is taking at the bottom of the screen, if any,
-  // plus the timing that space must travel on. The inset changes in ONE step, so
-  // without the transition the composer teleports to its final position while the
-  // keyboard is still sliding up behind it — two events instead of one.
-  const keyboardInset = useBeginnerKeyboardInset();
-  const keyboardTransition = useBeginnerKeyboardTransition('padding-bottom');
+  // Space a keyboard is taking at the bottom of the screen, if any, plus the timing
+  // that space must travel on. The inset changes in ONE step, so without the
+  // transition the composer teleports to its final position while the keyboard is
+  // still sliding up behind it — two events instead of one.
+  //
+  // ⚠️ EITHER KEYBOARD, not just ours. The learner reaches the OS keyboard two ways
+  // from this very page — the `ABC` key, and the composer's dictionary tray, which
+  // is `data-beginner-keyboard="off"` precisely so it raises a latin keyboard — and
+  // on both the beginner inset is 0. Reserving off that alone left the OS keyboard
+  // covering the bottom of the scene with nothing moving out of its way.
+  const keyboardInset = useKeyboardInset();
+  const keyboardTransition = useKeyboardTransition('padding-bottom');
 
   if (loadError) {
     return (
@@ -187,14 +199,22 @@ export default function IWPlayPage() {
       onBack={() => navigate('/immersive-world')}
       className="iw-play-page"
       contentClassName="iw-play-page__body"
-      // ⚠️ The beginner keyboard (docs/BEGINNER_KEYBOARD.md § 7a) is portaled OVER
-      // the app, not into this page's flow, so it would otherwise cover the
-      // composer — the one control the learner needs while it is open. This page
-      // cannot scroll out from under it either: the stage is a fixed viewport.
-      // Reserving the height here shrinks `stage-wrap` (it is the flex: 1 child)
-      // and carries the composer up above the keyboard. 0 when it is closed, and
-      // animated on the keyboard's own curve so the two move as one surface
-      // (BEGINNER_KEYBOARD.md § 6z).
+      // ⚠️ A keyboard (docs/BEGINNER_KEYBOARD.md § 7a) sits OVER the app, not in
+      // this page's flow, so it would otherwise cover the composer — the one
+      // control the learner needs while it is open. This page cannot scroll out
+      // from under it either: the stage is a fixed viewport. Reserving the height
+      // here shrinks `stage-wrap` (it is the flex: 1 child) and carries the
+      // composer up above the keyboard. 0 when it is closed, and animated on the
+      // keyboard's own curve so the two move as one surface (§ 6z).
+      //
+      // ⚠️ THIS IS ALSO WHAT KEEPS THE SCENE CENTRED. `IWSceneStage` draws the
+      // board at the CENTRE of its canvas, so the world point under the centre is
+      // `-pan / zoom` — independent of the canvas size. Shrinking the box (and
+      // letting the stage's ResizeObserver hand the new size to Pixi) therefore
+      // re-centres the scene inside what is left of the viewport on its own, with
+      // no pan correction to apply, unwind, or get wrong. Do not "fix" a
+      // keyboard-time camera offset anywhere else: if the scene drifts behind the
+      // keyboard, this padding or that observer is what stopped working.
       contentSx={{
         p: 0,
         position: 'relative',

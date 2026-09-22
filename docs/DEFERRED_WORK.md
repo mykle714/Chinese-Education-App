@@ -291,6 +291,23 @@ something.
 | **Trigger** | The next backend pass on arena — ideally the same one that touches `ArenaService.getBoard` for another reason |
 | **References** | `server/types/arena.ts` → `ArenaState`; `server/services/ArenaService.ts` → `getBoard` (the third return); `src/api/arena.ts` → `ArenaState`; `src/features/arena/ArenaPage.tsx` (the `seatless` derivation); docs/ARENA_FEATURE.md § 2.3 and § 8 |
 
+### 21. One unscoped `backfill-breakdown-senses --reconcile` sweep to retire the orphan backlog
+
+*Added 2026-09-22.*
+
+| | |
+|---|---|
+| **What** | Run `scripts/backfill/chinese/backfill-breakdown-senses.js --reconcile` **unscoped** (no `--words=`, no `--shard=`) over the whole zh corpus, in oracle mode, until the `breakdownSenseOrphan` drift probe returns 0. ⚠️ `--reconcile`, never `--force` — `--force` re-tags all ~9.5k rows and re-spends every prompt to fix the ~1.4k that drifted |
+| **Why deferred** | It needs a dedicated run of its own. Oracle rounds are scoped to a sharded 50-row candidate batch, and the orphan backlog is corpus-wide |
+| **Cost of leaving it** | **The backlog grows every round and scoped rounds structurally cannot catch up**: 1185 → 1264 → 1290 → 1383 over four rounds. Each round's re-clustering renames cluster `sense` labels and orphans more rows elsewhere in the corpus than the round's own batch contains, so each round reconciles ~44 rows and creates ~137. An orphaned pointer means a bt component shows a sense label that no longer exists on that character's entry |
+| **Trigger** | Any oracle session with a full five-hour window free, or the next time the bt sense labels are worked on. Take the §2 det backup first, as any oracle round does |
+
+**Blocked sub-case worth fixing first**: 乐 has no `yuè` "music" sense in its
+`definitionClusters` (only the `lè` "happy / laugh" senses), so 器乐 and every other 乐-compound
+**cannot** be reconciled correctly — the disambiguation prompt offers no "none of these" answer
+and the tag goes in knowingly wrong. Repair 乐's det row before the sweep reaches it. Found
+2026-09-22; see `docs/oracle-runs/oracle-run-20260922T060118Z.md` § 4a.
+
 ## Recently closed
 
 ### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)

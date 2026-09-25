@@ -20,6 +20,10 @@
  *     sense:      <the tagged cluster's `sense` LABEL>,           // stable pointer
  *     pronunciation?: <preserved from the prior breakdown value>
  *   }
+ *   NOTE (verified 2026-09-24): no writer currently emits `pronunciation` inside a
+ *   breakdown value — 0 of 7595 zh rows with a breakdown carry one, and
+ *   backfill-dictionary-breakdown.js never sets it. The preserve branch in the merge
+ *   step is therefore defensive only; do not rely on the field being present.
  *   `sense` is the source of truth and is the cluster's LABEL (not an index) so it
  *   survives re-clustering/re-scoring — the same stability contract as
  *   vet.selectedSense (migration 99). `definition` is refreshed to the tagged

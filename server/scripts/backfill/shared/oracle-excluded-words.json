@@ -40,6 +40,16 @@
       "word1": "土人",
       "reason": "slur — primary senses 'native'/'aborigine' are a derogatory epithet for indigenous people",
       "droppedAt": "2026-09-18T10:18:49Z"
+    },
+    {
+      "word1": "尼格罗",
+      "reason": "slur — only sense is \"negro (loanword)\", a dated/offensive racial term for Black people; nothing neutral to ship",
+      "droppedAt": "2026-09-22T21:59:09Z"
+    },
+    {
+      "word1": "手交",
+      "reason": "explicit-sexual: only sense is a sex act (handjob / manual stimulation)",
+      "droppedAt": "2026-09-23T07:20:00Z"
     }
   ],
   "es": []

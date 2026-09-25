@@ -91,7 +91,10 @@ Breakdown enrichment is two ordered passes over `dictionaryentries_zh.breakdown`
   (migration 90) per component character in the context of `word1`.
 - **Writes** (extends the breakdown shape, **no new column**):
   `breakdown[char] = { definition: <tagged cluster lead gloss>, sense: <tagged
-  cluster's `sense` LABEL>, pronunciation? }`. `sense` is the source of truth and is
+  cluster's `sense` LABEL>, pronunciation? }`. The `pronunciation?` slot is
+  **defensive only** — verified 2026-09-24, no writer emits it (0 of 7595 zh rows with a
+  breakdown carry one, and `backfill-dictionary-breakdown.js` never sets it), so read
+  paths must not depend on it. `sense` is the source of truth and is
   the cluster **label** (not an index) so it survives re-clustering/re-scoring — the
   same stability contract as `vet.selectedSense` (migration 99). `definition` is
   refreshed to that cluster's lead gloss (ddt-style) so the on-card breakdown shows

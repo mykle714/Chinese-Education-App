@@ -299,7 +299,7 @@ something.
 |---|---|
 | **What** | Run `scripts/backfill/chinese/backfill-breakdown-senses.js --reconcile` **unscoped** (no `--words=`, no `--shard=`) over the whole zh corpus, in oracle mode, until the `breakdownSenseOrphan` drift probe returns 0. ⚠️ `--reconcile`, never `--force` — `--force` re-tags all ~9.5k rows and re-spends every prompt to fix the ~1.4k that drifted |
 | **Why deferred** | It needs a dedicated run of its own. Oracle rounds are scoped to a sharded 50-row candidate batch, and the orphan backlog is corpus-wide |
-| **Cost of leaving it** | **The backlog grows every round and scoped rounds structurally cannot catch up**: 1185 → 1264 → 1290 → 1383 over four rounds. Each round's re-clustering renames cluster `sense` labels and orphans more rows elsewhere in the corpus than the round's own batch contains, so each round reconciles ~44 rows and creates ~137. An orphaned pointer means a bt component shows a sense label that no longer exists on that character's entry |
+| **Cost of leaving it** | **The backlog grows every round and scoped rounds structurally cannot catch up**: 1185 → 1264 → 1290 → 1383 over four rounds, and 1358 → 1475 (+117) in the 2026-09-22T09:29Z round alone, then 1496 → 1674 (+178) in the 2026-09-22T16:26Z shard-0/2 round, which clustered 字 and 学 — components of hundreds of headwords. Each round's re-clustering renames cluster `sense` labels and orphans more rows elsewhere in the corpus than the round's own batch contains, so each round reconciles ~44 rows and creates ~137. The rise is worst exactly where the clusterer is most useful — 基/报/场/外 are components of hundreds of headwords, so refreshing 43 of them orphaned ~150 others. A round that shows a *fall* (e.g. 1443 → 1395, or 1669 → 1639 in the 2026-09-23T03:27Z shard-0/2 round, whose 38 clustered rows sat on 德-/心- compounds) is a round whose batch happened to sit on rare characters, not evidence of convergence. An orphaned pointer means a bt component shows a sense label that no longer exists on that character's entry. **The 2026-09-24T16:17Z shard-0/2 round is the cleanest evidence the sweep would work**: its planner named `backfill-breakdown-senses` as the *only* script with work, so the round ran no clusterer at all and the probe fell 1303 → 1253 — exactly −50, the batch size, with nothing created. That isolates the two effects: reconciling is exactly 1:1, and every net rise seen above comes from the clusterer running in the same round. An unscoped sweep, which by construction clusters nothing, converges in one pass. The 2026-09-24T19:32Z shard-0/2 round adds a mid-sized data point: 49 clustered rows (科, 管, 空-, 神- compounds) + 41 reconciled rows moved the probe 1120 → 1149 (+29 net), and 4 of the rows it orphaned were inside its own batch and had to be re-tagged in a second pass within the round |
 | **Trigger** | Any oracle session with a full five-hour window free, or the next time the bt sense labels are worked on. Take the §2 det backup first, as any oracle round does |
 
 **Blocked sub-case worth fixing first**: 乐 has no `yuè` "music" sense in its
@@ -307,6 +307,18 @@ something.
 **cannot** be reconciled correctly — the disambiguation prompt offers no "none of these" answer
 and the tag goes in knowingly wrong. Repair 乐's det row before the sweep reaches it. Found
 2026-09-22; see `docs/oracle-runs/oracle-run-20260922T060118Z.md` § 4a.
+
+**Second sub-case, same shape — transliterations have no phonetic candidate.** The
+sense-tagging prompt forces every component character onto one of the *lexical* labels
+that character's own `definitionClusters` supply, but in a transliteration the character
+carries sound, not meaning, and **no** candidate applies. Some characters happen to own a
+phonetic cluster (阿 "used in transliteration", 斯 "(phonetic) transliteration syllable")
+and tag cleanly; 波, 尔, 布, 特, 派, 对, 多, 美 do not, so the answerer must pick a label it
+knows to be wrong and disclaim it in `reviewNotes` — 波尔多, 波尔布特, 波美度 and 派对 all
+went in that way. **Fix:** offer `"(phonetic)"` as an always-available candidate in
+`chinese/backfill-breakdown-senses.js`'s prompt and have the bt renderer suppress a gloss
+line for it. Found 2026-09-24; see
+`docs/oracle-runs/oracle-run-20260924T040014Z.md` § "⚠ BREAKDOWN SENSE REVIEW flags".
 
 ## Recently closed
 

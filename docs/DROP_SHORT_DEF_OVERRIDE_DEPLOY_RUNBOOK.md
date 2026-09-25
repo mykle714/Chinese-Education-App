@@ -1,7 +1,7 @@
 # TEMPORARY — Drop `shortDefinitionPronunciationOverride` deploy runbook
 
 > **TEMPORARY. Delete this file once PPE is verified.**
-> **Status: NOT YET DEPLOYED to PPE** (written 2026-09-23; PPE was at migration 163, dev at 166).
+> **Status: DEPLOYED 2026-09-24** — 164+165 applied by hand before the rebuild, 166 by `migrate.sh` after it; the `searchReadings` backfill wrote 2076 rows (行 = háng|héng|xíng…). Schema checks passed and the backend logged no errors. Open only until someone runs a logged-in dictionary search for 行 and sees results.
 > Renumbered 2026-09-23: the drop was 165 and became **166** so the expand-only `searchReadings`
 > column (165) could land with 164 before the rebuild; the contract migration goes last.
 > Per CLAUDE.md, derive what is actually pending from `schema_migrations` and

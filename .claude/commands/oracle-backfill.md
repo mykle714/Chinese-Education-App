@@ -87,6 +87,14 @@ on the next request and runs five hours from there.
 > default 99% — the two caps fail in different currencies), but it can only refuse to *start*; a round that
 > crosses the cap mid-manifest can only be stopped by you.
 >
+> **The weekly threshold can be raised (or lowered) for the current week only** with
+> `/oracle-weekly-override` (`server/scripts/backfill/oracle-weekly-override.sh`). It
+> writes `server/logs/oracle-weekly-override`, which the cron prefers over
+> `ORACLE_MAX_UTILIZATION` until that week's `weekly_all` `resets_at`, then deletes.
+> An interactive round should honour the same number: run
+> `oracle-weekly-override.sh show` and use the override in place of ~75% wherever this
+> skill says "weekly cap".
+>
 > **When a cap parks the cron, it now sleeps to that cap's `resets_at`** rather than
 > re-reading usage every tick: the binding cap's reset is stamped into
 > `server/logs/oracle-park-until.<slug>` and earlier ticks exit immediately with no

@@ -48,6 +48,9 @@
 #       it only gets requests refused until the window resets, so a solo backfill may
 #       run it to the edge.
 #   Either set to 0 parks the cron without editing the crontab.
+#   The weekly threshold can also be replaced for the CURRENT WEEK ONLY with
+#   oracle-weekly-override.sh (the /oracle-weekly-override skill); that override
+#   wins over ORACLE_MAX_UTILIZATION until the week resets — see WEEKLY OVERRIDE.
 #   ORACLE_GATE_FAIL_ESCALATE (default 3) is how many CONSECUTIVE unexpected gate
 #   failures (stale credential, unreachable endpoint) it takes before the script
 #   complains on stderr. At-the-cap skips are not failures and never count.
@@ -268,6 +271,27 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # ORACLE_GATE_FAIL_ESCALATE (default 3). An at-the-cap skip is NOT counted, because
 # the weekly cap can legitimately hold the cron down for most of a day.
 MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"                 # weekly caps (dollars)
+
+# WEEKLY OVERRIDE: a one-week replacement for MAX_UTIL, written by
+# oracle-weekly-override.sh (the /oracle-weekly-override skill) when the operator knows
+# they will not use the rest of this week's margin. The file carries its own expiry —
+# the weekly cap's `resets_at` at the time it was set — so it lapses on its own and the
+# next week starts back at the default. It wins over ORACLE_MAX_UTILIZATION because it
+# is the newer, deliberate, time-boxed decision. Account-wide: every shard reads it.
+# Changing MAX_UTIL here also changes PARK_GATES_NOW below, so setting or expiring an
+# override discards any cap park on the next tick.
+WEEKLY_OVERRIDE_FILE="$LOG_DIR/oracle-weekly-override"
+if [[ -s "$WEEKLY_OVERRIDE_FILE" ]]; then
+  IFS=$'\t' read -r OVR_PCT OVR_EPOCH _ OVR_EXPIRES < "$WEEKLY_OVERRIDE_FILE" || true
+  if [[ "$OVR_PCT" =~ ^[0-9]+(\.[0-9]+)?$ && "$OVR_EPOCH" =~ ^[0-9]+$ ]] && (( $(date +%s) < OVR_EPOCH )); then
+    MAX_UTIL="$OVR_PCT"
+  else
+    # Expired or malformed — either way the default is the safe reading. Remove it so
+    # a malformed file is not silently re-evaluated every tick.
+    echo "[$(date -uIs)] $SLUG: weekly override ${OVR_PCT:-?}% ended (expired ${OVR_EXPIRES:-?} or malformed) — back to ${MAX_UTIL}%" >> "$RUN_LOG"
+    rm -f "$WEEKLY_OVERRIDE_FILE"
+  fi
+fi
 MAX_UTIL_SESSION="${ORACLE_MAX_UTILIZATION_SESSION:-99}" # five-hour window (throughput only)
 GATE_FAIL_STATE="$LOG_DIR/oracle-gate-failures.$SLUG"
 GATE_FAIL_ESCALATE="${ORACLE_GATE_FAIL_ESCALATE:-3}"

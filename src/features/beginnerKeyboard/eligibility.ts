@@ -61,7 +61,7 @@ export function isKeyboardDisabledPath(pathname: string): boolean {
  * `keep` exists because focus became a TRIGGER rather than a binding (2026-09-09,
  * § 6z): the keyboard now survives losing focus, and everything that is not
  * explicitly kept dismisses it. The controls that sit *beside* a field and act on
- * what the learner is composing — a send button, a volume chip, a helper toggle —
+ * what the learner is composing — a send button, a helper toggle —
  * would otherwise close the keyboard mid-sentence.
  */
 export const OPT_OUT_ATTRIBUTE = 'data-beginner-keyboard';
@@ -79,13 +79,13 @@ export const OFF_VALUE = 'off';
  * The value in force for an element: the NEAREST declaration of the attribute on
  * it or an ancestor, or null when nothing declares one.
  *
- * ⚠️ **NEAREST WINS, SO THE TWO VALUES CAN NEST AND SHADOW EACH OTHER.** The
- * iw composer is one `keep` region (every control in it acts on the sentence
- * being composed), but the quick-dictionary tray inside it is an ENGLISH field
- * that must raise the OS keyboard instead — so it declares `off` inside that
- * `keep`. Matching each value with its own `closest()` would have found the
- * outer `keep` regardless of the inner `off` and left the handwriting bar up
- * over an English query.
+ * ⚠️ **NEAREST WINS, SO THE TWO VALUES CAN NEST AND SHADOW EACH OTHER.** An
+ * `off` field inside a `keep` region must decline the keyboard, and a `keep`
+ * region inside an `off` one must be eligible again. Matching each value with
+ * its own `closest()` would find the outer declaration regardless of the inner
+ * one. (The case that forced this — the iw quick-dictionary field declaring
+ * `off` inside the composer's `keep` — was retired 2026-09-24, when that field
+ * went back to being an ordinary eligible field; the rule stands on its own.)
  */
 function attributeInForce(element: Element): string | null {
   const declaring = element.closest(`[${OPT_OUT_ATTRIBUTE}]`);

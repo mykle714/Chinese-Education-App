@@ -227,9 +227,11 @@ function ArenaPage() {
     // absolute positioning — but `overflow: hidden` means a short phone (or a large text
     // size, or a banner that grew) silently CLIPS the action instead of letting the
     // learner reach it, and Join is the only thing on the page worth tapping. The dock
-    // still works while it fits: the content column is `flex: 1` inside a scroller whose
-    // own height is definite, so the spacer grows on a tall screen and the whole column
-    // simply scrolls once it does not fit.
+    // still works while it fits: every box in the chain is `flex: 1 0 auto` (grow, never
+    // shrink) inside a scroller whose own height is definite, so the grid's dock grows on
+    // a tall screen and the whole column simply scrolls once it does not fit. Do NOT
+    // reintroduce `minHeight: 0` anywhere in that chain — it makes the column shrink
+    // instead of scroll, which overlapped the grid onto Join and clipped the board.
     const seatless = !!board && board.state !== "live" && board.state !== "results";
 
     const body = () => {
@@ -267,7 +269,25 @@ function ArenaPage() {
                     <>
                         {/* Flexes to fill whatever is between the clock and the action,
                             so the grid is centred on any device height. */}
-                        <Box sx={{ flex: 1, display: "flex", alignItems: "center", minHeight: 0 }}>
+                        <Box
+                            className="arena-page__seats-dock"
+                            // Grows into spare height but NEVER shrinks below the grid:
+                            // a `minHeight: 0` here let a short viewport squash this box
+                            // to nothing while the grid overflowed it and painted over the
+                            // Join button / entered card below.
+                            //
+                            // COLUMN direction, centred on the main axis. A row-direction
+                            // dock made the grid a row flex item with no intrinsic width
+                            // (25 empty `1fr` cells), so it collapsed to its 4 gaps (~32px)
+                            // and rendered as thin vertical slivers. In a column the grid
+                            // stretches across the page and its margins apply as designed.
+                            sx={{
+                                flex: "1 0 auto",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "center",
+                            }}
+                        >
                             <ArenaSeatField
                                 className="arena-page__seats"
                                 showViewerSeat={board.optedInNextWeek}
@@ -354,6 +374,11 @@ function ArenaPage() {
             title="Arena"
             onBack={() => slideNavigate("/")}
             contentClassName="arena-page"
+            // MobileTabScreen's content column defaults to `flex: 1; minHeight: 0`, which
+            // pins it to the viewport height and lets content overflow it. Arena's column
+            // must GROW with its content instead, so nothing inside gets flex-shrunk and
+            // the scroll area's bottom padding lands after the real last row.
+            contentSx={{ flex: "1 0 auto", minHeight: "auto" }}
             // Three things in the right slot — help, the message editor, and the ambient
             // minute-points flame every header carries — which is exactly the case
             // `dense` exists for. The artboards draw only the two buttons, because the
@@ -391,7 +416,16 @@ function ArenaPage() {
                 </>
             }
         >
-            <Box sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, pb: "14px" }}>
+            {/* `flex: 1 0 auto` — fill the viewport when content is short (so the
+                seat-less action docks at the bottom), but never shrink below content.
+                This used to be `flex: 1; minHeight: 0`, which clamped the column to the
+                viewport; `Board` is `overflow: hidden` (so its min-height resolves to 0)
+                and was squeezed to fit, clipping its rows — the board looked
+                unscrollable because the rows were cut off, not scrolled off. */}
+            <Box
+                className="arena-page__column"
+                sx={{ display: "flex", flexDirection: "column", flex: "1 0 auto", pb: "14px" }}
+            >
                 {body()}
             </Box>
             {/* Clearance under the last board row. The seat-less states skip it: their
@@ -505,11 +539,12 @@ function ResultsCard({ divisionChange }: { divisionChange: number | null }) {
                 margin: "12px 18px 0",
                 padding: "14px 16px",
                 borderRadius: "18px",
-                backgroundColor: hue?.fill ?? COLORS.card,
+                // v2: the zone hue's MID tier, like the board's own zone dividers.
+                backgroundColor: hue?.mid ?? COLORS.card,
                 border: `1px solid ${hue ? "transparent" : COLORS.rowBorder}`,
             }}
         >
-            <Icon name={arrow} size={21} color={hue?.ink ?? COLORS.textSecondary} weight={600} />
+            <Icon name={arrow} size={21} color={hue ? COLORS.onSurface : COLORS.textSecondary} weight={600} />
             <Typography
                 sx={{
                     fontFamily: FONTS.sans,

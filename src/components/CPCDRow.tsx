@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import CpcdPopup from "./CpcdPopup";
@@ -5,6 +6,7 @@ import { copyToClipboard } from "../utils/copyToClipboard";
 import { getToneColor } from "../utils/toneColors";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
+import { COLORS } from "../theme/colors";
 
 export type CPCDSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -521,7 +523,9 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 borderRadius: "6px",
                                 border: item.selected ? "1px solid" : "1px solid transparent",
                                 borderColor: item.selected ? "text.primary" : "transparent",
-                                backgroundColor: item.selected ? "rgba(119, 155, 231, 0.15)" : "transparent",
+                                // A translucent wash of the blue MARK (highlighter) tier — the selection
+                                // tint SegmentedSentenceDisplay's highlight overlay uses too.
+                                backgroundColor: item.selected ? alpha(COLORS.bluMk, 0.18) : "transparent",
                                 cursor: isInteractive ? "pointer" : "default",
                                 transition: "border-color 0.15s ease, background-color 0.15s ease",
                                 fontSize: charFontSize,

@@ -4,16 +4,20 @@ import { findMetaLanguage, renderNpcBlock } from './iw/npcPrompt.js';
 import { getIwLadder } from './iw/modelLadder.js';
 import { runNpcTurn, type IWModelRung, type IWRungAttempt, type IWTurnOutcome } from './iw/npcTurn.js';
 import { buildTurnOffers, type TurnOffer } from './iw/turnOffers.js';
-import { renderTurnState, type IWContextInput, type TurnStateInput } from './iw/turnState.js';
+import { renderTurnState, type HeardLine, type IWContextInput, type TurnStateInput } from './iw/turnState.js';
+import { describeLearner } from './iw/learnerProfile.js';
 import { buildLineSystemBlock, renderNpcLine, type IWLineOutcome } from './iw/lineRender.js';
 import { routeAddressee, type RouterCastMember } from './iw/addresseeRouter.js';
+import { pickDestination, resolveCandidates } from './iw/destinationPicker.js';
 import { renderWorldRules } from './iw/worldRules.js';
 import type { IWTurnReply } from './iw/turnParser.js';
 import { iwTurnBudget, IWTurnBudget, type IWBudgetOptions, type IWBudgetRefusal } from './iw/turnBudget.js';
 import type { IImmersiveWorldDAL } from '../dal/interfaces/IImmersiveWorldDAL.js';
 import { npcOptionsForLanguage } from './iw/npcOptions.js';
 import { resolveCastMember } from './iw/sceneCast.js';
-import type { IWLineSegments, IWNpcOption, IWTranscriptEntry } from '../contracts/iw.js';
+import type {
+  IWDestinationCandidate, IWDestinationTarget, IWLineSegments, IWNpcOption, IWTranscriptEntry,
+} from '../contracts/iw.js';
 import { IW_ACTOR_PLAYER } from '../contracts/iw.js';
 import { SceneTranscript } from './iw/sceneTranscript.js';
 import type { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
@@ -240,7 +244,6 @@ export interface IWTurnHttpRequest {
   perception: Omit<TurnStateInput, 'offers'>;
 }
 
-/** One line render from the client: whose line, what it means, and what they perceive. */
 /** What the client asks the addressee router (§ 4.2). Sheets are NOT sent — see the service. */
 export interface IWRouteHttpRequest {
   sceneId: string;
@@ -259,6 +262,29 @@ export type IWRouteRuntimeResult =
   | { kind: 'refused'; refusal: IWBudgetRefusal }
   | { kind: 'no-scene'; sceneId: string };
 
+/** What the client asks the destination picker (§ 5.4's `ai_walk`). */
+export interface IWDestinationHttpRequest {
+  sceneId: string;
+  /** The performer. Must be in the scene; its sheet is looked up here, never sent. */
+  npcId: string;
+  /** The step's authored brief — `ai_walk.instruction`. */
+  brief: string;
+  /** Built by the client from where everybody is standing; re-checked against the scene. */
+  candidates: readonly IWDestinationCandidate[];
+  /** What the performer has heard, as a turn's perception carries it. */
+  heard: readonly HeardLine[];
+}
+
+/**
+ * ⚠️ `picked` WITH A NULL `target` IS A SUCCESS, exactly as the router's null is: the step is
+ * skipped and the script plays on. Only the daily cap is a refusal.
+ */
+export type IWDestinationRuntimeResult =
+  | { kind: 'picked'; target: IWDestinationTarget | null; detail: string }
+  | { kind: 'refused'; refusal: IWBudgetRefusal }
+  | { kind: 'no-scene'; sceneId: string };
+
+/** One line render from the client: whose line, what it means, and what they perceive. */
 export interface IWLineHttpRequest {
   sceneId: string;
   sessionId: string;
@@ -366,12 +392,31 @@ export class ImmersiveWorldService {
    * lifted, not a permission being granted, so the safe default is the learner's one.
    */
   private async budgetOptions(userId: string): Promise<IWBudgetOptions> {
-    if (!this.userDAL) return {};
+    return (await this.accountFacts(userId)).budget;
+  }
+
+  /**
+   * Everything a model call needs from the caller's `users` row, in ONE read: the § 7 budget
+   * exemption above, and — since migration 164 — what the learner looks like to an NPC
+   * (`describeLearner`, docs/IMMERSIVE_WORLD.md § 5.5).
+   *
+   * The learner description comes from the ACCOUNT, never the request: the client assembles the
+   * rest of the perception block and cannot be trusted with free text that reaches the prompt
+   * outside the learner's quoted span (§ 11).
+   *
+   * Same failure rule as the exemption — a lookup that throws or comes back empty yields the
+   * learner's default (not exempt, not described), which is exactly the pre-164 prompt.
+   */
+  private async accountFacts(userId: string): Promise<{ budget: IWBudgetOptions; learner?: string }> {
+    if (!this.userDAL) return { budget: {} };
     try {
       const user = await this.userDAL.findById(userId);
-      return { unlimited: !!user?.isTemplateAuthor };
+      return {
+        budget: { unlimited: !!user?.isTemplateAuthor },
+        learner: describeLearner({ gender: user?.gender, birthDate: user?.birthDate }) ?? undefined,
+      };
     } catch {
-      return {};
+      return { budget: {} };
     }
   }
 
@@ -390,7 +435,7 @@ export class ImmersiveWorldService {
     const spoken =
       request.perception.event.kind === 'utterance' ? request.perception.event.text : undefined;
 
-    const budgetOpts = await this.budgetOptions(userId);
+    const { budget: budgetOpts, learner } = await this.accountFacts(userId);
     const verdict = this.budget.check(userId, request.sessionId, spoken, budgetOpts);
     if (verdict.refusal) return { kind: 'refused', refusal: verdict.refusal, remaining: verdict.remaining };
 
@@ -402,7 +447,7 @@ export class ImmersiveWorldService {
       npcId: request.npcId,
       firedCues: request.firedCues,
       playedConversations: request.playedConversations,
-      perception: request.perception,
+      perception: { ...request.perception, learner },
       rungs: this.rungs,
       onDelta,
     });
@@ -439,7 +484,8 @@ export class ImmersiveWorldService {
     request: IWLineHttpRequest,
     onDelta?: (text: string, attemptIndex: number, complete: boolean) => void,
   ): Promise<IWLineRuntimeResult> {
-    const refusal = this.budget.checkSceneCall(userId, await this.budgetOptions(userId));
+    const { budget: budgetOpts, learner } = await this.accountFacts(userId);
+    const refusal = this.budget.checkSceneCall(userId, budgetOpts);
     if (refusal) return { kind: 'refused', refusal };
 
     const scene = await this.iwDAL.findSceneById(request.sceneId);
@@ -450,7 +496,9 @@ export class ImmersiveWorldService {
       npcId: request.npcId,
       direction: request.direction,
       toward: request.toward,
-      perception: request.perception,
+      // A rendered line is the same NPC speaking in the same scene as a turn, so it sees the
+      // learner the same way — otherwise scripted beats would address them differently.
+      perception: { ...request.perception, learner },
       rungs: this.rungs,
       onDelta,
     });
@@ -492,6 +540,44 @@ export class ImmersiveWorldService {
     const outcome = await routeAddressee({ rungs: this.rungs ?? getIwLadder(), input: { ...request, cast } });
     if (outcome.npcId) this.budget.spendSceneCall(userId);
     return { kind: 'routed', npcId: outcome.npcId, detail: outcome.detail };
+  }
+
+  /**
+   * Choose where an `ai_walk` step sends its performer (§ 5.4, 2026-09-23).
+   *
+   * Same failure contract as {@link routeAddressee}: every miss is `target: null` and the
+   * client skips the walk. Billed only when a destination came back AND a model was actually
+   * asked — a single surviving candidate is answered without a call, so it costs nothing.
+   *
+   * ⚠️ **THE CANDIDATES ARE RE-CHECKED HERE, NOT TRUSTED.** The client built them, so a place
+   * tag the scene does not have, or a body not in its cast, is dropped before the prompt is
+   * assembled, and every label the model reads comes from the scene or the registry.
+   */
+  async pickDestination(userId: string, request: IWDestinationHttpRequest): Promise<IWDestinationRuntimeResult> {
+    const refusal = this.budget.checkSceneCall(userId, await this.budgetOptions(userId));
+    if (refusal) return { kind: 'refused', refusal };
+
+    const scene = await this.iwDAL.findSceneById(request.sceneId);
+    if (!scene) return { kind: 'no-scene', sceneId: request.sceneId };
+
+    const npc = npcById(request.npcId);
+    if (!npc || !resolveCastMember(scene, request.npcId)) {
+      return { kind: 'picked', target: null, detail: `performer ${request.npcId} is not in this scene` };
+    }
+
+    const candidates = resolveCandidates(scene, request.npcId, request.candidates);
+    const outcome = await pickDestination({
+      rungs: this.rungs ?? getIwLadder(),
+      input: {
+        who: `${npc.name} — ${npc.occupation}`,
+        brief: request.brief,
+        sceneNotes: scene.sceneNotes ?? '',
+        candidates,
+        heard: request.heard,
+      },
+    });
+    if (outcome.target && candidates.length > 1) this.budget.spendSceneCall(userId);
+    return { kind: 'picked', target: outcome.target, detail: outcome.detail };
   }
 
   /**

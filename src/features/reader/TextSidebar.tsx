@@ -3,6 +3,7 @@ import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { Article as ArticleIcon, Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Person as PersonIcon } from "@mui/icons-material";
 import type { Text } from "../../types";
 import { SIZE , WEIGHT} from "../../theme/scale";
+import { COLORS } from "../../theme/colors";
 
 interface TextSidebarProps {
     texts: Text[];
@@ -37,7 +38,7 @@ function TextSidebar({
             {/* Header */}
             <Box
                 className="reader-page-sidebar-header"
-                sx={{ p: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}
+                sx={{ p: 2, borderBottom: `1px solid ${COLORS.rowBorder}` }}
             >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography
@@ -115,9 +116,9 @@ function TextSidebar({
                                                         onEdit(text);
                                                     }}
                                                     sx={{
-                                                        color: selectedText?.id === text.id ? 'white' : 'text.secondary',
+                                                        color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
                                                         '&:hover': {
-                                                            backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
+                                                            backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
                                                         }
                                                     }}
                                                 >
@@ -133,9 +134,9 @@ function TextSidebar({
                                                     onDelete(text);
                                                 }}
                                                 sx={{
-                                                    color: selectedText?.id === text.id ? 'white' : 'text.secondary',
+                                                    color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
                                                     '&:hover': {
-                                                        backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
+                                                        backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
                                                     }
                                                 }}
                                             >
@@ -156,11 +157,14 @@ function TextSidebar({
                                     alignItems: 'flex-start',
                                     p: 2,
                                     pr: text.isUserCreated ? 7 : 2, // Extra padding for action buttons
+                                    // Shelf System v2: a selected ROW is a MID-tier fill with
+                                    // ink on it (the old MUI-blue ground + white text is off
+                                    // the palette, and white never sits on a ramp colour).
                                     '&.Mui-selected': {
-                                        backgroundColor: 'primary.main',
-                                        color: 'white',
+                                        backgroundColor: COLORS.bluM,
+                                        color: COLORS.onSurface,
                                         '&:hover': {
-                                            backgroundColor: 'primary.dark',
+                                            backgroundColor: COLORS.bluM,
                                         },
                                     },
                                     '&:hover': {
@@ -174,7 +178,7 @@ function TextSidebar({
                                             <PersonIcon
                                                 sx={{
                                                     fontSize: SIZE.bodyLg,
-                                                    color: selectedText?.id === text.id ? 'rgba(255,255,255,0.8)' : 'primary.main'
+                                                    color: COLORS.iconColor
                                                 }}
                                             />
                                         </Tooltip>
@@ -184,7 +188,7 @@ function TextSidebar({
                                         variant="subtitle2"
                                         sx={{
                                             fontWeight: WEIGHT.bold,
-                                            color: selectedText?.id === text.id ? 'white' : 'text.primary',
+                                            color: selectedText?.id === text.id ? COLORS.onSurface : 'text.primary',
                                             flex: 1
                                         }}
                                     >
@@ -196,7 +200,7 @@ function TextSidebar({
                                     variant="body2"
                                     sx={{
                                         mb: 1,
-                                        color: selectedText?.id === text.id ? 'rgba(255,255,255,0.8)' : 'text.secondary',
+                                        color: selectedText?.id === text.id ? COLORS.textSecondary : 'text.secondary',
                                         fontSize: SIZE.body
                                     }}
                                 >
@@ -214,16 +218,16 @@ function TextSidebar({
                                         sx={{
                                             fontSize: SIZE.caption,
                                             height: 20,
-                                            color: selectedText?.id === text.id ? 'white' : 'text.secondary',
-                                            borderColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.5)' : undefined,
-                                            backgroundColor: selectedText?.id === text.id ? 'rgba(255,255,255,0.2)' : undefined
+                                            color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
+                                            borderColor: selectedText?.id === text.id ? COLORS.border : undefined,
+                                            backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
                                         }}
                                     />
                                     <Typography
                                         className="reader-page-sidebar-text-date"
                                         variant="caption"
                                         sx={{
-                                            color: selectedText?.id === text.id ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                                            color: selectedText?.id === text.id ? COLORS.textSecondary : 'text.secondary'
                                         }}
                                     >
                                         {formatDate(text.createdAt)}

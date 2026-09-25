@@ -354,14 +354,6 @@ export const DICTIONARY_SEARCH_RANKINGS: readonly DictionarySearchRanking[] = [
 // Manual per-entry display overrides
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Override for display fields; stored as JSONB in dictionaryentries_zh. */
-export interface ShortDefinitionPronunciationOverride {
-  /** Replaces the computed shortDefinition. */
-  definition?: string | null;
-  /** Replaces DictionaryEntry.pronunciation (space-separated, e.g. "fēng kuáng"). */
-  pronunciation?: string | null;
-}
-
 /** Override for example-sentence segment popups; stored as JSONB in dictionaryentries_zh. */
 export interface ExampleSentenceDefinitionPronunciationOverride {
   /** Shown verbatim in the segment popup instead of the context-matched definition. */
@@ -736,7 +728,34 @@ export interface UserProfile {
    * CHINESE_FONT_IDS (migration 157). See docs/CJK_TYPEFACE_LAB.md.
    */
   chineseFont?: string;
+  /**
+   * The learner's gender, or null when not told ("Prefer not to answer", or an account
+   * predating migration 164). Picks the Immersive World body (`iwPlayerAvatar` in
+   * contracts/iw.ts) and is described to NPCs so they address the learner naturally
+   * (docs/IMMERSIVE_WORLD.md § 5.5).
+   */
+  gender?: UserGender | null;
+  /**
+   * The learner's date of birth as `YYYY-MM-DD`, or null when not told (migration 164).
+   *
+   * ⚠️ PRIVATE. Only ever returned to the account itself; an NPC is told a coarse age band
+   * derived from it (`server/services/iw/learnerProfile.ts`), never the date. A string, not a
+   * Date: a calendar date has no time zone, and a JS Date re-reads it as a UTC instant that can
+   * render as the previous day. `UserDAL` normalizes pg's DATE into this form.
+   */
+  birthDate?: string | null;
 }
+
+/**
+ * Every storable `users."gender"` value (migration 164's CHECK mirrors this list).
+ * `null` — not told — is the third state and is deliberately not a member: it is the
+ * absence of an answer, not an answer. Extend BOTH this and the CHECK together.
+ */
+export const USER_GENDERS = ['male', 'female'] as const;
+export type UserGender = typeof USER_GENDERS[number];
+
+/** The shape of a `YYYY-MM-DD` calendar date — `users."birthDate"` on the wire. */
+export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dictionary entries
@@ -784,8 +803,7 @@ export interface DictionaryEntryBase {
    * flashcard. See docs/DEFINITION_CLUSTERS.md.
    */
   selectedSense?: string | null;
-  shortDefinitionPronunciationOverride?: ShortDefinitionPronunciationOverride | null;
-  /** Resolved at runtime: override.definition ?? generateShortDefinition(). */
+  /** Computed at read time by generateShortDefinition() (server/utils/definitions.ts). */
   shortDefinition?: string | null;
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null;
   /** Hydrated at read time from the JSONB column, narrowed to the card's CURRENT sense. */

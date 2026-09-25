@@ -28,7 +28,7 @@ import type { PromptPhase } from "./types";
  * the end.
  *
  * ── THE RED GLOSS IS THE ENTIRE FIND-THE-FAILED-WORD AFFORDANCE ──────────────
- * On the third miss the gloss itself turns red (Q17). That is deliberately all the help
+ * On the third miss the prompt bar turns red (Q17; the gloss text did, before v2). That is deliberately all the help
  * there is: no camera ease toward the target, no edge arrow, no directional hint.
  * Searching IS the game — what the red does is tell the player to stop recalling and
  * start looking for the pulsing word, so they are not still trying to answer a question
@@ -108,7 +108,12 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 // phone screen before the map got any. The padding is deliberately tight
                 // for the same reason: every row of chrome is a row the board loses.
                 padding: "8px 16px",
-                backgroundColor: COLORS.header,
+                // The failed state's red (see docblock) is the BAR's fill since v2: it
+                // used to be `dangerInk` text, which v2 made plain ink — erasing the
+                // one affordance that sends the player looking for the pulsing word.
+                // The red MID tier (the row tier) with ink text carries it instead.
+                backgroundColor: failed ? COLORS.redM : COLORS.header,
+                transition: "background-color 0.25s ease",
                 borderBottom: `1px solid ${COLORS.rowBorder}`,
             }}
         >
@@ -122,9 +127,8 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    // The one piece of feedback the failed state gives (see docblock).
-                    color: failed ? COLORS.dangerInk : COLORS.onSurface,
-                    transition: "color 0.25s ease",
+                    // Ink in every state; the failed red is the bar's fill (above).
+                    color: COLORS.onSurface,
                     // Long glosses truncate rather than wrapping the bar to two lines and
                     // undoing the space this layout exists to reclaim.
                     overflow: "hidden",

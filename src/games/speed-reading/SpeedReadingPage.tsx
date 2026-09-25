@@ -647,11 +647,15 @@ const SpeedReadingPage: React.FC = () => {
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    // White on the game's accent ground (§ A6b), and a PASTEL red once
-                    // the run can no longer medal — `dangerInk` is a dark red on a dark
-                    // saturated ground, which is the one place the semantic ink cannot
-                    // be read. The pastel keeps the "it slipped away" signal legible.
-                    color: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.red : ON_ACCENT_INK,
+                    // Ink on the game's accent ground (§ A6b). Once the run can no
+                    // longer medal it sits on a red MID-tier pill instead of turning red
+                    // itself: v2 never puts text in a pastel (it was pastel-red TEXT in
+                    // v1). The padding is permanent and only the fill toggles, so the
+                    // clock never shifts when the pill appears.
+                    color: ON_ACCENT_INK,
+                    backgroundColor: totalMs > MEDAL_THRESHOLDS.bronze ? COLORS.redM : "transparent",
+                    borderRadius: "6px",
+                    px: 0.75,
                     minWidth: 44,
                     textAlign: "right",
                 }}

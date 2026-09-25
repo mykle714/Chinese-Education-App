@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import CpcdPopup from "./CpcdPopup";
@@ -8,6 +9,7 @@ import { claimSegmentSelection, registerSegmentSelectionOwner } from "../utils/s
 import { pickDrillRung } from "../utils/segmentDrill";
 import { applyYiBuSandhi } from "../utils/toneSandhi";
 import type { SegmentDrillRung } from "../types";
+import { COLORS } from "../theme/colors";
 
 type Size = "xs" | "sm" | "md";
 
@@ -694,7 +696,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
             borderRadius: "6px",
             border: "1px solid",
             borderColor: "text.primary",
-            backgroundColor: "rgba(119, 155, 231, 0.15)",
+            backgroundColor: alpha(COLORS.bluMk, 0.18), // same selection wash as CPCDRow
             boxSizing: "border-box",
             zIndex: 1,
             pointerEvents: "none",

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IW_ACTOR_PLAYER, IW_CONVERSATION_LINE_MS, IW_DEFAULT_EMOTE, IW_MAX_LISTENERS_PER_UTTERANCE,
-  IW_MIN_TURN_GAP_MS, scenePlaces, type IWEmote, type IWFacing, type IWLineSegments,
-  type IWNpcOption, type IWScene, type IWVolume,
+  IW_ACTOR_PLAYER, IW_DEFAULT_EMOTE,
+  IW_MIN_TURN_GAP_MS, IW_PLAYER_LABEL, iwPlayerAvatar, scenePlaces, type IWEmote, type IWLineSegments,
+  type IWDestinationCandidate, type IWDestinationTarget,
+  type IWNpcOption, type IWScene,
 } from '../../../../server/contracts/iw';
 import { actionById, type ActionWorld } from './actionPlayer';
 import { chooseAddressee } from './addressee';
-import { hears } from './hearing';
 import { guardNpcLine } from '../../../../server/contracts/iwLineGuard';
 import { planGlyphReveal } from '../../../engine/iw/revealSchedule';
 import {
@@ -18,6 +18,7 @@ import {
   type SceneActorState,
 } from '../../../engine/iw/sceneActor';
 import { useTTS } from '../../../hooks/useTTS';
+import { useAuth } from '../../../AuthContext';
 import type { TTSVoice } from '../../../services/tts';
 import {
   actorCells, bodyDrawable, buildSceneBodies,
@@ -25,6 +26,7 @@ import {
 } from './iwSceneActors';
 import { runAuthoredAction, runInteraction, type IWScriptDeps } from './iwScript';
 import {
+  chooseDestination as requestDestination,
   endIwSession, newSessionId, renderNpcLine, routeAddressee, segmentUtterance, takeNpcTurn,
   type IWCollectGoal,
   type IWPerception,
@@ -36,7 +38,7 @@ import { iwLog, iwWarn } from '../iwDebugLog';
  *
  * LAYER: feature hook. It is the ONLY stateful thing in the play surface: the stage draws what
  * it is given, the bubble renders what it is given, and everything that decides *what happens*
- * is here. Every rule it enforces is somebody else's, though — the graph, the hearing gate,
+ * is here. Every rule it enforces is somebody else's, though — the graph, the addressee rules,
  * the reveal schedule, the line guard and the step resolver are all pure modules under
  * `engine/iw/`, and this hook is what wires them to a clock, a network and a speaker.
  *
@@ -64,12 +66,8 @@ import { iwLog, iwWarn } from '../iwDebugLog';
  * The one thing this costs is that `heardRef` — which knows the real SPEAKING order, and knows
  * about a line nobody could hear — is not what gets stored. See § 12 phase 3's two known gaps.
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 3, § 4, § 4.1, § 4.2, § 5.3a, § 6.4, § 7, § 12 phase 2.
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 3, § 4, § 4.1, § 4.2, § 5.3a, § 5.3d, § 6.4, § 7, § 12 phase 2.
  */
-
-/** How long after a bubble finishes revealing before it fades. Proportional to length. */
-const BUBBLE_DWELL_BASE_MS = 1600;
-const BUBBLE_DWELL_PER_GLYPH_MS = 90;
 
 /**
  * § 6.4 rule 4: if the MP3 is not decoded this long after the line is in hand, start the
@@ -129,6 +127,15 @@ const HEARD_WINDOW = 8;
 const IW_ROUTE_CLIENT_DEADLINE_MS = 2000;
 
 /**
+ * How long an `ai_walk` waits for the destination picker before giving up on the walk (§ 5.4).
+ *
+ * The router's ceiling, for the router's reason: the server's own deadline is the same 1800 ms
+ * (`destinationPicker.ts`), so this fires only on a hung connection. The difference is what
+ * happens past it — no rule ladder answers, the walk is simply skipped and the script plays on.
+ */
+const IW_DESTINATION_CLIENT_DEADLINE_MS = IW_ROUTE_CLIENT_DEADLINE_MS;
+
+/**
  * How long the learner's own bubble is HELD BACK waiting for its segmentation (§ 5.3b).
  *
  * ⚠️ **A DELAY IS THE CHEAPER FAULT THAN A REFLOW.** Their line is segmented by a round trip
@@ -145,8 +152,22 @@ const IW_ROUTE_CLIENT_DEADLINE_MS = 2000;
  */
 const IW_PLAYER_SEGMENT_HOLD_MS = 700;
 
-/** What the learner is called in an NPC's prompt. In-world, never "the player" (§ 14 Q27). */
-const PLAYER_LABEL = 'the customer';
+/**
+ * What the learner is called in an NPC's prompt. In-world, never "the player" (§ 14 Q27).
+ * Shared with the server's destination labels and learner description — see `IW_PLAYER_LABEL`.
+ */
+const PLAYER_LABEL = IW_PLAYER_LABEL;
+
+/**
+ * Who holds the conversational floor — what the composer renders (§ 5.3d).
+ *
+ * - `open` — nothing is being said or waited on: the learner may type.
+ * - `waiting` — a turn is in flight, or an NPC line is queued but not on screen yet (the
+ *   model round trip, the TTS race). The composer is the bar, inert.
+ * - `continue` — an NPC line is on screen and parked until the learner taps Continue.
+ * - `frozen` — § 14 Q7's terminal state. Nothing may ever be sent again.
+ */
+export type IWFloor = 'open' | 'waiting' | 'continue' | 'frozen';
 
 /** One speech bubble on screen. */
 export interface IWBubble {
@@ -223,8 +244,17 @@ export interface IWSceneRuntime {
   frozen: boolean;
   /** § 7's session budget, as last reported by the server. Null before the first turn. */
   remaining: number | null;
-  /** A turn is in flight; the composer disables itself. */
-  sending: boolean;
+  /**
+   * Who may speak next (§ 5.3d). Replaced the raw `sending` flag, which was held for a turn's
+   * WHOLE performance — including an authored action that could park on the learner's next
+   * utterance, a deadlock the learner had no way out of.
+   */
+  floor: IWFloor;
+  /**
+   * Dismiss the NPC line on screen and let the speech queue move on (§ 5.3d). A no-op unless
+   * `floor === 'continue'`. Legal mid-reveal: it cuts the voice and the bubble together.
+   */
+  continueLine(): void;
   popup: IWPopup | null;
   dismissPopup(): void;
   /** Walk the learner to a cell (§ 14 Q18's tap-to-move), tolerating a near miss. */
@@ -234,7 +264,7 @@ export interface IWSceneRuntime {
   /** Which body the learner last addressed. The `addressed` flag in the next turn. */
   focusedId: string | null;
   /** Say something. The one path that reaches an NPC's brain (§ 14 Q38). */
-  say(text: string, volume?: IWVolume): void;
+  say(text: string): void;
   /** Skipped steps and refused lines, newest last — the § 4 debug overlay's data. */
   notes: string[];
   /**
@@ -298,15 +328,20 @@ export function useIWSceneRuntime(
       unwalkable: scene?.layout?.unwalkable ?? [],
       forcedDirection: scene?.layout?.forcedDirection ?? {},
       // Read through `scenePlaces`, never `layout.places` directly — a scene stored before the
-      // 2026-09-06 rename still carries `locations` (migration 163 is not on PPE yet).
+      // 2026-09-06 rename still carries `locations` on any DB migration 163 has not reached.
       places: scenePlaces(scene?.layout),
     }),
     [scene],
   );
 
+  // The learner's body follows their account (`users."gender"`, migration 164). Keyed on the
+  // gender VALUE, not on `user` — the user object is replaced on every settings write, and a
+  // rebuild here re-places every body at its start cell.
+  const { user } = useAuth();
+  const playerAvatar = iwPlayerAvatar(user?.gender);
   const built = useMemo(
-    () => (scene ? buildSceneBodies(scene, npcs, graph) : null),
-    [scene, npcs, graph],
+    () => (scene ? buildSceneBodies(scene, npcs, graph, playerAvatar) : null),
+    [scene, npcs, graph, playerAvatar],
   );
 
   // Keyed on `built` (a memo of the scene), so unlike `bodiesRef` this is correct on the very
@@ -355,6 +390,15 @@ export function useIWSceneRuntime(
   const [frozen, setFrozen] = useState(false);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  /**
+   * NPC lines handed to `enqueueSay` that have not been continued past yet — including the
+   * one on screen. Counted from the moment of enqueueing, not of posting, so the gap between
+   * a reply arriving and its bubble painting (the TTS race) reads as `waiting` instead of
+   * flashing the text box back for a beat.
+   */
+  const [queuedLines, setQueuedLines] = useState(0);
+  /** An NPC bubble is up and parked on {@link continueResolveRef}. */
+  const [awaitingContinue, setAwaitingContinue] = useState(false);
   const [popup, setPopup] = useState<IWPopup | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
@@ -391,16 +435,17 @@ export function useIWSceneRuntime(
   /** Resolvers of everything currently parked at the hold. */
   const pauseWaitersRef = useRef<Array<() => void>>([]);
   const lastSendRef = useRef(0);
+  /** Releases the `sayLine` currently parked on its Continue tap (§ 5.3d). One at a time. */
+  const continueResolveRef = useRef<(() => void) | null>(null);
   /**
-   * The scene transcript, WITH the audience of each line (§ 4c).
+   * The scene transcript, as `"<speaker label>: <line>"`, newest last.
    *
-   * ⚠️ **AN ENTRY IS A LINE PLUS WHO WAS THERE FOR IT, AND THAT PAIRING IS THE POINT.** This
-   * used to be a flat `string[]` handed identically to every NPC, which is why the first
-   * earshot model was withdrawn as theatre — a "deaf" NPC still knew verbatim what was said
-   * out of its range. `audience: null` means everybody heard it (an NPC speaking; nothing
-   * makes an NPC quiet). A set means only those ids did, and `contextFor` filters on it.
+   * ⚠️ **ONE LIST, HANDED IDENTICALLY TO EVERY NPC — AND THAT IS NOW THE RULE, NOT A GAP.**
+   * Everybody in a scene hears every line (§ 4c was withdrawn 2026-09-23). Entries used to
+   * carry the audience that heard them so a whisper could be kept out of a bystander's memory;
+   * with no volumes there is nothing to filter, so the pairing went with them.
    */
-  const heardRef = useRef<Array<{ line: string; audience: ReadonlySet<string> | null }>>([]);
+  const heardRef = useRef<string[]>([]);
   const lastSpeakerRef = useRef<string | null>(null);
   const firedCuesRef = useRef<string[]>([]);
   /** Conversations already overheard this run. Per-run, like `firedCuesRef` — see below. */
@@ -410,7 +455,8 @@ export function useIWSceneRuntime(
   /** Resolvers waiting on an actor's walk to end. One per actor at most. */
   const arrivalsRef = useRef(new Map<string, (how: 'arrived' | 'blocked') => void>());
   /**
-   * Scripts parked at a `wait_for_response` step, with WHO is waiting (2026-09-20).
+   * Scripts parked at a `wait_for_response` step, with WHO is waiting (2026-09-20). Released
+   * in `say`'s turn once the learner's line has been ROUTED to that actor — see there.
    *
    * A list rather than a map: one actor can legitimately hold two parked scripts for a moment
    * (a superseded one that has not yet noticed its token changed, and its replacement), and
@@ -467,6 +513,9 @@ export function useIWSceneRuntime(
       // Same for a script parked mid-errand. `not-yet` rather than `got` so the loop sees a
       // failure, checks `cancelled` and unwinds without speaking a give-up line at nobody.
       collectWaiters.splice(0).forEach(({ resolve }) => resolve('not-yet'));
+      // And a line parked on Continue: the chain resumes, sees `cancelledRef` and unwinds.
+      continueResolveRef.current?.();
+      continueResolveRef.current = null;
       // Release § 7's session counter. Fire-and-forget by design — a failure here leaks one
       // integer on the server and nothing the learner can see.
       endIwSession(session);
@@ -777,25 +826,49 @@ export function useIWSceneRuntime(
     // path, which speaks in every mode — so a muted learner who wants to hear one line taps it
     // and hears it, without cycling the header chip and losing the line to the next turn.
     postBubble({ actorId, text, schedule, startedAt, emote, replayable: true });
-    // An NPC's line has no volume: everybody present hears it. Only the LEARNER can whisper,
-    // because only the learner has a control for it (§ 4c) — an NPC choosing to speak quietly
-    // would be a second, invisible hearing model, which is the thing § 4 threw out.
-    heardRef.current = [...heardRef.current, { line: `${labelFor(actorId)}: ${text}`, audience: null }].slice(-HEARD_WINDOW);
+    heardRef.current = [...heardRef.current, `${labelFor(actorId)}: ${text}`].slice(-HEARD_WINDOW);
     lastSpeakerRef.current = actorId;
 
-    // ⚠️ THE DWELL PACES THE QUEUE; IT NO LONGER DISMISSES THE BUBBLE. `enqueueSay` chains on
-    // this promise, so the wait is what stops the next speaker from starting before this line
-    // has been read — dropping it would blank a line mid-reveal (§ 5.3a). What changed
-    // is what happens at the end: nothing. An NPC's line now STAYS UP until the learner
-    // speaks (see `enqueueSayPlayer`), because a bubble that expires on a timer punishes
-    // exactly the learner this is for — the one still reading it.
-    const revealMs = schedule[schedule.length - 1] ?? 0;
-    await sleep(revealMs + BUBBLE_DWELL_BASE_MS + text.length * BUBBLE_DWELL_PER_GLYPH_MS);
+    // ⚠️ **AN NPC LINE HAS NO TIMER AT ALL — IT WAITS FOR CONTINUE** (§ 5.3d, 2026-09-23).
+    // `enqueueSay` chains on this promise, so parking here is what holds the next speaker
+    // back. It replaced a dwell (`reveal + 1600 ms + 90 ms/glyph`) that paced the queue on
+    // the clock: a slow reader lost the line to whatever came next, and a fast one sat
+    // through dead air. Now the learner is the clock, and the tap that releases the queue
+    // also dismisses the bubble (`continueLine`), so the board is empty — and the composer
+    // is a text box again — only once every line has been read.
+    await new Promise<void>(resolve => {
+      continueResolveRef.current = resolve;
+      setAwaitingContinue(true);
+    });
   }, [scene, tts, sleep, note, labelFor, voiceFor, postBubble, whenResumed]);
+
+  /**
+   * The Continue tap (§ 5.3d): dismiss the NPC line on screen and release the speech queue.
+   *
+   * Allowed mid-reveal by decision (2026-09-23) — which partly reverses Q41's "listening is
+   * not skippable". The voice is cut with the bubble rather than left talking over an empty
+   * board; the replay button is gone with it, so a line skipped this way is skipped for good.
+   */
+  const cancelSpeech = tts.cancel;
+  const continueLine = useCallback(() => {
+    const resolve = continueResolveRef.current;
+    if (!resolve) return;
+    continueResolveRef.current = null;
+    setAwaitingContinue(false);
+    cancelSpeech();
+    setBubbles([]);
+    resolve();
+  }, [cancelSpeech]);
 
   /** Queue a line behind whatever is already being said, so two NPCs never overlap. */
   const enqueueSay = useCallback((actorId: string, text: string, emote?: IWEmote): Promise<void> => {
-    const next = speechChainRef.current.then(() => sayLine(actorId, text, emote));
+    // Counted SYNCHRONOUSLY, before any await, so a caller that clears `sending` right after
+    // enqueueing lands in the same render and the floor never flickers to `open` (see
+    // `runTurn`). Uncounted in `finally`, so a silenced or cancelled line releases it too.
+    setQueuedLines(n => n + 1);
+    const next = speechChainRef.current
+      .then(() => sayLine(actorId, text, emote))
+      .finally(() => setQueuedLines(n => n - 1));
     // The chain must survive a failed link, or one thrown error silences the scene forever.
     speechChainRef.current = next.catch(() => {});
     return next;
@@ -829,14 +902,8 @@ export function useIWSceneRuntime(
       .filter((n): n is { label: string; distance: number; facingYou: boolean } => n !== null)
       .sort((a, b) => a.distance - b.distance);
 
-    // ⚠️ **THE MEMORY GATE** (§ 4c). An NPC's transcript is what THAT NPC could hear, which is
-    // the half the withdrawn earshot model never had. A line whispered across the table is
-    // absent from this list for everybody but its one listener, so it cannot resurface three
-    // turns later out of somebody who was not there.
-    const heard = heardRef.current
-      .filter(e => e.audience === null || e.audience.has(npcId))
-      .map(e => e.line);
-    return { knownWords: [...knownWordsRef.current], nearby, heard };
+    // Everybody heard everything (§ 4c withdrawn), so every NPC gets the same transcript.
+    return { knownWords: [...knownWordsRef.current], nearby, heard: [...heardRef.current] };
   }, [labelFor]);
 
   /**
@@ -888,6 +955,31 @@ export function useIWSceneRuntime(
     return outcome.say;
   }, [scene?.id, contextFor, note, labelFor]);
 
+  /**
+   * Ask the model where an `ai_walk` goes (§ 5.4, 2026-09-23). `null` skips the walk.
+   *
+   * The performer's `heard` is the SAME memory-gated list its turn prompt reads
+   * (`contextFor`), so "back to whoever was just calling out" is decided on what this NPC
+   * could actually hear, not on the whole room's transcript.
+   */
+  const chooseDestination = useCallback(async (
+    npcId: string, brief: string, candidates: readonly IWDestinationCandidate[],
+  ): Promise<IWDestinationTarget | null> => {
+    if (!scene?.id || cancelledRef.current) return null;
+    const target = await Promise.race([
+      requestDestination({
+        sceneId: scene.id,
+        npcId,
+        brief,
+        candidates,
+        heard: contextFor(npcId).heard,
+      }),
+      sleep(IW_DESTINATION_CLIENT_DEADLINE_MS).then(() => null),
+    ]);
+    if (!target) note(npcId, `AI walk found nowhere to go — "${brief}"`);
+    return target;
+  }, [scene?.id, contextFor, sleep, note]);
+
   // ── Authored scripts ────────────────────────────────────────────────────────────────────
 
   /** The world as one performer sees it, for `resolveActionStep`. */
@@ -907,7 +999,7 @@ export function useIWSceneRuntime(
     const id = setTimeout(() => {
       if (cancelledRef.current) return;
       // Phase 2 records the cue (which unlocks anything gated on it — § 5.4b's `unlockedBy`)
-      // and shows the fact. Having the cast REACT to it in character is a turn per audible
+      // and shows the fact. Having the cast REACT to it in character is a turn per
       // NPC and belongs with the complication draw in phase 3.
       firedCuesRef.current = [...firedCuesRef.current, eventId];
       setBanner(event.description);
@@ -949,14 +1041,14 @@ export function useIWSceneRuntime(
       // template. The line is added to `heard` by `sayLine`, so the next render sees it.
       const say = await renderLine(turn.npcId, turn.text);
       if (cancelledRef.current) return;
-      // A beat that could not be rendered is SKIPPED, never spoken as written.
+      // A beat that could not be rendered is SKIPPED, never spoken as written. No gap after
+      // it: the line resolves on the learner's Continue tap (§ 5.3d), which IS the pacing.
       if (say) await enqueueSay(turn.npcId, say);
-      await sleep(Math.max(0, IW_CONVERSATION_LINE_MS - 3000));
     }
-  }, [scene, enqueueSay, renderLine, sleep, note]);
+  }, [scene, enqueueSay, renderLine, note]);
 
   /**
-   * Park a script until the learner says something this actor can hear (`iwScript.ts`).
+   * Park a script until the learner says something ROUTED to this actor (`iwScript.ts`).
    *
    * There is deliberately no timeout: the three ways out are the learner speaking, the scene
    * being left, and another action superseding this script — the same set every other await
@@ -1013,6 +1105,7 @@ export function useIWSceneRuntime(
     face,
     say: (who, text) => enqueueSay(who, text),
     renderLine,
+    chooseDestination,
     playConversation,
     armEvent,
     wait: sleep,
@@ -1020,7 +1113,7 @@ export function useIWSceneRuntime(
     collect,
     note,
     cancelled: () => cancelledRef.current || scriptTokensRef.current.get(actorId) !== token,
-  }), [worldFor, walk, face, enqueueSay, renderLine, playConversation, armEvent, sleep, awaitLearner, collect, note]);
+  }), [worldFor, walk, face, enqueueSay, renderLine, chooseDestination, playConversation, armEvent, sleep, awaitLearner, collect, note]);
 
   /**
    * Perform one of an NPC's authored actions.
@@ -1074,57 +1167,34 @@ export function useIWSceneRuntime(
   // ── The turn (§ 4.1, § 4.2) ─────────────────────────────────────────────────────────────
 
   /**
-   * Everyone who could be the one being spoken to at this VOLUME — nearest first, capped
-   * (§ 4c, § 4.2, § 7). Exactly one of them is then chosen, by the router or by the rules.
+   * Everyone who could be the one being spoken to — every NPC in the scene, nearest first
+   * (§ 4.2). Exactly one of them is then chosen, by the router or by the rules.
    *
-   * ⚠️ **EARSHOT WAS DELETED AND REBUILT ON THE SAME DAY, AND THE DIFFERENCE IS WHO DECIDES.**
-   * The withdrawn version ran an automatic geometry gate — per-volume radii nobody chose, plus
-   * an occlusion walk — and it failed on three counts:
+   * ⚠️ **THERE IS NO HEARING GATE, AND THERE HAS BEEN ONE TWICE.** The first was an automatic
+   * earshot model (§ 4, withdrawn 2026-09-07); the second was a whisper/say/shout volume the
+   * learner picked (§ 4c, withdrawn 2026-09-23). Both went for the same underlying reason: a
+   * scene is one small room, so the question worth answering is not WHO COULD HEAR but WHO
+   * WAS MEANT — and that is decided from position, facing and the sentence itself, which is
+   * exactly what each entry below carries to the router and to `chooseAddressee`.
    *
-   * 1. **It never gated MEMORY, only replies.** The transcript was one shared list handed
-   *    identically to every NPC, so a "deaf" NPC already knew verbatim what was said out of
-   *    its range. The gate was not modelling ignorance; it was withholding a reply from
-   *    somebody who already knew.
-   * 2. **Its failure was invisible.** Silence is what an NPC choosing not to speak looks like
-   *    too (§ 4.1), so "he is four tiles away with a stand between you" and "he decided you
-   *    were not talking to him" were the same picture.
-   * 3. **A scene is small**, so the geometry was almost always trivially satisfied — paying
-   *    for a model of distance in a space with no distance in it.
-   *
-   * The volume toggle answers all three. It gates memory (`heardRef` entries now carry their
-   * audience, and `contextFor` filters on it); its failure is legible, because the learner set
-   * the range one press ago and the banner names it; and it is not a simulation of distance at
-   * all but an INTENTION — whispering to one person at a table of four is something a learner
-   * MEANS, which is worth having even in a room where everybody could hear everything.
-   * Occlusion did not come back, and will not: see `play/hearing.ts`.
-   *
-   * ⚠️ **THERE IS NO FAN-OUT ANY MORE EITHER** (§ 4.2, same day). For a few hours between the
-   * two changes this list WAS the spend — every body in it was a model call — which is what
-   * made § 4.1's over-eagerness both loud and expensive at once. Routing to a single addressee
-   * fixed the cost as a side effect: an utterance is **one call**, whatever the cast size.
-   * {@link IW_MAX_LISTENERS_PER_UTTERANCE} therefore no longer bounds anything on this path
-   * and is kept only as the server's cap on the `nearby` block it also feeds.
+   * ⚠️ **NOR IS THERE A CAP** (2026-09-23). The list used to stop at four, a leftover from when
+   * every body in it was a model call (§ 4.1). Routing made an utterance one call whatever the
+   * cast size, so a cap only hid the farthest NPCs from the router — a learner naming somebody
+   * across a big room would be answered by whoever stood nearer. The bound is now the scene's
+   * own cast, which the server re-checks (`ImmersiveWorldService` filters the route request to
+   * the scene's members).
    *
    * Distance survives as the ordering: `chooseAddressee`'s last-resort rule takes the first
    * entry, so "nearest" has to mean the front of this list.
    */
-  const audienceFor = useCallback((
-    self: { cell: string; facing: string },
-    volume: IWVolume,
-  ): AddresseeOption[] => {
+  const audienceFor = useCallback((self: { cell: string; facing: string }): AddresseeOption[] => {
     const from = parseCellKey(self.cell);
     if (!from) return [];
-    const facing = self.facing as IWFacing;
     return actorsRef.current
       .filter(a => a.id !== IW_ACTOR_PLAYER)
       .map(a => {
         const cell = parseCellKey(a.cell);
         if (!cell) return null;
-        // ⚠️ **THE HEARING GATE IS BACK, AS A CHOICE** (§ 4c). It bounds the ROUTER's
-        // candidate list, so a whisper cannot be answered by somebody across the room however
-        // the router reads the sentence — and it bounds the transcript the same way, in
-        // `say`, so the same body cannot quote it later either.
-        if (!hears(volume, from, facing, cell)) return null;
         return {
           id: a.id,
           label: labelFor(a.id),
@@ -1140,20 +1210,14 @@ export function useIWSceneRuntime(
         };
       })
       .filter((l): l is AddresseeOption => l !== null)
-      // Nearest first — `chooseAddressee`'s last-resort rule reads this order, and it is the
-      // order the cap drops from.
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, IW_MAX_LISTENERS_PER_UTTERANCE);
+      // Nearest first — `chooseAddressee`'s last-resort rule reads this order.
+      .sort((a, b) => a.distance - b.distance);
   }, [labelFor]);
 
   /** What one NPC perceives, for layer 3 of their prompt. */
-  const perceptionFor = useCallback((npcId: string, addressed: boolean, text: string, volume: IWVolume): IWPerception => ({
+  const perceptionFor = useCallback((npcId: string, addressed: boolean, text: string): IWPerception => ({
     ...contextFor(npcId),
-    // The volume reaches layer 3 as a FACT about the line, beside `addressed` (§ 5.5). It is
-    // not another rule for the model to obey — the gate already happened, in `audienceFor` —
-    // but somebody who was whispered to should answer like somebody who was whispered to, and
-    // an NPC who was shouted at across a room knows why they were shouted at.
-    event: { kind: 'utterance', speaker: PLAYER_LABEL, text, addressed, volume },
+    event: { kind: 'utterance', speaker: PLAYER_LABEL, text, addressed },
     spokeLastTurn: lastSpeakerRef.current === npcId,
     // Present only while this NPC's script is parked on a `get_information` step, which is
     // also exactly when the reply will be read for a fourth line (§ 5.4).
@@ -1227,7 +1291,7 @@ export function useIWSceneRuntime(
     void Promise.race([pending, sleep(IW_PLAYER_SEGMENT_HOLD_MS)]).then(show);
   }, [postBubble, sleep, whenResumed]);
 
-  const say = useCallback((raw: string, volume: IWVolume = 'talk') => {
+  const say = useCallback((raw: string) => {
     const text = raw.trim();
     if (!text || frozenRef.current || cancelledRef.current) return;
     const now = Date.now();
@@ -1238,55 +1302,23 @@ export function useIWSceneRuntime(
 
     const player = actorById(IW_ACTOR_PLAYER);
     if (!player) return;
-    const audience = audienceFor(player, volume);
-    // ⚠️ THE TRANSCRIPT REMEMBERS WHO WAS THERE (§ 4c). The audience is stored beside the
-    // line, so an NPC that could not hear it never sees it — not on this turn and not on any
-    // later one. Storing it here rather than at read time is what makes the gate durable:
-    // the cast moves, and "who could hear it" is a fact about the moment it was said.
-    const audible = new Set(audience.map(l => l.id));
-    heardRef.current = [...heardRef.current, { line: `${PLAYER_LABEL}: ${text}`, audience: audible }].slice(-HEARD_WINDOW);
+    const audience = audienceFor(player);
+    heardRef.current = [...heardRef.current, `${PLAYER_LABEL}: ${text}`].slice(-HEARD_WINDOW);
     // Logged BEFORE the routing decision, so a line nobody answered still shows up in the
     // transcript — "I said it and got nothing" is exactly the case worth reading back.
-    iwLog('dialogue', `${PLAYER_LABEL} (${IW_ACTOR_PLAYER}) [${volume}]: ${text}`, {
-      playerCell: player.cell, facing: player.facing, volume, cast: audience.map(l => l.id),
+    iwLog('dialogue', `${PLAYER_LABEL} (${IW_ACTOR_PLAYER}): ${text}`, {
+      playerCell: player.cell, facing: player.facing, cast: audience.map(l => l.id),
     });
     // The learner's own line goes in a bubble too, un-spoken: it is the only record of what
     // they just said once the composer clears, and reading it back is half of noticing a typo.
     void enqueueSayPlayer(text);
 
-    // ⚠️ **RELEASE THE PARKED SCRIPTS HERE, AND IN THIS ORDER** (2026-09-20). A
-    // `wait_for_response` step resumes on the learner's next AUDIBLE utterance, so the filter
-    // is `audible` — the same set the transcript was just stamped with, not "anybody with a
-    // script". Releasing after the `heardRef` append matters: a resumed script's very next
-    // beat is usually a `comment`, and its render has to see the sentence it is answering.
-    // It also happens before the routing/turn call below, on purpose — waking the script is a
-    // local fact and must not wait on a model round trip.
-    const waking = learnerWaitersRef.current.filter(w => audible.has(w.actorId));
-    if (waking.length) {
-      learnerWaitersRef.current = learnerWaitersRef.current.filter(w => !audible.has(w.actorId));
-      waking.forEach(({ resolve }) => resolve());
-    }
-
-    // ⚠️ **AND HERE IS WHY THE VOLUME HAD TO COME WITH ITS OWN COPY** (§ 4c). This branch has
-    // three quite different meanings now, and telling a learner the wrong one sends them
-    // hunting: an empty scene is an authoring mistake, a whisper with nobody in front of them
-    // is a step away from being fixed, and a normal voice out of range means walk over. The
-    // withdrawn earshot model had one line for all of it, which is half of why its failures
-    // read as bugs.
+    // With everybody hearing everything, the only way to have nobody to answer is an empty
+    // scene — an authoring mistake, not something the learner can walk or turn to fix.
     if (audience.length === 0) {
-      iwLog('turn', `no audience at ${volume}`, { playerCell: player.cell, facing: player.facing, volume });
-      const cast = actorsRef.current.filter(a => a.id !== IW_ACTOR_PLAYER).length;
-      const why = cast === 0
-        ? 'there is nobody here to hear that'
-        : volume === 'whisper'
-          ? 'nobody is standing where a whisper would reach'
-          : 'nobody is close enough to hear that';
-      note('world', why);
-      setBanner(cast === 0
-        ? 'There is nobody here to talk to.'
-        : volume === 'whisper'
-          ? 'A whisper only reaches whoever you are standing in front of.'
-          : 'Nobody is close enough. Walk over, or shout.');
+      iwLog('turn', 'no NPCs in the scene', { playerCell: player.cell, facing: player.facing });
+      note('world', 'there is nobody here to hear that');
+      setBanner('There is nobody here to talk to.');
       return;
     }
 
@@ -1332,11 +1364,9 @@ export function useIWSceneRuntime(
             focused: l.id === focusedId,
             spokeLast: l.id === lastSpeakerRef.current,
           })),
-          // ⚠️ The router reads the WHOLE transcript, unfiltered, and that is correct: it is
-          // answering on the learner's behalf ("who did they mean?"), and the learner heard
-          // every line in the scene. The § 4c memory gate is about what an NPC knows, not
-          // about what the engine may look at.
-          heard: heardRef.current.map(e => e.line),
+          // The whole transcript — the same one every NPC is given. "Who did they mean?"
+          // often turns on who spoke last and what was asked.
+          heard: [...heardRef.current],
         }).catch(() => null),
         sleep(IW_ROUTE_CLIENT_DEADLINE_MS).then(() => null),
       ]);
@@ -1356,6 +1386,22 @@ export function useIWSceneRuntime(
       // the question this whole path exists to be able to answer out loud.
       note(listener.id, `answering — ${why}`);
 
+      // ⚠️ **A PARKED SCRIPT WAKES ONLY FOR THE NPC THIS LINE WAS ROUTED TO** (2026-09-23).
+      // A `wait_for_response` step hands the floor to the learner and resumes when they answer
+      // THIS NPC. It used to wake on any line the NPC could hear, which — once everybody hears
+      // everything — would have an NPC treat an aside to somebody else as the answer to its
+      // own question. The price is that waking now waits on the routing race above (bounded by
+      // `IW_ROUTE_CLIENT_DEADLINE_MS`) instead of firing the instant the learner hits send.
+      //
+      // Released after the `heardRef` append in `say` and BEFORE the turn: a resumed script's
+      // next beat is usually a `comment`, whose render has to see the sentence it is answering,
+      // and it queues behind the reply on the speech chain rather than racing it.
+      const waking = learnerWaitersRef.current.filter(w => w.actorId === listener.id);
+      if (waking.length) {
+        learnerWaitersRef.current = learnerWaitersRef.current.filter(w => w.actorId !== listener.id);
+        waking.forEach(({ resolve }) => resolve());
+      }
+
       try {
         const outcome = await takeNpcTurn({
           sceneId: scene!.id!,
@@ -1366,7 +1412,7 @@ export function useIWSceneRuntime(
           // `addressed: true`, always — the engine has already decided this line was for
           // them, and it is the only NPC being asked. The flag survives because it is still
           // TRUE and layer 3 reads better for saying so; it is no longer load-bearing.
-          perception: perceptionFor(listener.id, true, text, volume),
+          perception: perceptionFor(listener.id, true, text),
         }, {
           // Arrives after the reply, mid-reveal (§ 5.3b). Merged by exact line text, so a
           // bubble that is already on screen picks it up on the next render without being
@@ -1379,11 +1425,18 @@ export function useIWSceneRuntime(
         if (cancelledRef.current) return;
         if (outcome.kind === 'reply') {
           setRemaining(outcome.reply.remaining);
-          await applyReply(listener.id, {
+          const performing = applyReply(listener.id, {
             say: outcome.reply.say,
             emote: outcome.reply.emote,
             chosen: outcome.reply.chosen,
           });
+          // ⚠️ **THE TURN STOPS HOLDING THE FLOOR HERE, NOT WHEN THE PERFORMANCE ENDS**
+          // (§ 5.3d). `applyReply` enqueued the line synchronously, so the floor is now held
+          // by `queuedLines` and then by Continue. Holding `sending` through the chosen action
+          // deadlocked any action with a `wait_for_response` / `get_information` step: the
+          // script waited on the learner, and the learner's composer waited on the script.
+          setSending(false);
+          await performing;
           // ⚠️ RELEASED AFTER THE REPLY HAS BEEN SPOKEN, not when it arrived. The parked
           // script's next step belongs after the NPC's own answer — resuming at the earlier
           // moment would have the script walking away mid-sentence.
@@ -1451,7 +1504,11 @@ export function useIWSceneRuntime(
     dismissBanner: () => setBanner(null),
     frozen,
     remaining,
-    sending,
+    floor: frozen ? 'frozen'
+      : awaitingContinue ? 'continue'
+        : (sending || queuedLines > 0) ? 'waiting'
+          : 'open',
+    continueLine,
     popup,
     dismissPopup,
     walkPlayerTo,

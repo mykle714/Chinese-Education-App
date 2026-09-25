@@ -1,5 +1,7 @@
+import { alpha } from "@mui/material/styles";
 import { Box, Card, CardContent, Typography } from "@mui/material";
 import { WEIGHT } from '../theme/scale';
+import { COLORS } from "../theme/colors";
 
 interface StreakCounterProps {
     currentStreak: number;
@@ -8,8 +10,10 @@ interface StreakCounterProps {
 function StreakCounter({ currentStreak }: StreakCounterProps) {
     return (
         <Card sx={{
-            background: 'linear-gradient(135deg, #ff6b6b, #ff8e53)',
-            color: 'white',
+            // Shelf System v2: a large card is a SURFACE with ink on it (never white on a
+            // pastel). Org — the streak/fire family — replaces the off-palette gradient.
+            background: COLORS.org,
+            color: COLORS.onSurface,
             mb: 3
         }}>
             <CardContent sx={{ py: 3 }}>
@@ -28,7 +32,7 @@ function StreakCounter({ currentStreak }: StreakCounterProps) {
                     fontWeight: WEIGHT.bold,
                     textAlign: 'center',
                     mb: 1,
-                    textShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                    textShadow: `0 1px 2px ${alpha(COLORS.onSurface, 0.1)}`
                 }}>
                     {currentStreak === 0 ? 'Start Today!' : `${currentStreak} ${currentStreak === 1 ? 'Day' : 'Days'}`}
                 </Typography>

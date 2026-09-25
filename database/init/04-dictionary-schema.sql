@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS dictionaryentries (
     classifier      JSONB,                   -- measure words for nouns, e.g. ["辆"] for 车
     "expansionLiteralTranslation" TEXT,      -- literal translation of expansion components
     "matchException" JSONB DEFAULT '[]',                     -- multi-char tokens to skip during GSA matching (manual override)
-    "shortDefinitionPronunciationOverride" JSONB DEFAULT NULL, -- { definition?, pronunciation? } — manual overrides for computed shortDefinition and/or pronunciation
     "frequencyScore" SMALLINT,                              -- AI-scored everyday-conversation frequency (1-5)
     "exampleSentenceDefinitionPronunciationOverride" JSONB DEFAULT NULL -- { definition?, pronunciation? } — manual overrides for example sentence segment popup display
 );

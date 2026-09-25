@@ -1,7 +1,8 @@
 # Hydra Bubbles — endless recognition drill
 
 **Status: BUILT (2026-08-18), UNPLAYED. Reworked to TWO colors 2026-08-21; the tier
-palette is now YELLOW / BLUE (2026-08-24, § 2.2).** (§ 2 —
+palette is now YELLOW / BLUE (2026-08-24), on the Shelf System v2 MID tier with ink rings
+(2026-09-23, § 2.2); the game's hue is GREEN (was teal; 2026-09-24).** (§ 2 —
 still no migration). The game ships: `src/games/hydra-bubbles/`,
 the `/games/hydra-bubbles` route, a registry entry, a `CHALLENGE_GAMES` spec, and the
 server's rolling-supply lending. No migration was needed at any point — Hydra adds no
@@ -81,18 +82,29 @@ important consequence to hold on to:
 
 ### 2.2 The palette
 
-Each bubble is a **flat body** with no ring. The ladder is **yellow / blue**
-(2026-08-24) — warm is the harder tier, cool the easier one:
+Each bubble is a **flat body** with a 2px ring. The ladder is **yellow / blue**
+(2026-08-24) — warm is the harder tier, cool the easier one — on the **v2 MID tier**
+(2026-09-23, artboard 16 caption "Mid: bubbles"):
 
 **Three bubbles share the field, not two.** The two payout tiers plus the **English**
 bubbles, which carry no payout meaning at all. A palette that separates drain from
 bloom beautifully is still broken if either of them reads as English.
 
-| Bubble | Body | Char ink | Means |
-|---|---|---|---|
-| English | `#E7E7EA` inert grey (`COLORS.grey`) | dark | nothing — scenery |
-| bloom — **light blue** | `#D2EBFF` (`COLORS.blu`) | dark | net +1, the known words |
-| drain — **light yellow** | `#F5E7B4` (`COLORS.yel`) | dark | net -1, the hard words |
+| Bubble | Body | Ring | Char ink | Means |
+|---|---|---|---|---|
+| English | `#E7E7EA` inert grey (`COLORS.grey`) | `--line2` (`NEUTRAL_BUBBLE_RING`) | dark | nothing — scenery |
+| bloom — **blue** | `#A9DFFF` (`COLORS.bluM`) | ink (`COLOURED_BUBBLE_RING`) | dark | net +1, the known words |
+| drain — **yellow** | `#FFE66E` (`COLORS.yelM`) | ink (`COLOURED_BUBBLE_RING`) | dark | net -1, the hard words |
+
+The contrast tables below were measured against the pre-v2 Surface bodies (`blu`
+`#D2EBFF`, `yel` `#F5E7B4`) and are kept as the history of the choice, not re-derived.
+The v2 ink ring is a second, non-hue channel between a payout bubble and scenery, which
+those tables show the ladder needed.
+
+**Not adopted from artboard 16:** the design colours the ENGLISH bubbles (`#hyd
+.bub:not(.zh){background:var(--grn)}`) and makes the Chinese side neutral (`--header`,
+lent `--grey`). That moves the payout signal off the word bubble, which is a redesign of
+the game rather than a repaint — an open question for the user, not a change made.
 
 **All three take black text**, and that is a constraint on any replacement rather than an
 accident: the two tiers are one object at two settings, and a rung whose glyphs invert to
@@ -100,14 +112,17 @@ white stops reading as *"the same thing"* and starts reading as *"a different th
 `inkOnFill` derives that automatically, so a future swap cannot strand dark text on a dark
 body.
 
-Every bubble's border is its own body color: the shared `Bubble` draws a fixed 2px
-border, so a same-color border is how a bubble reads as ringless without changing its
-border box. `YELLOW_DRAIN` / `BLUE_LIGHT` / `DEFINITION_FILL` live in `HydraStage.tsx`.
+The shared `Bubble` draws a fixed 2px border on every bubble; the ring COLOUR follows v2's
+rule — a coloured bubble in ink, a neutral one in `--line2` — from `COLOURED_BUBBLE_RING` /
+`NEUTRAL_BUBBLE_RING` in `src/games/bubbles/constants.ts` (shared with Bubble Match).
+`YELLOW_DRAIN` / `BLUE_LIGHT` / `DEFINITION_FILL` live in `HydraStage.tsx`.
 
-**`COLORS.yel` and not `COLORS.org`.** `org` (hue 70) IS `CATEGORY_COLORS.Target`, and
-drain is Unfamiliar + Target — a bubble wearing Target's exact fill would read as a band
-label rather than as a tier. `yel` (hue 92) exists in the ramp precisely to be a gold that
-is not Target's orange.
+**⚠️ Drain now wears Target's hue (v2).** This used to read "`yel` and not `org`, because
+org IS Target". v2 moved Target to yellow (`BAND_HUES.Target`,
+`src/utils/categoryColors.ts`), so drain (Unfamiliar + Target) wears Target's hue exactly
+as bloom (Comfortable + Mastered) wears Mastered's. Both halves are half-true — symmetrical
+rather than wrong — but yellow is no longer a hue with no band. Open for the user;
+switching is the `YELLOW_DRAIN` constant.
 
 #### The channel is HUE, and the value read is gone
 
@@ -190,8 +205,8 @@ The overlay cannot be recolored to escape it: `ForeignText.characterColor` is do
 to leave the tone overlay alone, and `TONE_COLORS` are design-owned literals.
 **The only real fix is to leave hue 250** — a ladder on **purple** (hue 300, `COLORS.pur`
 / `COLORS.purA`) has no tone color anywhere near it and would free the whole lightness
-range, giving back both the dark rung and the pinyin. Teal (195) does *not* help: tone 2
-`#05C793` sits next to it.
+range, giving back both the dark rung and the pinyin. (A hue-195 cyan would not have
+helped either — tone 2 `#05C793` sits next to it — and v2 removed teal from the palette.)
 
 Text ink itself is derived, not declared: `inkOnFill` in `src/games/bubbles/Bubble.tsx`
 picks white or near-ink from body luminance, so no game can strand dark text on a dark
@@ -213,9 +228,9 @@ Taken anyway, and here is the defence:
   asks to be decoded as a band. Value is the whole message.
 
 **If a learner is observed reading a dark blue bubble as "mastered"**, the fix is to move
-the *whole ladder* to a hue with no band — teal, hue 195, `COLORS.tea` / `COLORS.teaA`,
-the same structure and a one-token swap — **not** to split the tiers across two hues
-again.
+the *whole ladder* to a hue with no band — purple (`COLORS.purM`), the same structure and
+a one-token swap (teal, the hue this used to name, left the palette in v2) — **not** to
+split the tiers across two hues again.
 
 **Drain used to stay achromatic on purpose** — being the one property no mastery
 surface could collide with, since the four bands, Learn Now's gold (purple until 2026-09-01) and the
@@ -1046,7 +1061,7 @@ the field's measured bounds were larger than the area a bubble could be read in.
 |---|---|
 | left | `endless` — **or `shrink only`** the moment the table enters the squeeze band (§ 3.1) |
 | right | `{score} cleared` |
-| bar | the field's **fill ratio**, `teaA` → `dangerInk` on the danger band |
+| bar | the field's **fill ratio**, in ink in every state (v2; the danger band is raised by the vignette and the `shrink only` label) |
 
 **The mode slot doubles as the warning** because there is only one mode: a constant
 "endless" is dead pixels, but drain-only is urgent, and saying it where the mode was keeps
@@ -1426,8 +1441,8 @@ tiers are now `COLORS.blu` / `COLORS.bluA`, and `blu` IS `CATEGORY_COLORS.Master
 Reasoned through and accepted — a single-hue ladder asks to be read as *value*, not as a
 band — but nobody has yet watched a learner meet a dark blue bubble cold. The question to
 answer is narrow: **does drain read as "mastered" to someone who has been using the decks
-page?** If yes, swap the whole ladder to teal (`COLORS.tea` / `COLORS.teaA`), which is one
-token change and no structural work. Also unchecked on a phone in daylight: tone-1 pinyin
+page?** If yes, swap the whole ladder to purple (`COLORS.purM`; teal, the hue this used to
+name, left the palette in v2), which is one token change and no structural work. Also unchecked on a phone in daylight: tone-1 pinyin
 `#EF476F` on the drain body at 1.51:1.
 
 > The other adjacency this item used to carry — charcoal's body against the English
@@ -1531,7 +1546,8 @@ nothing.
 | per-bubble lent mark (§ 6.4) | `src/games/bubbles/Bubble.tsx` → the `lent` prop; `src/games/hydra-bubbles/HydraStage.tsx` passes it |
 | the mark itself | `src/components/LentCardBadge.tsx` (`LentCardBadge` / `LentCardIcon`) |
 | lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
-| registry + hub row | `src/games/registry.ts` → `GAME_REGISTRY`; `COLORS.tealAccent` (`src/theme/colors.ts`) |
+| registry + hub row | `src/games/registry.ts` → `GAME_REGISTRY`; the hue is `GAME_HUE` (`"grn"`) in `src/games/hydra-bubbles/constants.ts` |
+| bubble palette | `src/games/hydra-bubbles/HydraStage.tsx` → `YELLOW_DRAIN`, `BLUE_LIGHT`, `FILL_BY_COLOR`, `DEFINITION_FILL`; `src/games/bubbles/constants.ts` → `COLOURED_BUBBLE_RING`, `NEUTRAL_BUBBLE_RING`, the status fills, `DANGER_VIGNETTE_BG`, `CANCEL_ZONE_COLORS` |
 | minute points (§ 9) | `src/constants.ts` → `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | challenge spec (§ 7.5) | `server/contracts/wire.ts` → `CHALLENGE_GAMES` |
 | challenge round wiring (§ 7.5) | `src/games/runtime/useChallengeRound.ts` (scorer + active-time clock) and `ChallengeRoundScoreboard.tsx`; `HydraBubblesPage.tsx` → `fetchChallengeCards`, `shouldEndRun`, `remainingContestedRef`; `useColorBuffers`'s third argument (the bloom-slot queue); `HydraStage.tsx` → the `shouldEndRun` prop |

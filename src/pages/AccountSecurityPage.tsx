@@ -239,9 +239,10 @@ function AccountSecurityPage() {
                     tone="danger"
                     description="This action is permanent and cannot be undone."
                 >
-                    {/* `color="error"` rather than the theme's primary ink: the shape
-                        override applies to every colour, but the ink only lands on the
-                        `*Primary` slots, so this keeps its red. */}
+                    {/* `color="error"` rather than the theme's primary: `error.main` is
+                        `COLORS.dangerInk`, which v2 sets to ink — artboard 11b's Delete is an
+                        ink OUTLINE here and a solid ink pill with white text in the confirm
+                        dialog below. The name keeps the intent readable. */}
                     <Button
                         className="account-security-page__delete-button"
                         fullWidth

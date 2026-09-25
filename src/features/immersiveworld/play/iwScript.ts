@@ -1,5 +1,7 @@
-import type { IWActionStep, IWInteractionStep } from '../../../../server/contracts/iw';
-import { resolveActionStep, type ActionWorld } from './actionPlayer';
+import type {
+  IWActionStep, IWDestinationCandidate, IWDestinationTarget, IWInteractionStep,
+} from '../../../../server/contracts/iw';
+import { resolveActionStep, resolveDestination, type ActionWorld } from './actionPlayer';
 
 /**
  * iwScript — playing an authored script, one step at a time.
@@ -47,29 +49,40 @@ export interface IWScriptDeps {
    * prints over a head.
    */
   renderLine(actorId: string, direction?: string, towardActorId?: string): Promise<string | null>;
+  /**
+   * Ask the model where an `ai_walk` goes (§ 5.4, 2026-09-23). Resolves to one of
+   * `candidates`, or `null` — NONE, a dead model, a refusal, a timeout — which skips the walk.
+   *
+   * ⚠️ **IT MUST NEVER RESOLVE TO SOMETHING OFF THE LIST.** The host checks the answer against
+   * `candidates` before returning it; the script trusts it to have done so.
+   */
+  chooseDestination(
+    actorId: string, brief: string, candidates: readonly IWDestinationCandidate[],
+  ): Promise<IWDestinationTarget | null>;
   /** Play an authored NPC-to-NPC conversation to the end (§ 14 Q6). */
   playConversation(conversationId: string): Promise<void>;
   /** Arm an authored event. Fire-and-forget: the step does NOT wait for it (migration 161). */
   armEvent(eventId: string, ms: number): void;
   wait(ms: number): Promise<void>;
   /**
-   * Park until the learner says something THIS ACTOR CAN HEAR (§ 4c), then carry on.
+   * Park until the learner says something ROUTED TO THIS ACTOR (§ 4.2), then carry on.
    *
    * ⚠️ **IT IS A BARRIER, NOT A TERMINATOR** (2026-09-20). It used to end the action outright,
    * which made "hand the floor back" and "this is the last thing I do" the same step and
    * forced every authored beat that follows a learner's sentence into a second action the
    * author had to find another way to trigger. Now the script simply stops here and resumes
-   * on the learner's next audible utterance, so `say → wait → say` is one script again.
+   * on the learner's next line to this NPC, so `say → wait → say` is one script again.
    *
-   * ⚠️ **AUDIBLE, not merely "the learner spoke".** Waking on a whisper aimed at somebody
-   * across the stand is exactly the theatre the earshot rework deleted (§ 4c): an NPC that
-   * provably could not hear the line must not visibly react to it. The consequence an author
-   * has to know is that walking away from a parked NPC leaves it parked — until the scene is
-   * left or another action supersedes the script, which are the only two other ways out.
+   * ⚠️ **ROUTED TO THIS NPC, not merely "the learner spoke"** (2026-09-23). Everybody hears
+   * every line (§ 4c withdrawn), so waking on any utterance would have an NPC treat an aside to
+   * somebody else as the answer to its own question. It wakes when the addressee router (or its
+   * rule fallback) picks this NPC. The consequence an author has to know is that talking only
+   * to other people leaves it parked — until the scene is left or another action supersedes
+   * the script, which are the only two other ways out.
    */
   awaitLearner(actorId: string): Promise<void>;
   /**
-   * Park until the learner's next audible utterance has been ANSWERED, and report whether the
+   * Park until the learner's next utterance to this NPC has been ANSWERED, and report whether the
    * answer contained what this NPC was after (§ 5.4's `get_information`).
    *
    * ⚠️ **IT RESOLVES LATER THAN {@link awaitLearner}, AND THAT IS THE POINT.** `awaitLearner`
@@ -133,7 +146,18 @@ export async function runAuthoredAction(
 
     // Resolved HERE, immediately before performing it, so positions are the current ones —
     // see `actionPlayer.ts`'s "resolved late" note.
-    const instruction = resolveActionStep(step, deps.worldFor(actorId));
+    let instruction = resolveActionStep(step, deps.worldFor(actorId));
+
+    // ⚠️ **AN `ai_walk` IS RESOLVED IN TWO HALVES, AND THE MODEL CALL SITS BETWEEN THEM.** The
+    // first half built the closed list; the model picks from it; the second half turns the pick
+    // into the ordinary `walkTo`/`face` against the world as it is NOW — positions have moved
+    // during the call. What comes out is performed by the same `walkTo` case below, so an AI
+    // walk arrives and faces exactly like the authored walk it stands in for.
+    if (instruction.kind === 'chooseDestination') {
+      const target = await deps.chooseDestination(actorId, instruction.brief, instruction.candidates);
+      if (deps.cancelled()) return;
+      instruction = resolveDestination(target, deps.worldFor(actorId));
+    }
 
     switch (instruction.kind) {
       case 'walkTo':
@@ -230,6 +254,9 @@ export async function runAuthoredAction(
       }
       case 'skip':
         deps.note(actorId, instruction.reason);
+        break;
+      case 'chooseDestination':
+        // Unreachable — resolved above. Listed so the switch stays exhaustive over the union.
         break;
     }
   }

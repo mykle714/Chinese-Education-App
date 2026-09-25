@@ -100,7 +100,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                 alignItems: "center",
                 justifyContent: "center",
                 padding: 24,
-                background: "rgba(0, 0, 0, 0.45)",
+                background: COLORS.modalScrim,
                 // The app shell never scrolls and components default to no touch
                 // panning (CLAUDE.md § Touch & Scroll); the card grid opts back in
                 // on its own container below.
@@ -197,7 +197,7 @@ const ProvisionalCardsNotice: React.FC<ProvisionalCardsNoticeProps> = ({
                         borderRadius: 14,
                         padding: "13px 18px",
                         background: COLORS.successInk,
-                        color: "#FFFFFF",
+                        color: COLORS.white,
                         fontFamily: FONTS.sans,
                         fontSize: SIZE.bodyLg,
                         fontWeight: WEIGHT.bold,

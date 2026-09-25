@@ -1,0 +1,32 @@
+-- 166 — drop det."shortDefinitionPronunciationOverride" (zh + es)
+--
+-- CONTRACT MIGRATION — MUST RUN **AFTER** THE CONTAINER REBUILD. The pre-166 backend selects
+-- this column by name in `DictionaryDAL`'s column list, so old code + dropped column 500s
+-- EVERY dictionary read (search, lookups, segmentation, est, IW bubbles). See
+-- docs/DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md for the split around the rebuild.
+--
+-- (Renumbered 165 → 166 on 2026-09-23 before reaching PPE: 165 went to the expand-only
+-- `searchReadings` column, and CLAUDE.md puts a held-back contract migration LAST in its batch,
+-- because migrate.sh refuses to apply a version below one already recorded.)
+--
+-- WHY. The column (migration 38; jsonb `{ definition?, pronunciation? }`) was an entry-level
+-- manual override that `DictionaryDAL.mapRowToEntity` wrote over `pronunciation`. Since sense
+-- clustering (migration 90) a heteronym's reading lives per SENSE in
+-- `definitionClusters[*].reading`, and every surface renders `resolveDisplayPronunciation`
+-- (the chosen sense, else the highest-frequencyScore cluster). A single word-level override
+-- cannot express "which sense", so it either lost to the cluster reading or, where it won,
+-- forced one reading onto every sense. Its `definition` half only fed the computed
+-- `shortDefinition` wire field, which no client reads.
+--
+-- DATA LOST. On PPE exactly ONE row carried a value at the time of writing:
+--   dictionaryentries_zh 着 (id 94176) = {"definition": "'in-progress' particle", "pronunciation": "zhe"}
+-- Its top cluster already reads `zhe5` ("aspect particle"), so the display is unchanged.
+-- dictionaryentries_es: zero rows set.
+--
+-- `exampleSentenceDefinitionPronunciationOverride` (migration 46) is a DIFFERENT column and is
+-- kept — it feeds the est segment popups (`resolveSenseView` in segmentString.ts).
+--
+-- IDEMPOTENT: IF EXISTS on both drops.
+
+ALTER TABLE dictionaryentries_zh DROP COLUMN IF EXISTS "shortDefinitionPronunciationOverride";
+ALTER TABLE dictionaryentries_es DROP COLUMN IF EXISTS "shortDefinitionPronunciationOverride";

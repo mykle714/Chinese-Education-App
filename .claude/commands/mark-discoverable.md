@@ -56,7 +56,6 @@ UPDATE dictionaryentries_zh SET
   tone = NULL, difficulty = NULL, "longDefinition" = NULL, breakdown = NULL,
   synonyms = NULL, "exampleSentences" = NULL, classifier = NULL,
   "frequencyScore" = NULL,
-  "shortDefinitionPronunciationOverride" = NULL,
   "exampleSentenceDefinitionPronunciationOverride" = NULL
 WHERE id = <id>;
 ```

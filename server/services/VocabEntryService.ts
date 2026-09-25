@@ -547,10 +547,8 @@ export class VocabEntryService {
       throw new ValidationError('Search term is required');
     }
 
-    // Business rule: minimum search term length
-    if (searchTerm.trim().length < 2) {
-      throw new ValidationError('Search term must be at least 2 characters long');
-    }
+    // No 2-character minimum: a single character is a real query ("I", Spanish "a"/"o"/"y", or one
+    // hanzi), and this scan is bounded to the user's own cards, so it is cheap at any length.
 
     const results = await this.vocabEntryDAL.searchEntries(userId, searchTerm.trim(), language, limit);
     const withExampleMeta = await this.dictionaryService.enrichExampleSentencesMetadataBatch(results, language);

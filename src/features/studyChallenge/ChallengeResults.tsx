@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ButtonBase, Typography } from "@mui/material";
 import ChallengeTestCard from "./ChallengeTestCard";
@@ -71,8 +72,10 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
             : iWon ? "You won" : `${opponentName} won`;
 
     // The verdict's ink. A draw and a no contest both declare nobody, so both take the
-    // neutral treatment rather than either player's colour.
-    const verdictInk = iWon ? "#0B6B4F" : theyWon ? "#8E1526" : COLORS.textSecondary;
+    // neutral treatment rather than either player's colour. v2: the semantic inks are
+    // all `--ink`, so a win and a loss now differ by WORDS and the crest/bar fills, not
+    // by the verdict's hue; the names are kept so the intent stays readable.
+    const verdictInk = iWon ? COLORS.successInk : theyWon ? COLORS.dangerInk : COLORS.textSecondary;
 
     /**
      * Whose taunt lands on whose card.
@@ -254,7 +257,7 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
                             fontSize: SIZE.micro,
                             fontWeight: WEIGHT.semibold,
                             backgroundColor: COLORS.onSurface,
-                            color: "#fff",
+                            color: COLORS.white,
                         }}
                     >
                         {/* ONE FIXED LABEL. The button does the same thing on every
@@ -280,7 +283,7 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
                     py: 1.75,
                     borderRadius: "18px",
                     backgroundColor: COLORS.white,
-                    border: `1px solid ${iWon ? "rgba(11,107,79,.22)" : theyWon ? "rgba(142,21,38,.18)" : COLORS.rowBorder}`,
+                    border: `1px solid ${iWon ? alpha(COLORS.successInk, 0.22) : theyWon ? alpha(COLORS.dangerInk, 0.18) : COLORS.rowBorder}`,
                 }}
             >
                 <Box
@@ -294,7 +297,8 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
                         justifyContent: "center",
                         fontSize: SIZE.subtitle,
                         mb: 1.4,
-                        backgroundColor: iWon ? COLORS.grn : theyWon ? COLORS.red : COLORS.iconBg,
+                        // A 34px crest is avatar-sized, so it takes the MID tier (v2).
+                        backgroundColor: iWon ? COLORS.grnM : theyWon ? COLORS.redM : COLORS.iconBg,
                         // A crown that belongs to nobody is drained rather than removed:
                         // the shape says "this is where the winner goes", and its absence
                         // is the point of a draw or a no contest.
@@ -327,10 +331,12 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
 
                 {/* The two-bar comparison. Flex-weighted by the raw totals so the ratio
                     is the picture; a zero-zero result would collapse both to nothing, so
-                    it falls back to an even split. */}
+                    it falls back to an even split. The winner's 4px bar is a MARK-tier
+                    fill (v2: small bars take the fluorescent tier, which holds up at
+                    4px where a surface would vanish). */}
                 <Box className="challenge-results__bars" sx={{ display: "flex", gap: "3px", mt: 1.5 }}>
-                    <Box sx={{ flex: myTotal + theirTotal === 0 ? 1 : Math.max(myTotal, 0), height: 4, borderRadius: "2px", backgroundColor: iWon ? "#0B6B4F" : "rgba(23,22,26,.14)" }} />
-                    <Box sx={{ flex: myTotal + theirTotal === 0 ? 1 : Math.max(theirTotal, 0), height: 4, borderRadius: "2px", backgroundColor: theyWon ? "#8E1526" : "rgba(23,22,26,.14)" }} />
+                    <Box sx={{ flex: myTotal + theirTotal === 0 ? 1 : Math.max(myTotal, 0), height: 4, borderRadius: "2px", backgroundColor: iWon ? COLORS.grnMk : alpha(COLORS.onSurface, 0.14) }} />
+                    <Box sx={{ flex: myTotal + theirTotal === 0 ? 1 : Math.max(theirTotal, 0), height: 4, borderRadius: "2px", backgroundColor: theyWon ? COLORS.redMk : alpha(COLORS.onSurface, 0.14) }} />
                 </Box>
             </Box>
 

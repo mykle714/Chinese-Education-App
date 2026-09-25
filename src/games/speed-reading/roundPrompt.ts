@@ -53,10 +53,13 @@ export function roundPrompt(round: Round): RoundPrompt {
             speechPinyin: pinyin,
         };
     }
+    // One resolution for both halves: the SPOKEN hint used to read the raw column, so a
+    // heteronym (行 xíng vs the column's háng) could be printed one way and voiced another.
+    const pinyin = resolveDisplayPronunciation(round.entry);
     return {
-        pinyin: resolveDisplayPronunciation(round.entry) ?? "",
+        pinyin: pinyin ?? "",
         english: resolveDisplayDefinition(round.entry),
         speechText: round.entry.entryKey,
-        speechPinyin: round.entry.pronunciation ?? undefined,
+        speechPinyin: pinyin ?? undefined,
     };
 }

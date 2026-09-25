@@ -13,6 +13,8 @@
  * Docs: docs/GAMES_FEATURE.md, docs/HYDRA_BUBBLES.md § 3 (the fill-ratio spawn
  * table reads the same LOSE_FILL_RATIO the overflow loss reads).
  */
+import { alpha } from "@mui/material/styles";
+import { COLORS } from "../../theme/colors";
 
 // ---- Bubble sizing (px radius) -------------------------------------------
 // Word bubbles hold the foreign headword (char + pinyin); definition bubbles
@@ -178,15 +180,63 @@ export const POST_DONE_SETTLE_MS = 900;
 // game's BASE colors (what an idle bubble looks like) are its own: Bubble Match
 // keys them on kind, Hydra on the card's tier. See BubbleFill in types.ts.
 
-// Light green: a correct match pop AND the cleanup-mode "here's your partner"
-// drop hint (the `revealed` status). Deliberately soft so it reads as friendly,
-// not alarming — paired with dark text (see Bubble.tsx) for contrast.
-export const CORRECT_BUBBLE_BG = "#A5D6A7";
-export const CORRECT_BUBBLE_BORDER = "#7BB97F";
-// Strong red: a wrong drag-drop error flash (with the shake).
-export const WRONG_BUBBLE_BG = "#F44336";
-// Light red: a cleanup-mode bubble whose partner isn't on the field, so it can
-// never be matched/cleared. Distinct (softer) from the wrong-drop red — it marks
-// "unavailable", not "error".
-export const NOMATCH_BUBBLE_BG = "#EF9A9A";
-export const NOMATCH_BUBBLE_BORDER = "#E07B7B";
+//
+// SHELF SYSTEM v2: all three are framework ramp tiers carrying INK text (v2 never puts
+// white text on a pastel; `inkOnFill` in Bubble.tsx now always resolves to the dark ink
+// for these). Every status bubble is a COLOURED bubble, so it takes the ink ring the
+// design gives coloured bubbles (`#bm .bub{border:2.5px solid var(--ink)}`) — see
+// COLOURED_BUBBLE_RING below.
+
+// Green MID tier (`--grnM`, "Mid: bubbles"): a correct match pop AND the cleanup-mode
+// "here's your partner" drop hint (the `revealed` status). Deliberately the same
+// tier as an idle bubble so it reads as friendly, not alarming.
+export const CORRECT_BUBBLE_BG = COLORS.grnM;
+export const CORRECT_BUBBLE_BORDER = COLORS.onSurface;
+// Red MARK tier (`--redMk`, the fluorescent one): a wrong drag-drop error flash (with
+// the shake). The strongest red the palette owns — one step louder than Bubble Match's
+// red-Mid word bubbles, so the flash still reads on a word bubble; the shake carries
+// the rest. (Was an off-palette `#F44336` with white text.)
+export const WRONG_BUBBLE_BG = COLORS.redMk;
+// Red SURFACE tier (`--red`): a cleanup-mode bubble whose partner isn't on the field,
+// so it can never be matched/cleared. The palest red, distinct (softer) from the
+// wrong-drop Mark red — it marks "unavailable", not "error". Its ring is the neutral
+// `--line2` rather than ink, which is what keeps it from reading as one of Bubble
+// Match's red-Mid word bubbles (a coloured bubble always wears the ink ring).
+export const NOMATCH_BUBBLE_BG = COLORS.red;
+export const NOMATCH_BUBBLE_BORDER = COLORS.border;
+
+/**
+ * THE TWO RING COLOURS every bubble in both games wears (v2, artboards 12 and 16).
+ *
+ * The design rings a COLOURED bubble in ink (`#bm .bub{border:2.5px solid var(--ink)}`,
+ * `#hyd .bub:not(.zh){…border:2.5px solid var(--ink)}`) and a NEUTRAL one in a soft
+ * line (`#bm .bub.zh{border-color:var(--line2)}`, `#hyd .bub.zh{border:2px solid
+ * var(--greyA)}`). Which side is coloured differs per game (see each game's palette),
+ * but the rule — colour gets ink, neutral gets a line — is shared, so it lives here.
+ *
+ * The ring WIDTH stays the shared `Bubble`'s fixed 2px rather than the design's 2.5px:
+ * it is a geometry constant there (every bubble's border box is the same size), and
+ * half a pixel is not worth making the two games' bubbles different sizes.
+ */
+export const COLOURED_BUBBLE_RING = COLORS.onSurface;
+export const NEUTRAL_BUBBLE_RING = COLORS.border;
+
+// ---- Shared stage chrome (both bubble stages) ---------------------------------
+/**
+ * The over-packed alarm vignette: clear at the very centre, then ramping hard to the
+ * red MARK tier (`--redMk`) at the edges. It was an off-palette MUI red (#F44336 →
+ * #C62828); the Mark tier is the palette's loudest red, which is what an alarm wants.
+ * Shared by BubbleStage and HydraStage (it was duplicated verbatim in both).
+ */
+export const DANGER_VIGNETTE_BG = `radial-gradient(125% 125% at 50% 50%, ${alpha(COLORS.redMk, 0)} 18%, ${alpha(COLORS.redMk, 0.5)} 48%, ${alpha(COLORS.redMk, 0.8)} 76%, ${alpha(COLORS.redMk, 0.95)} 100%)`;
+
+/**
+ * The safe-release strip's colours (drag a bubble here to abandon a match), idle and
+ * with a bubble held over it. Shared by BubbleStage and HydraStage. Idle is a faint
+ * `--outline` dash on a whisper of ink; armed swaps to the red TINT with an ink dash
+ * and ink label (v2 carries danger as ink, not as a red text colour).
+ */
+export const CANCEL_ZONE_COLORS = {
+    idle: { border: COLORS.markOutline, bg: alpha(COLORS.onSurface, 0.02), label: COLORS.textFaint },
+    armed: { border: COLORS.dangerInk, bg: COLORS.redTint, label: COLORS.dangerInk },
+} as const;

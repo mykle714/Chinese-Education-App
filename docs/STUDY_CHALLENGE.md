@@ -240,15 +240,18 @@ green is a decision that arrives unasked (`incoming` only), red is the page's on
 destructive control (`waiting`), orange is the state whose job is the deck rather than
 the challenge (`study`, matching the Challenges shelf spines on `/decks`), **purple is
 the one control that STARTS something** (`issue`), blue is the routine taps on a
-challenge that already exists (`test`, `results`), grey is inert.
+challenge that already exists (`test`, `results`), grey is inert. The fills are each
+hue's **MID** tier (Shelf System v2: pills are mid) — `challengeActionColor` in
+`src/features/studyChallenge/challengeLabels.ts`; the sheet's state chip (`TONE_FILL` in
+`ChallengeSheet.tsx`) and View Challenge's header chip use the same tier.
 
 `issue` was blue alongside those routine taps until 2026-09-01. Two reasons it moved:
 it is the page's **main verb** — on a list of friends you have no live challenge with,
 it is the only control most rows carry — and sharing a fill with *See results* made the
 row that offers a new challenge look like the row that reports an old one. Purple
-(`COLORS.pur`) is the ramp hue this lexicon had not already spent, so the split costs no
-new colour. ⚠️ Note it is also Learn Now's fill on `/decks`; the two never appear on the
-same surface, but a third purple would break that, so check here before spending it.
+(`COLORS.purM`) is the ramp hue this lexicon had not already spent, so the split costs no
+new colour. (Learn Now on `/decks` is yellow since 2026-09-23, so purple is no longer
+shared with it.)
 
 **Accept and decline are not competing pills in a list.** One *Incoming Challenge* pill
 opens the sheet that holds both, next to the words they are about.
@@ -1193,9 +1196,12 @@ placed immediately BEFORE the user's own `Decks` section** — generated sets ab
 authored ones, so the user's own decks keep a stable position at the bottom of the page
 and a new challenge never shuffles them.
 
-It renders the same `Spine` (`src/components/shelf/`) as every other set on the page
-(the page's governing principle is that a built-in collection, a mastery bar and a user
-deck are all just "a set of your cards"). Section header: **"Challenges"**. The section is **omitted
+It renders the same `Spine` (`src/components/shelf/`) as every other set on the page —
+painted `COLORS.orgM` — the `study` pill's hue, at the MID tier every spine takes
+(`DecksPanelBody`, `decks-panel-body__challenge-spine`). The design paints a FINISHED
+challenge's spine `--grey`; that is not wired, because `DeckSummary` carries no challenge
+status and preset decks outlive their challenge. (The page's governing principle is that
+a built-in collection, a mastery bar and a user deck are all just "a set of your cards".) Section header: **"Challenges"**. The section is **omitted
 entirely** when the user has no active challenge deck, exactly as the `Mastered` section
 is when no reading/writing goal is set.
 

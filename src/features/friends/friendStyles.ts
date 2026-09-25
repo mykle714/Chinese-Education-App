@@ -35,11 +35,13 @@ export const sendButtonSx = {
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
     color: COLORS.onSurface,
-    backgroundColor: COLORS.greenAccent,
+    // v2: a button is a MID-tier fill (the near-white tint it used to take reads as a
+    // disabled control next to the mid-tier rows around it).
+    backgroundColor: COLORS.grnM,
     borderRadius: 2,
     flexShrink: 0,
     px: 1.5,
-    "&:hover": { backgroundColor: COLORS.greenAccent, filter: "brightness(0.97)" },
+    "&:hover": { backgroundColor: COLORS.grnM, filter: "brightness(0.97)" },
 } as const;
 
 /** Centred loading / empty-state copy. */

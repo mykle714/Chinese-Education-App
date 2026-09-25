@@ -4,6 +4,7 @@ import { Box, Typography, Snackbar, Switch } from '@mui/material';
 import LeafPage from '../components/LeafPage';
 import Icon from '../components/Icon';
 import { SettingsSection, OptionRow, SwitchRow } from '../components/primitives';
+import { AboutYouSections } from './settings/AboutYouSections';
 import { useTheme, type ThemeMode } from '../contexts/ThemeContext';
 import { useAuth } from '../AuthContext';
 import { LANGUAGE_FLAGS, LANGUAGE_NAMES } from '../types';
@@ -117,7 +118,7 @@ const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> =
  */
 const THEME_SWATCHES: Record<ThemeMode, string> = {
     light: COLORS.background,
-    dark: '#26252B',
+    dark: COLORS.onSurface, // artboard 11: the swatch row is SURFACE — blu, grn, paper, ink
     blue: COLORS.blu,
     green: COLORS.grn,
 };
@@ -357,6 +358,12 @@ function SettingsPage() {
                         />
                     ))}
                 </SettingsSection>
+
+                {/* ── About you — gender + date of birth (migration 164) ──────────
+                    Asked at signup; editable here. Read by Immersive World (the
+                    learner's body, and how NPCs address them). Its own component —
+                    see AboutYouSections — to keep this page from growing further. */}
+                <AboutYouSections />
 
                 {/* ── Narration (TTS) ─────────────────────────────────────────────
                     The app's ONE narration setting. Three states on one axis for the

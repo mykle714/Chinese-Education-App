@@ -7,6 +7,7 @@ import { useDictionarySearch } from "../../hooks/useDictionarySearch";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { CommunityDesign, DictionaryEntry, Language } from "../../types";
+import { resolveDefaultPronunciation } from "../../utils/definitionUtils";
 
 // Supplementary to the dictionary page's own search — no pagination UI, just enough results to
 // head a handful of per-entry design rows.
@@ -24,7 +25,7 @@ const EntryDesignsSection: React.FC<{
     <Box sx={{ px: 2, mb: 0.5 }}>
       <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
         {entry.word1}
-        {entry.pronunciation ? ` · ${entry.pronunciation}` : ""}
+        {resolveDefaultPronunciation(entry) ? ` · ${resolveDefaultPronunciation(entry)}` : ""}
       </Typography>
       {entry.definitions?.[0] && (
         <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary }} noWrap>

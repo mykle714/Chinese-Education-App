@@ -1,5 +1,5 @@
 import { PoolClient } from 'pg';
-import { VocabEntry, TypedMarkHistory, MarkType } from '../types/index.js';
+import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
 import type { MasteryBarId, FlpForeignTrack } from '../contracts/wire.js';
 import { flpMarkTypes } from '../contracts/wire.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
@@ -21,7 +21,7 @@ import {
   type WordSearchInput,
   type WordSearchGrid,
 } from './wordSearchGrid.js';
-import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
+import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciation, resolveDefaultPronunciation, ddCollisionKey } from '../utils/definitions.js';
 // Tap-to-drill rung construction, shared with the example-sentence / long-definition
 // enrichment paths so both chains obey one rule. See docs/SEGMENT_DRILL_DOWN.md.
 import { getAllSubstrings, buildDictMap, buildExcludeSet, buildDrillRungs, type SegmentDrillRung } from '../dal/shared/segmentString.js';
@@ -2441,8 +2441,11 @@ export class OnDeckVocabService {
       // class, in case a future filler source ever contains one — none of the
       // Chinese characters we use today need it, so this is purely defensive.
       const charClass = gridChars.map((ch) => ch.replace(/[\^\]\\-]/g, '\\$&')).join('');
-      const bonusWordsResult = await client.query<{ word1: string; pronunciation: string | null; definition: string | null }>(`
-        SELECT word1, pronunciation, definitions->>0 AS definition
+      // `definitionClusters` rides along so the pinyin can be the default sense's reading
+      // (resolveDefaultPronunciation — the row shows the flat definitions->>0, not one
+      // sense's gloss) rather than the raw, unreviewed column.
+      const bonusWordsResult = await client.query<{ word1: string; pronunciation: string | null; definition: string | null; definitionClusters: DefinitionCluster[] | null }>(`
+        SELECT word1, pronunciation, definitions->>0 AS definition, "definitionClusters"
         FROM dictionaryentries_zh
         WHERE language = 'zh'
           AND word1 ~ ('^[' || $1 || ']+$')
@@ -2453,7 +2456,7 @@ export class OnDeckVocabService {
       `, [charClass]);
       const bonusWords = bonusWordsResult.rows
         .filter((r) => !!r.definition)
-        .map((r) => ({ entryKey: r.word1, pinyin: r.pronunciation ?? '', definition: r.definition! }));
+        .map((r) => ({ entryKey: r.word1, pinyin: resolveDefaultPronunciation(r) ?? '', definition: r.definition! }));
 
       return {
         grid: generated.grid,
@@ -2489,7 +2492,10 @@ export class OnDeckVocabService {
    * cache hits whose column was never written (legacy gap), and is cheap
    * enough to run unconditionally in parallel with the synth call.
    */
-  async prewarmAudio<T extends { entryKey: string; language?: string; pronunciation?: string | null; hasAudio?: boolean }>(
+  async prewarmAudio<T extends {
+    entryKey: string; language?: string; pronunciation?: string | null; hasAudio?: boolean;
+    definitionClusters?: DefinitionCluster[] | null; selectedSense?: string | null;
+  }>(
     entries: T[]
   ): Promise<T[]> {
     await Promise.all(entries.map(async entry => {
@@ -2499,7 +2505,11 @@ export class OnDeckVocabService {
         // Pass tone-marked pinyin so the audio matches the displayed pronunciation
         // (and polyphones cache separately). buildPinyinSsml inside TTSService
         // gracefully falls back to plain text if the pinyin doesn't align.
-        const result = await this.ttsService.synthesize(entry.entryKey, ttsLang, entry.pronunciation);
+        // Resolved through the same sense-aware rule the client's useTTS applies before it
+        // requests audio, so the pre-warmed cache key (text + pinyin) is the one the client
+        // actually hits — and a heteronym is voiced as its chosen/default sense, not as the
+        // raw column's reading.
+        const result = await this.ttsService.synthesize(entry.entryKey, ttsLang, resolveDisplayPronunciation(entry));
         entry.hasAudio = true;
         // Stamp the column when it's still NULL — covers new synths and any
         // pre-existing disk-cached rows that never went through the controller.

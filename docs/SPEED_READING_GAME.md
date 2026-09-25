@@ -196,10 +196,11 @@ as two clocks. The clock keeps the header slot alone — it IS the score in this
 the `FEEDBACK_MS` window, so the number must not tick to the next round early.
 Clamped at both ends: never `Round 0` on the loading header, never past the target.
 
-The clock itself turns **pastel** red (`COLORS.red`, not `dangerInk`) once `totalMs`
+The clock sits on a **red MID-tier pill** (`COLORS.redM`, ink text) once `totalMs`
 passes the **bronze** threshold, i.e. once the run can no longer medal; that is the
-count-up equivalent of the old "last ten seconds" red. Pastel because the header now sits
-on the game's saturated blue ground, where a dark semantic red cannot be read.
+count-up equivalent of the old "last ten seconds" red. A fill rather than red text because
+v2 never puts text in a pastel (it was pastel-red text before v2). The pill's padding is
+permanent, so the clock never shifts when it appears (`SpeedReadingPage.tsx` → `clockEl`).
 
 ### The round ticks (`SpeedReadingRoundTicks`)
 
@@ -216,11 +217,11 @@ only thing separating a red from its neighbours. At 8px tall a colour can be see
 peripherally, which is the only way it will be seen at all — the player's eyes are on the
 words.
 
-**The colours are the app's ramp, not the artboard's.** Artboard 15 fills these with
-`#22C55E` / `#EF4444`; they ship as `COLORS.successInk` / `COLORS.dangerInk` / `COLORS.card`
-— the app's one green, one red, and the inert fill every empty track uses. A second
-success/failure pair would make these pips disagree with the tap-zone flash that produced
-them.
+**The colours (v2, artboard 15).** Correct `COLORS.grnM`, wrong `COLORS.redM`, pending
+`COLORS.wood`, each lit pip with the `markOutline` inset ring (`SpeedReadingRoundTicks.tsx`
+→ `TICK_COLOR`). They were `successInk` / `dangerInk`, which v2 made plain ink — right and
+wrong would have drawn identically. The same two tokens fill the tap-zone flash, so a pip
+and the flash that produced it are one colour.
 
 **State:** `results: RoundTick[]` in `SpeedReadingPage`, APPENDED on every pick (never
 indexed by ordinal — `answeredRef` is the source of truth for "which round is this", and a
@@ -285,9 +286,10 @@ middle so the halves read as two targets before either has been tapped.
 
 **The tint is the answer feedback.** The tapped half fills green when it was
 correct and red when it was wrong, for `FEEDBACK_MS` — `ZONE_TINT_CORRECT` /
-`ZONE_TINT_WRONG`, held at the old cards' **0.14 alpha** even though the tinted
-surface is now half the screen: with the float indicator gone the tint is the
-only visual cue, and only one half ever lights. As with the old buttons the
+`ZONE_TINT_WRONG` — since v2 the green / red **MID tier** (`COLORS.grnM` / `redM`,
+artboard 15 "Mid: picked word"; the tapped half is this app's picked word), the same
+tokens the round ticks use. With the float indicator gone the tint is the only visual
+cue, and only one half ever lights. As with the old buttons the
 transition runs **into** feedback only; fading back to neutral would leave the
 previous round's colour draining out while the next word is already up, which
 reads as lag. **Only the TAPPED half is ever painted** — a wrong pick does not
@@ -393,8 +395,8 @@ by design — see the CLAUDE.md rule about never keying a load effect on `token`
 | ~~`ENTRY_GATE_CARDS`~~ | — | **Removed.** The baseline lives in `CARD_BASELINES['speed-reading']` (`server/contracts/wire.ts`) and is topped up, not enforced. |
 | `OPTION_GLYPH_SIZE` | `"xl"` | cpcd size the option word renders at; wraps rather than shrinking |
 | `OPTION_WORD_PADDING_X_PX` | 12 | breathing room around one word, per side |
-| `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | green/red @ 0.10 | fill of a half during feedback |
-| `ZONE_DIVIDER` | white @ 0.08 | hairline between the two halves |
+| `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | `COLORS.grnM` / `COLORS.redM` | fill of a half during feedback |
+| `ZONE_DIVIDER` | `COLORS.rowBorder` (`--line`) | hairline between the two halves |
 | ~~`OPTION_ROW_GAP_PX`~~, ~~`OPTION_PADDING_X_PX`~~, ~~`MIN_OPTION_HEIGHT_PX`~~ | — | **Removed** with the option cards |
 | ~~`OPTION_CHAR_GAP_PX`~~, ~~`MIN_GLYPH_PX`~~, ~~`MAX_GLYPH_PX`~~ | — | **Removed** with the measured-`GlyphSvg` options; cpcd owns the intra-word spacing now |
 
@@ -1033,7 +1035,7 @@ one-character invariant, the ladder, and the sentence-round builder).
 | `WRONG_PENALTY_MS` | 3_000 | ~2 rounds of good play. Raise it if guessing through the 20 still medals; lower it if a single slip feels run-ending. |
 | `TARGET_ROUNDS` | 20 | Long enough that one lucky guess doesn't decide the run, short enough to replay. Changing it invalidates the medal thresholds. |
 | `FEEDBACK_MS` | 180 | Long enough to see the answer, short enough not to feel like a tax. Cut from 600 once the sound carried the outcome. ⚠️ With the float indicator gone the tint is the only thing to *see*, and 180ms is short for a colour change — **lengthen** this if the reveal starts reading as nothing happening. |
-| `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | 0.14 alpha | The sole visual cue now. Raise the alpha if the flash goes unnoticed on a bright screen. |
+| `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | green / red MID tier | The sole visual cue now. If the flash goes unnoticed on a bright screen, the next step is the MARK tier (`grnMk` / `redMk`). |
 | `SENTENCE_ROUNDS` | 2 | How much of the run is the sentence finale. Raising it needs more eligible cards in the opening pool (20 cards, so there is headroom) and makes the run meaningfully harder. |
 | `OPTION_SENTENCE_GLYPH_SIZE` | `"sm"` | Fits ~10 characters per half-screen line. Drop to `"xs"` if long sentences wrap past two lines; raise to `"md"` if they read as too small next to the `xl` word rounds. |
 

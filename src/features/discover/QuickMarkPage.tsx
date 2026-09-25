@@ -283,7 +283,7 @@ const QuickMarkPage: React.FC = () => {
                     }
                     size="small"
                     onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
-                    sx={{ backgroundColor: COLORS.infoInk, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold, letterSpacing: TRACKING.caps, cursor: "pointer" }}
+                    sx={{ backgroundColor: COLORS.infoInk, color: COLORS.white, fontSize: SIZE.micro, fontWeight: WEIGHT.bold, letterSpacing: TRACKING.caps, cursor: "pointer" }}
                 />
                 <Menu className="quick-mark-page__level-menu" anchorEl={levelMenuAnchor} open={Boolean(levelMenuAnchor)} onClose={() => setLevelMenuAnchor(null)}>
                     {DIFFICULTY_LEVELS.map((lvl) => (
@@ -309,12 +309,12 @@ const QuickMarkPage: React.FC = () => {
                 <LegendItem
                     className="quick-mark-page__legend-library"
                     label="Add to Learn Now"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.successInk, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckIcon sx={{ fontSize: 11, color: "white" }} /></Box>}
+                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.successInk, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckIcon sx={{ fontSize: 11, color: COLORS.white }} /></Box>}
                 />
                 <LegendItem
                     className="quick-mark-page__legend-mastered"
                     label="Mastered"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.infoInk, color: "white", fontSize: 10, fontWeight: WEIGHT.bold, display: "flex", alignItems: "center", justifyContent: "center" }}>M</Box>}
+                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.infoInk, color: COLORS.white, fontSize: 10, fontWeight: WEIGHT.bold, display: "flex", alignItems: "center", justifyContent: "center" }}>M</Box>}
                 />
             </Box>
 

@@ -10,7 +10,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
 import { masteryBar, masteryWindowCells, PBH_FULL, BAR_LABELS, MARK_TYPE_LABELS, type MasteryBarId } from "../utils/masteryCompute";
-import { getBandInk } from "../utils/categoryColors";
+import { getBandMark } from "../utils/categoryColors";
 import { COLORS } from "../theme/colors";
 import { SIZE } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
@@ -68,24 +68,20 @@ interface MiniVocabCardProps {
 // mark turns a cell off; it does not drain a fraction of a tank. The thumbnail should not
 // invite an estimate the detail page spent a whole component refusing to invite.
 //
-// COLOR is the lens bar's utcm band (`getBandInk`), one hue for every filled cell —
-// unlike the cdp, which colors each cell by the mark type that owns it. At this size a
-// two-hue fill inside 8 cells of ~8px is mush, and the band is the question a thumbnail
-// is actually asked ("how well do I know this?"). The per-type split survives in the
-// tooltip.
+// COLOR is the lens bar's utcm band in the MARK tier (`getBandMark(…, "small")`), one
+// hue for every filled cell — the same rule as the cdp window: "mastery bars are colored
+// by mastery progress, not the mark type" (2026-09-23). The per-type split survives in
+// the tooltip.
 //
-// ⚠️ `getBandInk`, NOT `getCategoryColor`. The band's normal value is a ~1.15:1 PASTEL
-// legible only behind a 1px `COLORS.markOutline` ring, and a 3px cell cannot carry one —
-// the ring would eat two thirds of it. See the BAND_INK note in `utils/categoryColors.ts`,
-// which also explains why this is not the pre-redesign saturated band palette (those
-// hexes ARE the mark-type colors).
+// "small": Target takes the deeper `--yelMkD` here, as artboard 17's mini bars do —
+// full-strength `--yelMk` dissolves into the cream face at 3.5px. The Mark tier is
+// saturated enough to need no `markOutline` ring (the design draws these
+// `box-shadow:none`), which is what a 3.5px cell needs.
 //
-// LINEAGE. Frame 17 draws this strip as one pip per mark type painted Recognition blue /
-// Production green. Two later decisions moved off it — color onto the band, then the row
-// onto the cdp's 8 cells — so only the strip's PLACEMENT (full width, 8px inset, 3px tall,
-// bottom of the card) is still the frame's.
+// LINEAGE. Frame 17 draws this strip as cells in the MARK tier; only the strip's
+// PLACEMENT (full width, 8px inset, bottom of the card) and its hue rule are the frame's.
 const BAR_STRIP = {
-    height: 3,        // frame 17's hairline
+    height: 3.5,      // v2 frame 17's hairline (`.mcd .mk`, was 3)
     cellGap: 1.5,     // the cdp's 3px gap does not survive the scale down; half of it does
     inset: 8,         // left AND right — the window spans the card
     bottom: 8,
@@ -104,7 +100,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // The same eight-cell geometry the cdp window draws, from the same helper — the two
     // surfaces must not drift on where the partial cell falls.
     const cells = bar ? masteryWindowCells(bar) : [];
-    const bandInk = getBandInk(bar?.category);
+    const bandMark = getBandMark(bar?.category, "small");
     // The per-mark-type split the cells no longer show, kept on hover: "Know 4.3/8 ·
     // Comfortable · Recognition 5, Production 2". Costs nothing visually and means the
     // detail is still reachable without opening the cdp.
@@ -364,26 +360,25 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
                             flex: 1,
                             height: BAR_STRIP.height,
                             borderRadius: BAR_STRIP.height / 2,
-                            // Frame 17's empty-track tint. Deliberately NOT the cdp's
-                            // 6% fill + 12% inset ring: at 3px tall that ring would be
-                            // most of the cell, so the empty state is carried by a single
-                            // slightly stronger flat tint instead.
-                            backgroundColor: 'rgba(23, 22, 26, 0.13)',
+                            // Frame 17's empty-track tint, `.mcd .mk i{background:var(--outline)}`.
+                            // Deliberately NOT the cdp's 6% fill + 12% inset ring: at
+                            // 3.5px tall that ring would be most of the cell.
+                            backgroundColor: COLORS.markOutline,
                             overflow: 'hidden',
                         }}
                     >
                         {/* A partial trailing cell is rendered partial, not rounded —
                             rounding would make two genuinely different cards read the
-                            same. Every filled cell takes the band ink; the mark type
-                            that owns it (`cell.type`) is what the CDP colors by, and is
-                            deliberately unused here. */}
+                            same. Every filled cell takes the band's mark colour;
+                            the mark type that owns it (`cell.type`) is deliberately
+                            unused (the cdp window does the same). */}
                         {cell.fill > 0 && (
                             <Box
                                 className="mini-vocab-card__mastery-cell-fill"
                                 sx={{
                                     width: `${cell.fill * 100}%`,
                                     height: '100%',
-                                    backgroundColor: bandInk,
+                                    backgroundColor: bandMark,
                                     // Color transitions too: crossing a band boundary
                                     // should read as the strip changing state, not just
                                     // one more cell lighting up.

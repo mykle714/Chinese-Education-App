@@ -37,6 +37,7 @@ import ScrollArrow from '../../../components/ScrollArrow';
 import { useHorizontalScrollArrows } from '../../../hooks/useHorizontalScrollArrows';
 import ForeignText from '../../../components/ForeignText';
 import type { DictionaryEntry } from '../../../types';
+import { resolveDefaultPronunciation } from '../../../utils/definitionUtils';
 
 export interface IWLookupResultsProps {
   results: DictionaryEntry[];
@@ -108,7 +109,7 @@ export default function IWLookupResults({
           >
             <ForeignText
               text={entry.word1}
-              pronunciation={entry.pronunciation}
+              pronunciation={resolveDefaultPronunciation(entry)}
               language={language}
               size="sm"
               compact

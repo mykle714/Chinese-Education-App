@@ -1014,6 +1014,13 @@ benefits from seeing it attached to the character they just drew.
 
 #### Cell content: glyph + pinyin
 
+> ⚠️ **Not what shipped, and confirmed 2026-09-24 to stay that way.** The chips in
+> `CandidateRow` render the bare glyph in `FONTS.hanziComponents` — no
+> `ForeignText`, no pinyin — and the product call was to keep them glyph-only.
+> Pinyin reaches the candidate row only through the § 6z-4 hint bubbles. The
+> reasoning below (default `pronunciation`, context-naive) is what those bubbles
+> use; the index now bundles that reading per character (format v2).
+
 **Confirmed 2026-09-07.** Each cell shows the **glyph with its pinyin**, using the
 row's default `pronunciation` — **context-naive, and knowingly wrong sometimes**.
 
@@ -1236,27 +1243,51 @@ time, and removing one **widens** the candidate list rather than narrowing it.
 This is also the only escape from a misrecognized component, so it must never be
 gated on the buffer being non-empty in some other sense.
 
-#### Clearing the canvas — REVISED 2026-09-09: a clear key, ink only
+#### Clearing the canvas — REVISED 2026-09-09: a clear key, ink only; 2026-09-24: undo + redo keys
 
 **Code:** `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` → `handleClear`,
-`.beginner-keyboard__clear`; `src/components/handwriting/WritingCanvas.tsx` → the
-imperative handle's `clear`.
+`handleUndo`, `handleRedo`, `handleInkChange`, `inkKeySx`,
+`.beginner-keyboard__controls`, `.beginner-keyboard__clear` / `__undo` / `__redo`;
+`src/components/handwriting/WritingCanvas.tsx` → the imperative handle's `clear`,
+`undo`, `redo`, `canRedo` and its `redoRef` stack; `src/components/handwriting/types.ts`
+→ `WritingCanvasHandle`.
 
-The keyboard's footer row (described in § 6w, under the debug dump that shares it)
-carries a **`Clear` key** beside the `ABC` escape. It clears **the canvas ink only — never the component buffer.** The
-buffer keeps its own per-chip tap-to-remove, so the two controls are orthogonal
-and neither undoes the other's work. Undo/redo (per-stroke) remain deferred:
-clear is all-or-nothing.
+The left column, under the component buffer, ends in a **controls section** set off
+from the parts above by a 1px divider rule (`.beginner-keyboard__controls`,
+`borderTop: COLORS.border`). Its key row holds three ink keys, left to right:
 
-It is **disabled and greyed (opacity 0.4) while the canvas is empty** rather than
+| key | does | live when |
+|---|---|---|
+| **`Clear`** | empties the canvas | there is ink |
+| **`Undo`** | drops the most recent stroke (LIFO) onto the redo stack | there is ink |
+| **`Redo`** | re-appends the most recently undone stroke | the redo stack is non-empty |
+
+All three act on **the canvas ink only — never the component buffer.** The buffer
+keeps its own per-chip tap-to-remove, so the controls are orthogonal and neither
+undoes the other's work. The redo stack is **dropped by a new stroke and by
+`clear()`** (which also covers submitting a candidate), so redo only ever replays a
+straight run of undos; a clear itself is not undoable. The keys split the column
+width equally (`flex: 1`, tight padding) because the column can be as narrow as
+~40% of a phone's width.
+
+For template authors the § 6w debug chips (dump, 🎯 target) sit on their **own row
+inside the controls section, directly above** the ink keys
+(`.beginner-keyboard__debug-row`), so the ink keys stay in the same place for every
+account.
+
+`Redo`'s enabled state is mirrored into React state by `handleInkChange`, which
+wraps the composition's `onInkChange` and re-reads `canRedo()` — every change to
+the canvas's redo stack is followed by an ink notification, so that is always current.
+
+The keys are **disabled and greyed (opacity 0.4) when they have nothing to act on** rather than
 hidden — a key that appears and disappears as the learner draws is a moving target
 in the one row they reach for without looking. Like every other footer key it
 swallows `mousedown` so the tap cannot move focus off the field.
 
-Clearing goes through the canvas's imperative `clear()`, not through the
-composition hook: the strokes live in the canvas, and `clear()` re-notifies with an
-empty ink, which walks the candidate row back out of glyph mode into RESULT mode on
-its own. There is deliberately no second write to the composition state.
+Both go through the canvas's imperative handle (`clear()` / `undo()`), not through
+the composition hook: the strokes live in the canvas, and each call re-notifies with
+the new ink (`undo` re-scores the remaining strokes; `clear` sends an empty ink, which walks the candidate row back out of glyph mode into RESULT mode on
+its own). There is deliberately no second write to the composition state.
 
 **Superseded (2026-09-07): "submission is the only exit."** The first build had no
 clear button, no undo and no redo, on the reasoning that where such controls live
@@ -1727,15 +1758,15 @@ The keyboard UI is still unbuilt.
 | file | role |
 |---|---|
 | `server/scripts/backfill/chinese/generate-handwriting-lookup.js` | offline generator → `glyph-lookup.bin` + `glyph-words.bin` |
-| `src/components/handwriting/glyphLookup.ts` | `parseGlyphLookup`, `parseGlyphWords`, `lookupCharacters`, `lookupWords`, `lookupBuffer`, `loadGlyphLookup`, `loadGlyphWords` |
-| `src/__tests__/glyphLookup.test.ts` | 21 tests, all passing |
+| `src/components/handwriting/glyphLookup.ts` | `parseGlyphLookup`, `parseGlyphWords`, `lookupCharacters`, `lookupWords`, `lookupBuffer`, `findHintCharacter` (§ 6z-4), `loadGlyphLookup`, `loadGlyphWords` |
+| `src/__tests__/glyphLookup.test.ts` | lookup + § 6z-4 hint-search tests |
 
 ### Bundled to the client, not served
 
 | | |
 |---|---|
-| `glyph-lookup.bin` | **124.6 KB** — 895 components, 9,855 characters, 17,651 component slots |
-| `glyph-words.bin` | **699.8 KB** — 99,199 words of length 2–4 |
+| `glyph-lookup.bin` | **173.3 KB** (format **v2**, 2026-09-24) — 895 components, 9,855 characters, 17,651 component slots, plus per character a flags bit for COMMON and its default reading (§ 6z-4). v1 was 124.6 KB; the readings are the whole difference |
+| `glyph-words.bin` | **699.8 KB** — 99,200 words of length 2–4 (still format v1; the two files version independently) |
 
 **Two files, because they are needed at different moments.** The character index
 must be resident before the keyboard can show anything; the word pool is ~6×
@@ -1874,7 +1905,8 @@ phone.
 ### Clearing the canvas
 
 The footer row's `Clear` key (§ 6r, added 2026-09-09) empties the **ink** and
-nothing else; per-stroke undo/redo are still deferred. Submitting a candidate
+nothing else; its `Undo` / `Redo` keys (added 2026-09-24) step through the
+strokes one at a time. Submitting a candidate
 remains the other way out of a full canvas, and the only one that keeps the work —
 which is why `matchGlyphs` must never return an empty list for non-empty ink, and
 why that is a test in both suites.
@@ -1906,7 +1938,9 @@ only clears when focus lands outside both the field and our own surface.
 
 ⚠️ **The host is keyed per field.** Without the key React reuses the component
 across two different fields, and its `inputMode` cleanup runs against the new
-field rather than the old — leaving the previous one stuck at `"none"`.
+field rather than the old — leaving the previous one stuck at `"none"`. A
+consequence: nothing that must outlive a field can live in the host — the
+`写`/`ABC` choice is held by the provider for that reason (§ 6z-3).
 
 ### The viewport adapter
 
@@ -1918,6 +1952,19 @@ or a native shell.
 | source | `visualViewport` shrink, an **inference** | `keyboardWillShow.keyboardHeight`, a **fact** |
 | threshold | 120 px, so a collapsing URL bar is not read as a keyboard | none needed |
 | desktop | reports nothing; falls back to 320 px | n/a |
+
+⚠️ **Our keyboard's height is a SETTLED OS reading, never a live one.**
+`BeginnerKeyboardHost` caches the OS keyboard's height at module level (so fields
+that never saw the OS keyboard still match it), but only after a reading has held
+for `OS_HEIGHT_SETTLE_MS` (500 ms) without being superseded; until then it uses
+`DEFAULT_HEIGHT` (320 px). The cache used to take *every* visible reading, and
+`visualViewport` reports partial heights while the OS keyboard slides. The worst
+one came from a dismissal (`ABC` → `写`, or the blur/refocus suppression dropping a
+keyboard that had started rising), because the last reading above the 120 px
+threshold is a partial one. That value then stuck for the rest of the page's life,
+and every later field got a squeezed, half-height keyboard.
+(`BeginnerKeyboardHost.tsx` → `observedOsHeight`, `OS_HEIGHT_SETTLE_MS`;
+`useKeyboardViewport.ts` → `DEFAULT_HEIGHT`.)
 
 ⚠️ **Capacitor is not installed yet.** The native path is written against the
 documented `@capacitor/keyboard` events but is reached through a **runtime probe**
@@ -1946,8 +1993,9 @@ client-side `isTemplateAuthor` check it is **UX only**: nothing here is
 privileged, there is no server call behind it, and the same payload is derivable
 from the console. The gate exists so the button is not in everyone's way.
 
-**Where it sits.** In the keyboard's **footer row**, beside the `ABC` escape, in
-the left column under the component buffer.
+**Where it sits.** On its own row (`.beginner-keyboard__debug-row`) directly
+above the `Clear`/`Undo`/`Redo` key row, inside the divided controls section at the
+bottom of the left column.
 
 It first floated over the keyboard's top edge, on the reasoning that all three
 regions (§ 6r) are load-bearing and a button placed in one would either steal a
@@ -2197,7 +2245,7 @@ focus had landed on another field or inside our own surface. That is correct for
 field sitting alone on a page and wrong for a field sitting in a **composer row**.
 
 On desktop a `<button>` takes focus when it is clicked. So in the immersive-world
-composer, pressing **send** — or the volume chip, or the helper toggle — focused a
+composer, pressing **send** — or the then-present volume chip, or the helper toggle — focused a
 button, which was neither a field nor inside the keyboard, and the keyboard was
 torn down at the exact moment the learner was using it. Nothing was lost (the text
 survives), but the keyboard vanished mid-sentence and had to be re-summoned by
@@ -2252,12 +2300,12 @@ that row later inherits it.
 other: `attributeInForce` in `eligibility.ts` resolves the single closest element
 carrying the attribute and reads its value, rather than each value looking for its
 own nearest region. Both `isKeepOpenTarget` and `traitsOf`'s `optedOut` go through
-it. The case that forced it is inside that one `keep` region — the iw composer's
-**quick-dictionary field is queried in English/pinyin** (`iw-composer__lookup`,
-marked `off`), and the learner is using it precisely because they cannot write the
-word yet. With per-value `closest()` the outer `keep` was found regardless of the
-inner `off`, so the handwriting bar stayed up over an English query instead of
-dismissing and handing back to the OS keyboard.
+it. The case that forced it was inside that one `keep` region — the iw composer's
+quick-dictionary field (`iw-composer__lookup`) was marked `off`, and with
+per-value `closest()` the outer `keep` was found regardless of the inner `off`.
+**That marking was removed 2026-09-24** (see *Known gap* below), so no `off`-inside-
+`keep` exists today; the nearest-wins rule stays because it is the correct
+semantics for any future nesting.
 
 ### The transition, and why `field` outlives `open`
 
@@ -2311,14 +2359,18 @@ module because the host, the provider and every reserving page must agree on the
 hooks (`useBeginnerKeyboardTransition`, `useKeyboardTransition`) are that function
 plus a source, so the timings cannot drift apart between them.
 
-### Known gap
+### The iw quick-dictionary field is eligible — on purpose
 
-The composer's quick-dictionary lookup input takes **English or pinyin**, and it is
-an ordinary eligible field, so focusing it retargets the handwriting keyboard onto
-a field the handwriting keyboard cannot usefully fill. It predates this change (the
-old model followed focus there too). Marking it `data-beginner-keyboard="off"`
-would fix it and, under the model above, would also close the keyboard on the way
-in — which is the right behaviour. Not done, because it was not asked for.
+The composer's quick-dictionary lookup input (`iw-composer__lookup`) is usually
+queried in **English or pinyin**, but it is an ordinary eligible field: focusing it
+brings up whichever keyboard the session is on (§ 6z-3), and the learner reaches
+the latin keyboard **manually** with the switch bar's `ABC`.
+
+It was marked `data-beginner-keyboard="off"` from 2026-09-20 to 2026-09-24, which
+forced the OS keyboard up on every open of the tray and — because an `off` field
+gets no switch bar — left no way back to handwriting from it. Reversed 2026-09-24
+so the latin keyboard is the learner's choice rather than the field's. Code:
+`src/features/immersiveworld/play/IWComposer.tsx` → the `lookupRef` focus effect.
 
 ## 6z-2. BUILT 2026-09-21 — the switch bar
 
@@ -2364,10 +2416,11 @@ up in **both** states — over our keyboard, and perched on the OS keyboard afte
 `ABC`.
 
 ⚠️ **A field that declines the keyboard gets no bar.** On
-`data-beginner-keyboard="off"` (the iw composer's dictionary tray) the OS keyboard
-comes up bare, because there is no second keyboard to switch to there — that field
-is queried in English, and offering a Chinese IME over it would be advertising a
-door into a wall. Same for a Spanish learner and for the two authoring routes.
+`data-beginner-keyboard="off"` the OS keyboard comes up bare, because there is no
+second keyboard to switch to there — offering a Chinese IME over a field that has
+declined it would be advertising a door into a wall. Same for a Spanish learner and
+for the two authoring routes. (The iw quick-dictionary tray was the one `off` field
+until 2026-09-24; it is now eligible and gets the bar like any other field.)
 
 ### The motion — trailing stagger, NOT the keyboard's timing
 
@@ -2425,6 +2478,146 @@ A reserving page (§ 7a) now clears the bar as well: in handwriting mode the
 measured surface **is** bar + keyboard, and in `ABC` mode the host reports the
 bar's height plus the perch. `IWPlayPage` needed no change — it reserves off
 `useKeyboardInset()`, which is a `Math.max` over both answers.
+
+## 6z-3. BUILT 2026-09-24 — the switch choice is a session preference
+
+**`写` vs `ABC` persists across fields for the rest of the session.** The next
+eligible field opens on whichever keyboard the learner left the previous one on;
+closing the keyboard (chevron, tap-away, navigation) does not reset it.
+
+Code: `BeginnerKeyboardProvider` → `source` / `setSource`, `readStoredSource`,
+`writeStoredSource`, `SOURCE_STORAGE_KEY`; `BeginnerKeyboardHost` (now takes
+`source` + `onSourceChange` as props).
+
+⚠️ **It lives in the provider, not the host.** The host is keyed per field (§ 6v, "The host is keyed per field") so its `inputMode` cleanup always targets the right
+element — which means any state *in* the host dies on every field change. That is
+exactly why `ABC` used to be forgotten the moment the learner tapped into the next
+input. The host still owns the *mechanics* of each mode (suppression, blur/refocus,
+the OS perch); only the choice moved up.
+
+**"Session" = the browser tab**, via `sessionStorage` (key
+`beginnerKeyboard.source`), so a reload keeps the choice but a new tab/app launch
+starts back on handwriting — the default the feature exists for. Storage access is
+wrapped in try/catch; blocked storage degrades to in-memory only.
+
+A field mounted directly in `os` mode needs no dance: the suppression effect only
+runs for `ours`, so the field is focused with its normal `inputMode` and the OS
+keyboard comes up on its own, with the bar perched on it.
+
+## 6z-4. BUILT 2026-09-24 — hint bubbles over glyph chips
+
+**While the learner is drawing and has already locked in at least one component,
+each glyph chip that would lead to a common character carries a bubble above it
+showing that character, with its pinyin.** Tapping the bubble commits the
+character straight to the field.
+
+```
+  text field ▒▒╭──╮▒▒▒╭──╮▒▒▒     ← bubbles float over the switch bar
+  写 | ABC    │是│   │提│
+              │shì│  │tí│
+              ╰┬─╯   ╰┬─╯
+┌──────────────▼──────▼───────┐
+│ [疋] [止] [足] [走] ...      │   glyph chips (ink on canvas)
+├─────────────────────────────┤
+│ parts: 日      │  canvas    │   buffer = 日
+```
+
+### The rules (all confirmed 2026-09-24)
+
+| question | decision |
+|---|---|
+| when | ink on the canvas (GLYPH mode) **and** buffer non-empty. With an empty buffer, one drawn glyph says too little for a suggestion to be anything but noise |
+| how many | **one per chip** — every glyph chip that leads anywhere gets its own bubble |
+| which character | the best **COMMON** character whose component bag contains *buffer + the chip's glyph*, ranked by § 6k (fewest missing components → `frequencyScore` → discoverable → usage). "On track", not "complete": the hint may still need parts (`distance > 0`) |
+| COMMON | the character appears in any zh headword — itself as a one-character word included — with `frequencyScore` ≥ 4. **763** characters on dev (2026-09-24) |
+| tap | **commit** the character, exactly as tapping it in the result row: same `selectCandidate` path, so buffer and ink clear (§ 6r) |
+| where | floats **above** the candidate row, over the switch bar — no lane of its own, so it costs no canvas height. The accepted price: a bubble can cover 写/ABC, but only mid-character, which is not when a learner reaches for them |
+| reading | the row's default `pronunciation`, context-naive — the same accepted trade as § 6p "Cell content". Rendered through `ForeignText` (project rule) |
+
+⚠️ **The glyph is expanded before the containment test, exactly as a tap would
+expand it (§ 6x).** 亻 + 尔 must reach 你, whose bag is `[亻, ⺈, 小]` — searching on
+the raw `尔` would never match. Going through `expandGlyph` is what guarantees a
+bubble never promises a character its own chip's tap would not lead to.
+
+There is **no § 6n atomic rescue** in the hint search: the would-be buffer always
+holds ≥ 2 components, so an atomic character (empty bag) can never be the answer.
+
+### Motion (added 2026-09-24)
+
+The bubbles are meant to feel a little ethereal — rising out of the chips rather
+than snapping on like tooltips.
+
+| moment | behaviour |
+|---|---|
+| appear | after a **750 ms** pause, then **+70 ms per bubble** left to right; each grows up out of its tail (scale 0.2 → 1.08 → 1, 340 ms). The pause is long on purpose (raised from 260 ms): mid-character every stroke churns the hints, and a bubble replaced before its pause ends is dropped unseen — so bubbles only surface once the learner stops writing |
+| disappear | **pop**: a quick swell to ×1.3 while fading, leaving a thin ring that expands and dissolves (240 ms) |
+| a stroke re-ranks the chips | bubbles **never slide**. A bubble survives only if its chip kept the same **slot**, glyph and hint (keyed `position\|glyph\|hint`); a chip that moved pops its bubble and grows a new one over its new slot, with the newcomers entering as one staggered batch |
+| sliding the strip | every bubble **pops as soon as the strip moves**; once it has been still for **180 ms** the chips are re-measured and the bubbles regrow, staggered, over wherever the chips came to rest |
+| a bubble removed before it appeared | dropped silently — popping a bubble the learner never saw arrive would flash it |
+| `prefers-reduced-motion` | grow and pop collapse to plain fades, no ring; the delay, stagger and scroll behaviour stay, since they are timing rather than movement |
+
+All timings live in `hintMotion.ts` → `HINT_MOTION`. `popMs` is also how long a
+popped bubble stays mounted, so the animation and the unmount cannot drift.
+
+⚠️ **Two implementation constraints worth knowing before tuning this:**
+
+- **An entry's delay is frozen when it enters.** Changing a running element's
+  `animation` restarts it, so a stagger rank re-derived on every render would
+  flick bubbles back to scale 0 mid-grow.
+- **The entrance delay is pure CSS** (`animation-fill-mode: both` holds the
+  0.2-scale, transparent first frame through the delay, so an unarrived bubble
+  can't really be tapped). Only the exit needs a timer — to keep a popping
+  bubble mounted — and each exit carries an `exitId`, so a bubble that pops and
+  is revived before its timer fires is not removed by the stale timer.
+
+### Cost
+
+The search scans only the ~760 COMMON records (cached per index in a `WeakMap`),
+not all 9,855: **≈ 0.04 ms per chip**, so a 12-chip row re-derives in under
+half a millisecond per stroke. It is a separate memo from the ink match, so a
+buffer change re-derives only the hints.
+
+### Data — index format v2
+
+The COMMON flag (bit 1 of the flags byte) and each character's reading are
+precomputed into `glyph-lookup.bin` by the generator, so the keyboard stays
+offline (§ 6u). The flag is computed at generation time rather than derived from
+`glyph-words.bin` at runtime, because the word pool loads separately and later —
+hints would otherwise not appear until it landed. Regenerate after a
+`frequencyScore` backfill moves, or the COMMON set goes stale.
+
+⚠️ **The generator needs `dictionaryentries_zh.components` populated.** A PPE →
+dev data pull can leave it empty on a dev box (found empty 2026-09-24); re-run
+`backfill-character-components.js` first. On that date the re-run reproduced
+the committed bags **byte for byte** — only `frequencyScore` / discoverable
+drift differed.
+
+### Code
+
+- `server/scripts/backfill/chinese/generate-handwriting-lookup.js` →
+  `COMMON_FREQ_THRESHOLD`, `FLAG_COMMON`, `INDEX_FORMAT_VERSION`, `loadCharacters`
+  (the `common` CTE), `serializeIndex`
+- `src/components/handwriting/glyphLookup.ts` → `FLAG_COMMON`, `readings`,
+  `findHintCharacter`, `HintCharacter`, `commonRecords`
+- `src/features/beginnerKeyboard/compositionRules.ts` → `Candidate.hint`,
+  `withHints`, `hintCommit`
+- `src/features/beginnerKeyboard/useComposition.ts` → `hintedGlyphCandidates`
+- `src/features/beginnerKeyboard/CandidateRow.tsx` → `measureAnchors` (the chip
+  centres; the bubbles cannot live inside the scroller, whose `overflow-x: auto`
+  also clips vertically), `beginner-keyboard__hint-layer`
+- `src/features/beginnerKeyboard/HintBubble.tsx` — the bubble itself, and its
+  grow / pop / ring keyframes
+- `src/features/beginnerKeyboard/useHintBubblePresence.ts` → `reconcilePresence`
+  (pure enter/pop/revive rules), `useHintBubblePresence` (the removal timers)
+- `src/features/beginnerKeyboard/hintMotion.ts` → `HINT_MOTION`
+- `src/features/beginnerKeyboard/CandidateRow.tsx` → `handleScroll` (pop while
+  sliding, regrow on settle), `desiredBubbles` (keys bubbles by slot + glyph +
+  hint, so a moved chip respawns rather than slides)
+- `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` → `handleSelectHint`
+- Tests: `src/__tests__/glyphLookup.test.ts` (§ 6z-4 hint search),
+  `src/__tests__/beginnerKeyboardComposition.test.ts` (§ 6z-4 hint bubbles —
+  日 → draw 疋 → tap → 是), `src/__tests__/hintBubblePresence.test.ts`
+  (stagger, keep-without-restart, move → respawn, pop, silent drop, revival, scroll)
 
 ## 7. Outstanding before we can build
 
@@ -2506,9 +2699,23 @@ protecting.
 
 #### Giving up space — `useBeginnerKeyboardInset()`
 
-The keyboard is portaled into the app's overlay host, so it is **not** in any
+The keyboard is portaled into the **frame-level** overlay host
+(`src/components/overlayHost.ts` → `frameOverlayHost`), so it is **not** in any
 page's layout flow and cannot shrink one by existing. Most pages scroll, and a
 scrolling page handles an occluded bottom correctly on its own.
+
+⚠️ **Frame level, never the nearest page surface — or the footer covers it.**
+`nearestOverlayHost` (what sheets use) stops at a transformed page Surface
+(`NodePage`'s page-slide), which is its own stacking context: the keyboard's
+`zIndex: 1300` was sealed inside it and the frame-level footer bar
+(`FooterPresenter`, `zIndex: 100`) painted over the keyboard on most pages
+(fixed 2026-09-24). At the frame the two compete directly and the keyboard wins.
+**The footer does not move** — the keyboard simply covers it (decided
+2026-09-24). Do not give the keyboard a `useHideFooter` hold the way sheets
+have; the bar stays put underneath and is revealed unchanged when the
+keyboard slides away. (`useHideFooter` would also be unreachable here:
+`BeginnerKeyboardProvider` sits above `FooterVisibilityProvider`, inside
+`MobileDemoFrame`.) Code: `BeginnerKeyboardHost.tsx` → the `host` memo.
 
 Pages with something **pinned** to the bottom that scrolling cannot reveal must
 opt in. `IWPlayPage` is the motivating case: the stage is a fixed viewport with
@@ -2530,9 +2737,8 @@ host reports the bar's height **plus the perch it is sitting on** (`osPerch`,
 gated on `osKeyboardVisible`), which is the distance a reserving page actually has
 to clear.
 
-It is still 0 on a field marked `data-beginner-keyboard="off"` (the iw composer's
-dictionary tray is exactly that, deliberately — it wants a latin keyboard), where
-no host mounts at all and the OS keyboard covers the same pinned controls
+It is still 0 on a field marked `data-beginner-keyboard="off"`, and for a Spanish
+learner, where no host mounts at all and the OS keyboard covers the same pinned controls
 unannounced. So a page reserving off the beginner inset alone still reserves
 **nothing** there.
 
@@ -2728,8 +2934,6 @@ discoverable anyway. Note it rewrites a committed binary.
 
 - **Stroke-level input** (§ 3e / § 4.7) — derivable, but needs a new column and
   has a ~16% fallback rate. Whole-component input is the v1 interaction.
-- **Undo / redo buttons** (§ 6r) — per-stroke history. The all-or-nothing `Clear`
-  key shipped 2026-09-09; submission is still the only exit that keeps the ink.
 - **Any use of the Google recognizer** (§ 6a). It stays where it is, serving
   Practice Writing.
 

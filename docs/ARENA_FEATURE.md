@@ -338,9 +338,14 @@ using the board's own zone colours, so promotion-green and demotion-red are alre
 familiar when the live board arrives on Tuesday.
 
 **Every state scrolls.** `/arena` passes no `scrollable` prop, so it takes `NodePage`'s
-default. The docked Waiting/Out layout is produced by flex growth (the content column is
-`flex: 1` inside the scroller, so the seat field fills the gap and the action sits against
-the footer), *not* by `overflow: hidden`. The seat-less pair briefly shipped as
+default. The docked Waiting/Out layout is produced by flex growth (the content column, the
+page column and the seat-field dock are all `flex: 1 0 auto` — grow, never shrink — so the
+seat field fills the gap and the action sits against the footer), *not* by `overflow: hidden`.
+The column must never carry `minHeight: 0`: that lets it SHRINK to the viewport instead of
+scrolling, which is how the first cut overlapped the seat grid onto Join and squeezed the
+live board (an `overflow: hidden` flex item, so its min-height is 0) until its rows clipped
+and it looked unscrollable. `ArenaPage` overrides `MobileTabScreen`'s content column via
+`contentSx` for the same reason. The seat-less pair briefly shipped as
 `scrollable={false}`: that docks correctly at the artboards' phone size and silently CLIPS
 the Join button on a shorter viewport or at a large accessibility text size, leaving the
 state's only action unreachable. Flex growth gives the same docked result while it fits

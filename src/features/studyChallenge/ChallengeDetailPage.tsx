@@ -182,14 +182,15 @@ function ChallengeDetailPage() {
     const isResolved = challenge?.status === "complete" || challenge?.status === "no_contest";
     const opponentName = challenge?.opponent.name || challenge?.opponent.email || "them";
     // The state chip in the header. Its vocabulary is the row pill's, so the page a
-    // learner lands on names its state the same way the row they tapped did.
+    // learner lands on names its state the same way the row they tapped did — and, like
+    // the row pill, takes the hue's MID tier (v2: chips are mid).
     const chip = !challenge ? null
-        : isResolved ? { text: challenge.status === "no_contest" ? "no contest" : "results", fill: COLORS.blu }
+        : isResolved ? { text: challenge.status === "no_contest" ? "no contest" : "results", fill: COLORS.bluM }
         : challenge.gameSequence
             ? (Object.keys(challenge.rounds).length >= challenge.roundCount
-                ? { text: "waiting", fill: COLORS.org }
-                : { text: "test", fill: COLORS.blu })
-            : { text: "study", fill: COLORS.org };
+                ? { text: "waiting", fill: COLORS.orgM }
+                : { text: "test", fill: COLORS.bluM })
+            : { text: "study", fill: COLORS.orgM };
 
     /**
      * The word set — the one block that is the same on both pages.
@@ -308,7 +309,8 @@ function ChallengeDetailPage() {
                         px: 1.9,
                         py: 1.4,
                         borderRadius: "13px",
-                        backgroundColor: COLORS.org,
+                        // The `study` pill's hue at its MID tier (v2), as on the row.
+                        backgroundColor: COLORS.orgM,
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 1,
@@ -318,7 +320,7 @@ function ChallengeDetailPage() {
                         color: COLORS.onSurface,
                     }}
                 >
-                    <Icon name="help" size={17} color={COLORS.orgA} />
+                    <Icon name="help" size={17} color={COLORS.onSurface} />
                     How to study this deck
                 </ButtonBase>
             )}
@@ -467,11 +469,12 @@ function ChallengeDetailPage() {
                                         width: page === dot ? 18 : 7,
                                         height: 7,
                                         borderRadius: "99px",
-                                        // The active dot takes the ink of the page it marks,
+                                        // The active dot takes the colour of the page it marks
+                                        // (yours ink, theirs red — at 7px, red's MARK tier),
                                         // so the dots repeat the ownership colour rather than
                                         // inventing a third one.
                                         backgroundColor: page === dot
-                                            ? (dot === 0 ? COLORS.onSurface : "#8E1526")
+                                            ? (dot === 0 ? COLORS.onSurface : COLORS.redMk)
                                             : COLORS.border,
                                         transition: "width 160ms ease, background-color 160ms ease",
                                     }}

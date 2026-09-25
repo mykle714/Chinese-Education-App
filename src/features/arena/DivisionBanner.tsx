@@ -108,7 +108,7 @@ const DivisionBanner: React.FC<DivisionBannerProps> = ({ division, header, class
                 // ticks clear of the cut — without it the clip eats the row.
                 clipPath: "polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 15px), 0 100%)",
                 // ⚠️ PLACEHOLDER — the same neutral for all twelve rungs. See the header.
-                backgroundColor: RAMP.grey.fill,
+                backgroundColor: RAMP.grey.surface,
                 color: COLORS.onSurface,
             }}
         >

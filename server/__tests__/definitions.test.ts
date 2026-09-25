@@ -5,7 +5,6 @@ import {
   generateShortDefinition,
   resolveSelectedCluster,
   resolveSenseGloss,
-  resolveShortDefinition,
   stripParentheses,
 } from '../utils/definitions.js';
 
@@ -159,18 +158,6 @@ describe('generateShortDefinition', () => {
 
   it('strips a trailing parenthetical before measuring length', () => {
     expect(generateShortDefinition(['dog (the animal)'])).toBe('dog');
-  });
-});
-
-describe('resolveShortDefinition', () => {
-  it('prefers an explicit override over the computed value', () => {
-    expect(resolveShortDefinition(['to go; to depart'], { definition: 'MANUAL' })).toBe('MANUAL');
-  });
-
-  it('computes when the override is absent, null, or has no definition', () => {
-    expect(resolveShortDefinition(['to go; to depart'])).toBe('to go');
-    expect(resolveShortDefinition(['to go; to depart'], null)).toBe('to go');
-    expect(resolveShortDefinition(['to go; to depart'], { pronunciation: 'qù' })).toBe('to go');
   });
 });
 

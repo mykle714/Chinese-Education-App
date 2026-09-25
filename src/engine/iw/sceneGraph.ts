@@ -115,11 +115,11 @@ export function parseCellKey(key: string): SceneCell | null {
  * even though it is two steps away. Manhattan would make the corners of a room feel further
  * than they look.
  *
- * ⚠️ **THIS USED TO LIVE IN `hearing.ts`, WHICH NO LONGER EXISTS** (2026-09-07). It was the
- * metric the earshot radius was measured in; with that gate gone, its one surviving caller is
- * the `nearby` block of an NPC's prompt (`useIWSceneRuntime.contextFor`), which reports how
- * far away each other body is. That is a property of the BOARD, so it belongs beside the
- * board's other geometry rather than in a module named for a rule that was withdrawn.
+ * ⚠️ **THIS USED TO LIVE IN THE ORIGINAL `hearing.ts`**, the earshot module deleted on
+ * 2026-09-07. Distance is a property of the BOARD, so it moved here beside the board's other
+ * geometry, and every caller imports it from here: the `nearby` block of an NPC's prompt
+ * (`useIWSceneRuntime.contextFor`), § 4c's rebuilt volume gate (`play/hearing.ts`), and the
+ * distance hints on an `ai_walk`'s candidates (`actionPlayer.ts` → `destinationCandidates`).
  */
 export const chebyshev = (a: SceneCell, b: SceneCell): number =>
   Math.max(Math.abs(a.col - b.col), Math.abs(a.row - b.row));

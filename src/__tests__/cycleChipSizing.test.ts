@@ -19,7 +19,8 @@ describe('cycleChipFontPx', () => {
   });
 
   it('shrinks the long labels that actually forced the rule', () => {
-    // The two seven-character words in the app: the volume chip's and the audio chip's.
+    // 'default' is the audio chip's; 'whisper' is the removed iw volume chip's, kept as a
+    // second seven-character case.
     expect(cycleChipFontPx('whisper')).toBeLessThan(CYCLE_CHIP_FONT_PX);
     expect(cycleChipFontPx('default')).toBe(cycleChipFontPx('whisper'));
   });
@@ -42,10 +43,8 @@ describe('cycleChipWidthCh', () => {
     expect(cycleChipWidthCh(['whisper'])).toBeCloseTo(5.6, 5);
   });
 
-  it('gives the volume and audio chips the same width', () => {
-    // Both are three states whose longest label is seven characters. They sit in
-    // different surfaces, so a learner never sees them together — but a shared rule
-    // that happened to size them differently would be a rule with a leak in it.
+  it('gives two label sets with the same longest length the same width', () => {
+    // A shared rule that sized two such chips differently would be a rule with a leak in it.
     expect(cycleChipWidthCh(['whisper', 'say', 'shout']))
       .toBeCloseTo(cycleChipWidthCh(['mute', 'default', 'media']), 5);
   });

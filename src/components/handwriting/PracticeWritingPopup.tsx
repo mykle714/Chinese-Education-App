@@ -553,7 +553,7 @@ export default function PracticeWritingPopup({
                     bottom: "100%", // sits directly above the word, out of flow
                     left: "50%",
                     transform: "translateX(-50%)",
-                    color: "#F6B73C",
+                    color: COLORS.gld, // the completion star — `--gld`, as on PracticeWritingButton
                     lineHeight: 1,
                     visibility: completedLevels.has(t.mode) ? "visible" : "hidden",
                   }}
@@ -575,7 +575,7 @@ export default function PracticeWritingPopup({
     width: FOCUS_SIZE,
     height: FOCUS_SIZE,
     borderRadius: 3,
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.white,
     boxShadow: SHADOW.chip,
     overflow: "hidden",
   } as const;

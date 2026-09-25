@@ -73,11 +73,11 @@ const ArenaSeatField: React.FC<ArenaSeatFieldProps> = ({ showViewerSeat = false,
             const isRelegate = i >= SEAT_COUNT - RELEGATE_SEATS;
             const isViewer = showViewerSeat && i === VIEWER_SEAT_INDEX;
             const fill = isViewer
-                ? RAMP.gld.fill
+                ? RAMP.gld.surface
                 : isPromote
-                  ? RAMP.grn.fill
+                  ? RAMP.grn.mid
                   : isRelegate
-                    ? RAMP.red.fill
+                    ? RAMP.red.mid
                     : COLORS.white;
             return (
                 <Box

@@ -145,7 +145,10 @@ const VocabCardDetailPage: React.FC = () => {
 
     // Per-character rows for the eip's breakdown tab. Memoized because InfoCardSection
     // takes it as a prop and the panel re-renders on every sheet-resize frame.
-    const infoBreakdownItems = useMemo(() => getBreakdownItems(entry), [entry]);
+    const infoBreakdownItems = useMemo(
+        () => getBreakdownItems(entry, selectedSenseIndex),
+        [entry, selectedSenseIndex]
+    );
 
     // "Compare", from the word-tools rail above the card and from the eip entry header —
     // raises the compare SHEET over this page with the word in slot A (see

@@ -4,7 +4,7 @@ import TemplateEditorViewer, { type EditorMarker } from '../nightmarket/Template
 import { DIRT_FLOOR, type EditorMasks } from '../../engine/market/farmTerrain';
 import { freeFarmTileset } from '../../engine/market/freeFarmTileset';
 import {
-  IW_PLAYER_AVATAR,
+  iwPlayerAvatar,
   type IWAvatar, type IWFacing, type IWNpcOption, type IWScene,
 } from '../../../server/contracts/iw';
 import {
@@ -12,6 +12,8 @@ import {
   type IWEditorTool, type IWPaintTool, type IWPlaceTool,
 } from './useIWSceneDraft';
 import type { IWEditorTools } from './useIWEditorTools';
+import { iwBoardVoidBg } from './iwBoardVoid';
+import { useAuth } from '../../AuthContext';
 
 /**
  * IWSceneMapPanel — the scene's BOARD: the isometric canvas, the ghost under the cursor
@@ -78,6 +80,10 @@ export default function IWSceneMapPanel({
   scene, masks, places, npcs, activeTool, eraseMode, onPaintCell, onPlaceAt, tools,
 }: IWSceneMapPanelProps) {
 
+  /** The learner's body, from the author's own account (migration 164) — see the Player pin. */
+  const { user } = useAuth();
+  const playerAvatar = iwPlayerAvatar(user?.gender);
+
   /** The board's floor, read straight off the masks (absent ⇒ dirt) — no second copy to drift. */
   const floorKind = (masks.floor ?? DIRT_FLOOR).kind;
 
@@ -124,8 +130,9 @@ export default function IWSceneMapPanel({
     {
       col: scene.playerStartCol, row: scene.playerStartRow,
       label: 'Player', color: PLAYER_MARKER_COLOR,
-      // The learner's body is a constant, not a scene choice (`IW_PLAYER_AVATAR`).
-      sprite: avatarSprite(IW_PLAYER_AVATAR, scene.playerStartFacing),
+      // The learner's body is not a scene choice — it follows the account (`iwPlayerAvatar`),
+      // so the author sees the body THEY will play the scene in.
+      sprite: avatarSprite(playerAvatar, scene.playerStartFacing),
     },
     {
       col: scene.companionStartCol, row: scene.companionStartRow,
@@ -155,7 +162,7 @@ export default function IWSceneMapPanel({
       : []),
   ], [scene.playerStartCol, scene.playerStartRow, scene.playerStartFacing,
       scene.companionStartCol, scene.companionStartRow, scene.companionStartFacing,
-      scene.npcCast, npcName, avatarFor, companionAvatar, places, showPlaces]);
+      scene.npcCast, npcName, avatarFor, companionAvatar, places, showPlaces, playerAvatar]);
 
   /**
    * One click on the board. A PLACE tool moves a body; every other tool paints its layer.
@@ -177,12 +184,12 @@ export default function IWSceneMapPanel({
       className="iw-scene-map-panel"
       sx={{
         position: 'relative', width: '100%', height: '100%',
-        // BLACK BEHIND A WOOD BOARD. The Pixi canvas is transparent (`backgroundAlpha={0}`), so
+        // DARK VOID BEHIND A WOOD BOARD (`iwBoardVoid.ts`). The Pixi canvas is transparent (`backgroundAlpha={0}`), so
         // whatever this column paints IS the void around the board. A wood floor replaces the
         // dirt slab, which leaves the deck with no plateau body — on the app's light paper it
-        // reads as planks lying on a page, while against black it reads as a lit platform in the
+        // reads as planks lying on a page, while against the dark void it reads as a lit platform in the
         // dark. Dirt boards keep the page's own ground, so the toggle changes only what it must.
-        backgroundColor: floorKind === 'wood' ? '#000' : 'transparent',
+        backgroundColor: iwBoardVoidBg(floorKind),
       }}
     >
       <TemplateEditorViewer

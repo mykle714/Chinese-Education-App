@@ -5,13 +5,12 @@ import { Label, SectionRule, Segmented } from "../primitives";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
-import { BAND_COLORS } from "../../utils/categoryColors";
+import { getBandMark, getBandMid } from "../../utils/categoryColors";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import {
     masteryBar,
     computeTypeCategory,
     cooldownRemainingMs,
-    MARK_TYPE_COLORS,
     MASTERY_READY_COLOR,
     MARK_TYPE_LABELS,
     BAR_LABELS,
@@ -55,14 +54,15 @@ import type { MarkType, VocabEntry } from "../../types";
  * GOAL decides what gets surfaced, sorted and counted elsewhere; it does not decide
  * whether this card's history exists.
  *
- * ── Composition of the fill ───────────────────────────────────────────────────
- * A skill track (`reading` / `writing`) is one mark type, so its cells are one color.
- * The `core` track blends recognition and production, so its filled cells are painted
- * in the ratio of their positive marks (blue then green, `MARK_TYPE_COLORS` — these
- * are the SATURATED hues on purpose, see D2b). The core pbh is fractional (the blend
- * caps the stronger track at 6 and adds a third of the weaker), so the last filled
- * cell can be a partial — rendered as a partial cell rather than rounded, because
- * rounding it would make two genuinely different cards read the same.
+ * ── Colour of the fill: the BAND, not the mark type ─────────────────────────────
+ * Every filled cell takes the track's current utcm band in the fluorescent MARK tier
+ * (`getBandMark`) — "mastery bars are colored by mastery progress, not the mark type"
+ * (2026-09-23; artboard 18: Know green, Target yellow, Write red). The v1 window painted
+ * the core track's cells blue-then-green by mark type; the per-type split now lives
+ * only in the cooldown rows' labels. The core pbh is fractional (the blend caps the
+ * stronger track at 6 and adds a third of the weaker), so the last filled cell can be
+ * a partial — rendered as a partial cell rather than rounded, because rounding would
+ * make two genuinely different cards read the same.
  *
  * Under the window sit the per-track **cooldowns** (`.cd3`): when each mark type of
  * the shown track can next be earned, as a live countdown, with a green check the
@@ -73,8 +73,10 @@ import type { MarkType, VocabEntry } from "../../types";
  * Replaced `src/features/flashcards/MasteryProgressBar.tsx`, deleted with this pass.
  */
 
-/** Height of one window cell. The design's `.msb .cells i` is 15px. */
-const CELL_HEIGHT = 15;
+/** Height of one window cell. v2's `.msb .cells i` is 20px (v1: 15). */
+const CELL_HEIGHT = 20;
+/** An empty cell's fill — the design's `--hover` (6% ink). */
+const MASTERY_EMPTY_CELL = COLORS.rowHoverBg;
 /** How often the countdown rows re-render. The clock shows seconds, so: every second. */
 const COOLDOWN_TICK_MS = 1_000;
 
@@ -149,19 +151,23 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
                     borderRadius: "3px",
                     // The empty cell is a hairline-inset tint, not a border: a real
                     // border would make the filled and empty cells different sizes.
-                    backgroundColor: "rgba(23,22,26,0.06)",
-                    boxShadow: cell.fill > 0 ? "none" : "inset 0 0 0 1px rgba(23,22,26,0.12)",
+                    // `--hover` fill + `--outline` ring (`.msb .cells i`); a filled cell
+                    // drops the ring, as the design's `box-shadow:none` on a lit cell.
+                    backgroundColor: MASTERY_EMPTY_CELL,
+                    boxShadow: cell.fill > 0 ? "none" : `inset 0 0 0 1px ${COLORS.markOutline}`,
                     overflow: "hidden",
                 }}
             >
-                {cell.fill > 0 && cell.type && (
+                {cell.fill > 0 && (
                     <Box
                         className="mastery-window__cell-fill"
                         sx={{
                             width: `${cell.fill * 100}%`,
                             height: "100%",
-                            backgroundColor: MARK_TYPE_COLORS[cell.type],
-                            transition: "width 240ms ease",
+                            // The TRACK'S BAND in the fluorescent Mark tier, for every
+                            // filled cell (artboard 18: "Mark: mastery band cells").
+                            backgroundColor: getBandMark(bar.category),
+                            transition: "width 240ms ease, background-color 240ms ease",
                         }}
                     />
                 )}
@@ -251,7 +257,9 @@ const CooldownLegend: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number
                             height: 8,
                             borderRadius: "2px",
                             flexShrink: 0,
-                            backgroundColor: MARK_TYPE_COLORS[type],
+                            // The track's band mark, tying each cooldown row to the
+                            // cells above it; the row's LABEL names the mark type.
+                            backgroundColor: getBandMark(bar.category),
                         }}
                     />
                     <Typography component="em" sx={{ fontStyle: "normal", fontWeight: WEIGHT.semibold, fontSize: "inherit" }}>
@@ -338,9 +346,8 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
 
             <Box className={`mastery-window__track mastery-window__track--${bar.id}`} sx={{ display: "flex", flexDirection: "column", gap: "7px" }}>
                 {/* `.hd4` — the track's name, its band, and the raw figure. The band
-                    chip is the PASTEL fill (CATEGORY_COLORS via BAND_COLORS), not the
-                    saturated mark hue: it is a surface, and the cells beside it are
-                    the saturated ones. See D2b. */}
+                    pill is the band's MID tier (`.band3` on `--{hue}K`, K = M) — one
+                    step below the cells' fluorescent Mark tier. */}
                 <Box
                     className="mastery-window__heading"
                     sx={{ display: "flex", alignItems: "baseline", gap: "8px" }}
@@ -362,7 +369,7 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
                             textTransform: "uppercase",
                             padding: "3px 7px",
                             borderRadius: "999px",
-                            backgroundColor: BAND_COLORS[bar.category].main,
+                            backgroundColor: getBandMid(bar.category),
                             color: COLORS.onSurface,
                         }}
                     >

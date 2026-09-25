@@ -63,7 +63,6 @@ export type {
   ReviewMark,
   SegmentDrillRung,
   SegmentMetadata,
-  ShortDefinitionPronunciationOverride,
   SnapConfig,
   SortPack,
   StarterPackBucket,
@@ -121,6 +120,9 @@ export {
  * it imports this instead.
  */
 export type { UserProfile as User } from "../server/contracts/wire";
+
+/** `users."gender"` (migration 164) — see src/utils/demographics.ts. */
+export type { UserGender } from "../server/contracts/wire";
 
 /**
  * Dictionary entry as the CLIENT receives it. `createdAt` arrives as an ISO string,

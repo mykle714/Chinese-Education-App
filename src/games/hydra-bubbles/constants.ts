@@ -169,6 +169,9 @@ export const SHARES_PER_UNMATCHED_ROUND = 1;
  *
  * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
  * the registry reads this, and the page passes it to `gameSurfaceSx` /
- * `GameSurfaceProvider`. Tapping a tea row must open a tea screen.
+ * `GameSurfaceProvider`. Tapping a green row must open a green screen.
+ *
+ * Green since v2 (artboard 16, `#hyd` on `--grnK`); it was teal, a hue v2 removed
+ * from the palette.
  */
-export const GAME_HUE: RampHue = "tea";
+export const GAME_HUE: RampHue = "grn";

@@ -1,5 +1,5 @@
 import {
-  IW_ACTOR_COMPANION, IW_ACTOR_PLAYER, IW_PLAYER_AVATAR, scenePlaces,
+  IW_ACTOR_COMPANION, IW_ACTOR_PLAYER, scenePlaces,
   type IWAvatar, type IWFacing, type IWNpcOption, type IWScene,
 } from '../../../../server/contracts/iw';
 import { freeFarmTileset } from '../../../engine/market/freeFarmTileset';
@@ -65,7 +65,7 @@ export interface IWSpeakerName {
 export interface IWSceneBody {
   /** `player`, or an npcId. Never the literal `companion` — see {@link actorCells}. */
   id: string;
-  /** Null for the learner, who has no NPC entry at all (`IW_PLAYER_AVATAR` is their body). */
+  /** Null for the learner, who has no NPC entry at all (`iwPlayerAvatar` picks their body). */
   npc: IWNpcOption | null;
   avatar: IWAvatar;
   /**
@@ -115,6 +115,8 @@ export function buildSceneBodies(
   scene: IWScene,
   npcs: readonly IWNpcOption[],
   graph: SceneGraph,
+  /** The learner's body — `iwPlayerAvatar(user.gender)`, decided by the caller who has the account. */
+  playerAvatar: IWAvatar,
 ): { actors: SceneActorState[]; bodies: Map<string, IWSceneBody>; companionId: string | null } {
   const byId = new Map(npcs.map(npc => [npc.id, npc]));
   const actors: SceneActorState[] = [];
@@ -123,7 +125,7 @@ export function buildSceneBodies(
   const playerCell = clampedCell(scene.playerStartCol, scene.playerStartRow, graph);
   actors.push(createSceneActor(IW_ACTOR_PLAYER, playerCell, scene.playerStartFacing));
   bodies.set(IW_ACTOR_PLAYER, {
-    id: IW_ACTOR_PLAYER, npc: null, avatar: IW_PLAYER_AVATAR, label: '', pinyin: '',
+    id: IW_ACTOR_PLAYER, npc: null, avatar: playerAvatar, label: '', pinyin: '',
   });
 
   for (const member of scene.npcCast ?? []) {

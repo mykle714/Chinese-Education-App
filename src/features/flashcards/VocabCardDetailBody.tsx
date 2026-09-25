@@ -4,7 +4,7 @@ import { resolveCommonality, resolveLongDefinitionForSense, hasSynonymsOrRelated
 import type { VocabEntry } from "../../types";
 import LongDefinitionDisplay from "../../components/LongDefinitionDisplay";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
-import { getCategoryColor } from "../../utils/categoryColors";
+import { getBandMid } from "../../utils/categoryColors";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import BreakdownRow from "./BreakdownRow";
 import DefinitionFacts from "./DefinitionFacts";
@@ -64,10 +64,11 @@ export const VocabCardBadges: React.FC<{ entry: VocabEntry }> = ({ entry }) => {
                 label={entry.category}
                 size="small"
                 sx={{
-                    backgroundColor: getCategoryColor(entry.category),
-                    // Ink + the ramp's inset ring: the category colors are PASTELS
-                    // post-redesign (docs/SHELF_REDESIGN.md, D2), so white text is
-                    // unreadable and an unringed fill is invisible on the card.
+                    // v2: a band CHIP takes the band's MID tier (artboard 18's band
+                    // pill is `--{hue}K` = `--{hue}M`), not the large-fill surface.
+                    // Ink + the ramp's inset ring: white text is unreadable on any
+                    // ramp fill, and the ring keeps the pill's edge on the card.
+                    backgroundColor: getBandMid(entry.category),
                     color: COLORS.onSurface,
                     boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                     fontSize: SIZE.micro,
@@ -116,7 +117,8 @@ export const VocabCardSections: React.FC<VocabCardSectionsProps> = ({
     const hasUsedIn = isSingleChar && !!entry.usedIn && entry.usedIn.length > 0;
     const hasBreakdown = !isSingleChar && !!entry.breakdown && Object.keys(entry.breakdown).length > 0;
     const hasBreakdownBox = isSingleChar ? hasUsedIn : hasBreakdown;
-    const breakdownItems = getBreakdownItems(entry);
+    // Sense-aware so the bt's per-character pinyin follows the sense the page is on.
+    const breakdownItems = getBreakdownItems(entry, selectedSenseIndex);
 
     // The long definition is stored per sense (zh) — render the one the card is on, in
     // lockstep with the sense picker above it. See docs/DEFINITION_CLUSTERS.md.

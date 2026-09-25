@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { Box, ButtonBase, Typography } from "@mui/material";
 import Icon from "../../components/Icon";
 import { challengeLaunchFor } from "../../games/runtime/challengeLaunch";
@@ -131,7 +132,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                             className="challenge-test-card__explain"
                             onClick={onExplain}
                             aria-label="How the test works"
-                            sx={{ borderRadius: "999px", p: 0.6, backgroundColor: "rgba(255,255,255,.66)", color: COLORS.bluA }}
+                            sx={{ borderRadius: "999px", p: 0.6, backgroundColor: "rgba(255,255,255,.66)", color: COLORS.onSurface }}
                         >
                             <Icon name="info" size={14} />
                         </ButtonBase>
@@ -203,9 +204,13 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 fontWeight: WEIGHT.bold,
                                 letterSpacing: "0.04em",
                                 // A banked round fills its numeral — the card's own
-                                // progress bar, read down the left edge.
+                                // progress bar, read down the left edge. Mine is solid ink;
+                                // the opponent's is the red MID tier with an ink numeral
+                                // (v2 has no dark red to flood it with).
                                 ...(played
-                                    ? { backgroundColor: mine ? COLORS.onSurface : COLORS.redA, color: "#fff" }
+                                    ? (mine
+                                        ? { backgroundColor: COLORS.onSurface, color: COLORS.white }
+                                        : { backgroundColor: COLORS.redM, color: COLORS.onSurface })
                                     : { backgroundColor: COLORS.white, boxShadow: `inset 0 0 0 1px ${COLORS.border}`, color: COLORS.onSurface }),
                             }}
                         >
@@ -215,7 +220,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                         <Icon
                             name={launch?.glyph ?? "sports_esports"}
                             size={20}
-                            color={mine ? COLORS.bluA : COLORS.redA}
+                            color={COLORS.onSurface}
                         />
 
                         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -252,7 +257,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                     fontSize: SIZE.micro,
                                     letterSpacing: "0.09em",
                                     textTransform: "uppercase",
-                                    color: "rgba(23,22,26,.38)",
+                                    color: alpha(COLORS.onSurface, 0.38),
                                 }}
                             >
                                 not done
@@ -267,7 +272,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                     py: 1.1,
                                     borderRadius: "11px",
                                     backgroundColor: COLORS.onSurface,
-                                    color: "#fff",
+                                    color: COLORS.white,
                                     fontFamily: FONTS.sans,
                                     fontSize: SIZE.body,
                                     fontWeight: WEIGHT.bold,
@@ -298,7 +303,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 {played.score.toLocaleString()}
                             </Typography>
                         ) : (
-                            <Icon name="lock" size={16} color="rgba(23,22,26,.34)" />
+                            <Icon name="lock" size={16} color={alpha(COLORS.onSurface, 0.34)} />
                         )}
                     </Box>
                 );

@@ -14,6 +14,7 @@ import { authHeader } from "../../utils/authHeader";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { collectionQuerySuffix, collectionTitle } from "../../features/flashcards/collectionRef";
 import { GameLeafPage } from "../shared/GameSurface";
+import { COLORS } from "../../theme/colors";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
 import { GAME_HUE } from "./constants";
 import type { Language, VocabEntry } from "../../types";
@@ -715,7 +716,7 @@ const MatchSpeedPage: React.FC = () => {
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    backgroundColor: "rgba(0,0,0,0.28)",
+                                    backgroundColor: COLORS.scrim,
                                     pointerEvents: "none",
                                     zIndex: 5,
                                 }}
@@ -728,7 +729,7 @@ const MatchSpeedPage: React.FC = () => {
                                     sx={{
                                         fontSize: "72px",
                                         fontWeight: WEIGHT.bold,
-                                        color: "#FFFFFF",
+                                        color: COLORS.white,
                                         textShadow: "0 2px 12px rgba(0,0,0,0.4)",
                                         animation: "match-speed-countdown-pop 400ms ease-out",
                                         "@keyframes match-speed-countdown-pop": {

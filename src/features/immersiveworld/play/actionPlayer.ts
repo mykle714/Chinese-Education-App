@@ -1,10 +1,12 @@
 import type {
-  IWActionStep, IWConversation, IWNpcAction, IWSceneCastMember,
+  IWActionStep, IWConversation, IWDestinationCandidate, IWDestinationTarget, IWNpcAction, IWSceneCastMember,
 } from '../../../../server/contracts/iw';
 import {
   IW_ACTOR_COMPANION, IW_ACTOR_PLAYER, IW_COLLECT_TURNS_DEFAULT, IW_MAX_COLLECT_TURNS,
 } from '../../../../server/contracts/iw';
-import { approachCells, cellKey, planScenePath, resolvePlaceTarget, type SceneGraph } from '../../../engine/iw/sceneGraph';
+import {
+  approachCells, cellKey, chebyshev, parseCellKey, planScenePath, resolvePlaceTarget, type SceneGraph,
+} from '../../../engine/iw/sceneGraph';
 
 /**
  * iw action player — turning one AUTHORED action (§ 14 Q42) into things the host can do.
@@ -13,7 +15,7 @@ import { approachCells, cellKey, planScenePath, resolvePlaceTarget, type SceneGr
  * belongs there, and the reason is the engine's own purity rule: an engine module may not
  * import the server contract (`enginePurity.test.ts` enforces it, and `sceneGraph.ts` declares
  * its own `SceneBoard` rather than importing `IWSceneLayout` for exactly this reason). This
- * module's whole input IS the contract — `IWActionStep` is a ten-member discriminated union —
+ * module's whole input IS the contract — `IWActionStep` is a twelve-member discriminated union —
  * so re-declaring it locally would be a copy that drifts the first time a step kind is added.
  * Interpreting authored data is a feature concern; walking a graph is an engine one.
  *
@@ -39,8 +41,10 @@ import { approachCells, cellKey, planScenePath, resolvePlaceTarget, type SceneGr
  *     module calls them and never re-implements a traversal.
  *   - **Movement.** A `walkTo` instruction is a destination, not an animation — `sceneActor.ts`
  *     walks it.
- *   - **`ai_walk`.** It needs a model call to choose a destination, which is a turn, not a
- *     step. It skips with a reason until that path exists (§ 12 phase 2's note on the step).
+ *   - **`ai_walk`'s model call.** This module builds the closed candidate list
+ *     ({@link destinationCandidates}) and hands it back as a `chooseDestination` instruction;
+ *     the host asks the model, and {@link resolveDestination} turns the answer into the
+ *     ordinary walk. The call itself is I/O and never happens here.
  *   - **Rendering a prompted line.** `prompt_npc` resolves to a `promptNpc` instruction naming
  *     WHO speaks and, at most, what about; the model call that turns that into Chinese is the
  *     host's, exactly as it is for a `say`.
@@ -112,6 +116,16 @@ export type IWInstruction =
    * authored seconds.
    */
   | { kind: 'collectInfo'; goal: string; maxTurns: number }
+  /**
+   * Ask the model WHERE to walk — an `ai_walk` step, half resolved (§ 5.4, 2026-09-23).
+   *
+   * ⚠️ **NOT A MOVEMENT, AND THE HOST MUST NOT TREAT IT AS ONE.** It carries the brief and the
+   * closed list the model may choose from; the host makes the call and passes the answer to
+   * {@link resolveDestination}, which produces the `walkTo` / `face` the host then performs.
+   * The candidates are a snapshot taken at resolve time, which is fine: the pick is re-resolved
+   * against the world as it is when the answer lands.
+   */
+  | { kind: 'chooseDestination'; brief: string; candidates: IWDestinationCandidate[] }
   /** The step could not be resolved. `reason` is for a debug overlay, never for a learner. */
   | { kind: 'skip'; reason: string };
 
@@ -219,10 +233,17 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
         : { kind: 'skip', reason: `cannot reach the place "${step.tag}"` };
     }
 
-    case 'ai_walk':
-      // The destination is a MODEL choice from a closed list, which is a turn rather than a
-      // step; nothing calls that path yet. The step stays authored, validated and inert.
-      return { kind: 'skip', reason: 'ai_walk is not resolved in phase 2' };
+    case 'ai_walk': {
+      // The destination is a MODEL choice from a closed list, so this only builds the list;
+      // the host asks and comes back through `resolveDestination`. A brief-less step would
+      // hand the model a choice with no criterion, and an empty list has nothing to choose.
+      const brief = step.instruction?.trim();
+      if (!brief) return { kind: 'skip', reason: 'an AI walk step with no brief' };
+      const candidates = destinationCandidates(world);
+      return candidates.length
+        ? { kind: 'chooseDestination', brief, candidates }
+        : { kind: 'skip', reason: 'an AI walk with nowhere reachable to go' };
+    }
 
     case 'prompt_npc': {
       // A speaker who is not here is the one fatal half — there is nobody to say it, so
@@ -292,6 +313,64 @@ export function resolveActionStep(step: IWActionStep, world: ActionWorld): IWIns
       // the only honest answer; guessing would perform something nobody authored.
       return { kind: 'skip', reason: `unknown step kind "${(step as { kind: string }).kind}"` };
   }
+}
+
+/** `chebyshev` over two `col,row` keys; 0 for a malformed key (a hint, not a rule). */
+function cellDistance(a: string, b: string): number {
+  const ca = parseCellKey(a);
+  const cb = parseCellKey(b);
+  return ca && cb ? chebyshev(ca, cb) : 0;
+}
+
+/**
+ * Everywhere an `ai_walk` may send the performer RIGHT NOW — the closed list (§ 5.4).
+ *
+ * Two kinds, exactly the referents the other walk steps already have:
+ *   - **places** — every named place a `walk_to_tag` could reach from here. An unreachable one
+ *     is left OFF the list rather than offered and skipped later: offering the model a place
+ *     the engine cannot walk to would turn a correct choice into a no-op.
+ *   - **bodies** — everybody except the performer. They are always offered, because
+ *     `walk_to_actor` degrades an unreachable person to a face rather than a skip.
+ *
+ * ⚠️ **THE COMPANION IS IN `cells` TWICE** (`actorCells` keys him by npcId AND by the
+ * `companion` alias), so bodies are de-duplicated by the cell they stand on — occupancy means
+ * two different bodies never share one. The alias sorts after his npcId in insertion order and
+ * so loses, which is the id the server can label from the registry most directly.
+ *
+ * Nearest first within each kind, places before people, so the prompt reads in a stable order.
+ */
+export function destinationCandidates(world: ActionWorld): IWDestinationCandidate[] {
+  const places: IWDestinationCandidate[] = [];
+  for (const [tag, cell] of world.graph.places) {
+    if (!resolvePlaceTarget(world.graph, world.selfCell, tag, { occupied: world.occupied })) continue;
+    places.push({ kind: 'place', tag, distance: cellDistance(world.selfCell, cell) });
+  }
+
+  const people: IWDestinationCandidate[] = [];
+  const seenCells = new Set<string>([world.selfCell]);
+  for (const [actorId, cell] of world.cells) {
+    if (seenCells.has(cell)) continue;
+    seenCells.add(cell);
+    people.push({ kind: 'actor', actorId, distance: cellDistance(world.selfCell, cell) });
+  }
+
+  const nearest = (a: IWDestinationCandidate, b: IWDestinationCandidate) => a.distance - b.distance;
+  return [...places.sort(nearest), ...people.sort(nearest)];
+}
+
+/**
+ * Turn the model's pick into the instruction the host performs — or a skip.
+ *
+ * ⚠️ **IT RE-RESOLVES THROUGH THE ORDINARY STEPS, ON PURPOSE.** A place becomes a
+ * `walk_to_tag` and a person a `walk_to_actor`, against the world as it is NOW (the model took
+ * most of a second, and people move), so an `ai_walk` arrives, faces and degrades exactly as
+ * the authored walk it stands in for would. There is no second walking code path to drift.
+ */
+export function resolveDestination(target: IWDestinationTarget | null, world: ActionWorld): IWInstruction {
+  if (!target) return { kind: 'skip', reason: 'the AI walk found nowhere to go' };
+  return target.kind === 'place'
+    ? resolveActionStep({ kind: 'walk_to_tag', tag: target.tag }, world)
+    : resolveActionStep({ kind: 'walk_to_actor', actor: target.actorId }, world);
 }
 
 /**

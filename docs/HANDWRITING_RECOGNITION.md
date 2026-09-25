@@ -329,7 +329,7 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 | Presentation (surface) | "Practice Writing Me" **popup** — single panel (1 char) or 2×2 grid + focus (2–4 chars); floating bars (corner ✕, Clear/Undo pill, Verify, bottom Trace/Step Through/Memorize/Test bar), cooldowns, lifecycle, ✓/✗ | `src/components/handwriting/PracticeWritingPopup.tsx` |
 | Presentation (panel) | One writing panel = guide + capture canvas + ✓/✗ overlay; reused for the single panel, the focused slot, and the scaled grid previews | `src/components/handwriting/WritingStage.tsx` |
 | Presentation (guide) | **Hanzi Writer** (display-only) — grey outline + stroke-order guide; local data via `charDataLoader` (CDN fallback) | `src/components/handwriting/HanziGuide.tsx`, `loadCharData.ts` |
-| Presentation (capture) | DIY canvas overlay → emits `Ink`; Pointer Events, `touchAction:none`, undo/clear | `src/components/handwriting/WritingCanvas.tsx` |
+| Presentation (capture) | DIY canvas overlay → emits `Ink`; Pointer Events, `touchAction:none`, undo/redo/clear | `src/components/handwriting/WritingCanvas.tsx` |
 | Domain (contract) | `Stroke` / `Ink` / `WritingCanvasHandle` types; client recognition adapter | `src/components/handwriting/types.ts`, `recognize.ts` |
 | Domain (draft) | Preserve-on-close / hard-clear draft store | `src/components/handwriting/writingDraftStore.ts` |
 | Persistence (stars) | `writing_practice_completions` table (Shape A) + completion helper | migration `database/migrations/81-create-writing-practice-completions-table.sql`, `server/utils/writingPracticeStore.ts` |

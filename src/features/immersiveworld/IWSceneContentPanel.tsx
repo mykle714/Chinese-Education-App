@@ -2,7 +2,7 @@ import { Box, Button, Checkbox, FormControlLabel, IconButton, MenuItem, Stack, T
 import { COLORS } from '../../theme/colors';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import { IW_CONVERSATION_LINE_MS, IW_MAX_EVENT_DELAY_SECONDS } from '../../../server/contracts/iw';
+import { IW_MAX_EVENT_DELAY_SECONDS } from '../../../server/contracts/iw';
 import type {
   IWComplication, IWConversation, IWNpcOption, IWScene, IWSceneEvent,
 } from '../../../server/contracts/iw';
@@ -262,12 +262,10 @@ export default function IWSceneContentPanel({
           </Button>
         </Stack>
         <Typography sx={{ fontSize: 11, opacity: 0.7, mb: 1 }}>
-          Fixed lines between cast members, played back with no model calls. The learner can
-          tap to pause, so this is a study surface as much as ambience. Tick the box on one and
-          its FIRST speaker may also start it unprompted, the way they pick an action. Every
-          line is held for{' '}
-          {IW_CONVERSATION_LINE_MS / 1000} seconds — pacing is not authored, so write lines a
-          learner can read in that time.
+          Directions for an exchange between cast members — each turn is rendered into its
+          speaker&apos;s own words, one at a time, and stays up until the learner taps Continue,
+          so this is a study surface as much as ambience. Tick the box on one and its FIRST
+          speaker may also start it unprompted, the way they pick an action.
         </Typography>
 
         <Stack spacing={2}>

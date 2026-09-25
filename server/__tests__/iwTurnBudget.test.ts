@@ -9,11 +9,9 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  capListeners,
   checkUtterance,
   IWTurnBudget,
   IW_DAILY_TURN_CAP,
-  IW_MAX_LISTENERS_PER_UTTERANCE,
   IW_MAX_UTTERANCE_CHARS,
   IW_MIN_TURN_GAP_MS,
   IW_SESSION_TURN_BUDGET,
@@ -47,19 +45,6 @@ describe('checkUtterance', () => {
     const emoji = '😀'.repeat(IW_MAX_UTTERANCE_CHARS);
     expect(emoji.length).toBe(IW_MAX_UTTERANCE_CHARS * 2);
     expect(checkUtterance(emoji)).toBeNull();
-  });
-});
-
-describe('capListeners', () => {
-  it('drops beyond the cap rather than refusing', () => {
-    const many = Array.from({ length: 9 }, (_, i) => `npc${i}`);
-    expect(capListeners(many)).toHaveLength(IW_MAX_LISTENERS_PER_UTTERANCE);
-  });
-
-  it('keeps the order it was given', () => {
-    // The caller sorts by distance, because the nearest NPCs are the ones a learner is
-    // plausibly talking to. Reordering here would silently pick the wrong ones.
-    expect(capListeners(['near', 'mid', 'far'])).toEqual(['near', 'mid', 'far']);
   });
 });
 

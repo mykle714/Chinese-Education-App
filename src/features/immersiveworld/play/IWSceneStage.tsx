@@ -16,6 +16,14 @@ import { useCameraControls } from '../../../hooks/useCameraControls';
 import { parseCellKey } from '../../../engine/iw/sceneGraph';
 import { resolveTapTarget, type IWTapTarget, type TapBody } from './tapTarget';
 import type { IWBodyDrawable } from './iwSceneActors';
+import { iwBoardVoidBg } from '../iwBoardVoid';
+import { IW_SELECT_BLUE } from './iwTapColors';
+import {
+  resolveTapHighlight, TAP_HIGHLIGHT_MS, TAP_RIPPLE_MS, tapHighlightAlpha, type IWTapHighlight,
+} from './tapHighlight';
+import {
+  CellTapHighlight, DecorTapOutline, FurnitureTapOutline, TapRipple, TapSpriteOutline,
+} from './IWTapFeedback';
 
 // No `Text`: the canvas draws no words at all since the head label became a DOM cpcd
 // nametag (2026-09-21). Anything with glyphs in it belongs to the layer above.
@@ -103,7 +111,8 @@ const HEAD_TOP_PX = BODY_SPRITE_PX - BODY_INK_TOP_PX;
 const BUBBLE_GAP_PX = 12;
 
 const PLACE_RING_COLOR = 0xffe1a3;
-const FOCUS_RING_COLOR = 0x8fd6ff;
+/** The selection blue (`iwTapColors.ts`) — shared with the tap outline and the Continue bar. */
+const FOCUS_RING_COLOR = IW_SELECT_BLUE;
 
 /**
  * The hover highlight, tinted by WHAT the click would select — the same three kinds
@@ -190,6 +199,20 @@ function SceneContents(props: IWSceneStageProps & {
   const followingRef = useRef(props.following);
   followingRef.current = props.following;
 
+  /**
+   * Screen-px vertical offset the follow camera aims for, instead of dead centre. Non-zero only
+   * after a keyboard has CLOSED (see the resize handler below): the scene is held where the
+   * keyboard left it rather than sliding back down, and the follow ease must aim at that held
+   * spot or it would glide the scene down anyway over the next second. Always ≤ 0 (the held
+   * spot is above centre). Released — the camera then eases to true centre — by the next
+   * thing that moves the camera on purpose: the player walking, a re-lock, or the next
+   * keyboard opening (which crops the viewport around exactly the held spot).
+   */
+  const followBiasYRef = useRef(0);
+  /** The player's last position, so a walk (not a standing tick) is what releases the bias. */
+  const lastPlayerPosRef = useRef<{ isoX: number; isoY: number } | null>(null);
+  const wasFollowingRef = useRef(props.following);
+
   useTick(ticker => {
     const dtMs = ticker.deltaMS;
     nowRef.current += dtMs;
@@ -197,10 +220,23 @@ function SceneContents(props: IWSceneStageProps & {
 
     // ⚠️ Read through a ref: the tick callback is registered once, and a stale `false` here
     // would leave the camera unlocked forever after the first re-lock.
+    // A re-lock asks for the avatar at centre — drop any keyboard hold with it.
+    if (followingRef.current && !wasFollowingRef.current) followBiasYRef.current = 0;
+    wasFollowingRef.current = followingRef.current;
+
     const me = followingRef.current ? drawables(nowRef.current).find(b => b.id === playerId) : null;
     if (me) {
+      // The player took a step: the camera is about to move anyway, so this is where a held
+      // (post-keyboard) offset can be let go without reading as a shift of its own.
+      const last = lastPlayerPosRef.current;
+      if (last && (last.isoX !== me.isoX || last.isoY !== me.isoY)) followBiasYRef.current = 0;
+      lastPlayerPosRef.current = { isoX: me.isoX, isoY: me.isoY };
+
       const target = isoToScreen(me.isoX, me.isoY);
-      const want = { x: -target.screenX * zoomRef.current, y: -target.screenY * zoomRef.current };
+      const want = {
+        x: -target.screenX * zoomRef.current,
+        y: -target.screenY * zoomRef.current + followBiasYRef.current,
+      };
       const current = panRef.current;
       const next = {
         x: current.x + (want.x - current.x) * CAMERA_EASE,
@@ -265,6 +301,52 @@ function SceneContents(props: IWSceneStageProps & {
     return () => observer.disconnect();
   }, [app, isInitialised]);
 
+  /**
+   * Shift the scene when a keyboard OPENS, never when it closes.
+   *
+   * The board is drawn at the canvas centre, so any height change moves everything on screen
+   * by half the change: a shrinking canvas (keyboard arriving) lifts the scene into the space
+   * left above the keyboard — wanted, the avatar stays visible — but a growing one (keyboard
+   * leaving) dropped it straight back down, a second shift the learner did nothing to cause.
+   *
+   * So a GROW is cancelled by moving the pan up by the same half, and remembered as
+   * `followBiasYRef` so the follow ease holds it too. A SHRINK first pays back any such held
+   * offset (the scene is already sitting where the new, smaller viewport would centre it, so
+   * it stays still) and only lets the natural re-centre through for the remainder.
+   *
+   * Hooked to the renderer's own `resize` rather than the ResizeObserver above: this is the
+   * moment `app.screen` actually changes, so the correction lands in the same frame as the
+   * resize instead of one behind it (the box travels on a 300ms transition, and a one-frame
+   * lag at every step of it would read as a shudder).
+   */
+  const lastScreenHeightRef = useRef<number | null>(null);
+  useEffect(() => {
+    const renderer = app?.renderer;
+    if (!renderer || !isInitialised) return;
+    lastScreenHeightRef.current = app.screen.height;
+    const onResize = (_width: number, height: number) => {
+      const last = lastScreenHeightRef.current;
+      lastScreenHeightRef.current = height;
+      if (last === null || height === last) return;
+      const half = (height - last) / 2;
+      let correction: number;
+      if (half > 0) {
+        // Grew (keyboard leaving): hold the scene exactly where it is.
+        correction = -half;
+      } else {
+        // Shrank (keyboard arriving): release up to the held offset, let the rest re-centre.
+        correction = Math.min(-followBiasYRef.current, -half);
+      }
+      if (correction === 0) return;
+      followBiasYRef.current += correction;
+      const next = { x: panRef.current.x, y: panRef.current.y + correction };
+      panRef.current = next;
+      onPanChange(next);
+    };
+    renderer.on('resize', onResize);
+    return () => { renderer.off('resize', onResize); };
+  }, [app, isInitialised, onPanChange]);
+
   // ── Textures ──────────────────────────────────────────────────────────────────────────
   const [textures, setTextures] = useState<Map<string, Texture>>(new Map());
   const wanted = bodies.map(b => b.imagePath).filter(Boolean).sort().join('|');
@@ -312,6 +394,15 @@ function SceneContents(props: IWSceneStageProps & {
    * unsynchronised render at mouse-move rate on top of it.
    */
   const hoverRef = useRef<IWTapTarget | null>(null);
+
+  /**
+   * The last tap's feedback: WHEN it landed (on the ticker clock, `nowRef`), WHERE (board-local
+   * px, so the ripple stays on the spot it hit while the camera eases), and WHAT to highlight.
+   * A ref for the same reason as {@link hoverRef}: this subtree already repaints every frame,
+   * so the animation needs no state of its own. A new tap simply replaces it — there is only
+   * ever one ripple and one highlight on the board.
+   */
+  const tapFxRef = useRef<{ atMs: number; local: { x: number; y: number }; highlight: IWTapHighlight | null } | null>(null);
 
   /**
    * The bodies, as `resolveTapTarget` needs them. Sprite size comes from the LOADED texture,
@@ -395,6 +486,14 @@ function SceneContents(props: IWSceneStageProps & {
       // ⚠️ THE SAME CALL THE HIGHLIGHT WAS PAINTED FROM. See `tapTarget.ts` — one resolver is
       // what makes the indicator a promise rather than a guess.
       const target = resolve(e);
+      // The ripple acknowledges EVERY tap, even one that selects nothing (off the board): the
+      // finger did land, and silence there reads as a dropped touch. The blue highlight is
+      // drawn on the thing the SAME `target` acts on, so it cannot disagree with the action.
+      tapFxRef.current = {
+        atMs: nowRef.current,
+        local: toLocal(e),
+        highlight: target ? resolveTapHighlight(target, masks.furniture ?? [], masks.decor) : null,
+      };
       if (!target) return;
       if (target.kind === 'body') onTapBody(target.id);
       else if (target.kind === 'place') onTapPlace(target.tag);
@@ -415,7 +514,7 @@ function SceneContents(props: IWSceneStageProps & {
       stage.off('globalpointermove', onMove);
       stage.off('pointerleave', onLeave);
     };
-  }, [app, isInitialised, width, height, places, walkable, playerId,
+  }, [app, isInitialised, width, height, masks, places, walkable, playerId,
       onTapCell, onTapPlace, onTapBody, onPanChange, onPanGesture]);
 
   /** One tile diamond, at the origin. Positioned and tinted by the node that draws it. */
@@ -458,66 +557,113 @@ function SceneContents(props: IWSceneStageProps & {
   const hover = hoverRef.current;
   const hoverFoot = hover ? isoToScreen(hover.col, hover.row) : { screenX: 0, screenY: 0 };
 
+  // The last tap's feedback, as of this frame. Dropped once both halves have run out, so a
+  // finished tap costs nothing on later frames.
+  const tapFx = tapFxRef.current;
+  const tapElapsed = tapFx ? nowRef.current - tapFx.atMs : Infinity;
+  if (tapFx && tapElapsed >= Math.max(TAP_RIPPLE_MS, TAP_HIGHLIGHT_MS)) tapFxRef.current = null;
+  const tapAlpha = tapHighlightAlpha(tapElapsed);
+  const tapHighlight = tapAlpha > 0 ? tapFx?.highlight ?? null : null;
+  // A tapped body is outlined wherever it is NOW, in the frame it is showing now — the outline
+  // walks with them rather than staying on the square they were tapped on.
+  const tappedBody = tapHighlight?.kind === 'body' ? bodies.find(b => b.id === tapHighlight.id) : undefined;
+  const tappedBodyTexture = tappedBody ? textures.get(tappedBody.imagePath) : undefined;
+
   return (
-    <pixiContainer x={cx} y={cy} scale={props.zoom} sortableChildren>
-      <EditorTerrainLayer tiles={tiles} />
-      {/* Placed FURNITURE. Drawn from the same `masks` the terrain comes from, through the
-          shared strip renderer, so a piece depth-sorts per screen column against the bodies
-          (`computeLayerZ(..., 'entity')` is the same axis as `computePedestrianZ`): the
-          companion passes IN FRONT of a table's near edge and BEHIND its far edge.
-          ⚠️ Furniture does not yet BLOCK movement — see docs/LUMEISH_ASSET_PIPELINE.md § 7. */}
-      <FurnitureSprites placements={masks.furniture ?? []} />
-      <pixiGraphics draw={drawPlaceRing} zIndex={1} eventMode="none" />
-      {hover && (
-        // Read straight from the ref during render, which is sound here for the reason the
-        // ref's own note gives: this subtree already re-renders every frame, so the highlight
-        // is never more than one tick stale and costs no render of its own.
-        // zIndex 2 — above the terrain and the place rings, below every body, so a highlight
-        // on an occupied cell never paints over the person standing on it.
-        <pixiGraphics
-          draw={drawHoverCell}
-          x={hoverFoot.screenX}
-          y={hoverFoot.screenY}
-          tint={HOVER_TINT[hover.kind]}
-          zIndex={2}
-          eventMode="none"
-        />
-      )}
-      {focused && focusFoot && (
-        <pixiGraphics
-          draw={drawFocusRing}
-          x={focusFoot.screenX}
-          y={focusFoot.screenY}
-          zIndex={computePedestrianZ(focused.isoX, focused.isoY) - 1}
-          eventMode="none"
-        />
-      )}
-      {bodies.map(body => {
-        const texture = textures.get(body.imagePath);
-        if (!texture) return null;
-        const { screenX, screenY } = isoToScreen(body.isoX, body.isoY);
-        return (
-          <pixiSprite
-            key={body.id}
-            // The body id rides on the display object so ONE shared tap handler can resolve
-            // which person was hit — a per-body closure would be a new listener every frame.
-            label={body.id}
-            texture={texture}
-            x={screenX}
-            y={screenY}
-            anchor={{ x: 0.5, y: 1 }}
-            zIndex={computePedestrianZ(body.isoX, body.isoY)}
-            // ⚠️ NOT INTERACTIVE, DELIBERATELY. Bodies used to carry their own padded hit
-            // area and tap handler; a foot-anchored 48px sprite's box reaches three rows
-            // BACKWARD in an isometric projection, so it swallowed every tap meant for the
-            // furniture behind it. `resolveTapTarget` now hit-tests every pointer in one
-            // place, with an explicit priority — and, being the same call the hover highlight
-            // is painted from, it cannot disagree with what the learner was shown.
+    <>
+      <pixiContainer x={cx} y={cy} scale={props.zoom} sortableChildren>
+        <EditorTerrainLayer tiles={tiles} />
+        {/* Placed FURNITURE. Drawn from the same `masks` the terrain comes from, through the
+            shared strip renderer, so a piece depth-sorts per screen column against the bodies
+            (`computeLayerZ(..., 'entity')` is the same axis as `computePedestrianZ`): the
+            companion passes IN FRONT of a table's near edge and BEHIND its far edge.
+            ⚠️ Furniture does not yet BLOCK movement — see docs/LUMEISH_ASSET_PIPELINE.md § 7. */}
+        <FurnitureSprites placements={masks.furniture ?? []} />
+        <pixiGraphics draw={drawPlaceRing} zIndex={1} eventMode="none" />
+        {hover && (
+          // Read straight from the ref during render, which is sound here for the reason the
+          // ref's own note gives: this subtree already re-renders every frame, so the highlight
+          // is never more than one tick stale and costs no render of its own.
+          // zIndex 2 — above the terrain and the place rings, below every body, so a highlight
+          // on an occupied cell never paints over the person standing on it.
+          <pixiGraphics
+            draw={drawHoverCell}
+            x={hoverFoot.screenX}
+            y={hoverFoot.screenY}
+            tint={HOVER_TINT[hover.kind]}
+            zIndex={2}
             eventMode="none"
           />
-        );
-      })}
-    </pixiContainer>
+        )}
+        {/* TAP HIGHLIGHT — blue, on whatever the tap selected (`tapHighlight.ts`). Outlines sit
+            just behind their sprite (see `IWTapFeedback`'s header); an empty square is filled. */}
+        {tapHighlight?.kind === 'cell' && (
+          <CellTapHighlight col={tapHighlight.col} row={tapHighlight.row} alpha={tapAlpha} />
+        )}
+        {tapHighlight?.kind === 'furniture' && (
+          <FurnitureTapOutline placement={tapHighlight.placement} alpha={tapAlpha} />
+        )}
+        {tapHighlight?.kind === 'decor' && (
+          <DecorTapOutline col={tapHighlight.col} row={tapHighlight.row} url={tapHighlight.url} alpha={tapAlpha} />
+        )}
+        {tappedBody && tappedBodyTexture && (() => {
+          const foot = isoToScreen(tappedBody.isoX, tappedBody.isoY);
+          return (
+            <TapSpriteOutline
+              texture={tappedBodyTexture}
+              x={foot.screenX}
+              y={foot.screenY}
+              anchor={{ x: 0.5, y: 1 }}
+              spriteZ={computePedestrianZ(tappedBody.isoX, tappedBody.isoY)}
+              alpha={tapAlpha}
+            />
+          );
+        })()}
+        {focused && focusFoot && (
+          <pixiGraphics
+            draw={drawFocusRing}
+            x={focusFoot.screenX}
+            y={focusFoot.screenY}
+            zIndex={computePedestrianZ(focused.isoX, focused.isoY) - 1}
+            eventMode="none"
+          />
+        )}
+        {bodies.map(body => {
+          const texture = textures.get(body.imagePath);
+          if (!texture) return null;
+          const { screenX, screenY } = isoToScreen(body.isoX, body.isoY);
+          return (
+            <pixiSprite
+              key={body.id}
+              // The body id rides on the display object so ONE shared tap handler can resolve
+              // which person was hit — a per-body closure would be a new listener every frame.
+              label={body.id}
+              texture={texture}
+              x={screenX}
+              y={screenY}
+              anchor={{ x: 0.5, y: 1 }}
+              zIndex={computePedestrianZ(body.isoX, body.isoY)}
+              // ⚠️ NOT INTERACTIVE, DELIBERATELY. Bodies used to carry their own padded hit
+              // area and tap handler; a foot-anchored 48px sprite's box reaches three rows
+              // BACKWARD in an isometric projection, so it swallowed every tap meant for the
+              // furniture behind it. `resolveTapTarget` now hit-tests every pointer in one
+              // place, with an explicit priority — and, being the same call the hover highlight
+              // is painted from, it cannot disagree with what the learner was shown.
+              eventMode="none"
+            />
+          );
+        })}
+      </pixiContainer>
+      {/* THE RIPPLE — outside the zoomed world, so it is finger-sized at every zoom, but placed
+          from the tap's BOARD point each frame, so it stays on the spot while the camera moves. */}
+      {tapFx && (
+        <TapRipple
+          x={cx + tapFx.local.x * props.zoom}
+          y={cy + tapFx.local.y * props.zoom}
+          elapsedMs={tapElapsed}
+        />
+      )}
+    </>
   );
 }
 
@@ -555,14 +701,14 @@ export default function IWSceneStage(props: IWSceneStageProps) {
       ref={containerRef}
       sx={{
         position: 'absolute', inset: 0, touchAction: 'none',
-        // BLACK BEHIND A WOOD BOARD — the same rule, and the same one line, as the editor's
+        // DARK VOID BEHIND A WOOD BOARD (`iwBoardVoid.ts`) — the same rule, and the same one line, as the editor's
         // `IWSceneMapPanel`. The Pixi canvas is transparent (`backgroundAlpha={0}`), so
         // whatever this Box paints IS the void around the board; a wood floor replaces the
         // dirt slab, leaving the deck with no plateau body, and on the app's light paper that
         // reads as planks lying on a page rather than as a lit platform in the dark. Authoring
         // a scene and standing in it must not look like two different places, which is exactly
-        // what a black editor and a white runtime were.
-        backgroundColor: floorKind === 'wood' ? '#000' : 'transparent',
+        // what a dark editor and a white runtime were.
+        backgroundColor: iwBoardVoidBg(floorKind),
       }}
     >
       {ready && (

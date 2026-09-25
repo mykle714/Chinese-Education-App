@@ -21,8 +21,15 @@ import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from 
  * it into local user state.
  */
 type ProfilePatch = Partial<
-    Pick<User, 'selectedLanguage' | 'avatarIconId' | 'readingGoal' | 'writingGoal' | 'showSegmentSpaces' | 'chineseFont'>
+    Pick<User, 'selectedLanguage' | 'avatarIconId' | 'readingGoal' | 'writingGoal' | 'showSegmentSpaces' | 'chineseFont' | 'gender' | 'birthDate'>
 >;
+
+/**
+ * The learner's gender / date of birth (migration 164). Asked at signup and editable in
+ * Settings; `null` = "Prefer not to answer". Read by Immersive World (the learner's body, and
+ * how NPCs address them) — docs/IMMERSIVE_WORLD.md § 5.5.
+ */
+export type Demographics = Pick<ProfilePatch, 'gender' | 'birthDate'>;
 
 /**
  * Is the in-memory access token usable?
@@ -42,7 +49,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     isLoading: boolean;
     login: (email: string, password: string) => Promise<void>;
-    register: (email: string, name: string, password: string) => Promise<void>;
+    register: (email: string, name: string, password: string, demographics?: Demographics) => Promise<void>;
     logout: () => Promise<void>;
     changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
     deleteAccount: (password: string) => Promise<void>;
@@ -50,6 +57,7 @@ interface AuthContextType {
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
     updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<void>;
     updateDisplaySettings: (settings: { showSegmentSpaces?: boolean; chineseFont?: string }) => Promise<void>;
+    updateDemographics: (demographics: Demographics) => Promise<void>;
     error: string | null;
 }
 
@@ -301,7 +309,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     // Register function
-    const register = async (email: string, name: string, password: string) => {
+    const register = async (email: string, name: string, password: string, demographics: Demographics = {}) => {
         setError(null);
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
@@ -314,7 +322,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 // reads as a UTC user — and every 04:00-local boundary is computed
                 // in the wrong zone — until its owner's first login or minute
                 // point. See utils/authSync.ts for the full freshness contract.
-                body: JSON.stringify({ email, name, password, tz: getBrowserTimezone() }),
+                //
+                // `gender` / `birthDate` ride along for the same at-creation reason
+                // (migration 164); null = "Prefer not to answer".
+                body: JSON.stringify({ email, name, password, tz: getBrowserTimezone(), ...demographics }),
                 credentials: 'include'
             });
 
@@ -429,6 +440,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const updateDisplaySettings = (settings: { showSegmentSpaces?: boolean; chineseFont?: string }) =>
         updateProfile('displaySettings', 'update your display settings', settings);
 
+    /**
+     * Set or clear the learner's gender / date of birth (migration 164). Its own endpoint
+     * rather than a display setting: it changes how Immersive World treats the learner, not
+     * how anything is drawn. Send only the key that changed; null = "Prefer not to answer".
+     */
+    const updateDemographics = (demographics: Demographics) =>
+        updateProfile('demographics', 'update your details', demographics);
+
     const value = {
         user,
         token,
@@ -443,6 +462,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         updateAvatar,
         updateGoals,
         updateDisplaySettings,
+        updateDemographics,
         error
     };
 

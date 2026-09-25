@@ -1,8 +1,10 @@
+import { alpha } from "@mui/material/styles";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Box, Typography } from "@mui/material";
 import SheetCloseX from "../../components/sheet/SheetCloseX";
 import { sheetEdgeFadeSx } from "../../components/sheet/sheetStyled";
+import { trackScrollEdgeFade } from "../../components/scrollEdgeFade";
 import { nearestOverlayHost } from "../../components/overlayHost";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { COLORS } from "../../theme/colors";
@@ -18,12 +20,14 @@ export type ChallengeSheetTone = "neutral" | "green" | "blue" | "orange" | "red"
 // the eip has already learned how long a sheet takes to go away.
 const EXIT_MS = 220;
 
+// The state CHIP's fill — MID tier (v2: chips/pills are mid), matching the row pills in
+// challengeLabels' challengeActionColor so a state reads the same in both places.
 const TONE_FILL: Record<ChallengeSheetTone, string> = {
     neutral: COLORS.iconBg,
-    green: COLORS.grn,
-    blue: COLORS.blu,
-    orange: COLORS.org,
-    red: COLORS.red,
+    green: COLORS.grnM,
+    blue: COLORS.bluM,
+    orange: COLORS.orgM,
+    red: COLORS.redM,
 };
 
 /**
@@ -283,6 +287,8 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
                         {/* The one scrolling region. `touchAction: pan-y` is the opt-in the app
                             shell's global `none` requires (CLAUDE.md "Touch & Scroll"). */}
                         <Box
+                            // Feeds the scroll-aware edge-fade bands (sheetEdgeFadeSx).
+                            ref={trackScrollEdgeFade}
                             className="challenge-sheet__body"
                             sx={{
                                 flex: 1,
@@ -312,7 +318,7 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
                                 // so there is nothing else down here to clear.
                                 pb: "calc(20px + env(safe-area-inset-bottom))",
                                 borderTop: `1px solid ${COLORS.rowBorder}`,
-                                boxShadow: "0 -8px 14px rgba(20,18,26,.05)",
+                                boxShadow: `0 -8px 14px ${alpha(COLORS.onSurface, 0.05)}`,
                             }}
                         >
                             {actions}

@@ -8,7 +8,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildSceneGraph } from '../../../../engine/iw/sceneGraph';
-import { actionById, resolveActionStep, type ActionWorld } from '../actionPlayer';
+import {
+  actionById, destinationCandidates, resolveActionStep, resolveDestination, type ActionWorld,
+} from '../actionPlayer';
 import type { IWActionStep, IWSceneCastMember } from '../../../../../server/contracts/iw';
 
 /** An 8×8 open floor with a counter (an unwalkable cell) at 4,4 tagged "counter". */
@@ -134,12 +136,57 @@ describe('resolveActionStep — references into the scene', () => {
   });
 });
 
-describe('resolveActionStep — what phase 2 does not do', () => {
-  it('skips ai_walk with a reason rather than inventing a destination', () => {
-    expect(resolveActionStep({ kind: 'ai_walk', instruction: 'to whoever is waiting' }, world()))
-      .toEqual({ kind: 'skip', reason: 'ai_walk is not resolved in phase 2' });
+describe('ai_walk — the model picks WHERE, from a closed list (§ 5.4)', () => {
+  it('hands back the brief and every reachable place and body, places first, nearest first', () => {
+    const instruction = resolveActionStep({ kind: 'ai_walk', instruction: '  to whoever is waiting ' }, world());
+    expect(instruction).toEqual({
+      kind: 'chooseDestination',
+      brief: 'to whoever is waiting',
+      candidates: [
+        { kind: 'place', tag: 'doorway', distance: 1 },
+        { kind: 'place', tag: 'counter', distance: 3 },
+        // A tie keeps `cells` order — the sort is stable.
+        { kind: 'actor', actorId: 'player', distance: 5 },
+        { kind: 'actor', actorId: 'companion', distance: 5 },
+      ],
+    });
   });
 
+  it('never offers the performer, and offers a body standing on two ids once', () => {
+    // `actorCells` keys the companion by his npcId AND by the `companion` alias.
+    const cells = new Map([['self', '1,1'], ['michael', '6,5'], ['companion', '6,5']]);
+    const candidates = destinationCandidates(world({ cells }));
+    expect(candidates.filter(c => c.kind === 'actor')).toEqual([{ kind: 'actor', actorId: 'michael', distance: 5 }]);
+  });
+
+  it('leaves an unreachable place OFF the list rather than offering a walk that will skip', () => {
+    // The doorway's only neighbours walled off: the model must not be able to pick it.
+    const walled = buildSceneGraph({
+      width: 8, height: 8, unwalkable: ['0,0', '1,0', '0,1'], forcedDirection: {}, places: { doorway: '0,0' },
+    });
+    expect(destinationCandidates(world({ graph: walled })).some(c => c.kind === 'place')).toBe(false);
+  });
+
+  it('skips a brief-less step, and one with nowhere to go', () => {
+    expect(resolveActionStep({ kind: 'ai_walk', instruction: '  ' }, world()).kind).toBe('skip');
+    const empty = buildSceneGraph({ width: 3, height: 3, unwalkable: [], forcedDirection: {}, places: {} });
+    expect(resolveActionStep({ kind: 'ai_walk', instruction: 'anywhere' }, world({ graph: empty, cells: new Map() })).kind)
+      .toBe('skip');
+  });
+
+  it('plays the pick as the ordinary walk it stands in for', () => {
+    expect(resolveDestination({ kind: 'place', tag: 'counter' }, world()))
+      .toEqual(resolveActionStep({ kind: 'walk_to_tag', tag: 'counter' }, world()));
+    expect(resolveDestination({ kind: 'actor', actorId: 'player' }, world()))
+      .toEqual(resolveActionStep({ kind: 'walk_to_actor', actor: 'player' }, world()));
+  });
+
+  it('skips when the model found nowhere', () => {
+    expect(resolveDestination(null, world()).kind).toBe('skip');
+  });
+});
+
+describe('resolveActionStep — what it will not do', () => {
   it('skips a step kind it has never heard of', () => {
     // A scene authored by a newer build. Guessing would perform something nobody wrote.
     expect(resolveActionStep({ kind: 'teleport' } as unknown as IWActionStep, world()).kind).toBe('skip');

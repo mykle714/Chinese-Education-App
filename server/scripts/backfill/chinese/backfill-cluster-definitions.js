@@ -72,6 +72,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
+import { buildSearchReadings, defaultPrimaryForms } from './lib/searchReadings.js';
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
 import { createClusterTiebreaker } from '../shared/lib/tiebreakOrder.js';
@@ -384,16 +385,16 @@ async function run() {
     // them as clustered). --force re-clusters; otherwise skip already-set rows.
     const { rows: entries } = await client.query(
       targetIds
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters", "searchReadings"
            FROM dictionaryentries_zh WHERE id = ANY($1) ORDER BY id ASC`
         : targetWords?.length
-        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
+        ? `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters", "searchReadings"
            FROM dictionaryentries_zh
            WHERE language = 'zh' AND word1 = ANY($1)
              ${validatedFilter}
              AND jsonb_array_length(definitions) >= 1
            ORDER BY id ASC`
-        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters"
+        : `SELECT id, word1, pronunciation, "numberedPinyin", definitions, "partsOfSpeech", "frequencyScore", "definitionClusters", "searchReadings"
            FROM dictionaryentries_zh
            WHERE language = 'zh'
              ${includeAll ? '' : 'AND discoverable = TRUE'}
@@ -602,13 +603,35 @@ async function run() {
         // approved `frequencyScore` outranks the invariant, and the CASE leaves their
         // number alone (the only way this entry can stay inconsistent, by design).
         const reconciled = reconcileFrequencyScore(row.frequencyScore, finalClusters);
+        const writtenClusters = reconciled.clusters ?? finalClusters;
+
+        // New clusters can carry a new reading or a new default sense, so re-derive the two
+        // reading columns that follow from them in the SAME statement (the drift this prevents
+        // is how 行's primary sat on `háng` for months after its top senses were re-read
+        // `xing2`). Deterministic post-processing — no model output changes, so this does NOT
+        // bump SCRIPT_VERSION; backfill-search-readings.js --repair-primary healed the rows
+        // written before this existed. See ./lib/searchReadings.js.
+        //   primary        → the default sense's reading (null = already correct)
+        //   searchReadings → re-unioned: existing value (holds the CEDICT readings) ∪ the new
+        //                    clusters ∪ old AND new primary, so nothing becomes unfindable
+        const primary = defaultPrimaryForms({ ...row, definitionClusters: writtenClusters });
+        const searchReadings = buildSearchReadings({
+          clusters: writtenClusters,
+          primaryNumbered: [row.numberedPinyin, primary?.numberedPinyin],
+          existing: row.searchReadings,
+        });
         await client.query(
           `UPDATE dictionaryentries_zh
               SET "definitionClusters" = $1::jsonb,
                   "frequencyScore" = CASE WHEN ${validatedClause(['frequencyScore'], 'dictionaryentries_zh')}
-                                          THEN $3::int ELSE "frequencyScore" END
+                                          THEN $3::int ELSE "frequencyScore" END,
+                  "searchReadings" = $4,
+                  pronunciation    = COALESCE($5, pronunciation),
+                  "numberedPinyin" = COALESCE($6, "numberedPinyin"),
+                  tone             = COALESCE($7, tone)
             WHERE id = $2`,
-          [JSON.stringify(reconciled.clusters ?? finalClusters), row.id, reconciled.wordScore]
+          [JSON.stringify(writtenClusters), row.id, reconciled.wordScore, searchReadings,
+            primary?.pronunciation ?? null, primary?.numberedPinyin ?? null, primary?.tone ?? null]
         );
         await stampEntries(client, 'dictionaryentries_zh', row.id);
         updated++;

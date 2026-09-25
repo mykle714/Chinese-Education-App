@@ -12,6 +12,7 @@
  * See docs/ARCHITECTURE_REVIEW.md finding 3 and docs/MASTERY_REWORK.md.
  */
 import type { MarkType } from "../types";
+import { COLORS } from "../theme/colors";
 import { PBH_FULL as PBH_FULL_VALUE } from "../../server/contracts/mastery";
 import type { MasteryBar } from "../../server/contracts/mastery";
 import type { MasteryBarId } from "../../server/contracts/wire";
@@ -105,44 +106,31 @@ export function masteryWindowCells(bar: MasteryBar): MasteryWindowCell[] {
 }
 
 /**
- * App light colors per mark type (docs/MASTERY_REWORK.md).
+ * One colour per MARK TYPE — the identity of a skill, not a measure of progress
+ * (docs/MASTERY_REWORK.md).
  *
- * These collide with the PRE-REDESIGN saturated utcm category colors (same four hexes).
- * That collision is now contained rather than outstanding: the one surface that paints a
- * band as a small solid shape, the mini-card pip strip, uses `BAND_INK`'s darker `*A`
- * tier precisely so the two sets never meet at the same value. See the NOTE at the foot
- * of this file.
+ * ⚠️ NOT for mastery cells. Since 2026-09-23 a mastery window is coloured by the
+ * track's BAND (`getBandMark`, utils/categoryColors.ts): "mastery bars are colored by
+ * mastery progress, not the mark type". These remain for surfaces that name a SKILL —
+ * Bubble Match's track toggle dot and the eip tab strip (`TAB_COLORS`).
+ *
+ * v2 (docs/SHELF_REDESIGN.md § A1b): the four v1 literals (#779BE7 / #05C793 / #EF476F /
+ * #FF8E47) were outside the palette; they are now the MARK tier of the hue each skill
+ * has always owned, so a skill dot and a mastery cell are drawn from one register.
  */
-// ⚠️ THESE FOUR HEXES ARE LITERAL ON PURPOSE — do not re-point them at the pastel ramp
-// in `theme/colors.ts`. The shelf design (docs/SHELF_REDESIGN.md) spells them inline
-// wherever a mark is drawn: the Card Detail `.msb` mark cells and cooldown legend use
-// `#779BE7` Recognition / `#05C793` Production / `#EF476F` Reading. (Frame 17's deck-preview
-// mini-card strip repeated the same blue and green, but the app's strip has since moved its
-// COLOR onto the mastery band — see the NOTE at the foot of this file — while keeping the
-// frame's geometry.) A mark cell is a small solid
-// mark read directly against the paper ground with nothing sitting on top of it, so it
-// takes the SATURATED hue — unlike a band chip or a spine, which is a FILL and therefore
-// pastel (see CATEGORY_COLORS). A previous pass moved these to the pastels and the cells
-// vanished; that is why the distinction is spelled out here.
-//
-// Writing has no artboard of its own; it keeps the orange it has always had, which is
-// also the design's tone-4 orange.
 export const MARK_TYPE_COLORS: Record<MarkType, string> = {
-  recognition: "#779BE7", // blue
-  production: "#05C793",  // green
-  reading: "#EF476F",     // red
-  writing: "#FF8E47",     // orange
+  recognition: COLORS.bluMk,
+  production: COLORS.grnMk,
+  reading: COLORS.redMk,
+  writing: COLORS.orgMk,
 };
 
 /**
- * The green of the "cooldown elapsed, this track is markable now" check icon.
- *
- * The design fixes this at `#05C793` (`.msb .cd3 .ms` and `.mst .cdr .ms` in
- * `shelf-system.css`) — the same green as a Production mark, but a separate constant
- * because the icon means "ready", not "production". Kept here beside the mark colors
- * rather than in `theme/colors.ts` because only the mastery surfaces draw it.
+ * The "cooldown elapsed, this track is markable now" check icon. v2 draws it
+ * `var(--success)`, which is ink — the check glyph says "ready" by its shape. Kept as a
+ * named constant so the mastery surfaces agree on it.
  */
-export const MASTERY_READY_COLOR = "#05C793";
+export const MASTERY_READY_COLOR = COLORS.successInk;
 
 export const MARK_TYPE_LABELS: Record<MarkType, string> = {
   recognition: "Recognition",
@@ -164,17 +152,10 @@ export const BAR_LABELS: Record<MasteryBarId, string> = {
   writing: "Write",
 };
 
-// NOTE: the cdp track colors a bar by its SEGMENTS' mark types (MARK_TYPE_COLORS), so
-// there is nothing to name there.
+// NOTE: both mastery surfaces — the cdp window and the mini-card strip — colour every
+// filled cell by the track's utcm BAND (`getBandMark`, categoryColors.ts), while the
+// cells' LENGTHS still come from the per-mark-type segments. See docs/MASTERY_REWORK.md
+// § "Mini cards — the eight-mark window".
 //
-// The mini-card strip NO LONGER DOES. Its pips are colored by the lens bar's utcm BAND
-// (`getBandInk`, categoryColors.ts) while their lengths stay per mark type — see
-// docs/MASTERY_REWORK.md § "Mini cards — the eight-mark window". So the two mastery surfaces now
-// answer with different palettes on purpose, and `getBandInk` is deliberately the ramp's
-// dark `*A` tier rather than the pre-redesign saturated band hexes, which are byte-for-byte
-// the four values in MARK_TYPE_COLORS above. Blue must not mean "Recognition" on the cdp
-// and "Mastered" on the thumbnail beside it.
-//
-// The fdp's Mastered TILES do need one color per bar, and that lives in
-// MASTERY_BAR_COLORS (src/utils/categoryColors.ts) beside the other tile palettes. It
-// borrows from MARK_TYPE_COLORS for reading/writing rather than inventing hues.
+// The fdp's Mastered TILES need one colour per bar; that lives in MASTERY_BAR_COLORS
+// (src/utils/categoryColors.ts) beside the other tile palettes.

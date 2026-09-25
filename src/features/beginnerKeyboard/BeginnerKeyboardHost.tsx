@@ -6,7 +6,7 @@
  * keyboard itself knows nothing about inputs, carets or the OS.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 7a (host surface, app-wide), § 6z-2 (the
- * switch bar).
+ * switch bar), § 6z-3 (the switch choice persists for the session).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * IT IS THE KEYBOARD — NOT AN OFFER (decided 2026-09-07)
@@ -36,12 +36,17 @@
  * keyboard's measured top edge. That is why `source === 'os'` no longer renders
  * nothing.
  *
+ * ⚠️ THE CHOICE ITSELF IS NOT HELD HERE (2026-09-24, § 6z-3). This host is keyed
+ * per field, so state in it dies on every field change — which is how `ABC` used
+ * to be forgotten at the next input. `source` is a prop owned by the provider and
+ * persists for the session; this host only carries out whichever mode it is given.
+ *
  * ⚠️ THE BAR IS ONLY EVER OVER AN ELIGIBLE FIELD. The provider mounts this host
  * exactly where the handwriting keyboard is allowed (Chinese learners, eligible
  * field, non-authoring route), so a field that declines the keyboard —
- * `data-beginner-keyboard="off"`, the iw dictionary tray — gets the plain OS
- * keyboard with no bar over it. That is the point: there is no second keyboard to
- * switch to there, and advertising one over an English-only field would be a lie.
+ * `data-beginner-keyboard="off"` — gets the plain OS keyboard with no bar over
+ * it. That is the point: there is no second keyboard to switch to there, and
+ * advertising one over a field that cannot take a character would be a lie.
  *
  * ⚠️ THE FIELD KEEPS FOCUS THROUGHOUT. Insertion happens at the caret, so the
  * caret must still exist — which is why every control here prevents `mousedown`
@@ -60,16 +65,27 @@
  * ⚠️ IT PORTALS, AND IT IS `absolute` RATHER THAN `fixed`. On desktop the app
  * runs inside a 402px phone frame; a `position: fixed` surface resolves against
  * the browser window and would span the whole screen — the exact failure
- * `overlayHost.ts` documents. `nearestOverlayHost` finds the box that really
+ * `overlayHost.ts` documents. `frameOverlayHost` finds the box that really
  * bounds the app, and `inset` resolves against it.
+ *
+ * ⚠️ IT HOSTS AT THE FRAME, NOT AT THE NEAREST PAGE SURFACE (2026-09-24).
+ * It used `nearestOverlayHost`, which stops at a transformed page Surface
+ * (`NodePage`'s page-slide). That Surface is its own stacking context, so the
+ * keyboard's z-index 1300 was sealed inside it and the frame-level footer bar
+ * (z-index 100, `FooterPresenter`) painted over the keyboard's bottom rows on
+ * most pages. At the frame the 1300 competes with the footer directly.
+ * The footer deliberately does NOT move: the keyboard covers it, rather than
+ * taking a `useHideFooter` hold the way sheets do (decided 2026-09-24; that
+ * hook is also out of reach — this provider sits ABOVE
+ * `FooterVisibilityProvider`, inside `MobileDemoFrame`).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Box, Slide, useMediaQuery } from '@mui/material';
-import { nearestOverlayHost } from '../../components/overlayHost';
+import { frameOverlayHost } from '../../components/overlayHost';
 import BeginnerKeyboard from './BeginnerKeyboard';
 import KeyboardSwitchBar, { type KeyboardSource } from './KeyboardSwitchBar';
-import { useKeyboardViewport } from './useKeyboardViewport';
+import { DEFAULT_HEIGHT, useKeyboardViewport } from './useKeyboardViewport';
 import { insertAtCaret } from './insertAtCaret';
 import type { EditableField } from './eligibility';
 import { BEGINNER_KEYBOARD_SLIDE_MS, KEYBOARD_SWITCH_BAR_SLIDE_MS } from './transition';
@@ -79,6 +95,13 @@ interface BeginnerKeyboardHostProps {
   field: EditableField;
   /** Drives the slide transition: true is up, false is on its way out. */
   open: boolean;
+  /**
+   * Which keyboard is up. Owned by the provider, NOT by this host: the host is
+   * remounted per field, and the learner's choice must outlive that (§ 6z-3).
+   */
+  source: KeyboardSource;
+  /** The learner flipped the switch bar; the provider remembers it for the session. */
+  onSourceChange: (source: KeyboardSource) => void;
   /** The close chevron was pressed. The provider decides what dismissal means. */
   onDismiss: () => void;
   /** The exit transition has finished; the provider may now release the field. */
@@ -93,36 +116,66 @@ interface BeginnerKeyboardHostProps {
 }
 
 /**
- * Last OS keyboard height actually observed, remembered across fields.
+ * Last SETTLED OS keyboard height, remembered across fields.
  *
  * ⚠️ Module-level on purpose. Because we now suppress the OS keyboard on focus,
  * it may never be on screen long enough to measure — so a per-mount ref would
- * fall back to the default forever. Caching the first real measurement means the
+ * fall back to the default forever. Caching a real measurement means the
  * keyboard matches the platform's own height from then on, including on later
  * fields that never saw it.
  */
 let observedOsHeight: number | null = null;
 
+/**
+ * How long an OS keyboard reading must hold before it is cached.
+ *
+ * ⚠️ THIS IS THE "HALF-EXPANDED KEYBOARD" FIX (2026-09-24). The cache used to be
+ * written on every render where the OS keyboard read as visible — including the
+ * readings `visualViewport` reports WHILE the OS keyboard is still sliding. The
+ * worst one is the dismissal: when the learner taps `写` from `ABC` (or the
+ * blur/refocus dance on first focus drops a keyboard that had started rising),
+ * the last reading still above the 120 px threshold is a partial one, and it was
+ * cached for the rest of the page's life. Our keyboard then mounted at that
+ * height — every row squeezed and a tiny canvas — on every later field.
+ *
+ * A reading that has not been superseded for this long is a keyboard at rest: an
+ * animation (~250 ms on iOS) always posts its next reading, or the hidden one,
+ * sooner. Pending readings are dropped when the keyboard reads as hidden.
+ */
+const OS_HEIGHT_SETTLE_MS = 500;
+
 export default function BeginnerKeyboardHost({
   field,
   open,
+  source,
+  onSourceChange,
   onDismiss,
   onClosed,
   onInsetChange,
   debug,
 }: BeginnerKeyboardHostProps) {
-  // 'ours' from the moment the field is focused; 'os' only if the learner asks
-  // for the system keyboard back. Keyed per field by the provider, so the choice
-  // does not follow them to the next input.
-  const [source, setSource] = useState<KeyboardSource>('ours');
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewport = useKeyboardViewport();
   // Honoured rather than assumed: a learner who has asked the OS for less motion
   // still gets both states, just with no travel between them.
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
-  if (viewport.osKeyboardVisible && viewport.height > 0) observedOsHeight = viewport.height;
-  const keyboardHeight = observedOsHeight ?? viewport.height;
+  // State mirrors the module cache so a settled reading re-renders this host;
+  // it seeds from the cache so a later field starts at the right height.
+  const [osHeight, setOsHeight] = useState<number | null>(observedOsHeight);
+  useEffect(() => {
+    if (!viewport.osKeyboardVisible || viewport.height <= 0) return;
+    const reading = viewport.height;
+    // Cleared by the next reading (or by the keyboard hiding) — see OS_HEIGHT_SETTLE_MS.
+    const timer = setTimeout(() => {
+      observedOsHeight = reading;
+      setOsHeight(reading);
+    }, OS_HEIGHT_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [viewport.osKeyboardVisible, viewport.height]);
+  // Never the live reading: mid-animation it is exactly the partial height this
+  // guards against. The default stands in until a settled one arrives.
+  const keyboardHeight = osHeight ?? DEFAULT_HEIGHT;
 
   /**
    * How high off the bottom the bar has to sit while the OS keyboard is up.
@@ -140,10 +193,10 @@ export default function BeginnerKeyboardHost({
    */
   const osPerch = viewport.osKeyboardVisible ? viewport.height : 0;
 
-  // Where to portal. Computed per field because the right host depends on which
-  // page the field is on — a transformed page Surface becomes the containing
-  // block for its own positioned descendants.
-  const host = useMemo(() => nearestOverlayHost(field), [field]);
+  // Where to portal: always frame level, so the keyboard out-stacks the footer
+  // (see the header). Still computed per field — a field inside an MUI dialog is
+  // outside the frame and gets `document.body`.
+  const host = useMemo(() => frameOverlayHost(field), [field]);
 
   /**
    * Whether the switch bar has cleared its slot.
@@ -192,15 +245,15 @@ export default function BeginnerKeyboardHost({
   }, [source, field]);
 
   const useOsKeyboard = useCallback(() => {
-    setSource('os');
+    onSourceChange('os');
     field.inputMode = '';
     field.blur();
     requestAnimationFrame(() => field.focus({ preventScroll: true }));
-  }, [field]);
+  }, [field, onSourceChange]);
 
   // Coming back the other way needs no dance of its own: the effect above owns
   // the whole suppression sequence and re-runs on the source change.
-  const useOurKeyboard = useCallback(() => setSource('ours'), []);
+  const useOurKeyboard = useCallback(() => onSourceChange('ours'), [onSourceChange]);
 
   const commit = useCallback((text: string) => insertAtCaret(field, text), [field]);
 

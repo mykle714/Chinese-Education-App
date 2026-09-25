@@ -1,5 +1,6 @@
 import type { MarkType } from "../../types";
-import type { RampHue } from "../../theme/colors";
+import { COLORS, type RampHue } from "../../theme/colors";
+import type { WordOutcome } from "./types";
 
 /**
  * Memory Map constants (docs/MEMORY_MAP_GAME.md).
@@ -104,3 +105,19 @@ export const FIT_PADDING = 2;
  * `GameSurfaceProvider`. Tapping a org row must open a org screen.
  */
 export const GAME_HUE: RampHue = "org";
+
+/**
+ * Hue per outcome. Hue ALONE carries the result — no icons, no patterns (Q23).
+ *
+ * v2: the hue is the PARCEL'S FILL, not the glyphs' colour. It used to tint the text
+ * with `successInk` / `warnInk` / `dangerInk`, but v2 made all three plain ink, which
+ * silently erased the result. Colour in v2 is only ever a ground ink sits on, so an
+ * answered word's parcel takes its outcome's MID tier (the row/tile tier) and the
+ * glyphs stay ink. Read by MemoryMapWord (the parcels) and MemoryMapPage (the end
+ * popup's tally), so the two cannot disagree.
+ */
+export const OUTCOME_FILL: Record<WordOutcome, string> = {
+    green: COLORS.grnM,
+    orange: COLORS.orgM,
+    red: COLORS.redM,
+};

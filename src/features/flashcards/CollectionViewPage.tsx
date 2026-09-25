@@ -355,9 +355,10 @@ const CollectionViewPage: React.FC = () => {
                         fontFamily: FONTS.sans,
                         textTransform: "none",
                         color: COLORS.onSurface,
-                        backgroundColor: COLORS.greenAccent,
+                        // v2: a button is a MID-tier fill, not the near-white tint.
+                        backgroundColor: COLORS.grnM,
                         boxShadow: SHADOW.raised,
-                        "&:hover": { backgroundColor: COLORS.greenAccent },
+                        "&:hover": { backgroundColor: COLORS.grnM },
                     }}
                 >
                     Study these cards
@@ -395,7 +396,7 @@ const CollectionViewPage: React.FC = () => {
             {actionError && (
                 <Typography
                     className="collection-view__action-error"
-                    sx={{ color: COLORS.redAccent, fontSize: SIZE.body, fontFamily: FONTS.sans, pt: 1 }}
+                    sx={{ color: COLORS.dangerInk, fontSize: SIZE.body, fontFamily: FONTS.sans, pt: 1 }}
                 >
                     {actionError}
                 </Typography>
@@ -441,7 +442,7 @@ const CollectionViewPage: React.FC = () => {
                 <MenuItem
                     className="collection-view__deck-menu-delete"
                     onClick={() => { setDeleteOpen(true); setDeckMenuAnchor(null); }}
-                    sx={{ color: "#ef5350" }}
+                    sx={{ color: COLORS.dangerInk }}
                 >
                     Delete deck
                 </MenuItem>
@@ -480,7 +481,7 @@ const CollectionViewPage: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setDeleteOpen(false)}>Cancel</Button>
-                    <Button onClick={handleDelete} sx={{ color: "#ef5350" }}>Delete</Button>
+                    <Button onClick={handleDelete} sx={{ color: COLORS.dangerInk }}>Delete</Button>
                 </DialogActions>
             </Dialog>
         </NodePage>

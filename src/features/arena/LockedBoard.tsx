@@ -25,7 +25,7 @@ import { COLORS } from "../../theme/colors";
  * board in the app that ever freezes.
  *
  * ── THE GOLD IS THE FRAME'S, NOT THE ACTION'S ───────────────────────────────────────
- * `COLORS.gldFrame`, a step duller than `RAMP.gld.fill`. They are deliberately different:
+ * `COLORS.gldFrame`, a step duller than `RAMP.gld.surface`. They are deliberately different:
  * the join button directly above this is the page's one thing to tap, and ringing a
  * finished, inert table in that exact colour would invite a tap on it. Antique gold reads
  * as metal; the button's gold reads as go.

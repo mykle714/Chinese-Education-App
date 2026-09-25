@@ -424,7 +424,7 @@ const FlashcardsDecksPage: React.FC = () => {
                                             ...CARD_SURFACE,
                                             cursor: "pointer",
                                             padding: "13px 13px 14px",
-                                            backgroundColor: RAMP[CENTER_HUES[bar]].fill,
+                                            backgroundColor: RAMP[CENTER_HUES[bar]].surface,  // v2 "Surface: Reading/Writing Centers"
                                         }}
                                     >
                                         <Icon name={CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />

@@ -105,9 +105,8 @@ that is left, rather than the pair centring together. The icon is the chip's anc
 what says at a glance which control this is, before the word is read — and an anchor
 that slides as the label changes length is not one. It also gives the label a
 constant-size box in every state, which is what keeps a shrunken word optically
-centred. The immersive-world volume chip is the same control laid out the same way,
-and by the same sizing rule comes out exactly as wide (see
-[IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a).
+centred. (The immersive-world volume chip was the other control laid out this way;
+it was removed on 2026-09-23 — [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 4c.)
 
 `MODE_LABEL_WIDTH_CH` derives the count from `MODE_CHIP`, so adding or renaming a
 state cannot silently bring the jump back.

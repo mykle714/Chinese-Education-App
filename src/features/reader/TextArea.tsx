@@ -4,6 +4,7 @@ import { selectRelativeSpan, type SegmentSpan } from "./documentSegmentation";
 import ReaderTapOverlay from "./ReaderTapOverlay";
 import { FONTS } from "../../theme/fonts";
 import { SIZE } from "../../theme/scale";
+import { COLORS } from "../../theme/colors";
 
 // Text interface for TypeScript
 interface Text {
@@ -168,13 +169,13 @@ function TextArea({
                                 touchAction: 'pan-y',
                             },
                             '& fieldset': {
-                                borderColor: 'rgba(0, 0, 0, 0.12)',
+                                borderColor: COLORS.markOutline,
                             },
                             '&:hover fieldset': {
-                                borderColor: 'rgba(0, 0, 0, 0.23)',
+                                borderColor: COLORS.wood,
                             },
                             '&.Mui-focused fieldset': {
-                                borderColor: 'primary.main',
+                                borderColor: COLORS.onSurface,
                             },
                         },
                     }}

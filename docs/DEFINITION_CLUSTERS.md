@@ -302,7 +302,21 @@ resolves; if they stay server-side, the server resolves.** No surface reads the 
 Client — the flashcard face's `ChineseBlock` (which takes the live `selectedSenseIndex` so a
 pick made this session shows immediately, exactly like the gloss), the cdp hero AND the cdp
 header block (both on one entry, so both take the same `selectedSenseIndex`), the eip header,
-and the game prompts (match speed, bubble match, speed reading).
+the game prompts (match speed, bubble match, speed reading — whose word-round **spoken** hint
+`speechPinyin` now uses the same resolved value as the printed one, `roundPrompt.ts`), the
+breakdown tab's per-character pinyin (`src/utils/breakdownUtils.ts` → `getBreakdownItems`,
+taking the cdp's `selectedSenseIndex`), and every surface rendering a raw dictionary search
+result — `DictionaryEntryRow`, `IWLookupResults`, `CommunitySearchBar` (`EntryDesignsSection`),
+`CompareWorkspace` slots, `VocabDisplayCard` (Reader) and the legacy `FlashCard`.
+`DictionaryDAL.mapRowToEntity` deliberately still ships the column in `pronunciation` (plus the
+clusters), so a search result is resolved at the render site, not in the DAL.
+
+Segments — a sentence segment with no sense tag (every IW speech bubble, every Reader
+document, an est segment the tagging pass did not label) falls back to the entry's **default**
+sense reading through this same resolver, not to the column: `resolveSenseView` in
+`server/dal/shared/segmentString.ts`, row 4 of the priority table in
+[SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md) § 3a. This is what makes 行行 in an IW line
+read `xíng xíng` (the top-scored "OK" sense) rather than the column's `háng`.
 
 Server — the payloads that materialize a sense-resolved dd where the clusters do NOT travel,
 via the twin `resolveDisplayPronunciation` in `server/utils/definitions.ts` (numbered→toned
@@ -317,14 +331,20 @@ resolvers and are stripped before the row leaves the method, so no wire DTO carr
 | used-in list, pass 1 (saved words) | `VocabEntryDAL.findUsedInForCharacter` | the learner's `selectedSense` |
 | used-in list, pass 2 (dictionary words) | same | default — no pick to honor, but the default branch still applies |
 | Word Search word list | `OnDeckVocabService` | default |
+| Word Search bonus words | `OnDeckVocabService` (`bonusWordsResult`) | default |
+| synonyms metadata (st) | `DictionaryService.buildSynonymMetadata` | default |
+| validator document title | `ValidationService` (document composer) | default |
 | related-words list | `VocabEntryDAL.findRelatedBySharedCharacters` | learner's pick where saved |
 
-**Not covered (deliberate):** **card** TTS still narrates the entry-level `pronunciation`
-(`src/hooks/useTTS.ts` `speak`/`prefetch`, and the server-side audio prewarm in
-`OnDeckVocabService.prewarmAudio`). Making audio per-sense means the prewarm and the
-cloud-TTS cache key must resolve the same sense, so it is a separate change. (Example-sentence
-*segment* narration is already sense-correct — it passes `segmentMetadata[seg].pronunciation`,
-which the est path resolves per sense; see the est consumer row below.)
+**Audio.** Card TTS is sense-resolved on both halves of the cache key: `src/hooks/useTTS.ts`
+(`speak`/`autoSpeak`/`prefetch`) passes `resolveDisplayPronunciation(entry[, senseIndex])`, and
+the server-side prewarm `OnDeckVocabService.prewarmAudio` resolves through the server twin, so
+the pre-warmed MP3 is the one the client asks for. (Example-sentence *segment* narration is
+sense-correct via `segmentMetadata[seg].pronunciation`; see the est consumer row below.)
+**Still not covered:** Immersive World's spoken lines — `useIWSceneRuntime` calls
+`prepareSentence`/`autoSpeakSentence` with NO pinyin hint, so Google guesses each polyphone
+itself and can disagree with the bubble's (now correct) pinyin. The segments arrive after the
+line starts streaming, which is why a hint is not simply threaded through.
 
 Referenced code: `src/utils/definitionUtils.ts` (`resolveDisplayPronunciation`,
 `readingCluster`), `server/utils/definitions.ts` (server twins),

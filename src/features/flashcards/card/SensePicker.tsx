@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import React from "react";
 import { Box, ListSubheader, Menu, MenuItem, Typography } from "@mui/material";
 import Icon from "../../../components/Icon";
@@ -173,7 +174,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
                     learner has never picked one. Marked on the sense itself, not in a
                     gutter, so it costs no column. */}
                 {index === 0 && (
-                    <Icon name="star" size={13} fill={1} color="#F4A700" className={`${classPrefix}-sense-star`} />
+                    <Icon name="star" size={13} fill={1} color={COLORS.gld} className={`${classPrefix}-sense-star`} />
                 )}
                 {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency
                     score, migration 139 / docs/DEFINITION_CLUSTERS.md) — the same meter
@@ -240,8 +241,8 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         // while the sheet is up rather than as one more thing to tap.
                         ? { backgroundColor: COLORS.onSurface, boxShadow: "none" }
                         : {
-                              backgroundColor: "rgba(23,22,26,0.05)",
-                              boxShadow: "inset 0 0 0 1px rgba(23,22,26,0.08)",
+                              backgroundColor: COLORS.rowHoverBg,
+                              boxShadow: `inset 0 0 0 1px ${alpha(COLORS.onSurface, 0.08)}`,
                           }),
                 }}
             >

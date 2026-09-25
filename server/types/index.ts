@@ -23,6 +23,7 @@ import type {
   Language,
   StarterPackBucket,
   TextBase,
+  UserGender,
   UserProfile,
   ValidationField,
   VocabEntryBase,
@@ -60,7 +61,6 @@ export type {
   RelatedWord,
   ReviewMark,
   SegmentMetadata,
-  ShortDefinitionPronunciationOverride,
   SnapConfig,
   SortPack,
   StarterPackBucket,
@@ -173,6 +173,10 @@ export interface UserCreateData {
    * then (docs/STUDY_CHALLENGE.md § 2). UserService.createUser resolves this.
    */
   timezone?: string;
+  /** Asked at signup (migration 164). Null/absent = "Prefer not to answer". */
+  gender?: UserGender | null;
+  /** Asked at signup (migration 164), `YYYY-MM-DD`. Null/absent = "Prefer not to answer". */
+  birthDate?: string | null;
 }
 
 export interface UserLoginData {
@@ -196,6 +200,10 @@ export interface UserUpdateData {
   showSegmentSpaces?: boolean;
   /** Chosen in account settings (migration 157). One of CHINESE_FONT_IDS. */
   chineseFont?: string;
+  /** Set in account settings (migration 164). Null clears it. Validated by UserService.validateDemographics. */
+  gender?: UserGender | null;
+  /** Set in account settings (migration 164), `YYYY-MM-DD`. Null clears it. */
+  birthDate?: string | null;
   /**
    * The arena message (migration 152). Written through
    * ArenaService.setMessage, which trims, caps and sanitises it — do not set it

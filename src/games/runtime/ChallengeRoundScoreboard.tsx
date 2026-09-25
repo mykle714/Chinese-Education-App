@@ -6,9 +6,21 @@ import { nearestOverlayHost } from "../../components/overlayHost";
 import { challengeLaunchFor } from "./challengeLaunch";
 import { signedPoints } from "../../features/studyChallenge/challengeLabels";
 import type { ChallengeRoundState } from "./useChallengeRound";
+import { alpha } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+
+/**
+ * Chrome on the scoreboard's DARK ground. This is the app's one dark surface (with the
+ * View Challenge running total), so its neutrals are the inverse of the paper ground's:
+ * white text, white-alpha lines. Named here so the six white alphas below are one scale
+ * rather than six loose literals; the `COLORS.hl*` highlights stay the figures' colours.
+ */
+const ON_DARK = COLORS.white;
+const onDark = (opacity: number): string => alpha(COLORS.white, opacity);
+/** The ground: ink, not quite opaque, so a sliver of the finished board shows through. */
+const DARK_GROUND = alpha(COLORS.onSurface, 0.93);
 
 /**
  * The between-games scoreboard (docs/STUDY_CHALLENGE.md § 5.5, design F14).
@@ -129,8 +141,8 @@ const ChallengeRoundScoreboard: React.FC<{
                 alignItems: "baseline",
                 gap: 1,
                 width: "100%",
-                ...(tone === "sub" && { mt: 1.5, pt: 1.75, borderTop: "1px solid rgba(255,255,255,.18)" }),
-                ...(tone === "total" && { mt: 1.75, pt: 2, borderTop: "1px solid rgba(255,255,255,.3)" }),
+                ...(tone === "sub" && { mt: 1.5, pt: 1.75, borderTop: `1px solid ${onDark(0.18)}` }),
+                ...(tone === "total" && { mt: 1.75, pt: 2, borderTop: `1px solid ${onDark(0.3)}` }),
             }}
         >
             <Typography sx={{
@@ -140,14 +152,14 @@ const ChallengeRoundScoreboard: React.FC<{
                 letterSpacing: tone === "total" ? "-0.03em" : undefined,
                 textTransform: tone === "total" ? "uppercase" : undefined,
                 lineHeight: tone === "total" ? LEADING.none : undefined,
-                color: "#fff",
+                color: ON_DARK,
                 flex: 1,
                 textAlign: "left",
             }}>
                 {label}
             </Typography>
             {detail && (
-                <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: "rgba(255,255,255,.5)" }}>
+                <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: onDark(0.5) }}>
                     {detail}
                 </Typography>
             )}
@@ -160,7 +172,7 @@ const ChallengeRoundScoreboard: React.FC<{
                 // The two figures that are not a breakdown line get the dark-ground
                 // highlights: yellow for this round, blue for the total, so the eye
                 // can find either without reading the labels.
-                color: tone === "sub" ? COLORS.hlYellow : tone === "total" ? COLORS.hlBlue : "#fff",
+                color: tone === "sub" ? COLORS.hlYellow : tone === "total" ? COLORS.hlBlue : ON_DARK,
                 minWidth: 72,
                 textAlign: "right",
             }}>
@@ -185,7 +197,7 @@ const ChallengeRoundScoreboard: React.FC<{
                 // Not fully opaque: a sliver of the finished board stays legible behind
                 // it, which is what says "this score came from THAT run" without
                 // offering the board back.
-                backgroundColor: "rgba(12,11,14,.93)",
+                backgroundColor: DARK_GROUND,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "stretch",
@@ -197,7 +209,7 @@ const ChallengeRoundScoreboard: React.FC<{
         >
             <Box
                 className={`${classPrefix}__challenge-heading`}
-                sx={{ display: "flex", flexDirection: "column", gap: 0.75, pb: 2.25, borderBottom: "1px solid rgba(255,255,255,.14)" }}
+                sx={{ display: "flex", flexDirection: "column", gap: 0.75, pb: 2.25, borderBottom: `1px solid ${onDark(0.14)}` }}
             >
                 {/* Which round, then which game — in that order and at that contrast,
                     because after three rounds the player's question is "where am I",
@@ -209,14 +221,14 @@ const ChallengeRoundScoreboard: React.FC<{
                         fontSize: SIZE.caption,
                         letterSpacing: "0.14em",
                         textTransform: "uppercase",
-                        color: "rgba(255,255,255,.5)",
+                        color: onDark(0.5),
                     }}
                 >
                     Round {roundIndex} of {roundCount}
                 </Typography>
                 <Typography
                     className={`${classPrefix}__challenge-title`}
-                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.title, fontWeight: WEIGHT.bold, letterSpacing: "-0.02em", color: "#fff" }}
+                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.title, fontWeight: WEIGHT.bold, letterSpacing: "-0.02em", color: ON_DARK }}
                 >
                     {gameTitle}
                 </Typography>
@@ -257,7 +269,7 @@ const ChallengeRoundScoreboard: React.FC<{
             {!result.submitted && !result.error && (
                 <Typography
                     className={`${classPrefix}__challenge-saving`}
-                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: "rgba(255,255,255,.6)", mt: 1.5 }}
+                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: onDark(0.6), mt: 1.5 }}
                 >
                     Saving your score…
                 </Typography>
@@ -286,10 +298,10 @@ const ChallengeRoundScoreboard: React.FC<{
                             lineHeight: LEADING.tight,
                             // Inverted against the dark ground: white IS the primary
                             // here, the way charcoal is on the paper ground.
-                            backgroundColor: "#fff",
-                            color: "#111",
-                            "&:hover": { backgroundColor: "#fff" },
-                            "&.Mui-disabled": { backgroundColor: "rgba(255,255,255,.35)", color: "rgba(17,17,17,.5)" },
+                            backgroundColor: ON_DARK,
+                            color: COLORS.onSurface,
+                            "&:hover": { backgroundColor: ON_DARK },
+                            "&.Mui-disabled": { backgroundColor: onDark(0.35), color: alpha(COLORS.onSurface, 0.5) },
                         }}
                     >
                         Next round · {next.title}
@@ -304,8 +316,8 @@ const ChallengeRoundScoreboard: React.FC<{
                         textTransform: "none",
                         fontSize: SIZE.body,
                         fontWeight: WEIGHT.medium,
-                        color: "rgba(255,255,255,.85)",
-                        border: "1px solid rgba(255,255,255,.3)",
+                        color: onDark(0.85),
+                        border: `1px solid ${onDark(0.3)}`,
                     }}
                 >
                     {next ? "Back to the challenge" : "See the challenge"}

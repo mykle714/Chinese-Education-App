@@ -18,7 +18,7 @@ import {
   composePartsOfSpeechBody,
   composeSenseFrequencyScoreBody,
 } from '../utils/validationBodyFormat.js';
-import { longDefToDisplayString, type LongDefinitionValue } from '../utils/definitions.js';
+import { longDefToDisplayString, resolveDefaultPronunciation, type LongDefinitionValue } from '../utils/definitions.js';
 
 /**
  * Validation Service — business logic for the human-in-the-loop data-validation
@@ -171,7 +171,8 @@ export class ValidationService {
     const content = this.composeBody(entry, field);
     // Title carries the word and, when present, its pronunciation (pinyin for zh):
     // "Validate - 方言 - fāng yán". pronunciation may be NULL (e.g. some es rows).
-    const pinyin = entry.pronunciation?.trim();
+    // The entry's default-sense reading (it is a word-level title, not one sense's card).
+    const pinyin = resolveDefaultPronunciation(entry)?.trim();
     const title = pinyin ? `Validate - ${entry.word1} - ${pinyin}` : `Validate - ${entry.word1}`;
     const description = FIELD_LABEL[field];
 

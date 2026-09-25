@@ -115,14 +115,14 @@ Child docs:
 
 ### 4. `shortDefinition` — deterministic short gloss
 - **Shape:** `string | null`, resolved at read time, **no AI**.
-- **Rule:** `resolveShortDefinition` = manual override `?.definition`, else
-  `generateShortDefinition(definitions)` (`server/utils/definitions.ts`).
+- **Rule:** `generateShortDefinition(definitions)` (`server/utils/definitions.ts`).
   The generator filters grammatical-note glosses (`(`/`CL:`), splits on
   `; `, strips trailing parentheticals, and returns the **shortest** surviving
-  token.
-- **Override:** `shortDefinitionPronunciationOverride.definition`
-  (`server/types/index.ts`) wins verbatim.
-- **Hydrated by:** `DictionaryDAL` (`server/dal/implementations/DictionaryDAL.ts`).
+  token. There is no manual override: `shortDefinitionPronunciationOverride` was
+  dropped by migration 166.
+- **Hydrated by:** `DictionaryDAL.mapRowToEntity` (`server/dal/implementations/DictionaryDAL.ts`).
+- **Consumers:** none on the client today — the field is on the `DictionaryEntry` wire
+  type but no surface renders it.
 
 ### 5. `longDefinition` — AI extended definition
 - **Shape stored (zh):** JSONB **array, one element per (SENSE, PART OF SPEECH) pair** —

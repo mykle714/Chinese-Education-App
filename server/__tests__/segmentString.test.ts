@@ -228,9 +228,42 @@ describe('buildSegmentMetadata — sense-aware pronunciation', () => {
     expect(meta['会'].definition).toBe('to reckon accounts');
   });
 
-  it('falls back to the entry-level pronunciation when the segment is un-tagged', () => {
+  it('falls back to the default (highest-frequencyScore) sense’s reading when un-tagged', () => {
     const meta = buildSegmentMetadata(['会'], dict(huiEntry()));
     expect(meta['会'].pronunciation).toBe('huì');
+  });
+
+  it('un-tagged: the default sense’s reading beats a stale entry-level column (行 xíng, not háng)', () => {
+    // An IW bubble / Reader document carries no sense tags. The column held CEDICT's háng
+    // while the clusters were re-read — the top-scored sense ("OK") is xíng.
+    const xing = {
+      ...entry('行', 5),
+      pronunciation: 'háng',
+      definitions: ['OK', 'row'],
+      definitionClusters: [
+        { sense: 'row / line', reading: 'hang2', pos: ['noun'], gender: null, frequencyScore: 4, glosses: ['row'] },
+        { sense: 'OK, all right', reading: 'xing2', pos: ['adjective'], gender: null, frequencyScore: 5, glosses: ['OK'] },
+      ],
+    } as DictionaryEntry;
+    const meta = buildSegmentMetadata(['行'], dict(xing));
+    expect(meta['行'].pronunciation).toBe('xíng');
+  });
+
+  it('un-tagged: a gloss-less PARTICLE sense still supplies the default reading (了 le, not liǎo)', () => {
+    // The card resolver skips clusters whose glosses are all parenthetical; a sentence
+    // segment must not, or every 了 in an IW bubble reads liǎo.
+    const le = {
+      ...entry('了', 5),
+      pronunciation: 'le',
+      definitions: ['(completed action marker)', 'to understand'],
+      definitionClusters: [
+        { sense: 'completed-action particle', reading: 'le', pos: ['particle'], gender: null, frequencyScore: 5, glosses: ['(completed action marker)'] },
+        { sense: 'to understand', reading: 'liao3', pos: ['verb'], gender: null, frequencyScore: 2, glosses: ['to understand'] },
+        { sense: 'clear-sighted', reading: 'liao3', pos: ['adjective'], gender: null, frequencyScore: 1, glosses: ['clear-sighted'] },
+      ],
+    } as DictionaryEntry;
+    const meta = buildSegmentMetadata(['了'], dict(le));
+    expect(meta['了'].pronunciation).toBe('le');
   });
 
   it('falls back when the tagged label matches no cluster (stale label after re-clustering)', () => {

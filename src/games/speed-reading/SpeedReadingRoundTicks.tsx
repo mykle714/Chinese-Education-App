@@ -17,13 +17,14 @@ import { COLORS } from "../../theme/colors";
  * colour to be seen peripherally — which is the only way it will be seen, since the
  * player's eyes are on the words.
  *
- * ── THE COLOURS ARE THE APP'S, NOT THE ARTBOARD'S ─────────────────────────────────
- * The artboard fills these with `#22C55E` / `#EF4444` — a bright green/red pair that is
- * outside the app's ramp. They are drawn here with `COLORS.successInk` / `dangerInk`,
- * the app's ONE green and ONE red for "this went well / this went badly", because a
- * second pair would make these pips disagree with every other success and failure in
- * the app (the tap-zone flash this same answer just produced included). A pending pip
- * takes `COLORS.card`, the same inert fill every empty track in the app uses.
+ * ── THE COLOURS (v2, artboard 15) ───────────────────────────────────────────────
+ * Correct `--grnK`, wrong `--redK` (K = the MID tier, `COLORS.grnM` / `redM`), pending
+ * `--wood`. These used to be `successInk` / `dangerInk`, but v2 made every semantic ink
+ * plain INK, which would have drawn right and wrong pips identically — so the pips take
+ * the ramp FILLS instead, the same two tokens the tap-zone flash for this same answer
+ * uses (ZONE_TINT_CORRECT / ZONE_TINT_WRONG). Each lit pip carries the palette's inset
+ * `markOutline` ring, the rule for every pastel mark (theme/colors `markOutline`); a
+ * pending pip is the ink-alpha `--wood`, which needs none.
  *
  * Layer: presentational — it holds no state and computes nothing but its own layout.
  */
@@ -46,8 +47,8 @@ export interface SpeedReadingRoundTicksProps {
 }
 
 const TICK_COLOR: Record<RoundTick, string> = {
-    correct: COLORS.successInk,
-    wrong: COLORS.dangerInk,
+    correct: COLORS.grnM,
+    wrong: COLORS.redM,
 };
 
 const SpeedReadingRoundTicks: React.FC<SpeedReadingRoundTicksProps> = ({
@@ -91,7 +92,8 @@ const SpeedReadingRoundTicks: React.FC<SpeedReadingRoundTicksProps> = ({
                                     flex: 1,
                                     height: "8px",
                                     borderRadius: "3px",
-                                    backgroundColor: tick ? TICK_COLOR[tick] : COLORS.card,
+                                    backgroundColor: tick ? TICK_COLOR[tick] : COLORS.wood,
+                                    boxShadow: tick ? `inset 0 0 0 1px ${COLORS.markOutline}` : "none",
                                     // Only the pip that just landed animates; the rest
                                     // are already at their colour when this runs.
                                     transition: "background-color 200ms linear",

@@ -15,8 +15,11 @@ import { isFeatureEnabled } from '../contracts/featureFlags.js';
  */
 const router = Router();
 
-// Get all users
-router.get('/api/users', authenticateToken, handle(userController.getAllUsers, userController));
+// NOTE: GET /api/users ("get all users") was DELETED 2026-09-23. It ran `SELECT * FROM users`
+// behind nothing but authenticateToken, so any signed-in account could download every account's
+// email, timezone and bcrypt password hash. There is no admin role to gate it behind, and no
+// client ever called it. Anything that needs a list of users should add a narrow, purpose-built
+// read, never re-expose the whole row.
 
 // Create new user (admin only)
 router.post('/api/users', authenticateToken, handle(userController.createUser, userController));
@@ -32,6 +35,10 @@ router.put('/api/users/goals', authenticateToken, handle(userController.updateGo
 
 // Update the account's display preferences (word spacing). See docs/EXAMPLE_SENTENCES.md
 router.put('/api/users/displaySettings', authenticateToken, handle(userController.updateDisplaySettings, userController));
+
+// Set/clear the learner's gender and date of birth (migration 164). Read by Immersive World
+// to pick the learner's body and describe them to NPCs. See docs/IMMERSIVE_WORLD.md § 5.5
+router.put('/api/users/demographics', authenticateToken, handle(userController.updateDemographics, userController));
 
 // Minute Points — increment by 1
 router.post('/api/users/minutePoints/increment', authenticateToken, handle(userMinutePointsController.incrementMinutePoints, userMinutePointsController));
@@ -70,7 +77,8 @@ if (isFeatureEnabled('community')) {
     router.get('/api/users/:userId/designs', authenticateToken, handle(userProfileController.getDesigns, userProfileController));
 }
 
-// Get user by ID (kept after the literal paths above)
+// Get YOUR OWN user row by ID (kept after the literal paths above). Self-only since 2026-09-23 —
+// another account's id is a 403; public facts about other people go through /:userId/profile.
 router.get('/api/users/:id', authenticateToken, handle(userController.getUserById, userController));
 
 // NOTE: GET /api/users/:id/totalMinutePoints was removed by migration 130 — wallets are

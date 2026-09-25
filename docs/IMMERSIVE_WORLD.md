@@ -152,6 +152,16 @@ the action button bottom-right, the input docked above it. No virtual stick: the
 between tiles, not in continuous space, and a stick buys nothing that layout does not.
 `useBlockEdgeSwipe(true)` is mandatory, as on every game page.
 
+**The learner's body follows their account (BUILT 2026-09-23, migration 164).** It is
+`iwPlayerAvatar(user.gender)` (`server/contracts/iw.ts`), not a constant: `users."gender"` is
+asked at signup and editable in Settings (§ 5.5a), and maps directly onto the sprite pack's two
+bodies. An unset gender — an account predating 164, or "Prefer not to answer" — gets
+`IW_DEFAULT_PLAYER_AVATAR` (`'female'`), the one body every learner had before, so nobody's
+learner changes appearance without having answered. It is still **not a scene choice**: the
+play runtime (`useIWSceneRuntime` → `buildSceneBodies(…, playerAvatar)`) and the editor's Player
+pin (`IWSceneMapPanel`) both read it from the signed-in account, so an author sees the body they
+will play the scene in.
+
 Because tap now means four things (Q18's table), the world surface is the **only** one that
 hit-tests: the input region and the speech bubble consume their own taps, and within the world
 an NPC or object hit wins over the tile beneath it.
@@ -295,13 +305,13 @@ Referenced by: `server/contracts/iw.ts` → `IWSceneLayout`;
 `ForcedArrowOverlay`, `FACING_SCREEN_VECTOR`; `src/engine/market/farmTerrain.ts` →
 `EditorMasks`; `server/services/iw/sceneValidation.ts` → `validateLayout`.
 
-## 4. The hearing model — WITHDRAWN 2026-09-07, REBUILT THE SAME DAY as § 4c
+## 4. The hearing model — WITHDRAWN 2026-09-07 (and its § 4c replacement, 2026-09-23)
 
-> **The automatic gate is gone and is not coming back. A LEARNER-CHOSEN one replaced it.**
-> `src/engine/iw/hearing.ts` was deleted — radii, occlusion, volumes and all — and hearing is
-> now a **volume the learner picks in the composer** (§ 4c): whisper, normal voice, shout. The
-> rest of this section is kept because its three findings are exactly what § 4c was built
-> against, and every one of them is answered rather than overruled.
+> **There is no hearing model. Everybody in a scene hears every line.** The automatic gate
+> below was deleted on 2026-09-07; the learner-chosen volume that replaced it the same day
+> (§ 4c) was deleted on 2026-09-23. What the engine decides instead is WHO WAS MEANT — from
+> position, facing and the sentence itself — which is § 4.2. This section is kept for its three
+> findings, which are why neither gate is coming back.
 
 **What the gate was.** Audibility decided by pure geometry, client-side, before any model
 call: `chebyshev(speaker, npc) ≤ radius(volume)` (whisper 2, talk 5, shout 12), minus an
@@ -334,7 +344,7 @@ an expensive, illegible generator.
 | Piece | Where it went |
 |---|---|
 | `chebyshev` | `src/engine/iw/sceneGraph.ts` — a board metric, still reporting `nearby` distances into an NPC's prompt |
-| Nearest-first ordering | `audienceFor` — no longer audibility, now the cap's drop order and the fallback for who is `addressed` |
+| Nearest-first ordering | `audienceFor` — no longer audibility, now the order `chooseAddressee`'s last-resort `nearest` rung reads |
 | The `busy` exclusion | Nothing. It was never set by any caller |
 | `muffled` on `NearbyBody` | Deleted. Also never set — the client has only ever built `{label, distance, facingYou}` |
 | Character-level deafness | Untouched. 何老师 is hard of hearing in his *sheet* (§ 5.6d), which is roleplay in layer 2 and always was the better version of this idea |
@@ -345,71 +355,37 @@ Then § 4.2 routed each utterance to exactly ONE NPC, and the fan-out this gate 
 stopped existing. Cost is now flat: **one route + one turn per utterance, whatever the cast
 size.** Neither the gate nor its replacement is a budget lever any more.
 
-## 4c. Volume — the hearing gate the learner operates (BUILT 2026-09-07)
+## 4c. Volume — ~~the hearing gate the learner operates~~ WITHDRAWN 2026-09-23
 
-> **Three volumes in the composer. A whisper reaches the ONE cell in front of the avatar; a
-> normal voice reaches `IW_TALK_RADIUS` (5) cells; a shout reaches everybody in the scene.**
-> `src/features/immersiveworld/play/hearing.ts` → `hears` / `audibleListeners` /
-> `whisperCell`; the control is `IWComposer`'s `iw-composer__volume` group.
+> **Removed. Everybody in a scene hears everything, and the scene works out who the learner is
+> talking to from position, facing and what they said (§ 4.2).**
 
-**The whole design is one substitution: the room used to decide, and now the learner does.**
-§ 4's three findings are the specification, and each is answered by that substitution rather
-than argued with:
+**What it was (built 2026-09-07).** A whisper / say / shout chip in the composer
+(`IWVolumeChip`). A whisper reached only the one cell the avatar faced; "say" reached
+`IW_TALK_RADIUS` (5) Chebyshev cells; a shout reached the whole scene. The listener set it
+produced bounded two things: the router's candidate list, and each NPC's memory (every
+transcript entry was stamped with its audience, and `contextFor` filtered on it). The volume
+also reached layer 3 as colour ("the customer whispered to you").
 
-| § 4's finding | How § 4c answers it |
+**Why it went.** It answered "who could hear?", and in a one-room scene the question that
+matters is "who was meant?" — which § 4.2 already answers from the same physical signals a
+whisper relied on (walking over, turning to face someone) plus the words. The chip was a
+control a learner had to understand before speaking; the router asks nothing of them.
+
+**What changed when it was removed:**
+
+| Was | Now |
 |---|---|
-| *It never gated MEMORY, only replies* | **This one does.** Each transcript entry now stores the audience that heard it, and `contextFor` filters an NPC's `heard` on it. A line whispered across a table is absent from everybody else's memory — not just unanswered by them |
-| *Its failure was invisible* | The learner **set** the range, one control and one press ago, and the banner names the volume back to them: *"A whisper only reaches whoever you are standing in front of."* |
-| *A scene is small, so the geometry was trivially satisfied* | Still true, and still fatal to an *automatic* model. A chosen volume is not a simulation of distance — it is an **intention**. Whispering to one person at a table of four is something a learner MEANS, and it is worth having in a room where everybody could hear everything |
+| Router candidates filtered by volume, then capped to the nearest 4 | Every NPC in the scene, nearest first, **uncapped**. The server drops ids that are not in the scene and dedupes the rest (`ImmersiveWorldRuntimeController` → `parseRouteBody`) |
+| Each transcript line stamped with its audience; `contextFor` filtered per NPC | One `heardRef: string[]`, the same for every NPC |
+| `wait_for_response` woke on any line its NPC could hear | Wakes only when the line is **routed to that NPC** (§ 5.4, "How `wait_for_response` resumes") |
+| Three "nobody can hear you" banners | One — *"There is nobody here to talk to."* — for an empty scene |
+| `IW_VOLUMES`, `IWVolume`, `IW_TALK_RADIUS`, `IW_VOLUME_LABELS`; `hearing.ts`; `IWVolumeChip.tsx`; `volume?` on the utterance event; "whispered"/"shouted" in `turnState.renderEvent` | Deleted |
 
-⚠️ **THE WHISPER IS A CELL, NOT A RADIUS**, and that is the crux of it. "Within one tile"
-would be eight squares and would silently include the person at your shoulder. One square —
-the one the avatar is looking at — makes the whisper the only volume with a *physical*
-prerequisite: you have to walk over and turn to face them, which is the same act § 4.2 already
-reads as *"I am talking to you"*.
+No migration: the volume was never stored.
 
-⚠️ **OCCLUSION IS GONE FOR GOOD.** `cellsOnLine`, `countOccluders`, `OCCLUSION_PENALTY` and
-`MAX_OCCLUDERS` are not coming back, and neither is `busy`/`muffled`. A learner cannot be told
-why a noodle stall counted as a wall, and a rule nobody can explain reads as a bug. Every § 4c
-rule is a sentence you could put in a tooltip — and two of them are in one.
-
-**The gate binds in two places, from a single decision:**
-
-1. **Who may be asked.** `audienceFor(player, volume)` filters the router's candidate list, so
-   a whisper cannot be answered from across the room however the router reads the sentence.
-2. **Who remembers it.** The same id set is stored beside the line in the transcript. This is
-   the half § 4 found missing, and it is what makes a whisper mean anything at all — a gate on
-   replies alone is theatre, since the NPC across the room still knew.
-
-**Volume reaches layer 3 as COLOUR, never as a rule** (`turnState.renderEvent`): *"JUST NOW,
-the customer whispered to you: …"*. Whether this NPC hears the line was settled before the
-turn was requested — an NPC out of range is never asked — so the prompt carries only the
-register the answer should match. An absent volume renders exactly as it always did.
-
-**Three states, three different banners when nobody can hear you**, because they need three
-different remedies: an empty scene is an authoring mistake, a whisper with nobody in front is
-one step away from being fixed, and a normal voice out of range means *walk over, or shout*.
-The withdrawn model had one line for all of it, which is half of why its failures read as bugs.
-
-**What is deliberately NOT modelled:** an NPC has no volume — everybody present hears an NPC
-speak. Only the learner has the control, and a second invisible hearing model applied to NPCs
-would be the exact thing § 4 threw out.
-
-### Referenced code
-
-`src/features/immersiveworld/play/hearing.ts` → `hears`, `audibleListeners`, `whisperCell`;
-`src/features/immersiveworld/play/useIWSceneRuntime.ts` → `audienceFor`, `contextFor`, `say`;
-`src/features/immersiveworld/play/IWVolumeChip.tsx` → `VOLUME_CHIP`, `nextVolume`;
-`src/components/PageHeader.tsx` → `HeaderCycleChip`;
-`server/contracts/iw.ts` → `IW_VOLUMES`, `IW_TALK_RADIUS`, `IW_VOLUME_LABELS`;
-`server/services/iw/turnState.ts` → `renderEvent`.
-
-⚠️ **`hearing.ts` IS NOT IN `src/engine` THIS TIME**, and the deleted one was. It reads
-`IWVolume` and `IW_TALK_RADIUS` from `server/contracts/iw` because the volume is a wire field
-the server renders; the engine may import nothing outside itself (`enginePurity.test.ts`
-enforces it, and caught this on the first run). It sits beside `addressee.ts`, which is its
-real sibling: both are pure decisions about WHO, owned by the play surface, built on engine
-geometry.
+**Code:** `src/features/immersiveworld/play/useIWSceneRuntime.ts` → `audienceFor`, `contextFor`,
+`say`; `server/controllers/ImmersiveWorldRuntimeController.ts` → `parseRouteBody`.
 
 ### 4.1 Who answers — ~~each NPC decides for itself~~ REVERSED 2026-09-07 (see § 4.2)
 
@@ -453,14 +429,14 @@ absorb it somewhere other than arbitration:
 
 > ⚠️ **This whole table is superseded by § 4.2**, which removed the multiplier it was written
 > to absorb: one NPC is asked per utterance, so cast size costs nothing and needs no lever.
-> `IW_MAX_LISTENERS_PER_UTTERANCE` no longer bounds any fan-out.
+> The fan-out cap (`IW_MAX_LISTENERS_PER_UTTERANCE`, since renamed `IW_MAX_NEARBY_BODIES`) no longer bounds any fan-out.
 
 The old scoring signals are **not** wasted; they survive with two different jobs:
 
 - **Ordering.** Who speaks first when two NPCs both answer (addressed-by-name → in an open
   conversation with you → nearest and facing). Distance also picks who is marked `addressed`
-  when the learner has not tapped anybody — which, earshot being a volume the learner picks
-  rather than a filter on replies (§ 4c), is the *only* remaining
+  when the learner has not tapped anybody — which, with no hearing gate at all (§ 4, § 4c
+  both withdrawn), is the *only* remaining
   mechanical difference between the person in front of you and the one across the room.
 - **Turn-taking pressure in the prompt.** "You spoke last turn" and "the customer is facing
   away from you" are facts given to the NPC to inform its own decision, not rules imposed on
@@ -691,8 +667,9 @@ these from the probe.
   runs a few hundred ms before the turn it belongs to, and would make every turn refuse itself).
 - **Cost is one TURN per utterance**, whatever the cast size — see § 7. For a
   few hours on 2026-09-07, between § 4's withdrawal and this, a 4-body scene really did bill 4
-  calls per sentence; that window is closed and `IW_MAX_LISTENERS_PER_UTTERANCE` no longer
-  bounds the turn fan-out (it still caps the `nearby` block).
+  calls per sentence; that window is closed. The old fan-out cap no longer bounds the turn or
+  (since 2026-09-23) the router's candidate list — renamed `IW_MAX_NEARBY_BODIES` (12), it only
+  caps the `nearby` block.
 - **`addressed` is always `true`** in a turn's perception now. It survives because it is still
   a true statement and layer 3 reads better for making it, but it is no longer load-bearing.
 - **The bubble rule simplified** (§ 5.3a): with a scene reduced to a two-party conversation,
@@ -1051,11 +1028,34 @@ The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised again
 > bubble mid-blend is still partly outside it.
 >
 > **The bubble names its speaker** (2026-09-09). Every bubble carries a header row above the
-> spoken line: the speaker's name at the left, then the **emote glyph** and the **replay**
+> spoken line: the speaker's name at the left, then the **emote glyph** (now the mood puff, below) and the **replay**
 > button, both of which used to sit at the *end* of the text row. Two reasons for the move —
 > the chrome was competing with the line for the bubble's 260px and pushing lines into an extra
 > wrap, and read as though it were part of what was said. On its own row it reads as
 > attribution and costs height only when it has something to show.
+>
+> **The mood left the header row** (2026-09-23). The static emote glyph (`?` `♪` `…` `!` `~`)
+> was replaced by a **mood puff**: when a line starts, its emote is released as an emoji
+> (`EMOTE_EMOJI` — 🤔 curious, 😊 pleased, 😕 confused, 😤 impatient, 😄 amused; `neutral` shows
+> nothing), shown once over `EMOTE_PUFF_MS`. Its motion depends on where the bubble is when the
+> line starts: **anchored** over a head, it rises straight up off the top edge and fades;
+> **docked** at the top ledge (speaker off screen), it **launches** from a random point inside
+> the bubble, up and out to a random side, and falls under gravity while fading
+> (`EMOTE_LAUNCH`) — the straight rise would run into the layer's clipped top edge there. The
+> motion is chosen once from the tag's `data-docked` on the first frame and never switched
+> mid-flight; reduced motion keeps both in place. A mood is an
+> event — the moment somebody says something *with* a feeling — so it is shown once rather than
+> sitting in the header as chrome for the whole line. The puff is **portaled into its own
+> fixed, full-viewport layer on `document.body` (`iw-actor-tags__puffs`, `EMOTE_PUFF_Z_INDEX`
+> = 1100)** — in front of every bubble, the page header and the footer, but behind sheets
+> (`SheetPanel`, 1200+) so an eip opened mid-puff is not crossed by it. Two reasons it cannot
+> live anywhere lower: each tag is its own stacking context (placed by `transform`), so a puff
+> drawn inside one went behind any later bubble and behind its own line's `zIndex: 1` word
+> highlights; and the tag layer and the page's content box are both `overflow: hidden`, so a
+> puff launched off a docked bubble was cut off at the page header. It follows its tag by reading the tag's box every frame (its path is in the tag's
+> own px, so it still rides a walker and a docking bubble), and it is keyed by the bubble's
+> `startedAt`, so consecutive lines from one speaker each get their own. The header row now holds only the name and the replay button. Code:
+> `src/features/immersiveworld/play/IWSpeechBubbles.tsx` → `EMOTE_EMOJI`, `EMOTE_LAUNCH`, `EmotePuff`, `ActorTag`.
 >
 > The name is not a second copy of anything: since 2026-09-21 the head label and the bubble's
 > header are **literally the same element** (see the nametag block below), so the two places a
@@ -1142,10 +1142,24 @@ The implemented parser (`FORMATS.lines.parse`, `scenario.js`) is exercised again
 > learner taps to walk (§ 14 Q18), so left tappable it would silently eat every tap aimed at
 > the tile above a head. That reads as the world ignoring you, not as a label being in the way.
 >
+> **A bubble paints over every idle tag** (`zIndex` 1 vs 0 on the tag root,
+> `IWSpeechBubbles.tsx` → `ActorTag`). DOM order would do the opposite — `tags` lists speakers
+> first so they get ledge slots first, which puts every idle tag after them in paint order, and
+> a neighbour's name would sit across the line being read.
+>
 > **The learner wears no tag** (their body IS where they are looking) but still has a
 > `speakerNames` entry, because a docked bubble is detached from every head. That entry is
 > `foreign: false`: `'You'` is an English word the view chose, and run through a cpcd layout in
 > a `zh` scene it would be spelled out as three tone-coloured columns.
+>
+> **Instead of a tag, the learner gets a "this is you" arrow** (2026-09-23): a static scarlet
+> chevron (`PLAYER_MARKER_COLOR`, `#E0242F`, with a dark drop-shadow halo so it reads on both
+> dirt and the wood void) hung off the same head anchor a bubble uses. It is DOM, in the same
+> layer, so it keeps one screen size at every zoom rung, and it is first in the layer so every
+> tag and bubble paints over it. **It hides while the learner is speaking** — the bubble would
+> occupy the same air, and already says whose body this is. Positioned by the layer's one frame
+> loop from `positions.current.get(IW_ACTOR_PLAYER)` (`IWSpeechBubbles.tsx` →
+> `playerMarkerRef`, class `iw-player-marker`).
 >
 > **Geometry simplified with the merge.** `IWSceneStage` used to carry two offsets above
 > `HEAD_TOP_PX` — `NAME_LABEL_GAP_PX` for the label and `BUBBLE_GAP_PX` for the bubble. One
@@ -1245,14 +1259,12 @@ Bubble rules that follow:
   reversed a rule made earlier the same day** — one bubble per speaker, all of them held until
   the learner spoke — which was the right call while several NPCs could answer at once and
   became clutter the moment only one could.
-- **Nothing expires on a timer; a bubble is REPLACED, never retired** (2026-09-07). The dwell
-  (`BUBBLE_DWELL_BASE_MS` + per glyph) is still awaited, because `enqueueSay` chains on it and
-  it is what stops the next speaker starting before this line has been read — but it no longer
-  removes anything. The only thing that can take a line away is a newer line, and a newer line
-  is worth more than the one it covers. A dwell timer punished exactly the learner this feature
-  is for — the one still reading. The learner's own utterance goes up the same way: un-spoken,
-  replacing rather than expiring, because once the composer clears it is the only record of
-  what they typed.
+- **Nothing expires on a timer** (2026-09-07; the dwell itself was deleted 2026-09-23). An NPC
+  line stays up until the learner taps **Continue**, which dismisses it and releases the next
+  one — see § 5.3d. Before that date the speech queue was paced by a dwell (`reveal + 1600 ms +
+  90 ms/glyph`) that no longer removed the bubble but still moved on without the learner. The
+  learner's own utterance goes up un-spoken and is REPLACED rather than dismissed (by the reply
+  that answers it), because once the composer clears it is the only record of what they typed.
 - **Sanitize on line 1's close, before the TTS call.** Run the shared sanitizer
   ([DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) and the language check (§ 5.6)
   the moment `sayDone` fires (§ 6.4), and only then synthesize. A reply that fails either is
@@ -1388,8 +1400,9 @@ thing as `frozen`, which is § 14 Q7's terminal state (the ladder was exhausted;
 be sent again). What the hold gates:
 
 - **`sleep` parks at the gate after its timer.** The wall clock is not paused — the timer still
-  runs — but nothing self-paced on it resumes until the hold lifts: the speech chain's dwell, a
-  conversation's gap between lines, an authored beat. The deadline races built on `sleep` (TTS,
+  runs — but nothing self-paced on it resumes until the hold lifts: an authored `wait` beat, an
+  event's delay. (The speech chain no longer sleeps at all — each line waits on Continue, § 5.3d,
+  which the scrim already makes untappable while the sheet is up.) The deadline races built on `sleep` (TTS,
   the turn route) inherit it, which is what we want — a deadline must not expire against a clock
   the learner is not watching.
 - **`sayLine` waits BEFORE the synth call**, not after. Gating any later would voice a line whose
@@ -1414,6 +1427,47 @@ Referenced by: `src/features/immersiveworld/play/IWPlayPage.tsx`,
 `src/features/immersiveworld/play/IWSpeechBubbles.tsx`,
 `src/features/immersiveworld/play/useIWSceneRuntime.ts`,
 [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) (mount sites).
+
+### 5.3d The floor — Continue, not a clock (BUILT 2026-09-23)
+
+**Every NPC line waits for the learner to tap Continue.** No NPC speech times out, and the
+learner can type only when no NPC bubble is on screen. While they cannot, the **entire composer
+band becomes one solid blue bar**, edge to edge and square-edged, the whole strip the tap target
+— not a pill inset in the band, and not a disabled text box with a spinner in the send button
+(which is what it replaced). It takes the text band's height, so the stage never jumps.
+
+| `IWFloor` | When | Composer |
+|---|---|---|
+| `open` | nothing queued, no turn in flight | the text box |
+| `waiting` | a turn is in flight, or an NPC line is queued but not painted yet (model round trip, TTS race) | the band's blue at 45% opacity, inert, three-dot pulse |
+| `continue` | an NPC line is on screen | the band's blue — the stage's selection blue `#8FD6FF` (`play/iwTapColors.ts` → `IW_SELECT_BLUE_CSS`, since 2026-09-24; it was `primary.main` lightened 15% before), darkening 12% when pressed, with the label in the app's ink (`COLORS.onSurface`), since white on a light blue is ~1.6:1 — live: **Continue ›** |
+| `frozen` | § 14 Q7's ladder was exhausted | the text box, send permanently inert |
+
+Rules, each decided with the product owner:
+
+- **All NPC speech, not just replies.** Overheard conversations, `comment` / `prompt_npc`
+  beats and place interactions all go through `sayLine`, so all of them park on Continue. A
+  conversation therefore has no inter-line gap any more — the tap *is* the pacing — and
+  `IW_CONVERSATION_LINE_MS` was deleted.
+- **Continue dismisses the line.** The board is empty after the last tap, which is exactly
+  when the text box comes back. The TTS clip is cancelled with the bubble.
+- **Continue is live the moment the bubble is posted, mid-reveal included.** This partly
+  reverses Q41 ("listening is not skippable"): a line skipped mid-reveal is cut off voice and
+  all, and its replay button leaves with it.
+- **The turn stops holding the floor as soon as its reply is enqueued**, not when the NPC's
+  whole performance ends. `sending` used to span `applyReply` → `performNpcAction`, which
+  deadlocked any chosen action with a `wait_for_response` or `get_information` step: the
+  script waited on the learner and the learner's composer waited on the script. Now an NPC can
+  still be walking off to fetch the water while the learner types.
+- **The draft and the dictionary tray survive the swap.** Both are composer state, not input
+  state, so an ambient line that interrupts a half-typed sentence costs nothing.
+- **`queuedLines` is counted at enqueue, not at paint**, so the gap between a reply arriving
+  and its bubble appearing reads as `waiting` rather than flashing the text box for a beat.
+
+Code: `src/features/immersiveworld/play/useIWSceneRuntime.ts` → `IWFloor`, `sayLine` (the
+Continue park), `continueLine`, `enqueueSay` (`queuedLines`), `runTurn` inside `say`;
+`src/features/immersiveworld/play/IWComposer.tsx` → `IWContinueBar`;
+`src/features/immersiveworld/play/IWPlayPage.tsx` (wiring).
 
 ### 5.4 The action vocabulary — AUTHORED, not enumerated
 
@@ -1472,8 +1526,27 @@ is closed, a bad answer is a wrong destination, never an illegal one: no walking
 walls, no place that does not exist, and pathing has exactly the referents it always had.
 Validation therefore checks only the brief (non-empty, ≤ `IW_MAX_ACTION_INSTRUCTION_LENGTH`)
 plus one soft warning: a scene with no named places leaves the model only people to choose
-between, which is legal but rarely what was meant. **Resolution is phase 2** — today the step
-is authored, validated and stored, and nothing executes it.
+between, which is legal but rarely what was meant.
+
+#### How an `ai_walk` runs (BUILT 2026-09-23, no migration)
+
+It is resolved in two halves with one model call between them, and the call is the addressee
+router's shape (§ 4.2) rather than a turn's: a reader, not a speaker.
+
+| Step | Where | What |
+|---|---|---|
+| 1. Build the list | client, pure — `actionPlayer.ts` → `destinationCandidates` | Every named place a `walk_to_tag` can **reach** right now (an unreachable one is left off, so a correct pick can never be a no-op), then every body except the performer, de-duplicated by cell (the companion is keyed twice in `actorCells`). Nearest first, places before people. The step resolves to a `chooseDestination` instruction carrying the brief and this list; an empty brief or an empty list is a `skip` |
+| 2. Pick | `POST /api/immersiveWorld/destination` → `ImmersiveWorldService.pickDestination` → `destinationPicker.ts` → `pickDestination` | The server **re-checks** the list (`resolveCandidates`): an unknown place tag, a body not in the cast, or the performer is dropped, and every label the model reads comes from the scene or the registry, never the caller. The prompt is a numbered list plus the scene notes, the performer's memory-gated `heard`, and the brief, quoted. The reply is **a number or `NONE`**, not a name: place tags are author prose with spaces, and whole-line name matching is exactly what drops a paraphrase to nothing. One rung, the router's deadlines (1400 / 1800 ms). A single surviving candidate is answered without a call and is not billed |
+| 3. Walk | client, pure — `actionPlayer.ts` → `resolveDestination`, performed by `iwScript.ts` | The pick is re-resolved as an ordinary `walk_to_tag` / `walk_to_actor` against positions **as they are now**, not as they were when the list was built, then performed by the same `walkTo` case as every other walk. There is no second walking code path |
+
+**Failure is a skipped walk, never a guessed one.** `NONE`, a dead rung, an out-of-range
+number, a refusal, the client's 2 s deadline (`IW_DESTINATION_CLIENT_DEADLINE_MS`, which only
+fires on a hung connection) and a target not on the list the client sent all collapse to
+`null`, the script notes why, and it plays on. Unlike the router there is no free fallback, so a
+dead picker means an NPC that stands still where the author wanted movement.
+
+**Not a render barrier.** An `ai_walk` adds nothing to what the NPC has heard, so a `comment`
+after it is still prefetched, and its render overlaps the pick and the walk.
 
 **The transactional family is NOT here, and that is the second correction of the day.**
 `accept_payment` / `hand_over` / `give_item` / `refuse` were briefly step kinds; they lasted
@@ -1976,8 +2049,9 @@ invalidates everything after it):
 > Either way: **assert `cache_read_input_tokens > 0` in the turn path** rather than assuming it.
 > Re-run `prefix-size.js` after editing the world rules or any NPC — the numbers above
 > are a measurement, not a constant.
-3. **The volatile turn**: who is nearby and where, what was said in the last N utterances
-   *this NPC heard*, what they hold, the vocabulary budget (§ 9.4).
+3. **The volatile turn**: who is nearby and where, what the learner looks like (§ 5.5a), what
+   was said in the last N utterances *this NPC heard*, what they hold, the vocabulary budget
+   (§ 9.4).
 
 ~~An NPC's memory is **its own hearing history**, not the global transcript.~~ **WITHDRAWN
 2026-09-07 with § 4.** It was never true of the code — the client has only ever kept one
@@ -1985,11 +2059,81 @@ invalidates everything after it):
 nothing was maintaining. An NPC's memory is now, honestly, the scene's last 8 lines. What
 bounds it is the WINDOW, not the geometry: short memory, not selective memory.
 
+> ⚠️ **Until 2026-09-23 that memory never reached the prompt at all.** The client keeps each
+> line pre-labelled as a string (`"the customer: 你好"`, `useIWSceneRuntime` → `heardRef`), and
+> the controller passed those strings through as if they were `{ speaker, text }` objects, so
+> `renderContextSections` printed every heard line as `undefined said: "undefined"`. Every live
+> turn and every rendered authored line was written with no memory of the scene. The bench
+> never saw it because it builds `HeardLine` objects directly. Fixed in
+> `ImmersiveWorldRuntimeController.ts` → `heardLines`, which splits the strings at the first
+> `": "` and still accepts objects. **Anything measured from live play before this date (turn
+> continuity, `get_information` verdicts, "the NPC repeated itself") was measured without
+> memory**, and is worth re-checking.
+
 > **Note on the operator channel.** Mid-conversation `{role: "system"}` messages — the
 > injection-safe way to push an operator instruction without invalidating the cached prefix
 > — are supported on Opus 5 / 4.8 / Fable 5, **not on Haiku 4.5**, which § 6 selects. On
 > Haiku the system block is simply re-sent each turn (it is cached anyway), and the turn
 > state carries any mode change. Worth knowing before designing a feature that depends on it.
+
+### 5.5a Who the NPC is talking to — the learner's gender and age (BUILT 2026-09-23, migration 164)
+
+A vendor speaks to a twenty-year-old woman and a sixty-year-old man differently, and in Chinese
+the difference is **lexical**: 小姑娘 / 美女 / 大姐 / 阿姨 vs 小伙子 / 帅哥 / 大哥 / 叔叔 / 大爷 are
+chosen by gender *and* age. Until 164 an NPC knew nothing about "the customer", so it either
+avoided address terms or guessed.
+
+**The data.** `users."gender"` (`'male' | 'female' | NULL`, CHECK-constrained, mirrors
+`USER_GENDERS` in `server/contracts/wire.ts`) and `users."birthDate"` (`date NULL`). NULL is
+"not told" and covers two cases on purpose: accounts predating 164, and "Prefer not to answer".
+Nothing downstream distinguishes them. Both are asked at **signup** (`RegisterPage`: required
+questions, with "Prefer not to answer" as an explicit answer) and editable in **Settings**
+(`src/pages/settings/AboutYouSections.tsx`, two cards, saved on tap). Writes go through
+`PUT /api/users/demographics` → `UserService.updateDemographics`; signup and Settings share
+`validateDemographics` (real calendar day, ≥ 1900-01-01, not in the future). The client mirrors
+the rule in `src/utils/demographics.ts` only to catch a bad date at the field.
+
+**What the NPC is told** — one line in layer 3, printed by `renderContextSections` directly
+under NEARBY:
+
+```
+THE CUSTOMER LOOKS LIKE: a woman in her thirties.
+```
+
+- **A FACT, never an instruction.** It does not say "call her 大姐". Prescribing the form of
+  address would flatten every character into one register, which is § 5.5's 2026-09-01 mistake
+  again. 老周 and 小陈 are expected to pick *different* terms for the same learner.
+- **An age BAND, never the date.** `describeLearner` (`server/services/iw/learnerProfile.ts`)
+  gives decades from the twenties to "seventies or older", with 18–19 folded into the twenties.
+  Under 18 is "a teenage girl/boy" and under 13 is "a young girl/boy", so no NPC addresses a
+  minor as an adult. Either half may be missing ("a woman", "a person in their thirties");
+  both missing means **no line at all**, i.e. the pre-164 prompt byte for byte.
+- **Server-supplied, never client-supplied.** `ImmersiveWorldService.accountFacts` reads the
+  account in the SAME single PK read that already resolved the § 7 budget exemption, and sets
+  `perception.learner` on both a turn (`runTurn`) and a line render (`runLine`). A scripted
+  beat must address the learner the same way a free turn does. `parsePerception` in the
+  runtime controller never reads `learner` from the body: a client-sent copy would be free
+  text in the prompt outside the learner's quoted span (§ 11).
+- **Layer 3, so caching is untouched.** Layers 1–2 are unchanged per learner; the line sits
+  in the per-turn user message, which is never cached.
+- The label is `IW_PLAYER_LABEL` (`server/contracts/iw.ts`), now the single source for
+  "the customer" across the client's perception labels, `destinationPicker.ts` → `actorLabel`
+  and this line. If they drifted, the NPC would be told about one person and hear from another.
+
+⚠️ **NOT YET MEASURED.** No `character-run.js` sweep has been run with a described learner. The
+open questions it should answer: does every NPC now reach for an address term on *every* line
+(over-use is as unnatural as none), and does the companion — who knows the learner — treat a
+description meant for strangers as news? If the companion does, the fix is to omit the line
+for him, not to reword it for everyone.
+
+**Privacy.** `birthDate` is returned only to the account itself. `UserDAL.findById` includes
+both columns, and every route that returns it is self-only: `/api/auth/me`, and
+`UserController.getUserById` (`GET /api/users/:id`), which since 2026-09-23 refuses another
+account's id with a 403 (it used to serve any account's full row). `GET /api/users`, which
+returned every column of every account including password hashes, was deleted the same day. `UserDAL`
+normalizes pg's DATE into `YYYY-MM-DD` (`withIsoBirthDate`) on every path that returns a row
+(`findById`, login's `findByEmailWithPassword`, `create`, `update`). A raw JS Date would
+serialize as a UTC instant that can read as the previous day.
 
 ### 5.6 Staying in character — measured, not hoped
 
@@ -2589,9 +2733,9 @@ four actions behind the shipped set (§ 5.6c).
 
 > **Where the numbers live (2026-09-06).** Three of the five are in `server/contracts/iw.ts`
 > and re-exported by `turnBudget.ts` — `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and
-> `IW_MAX_LISTENERS_PER_UTTERANCE` — because a well-behaved CLIENT has to respect them: the
-> composer counts characters against the cap, the send path waits out the gap, and the client
-> caps the candidate list it routes over. A client that has to guess a server limit gets it wrong the first
+> `IW_MAX_NEARBY_BODIES` — because a well-behaved CLIENT has to respect them: the
+> composer counts characters against the cap, the send path waits out the gap, and the
+> perception block stays under the `nearby` cap. A client that has to guess a server limit gets it wrong the first
 > time the limit is tuned, and the learner sees it as the game losing their sentence. The other
 > two (`IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP`) stay server-only: `remaining` rides back
 > on every reply, and the daily cap is deliberately not a number anybody is shown.
@@ -2627,7 +2771,7 @@ length, and a per-utterance rate limit, both enforced **on the server**.
 > |---|---|---|
 > | `IW_MAX_UTTERANCE_CHARS` | 120 | The PROMPT, not the database — layer 3 quotes the learner verbatim (§ 11), so an unbounded utterance is an unbounded call. Counted in **code points** after trimming |
 > | `IW_MIN_TURN_GAP_MS` | 700 | Sends per user. Below any human cadence, above what a loop exploits |
-> | `IW_MAX_LISTENERS_PER_UTTERANCE` | 4 | ⚠️ **No longer bounds the turn fan-out — there isn't one** (§ 4.2). It survives as the cap on the `nearby` block the client sends (×3, so a body can be listed without being addressable) and as the size of the addressee candidate list. **It drops rather than refuses**: a crowded market should get quieter, not error |
+> | `IW_MAX_NEARBY_BODIES` | 12 | The cap on the `nearby` block the client sends in an NPC's perception. **Renamed 2026-09-23** from `IW_MAX_LISTENERS_PER_UTTERANCE` (4, applied ×3): it used to bound the turn fan-out and then the addressee candidate list, and neither exists any more (§ 4.2; § 4c's removal table — the candidate list is uncapped). **It drops rather than refuses** |
 > | `IW_SESSION_TURN_BUDGET` | 60 | One scene run. Reported on every response as `remaining`, for the in-world HUD this section asks for. **Lifted for template authors — § 7a** |
 > | `IW_DAILY_TURN_CAP` | 400 | The caller who exhausts a run and starts another. ≈ 32 ¢. **Line renders count against this one too** — see below. **Lifted for template authors — § 7a** |
 >
@@ -2747,6 +2891,7 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Scene walkability + pathfinding | **engine (pure)** | `src/engine/iw/sceneGraph.ts` (BUILT) |
 | Who one utterance was aimed at | **service** | `server/services/iw/addresseeRouter.ts` (BUILT 2026-09-07, § 4.2) — the model call. Server-side because it reads the character sheets, which never cross the wire |
 | …when the router does not answer | **feature (pure)** | `src/features/immersiveworld/play/addressee.ts` — the rule-ladder fallback. Feature rather than engine: it reads NPC names and a scene language, which are contract shapes the engine does not import |
+| Where an `ai_walk` goes (§ 5.4) | **service** + **feature (pure)** | `server/services/iw/destinationPicker.ts` (BUILT 2026-09-23) — the model call, and the re-check of the candidate list against the scene. The list itself and the walk it becomes are `src/features/immersiveworld/play/actionPlayer.ts` → `destinationCandidates` / `resolveDestination` |
 | ~~Audibility~~ | — | **DELETED 2026-09-07** (§ 4 withdrawn). `chebyshev` moved to `sceneGraph.ts`; the whole cast is the audience |
 | Arbitration ordering, action legality | **engine (pure)** — no React, no Pixi, no fetch | `src/engine/iw/` (`npcArbitration.ts`, not built) |
 | Body movement (learner AND cast) | **engine (pure)** | `src/engine/iw/sceneActor.ts` (BUILT). ⚠️ NOT an extension of `pedestrianAgent.ts` — that FSM requires a `StreetGraph`, and § 3a deleted the masks one is derived from |
@@ -2781,7 +2926,8 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Which `iw_scene_runs` row a session IS, and when it is finished | **service** | `server/services/iw/sceneTranscript.ts` → `SceneTranscript` (BUILT 2026-09-08). Holds the per-process `sessionId → runId` map, opens the run lazily on the first model call, serializes appends, and can never throw at the turn riding along with it |
 | Reading a run back | **operational script** | `server/scripts/iw-transcript.js` (BUILT 2026-09-08). `--last`, `<runId>`, `--user`, `--self-test` (which exercises the trim SQL against a real database and rolls back) |
 | Camera: follow lock, drag-to-pan, re-centre | feature view | `play/IWSceneStage.tsx` (BUILT 2026-09-07). `useCameraControls` owns zoom only — it says drag-to-pan belongs to each surface's own scene, because that is where it must arbitrate against tapping |
-| Camera: re-centre when a keyboard crops the viewport | feature view + page | `play/IWSceneStage.tsx` (the `ResizeObserver` → `app.queueResize()`) + `play/IWPlayPage.tsx` (`useKeyboardInset` → `paddingBottom`) (BUILT 2026-09-21). No pan maths — centring falls out of the canvas resize |
+| Camera: re-centre when a keyboard crops the viewport, hold still when it closes | feature view + page | `play/IWSceneStage.tsx` (the `ResizeObserver` → `app.queueResize()`) + `play/IWPlayPage.tsx` (`useKeyboardInset` → `paddingBottom`) (BUILT 2026-09-21). Centring on open falls out of the canvas resize; the close is cancelled by a pan correction held as `followBiasYRef` (2026-09-23) |
+| What a tap lights up, and the tap ripple | **feature helper (pure)** + feature view | `play/tapHighlight.ts` → `resolveTapHighlight`, `tapHighlightAlpha`, `tapRippleRings`; drawn by `play/IWTapFeedback.tsx` (BUILT 2026-09-24). Reads the cell `resolveTapTarget` already chose, so it is never a second hit test — see Q18's "Tap feedback" |
 | Which thing a pointer selects | **feature helper (pure)** | `play/tapTarget.ts` → `resolveTapTarget` (BUILT 2026-09-07). The ONE hit test: the hover highlight and the click are the same call, so the indicator cannot promise a cell the click does not pick. Replaced Pixi's per-sprite `hitArea` — see Q18 |
 | Is this NPC in this scene? | **service helper (pure)** | `services/iw/sceneCast.ts` → `resolveCastMember` (BUILT 2026-09-07). The stored cast PLUS the derived companion row. `takeNpcTurn` gates on this and never reads `scene.npcCast` — § 14 Q25 |
 | What a legal NPC line is | **contract (pure)** | `server/contracts/iwLineGuard.ts` → `guardNpcLine`. ONE rule, TWO enforcement points: the runtime (before the bubble and the TTS call) and `sceneValidation.validateAuthoredLines` (at save time). Moved out of `src/engine/iw/` on 2026-09-07 so the two cannot drift |
@@ -2829,10 +2975,10 @@ do something, and you leave with a rating and a label.
 |---|---|
 | **Objective** | A real-world errand: *eat a meal at this restaurant*, *check into the hotel and get to your room*, *take a cab across town*. A **social** task, not a puzzle — there is no hidden solution, only a conversation that has to go well enough. ⚠️ **No longer an authored FIELD** (2026-09-05, migration 159): it is not stated anywhere, it is *constituted* by the completion action. "Take payment" — walk to the learner, ask for five yuan, wait — already says the errand is to eat and pay, in steps the engine can run, and the objective sentence only restated it in prose nothing read. The concept survives; the text box does not. |
 | **Companion** | Every scene is played **with a companion NPC** who accompanies the learner throughout. The companion is the scene's safety net and its second voice: it can be spoken to freely, it reacts to what the learner says to others, and it is the reason a beginner is never standing mute in front of a stranger. |
-| **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5) with its own hearing history. |
+| **Cast** | The other NPCs the objective forces you through — waitress, hotel clerk, cab driver, shop assistant. Each is an NPC (§ 5.5); every NPC in a scene hears every line (§ 4, § 4c withdrawn). |
 | **Complication** | Per scene, environmental (Q31): the cab takes a wrong turn, the order arrives wrong, the room is double-booked. It belongs to the world, not to an NPC — everyone present reacts to it in character. A complication exists to force the learner past the memorised opening exchange. ⚠️ "Optional" here means a scene *may* be authored without one, not that the learner may skip it. |
 | **Event** (migration 161) | **The same kind of fact as a complication, with a different trigger.** One line, the world's, injected into the turn context of everyone present and reacted to in character — but SCHEDULED rather than drawn: by a `schedule_event` step inside an authored action (§ 5.4), or by the event's own `atStartSeconds`, which arms it when the scene opens. Both timers feed the same queue and fire at the **next legal opportunity** — the same one a complication uses, so never mid-turn and never while the learner is composing (Q29); the delay is an *earliest*, not an exactly-when. Two separate pools rather than one flagged list, deliberately: **the random roll must never spring an authored beat before its cue, and a script must never be able to arm the surprise.** Environmental like a complication, so no owner field — "the kitchen sends out the noodles" is a fact about the room, and an event written as "王婶 is flustered" is a character note misfiled. A run records what fired in `iw_scene_runs."eventIds"`, mirroring `"complicationIds"`. |
-| **Conversation** (Q6) | A canned, pre-reviewed exchange between two bodies on the board — the cast, or the companion — played back at a fixed `IW_CONVERSATION_LINE_MS` per line, tap-to-pause, yielding if the learner speaks. Since **2026-09-06** it has two ways in, not one: a `start_conversation` step fires it, and — if marked `selectable` — its **first speaker** may choose to start it, the way they choose an action (§ 5.4b). Ownership is derived from `turns[0]`, never authored. ⚠️ A conversation that is neither selectable nor started by any step is unreachable, and the validator now says so. ⚠️ **It plays at most ONCE per run** (2026-09-07, § 5.4b) — and so does any action that would start it. ⚠️ "No model calls" is no longer true: each turn is a line render (§ 14 Q42). |
+| **Conversation** (Q6) | A canned, pre-reviewed exchange between two bodies on the board — the cast, or the companion — each line held until the learner taps Continue (§ 5.3d; the fixed 7 s `IW_CONVERSATION_LINE_MS` pacing was deleted 2026-09-23). Since **2026-09-06** it has two ways in, not one: a `start_conversation` step fires it, and — if marked `selectable` — its **first speaker** may choose to start it, the way they choose an action (§ 5.4b). Ownership is derived from `turns[0]`, never authored. ⚠️ A conversation that is neither selectable nor started by any step is unreachable, and the validator now says so. ⚠️ **It plays at most ONCE per run** (2026-09-07, § 5.4b) — and so does any action that would start it. ⚠️ "No model calls" is no longer true: each turn is a line render (§ 14 Q42). |
 | **Interaction** (migration 162) | **What a PLACE does when the learner walks up to it** (§ 5.4a, Q43) — the only thing in the feature triggered by the learner's own body rather than by the model, the per-turn roll or a timer. It hangs off a named place as an optional property of it, and can show a picture, make a cast NPC perform one of its own authored actions, play an overheard conversation, arm an event, or wait. ⚠️ If the learner cannot reach the place they walk as close as they can and **nothing fires**. Two interactive places may share a cell, and a walk there runs **both**. |
 
 Worked examples given by the product owner:
@@ -2889,8 +3035,9 @@ At the end of a scene the learner gets a report, assembled in two stages:
 Rating is **per NPC**, which is the interesting part: the waitress and your companion saw
 different halves of the scene and can disagree. Politeness especially is relative to the
 relationship — casual with the companion is correct, casual with the hotel clerk is not.
-Each NPC rates from **its own hearing history** (§ 4), the same buffer that drove its
-replies, so the rating is grounded in what that character actually heard.
+Each NPC rates from the scene transcript it was given (§ 5.5's `heard`), the same buffer that
+drove its replies, so the rating is grounded in what that character was actually shown.
+(Since 2026-09-23 that buffer is the same for every NPC — nobody's hearing is filtered.)
 
 **Stage 1b — the transcript is labelled per utterance** (Q34). Every line of the scene is
 replayed in the report carrying AI labels on the rating axes — correctness, politeness — from
@@ -3055,58 +3202,15 @@ looking at once real session lengths exist, but not worth pre-empting with a rul
 > is still fetched by `IWPlayPage` and pushed into the turn payload as § 9.4's vocabulary
 > guidance; only its on-screen chip row was removed.
 >
-> **It also carries the § 4c volume control** — `IWVolumeChip`, ONE word that cycles
-> `whisper → say → shout` on tap, with a tooltip stating its reach, because nothing else in the
-> game can teach a learner that a whisper crosses exactly one square.
+> **It no longer carries a volume control.** The § 4c whisper / say / shout chip
+> (`IWVolumeChip`, a `HeaderCycleChip` like `AudioModeChip`) was removed on 2026-09-23 with the
+> rest of § 4c. The header's `AudioModeChip` (added 2026-09-09, in `IWPlayPage`'s `rightContent`)
+> is the only volume-glyph control on the page, and it is the **phone's output route**
+> (`off / default / media`), not anything inside the scene.
 >
-> ⚠️ **It is the app's `HeaderCycleChip`, the same control as `AudioModeChip`** — see
-> [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md). This is the established answer to "a three-state
-> setting that has to fit on a phone", and reusing it means a learner works out once, not
-> twice, that a control cycles.
->
-> ⚠️ **`AudioModeChip` ITSELF is now on this page too** (added 2026-09-09, in `IWPlayPage`'s
-> `rightContent` beside the § 7 remaining count) — a scene speaks its NPC lines aloud, so it
-> needs the same mid-play mute every other narrating surface has. The two chips look alike and
-> mean different things: the header one is the **phone's output route** (`off / default /
-> media`, persisted app-wide), the composer one is **how loudly the player speaks inside the
-> scene** (`whisper / say / shout`, per-utterance). They are kept on different rows — header vs.
-> writing bar — so they are never read as one control rendered twice. It inverts to ink on `whisper` and `shout` and stays grey on
-> `say`, so *"I have left the default"* is visible before the next line is sent into the wrong
-> room. The cycle order is derived from `IW_VOLUMES` so the contract's order IS the tap order.
->
-> **`whisper` renders one size down; `say` and `shout` do not.** Seven characters would
-> otherwise size all three states — this chip shares its line with the text field the learner is
-> actually using, so its width comes straight out of that field. The rule is the chip's, not
-> this feature's (`cycleChipFontPx` / `cycleChipWidthCh` in
-> `src/components/cycleChipSizing.ts`): a label past the comfortable width shrinks just far
-> enough to fit it, and the chip is then measured at what that label actually occupies. Only the
-> long word shrinks — shrinking all three to suit one is a chip that is uniformly harder to read
-> to solve a problem one word has. Shrinking type rather than words is the point: abbreviating
-> (`whisp`) or going to bare icons both hand back the question the control exists to answer at a
-> glance.
->
-> The icon is **pinned to the left edge** and the word centres in what is left. The icon is the
-> chip's anchor — the part that says what the control is about before the label is read — and an
-> anchor that slides as the label changes length is not one. `AudioModeChip` is laid out the
-> same way, and by the same rule ends up exactly as wide.
->
-> Two shapes were built and discarded on the way, both for width:
->
-> - **A three-button segmented group.** Three labelled buttons plus the dictionary toggle, the
->   field and send do not fit a 360px row without the field collapsing. A cycle chip is one
->   label wide whatever the state count.
-> - **Three speaker icons.** They read as *one control with three settings* — correct — but not
->   as WHICH setting, so the learner has to press one to find out.
->
-> Alongside it: **the send button is a bare icon**, not a labelled pill (the chip carries the
-> verb, and its `aria-label` still reads *"Whisper it"*), and **the character counter appears
-> only near the limit** — it used to sit there permanently at half opacity, and a courtesy
-> warning is not a warning until there is something to warn about.
->
-> ⚠️ **The volume does NOT reset after a line.** A learner who leans in to whisper is usually
-> about to whisper again, and snapping back would make the quiet exchange the one thing in a
-> scene you cannot do twice in a row. The setting stays visible in the group rather than being
-> something to remember.
+> **The send button is a bare icon** (tooltip and `aria-label` *"Say it"*), and **the character
+> counter appears only near the limit** — it used to sit there permanently at half opacity, and a
+> courtesy warning is not a warning until there is something to warn about.
 
 **Decided: iw ships its own input surface rather than depending on the OS IME.** This is a
 work item of the feature, not a blocker inherited from elsewhere.
@@ -3153,14 +3257,22 @@ iw needed no search of its own. **Completion from the learner's own cards** ship
 of `getGameVocabPool` words and was **removed the following day** along with the openers (see the
 reversal above). So of the four candidate pieces, exactly one now stands: the quick dictionary.
 
-**The quick-dictionary field opts out of the beginner keyboard (2026-09-20).** The composer as
-a whole is a `data-beginner-keyboard="keep"` region so that reaching for send or the volume chip
-does not dismiss an open handwriting bar, but the lookup field inside it is marked
-`data-beginner-keyboard="off"`: it is queried in **English or pinyin**, and a learner is using it
-precisely because they cannot write the word yet. Focusing it therefore drops the handwriting bar
-and raises the OS keyboard. This is what forced `eligibility.ts` to resolve the attribute by
-*nearest declaration* rather than per value — see
-[BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § *`data-beginner-keyboard` now has two values*.
+**The quick-dictionary field is an ordinary keyboard field (2026-09-24).** The composer as a
+whole is a `data-beginner-keyboard="keep"` region so that reaching for send does not dismiss an
+open handwriting bar, and the lookup field inside it simply inherits that `keep` — it carries no
+declaration of its own. So for a Chinese learner, focusing it brings up **whichever keyboard the
+session is on** (the handwriting keyboard by default; the OS keyboard if the learner last chose
+`ABC` — [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 6z-3), and the learner switches to the
+latin keyboard **manually**, with the switch bar's `ABC` segment, when they want to type English
+or pinyin. Moving between the lookup field and the sentence field retargets the keyboard rather
+than dismissing it. A Spanish learner has no handwriting keyboard and gets the OS keyboard.
+
+> **Reversed.** From 2026-09-20 to 2026-09-24 the field was marked `data-beginner-keyboard="off"`
+> on the reasoning that it is queried in English/pinyin, so focusing it dropped the handwriting
+> bar and forced the OS keyboard up — with no switch bar, so no way back to handwriting from
+> there. It was reversed so the latin keyboard is an explicit choice rather than something every
+> open of the tray imposes. The `off` case is what made `eligibility.ts` resolve the attribute by
+> *nearest declaration*; that rule stays, now without a live user.
 
 **The toggle is a BOOK, and pressing it focuses the field (2026-09-21).** Two changes to the
 same control (`IWComposer` → the `iw-composer__dictionary-toggle` button):
@@ -3173,11 +3285,10 @@ same control (`IWComposer` → the `iw-composer__dictionary-toggle` button):
 - **Opening the tray focuses the lookup field**, in an effect keyed on `dictionaryOpen`
   because the field does not exist until the tray has rendered — React flushes the discrete
   click synchronously, so the focus still lands inside the user gesture a mobile browser
-  requires before it will raise a keyboard. The rest falls out of the `off` marking described
-  just above: the `focusin` dismisses any handwriting bar raised from the sentence field, and
-  the phone raises its own latin keyboard over the now-focused English/pinyin input. A learner
-  who presses this button wanted a cursor and a latin keyboard; they no longer have to tap
-  twice to get one.
+  requires before it will raise a keyboard. Which keyboard that is follows from the paragraph
+  just above — the session's current choice, not a forced latin one (the 2026-09-21 version of
+  this section said the focus raised the latin keyboard; that was the `off` era, reversed
+  2026-09-24).
 
 A result is rendered as **the word alone**: a `ForeignText` cpcd row carrying its pinyin, at
 `sm` so the overlay is legible, with **no English beside it**. The learner typed the meaning, so
@@ -3640,18 +3751,21 @@ is the "shuffle the deck" affordance (`useIWSceneDraft.setFloor`). A and G sit o
 beside the decor tools because the floor is a surface concept — and G is the night market's
 own wood-panel key, so the one wood thing in each editor answers to the same letter.
 
-**Wood mode paints the map column BLACK — in the editor AND in the scene.** The Pixi canvas is
+**Wood mode paints the map column dark — in the editor AND in the scene.** The Pixi canvas is
 transparent (`backgroundAlpha={0}`), so the host element's own background is the void around the
 board — and a wood board has no plateau body to stand on (the deck replaces the slab). On the
-app's light paper that reads as planks lying on a page; against black it reads as a lit platform
-in the dark. A dirt board keeps the page's ground, so the toggle changes only what it must.
+app's light paper that reads as planks lying on a page; against a dark ground it reads as a lit platform
+in the dark. The colour is a warm charcoal (`IW_WOOD_VOID_BG`, `#48454F`), not pure black,
+which read as a hole in the page. It was lightened from `#2E2C33` on 2026-09-23 — still dark
+enough for the deck to read as lit, but the old value felt close to that same hole. A dirt board keeps the page's ground, so the toggle changes only what it must.
 
 ⚠️ **BOTH SURFACES, ONE RULE — and `IWSceneStage` did not honour it until 2026-09-07.** The
 play surface shipped with a plain transparent host, so authoring a wood scene and standing in
 it looked like two different places: a lit platform in the editor, planks on white paper in the
 game. Both now derive `floorKind` the same way — `(masks.floor ?? DIRT_FLOOR).kind`, straight
-off the masks, with no second copy to drift — and paint the identical one-line background
-(`IWSceneMapPanel` and `play/IWSceneStage.tsx`). A floor added in future must be taught to both.
+off the masks, with no second copy to drift — and paint the identical background through one shared helper,
+`src/features/immersiveworld/iwBoardVoid.ts` → `iwBoardVoidBg` (used by `IWSceneMapPanel` and
+`play/IWSceneStage.tsx`). A floor added in future must be taught to both.
 
 It persists as `layout.floor` (`IWSceneFloor` in `server/contracts/iw.ts`) — a jsonb field, so
 **no migration**; a scene saved before the row existed has no `floor` and reads as dirt. The
@@ -3690,7 +3804,7 @@ making:
 | Removed | Why |
 |---|---|
 | **Essential words** (the `words` blob) | Out of spec. Vocabulary guidance is derived from the learner, never authored per scene — see § 9.4 and Q14, now closed. |
-| **A per-line `holdMs`** on conversation turns | Pacing is a constant (7 s, `IW_CONVERSATION_LINE_MS`), not a per-line choice. See Q6. |
+| **A per-line `holdMs`** on conversation turns | Pacing is not authored at all: every line waits for the learner's Continue tap (§ 5.3d). See Q6. |
 | **The companion as a cast member** | He is in every scene by definition and is placed by the scene's own companion start cell, so casting him would be a second answer to where he stands. ⚠️ This covers CASTING only: since 2026-09-05 he **may speak in an overheard conversation** — he stands on the board like anyone else, so an authored exchange between him and a cast member is one the learner can walk up on. `sceneValidation.ts` → `validateConversations` takes the cast ∪ companion as its speaker set. He still terminates nothing (Q19/Q27). |
 | **The objective** | The completion action already says what the scene is for, in steps rather than in prose. Two descriptions of one fact is one description too many, and the prose one had no reader (§ 9.1). |
 
@@ -3764,8 +3878,8 @@ diamond, since drawing a place as a person would be a lie about what is there.
 
 Which body an NPC wears is `IWNpc.avatar`, the one COSMETIC field on an NPC and the only one
 that is deliberately **not** rendered into the prompt — a character told which sprite they are
-is a character who can talk about being drawn. The learner is `IW_PLAYER_AVATAR` (female) and
-the companion is male; neither is a per-scene choice, because a companion who looks different
+is a character who can talk about being drawn. The learner's body follows their account
+(`iwPlayerAvatar`, § 3 — female when unset) and the companion is male; neither is a per-scene choice, because a companion who looks different
 on Wednesday is not the same person.
 
 **The NPC control is a picker**, sourced server-side from `npcsForLanguage()` and projected
@@ -3817,7 +3931,7 @@ name still refuses too, but from the service rather than the validator.
 
 **How an author reaches it:** a `low` **Scene Editor** tile on the hp Bento, appended
 beside Template Editor and Template Sandbox and shown on the same `user.isTemplateAuthor`
-condition — one grant, three tools (`src/pages/HomePage.tsx`). It wears the `tea` ramp hue
+condition — one grant, three tools (`src/pages/HomePage.tsx`). It wears the `blu` ramp hue (teal until 2026-09-24, when it left the palette)
 rather than the night market's `pur`: it borrows that editor's map, but it does not edit
 night-market templates, and a shared hue would say it did. ⚠️ Not to be confused with the
 **learner-facing** hp row of § 14 Q9, which is phase 2 and ungated.
@@ -3924,8 +4038,8 @@ feature is worth building.
 >   the full eip sheet, and the world takes a reversible hold for as long as it is up.
 > - **The hp row** (Q9) and the two routes.
 >
-> Not built, and deliberately: **`ai_walk`** (it needs a model call to choose a destination,
-> which is a turn rather than a step — it skips with a reason), a `comment` step's
+> Not built, and deliberately: ~~**`ai_walk`**~~ (**built 2026-09-23**, see § 5.4's *How an
+> `ai_walk` runs*; it skipped with a reason until then), a `comment` step's
 > EMBELLISHMENT (§ 14 Q42 wants the model to colour an authored line; phase 2 speaks the
 > author's words verbatim, which is the conservative half), and the cast REACTING to an event
 > that fires (the cue is recorded and the fact is shown; reacting in character is a turn per
@@ -3990,7 +4104,7 @@ is the opposite of the test.
 - **The input:** ✅ BUILT — the throwaway writing assistant (Q4b), entirely under `features/iw`,
   header-commented as destined for replacement by BACKLOG item 1. ⚠️ It must answer *"I don't
   know where to begin"* — it is the learner's only safety net (Q24, Q29).
-- The hp row (Q9) and the route. ✅ BUILT — a `tea` bento tile on `/`, plus
+- The hp row (Q9) and the route. ✅ BUILT — a `blu` bento tile on `/`, plus
   `/immersive-world` (the scene list) and `/immersive-world/:sceneId` (one scene, running).
   Both rows sit BELOW the exact `/immersive-world/scene-editor` row in `routeMeta.ts`, because
   `findRoute` takes the first match and `:sceneId` would otherwise swallow the editor.
@@ -4028,7 +4142,7 @@ is the opposite of the test.
 >   said — the design this deliberately avoided.
 >
 > **Two known gaps**, both flagged rather than hidden:
-> - **An utterance nobody could hear is not stored.** § 4c's no-audience case never reaches
+> - **An utterance in an empty scene is not stored.** The no-NPC case never reaches
 >   `/turn`, so no server-side recorder can see it. "I said it and got nothing" is exactly the
 >   case worth reading back, and today it is only in the client console.
 > - **A frozen turn stores neither half.** Keeping the learner's line without a reply beside
@@ -4050,7 +4164,7 @@ is the opposite of the test.
 - **The scene state machine**, injecting complications as facts into an NPC's turn context
   (Q31) — the NPC is never told there is a scene (Q27).
 - **Q6's authored NPC-to-NPC conversations**: `start_conversation` in the enum, engine-played
-  canned exchanges at the fixed `IW_CONVERSATION_LINE_MS` (7 s) per line, tap-to-pause,
+  canned exchanges, each line held until the learner taps Continue (§ 5.3d),
   yielding to the player, pre-synthesized for 0 ms audio.
 - Once-per-day + within-the-day resume at **04:00 local** (Q30); the hp row's daily state.
 - Minute points: real time played, gated on speech within ~90 s (§ 9.5).
@@ -4153,6 +4267,15 @@ to be watched for deliberately.
 - `server/services/iw/turnState.ts` → `renderTurnState`, `renderContextSections` — layer 3, as
   the USER message (§ 11). The context half is shared with a line render, so an NPC's memory
   cannot differ between answering the learner and delivering a scripted beat
+- `server/services/iw/learnerProfile.ts` → `describeLearner`, `ageOn`, `renderLearnerLine` —
+  what the learner looks like to an NPC (§ 5.5a); `server/services/ImmersiveWorldService.ts` →
+  `accountFacts` supplies it from the account
+- `server/contracts/iw.ts` → `iwPlayerAvatar`, `IW_DEFAULT_PLAYER_AVATAR`, `IW_PLAYER_LABEL` —
+  the learner's body (§ 3) and prompt label
+- `server/services/UserService.ts` → `validateDemographics`, `updateDemographics`;
+  `server/dal/implementations/UserDAL.ts` → `withIsoBirthDate`; `src/utils/demographics.ts`;
+  `src/pages/settings/AboutYouSections.tsx`; `src/pages/RegisterPage.tsx` — where
+  `users."gender"` / `users."birthDate"` (migration 164) are written and validated
 - `server/services/iw/lineRender.ts` → `renderNpcLine`, `renderLineDirection`,
   `createLineSink` — § 14 Q42's embellishment: an authored direction becomes a line.
   `renderLineDirection` carries **two closers**: the quoted-direction one, and the unbriefed
@@ -4185,11 +4308,11 @@ to be watched for deliberately.
   `ImmersiveWorldService.budgetOptions` (§ 7a's template-author exemption — the runtime's only
   read of the users table, and a relaxation rather than a gate),
   `listPlayableScenes` / `openScene` (the runtime's own reads — published only, no author gate)
-- `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`, `capListeners`,
+- `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`,
   `IW_SESSION_TURN_BUDGET`, `IW_DAILY_TURN_CAP`, `IWBudgetOptions` — § 7's bound. In-memory and
   per-process; see § 7's caveat. Account-blind: § 7a's exemption arrives as an `unlimited`
   option, never as a user id it looks up. Its other three numbers (`IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS`,
-  `IW_MAX_LISTENERS_PER_UTTERANCE`) live in `server/contracts/iw.ts` and are re-exported here,
+  `IW_MAX_NEARBY_BODIES`) live in `server/contracts/iw.ts` and are re-exported here,
   because the client has to respect them to behave well
 - `server/controllers/ImmersiveWorldRuntimeController.ts` → `takeTurn` (the SSE endpoint),
   `listScenes` / `getScene` (the learner's PUBLISHED-only reads, a different gate from the
@@ -4222,6 +4345,16 @@ to be watched for deliberately.
 - `src/features/immersiveworld/play/addressee.ts` → `chooseAddressee` — the § 4.2 rule-ladder
   FALLBACK for when the router is slow or unsure, and the alias derivation behind its `named`
   rung
+- `server/services/iw/destinationPicker.ts` → `pickDestination`, `resolveCandidates`,
+  `parseDestinationReply`, `IW_DEST_SYSTEM` — the § 5.4 `ai_walk` model call; served by
+  `ImmersiveWorldRuntimeController.pickDestination` at `POST /api/immersiveWorld/destination`.
+  Client: `immersiveWorldTurnApi.ts` → `chooseDestination`,
+  `useIWSceneRuntime.ts` → `chooseDestination`, `actionPlayer.ts` → `destinationCandidates` /
+  `resolveDestination`
+- `server/controllers/ImmersiveWorldRuntimeController.ts` → `heardLines` — normalizes the
+  client's pre-labelled `"label: text"` memory lines into `HeardLine`s for all three prompt
+  endpoints (`/turn`, `/line`, `/destination`). Until 2026-09-23 they were passed through
+  unsplit and every prompt printed `undefined said: "undefined"` — see § 5.5
 - `src/features/immersiveworld/play/IWSceneStage.tsx` — the Pixi host. Reuses
   `EditorTerrainLayer` (the app's one mask-driven terrain renderer), NOT `TemplateEditorViewer`
 - `src/features/immersiveworld/play/IWSpeechBubbles.tsx` — the DOM nametag/bubble layer, because
@@ -4251,7 +4384,7 @@ to be watched for deliberately.
   `unlockedBy` editor both panels render (§ 5.4b). It deliberately does NOT draw the per-type
   flag, whose polarity is opposite on each side
 - `server/contracts/iw.ts` → `IW_ACTION_STEP_KINDS`, `IW_ACTOR_STEP_KINDS`, `isActorStep`,
-  `IW_CONVERSATION_LINE_MS`, `IW_MAX_EVENT_DELAY_SECONDS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
+  `IW_MAX_EVENT_DELAY_SECONDS`, `IWNpcAction`, `IWActionStep`, `IWScene`,
   `IWSceneLayout`, `IWSceneCastMember`, `IWComplication`, `IWSceneEvent`, `IWConversation`,
   `IW_INTERACTION_STEP_KINDS`, `IWInteractionStep`, `IWSceneInteractions`, `IW_POPUP_IMAGE_ID`,
   `IWNpcOption` — **the client↔server contract for a scene**, and the closed STEP
@@ -4736,6 +4869,10 @@ have time to study the sentences.
 > pre-reviewed by construction, and it is no longer pre-synthesizable, so § 6.4 rule 5's 0 ms
 > playback is lost — every line is a cold synth.
 
+> ⚠️ **SUPERSEDED 2026-09-23 by § 5.3d:** there is no pace constant any more — every line waits
+> for the learner's Continue tap, and `IW_CONVERSATION_LINE_MS` was deleted. The "not an
+> authored field" half still stands.
+>
 > **The pace is a constant, not an authored field (decided 2026-09-05).** Every line is held
 > for **7 seconds** — `IW_CONVERSATION_LINE_MS` in `server/contracts/iw.ts`. Phase 1d briefly
 > shipped a per-turn `holdMs` on each conversation turn; it was removed. Pacing is not
@@ -4876,7 +5013,7 @@ tile is an activity you can do as much as you like. A daily ritual with its own 
 as a pillar of the app, and an hp row is what the app already uses for pillars
 ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 
-> **BUILT 2026-09-06 (the row, not its state).** A `tea` bento tile on `/` next to Arena and
+> **BUILT 2026-09-06 (the row, not its state).** A `blu` bento tile on `/` next to Arena and
 > Friends, leading to `/immersive-world`. The state recommendation below is NOT built. ⚠️ The
 > reason given here — "read from a run row, and phase 2 has none" — **stopped being true on
 > 2026-09-08**: runs exist (§ 12 phase 3), and `listRuns` is the read. What is still missing is
@@ -5100,6 +5237,39 @@ one cell while the click picks another is worse than none, because it teaches a 
 It sits at `zIndex` 2 — above the terrain, below every body — and is held in a ref rather than
 state, since the Pixi subtree already re-renders each frame.
 
+**Tap feedback — a ripple and a blue highlight (BUILT 2026-09-24).** Every tap that is not a
+drag gets two things, recorded in `IWSceneStage`'s `tapFxRef` on the ticker clock and drawn by
+`play/IWTapFeedback.tsx`:
+
+- **A ripple where the finger landed**: two hairline rings drifting out to 22px, the second a
+  fainter echo 200 ms behind the first, 600 ms in all (`TAP_RIPPLE_MS`), in a pale greyed
+  yellow (`IW_TAP_RIPPLE`). Deliberately calm: low opacity, a soft fade-in and a sine ease
+  rather than a burst, so it never competes with the blue highlight. It fires on
+  every tap, even one that selects nothing, and is drawn in **screen** space (finger-sized at
+  every zoom) but anchored to the tap's **board** point, so it stays on the spot while the
+  follow camera eases.
+- **A blue highlight on what the tap selected**, held for 2 s and fading out over the last
+  400 ms (`TAP_HIGHLIGHT_MS`, `tapHighlightAlpha`). `resolveTapHighlight` reads the target the
+  click acts on and asks what is DRAWN there: a **person** is outlined (and the outline walks
+  with them); otherwise **furniture** covering the cell is outlined whole, from whichever of its
+  cells was tapped; otherwise a **blocking decor** sprite (`isBlockingDecorUrl`) is outlined;
+  otherwise the cell is **empty floor** and its diamond is filled. Flush decor (tufts, dirt
+  details) counts as floor. A place is only a tag on a cell, so it outlines whatever stands on
+  it, or its square when it is a spriteless spot.
+
+The blue is the stage's one selection blue, `#8FD6FF` (`play/iwTapColors.ts`), which is also
+`FOCUS_RING_COLOR` (the addressee ring) and the Continue bar (§ 5.3d). ⚠️ **The outline is a
+silhouette drawn BEHIND the sprite, not a stroke on top.** Pixi has no sprite-outline primitive
+(`pixi-filters` is not a dependency), so `TapSpriteOutline` draws the texture four times nudged
+one world pixel each way, flattens them to solid blue with a `ColorMatrixFilter`, and sits
+0.01 below the sprite's zIndex, so only a one-pixel rim shows. Being behind, it is correctly
+hidden by anything standing in front of the object. Furniture is outlined from the unsliced
+art, aligned to its leftmost strip's `offsetX` and tucked behind its backmost strip. Decor is
+tucked behind `computeLayerZ(…, 'background') + RAISED_DECOR_Z_LIFT`, which is exported from
+`nightmarket/terrainDraws.ts` so the depth has one source.
+
+The mouse-only hover diamond is unchanged and still tinted by kind (white / amber / blue).
+
 **The camera can be looked around, and says so (2026-09-07).** It used to follow the avatar
 unconditionally, so any drag was pulled back within a few frames — indistinguishable from the
 drag not working. Now a drag past `TAP_SLOP_PX` hands control over and **keeps** it; a camera
@@ -5121,16 +5291,29 @@ board anchored to a centre now hidden behind the keyboard. `IWSceneStage` now ob
 box and hands the new size to `app.queueResize()` (coalesced to one frame, because the box
 travels on a 300ms transition).
 
-No pan correction exists, and none should be added: the board is drawn at the CANVAS centre, so
-the world point under the centre is `-pan / zoom` — a quantity that does not mention the
-viewport. Cropping the canvas therefore preserves whatever was centred, in both the follow-lock
-and the panned-away states, with nothing to unwind when the keyboard closes. If the scene ever
-drifts behind a keyboard again, the broken part is the page's padding or that observer.
+The board is drawn at the CANVAS centre, so the world point under the centre is `-pan / zoom` —
+a quantity that does not mention the viewport. Cropping the canvas therefore re-centres whatever
+was centred into the space above the keyboard, in both the follow-lock and the panned-away
+states, with no pan maths. If the scene ever drifts behind a keyboard, the broken part is the
+page's padding or that observer.
+
+**The scene shifts when a keyboard opens, and holds still when it closes (2026-09-23).** The
+same geometry made the canvas growing back drop the scene by half the keyboard's height — a
+second shift the learner did nothing to cause. `IWSceneStage` (`SceneContents`, the renderer
+`resize` handler) now cancels a GROW with an equal pan correction and records it as
+`followBiasYRef`, a vertical offset the follow ease aims for so it does not glide the scene back
+down on its own. A SHRINK pays that offset back first (the scene already sits where the smaller
+viewport would centre it, so it stays still) and only re-centres for the remainder. The held
+offset is released — the camera then eases to true centre — when the player next walks, when
+the camera is re-locked, or when the next keyboard opens. Hooked to the renderer's `resize`
+event rather than the ResizeObserver so the correction lands in the same frame as the resize.
+Code: `play/IWSceneStage.tsx` → `SceneContents` (`followBiasYRef`, the `renderer.on('resize')`
+effect, the follow block in `useTick`).
 
 The inset is `useKeyboardInset()`, which unions **our** keyboard with the **OS** one
-([BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a). Both reach this page: the `ABC` key, and
-the composer's dictionary tray, which is `data-beginner-keyboard="off"` precisely so it raises
-a latin keyboard. Reserving off the beginner inset alone reserved nothing in either.
+([BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a). The OS keyboard reaches this page
+without our surface for a Spanish learner (the handwriting keyboard is zh-only), where the
+beginner inset is 0 — reserving off that alone reserved nothing.
 
 **Every tap target now MOVES the learner (2026-09-07).** Tapping a person or a place used to
 turn the player on the spot without walking, which made the tap read as ignored whenever the
@@ -5694,6 +5877,10 @@ learner stalls, § 4.1's free non-verbal channel and the NPC's own judgement are
 consistent with Q29 (nobody nudges).
 
 **Q41 — ~~What does tap-to-complete do to the audio?~~ DECIDED: tap-to-complete is removed.**
+
+> ⚠️ **Partly reversed 2026-09-23 (§ 5.3d).** The Continue bar is live mid-reveal, so a line
+> CAN now be cut short — voice and bubble together, never desynced. Tapping the bubble itself
+> still only replays; skipping lives on the composer bar, not on the line.
 The bubble reveals at speech rate and cannot be skipped; **a replay affordance** lets the
 learner hear and read the line again instead.
 
@@ -5800,12 +5987,12 @@ authored thing in the feature that produces behaviour rather than text.
 | **Prompt an NPC to speak** (`prompt_npc`) | **BUILT 2026-09-19.** Force a **different** body to say something, now. Carries a required `npcId` (who speaks), an optional `target` (whom they address, as an actor id), and an optional `instruction` (the author's brief). ⚠️ **The only step whose subject is not the performer** — every other step here is written from inside one NPC, and this one hands the floor to somebody else for one line. Both optional halves mean *the model decides* when left out, so the minimal cue is just a name: *somebody say something now*. The third step that costs a model call, and nothing is spoken verbatim — the prompted NPC renders the beat in its own register, out of its own mood and memory, exactly as a `comment` does. See Q45. |
 | **Walk to place** (`walk_to_tag`) | Path to the nearest cell adjacent to the cell that place names, and face it. |
 | **Walk to person** (`walk_to_actor`) | The same, targeting the learner, the companion, or another cast NPC. Stops **beside** them and **turns to face them** — and faces them even when no adjacent cell is reachable, rather than skipping (2026-09-07: a shopkeeper who could not get around the counter was delivering her line to a wall). `walk_away_from` deliberately does not face its target. |
-| **Walk (AI picks where)** (`ai_walk`) | The author writes a **brief** — "to whoever has been waiting longest" — and the model returns a **destination**: one of this scene's named places, or one of its bodies (learner, companion, cast). The engine then plays the ordinary walk for it. ⚠️ The second step that costs a model call, but the model picks *where* and nothing more — the route is the same deterministic traversal as every other walk, and the closed answer space keeps a bad answer a *wrong* destination rather than an illegal one. Resolution is **phase 2**. |
+| **Walk (AI picks where)** (`ai_walk`) | The author writes a **brief** — "to whoever has been waiting longest" — and the model returns a **destination**: one of this scene's named places, or one of its bodies (learner, companion, cast). The engine then plays the ordinary walk for it. ⚠️ The second step that costs a model call, but the model picks *where* and nothing more — the route is the same deterministic traversal as every other walk, and the closed answer space keeps a bad answer a *wrong* destination rather than an illegal one. **Built 2026-09-23** — § 5.4's *How an `ai_walk` runs*. |
 | **Walk away from** (`walk_away_from`) / **Turn to face** (`face`) | The other two actor-aimed steps; one control in the editor, since all three ask *who*. |
 | **Start a conversation** (`start_conversation`) | Play one of the scene's authored overheard exchanges. |
 | **Wait** (`wait`) | Hold still for 1–60 whole seconds. The beat that makes a script read as behaviour rather than as teleporting. |
 | **Get information** (`get_information`) | **BUILT 2026-09-20.** Hold the floor until the learner has told this NPC something. Carries a required `goal` — the author's words for what the NPC is trying to find out ("what they want to order") — and an optional `maxTurns` (1–5, default 3). ⚠️ **It does not speak**: the asking is the `comment` step in front of it, and the only line the step itself produces is the give-up. ⚠️ **It is the one step whose length the author does not decide** — it ends on the MODEL's verdict, which is why the cap is not optional in spirit even though the field is. See § 5.4c. |
-| **Wait for the learner** (`wait_for_response`) | Hand the floor back, and **carry on from here once they have used it** (2026-09-20). Steps may follow it, and an action may hold as many as it likes — `Say → Wait for the learner → Say` is one script, so an NPC that asks a question can react to the answer without the author inventing a second action to trigger. ⚠️ **It resumes only on an utterance this NPC could HEAR** (§ 4c): waking on a whisper aimed at somebody across the stand is the theatre the earshot rework deleted. The consequence for an author is that walking away from a parked NPC leaves it parked — the only other ways out are leaving the scene and another action superseding the script. There is deliberately **no timeout**. |
+| **Wait for the learner** (`wait_for_response`) | Hand the floor back, and **carry on from here once they have used it** (2026-09-20). Steps may follow it, and an action may hold as many as it likes — `Say → Wait for the learner → Say` is one script, so an NPC that asks a question can react to the answer without the author inventing a second action to trigger. ⚠️ **It resumes only on an utterance ROUTED to this NPC** (§ 4.2; changed 2026-09-23 from "one this NPC could hear", with § 4c): everybody hears everything, so waking on any line would have the NPC take an aside to somebody else as its answer. The consequence for an author is that talking only to other people leaves a parked NPC parked — the only other ways out are leaving the scene and another action superseding the script. There is deliberately **no timeout**. |
 | **Schedule event** (`schedule_event`) | Arm one of the scene's authored **events** (see *Event* in § 9.1) for `seconds` from now — 0–600 — and carry on. ⚠️ It does **not** hold the NPC (that is `wait`) and does not fire the event itself: the engine injects it at the next legal opportunity, so the delay is an *earliest*, not an exactly-when. This is what lets a script set in motion something it does not perform — 王婶 calls the order through, and the food arrives twenty seconds later without her standing there. |
 
 ⚠️ **`accept_payment` / `hand_over` / `give_item` / `refuse` are NOT steps** — see sub-answer 4.
@@ -5814,15 +6001,20 @@ authored thing in the feature that produces behaviour rather than text.
 here" is literally an `await`: `runAuthoredAction` calls `IWScriptDeps.awaitLearner(actorId)`
 and the host hands back a promise it keeps in a list of parked scripts
 (`useIWSceneRuntime.ts` → `learnerWaitersRef`, `awaitLearner`). The learner's `say` resolves
-every waiter whose actor is in that utterance's **audience** — the same set § 4c stamps onto
-the transcript entry — and it does so *after* appending the line to `heardRef` and *before*
-the routing call, so a resumed script's next `comment` renders against the sentence it is
-answering and does not wait on a model round trip to wake up. A parked waiter is also drained
+the waiters of **the one NPC the utterance is routed to** (§ 4.2) — nobody else's (changed
+2026-09-23; it used to be every waiter whose NPC could HEAR the line, § 4c). Everybody hears
+everything now, so waking on any line would have an NPC take an aside to somebody else as the
+answer to its own question. The release happens once routing settles and *before* the turn
+call, after the line is already in `heardRef`, so a resumed script's next `comment` renders
+against the sentence it is answering. The cost is that waking waits on the routing race
+(bounded by `IW_ROUTE_CLIENT_DEADLINE_MS`) rather than firing the instant the learner hits
+send. A parked waiter is also drained
 on teardown, so a scene left mid-wait unwinds through the ordinary `cancelled()` check instead
 of stranding its promise chain.
 
 ⚠️ **The two beats that now run concurrently.** The learner's utterance both wakes the parked
-script *and* starts the ordinary routed turn (§ 4.2). Both can produce a line, so the speech
+script *and* starts the ordinary routed turn (§ 4.2) — for the same NPC, since only the routed
+NPC's script wakes. Both can produce a line, so the speech
 chain (§ 5.3a) is what keeps them from revealing over each other — and if the routed reply is
 that same NPC performing an action, `performNpcAction` bumps its script token and the parked
 script is superseded on its next `cancelled()` check, which is the correct resolution: the NPC
@@ -5966,7 +6158,7 @@ impossible to miss.
   calls". No longer true, and it could not stay true: an NPC-to-NPC exchange spoken verbatim
   beside a `comment` spoken in character would be two registers from the same mouths. Turns
   render one at a time, in order, so turn 2 is written knowing what turn 1 actually said.
-  `IW_CONVERSATION_LINE_MS` survives only as the inter-line gap.
+  (`IW_CONVERSATION_LINE_MS` survived as the inter-line gap until § 5.3d deleted it.)
 - **The save-time line guard inverted, hours after it was added** (§ 5.2a). English in a
   `comment` is now CORRECT. `validateAuthoredLines` no longer checks language; it checks that
   a direction is under the 400-character cap the runtime sends and does not talk *about* the

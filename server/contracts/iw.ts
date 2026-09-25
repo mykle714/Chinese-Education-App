@@ -1,4 +1,4 @@
-import type { SegmentMetadata } from './wire.js';
+import type { SegmentMetadata, UserGender } from './wire.js';
 
 /**
  * iw.ts — the client↔server contract for the Immersive World (iw) SCENE, plus the
@@ -197,21 +197,26 @@ export const IW_MAX_UTTERANCE_CHARS = 120;
  * seconds. 700 ms is below any human's send cadence — a real turn takes ~1 s of model time
  * before the learner has even read the reply — and above what a loop can exploit.
  *
- * ⚠️ It bounds SENDS, not model calls: one send can legitimately fan out to several NPCs
- * (§ 4.1), which is what {@link IW_MAX_LISTENERS_PER_UTTERANCE} bounds instead.
+ * It bounds SENDS. Since § 4.2 a send is also exactly one routed NPC turn (plus one routing
+ * call), so bounding sends bounds model calls too.
  */
 export const IW_MIN_TURN_GAP_MS = 700;
 
 /**
- * How many NPCs one utterance may be routed to.
+ * The most other bodies one NPC's perception block may list (`nearby`, layer 3 of § 5.5).
  *
- * § 4.1 decided that every audible NPC decides for itself whether to answer, so a single
- * utterance is several model calls; § 7 says the ~800 µ$/turn figure must be multiplied by
- * the audible cast size before any budget is set. The design target is 2–4, so 4 is the cap
- * and a fifth listener is dropped rather than refused — a scene with a crowd in it should
- * get quieter, not error.
+ * Enforced by `ImmersiveWorldRuntimeController.parsePerception`, because the client assembles
+ * that block and cannot be trusted — an uncapped list is an uncapped prompt. It DROPS rather
+ * than refuses: the client sorts nearest-first, so a crowded scene loses its farthest bodies
+ * from the prompt instead of erroring.
+ *
+ * ⚠️ **RENAMED 2026-09-23 from `IW_MAX_LISTENERS_PER_UTTERANCE = 4`** (applied ×3). That name
+ * was the fan-out cap when every NPC in earshot took a turn (§ 4.1), then the size of the
+ * addressee candidate list; routing (§ 4.2) and § 4c's withdrawal removed both jobs, leaving
+ * only this one. The router's candidate list is deliberately NOT bounded by it — see
+ * `parseRouteBody`.
  */
-export const IW_MAX_LISTENERS_PER_UTTERANCE = 4;
+export const IW_MAX_NEARBY_BODIES = 12;
 
 /**
  * The emote channel of an NPC's reply (§ 5.1 line 3). Drives a sprite; NEVER rendered as text.
@@ -237,45 +242,6 @@ export const IW_DEFAULT_EMOTE: IWEmote = 'neutral';
  */
 export const IW_NO_ACTION = 'none';
 
-/**
- * How loudly the learner said it (2026-09-07).
- *
- * ⚠️ **THIS IS THE HEARING GATE COMING BACK, DELIBERATELY REBUILT AS A CHOICE.** § 4 removed
- * an earshot model on three findings, and the volume toggle answers all three rather than
- * overruling them:
- *
- * 1. *It never gated memory.* This one does — an NPC out of range does not get the line in
- *    its transcript, so it cannot use tomorrow what it could not hear today.
- * 2. *Its failure was invisible* — silence looked identical to an NPC choosing not to answer.
- *    Now the learner SET the range, one control, one press ago, and the banner names it.
- * 3. *A scene is small, so the geometry was almost always trivially satisfied.* True, and it
- *    is why the old automatic model bought nothing. A volume the learner picks is not a
- *    simulation of distance — it is an INTENTION, and 悄悄说 to one person at a table of four
- *    is a thing a learner means to do rather than a thing the room does to them.
- *
- * What is NOT coming back is occlusion: no line-of-sight walk, no stall counted as a wall.
- * That was the half of the old model whose failures were unexplainable to a player.
- */
-export const IW_VOLUMES = ['whisper', 'talk', 'shout'] as const;
-export type IWVolume = (typeof IW_VOLUMES)[number];
-
-/**
- * How far an ordinary speaking voice carries, in Chebyshev cells.
- *
- * Inherited from the deleted `hearing.ts`, where it was `HEARING_RADIUS.talk`. A one-room
- * stall is rarely wider than this, which is the point: `talk` is the volume that behaves the
- * way the scene did before there were volumes at all, so a learner who never touches the
- * toggle notices nothing.
- */
-export const IW_TALK_RADIUS = 5;
-
-/** How the composer labels each volume, and what it tells the NPC in layer 3. */
-export const IW_VOLUME_LABELS: Record<IWVolume, string> = {
-  whisper: 'Whisper',
-  talk: 'Say',
-  shout: 'Shout',
-};
-
 /** The four facings a placed body can be authored with. Mirrors the engine's `Direction`. */
 export const IW_FACINGS = ['n', 'e', 's', 'w'] as const;
 export type IWFacing = (typeof IW_FACINGS)[number];
@@ -298,15 +264,30 @@ export const IW_FACING_LABELS: Record<IWFacing, string> = {
 export type IWAvatar = 'male' | 'female';
 
 /**
- * The learner's body, and the companion's.
+ * The learner's body when they have not told us their gender.
  *
  * ⚠️ NOT AUTHORED, and deliberately not stored on a scene. Every scene has exactly one
  * learner and one companion, and they look the same in all of them — a per-scene choice
  * would be a way to make the same person unrecognisable between Tuesday and Wednesday.
  * The companion's avatar comes from his NPC entry (he IS an NPC); the learner has no NPC
- * entry at all, so `IW_PLAYER_AVATAR` is the only place their body is decided.
+ * entry at all, so {@link iwPlayerAvatar} is the only place their body is decided.
+ *
+ * `'female'` because it was the one body every learner had before migration 164 — an
+ * account that never answered (or chose "Prefer not to answer") looks exactly as it did.
  */
-export const IW_PLAYER_AVATAR: IWAvatar = 'female';
+export const IW_DEFAULT_PLAYER_AVATAR: IWAvatar = 'female';
+
+/**
+ * The learner's body, from their account (`users."gender"`, migration 164).
+ *
+ * A direct mapping today because the account's gender values and the sprite pack's bodies are
+ * the same two words — but they are different concepts (`USER_GENDERS` may grow; the pack
+ * authors what it authors), so this is the one seam where a gender without a matching sprite
+ * falls back to the default rather than to a missing texture. See docs/IMMERSIVE_WORLD.md § 3.
+ */
+export function iwPlayerAvatar(gender: UserGender | null | undefined): IWAvatar {
+  return gender === 'male' || gender === 'female' ? gender : IW_DEFAULT_PLAYER_AVATAR;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The five authored blobs
@@ -667,8 +648,10 @@ export type IWActionStep =
    * that does not exist, and pathing has exactly the referents it always had.
    *
    * `instruction` is the author's brief for that choice ("to whoever has been waiting
-   * longest"), in the same register as an action's `when`. Resolution itself is phase 2 —
-   * today the step is authored, validated and stored, and nothing executes it yet.
+   * longest"), in the same register as an action's `when`. Resolved at runtime since
+   * 2026-09-23: `actionPlayer.ts` builds the candidates, `POST /api/immersiveWorld/destination`
+   * (`destinationPicker.ts`) picks one, and `iwScript.ts` walks it. A step the model cannot
+   * place — no candidates, a dead rung, an honest NONE — is skipped, never guessed.
    */
   | { kind: 'ai_walk'; instruction: string }
   /** Play one of the scene's authored NPC-to-NPC conversations (§ 14 Q6). */
@@ -764,7 +747,40 @@ export interface IWLineSegments {
 
 /** The two non-NPC bodies a `walk_to_actor` step may target. */
 export const IW_ACTOR_PLAYER = 'player';
+
+/**
+ * What the learner is called in an NPC's prompt — in-world, never "the player" (§ 14 Q27).
+ *
+ * One constant because three places print it and they MUST agree: the client's perception
+ * labels (`useIWSceneRuntime` → nearby / heard), the server's destination labels
+ * (`destinationPicker.ts` → `actorLabel`), and the learner description
+ * (`server/services/iw/learnerProfile.ts`). If they drifted, the NPC would be told about "the
+ * customer" and then hear from someone else entirely.
+ */
+export const IW_PLAYER_LABEL = 'the customer';
 export const IW_ACTOR_COMPANION = 'companion';
+
+/**
+ * One destination an `ai_walk` step may be sent to (§ 5.4, BUILT 2026-09-23).
+ *
+ * ⚠️ **THE CLIENT PROPOSES THE LIST, THE SERVER RE-CHECKS IT, THE MODEL PICKS FROM IT.** The
+ * client knows where everybody is standing and which places are reachable this instant, so it
+ * builds the candidates (`actionPlayer.ts` → `destinationCandidates`). The server drops any
+ * that do not belong to the scene (`destinationPicker.ts` → `resolveCandidates`) and labels the
+ * rest from its own data, so a caller cannot describe a destination into the prompt. The reply
+ * is an index into what survived — never a free-text name.
+ *
+ * Shared by both halves because it is the wire shape of `POST /api/immersiveWorld/destination`.
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 5.4.
+ */
+export type IWDestinationTarget =
+  /** A named place in `layout.places` — played as a `walk_to_tag`. */
+  | { kind: 'place'; tag: string }
+  /** A body — `player`, `companion`, or a cast npcId — played as a `walk_to_actor`. */
+  | { kind: 'actor'; actorId: string };
+
+/** A target plus how far it is from the performer, in Chebyshev cells — a hint for the model. */
+export type IWDestinationCandidate = IWDestinationTarget & { distance: number };
 
 /**
  * One authored action — a named script the model may CHOOSE, and the engine then PLAYS.
@@ -900,18 +916,6 @@ export interface IWSceneEvent {
    */
   atStartSeconds?: number;
 }
-
-/**
- * How long each line of an overheard conversation stays on screen before the next one
- * plays. A FIXED CONSTANT, not an authored field (2026-09-05).
- *
- * There used to be a per-turn `holdMs`. It was removed because pacing is not a thing an
- * author should have to get right line by line: a uniform beat is legible, and a field that
- * is usually left blank only produces conversations that are inconsistently paced for no
- * deliberate reason. If a scene ever genuinely needs a dramatic pause, that is an argument
- * for a pause *marker* in the line, not for a number on every line.
- */
-export const IW_CONVERSATION_LINE_MS = 7000;
 
 /** One line of an authored NPC-to-NPC exchange (§ 14 Q6). */
 export interface IWConversationTurn {

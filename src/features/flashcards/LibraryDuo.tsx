@@ -53,9 +53,9 @@ import type { BuiltinCollectionEntry } from "./builtinCollections";
  * ── Saying which one is on ────────────────────────────────────────────────────
  * A 93% pastel cannot carry "active" on its own — the four fills are ~1.15:1 against
  * the paper and the difference between two of them is not a state change anyone will
- * notice. So the active tile takes its hue's SATURATED INK (`RAMP[entry.hue].ink`, the
- * reason an entry carries a hue key at all): a 2px ring of it, its glyph and its
- * figure in it. And the OTHER tile drops from the 93% fill to the 97.5% tint, so the
+ * notice. So the active tile takes INK (v2 has no per-hue ink tier): a 2px ink ring,
+ * its glyph and figure at full ink, and a 4px halo in the hue's MID tier (the reason an
+ * entry carries a hue key at all). And the OTHER tile drops from the 93% fill to the 97.5% tint, so the
  * pair separates on two channels at once — the on tile gains ink, the off tile loses
  * colour — rather than asking the eye to compare two near-white rectangles.
  *
@@ -139,20 +139,20 @@ export const LibraryDuo: React.FC<LibraryDuoProps> = ({
                         // (a place to go look at a set), so they are the same object.
                         cursor: "pointer",
                         borderRadius: "15px",
-                        // The ACTIVE ring is 2px of the hue's ink; the resting border
+                        // The ACTIVE ring is 2px of ink; the resting border
                         // is the hand's 1px hairline. The padding drops by 1px to
                         // match, so a tile does not grow by 2px when it is switched on
                         // and shove its neighbour's label into an ellipsis.
-                        border: isActive ? `2px solid ${hue.ink}` : `1px solid ${COLORS.border}`,
+                        border: isActive ? `2px solid ${COLORS.onSurface}` : `1px solid ${COLORS.border}`,
                         padding: isActive ? "12px 12px 13px" : "13px 13px 14px",
-                        // Fill: the hue's 93% pastel normally, its 97.5% tint while the
+                        // Fill: the hue's SURFACE normally, its 97.5% tint while the
                         // OTHER tile is the one filtering. See the header.
                         backgroundColor: isMuted ? hue.tint : entry.colors.main,
                         // Active tiles also sit UP: the resting elevation plus a soft
-                        // halo in the hue's own ink, so "on" is legible at a glance
+                        // halo in the hue's MID tier, so "on" is legible at a glance
                         // from across the sheet and not only by reading the border.
                         boxShadow: isActive
-                            ? `${SHADOW.cardRest}, 0 0 0 4px ${hue.fill}`
+                            ? `${SHADOW.cardRest}, 0 0 0 4px ${hue.mid}`
                             : SHADOW.cardRest,
                         // The state change is a filter being applied, so it should read
                         // as one movement rather than four properties landing at once.
@@ -166,7 +166,7 @@ export const LibraryDuo: React.FC<LibraryDuoProps> = ({
                             // Ink at full strength when active — the glyph is the tile's
                             // one non-text mark, so it is the cheapest place to spend a
                             // second signal. Otherwise the Centers rail's 0.72 grey.
-                            color: isActive ? hue.ink : undefined,
+                            color: isActive ? COLORS.onSurface : undefined,
                             opacity: isActive ? 1 : 0.72,
                             flexShrink: 0,
                         }}
@@ -212,9 +212,9 @@ export const LibraryDuo: React.FC<LibraryDuoProps> = ({
                                 fontWeight: 800,
                                 letterSpacing: "-0.035em",
                                 lineHeight: 1,
-                                // The figure carries the hue's ink while active: it is
-                                // the number the filter is about.
-                                color: isActive ? hue.ink : COLORS.onSurface,
+                                // Ink in both states (v2 dropped the per-hue ink the
+                                // active figure used to take).
+                                color: COLORS.onSurface,
                                 flexShrink: 0,
                                 // Tabular figures so a count changing from 99 to 100
                                 // does not re-space the ones already on screen.

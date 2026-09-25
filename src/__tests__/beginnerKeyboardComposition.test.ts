@@ -8,7 +8,7 @@
  * (the suite has no DOM); its decisions live in compositionRules.ts precisely so
  * they can be checked here.
  *
- * Spec: docs/BEGINNER_KEYBOARD.md § 6n, § 6r, § 6q.
+ * Spec: docs/BEGINNER_KEYBOARD.md § 6n, § 6r, § 6q, § 6z-4.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -17,6 +17,7 @@ import { parseGlyphTemplates } from '../components/handwriting/glyphTemplates';
 import { matchGlyphs } from '../components/handwriting/glyphMatcher';
 import {
   expandGlyph,
+  findHintCharacter,
   lookupBuffer,
   parseGlyphLookup,
   parseGlyphWords,
@@ -27,6 +28,8 @@ import {
   bufferAfterSelect,
   toGlyphCandidates,
   toResultCandidates,
+  withHints,
+  hintCommit,
   type Candidate,
 } from '../features/beginnerKeyboard/compositionRules';
 import { CANDIDATE_DISPLAY_LIMIT } from '../features/beginnerKeyboard/useComposition';
@@ -218,5 +221,31 @@ describe('end to end — draw, append, commit', () => {
     expect(results[0].text).toBe('江湖');
     expect(results[0].isWord).toBe(true);
     expect(results[0].action).toBe('commit');
+  });
+});
+
+describe('§ 6z-4 hint bubbles', () => {
+  const findHint = (buffer: readonly string[], glyph: string) => findHintCharacter(buffer, glyph, index);
+
+  it('attaches no hints while the buffer is empty', () => {
+    const row = toGlyphCandidates(matchGlyphs(inkFromMedians('疋'), templates, { limit: CANDIDATE_DISPLAY_LIMIT }));
+    expect(withHints(row, [], findHint).some((candidate) => candidate.hint)).toBe(false);
+  });
+
+  it('walks 日 → draw 疋 → tap the bubble → commit 是, clearing the buffer', () => {
+    const buffer = submit('日');
+    const row = withHints(
+      toGlyphCandidates(matchGlyphs(inkFromMedians('疋'), templates, { limit: CANDIDATE_DISPLAY_LIMIT })),
+      buffer,
+      findHint,
+    );
+    const chip = row.find((candidate) => candidate.text === '疋');
+    expect(chip, '疋 should be among the glyph guesses for its own ink').toBeDefined();
+    expect(chip!.hint?.text).toBe('是');
+
+    // The bubble commits through the same rule as a result chip (§ 6r).
+    const commit = hintCommit(chip!.hint!);
+    expect(commit).toEqual({ text: '是', action: 'commit', isWord: false });
+    expect(bufferAfterSelect(buffer, commit, expand)).toEqual([]);
   });
 });

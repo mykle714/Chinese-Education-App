@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, ButtonBase, Typography } from "@mui/material";
@@ -116,7 +117,7 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                                 justifyContent: "center",
                                 textAlign: "center",
                                 // The hatch shows through wherever there is no image yet.
-                                backgroundImage: "repeating-linear-gradient(135deg,rgba(23,22,26,.05) 0 6px,rgba(23,22,26,.015) 6px 12px)",
+                                backgroundImage: `repeating-linear-gradient(135deg,${COLORS.rowHoverBg} 0 6px,${alpha(COLORS.onSurface, 0.015)} 6px 12px)`,
                             }}
                         >
                             {shot ? (
@@ -131,7 +132,7 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                             ) : (
                                 <Typography
                                     className="stepped-help__shot-placeholder"
-                                    sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.06em", color: "rgba(23,22,26,.34)", lineHeight: 1.5, px: 2.5 }}
+                                    sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.06em", color: alpha(COLORS.onSurface, 0.34), lineHeight: 1.5, px: 2.5 }}
                                 >
                                     screenshot · {step.shotDescription}
                                 </Typography>
@@ -150,11 +151,11 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                                     px: 1.75,
                                     pt: 1.75,
                                     pb: 4.25,
-                                    background: "linear-gradient(to bottom,rgba(20,18,26,.82) 0%,rgba(20,18,26,.62) 48%,rgba(20,18,26,0) 100%)",
+                                    background: `linear-gradient(to bottom,${alpha(COLORS.onSurface, 0.82)} 0%,${alpha(COLORS.onSurface, 0.62)} 48%,${alpha(COLORS.onSurface, 0)} 100%)`,
                                 }}
                             >
                                 <Box sx={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                                    <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.bodyLg, fontWeight: WEIGHT.semibold, letterSpacing: "-0.015em", color: "#fff" }}>
+                                    <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.bodyLg, fontWeight: WEIGHT.semibold, letterSpacing: "-0.015em", color: COLORS.white }}>
                                         {step.heading}
                                     </Typography>
                                     <Typography sx={{ fontFamily: FONTS.label, fontSize: SIZE.micro, letterSpacing: "0.11em", textTransform: "uppercase", color: "rgba(255,255,255,.88)", mt: 0.5 }}>
@@ -213,14 +214,14 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                                     py: 1.25,
                                     borderRadius: "999px",
                                     backgroundColor: COLORS.onSurface,
-                                    color: "#fff",
+                                    color: COLORS.white,
                                     fontFamily: FONTS.sans,
                                     fontSize: SIZE.body,
                                     fontWeight: WEIGHT.semibold,
                                 }}
                             >
                                 {last ? "Done" : "Next"}
-                                {!last && <Icon name="arrow_forward" size={15} color="#fff" />}
+                                {!last && <Icon name="arrow_forward" size={15} color={COLORS.white} />}
                             </ButtonBase>
                         </Box>
                     </Box>

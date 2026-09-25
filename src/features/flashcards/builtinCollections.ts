@@ -83,10 +83,10 @@ export interface BuiltinCollectionEntry {
     /** The tile's two-tone palette; the selector uses `main` alone for its dot. */
     colors: { main: string; accent: string };
     /**
-     * The same colour as a RAMP hue KEY, for surfaces that need a third tier of it —
-     * the saturated `ink`. `LibraryDuo`'s ACTIVE (filtering) tile is the caller: a
-     * pastel fill cannot say "this filter is on" on its own, so the active tile takes
-     * this hue's ink for its ring, its glyph and its figure. Carried beside `colors`
+     * The same colour as a RAMP hue KEY, for surfaces that need another tier of it —
+     * the MID. `LibraryDuo`'s ACTIVE (filtering) tile is the caller: a pastel fill
+     * cannot say "this filter is on" on its own, so the active tile takes an ink ring
+     * plus a halo in this hue's mid tier (v2 has no per-hue ink). Carried beside `colors`
      * rather than replacing it because the two are derived from the same hue anyway
      * (categoryColors.ts) and the menu surfaces only ever want the fill.
      */

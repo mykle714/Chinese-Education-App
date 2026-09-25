@@ -69,7 +69,7 @@ const VoteButton: React.FC<{
         px: small ? 1.25 : 2,
         py: small ? 0.25 : undefined,
         // Color encodes vote state: COLORED = voted, GREY = not yet voted (available to vote).
-        color: voted ? "#fff" : COLORS.textSecondary,
+        color: voted ? COLORS.white : COLORS.textSecondary,
         backgroundColor: voted ? COLORS.infoInk : COLORS.card,
         "&:hover": {
           backgroundColor: voted ? COLORS.infoInk : COLORS.card,

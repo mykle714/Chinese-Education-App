@@ -3,8 +3,8 @@ import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
 import { senseLabelForIndex, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel, cardSlotPadding, type CardSlotPadding } from "./styled";
 import {
-    CORRECT_COLOR,
-    INCORRECT_COLOR,
+    CORRECT_WASH,
+    INCORRECT_WASH,
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_TRANSITION,
     CARD_FLIP_TRANSITION,
@@ -328,7 +328,7 @@ const CardFace: React.FC<{
                 <Box sx={{
                     position: 'absolute',
                     top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundColor: dragPosition.x > dismissThreshold ? CORRECT_COLOR : dragPosition.x < -dismissThreshold ? INCORRECT_COLOR : 'transparent',
+                    backgroundColor: dragPosition.x > dismissThreshold ? CORRECT_WASH : dragPosition.x < -dismissThreshold ? INCORRECT_WASH : 'transparent',
                     opacity: Math.min(Math.abs(dragPosition.x) / (dismissThreshold * 3), 0.3),
                     borderRadius: CARD_SURFACE.borderRadius,
                     pointerEvents: 'none',

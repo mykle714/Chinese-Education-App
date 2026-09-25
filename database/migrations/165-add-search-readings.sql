@@ -1,0 +1,24 @@
+-- 165 — dictionaryentries_zh."searchReadings": every reading a heteronym can be searched under
+--
+-- EXPAND-ONLY — MUST RUN **BEFORE** THE CONTAINER REBUILD. The new `DictionaryDAL.searchByWord1`
+-- matches this column by name, so new code + missing column 500s every dictionary search.
+-- Old code never reads it, so applying it early is harmless.
+--
+-- WHY. det keeps ONE row per headword, so `pronunciation` / `numberedPinyin` can only hold one
+-- reading — and pinyin search matched only those. A heteronym was findable under exactly one
+-- of its readings: 了 only as "le" (never "liao"), 行 only as whatever the column happened to
+-- say. CC-CEDICT lists 1,248 multi-reading headwords; 1,216 of them are in det, and only 258
+-- of those are sense-clustered, so the other readings exist NOWHERE else in the table.
+--
+-- FORMAT (built by scripts/backfill/chinese/lib/searchReadings.js): every distinct reading in
+-- both column forms, pipe-separated, toned first — 行 = 'xíng|háng|héng|xing2|hang2|heng2'.
+-- NULL for a single-reading headword (the primary columns already cover it).
+--
+-- POPULATED BY scripts/backfill/chinese/backfill-search-readings.js (CEDICT ∪ cluster readings
+-- ∪ primary columns); kept current by backfill-cluster-definitions.js, which re-unions it
+-- whenever it rewrites a row's clusters. No index: search already seq-scans det with regexes
+-- on `pronunciation` / `numberedPinyin`, and this column is NULL on all but ~1.2k rows.
+--
+-- Chinese only — `dictionaryentries_es` has no pinyin.
+
+ALTER TABLE dictionaryentries_zh ADD COLUMN IF NOT EXISTS "searchReadings" TEXT NULL;

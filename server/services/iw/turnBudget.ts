@@ -1,5 +1,4 @@
 import {
-  IW_MAX_LISTENERS_PER_UTTERANCE,
   IW_MAX_UTTERANCE_CHARS,
   IW_MIN_TURN_GAP_MS,
 } from '../../contracts/iw.js';
@@ -17,12 +16,10 @@ import {
  * was bypassed entirely — which also means every check here has to be meaningful against a
  * caller who never ran our JavaScript.
  *
- * ⚠️ **{@link IW_MAX_LISTENERS_PER_UTTERANCE} IS NOW THE WHOLE FAN-OUT BUDGET** (2026-09-07).
- * § 4.1 used to name the earshot gate as the primary cost control and this cap as a server-side
- * restatement of it. The gate is withdrawn — everyone in a scene hears everything — so there is
- * no geometry left to restate and no distance at which a scene gets cheaper. The cap is not a
- * backstop for an untrusted client any more; it is the only thing bounding what one utterance
- * costs, on the honest path as much as the hostile one.
+ * ⚠️ **THERE IS NO FAN-OUT BUDGET ANY MORE** (2026-09-23). `capListeners` trimmed the
+ * listener list when every NPC in earshot took a turn (§ 4.1). Routing (§ 4.2) made an
+ * utterance exactly one NPC turn, so what one utterance costs is bounded by the per-send
+ * checks below, and `capListeners` — by then called only by its own test — was deleted.
  *
  * ⚠️ **IT IS PER-PROCESS AND RESETS ON RESTART.** Deliberate for phase 2 and a real
  * limitation: the counters live in a `Map`, so a backend rebuild forgives every daily cap,
@@ -41,10 +38,10 @@ import {
 /**
  * ⚠️ THREE OF § 7's FIVE NUMBERS LIVE IN THE CONTRACT, NOT HERE (2026-09-06).
  *
- * `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and `IW_MAX_LISTENERS_PER_UTTERANCE` moved to
+ * `IW_MAX_UTTERANCE_CHARS`, `IW_MIN_TURN_GAP_MS` and `IW_MAX_NEARBY_BODIES` moved to
  * `server/contracts/iw.ts` and are re-exported below, because the CLIENT has to respect them
  * to behave well: the composer counts characters against the cap, the send button waits out
- * the gap, and the send path caps its own fan-out. A client that has to guess a server
+ * the gap, and the perception block stays under the `nearby` cap. A client that has to guess a server
  * limit gets it wrong the first time the limit is tuned — a refusal the learner sees as the
  * game losing their sentence.
  *
@@ -55,7 +52,7 @@ import {
  */
 export {
   IW_MAX_UTTERANCE_CHARS,
-  IW_MAX_LISTENERS_PER_UTTERANCE,
+  IW_MAX_NEARBY_BODIES,
   IW_MIN_TURN_GAP_MS,
 } from '../../contracts/iw.js';
 
@@ -133,18 +130,6 @@ export function checkUtterance(text: string): IWBudgetRefusal | null {
     return { code: 'utterance-too-long', limit: IW_MAX_UTTERANCE_CHARS, got: [...trimmed].length };
   }
   return null;
-}
-
-/**
- * Trim a listener list to what one utterance may pay for.
- *
- * ⚠️ IT DROPS RATHER THAN REFUSES, and the order it keeps is the order it was given — the
- * caller sorts by distance, because the nearest NPCs are the ones a learner is plausibly
- * talking to. A refusal here would turn "you walked into a busy part of the market" into an
- * error message, which is exactly the wrong shape for a world.
- */
-export function capListeners<T>(listeners: readonly T[]): T[] {
-  return listeners.slice(0, IW_MAX_LISTENERS_PER_UTTERANCE);
 }
 
 interface UserBudgetState {

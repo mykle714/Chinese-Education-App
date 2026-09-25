@@ -25,7 +25,7 @@ import { useThemeColor } from "../../hooks/useThemeColor";
  * `apple-mobile-web-app-status-bar-style: black-translucent`, src/theme/safeArea.ts).
  */
 export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => {
-    useThemeColor(RAMP[hue].ink);
+    useThemeColor(RAMP[hue].mid);
     return <GameSurfaceContext.Provider value={hue}>{children}</GameSurfaceContext.Provider>;
 };
 
@@ -33,7 +33,7 @@ export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.React
  * `LeafPage` for a GAME: the accent ground, the header-ink flips it forces, and the
  * context the panel's own parts read — all from one `hue`.
  *
- * Every game page uses this instead of `LeafPage` directly, so "this game is teal"
+ * Every game page uses this instead of `LeafPage` directly, so "this game is green"
  * is stated once per page and cannot be stated inconsistently (a ground painted from
  * one hue with a HUD tinted from another would typecheck perfectly).
  *

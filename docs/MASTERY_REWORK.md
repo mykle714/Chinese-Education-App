@@ -557,16 +557,17 @@ for the reason `MasteryWindow` gives at length: pbh **is** a count, not a percen
 bad mark turns a cell off, it does not drain a fraction of a tank — and a thumbnail should
 not invite the estimate the detail page spent a whole component refusing to invite.
 
-**Where it differs from the cdp: colour.** The cdp paints each cell by the **mark type**
-that owns it (`MARK_TYPE_COLORS`). The mini card paints every filled cell with the lens
-bar's utcm **band** (`getBandInk`), one hue for the whole window. Two reasons: at ~8px a
-cell cannot legibly carry a two-hue split, and the band is the question a thumbnail is
-actually asked — *"how well do I know this?"* — which is precisely what the deleted corner
-letter badge answered.
+**Colour — the same rule as the cdp (Shelf System v2, 2026-09-23).** Every filled cell
+takes the lens bar's utcm **band** in the ramp's MARK tier, one hue for the whole window
+(`getBandMark(category, "small")` in `src/components/MiniVocabCard.tsx`). The cdp's
+`MasteryWindow` now does the same (`getBandMark(category)`): *"mastery bars are colored by
+mastery progress, not the mark type"* (user, 2026-09-23), which retired the v1 split where
+the cdp coloured cells by mark type and the mini card by band. The band is the question a
+thumbnail is actually asked — *"how well do I know this?"* — which is precisely what the
+deleted corner letter badge answered.
 
-`masteryWindowCells` therefore returns the owning mark **type**, not a colour, and each
-surface maps it through its own palette. (The mini card ignores `cell.type` entirely; it
-is still returned because the cdp needs it.)
+`masteryWindowCells` still returns the owning mark **type**, not a colour; neither surface
+paints by it any more, but it is kept for the strip's `title` breakdown below.
 
 **What this costs.** The per-mark-type split is no longer visible on the thumbnail — an
 earlier version drew one pip per mark type, which let a card say *"you recognise this but
@@ -586,29 +587,20 @@ still the frame's. The artboard has not been re-rendered to match.
 ring would be most of the cell, so the mini card uses frame 17's single flat
 `rgba(23,22,26,.13)` tint instead.
 
-⚠️ **The band colour is `getBandInk`, not `getCategoryColor`.** `CATEGORY_COLORS` are
-~1.15:1 pastels that are legible only behind a 1px `COLORS.markOutline` ring, and a 3px
-pip cannot carry one — the ring would consume two thirds of the fill.
-`BAND_INK` (`src/utils/categoryColors.ts`) is the ramp's dark `*A` tier at each band's own
-hue: `#B54249` / `#A46400` / `#387D3D` / `#1F6CB0`, falling back to `--muted` for an absent
-band so "no band yet" never reads as a fifth band.
-
-⚠️ **And it is deliberately not the pre-redesign saturated band palette.** Those values
-(`#EF476F` / `#FF9E5A` / `#05C793` / `#779BE7`) are byte-for-byte `MARK_TYPE_COLORS` —
-Comfortable green **is** Production green, Mastered blue **is** Recognition blue. Because
-the mini-card strip is band-coloured while the cdp's mark cells beside it stay
-mark-type-coloured, reusing them would put one blue on two surfaces meaning two different
-things. The `*A` tier is darker than any mark colour and reads as its own register. This
-is what the old "these currently collide with the utcm category colors; to be rectified
-later" note in `masteryCompute.ts` was pointing at; the collision is now *contained* at the
-one surface that could have suffered it.
+⚠️ **The band colour is the MARK tier, not `getCategoryColor`.** `CATEGORY_COLORS` are the
+band SURFACES — pale fills legible only behind a 1px `COLORS.markOutline` ring, and a 3px
+pip cannot carry one. `BAND_MARK` (`src/utils/categoryColors.ts`) is the fluorescent MARK
+tier at each band's own hue, saturated enough to stand at any size, falling back to
+`--greyA` for an absent band so "no band yet" never reads as a fifth band. The mini strip
+uses the `"small"` variant, which swaps Target's `--yelMk` for the deeper `--yelMkD`: at
+3.5px on the cream card face the full-strength yellow dissolves. (v1 used a dark `*A` ink
+tier here, `BAND_INK` / `getBandInk`; v2 removed the ink tier.)
 
 **Layering note — REVERSED 2026-08-31.** The cycle this warned about is gone:
 `theme/colors.ts` now imports **nothing** (its four `*Main` aliases read hoisted local
 constants instead of `CATEGORY_COLORS`), so the theme is the palette's root and
 `categoryColors.ts` sits *above* it. `LEARN_NOW_COLORS` / `MASTERY_BAR_COLORS` are
-derived from `RAMP` hue keys there, and `BAND_INK` may now be re-pointed at
-`COLORS.redA` etc. too — it just has not been yet.
+derived from `RAMP` hue keys there, as are `BAND_MID` / `BAND_MARK`.
 
 > The old cycle was harmless only while neither module needed the other's VALUES at
 > module-evaluation time. The moment `categoryColors.ts` did, whichever module loaded
@@ -638,30 +630,26 @@ does not have that failure mode: its length is pbh, an absolute position in an e
 window, and its colour is the band.
 
 - **Colors** — one hue per **mark type** (`MARK_TYPE_COLORS`,
-  `src/utils/masteryCompute.ts`), used by the **cdp** mark cells and the Games hub chip.
-  There is deliberately **no per-bar color**: the cdp paints a bar by its segments, so a
-  bar has no single color of its own to name.
-  ⚠️ This is **no longer "both surfaces"** — the mini-card window colors every filled cell
-  by the utcm **band** (`BAND_INK`) and does not use these hues at all, though it still
-  receives the owning mark type from the shared `masteryWindowCells`. See § "Mini cards —
-  the eight-mark window" above. From the app light palette (`src/theme/colors.ts`):
-  - Recognition → **Blue** `#779BE7` (`MARK_TYPE_COLORS.recognition`)
-  - Production → **Green** `#05C793` (`MARK_TYPE_COLORS.production`)
-  - Reading → **Red** `#EF476F` (`MARK_TYPE_COLORS.reading`)
-  - Writing → **Orange** `#FF8E47` (`MARK_TYPE_COLORS.writing`)
+  `src/utils/masteryCompute.ts`), for surfaces that name a SKILL: the eip tab strip
+  (`TAB_COLORS`, `src/features/flashcards/constants.ts`) and Bubble Match's track toggle.
+  ⚠️ **NOT for mastery cells** (since 2026-09-23): both the cdp window and the mini-card
+  strip colour every filled cell by the track's utcm **band** (`getBandMark`,
+  `src/utils/categoryColors.ts`) — see § "Mini cards — the eight-mark window" above.
+  `masteryWindowCells` still returns the owning mark type. Shelf System v2 values — the
+  ramp's MARK tier of the hue each skill has always owned:
+  - Recognition → **Blue** `COLORS.bluMk` (`MARK_TYPE_COLORS.recognition`)
+  - Production → **Green** `COLORS.grnMk` (`MARK_TYPE_COLORS.production`)
+  - Reading → **Red** `COLORS.redMk` (`MARK_TYPE_COLORS.reading`)
+  - Writing → **Orange** `COLORS.orgMk` (`MARK_TYPE_COLORS.writing`)
 
-  These are `MARK_TYPE_COLORS` (`src/utils/masteryCompute.ts`) and are **literal on
-  purpose** — do not swap them for `COLORS.blueMain` / `greenMain` / `redMain` /
-  `yellowMain`, which since the shelf redesign hold the *pastel fill* tier of the same
-  four hues (docs/SHELF_REDESIGN.md, D2b). A mark cell is read directly against the
-  paper ground with nothing on top of it, so it takes the saturated hue; a band chip or
-  spine is a fill with text printed on it, so it takes the pastel plus
-  `COLORS.markOutline`. The cooldown-elapsed check icon is `MASTERY_READY_COLOR`
-  (`#05C793`), beside them in the same file.
+  (v1 used four off-palette literals, `#779BE7` / `#05C793` / `#EF476F` / `#FF8E47`.) The
+  cooldown-elapsed check icon is `MASTERY_READY_COLOR`, beside them in the same file —
+  `COLORS.successInk`, which v2 sets to ink.
 
-  Note: these currently double as the utcm category colors (Unfamiliar=red,
-  Target=yellow, Comfortable=green, Mastered=blue in `utils/categoryColors.ts`).
-  Reusing them for mark types is a **semantic collision** to be aware of. **❓**
+  Note: three of these hues are also band hues (Unfamiliar=red, Comfortable=green,
+  Mastered=blue in `utils/categoryColors.ts`; Target is yellow since v2). Now that no
+  mastery cell is mark-type coloured the collision is confined to the skill-naming
+  surfaces above. **❓**
 
 ---
 

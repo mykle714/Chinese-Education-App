@@ -37,8 +37,8 @@
  *
  * The keyboard used to exist exactly while an eligible field held focus. That
  * coupling was wrong in practice: on desktop a `<button>` takes focus when it is
- * clicked, so tapping the immersive-world send button — or the volume chip, or
- * the helper toggle — tore the keyboard down at the exact moment the learner was
+ * clicked, so tapping the immersive-world send button — or the helper toggle —
+ * tore the keyboard down at the exact moment the learner was
  * using it, mid-sentence.
  *
  * So focusing an eligible field OPENS the keyboard, and after that the keyboard
@@ -69,6 +69,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import BeginnerKeyboardHost from './BeginnerKeyboardHost';
+import type { KeyboardSource } from './KeyboardSwitchBar';
 import {
   asEditableField,
   isEligibleField,
@@ -83,6 +84,33 @@ export const HOST_CLASS = 'beginner-keyboard-host';
 
 /** The only language this keyboard can write. */
 const SUPPORTED_LANGUAGE = 'zh';
+
+/**
+ * sessionStorage key for the learner's last switch-bar choice (§ 6z-3).
+ *
+ * sessionStorage rather than React state alone so a reload in the same tab keeps
+ * the choice, and rather than localStorage so a fresh session starts back on the
+ * handwriting keyboard — the default this feature exists to provide.
+ */
+const SOURCE_STORAGE_KEY = 'beginnerKeyboard.source';
+
+/** Read the remembered choice; storage can be blocked, so fail to the default. */
+function readStoredSource(): KeyboardSource {
+  try {
+    return sessionStorage.getItem(SOURCE_STORAGE_KEY) === 'os' ? 'os' : 'ours';
+  } catch {
+    return 'ours';
+  }
+}
+
+/** Remember the choice. Best-effort: losing it only costs one extra tap. */
+function writeStoredSource(source: KeyboardSource): void {
+  try {
+    sessionStorage.setItem(SOURCE_STORAGE_KEY, source);
+  } catch {
+    // Private mode / blocked storage — the in-memory state still carries it.
+  }
+}
 
 export default function BeginnerKeyboardProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -104,6 +132,21 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
   const [field, setField] = useState<EditableField | null>(null);
   const [open, setOpen] = useState(false);
   const [inset, setInset] = useState(0);
+
+  /**
+   * Which keyboard the learner last chose — handwriting or the OS keyboard.
+   *
+   * ⚠️ Held HERE, not in the host, because the host is remounted per field (see
+   * `fieldKey`). It used to live in the host, so `ABC` was forgotten the moment
+   * the learner tapped into the next input and had to be re-chosen on every field.
+   * It is a SESSION preference (§ 6z-3): the next field opens on whichever keyboard
+   * the previous one was left on. Closing the keyboard does not reset it.
+   */
+  const [source, setSourceState] = useState<KeyboardSource>(readStoredSource);
+  const setSource = useCallback((next: KeyboardSource) => {
+    setSourceState(next);
+    writeStoredSource(next);
+  }, []);
 
   // The document listeners are registered once and must not be torn down and
   // rebuilt on every field change, so they read the target through a ref.
@@ -232,6 +275,8 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
           key={fieldKey(field)}
           field={field}
           open={open}
+          source={source}
+          onSourceChange={setSource}
           onDismiss={close}
           onClosed={release}
           onInsetChange={handleInset}

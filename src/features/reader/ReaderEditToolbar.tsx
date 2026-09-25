@@ -94,13 +94,13 @@ const ReaderEditToolbar: React.FC<{
                     ...smallBtnSx,
                     fontWeight: WEIGHT.semibold,
                     backgroundColor: COLORS.infoInk,
-                    color: "#fff",
+                    color: COLORS.white,
                     "&:hover": { backgroundColor: COLORS.infoInk },
-                    "&.Mui-disabled": { color: "#fff", opacity: 0.5 },
+                    "&.Mui-disabled": { color: COLORS.white, opacity: 0.5 },
                 }}
             >
                 {saving ? (
-                    <CircularProgress size={16} thickness={5} sx={{ color: "#fff" }} className="reader-edit-toolbar__save-spinner" />
+                    <CircularProgress size={16} thickness={5} sx={{ color: COLORS.white }} className="reader-edit-toolbar__save-spinner" />
                 ) : (
                     "save"
                 )}

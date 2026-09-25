@@ -8,7 +8,8 @@
  * generate-handwriting-templates.js, which handles the ink→glyph half.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6e/§ 6h (containment), § 6k (ranking),
- * § 6q (the 2–4 character word fallback).
+ * § 6q (the 2–4 character word fallback), § 6z-4 (the hint bubble's common flag
+ * and reading).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ THIS SUPERSEDES § 6g's "server service" ROW
@@ -67,7 +68,28 @@ const WORDS_FILE = path.join(OUTPUT_DIR, 'glyph-words.bin');
 
 const INDEX_MAGIC = 'HWLK';
 const WORDS_MAGIC = 'HWWD';
-const FORMAT_VERSION = 1;
+/**
+ * The two files version independently: v2 of the index added the per-character
+ * reading and the COMMON flag bit (the § 6z-4 hint bubble); the word pool did not
+ * change, so bumping it would force a pointless client parser change.
+ */
+const INDEX_FORMAT_VERSION = 2;
+const WORDS_FORMAT_VERSION = 1;
+
+/**
+ * Flags byte, per character. Mirrored by `FLAG_*` in
+ * src/components/handwriting/glyphLookup.ts — change both together.
+ */
+const FLAG_DISCOVERABLE = 1;
+const FLAG_COMMON = 2;
+
+/**
+ * A character is COMMON when it appears in any zh headword — itself as a one-
+ * character word included — whose `frequencyScore` is at least this. Only common
+ * characters may appear in a § 6z-4 hint bubble: a hint that suggests an obscure
+ * character teaches nothing and misleads the learner about what they are writing.
+ */
+const COMMON_FREQ_THRESHOLD = 4;
 
 /** Longest word the fallback pool admits (§ 6q: 2, 3 and 4 characters). */
 const MAX_WORD_LENGTH = 4;
@@ -99,14 +121,24 @@ async function loadCharacters(client) {
            WHERE language = 'zh' AND char_length(word1) > 1
         ) x
        GROUP BY ch
+    ),
+    -- § 6z-4: every character of every word scored ${COMMON_FREQ_THRESHOLD}+ (single-character
+    -- words included, so a character common in its own right qualifies too).
+    common AS (
+      SELECT DISTINCT regexp_split_to_table(word1, '') AS ch
+        FROM dictionaryentries_zh
+       WHERE language = 'zh' AND "frequencyScore" >= ${COMMON_FREQ_THRESHOLD}
     )
     SELECT d.word1,
            d.components,
            d."frequencyScore" AS freq,
            d.discoverable,
-           COALESCE(u.n, 0) AS usage
+           COALESCE(u.n, 0) AS usage,
+           d.pronunciation,
+           (c.ch IS NOT NULL) AS common
       FROM dictionaryentries_zh d
       LEFT JOIN usage u ON u.ch = d.word1
+      LEFT JOIN common c ON c.ch = d.word1
      WHERE d.language = 'zh'
        AND char_length(d.word1) = 1
      ORDER BY d.word1
@@ -126,6 +158,10 @@ async function loadCharacters(client) {
       freq: row.freq == null ? 0 : Math.max(0, Math.min(255, row.freq)),
       usage: Math.min(65535, row.usage),
       discoverable: row.discoverable === true,
+      common: row.common === true,
+      // The row's default reading — context-naive by design (§ 6p "Cell content"):
+      // a keyboard cell has no sentence to disambiguate a heteronym with.
+      pronunciation: typeof row.pronunciation === 'string' ? row.pronunciation.trim() : '',
     };
   });
 }
@@ -158,24 +194,36 @@ async function loadWords(client) {
  *   then, per character:
  *     codepoint    u32
  *     freq         u8   (0 = NULL, else 1–5)
- *     flags        u8   (bit 0 = discoverable)
+ *     flags        u8   (bit 0 = discoverable, bit 1 = common — § 6z-4)
  *     usage        u16
  *     nComponents  u8
  *     componentIds u16 × nComponents
+ *     readingBytes u8                    (v2)
+ *     reading      UTF-8 × readingBytes  (v2; the default `pronunciation`, may be empty)
  *
  * Components are stored as IDs into the table rather than as codepoints: the
  * runtime compares bags by counting, and small dense integers let it use a typed
  * count array instead of a Map.
  */
 function serializeIndex(components, characters) {
+  // Encode each reading once up front: the size pass and the write pass must
+  // agree on byte lengths, and UTF-8 length is not the string's .length.
+  const readings = characters.map((c) => {
+    const bytes = Buffer.from(c.pronunciation, 'utf8');
+    if (bytes.length > 255) throw new Error(`Reading for ${c.char} exceeds 255 bytes.`);
+    return bytes;
+  });
+
   let size = 4 + 1 + 3 + 4 + 4 + components.length * 4;
-  for (const c of characters) size += 4 + 1 + 1 + 2 + 1 + c.components.length * 2;
+  characters.forEach((c, i) => {
+    size += 4 + 1 + 1 + 2 + 1 + c.components.length * 2 + 1 + readings[i].length;
+  });
 
   const buffer = Buffer.alloc(size);
   let offset = 0;
   buffer.write(INDEX_MAGIC, offset, 'ascii');
   offset += 4;
-  buffer.writeUInt8(FORMAT_VERSION, offset++);
+  buffer.writeUInt8(INDEX_FORMAT_VERSION, offset++);
   buffer.writeUInt8(0, offset++);
   buffer.writeUInt8(0, offset++);
   buffer.writeUInt8(0, offset++);
@@ -191,11 +239,11 @@ function serializeIndex(components, characters) {
     offset += 4;
   });
 
-  for (const c of characters) {
+  characters.forEach((c, i) => {
     buffer.writeUInt32LE(c.char.codePointAt(0), offset);
     offset += 4;
     buffer.writeUInt8(c.freq, offset++);
-    buffer.writeUInt8(c.discoverable ? 1 : 0, offset++);
+    buffer.writeUInt8((c.discoverable ? FLAG_DISCOVERABLE : 0) | (c.common ? FLAG_COMMON : 0), offset++);
     buffer.writeUInt16LE(c.usage, offset);
     offset += 2;
     buffer.writeUInt8(c.components.length, offset++);
@@ -203,7 +251,10 @@ function serializeIndex(components, characters) {
       buffer.writeUInt16LE(componentId.get(component), offset);
       offset += 2;
     }
-  }
+    buffer.writeUInt8(readings[i].length, offset++);
+    readings[i].copy(buffer, offset);
+    offset += readings[i].length;
+  });
   return buffer;
 }
 
@@ -232,7 +283,7 @@ function serializeWords(words) {
   let offset = 0;
   buffer.write(WORDS_MAGIC, offset, 'ascii');
   offset += 4;
-  buffer.writeUInt8(FORMAT_VERSION, offset++);
+  buffer.writeUInt8(WORDS_FORMAT_VERSION, offset++);
   buffer.writeUInt8(0, offset++);
   buffer.writeUInt8(0, offset++);
   buffer.writeUInt8(0, offset++);
@@ -300,6 +351,8 @@ async function generateHandwritingLookup() {
   const atomic = characters.length - decomposable.length;
   const scored = characters.filter((c) => c.freq > 0).length;
   const used = characters.filter((c) => c.usage > 0).length;
+  const common = characters.filter((c) => c.common).length;
+  const unread = characters.filter((c) => c.pronunciation === '').length;
 
   console.log(`  components:    ${components.length.toLocaleString()}`);
   console.log(`  characters:    ${characters.length.toLocaleString()}`);
@@ -308,6 +361,8 @@ async function generateHandwritingLookup() {
   console.log(`    comp slots:  ${slots.toLocaleString()} (avg ${(slots / decomposable.length).toFixed(2)} over decomposable)`);
   console.log(`    freqScore:   ${scored.toLocaleString()} scored, ${(characters.length - scored).toLocaleString()} NULL`);
   console.log(`    usage > 0:   ${used.toLocaleString()} (${((used / characters.length) * 100).toFixed(1)}%)`);
+  console.log(`    common:      ${common.toLocaleString()} (in a freq ${COMMON_FREQ_THRESHOLD}+ word; § 6z-4 hint pool)`);
+  console.log(`    no reading:  ${unread.toLocaleString()}`);
   console.log(`  words (2-${MAX_WORD_LENGTH}):   ${words.length.toLocaleString()}`);
   console.log(`    bag derivable: ${derivable.toLocaleString()} (${((derivable / words.length) * 100).toFixed(1)}%)`);
   console.log(`\n✅ ${path.relative(REPO_ROOT, INDEX_FILE)} — ${(indexBuffer.length / 1024).toFixed(1)} KB`);

@@ -1,6 +1,8 @@
+import { alpha } from "@mui/material/styles";
 import { Box, Card, CardContent, Typography } from "@mui/material";
 import { WEIGHT } from '../theme/scale';
 import { convertMinutesToTimeFormat, formatTimeBreakdown } from "../utils/timeUtils";
+import { COLORS } from "../theme/colors";
 
 interface TimeDisplayProps {
     /** NET balance for the selected language (penalty-debited, user_languages.totalMinutePoints)
@@ -16,8 +18,10 @@ function TimeDisplay({ netMinutes, grossMinutes }: TimeDisplayProps) {
 
     return (
         <Card sx={{
-            background: 'linear-gradient(135deg, #4facfe, #00f2fe)',
-            color: 'white',
+            // Shelf System v2: a large card is a SURFACE with ink on it (never white on a
+            // pastel). Blue replaces the off-palette cyan gradient.
+            background: COLORS.blu,
+            color: COLORS.onSurface,
             mb: 3
         }}>
             <CardContent sx={{ py: 3 }}>
@@ -39,7 +43,7 @@ function TimeDisplay({ netMinutes, grossMinutes }: TimeDisplayProps) {
                     fontWeight: WEIGHT.bold,
                     textAlign: 'center',
                     mb: 1,
-                    textShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                    textShadow: `0 1px 2px ${alpha(COLORS.onSurface, 0.1)}`
                 }}>
                     {formattedTime}
                 </Typography>

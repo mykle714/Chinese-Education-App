@@ -177,35 +177,6 @@ describe('layer 3 — the volatile turn', () => {
     expect(text).not.toMatch(/do not speak|you must|stay quiet/i);
   });
 
-  /**
-   * ⚠️ The volume is COLOUR, not a gate (§ 4c). Whether this NPC hears the line at all was
-   * settled before the turn was requested — an NPC out of range is never asked — so what
-   * reaches layer 3 is only the register the answer should match.
-   */
-  it('says how loudly the line was said, when the learner chose', () => {
-    const said = (volume: 'whisper' | 'talk' | 'shout') => renderTurnState(baseTurn({
-      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: true, volume },
-    }));
-    expect(said('whisper')).toContain('whispered to you');
-    expect(said('shout')).toContain('shouted to you');
-    expect(said('talk')).toContain('said to you');
-  });
-
-  it('reads exactly as before when no volume is sent', () => {
-    const text = renderTurnState(baseTurn({
-      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: true },
-    }));
-    expect(text).toContain('said to you');
-    expect(text).not.toMatch(/whispered|shouted/);
-  });
-
-  it('carries the volume through the overheard phrasing too', () => {
-    const text = renderTurnState(baseTurn({
-      event: { kind: 'utterance', speaker: 'the customer', text: '买单', addressed: false, volume: 'shout' },
-    }));
-    expect(text).toContain('you overheard the customer shouted, not to you');
-  });
-
   it('handles an approach with no speech', () => {
     expect(renderTurnState(baseTurn({ event: { kind: 'approach', who: 'the customer' } })))
       .toContain('walked up to you and said nothing');

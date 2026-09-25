@@ -30,9 +30,10 @@
  * FIELD sits. A floating chip covered the very text the author was typing, which
  * is exactly what they are trying to watch while debugging.
  *
- * The footer row solves it without costing the canvas anything — it already
- * exists for the `ABC` escape, in the left column under the component buffer,
- * and it is laid out beside the canvas rather than above it.
+ * The left column solves it without costing the canvas anything — it sits under
+ * the component buffer, beside the canvas rather than above it. Since 2026-09-24
+ * the dump and target chips have their own row directly ABOVE the learner-facing
+ * `Clear`/`Undo`/`Redo` key row, so those keys never shift position for authors.
  *
  * ⚠️ IT MUST NOT TAKE FOCUS. The field keeps the caret the whole time the
  * keyboard is up; a tap that blurred it would break the next commit. The host's
@@ -141,7 +142,7 @@ export default function DebugDumpButton(props: DebugDumpButtonProps) {
   // Shared chrome: the two controls are one tool and must not read as unrelated.
   const chip = {
     px: 1.25,
-    // Matches the `ABC` key they sit beside.
+    // Matches the `Clear`/`Undo`/`Redo` keys on the row below.
     height: 32,
     flexShrink: 0,
     border: `1px solid ${COLORS.warnInk}`,

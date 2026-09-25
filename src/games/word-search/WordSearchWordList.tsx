@@ -2,7 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { HINT_ACCENT_COLOR } from "./constants";
+import { HINT_ACCENT_COLOR, HINT_HIGHLIGHT_BG } from "./constants";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { PlacedWord } from "./types";
 
@@ -43,14 +43,15 @@ interface WordSearchWordListProps {
  *             the record of what the run has covered, and the fade is what makes the
  *             remaining work countable at a glance.
  *
- * A third state, added 2026-08-28: the HINTED word is tinted in `HINT_ACCENT_COLOR`, the
- * same ink the `.hintbar` lightbulb, charge dots and reveal mask use. It previously had no
+ * A third state, added 2026-08-28: the HINTED word is marked — since v2 with the
+ * `HINT_HIGHLIGHT_BG` highlighter fill (the board's own hint-reveal orange), because v2
+ * made `HINT_ACCENT_COLOR` plain ink and a tint could no longer tell it apart. It previously had no
  * state at all, on the theory that the reveal one row above already named it — but the
  * reveal names it in PINYIN (or in component glyphs), which is precisely the thing the
  * player cannot yet read, so nothing on screen connected the mask to the meaning it was
- * spelling. The tint is the connection, and it costs no layout: colour only, no weight or
- * size change, so the run's rhythm is unchanged. A hinted word that gets FOUND drops the
- * tint — found beats hinted, and the hint state is cleared at that moment anyway
+ * spelling. The highlight is the connection, and it costs no layout: colour only, no
+ * weight or size change, so the run's rhythm is unchanged. A hinted word that gets FOUND drops the
+ * highlight — found beats hinted, and the hint state is cleared at that moment anyway
  * (`WordSearchPage`'s `onFound`).
  *
  * Wraps freely; the row band it sits in is allowed to scroll if a long set overflows.
@@ -132,7 +133,18 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                                     textDecoration: "line-through",
                                     opacity: 0.5,
                                 }),
-                                transition: "opacity 150ms linear, color 150ms linear",
+                                // v2: HINT_ACCENT_COLOR is ink, so the tint alone no
+                                // longer marks the hinted word — a highlighter fill does.
+                                // The 2px padding is cancelled by an equal negative
+                                // margin, so the fill breathes past the glyphs without
+                                // moving them and the run's rhythm is unchanged.
+                                ...(isHinted && {
+                                    backgroundColor: HINT_HIGHLIGHT_BG,
+                                    borderRadius: "3px",
+                                    px: "2px",
+                                    mx: "-2px",
+                                }),
+                                transition: "opacity 150ms linear, color 150ms linear, background-color 150ms linear",
                             }}
                         >
                             {gloss || w.entryKey}

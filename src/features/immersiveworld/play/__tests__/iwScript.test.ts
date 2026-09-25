@@ -28,6 +28,8 @@ function harness(over: Partial<IWScriptDeps> = {}) {
     face: (_who, cell) => { log.push(`face:${cell}`); },
     say: async (_who, text) => { log.push(`say:${text}`); },
     renderLine: async (_who, direction) => { log.push(`render:${direction}`); return `[${direction}]`; },
+    // The default picker chooses the FIRST candidate, so a test sees a deterministic walk.
+    chooseDestination: async (_who, brief, candidates) => { log.push(`choose:${brief}`); return candidates[0] ?? null; },
     playConversation: async id => { log.push(`conversation:${id}`); },
     armEvent: id => { log.push(`event:${id}`); },
     wait: async ms => { log.push(`wait:${ms}`); },
@@ -362,5 +364,36 @@ describe('get_information keeps the floor until the NPC has its answer', () => {
     const { log, deps } = harness();
     await runAuthoredAction('wangshen', [{ kind: 'get_information', goal: '  ' }], deps);
     expect(log).toEqual(['note:a Get information step with no goal']);
+  });
+});
+
+describe('ai_walk — ask where, then walk there like any other walk (§ 5.4)', () => {
+  it('asks the picker, then walks beside the chosen place and faces it', async () => {
+    const { log, deps } = harness({
+      chooseDestination: async (_who, brief) => { log.push(`choose:${brief}`); return { kind: 'place', tag: 'counter' }; },
+    });
+    await runAuthoredAction('wangshen', [{ kind: 'ai_walk', instruction: 'to the counter' }], deps);
+    expect(log[0]).toBe('choose:to the counter');
+    // Faced before setting off and again on arrival — the ordinary walk_to_tag shape.
+    expect(log.slice(1)).toEqual(['face:4,4', expect.stringMatching(/^walk:/), 'face:4,4']);
+  });
+
+  it('skips the walk — and plays on — when the picker finds nowhere', async () => {
+    const { log, deps } = harness({ chooseDestination: async () => null });
+    await runAuthoredAction('wangshen', [
+      { kind: 'ai_walk', instruction: 'somewhere' },
+      { kind: 'wait', seconds: 1 },
+    ], deps);
+    expect(log).toEqual(['note:the AI walk found nowhere to go', 'wait:1000']);
+  });
+
+  it('stops without walking when the script is cancelled during the call', async () => {
+    let cancelled = false;
+    const { log, deps } = harness({
+      chooseDestination: async () => { cancelled = true; return { kind: 'place', tag: 'counter' }; },
+      cancelled: () => cancelled,
+    });
+    await runAuthoredAction('wangshen', [{ kind: 'ai_walk', instruction: 'to the counter' }], deps);
+    expect(log.some(l => l.startsWith('walk:'))).toBe(false);
   });
 });

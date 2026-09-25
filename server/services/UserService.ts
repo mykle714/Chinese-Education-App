@@ -6,7 +6,7 @@ import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { resolveTimezone } from '../utils/streakDate.js';
-import { CHINESE_FONT_IDS } from '../contracts/wire.js';
+import { CHINESE_FONT_IDS, ISO_DATE_PATTERN, USER_GENDERS, type UserGender } from '../contracts/wire.js';
 
 // JWT secret key - should be in environment variables in PPE
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -43,6 +43,60 @@ export interface RefreshResult {
   user: User;
   token: string;
   refreshToken: IssuedRefreshToken;
+}
+
+/**
+ * The learner's demographics as a write — `users."gender"` / `users."birthDate"` (migration 164).
+ *
+ * Each key follows the same three-state rule as the other account settings patches:
+ * ABSENT = leave the column alone, `null` = "Prefer not to answer" (clear it), a value = set it.
+ */
+export interface DemographicsPatch {
+  gender?: UserGender | null;
+  birthDate?: string | null;
+}
+
+/**
+ * Validate a demographics patch, returning only the keys that were present.
+ *
+ * Shared by signup (`createUser`) and Settings (`updateDemographics`) so the two entry points
+ * cannot disagree about what a legal birth date is. `now` is injectable for tests.
+ *
+ * `birthDate` must be a REAL calendar day (`2001-02-29` is rejected — `Date.UTC` rolls it over to
+ * March 1st, and the round-trip check catches that), on or after 1900-01-01 (migration 164's
+ * CHECK), and not in the future. The future rule lives here rather than in a CHECK because a
+ * constraint on CURRENT_DATE is only evaluated at write time and can fail a later restore.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 5.5.
+ */
+export function validateDemographics(patch: DemographicsPatch, now: Date = new Date()): DemographicsPatch {
+  const out: DemographicsPatch = {};
+  if (patch.gender !== undefined) {
+    if (patch.gender !== null && !USER_GENDERS.includes(patch.gender)) {
+      throw new ValidationError(`gender must be one of: ${USER_GENDERS.join(', ')}, or null`);
+    }
+    out.gender = patch.gender;
+  }
+  if (patch.birthDate !== undefined) {
+    if (patch.birthDate !== null) {
+      if (typeof patch.birthDate !== 'string' || !ISO_DATE_PATTERN.test(patch.birthDate)) {
+        throw new ValidationError('birthDate must be a YYYY-MM-DD date, or null');
+      }
+      const [y, m, d] = patch.birthDate.split('-').map(Number);
+      const asUtc = new Date(Date.UTC(y, m - 1, d));
+      const roundTrips =
+        asUtc.getUTCFullYear() === y && asUtc.getUTCMonth() === m - 1 && asUtc.getUTCDate() === d;
+      if (!roundTrips) throw new ValidationError('birthDate is not a real calendar date');
+      if (y < 1900) throw new ValidationError('birthDate must be on or after 1900-01-01');
+      // Compared as calendar strings against the server's UTC date. A learner born "today" in a
+      // zone ahead of UTC is off by at most a day either way, which this rule does not care about.
+      if (patch.birthDate > now.toISOString().slice(0, 10)) {
+        throw new ValidationError('birthDate cannot be in the future');
+      }
+    }
+    out.birthDate = patch.birthDate;
+  }
+  return out;
 }
 
 /**
@@ -84,10 +138,18 @@ export class UserService {
     // login or first minute point, and every 04:00-local boundary (streak cron,
     // AI usage day, study-challenge windows) was computed in the wrong zone
     // meanwhile.
+    //
+    // `gender` / `birthDate` (migration 164) are validated and then written as explicit
+    // values — `null` when the learner chose "Prefer not to answer" or the caller omitted them
+    // — for the same `buildInsertQuery` reason as `timezone`: an `undefined` key would be
+    // inserted too, and an explicit null says the same thing on purpose.
+    const demographics = validateDemographics({ gender: userData.gender, birthDate: userData.birthDate });
     const newUser = await this.userDAL.create({
       ...userData,
       password: hashedPassword,
-      timezone: resolveTimezone(userData.timezone)
+      timezone: resolveTimezone(userData.timezone),
+      gender: demographics.gender ?? null,
+      birthDate: demographics.birthDate ?? null,
     });
     
     // Remove password from response for security
@@ -465,11 +527,26 @@ export class UserService {
   }
 
   /**
-   * Get all users (admin function)
+   * Set or clear the learner's gender / date of birth (migration 164) — the Settings half of the
+   * question signup asks. Deliberately NOT part of `updateDisplaySettings`: these change how the
+   * app treats the learner (the iw body, how NPCs address them), not how anything is drawn.
+   *
+   * Every key is optional; `null` is a real value ("Prefer not to answer"). At least one key
+   * must be present. See docs/IMMERSIVE_WORLD.md § 5.5.
    */
-  async getAllUsers(): Promise<User[]> {
-    return await this.userDAL.findAll();
+  async updateDemographics(userId: string, patch: DemographicsPatch): Promise<User> {
+    if (!userId) {
+      throw new ValidationError('User ID is required');
+    }
+    const updateData = validateDemographics(patch);
+    if (Object.keys(updateData).length === 0) {
+      throw new ValidationError('At least one of gender or birthDate is required');
+    }
+    const updatedUser = await this.userDAL.update(userId, updateData);
+    delete updatedUser.password;
+    return updatedUser;
   }
+
 
   // NOTE: getTotalMinutePoints() was removed by migration 130 along with its endpoint
   // (GET /api/users/:id/total-minute-points). Wallet + streak are per-language now, so there

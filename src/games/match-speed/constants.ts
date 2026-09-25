@@ -280,13 +280,22 @@ export const DEF_MAX_LINES = 3;
 //
 // Every fill below is a PASTEL carrying ink text, per the redesign's fill rule
 // (docs/SHELF_REDESIGN.md § A1) — never saturated ink behind white letters.
-export const FOREIGN_CARD_BG = COLORS.background;
+//
+// v2 (artboard 14, `#msp`): every resting card is WHITE (`.msc{background:var(--white)}`)
+// — the foreign column no longer sits on the paper ground, so the columns are told apart
+// by type alone. State fills are the SURFACE tier (caption "Surface: picked cards"): a
+// card is a large fill, not a Mid-tier chip.
+export const FOREIGN_CARD_BG = COLORS.white;
 export const ENGLISH_CARD_BG = COLORS.white;
 /** Both columns rest on the same hairline, so selecting a card cannot change its
  *  border WIDTH and re-wrap a three-line gloss mid-tap. State swaps the colour only. */
 export const CARD_BORDER = COLORS.rowBorder;
-/** Selected card (`.msc.pick`) — pastel fill, border blended into it. */
+/** Selected card (`.msc.pick{background:var(--blu);border:2px solid var(--ink)}`) — the
+ *  blue SURFACE fill with an INK edge. The edge is drawn as the 1px border in ink PLUS a
+ *  1px inset ring (see MatchSpeedCard), which is the design's 2px without changing the
+ *  border width — the rule above that keeps a tap from re-wrapping a gloss. */
 export const SELECTED_CARD_BG = COLORS.blu;
+export const SELECTED_CARD_BORDER = COLORS.onSurface;
 /** Correct-match pop AND the cleanup-mode partner hint. */
 export const CORRECT_CARD_BG = COLORS.grn;
 /** Wrong-attempt flash. Ink-on-pastel like the rest, so the flash reads as the same
@@ -300,6 +309,14 @@ export const WRONG_CARD_INK = COLORS.dangerInk;
  *
  * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
  * the registry reads this, and the page passes it to `gameSurfaceSx` /
- * `GameSurfaceProvider`. Tapping a grn row must open a grn screen.
+ * `GameSurfaceProvider`. Tapping a blue row must open a blue screen.
+ *
+ * Blue since v2 (artboard 14, `#msp` on `--bluM`); it was green until the hub hues were
+ * brought in line with the artboards. The state fills above were checked against the
+ * move: the picked card's `--blu` Surface now shares the ground's hue, which is the
+ * design's own pairing (`#msp .msc.pick{background:var(--blu)}` on a `--bluM` ground),
+ * and it stays distinct because the cards sit on the white `.play` panel, not on the
+ * ground, and the pick carries the ink edge. The green "matched" fill no longer shares
+ * the game's hue at all, which only helps it read as feedback.
  */
-export const GAME_HUE: RampHue = "grn";
+export const GAME_HUE: RampHue = "blu";

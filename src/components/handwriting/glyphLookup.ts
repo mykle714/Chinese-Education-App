@@ -12,7 +12,8 @@
  * no DAL, no migration.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6h (containment), § 6k (ranking),
- * § 6n (the atomic rescue), § 6q (the 2–4 character word fallback).
+ * § 6n (the atomic rescue), § 6q (the 2–4 character word fallback),
+ * § 6z-4 (the hint bubble's common-character search).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY A LINEAR SCAN AND NOT AN INVERTED INDEX
@@ -33,10 +34,20 @@ import wordsUrl from '../../assets/handwriting/glyph-words.bin?url';
 
 const INDEX_MAGIC = 'HWLK';
 const WORDS_MAGIC = 'HWWD';
-const SUPPORTED_VERSION = 1;
+/**
+ * The two assets version independently (see the generator): index v2 added the
+ * per-character reading and the COMMON flag; the word pool is still v1.
+ */
+const INDEX_VERSION = 2;
+const WORDS_VERSION = 1;
 
-/** Bit 0 of a character's flags byte. */
+/**
+ * Flags byte, per character. Mirrored by `FLAG_*` in
+ * server/scripts/backfill/chinese/generate-handwriting-lookup.js — change both together.
+ */
 const FLAG_DISCOVERABLE = 1;
+/** § 6z-4: the character appears in a headword with `frequencyScore` ≥ 4. */
+const FLAG_COMMON = 2;
 
 export interface GlyphLookupIndex {
   /** Component character for component id i. */
@@ -49,8 +60,10 @@ export interface GlyphLookupIndex {
   charIndex: Map<string, number>;
   /** `frequencyScore`, 1–5, or 0 for NULL. */
   freq: Uint8Array;
-  /** Flags bitfield; bit 0 = discoverable. */
+  /** Flags bitfield; bit 0 = discoverable, bit 1 = common (§ 6z-4). */
   flags: Uint8Array;
+  /** The row's default `pronunciation` (tone-marked pinyin), or '' when NULL. */
+  readings: string[];
   /** In-corpus usage count — how many multi-character words contain it. */
   usage: Uint16Array;
   /** Index into `bags` where record i's components begin. */
@@ -87,15 +100,15 @@ export interface LookupCandidate {
   isWord: boolean;
 }
 
-function readHeader(buffer: ArrayBuffer, magic: string, label: string) {
+function readHeader(buffer: ArrayBuffer, magic: string, label: string, expectedVersion: number) {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
   const found = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
   if (found !== magic) throw new Error(`${label}: bad magic "${found}" (expected "${magic}")`);
   const version = view.getUint8(4);
-  if (version !== SUPPORTED_VERSION) {
+  if (version !== expectedVersion) {
     throw new Error(
-      `${label}: format version ${version}, expected ${SUPPORTED_VERSION}. Regenerate ` +
+      `${label}: format version ${version}, expected ${expectedVersion}. Regenerate ` +
         `(scripts/backfill/chinese/generate-handwriting-lookup.js).`,
     );
   }
@@ -104,7 +117,7 @@ function readHeader(buffer: ArrayBuffer, magic: string, label: string) {
 
 /** Decode the character index. Throws on header mismatch rather than reading on. */
 export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
-  const view = readHeader(buffer, INDEX_MAGIC, 'glyph-lookup.bin');
+  const view = readHeader(buffer, INDEX_MAGIC, 'glyph-lookup.bin', INDEX_VERSION);
   const componentCount = view.getUint32(8, true);
   const charCount = view.getUint32(12, true);
 
@@ -125,6 +138,9 @@ export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
   const usage = new Uint16Array(charCount);
   const bagOffsets = new Uint32Array(charCount);
   const bagSizes = new Uint8Array(charCount);
+  const readings: string[] = new Array(charCount);
+  const utf8 = new TextDecoder('utf-8');
+  const bytes = new Uint8Array(buffer);
 
   // First pass: fixed fields and bag sizes, so `bags` is one right-sized
   // allocation rather than a growing array.
@@ -141,6 +157,10 @@ export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
     total += size;
     charIndex.set(chars[i], i);
     cursor += 9 + size * 2;
+    // v2: a length-prefixed UTF-8 reading trails the bag.
+    const readingBytes = view.getUint8(cursor);
+    readings[i] = readingBytes === 0 ? '' : utf8.decode(bytes.subarray(cursor + 1, cursor + 1 + readingBytes));
+    cursor += 1 + readingBytes;
   }
 
   // Second pass: the bags themselves.
@@ -154,9 +174,10 @@ export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
       bags[write++] = view.getUint16(cursor, true);
       cursor += 2;
     }
+    cursor += 1 + view.getUint8(cursor); // skip the reading, decoded in pass one
   }
 
-  return { components, componentIds, chars, charIndex, freq, flags, usage, bagOffsets, bagSizes, bags };
+  return { components, componentIds, chars, charIndex, freq, flags, readings, usage, bagOffsets, bagSizes, bags };
 }
 
 /**
@@ -171,7 +192,7 @@ export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
  * the word's bag smaller and therefore easier to contain, never wrongly excluded.
  */
 export function parseGlyphWords(buffer: ArrayBuffer, index: GlyphLookupIndex): GlyphWordPool {
-  const view = readHeader(buffer, WORDS_MAGIC, 'glyph-words.bin');
+  const view = readHeader(buffer, WORDS_MAGIC, 'glyph-words.bin', WORDS_VERSION);
   const wordCount = view.getUint32(8, true);
 
   const words: string[] = new Array(wordCount);
@@ -438,6 +459,79 @@ export function expandGlyph(glyph: string, index: GlyphLookupIndex): string[] {
   const out: string[] = [];
   for (let i = 0; i < size; i++) out.push(index.components[index.bags[start + i]]);
   return out;
+}
+
+export interface HintCharacter {
+  /** The suggested character. */
+  text: string;
+  /** Its default reading, for the ForeignText row in the bubble ('' when unknown). */
+  pronunciation: string;
+  /** Components still missing after buffer + glyph — 0 means the pair completes it. */
+  distance: number;
+}
+
+/**
+ * Record indices of the COMMON characters, built once per index.
+ *
+ * The hint search runs once per glyph candidate on every stroke (up to 12 scans
+ * per ink change), so it scans only the ~760 common records rather than all
+ * ~9,900. A WeakMap keyed on the index keeps this cache from outliving it.
+ */
+const commonRecordCache = new WeakMap<GlyphLookupIndex, Uint32Array>();
+
+function commonRecords(index: GlyphLookupIndex): Uint32Array {
+  let records = commonRecordCache.get(index);
+  if (!records) {
+    const list: number[] = [];
+    for (let i = 0; i < index.chars.length; i++) if (index.flags[i] & FLAG_COMMON) list.push(i);
+    records = Uint32Array.from(list);
+    commonRecordCache.set(index, records);
+  }
+  return records;
+}
+
+/**
+ * § 6z-4 — the hint bubble over a glyph candidate: the best COMMON character that
+ * the buffer plus this glyph is on track to spell.
+ *
+ * "On track" is the same multiset containment the result row uses (§ 6h), applied
+ * to the buffer the learner WOULD have if they tapped this glyph — i.e. the glyph
+ * goes through `expandGlyph` exactly as `selectCandidate` would put it in the
+ * buffer, so a hint can never promise a character the tap would not lead to.
+ *
+ * Ranked by § 6k (fewest missing components first, then frequency, discoverable,
+ * usage), restricted to characters flagged COMMON (in a freq 4–5 headword).
+ *
+ * ⚠️ There is no § 6n atomic rescue here, on purpose: the hint only fires with a
+ * non-empty buffer, so the would-be buffer always holds ≥ 2 components and an
+ * atomic character (empty bag) can never be what it spells.
+ *
+ * Returns null when no common character contains the would-be buffer.
+ */
+export function findHintCharacter(
+  buffer: readonly string[],
+  glyph: string,
+  index: GlyphLookupIndex,
+): HintCharacter | null {
+  const prospective = [...buffer, ...expandGlyph(glyph, index)];
+  const counts = bufferCounts(prospective, index);
+  if (counts === null) return null;
+
+  const scratch = new Int32Array(index.components.length);
+  let best: { record: number; distance: number } | null = null;
+  for (const record of commonRecords(index)) {
+    const size = index.bagSizes[record];
+    if (size < prospective.length) continue;
+    if (!contains(index.bags, index.bagOffsets[record], size, counts, scratch)) continue;
+    const hit = { record, distance: size - prospective.length };
+    if (best === null || compareCharacters(hit, best, index) < 0) best = hit;
+  }
+  if (best === null) return null;
+  return {
+    text: index.chars[best.record],
+    pronunciation: index.readings[best.record],
+    distance: best.distance,
+  };
 }
 
 /**

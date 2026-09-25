@@ -121,7 +121,7 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                     // composed rather than replacing it, so a selected card is still the
                     // same tile with a mark on it.
                     ...(selected && {
-                        boxShadow: `0 0 0 2px ${COLORS.bluA}, ${MINI_CARD_RING}, ${SHADOW.raised}`,
+                        boxShadow: `0 0 0 2px ${COLORS.onSurface}, ${MINI_CARD_RING}, ${SHADOW.raised}`,
                     }),
                     transition: "background-color 140ms ease, box-shadow 140ms ease",
                 }}
@@ -143,7 +143,7 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                             height: 18,
                             borderRadius: "50%",
                             backgroundColor: COLORS.onSurface,
-                            color: "white",
+                            color: COLORS.white,
                             fontSize: SIZE.micro,
                             fontWeight: WEIGHT.bold,
                             display: "flex",
@@ -237,8 +237,8 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                         alignItems: "center",
                         gap: 0.5,
                         whiteSpace: "nowrap",
-                        backgroundColor: COLORS.bluA,
-                        color: "#fff",
+                        backgroundColor: COLORS.onSurface,
+                        color: COLORS.white,
                         borderRadius: "999px",
                         px: 1.4,
                         py: 0.75,

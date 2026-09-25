@@ -1,8 +1,8 @@
 import React from "react";
 import { GameTimer } from "../shared/GameFrame";
 import { formatTimeMs } from "../../utils/timeUtils";
-import { GAME_HUE, RUN_DURATION_MS } from "./constants";
-import { COLORS, RAMP } from "../../theme/colors";
+import { RUN_DURATION_MS } from "./constants";
+import { COLORS } from "../../theme/colors";
 
 /** Below this the clock turns red and pulses. */
 const URGENT_MS = 10_000;
@@ -43,15 +43,12 @@ const MatchSpeedTimerBar: React.FC<MatchSpeedTimerBarProps> = ({ remainingMs, di
             className={`match-speed__timer-bar${urgent ? " match-speed__timer-bar--urgent" : ""}`}
             value={formatTimeMs(remainingMs)}
             fraction={fraction}
-            // The urgency colour is the palette's semantic red — this is ink on white,
-            // not a fill under text, so it takes `dangerInk` and not the pastel.
+            // v2 draws the clock and its drain bar in ink, and the urgent state in
+            // `--danger`, which v2 also sets to ink — so urgency is carried by the PULSE
+            // alone. (The caption still says "red and pulsing under ten seconds"; the
+            // tokens say ink. The tokens win: docs/SHELF_REDESIGN.md § A1b.)
             valueColor={urgent ? COLORS.dangerInk : COLORS.onSurface}
-            // The resting track is THIS GAME'S accent ink, not the palette's neutral
-            // blue: the clock now sits on a strip tinted with that same hue (§ A6b), and
-            // a blue bar on a green strip read as a widget borrowed from another screen.
-            // It cannot be confused with the board's green "matched" fill — that is a
-            // card body, this is a 4px rule in the chrome.
-            fillColor={urgent ? COLORS.dangerInk : RAMP[GAME_HUE].ink}
+            fillColor={urgent ? COLORS.dangerInk : COLORS.onSurface}
             dimmed={dimmed}
             pulse={urgent}
         />

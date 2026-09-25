@@ -2,6 +2,7 @@ import { Box, Card, CardContent, Typography } from "@mui/material";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useCalendarMinutePoints, type CalendarDayData } from "../hooks/useCalendarMinutePoints";
 import { SIZE , WEIGHT} from "../theme/scale";
+import { COLORS } from "../theme/colors";
 
 function MonthlyCalendar() {
     const { calendarData, isLoading, error } = useCalendarMinutePoints();
@@ -83,7 +84,7 @@ function MonthlyCalendar() {
 
         if (dayData.isToday) {
             // Today gets very subtle highlighting
-            return 'rgba(255, 255, 255, 0.1)';
+            return COLORS.rowHoverBg;
         }
 
         // All other days get neutral background
@@ -93,8 +94,8 @@ function MonthlyCalendar() {
     if (error) {
         return (
             <Card sx={{
-                background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                color: 'white',
+                background: COLORS.pur,
+                color: COLORS.onSurface,
                 mb: 3
             }}>
                 <CardContent sx={{ py: 3 }}>
@@ -106,7 +107,7 @@ function MonthlyCalendar() {
                             <Typography variant="h6" component="div" sx={{ fontWeight: WEIGHT.bold, mb: 0.5 }}>
                                 {currentMonth} {currentYear}
                             </Typography>
-                            <Typography variant="body2" sx={{ opacity: 0.9, color: '#ffcccb' }}>
+                            <Typography variant="body2" sx={{ opacity: 0.9, color: COLORS.dangerInk }}>
                                 Error loading calendar data
                             </Typography>
                         </Box>
@@ -121,8 +122,11 @@ function MonthlyCalendar() {
 
     return (
         <Card sx={{
-            background: 'linear-gradient(135deg, #667eea, #764ba2)',
-            color: 'white',
+            // Shelf System v2: a large card is a SURFACE with ink on it (never white on a
+            // pastel). Purple replaces the off-palette indigo gradient; the day cells'
+            // white hairlines became ink lines to match.
+            background: COLORS.pur,
+            color: COLORS.onSurface,
             mb: 3
         }}>
             <CardContent sx={{ py: 3 }}>
@@ -161,7 +165,7 @@ function MonthlyCalendar() {
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
                         {isLoading ? (
                             <Box sx={{ gridColumn: 'span 7', display: 'flex', justifyContent: 'center', py: 4 }}>
-                                <DelayedCircularProgress size={24} sx={{ color: 'white' }} />
+                                <DelayedCircularProgress size={24} sx={{ color: COLORS.onSurface }} />
                             </Box>
                         ) : (
                             calendarDisplay.map((dayData, index) => (
@@ -174,10 +178,10 @@ function MonthlyCalendar() {
                                     borderRadius: 1,
                                     backgroundColor: dayData ? getDayBackgroundColor(dayData) : 'transparent',
                                     border: dayData?.isToday
-                                        ? '2px solid rgba(255, 255, 255, 0.9)'
-                                        : '1px solid rgba(255, 255, 255, 0.2)',
+                                        ? `2px solid ${COLORS.onSurface}`
+                                        : `1px solid ${COLORS.rowBorder}`,
                                     minWidth: 0,
-                                    color: 'white'
+                                    color: COLORS.onSurface
                                 }}>
                                     {dayData && (
                                         <>

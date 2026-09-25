@@ -1,7 +1,7 @@
 import { ButtonBase, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import Icon from "../../components/Icon";
-import { RAMP } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 
 /**
@@ -56,7 +56,7 @@ const ArenaJoinButton: React.FC<ArenaJoinButtonProps> = ({ label, busy = false, 
             // 16px, not the pill's 999px: at this width a full pill reads as a lozenge
             // floating on the page, while a soft rectangle reads as a bar across it.
             borderRadius: "16px",
-            backgroundColor: busy ? RAMP.gld.tint : RAMP.gld.fill,
+            backgroundColor: busy ? RAMP.gld.tint : RAMP.gld.surface,
         }}
     >
         <Typography
@@ -66,7 +66,8 @@ const ArenaJoinButton: React.FC<ArenaJoinButtonProps> = ({ label, busy = false, 
                 fontSize: 21,
                 fontWeight: 800,
                 letterSpacing: "-0.012em",
-                color: busy ? alpha(RAMP.gld.ink, 0.45) : RAMP.gld.ink,
+                // v2 removed `--gldA`: the label on gold is plain ink.
+                color: busy ? alpha(COLORS.onSurface, 0.45) : COLORS.onSurface,
             }}
         >
             {label}
@@ -74,7 +75,7 @@ const ArenaJoinButton: React.FC<ArenaJoinButtonProps> = ({ label, busy = false, 
         {!busy && (
             // 70% of the ink, per the artboard: the arrow is a direction cue, not a
             // second thing to read, and at full strength it competes with the label.
-            <Icon name="arrow_forward" size={21} color={alpha(RAMP.gld.ink, 0.7)} weight={700} />
+            <Icon name="arrow_forward" size={21} color={alpha(COLORS.onSurface, 0.7)} weight={700} />
         )}
     </ButtonBase>
 );

@@ -24,6 +24,7 @@ import { fetchCompletedLevels } from "./completions";
 import { markFlashcard } from "../../api/flashcards";
 import Icon from "../Icon";
 import { WORD_TOOL_PILL_SX } from "../wordToolPill";
+import { COLORS } from "../../theme/colors";
 
 interface PracticeWritingButtonProps {
   character: string;
@@ -134,8 +135,9 @@ export default function PracticeWritingButton({
       overlap="rectangular"
       sx={{
         "& .MuiBadge-badge": {
-          bgcolor: "#F6B73C",
-          color: "#3A2A00",
+          // The framework's action gold (`--gld`) with ink on it — v2 has no dark gold ink.
+          bgcolor: COLORS.gld,
+          color: COLORS.onSurface,
           fontWeight: 700,
           fontSize: "0.65rem",
         },

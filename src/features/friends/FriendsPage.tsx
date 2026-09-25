@@ -39,7 +39,10 @@ import { messageSx, mutedTextSx } from "./friendStyles";
 const PODIUM_HUES: Record<number, RampHue> = { 1: "org", 2: "blu", 3: "red" };
 
 function RankBadge({ rank }: { rank: number }) {
-    const { fill, ink } = RAMP[PODIUM_HUES[rank] ?? "grey"];
+    // v2: the podium chip is the hue's MID tier (artboard 8 `.av` on `--orgK`/`--bluK`/
+    // `--redK`, K = M) with an ink numeral.
+    const fill = RAMP[PODIUM_HUES[rank] ?? "grey"].mid;
+    const ink = COLORS.onSurface;
     return (
         <Box
             className={`friends-page__rank friends-page__rank--${rank}`}

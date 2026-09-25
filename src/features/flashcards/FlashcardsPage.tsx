@@ -36,6 +36,8 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import FlashCard from "../../components/FlashCard";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import type { VocabEntry } from "../../types";
+import { alpha } from "@mui/material/styles";
+import { COLORS } from "../../theme/colors";
 
 
 interface HistoryEntry {
@@ -121,7 +123,7 @@ const MainContent = memo<MainContentProps>(({
                         sx={{
                             fontSize: '80px',
                             color: 'success.main',
-                            filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                            filter: `drop-shadow(0 4px 8px ${alpha(COLORS.onSurface, 0.3)})`
                         }}
                     />
                 ) : (
@@ -129,7 +131,7 @@ const MainContent = memo<MainContentProps>(({
                         sx={{
                             fontSize: '80px',
                             color: 'error.main',
-                            filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                            filter: `drop-shadow(0 4px 8px ${alpha(COLORS.onSurface, 0.3)})`
                         }}
                     />
                 )}
@@ -153,7 +155,7 @@ const MainContent = memo<MainContentProps>(({
                     sx={{
                         fontSize: '60px',
                         color: 'primary.main',
-                        filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                        filter: `drop-shadow(0 4px 8px ${alpha(COLORS.onSurface, 0.3)})`
                     }}
                 />
             </Box>
@@ -176,7 +178,7 @@ const MainContent = memo<MainContentProps>(({
                     sx={{
                         fontSize: '60px',
                         color: 'primary.main',
-                        filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))'
+                        filter: `drop-shadow(0 4px 8px ${alpha(COLORS.onSurface, 0.3)})`
                     }}
                 />
             </Box>
@@ -968,7 +970,7 @@ function FlashcardsPage() {
     const SidebarContent = () => (
         <Box sx={{ width: drawerWidth, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <Box sx={{ p: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}>
+            <Box sx={{ p: 2, borderBottom: `1px solid ${COLORS.rowBorder}` }}>
                 <Typography variant="h6" sx={{ fontWeight: WEIGHT.bold, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <HistoryIcon />
                     Study History
@@ -1068,7 +1070,7 @@ function FlashcardsPage() {
                     <Box sx={{
                         width: drawerWidth,
                         flexShrink: 0,
-                        borderRight: '1px solid rgba(0, 0, 0, 0.08)',
+                        borderRight: `1px solid ${COLORS.rowBorder}`,
                         height: '100%',
                         overflow: 'hidden'
                     }}>
@@ -1128,7 +1130,7 @@ function FlashcardsPage() {
                     <Box sx={{
                         width: settingsWidth,
                         flexShrink: 0,
-                        borderLeft: '1px solid rgba(0, 0, 0, 0.08)',
+                        borderLeft: `1px solid ${COLORS.rowBorder}`,
                         height: '100%',
                         overflow: 'auto',
                         p: 2

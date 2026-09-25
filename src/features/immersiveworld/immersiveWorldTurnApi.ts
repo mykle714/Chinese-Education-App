@@ -1,6 +1,8 @@
 import { apiPost, apiPostStream, type SseEvent } from '../../api/http';
 import { iwLog, iwWarn } from './iwDebugLog';
-import type { IWEmote, IWLineSegments, IWVolume } from '../../../server/contracts/iw';
+import type {
+  IWDestinationCandidate, IWDestinationTarget, IWEmote, IWLineSegments,
+} from '../../../server/contracts/iw';
 
 /**
  * immersiveWorldTurnApi — the client half of the RUNTIME endpoint (§ 12 phase 2).
@@ -29,9 +31,13 @@ import type { IWEmote, IWLineSegments, IWVolume } from '../../../server/contract
 export interface IWPerception {
   /** The learner's vocabulary, so the NPC speaks words they can read (§ 9.4). */
   knownWords: string[];
-  /** Who is within earshot, nearest first — the client-side hearing gate's output (§ 4). */
+  /** The other bodies in the scene, nearest first. Everybody hears everything (§ 4c withdrawn). */
   nearby: Array<{ label: string; distance: number; facingYou: boolean }>;
-  /** Recent lines this NPC heard, for continuity. */
+  /**
+   * Recent lines this NPC heard, for continuity, each pre-labelled as `"label: text"`. The
+   * server splits them into `{ speaker, text }` (`ImmersiveWorldRuntimeController` →
+   * `heardLines`) — it used to assume they already were, and printed `undefined said`.
+   */
   heard: string[];
   /**
    * What the NPC is holding, in their own terms — a LIST, matching the prompt's shape
@@ -40,7 +46,7 @@ export interface IWPerception {
    */
   holding?: string[];
   event:
-    | { kind: 'utterance'; speaker: string; text: string; addressed: boolean; volume?: IWVolume }
+    | { kind: 'utterance'; speaker: string; text: string; addressed: boolean }
     | { kind: 'approach'; who: string }
     | { kind: 'world'; description: string };
   spokeLastTurn?: boolean;
@@ -457,6 +463,56 @@ export async function routeAddressee(request: IWRouteRequest): Promise<string | 
   } catch (error) {
     // `iwWarn`, not `iwFault`: falling back to the rules is a working scene, not a broken one.
     iwWarn('route', 'router unavailable — falling back to the client rules', error);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// § 5.4 — where an `ai_walk` step goes
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface IWDestinationRequest {
+  sceneId: string;
+  /** The performer. */
+  npcId: string;
+  /** The step's authored brief. */
+  brief: string;
+  candidates: readonly IWDestinationCandidate[];
+  /**
+   * What the performer has heard, oldest first — the same pre-labelled `"label: text"` lines
+   * its turn prompt is sent (`IWPerception.heard`); the server splits them.
+   */
+  heard: readonly string[];
+}
+
+/**
+ * Ask the server where an `ai_walk` should go (§ 5.4, 2026-09-23).
+ *
+ * ⚠️ **IT NEVER THROWS**, for the router's reason: every failure means the same thing to the
+ * caller — skip this walk — so it returns `null` for all of them.
+ *
+ * ⚠️ **THE ANSWER IS RE-CHECKED AGAINST WHAT WAS SENT.** The server only returns candidates it
+ * was given, but a target that is not on this list would be a walk the script never offered,
+ * so the match is enforced here too and anything else becomes `null`.
+ *
+ * ⚠️ **THE CALLER MUST IMPOSE ITS OWN DEADLINE** — see `useIWSceneRuntime.chooseDestination`.
+ */
+export async function chooseDestination(request: IWDestinationRequest): Promise<IWDestinationTarget | null> {
+  try {
+    const data = await apiPost<{ target?: IWDestinationTarget | null; detail?: string }>(
+      '/api/immersiveWorld/destination',
+      request,
+    );
+    const target = data?.target ?? null;
+    const offered = target && request.candidates.some(c => (
+      c.kind === 'place' && target.kind === 'place' ? c.tag === target.tag
+        : c.kind === 'actor' && target.kind === 'actor' ? c.actorId === target.actorId
+          : false
+    ));
+    iwLog('destination', `${request.npcId} → ${target ? JSON.stringify(target) : '(nowhere)'}`, { detail: data?.detail });
+    return offered ? target : null;
+  } catch (error) {
+    iwWarn('destination', 'picker unavailable — the walk is skipped', error);
     return null;
   }
 }

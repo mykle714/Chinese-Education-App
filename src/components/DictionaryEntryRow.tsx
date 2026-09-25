@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material';
 import type { DictionaryEntry, Language } from '../types';
-import { stripParentheses } from '../utils/definitionUtils';
+import { stripParentheses, resolveDefaultPronunciation } from '../utils/definitionUtils';
 import ForeignText, { isLatinScriptLang } from './ForeignText';
 import Icon from './Icon';
 import { COLORS } from '../theme/colors';
@@ -130,7 +130,8 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: Dictionary
                             className="dictionary-entry-row__headword"
                             language={language}
                             text={entry.word1}
-                            pronunciation={entry.pronunciation}
+                            // Default-sense reading: this row prints every sense's gloss, not one chosen sense.
+                            pronunciation={resolveDefaultPronunciation(entry)}
                             size="sm"
                             bold
                         />

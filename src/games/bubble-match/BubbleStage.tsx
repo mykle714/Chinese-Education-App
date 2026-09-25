@@ -24,6 +24,8 @@ import {
     WRONG_FEEDBACK_MS,
     CANCEL_ZONE_HEIGHT,
     POST_DONE_SETTLE_MS,
+    DANGER_VIGNETTE_BG,
+    CANCEL_ZONE_COLORS,
 } from "../bubbles/constants";
 import {
     MIN_PLAY_HEIGHT,
@@ -803,7 +805,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             <GameHudBar
                 className="bubble-stage__progress-bar"
                 fraction={totalPairs > 0 ? matched / totalPairs : 0}
-                color={COLORS.redA}
+                color={COLORS.onSurface}
             />
         </GameHud>
         <Box
@@ -843,8 +845,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     // (18%) and the mid stop is much heavier than the rim used to
                     // be, so the alarm reads as an intense red wash over most of
                     // the field rather than a rim highlight.
-                    background:
-                        "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 18%, rgba(244,67,54,0.45) 48%, rgba(229,57,53,0.78) 76%, rgba(198,40,40,0.95) 100%)",
+                    // Shared with the other bubble stage; the red MARK tier (v2).
+                    background: DANGER_VIGNETTE_BG,
                     // Dismissed for good once the player has collapsed the game-over
                     // popup to inspect the (still-packed) field — the alarm is no
                     // longer meaningful, and it must not flash back if they re-expand.
@@ -877,10 +879,11 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     height: 0,
                     pointerEvents: "none",
                     zIndex: 2,
-                    // Graphite slab fading to a hard, slightly menacing bottom edge
-                    // so the closing wall reads clearly against the pale playfield.
-                    background: "linear-gradient(180deg, #2a2f3a 0%, #3a414f 70%, #4a5263 100%)",
-                    borderBottom: "3px solid #1c2029",
+                    // An ink slab (`--ink` → `--ink2`) with a hard ink bottom edge, so
+                    // the closing wall reads clearly against the pale playfield. It was
+                    // an off-palette blue-graphite gradient; v2's only dark is ink.
+                    background: `linear-gradient(180deg, ${COLORS.onSurface} 0%, ${COLORS.iconColor} 100%)`,
+                    borderBottom: `3px solid ${COLORS.onSurface}`,
                     boxShadow: "0 6px 14px rgba(0,0,0,0.28)",
                 }}
             />
@@ -919,8 +922,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     // renders on top of the strip while it's over it.
                     zIndex: 5,
                     borderTop: "2px dashed",
-                    borderColor: overCancelZone ? "rgba(244,67,54,0.85)" : "rgba(0,0,0,0.12)",
-                    backgroundColor: overCancelZone ? "rgba(244,67,54,0.06)" : "rgba(0,0,0,0.02)",
+                    borderColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].border,
+                    backgroundColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].bg,
                     transition: "background-color 0.15s ease, border-color 0.15s ease",
                 }}
             >
@@ -929,7 +932,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     sx={{
                         fontSize: SIZE.body,
                         fontWeight: WEIGHT.bold,
-                        color: overCancelZone ? "#F44336" : "#9a9a9a",
+                        color: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].label,
                         letterSpacing: 0.3,
                     }}
                 >

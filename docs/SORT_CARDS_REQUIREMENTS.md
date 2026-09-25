@@ -292,8 +292,8 @@ each of its corners, so the user can see their collection grow as they sort:
 
 | Figure | Corner | Definition | Color |
 | --- | --- | --- | --- |
-| **Learn Now** | top-left | library cards whose utcm category is Unfamiliar + Target + Comfortable | `COLORS.redMain` (= `CATEGORY_COLORS.Unfamiliar`) |
-| **Mastered** | top-right | library cards whose utcm category is Mastered | `COLORS.blueMain` (= `CATEGORY_COLORS.Mastered`) |
+| **Learn Now** | top-left | library cards whose utcm category is Unfamiliar + Target + Comfortable | ink (`COLORS.dangerInk`, = `--ink` in v2); its bucket is `BAND_COLORS.Unfamiliar` |
+| **Mastered** | top-right | library cards whose utcm category is Mastered | ink (`COLORS.infoInk`, = `--ink` in v2); its bucket is `BAND_COLORS.Mastered` |
 
 - The figures sit in **opposite corners** rather than as one cluster, so each reads as its
   own standing total instead of the pair reading as a ratio. Each corner is on the **same

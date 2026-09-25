@@ -19,19 +19,18 @@ import { IW_EMOTES, IW_NO_ACTION } from '../../contracts/iw.js';
  * can only hold what is true of ALL of them. Register is layer 2's job
  * (`npcPrompt.renderNpcBlock`), and layer 1 says only that the register below wins.
  *
- * ⚠️ **NO EARSHOT CLAUSE, EVEN THOUGH EARSHOT IS BACK.** This text used to end the knowledge
+ * ⚠️ **NO EARSHOT CLAUSE.** This text used to end the knowledge
  * clause with *"You do not know anything said out of your earshot"* — the prompt half of § 4's
  * geometric hearing gate. It came out on 2026-09-07 because it was never true of the data: the
  * client handed every NPC the SAME `heard` transcript, so an NPC told it had missed something
  * was holding the thing it had missed.
  *
- * § 4c brought hearing back the same day, learner-chosen, and this time it DOES gate memory —
- * a transcript is filtered per NPC before it is rendered. The clause still does not return,
- * and the reason is the stronger one: **the gate is now structural, so the prompt has nothing
- * to say about it.** An NPC cannot be told to forget a line it was never shown, and a rule
- * about invisible knowledge is exactly the kind a model half-obeys. What survives is the
- * clause the sentence was really for — do not know what nobody told you — which guards against
- * an NPC answering out of the prompt's own furniture rather than out of the conversation.
+ * § 4c brought hearing back the same day as a learner-chosen volume that filtered each NPC's
+ * transcript, and it was withdrawn on 2026-09-23: everybody in a scene hears everything, and
+ * every NPC gets the same transcript. So the clause is now simply true to leave out. What
+ * survives is the clause the sentence was really for — do not know what nobody told you —
+ * which guards against an NPC answering out of the prompt's own furniture rather than out of
+ * the conversation.
  *
  * ⚠️ **"SHORT IS NOT THE SAME AS SIMPLIFIED" IS NOT A REGISTER, AND THAT IS WHY IT MAY LIVE
  * HERE** (added 2026-09-21). The complaint it answers is that every NPC came out sounding

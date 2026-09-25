@@ -32,8 +32,7 @@ This is the backend API server for the vocabulary application, providing endpoin
 - `POST /api/vocabEntries/byTokens` - Get vocabulary entries by tokens (protected)
 
 ### Users
-- `GET /api/users` - Get all users (protected)
-- `GET /api/users/:id` - Get a specific user by ID (protected)
+- `GET /api/users/:id` - Get your OWN user row (protected, self-only — another id is a 403)
 - `POST /api/users` - Create a new user (protected, admin only)
 
 ### Reading Materials

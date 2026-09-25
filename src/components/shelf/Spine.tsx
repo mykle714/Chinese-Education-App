@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Box } from "@mui/material";
-import { styled } from "@mui/material/styles";
+import { alpha, styled } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -12,7 +12,7 @@ import { SHADOW } from "../../theme/shadows";
  * (docs/SHELF_REDESIGN.md § A3). It replaces `DeckTile` outright (decision D9);
  * there is no coexistence period and no second "set of cards" visual.
  *
- * A spine is a book seen edge-on: a pastel body, a highlight down its right side, a
+ * A spine is a book seen edge-on: a mid-tier body, a highlight down its right side, a
  * dark strap down its left (`.sp::after` — that strap is what sells "book"; without
  * it the shape reads as a rounded rectangle), a title at the top and an optional
  * mono count at the foot. Its HEIGHT carries how big the set is, in three bands —
@@ -46,7 +46,10 @@ export interface SpineProps {
      * app agrees on where the cutoffs sit.
      */
     variant?: SpineVariant;
-    /** The body colour — a PASTEL from the ramp. Ink on it is `COLORS.onSurface`. */
+    /**
+     * The body colour — the ramp's MID tier (v2: "Mid: deck spines, pack spines,
+     * document spines, bucket spines"). Ink on it is `COLORS.onSurface`.
+     */
     color: string;
     /**
      * Width/height overrides in px, for the two places the design overrides them
@@ -118,7 +121,7 @@ const SpineRoot = styled(Box, {
         top: 0,
         bottom: 0,
         width: SPINE_SIZES.strapWidth,
-        background: "rgba(23, 22, 26, 0.09)",
+        background: alpha(COLORS.onSurface, 0.09),
     },
 }));
 

@@ -3,6 +3,7 @@ import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, LongDefinitionPart, LongDefinitionCitation, DefinitionCluster, EntryApprovalFlags } from '../types/index.js';
 import type { Language, DictionarySearchRanking } from '../types/index.js';
 import type { LongDefinitionValue } from '../utils/definitions.js';
+import { resolveDefaultPronunciation } from '../utils/definitions.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
@@ -995,7 +996,10 @@ Respond with only the definition text — no quotes, no extra text.`;
     for (const entry of entries) {
       metadata[entry.word1] = {
         definition: entry.definitions?.[0] ?? '',
-        pronunciation: entry.pronunciation ?? '',
+        // Default sense's reading (highest-frequencyScore cluster), not the raw column. The
+        // DEFAULT resolver, not the card one: this row shows the flat definitions[0], not a
+        // chosen sense's gloss — see resolveDefaultPronunciation.
+        pronunciation: resolveDefaultPronunciation(entry) ?? '',
       };
     }
 

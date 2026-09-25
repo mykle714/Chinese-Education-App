@@ -8,7 +8,15 @@ import {
     useMediaQuery,
     keyframes
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import Icon from '../components/Icon';
+import { COLORS } from '../theme/colors';
+
+// Framework colours for this legacy badge (Shelf System v2): its orange glow is the
+// streak flame's own `--fire` (COLORS.fireActive), the one hue the palette lets the
+// streak/minute-points chrome carry outside the ramp; its drop shadows are ink alphas.
+const FIRE_GLOW = (a: number) => alpha(COLORS.fireActive, a);
+const INK_SHADOW = alpha(COLORS.onSurface, 0.1);
 
 interface MinutePointsBadgeProps {
     points: number;
@@ -21,15 +29,15 @@ interface MinutePointsBadgeProps {
 const pointEarnedAnimation = keyframes`
   0% { 
     transform: scale(1); 
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px ${INK_SHADOW};
   }
   50% { 
     transform: scale(1.15); 
-    box-shadow: 0 4px 20px rgba(255, 152, 0, 0.6);
+    box-shadow: 0 4px 20px ${FIRE_GLOW(0.6)};
   }
   100% { 
     transform: scale(1); 
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px ${INK_SHADOW};
   }
 `;
 
@@ -37,21 +45,21 @@ const breathingAnimation = keyframes`
   0%, 100% { 
     opacity: 1;
     transform: scale(1);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px ${INK_SHADOW};
   }
   50% { 
     opacity: 0.85;
     transform: scale(1.05);
-    box-shadow: 0 4px 16px rgba(255, 152, 0, 0.4);
+    box-shadow: 0 4px 16px ${FIRE_GLOW(0.4)};
   }
 `;
 
 const activeGlowAnimation = keyframes`
   0%, 100% { 
-    box-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
+    box-shadow: 0 0 10px ${FIRE_GLOW(0.3)};
   }
   50% { 
-    box-shadow: 0 0 20px rgba(255, 152, 0, 0.6);
+    box-shadow: 0 0 20px ${FIRE_GLOW(0.6)};
   }
 `;
 
@@ -105,7 +113,7 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                         transition: 'color 0.3s ease-in-out, opacity 0.3s ease-in-out, filter 0.3s ease-in-out',
                         // Add glow effect when active
                         filter: isActive
-                            ? 'drop-shadow(0 0 8px rgba(255, 152, 0, 0.5))'
+                            ? `drop-shadow(0 0 8px ${FIRE_GLOW(0.5)})`
                             : 'none',
                         // Disable MUI's default progress transition for smooth real-time animation
                         '& .MuiCircularProgress-circle': {
@@ -139,13 +147,13 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                             // Animation for point earning
                             animation: isAnimating ? `${pointEarnedAnimation} 0.6s ease-out` : 'none',
                             // Enhanced styling
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            border: '2px solid white',
+                            boxShadow: `0 2px 4px ${INK_SHADOW}`,
+                            border: `2px solid ${COLORS.white}`,
                             // Dynamic colors based on activity
                             backgroundColor: isActive
                                 ? theme.palette.primary.main
                                 : theme.palette.grey[500],
-                            color: 'white',
+                            color: COLORS.white,
                         }
                     }}
                 >
@@ -164,9 +172,9 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                             animation: isActive ? `${breathingAnimation} 2s ease-in-out infinite` : 'none',
                             // Enhanced styling with pronounced active state
                             boxShadow: isActive
-                                ? '0 4px 16px rgba(255, 152, 0, 0.3)'
-                                : '0 2px 8px rgba(0,0,0,0.1)',
-                            border: '2px solid white',
+                                ? `0 4px 16px ${FIRE_GLOW(0.3)}`
+                                : `0 2px 8px ${INK_SHADOW}`,
+                            border: `2px solid ${COLORS.white}`,
                             // Additional glow effect when active
                             '&::before': isActive ? {
                                 content: '""',
@@ -176,7 +184,7 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                                 right: '-2px',
                                 bottom: '-2px',
                                 borderRadius: 'inherit',
-                                background: 'linear-gradient(45deg, #ff9800, #ff5722)',
+                                background: `linear-gradient(45deg, ${COLORS.orgMk}, ${COLORS.fireActive})`,
                                 zIndex: -1,
                                 animation: `${activeGlowAnimation} 2s ease-in-out infinite`,
                             } : {},
@@ -196,7 +204,7 @@ export const MinutePointsBadge: React.FC<MinutePointsBadgeProps> = ({
                             name="local_fire_department"
                             size={isMobile ? 24 : 29}
                             fill={1}
-                            color={isActive ? 'white' : theme.palette.grey[600]}
+                            color={isActive ? COLORS.white : theme.palette.grey[600]}
                         />
                     </Box>
                 </Badge>

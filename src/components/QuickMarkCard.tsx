@@ -37,7 +37,7 @@ const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
     if (state === "library") {
         return (
             <Box className="quick-mark-card__state-indicator quick-mark-card__state-indicator--library" sx={{ ...base, backgroundColor: COLORS.successInk }}>
-                <CheckIcon sx={{ fontSize: 13, color: "white" }} />
+                <CheckIcon sx={{ fontSize: 13, color: COLORS.white }} />
             </Box>
         );
     }
@@ -45,7 +45,7 @@ const StateIndicator: React.FC<{ state: QuickMarkState }> = ({ state }) => {
         return (
             <Box
                 className="quick-mark-card__state-indicator quick-mark-card__state-indicator--mastered"
-                sx={{ ...base, backgroundColor: COLORS.infoInk, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold }}
+                sx={{ ...base, backgroundColor: COLORS.infoInk, color: COLORS.white, fontSize: SIZE.micro, fontWeight: WEIGHT.bold }}
             >
                 M
             </Box>
@@ -102,7 +102,7 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({ card, state, onC
                         height: 18,
                         borderRadius: "50%",
                         backgroundColor: COLORS.onSurface,
-                        color: "white",
+                        color: COLORS.white,
                         fontSize: SIZE.micro,
                         fontWeight: WEIGHT.bold,
                         display: "flex",

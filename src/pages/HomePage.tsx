@@ -53,9 +53,10 @@ function HomePage() {
         // Its own destination rather than a Games tile (docs/IMMERSIVE_WORLD.md § 14 Q9): iw
         // is once per day, earns no marks and is capped by design, so it behaves unlike
         // everything on the Games shelf, where a tile is an activity you can do as much as
-        // you like. `tea` matches the Scene Editor tile below — one feature, one hue.
+        // you like. `blu` matches the Scene Editor tile below — one feature, one hue. (It was
+        // `tea` until teal left the palette on 2026-09-24.)
         ...(isFeatureEnabled("immersiveWorld")
-            ? [{ key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "tea", icon: "theater_comedy" } as HomeTile]
+            ? [{ key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "blu", icon: "theater_comedy" } as HomeTile]
             : []),
         { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", hue: "org", icon: "article" },
         { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them", hue: "red", icon: "book" },
@@ -68,7 +69,7 @@ function HomePage() {
         ...(isFeatureEnabled("community")
             ? [{ key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" } as HomeTile]
             : []),
-        { key: "friends", to: "/friends", title: "Friends", hue: "red", icon: "people", variant: "low" },
+        { key: "friends", to: "/friends", title: "Friends", hue: "grn", icon: "people", variant: "low" },
         // NOTE: there is no "Compare Words" tile. Compare is not a destination — it is a
         // sheet raised over the word you are already looking at, from the `Compare` pill on
         // WordToolsRail (docs/WORD_COMPARE_FEATURE.md). The tile and its /compare page were
@@ -90,8 +91,9 @@ function HomePage() {
         // All three ride the SAME grant (users.isTemplateAuthor, migration 115) — the two
         // night-market tools and the immersive-world scene editor are one authoring
         // permission, not three (docs/IMMERSIVE_WORLD.md § 12 phase 1e). The scene editor
-        // wears `tea` rather than the night market's `pur` because it authors a different
-        // feature; sharing a hue would imply it edits night-market templates.
+        // wears `blu` (Immersive World's hue) rather than the night market's `pur` because it
+        // authors a different feature; sharing a hue would imply it edits night-market
+        // templates.
         // Each tool needs BOTH the grant and its feature's flag: the grant says the
         // account may author, the flag says the feature exists to be authored for. The
         // three no longer rise or fall together — with one flag off the other tools stay,
@@ -103,7 +105,7 @@ function HomePage() {
               ]
             : []),
         ...(user?.isTemplateAuthor && isFeatureEnabled("immersiveWorld")
-            ? [{ key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "tea", icon: "theater_comedy", variant: "low" } as HomeTile]
+            ? [{ key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "blu", icon: "theater_comedy", variant: "low" } as HomeTile]
             : []),
     ];
 

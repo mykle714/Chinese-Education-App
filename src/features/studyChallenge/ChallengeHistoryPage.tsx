@@ -170,10 +170,14 @@ function ChallengeHistoryPage() {
                             // is read by scanning, and a scanner reads fills before words —
                             // a one-word label in the corner makes every row look alike
                             // until you stop and read it.
+                            // v2: the fill is the hue's TINT tier (a near-white second
+                            // tone — the old hand-mixed 5–6% washes, now tokens) under a
+                            // plain hairline; the label is ink (the semantic inks are all
+                            // `--ink` now, kept by name for intent).
                             const tint = outcome === "Won"
-                                ? { bg: "color-mix(in oklch, #0B6B4F 6%, #fff)", border: "color-mix(in oklch, #0B6B4F 24%, rgba(23,22,26,.10))", ink: "#0B6B4F" }
+                                ? { bg: COLORS.grnTint, border: COLORS.border, ink: COLORS.successInk }
                                 : outcome === "Lost"
-                                    ? { bg: "color-mix(in oklch, #B4213C 5%, #fff)", border: "color-mix(in oklch, #B4213C 20%, rgba(23,22,26,.10))", ink: "#B4213C" }
+                                    ? { bg: COLORS.redTint, border: COLORS.border, ink: COLORS.dangerInk }
                                     : { bg: COLORS.iconBg, border: COLORS.rowBorder, ink: COLORS.textFaint };
 
                             return (

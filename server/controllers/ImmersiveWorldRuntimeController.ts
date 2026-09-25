@@ -1,8 +1,12 @@
 import type { Request, Response } from 'express';
 import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
-import type { CollectGoal, TurnStateInput } from '../services/iw/turnState.js';
-import { IW_COLLECT_TURNS_DEFAULT, IW_MAX_COLLECT_GOAL_LENGTH, IW_MAX_COLLECT_TURNS } from '../contracts/iw.js';
-import { IW_MAX_LISTENERS_PER_UTTERANCE, IW_MAX_UTTERANCE_CHARS } from '../services/iw/turnBudget.js';
+import type { CollectGoal, HeardLine, TurnStateInput } from '../services/iw/turnState.js';
+import {
+  IW_COLLECT_TURNS_DEFAULT, IW_MAX_ACTION_INSTRUCTION_LENGTH, IW_MAX_COLLECT_GOAL_LENGTH, IW_MAX_COLLECT_TURNS,
+  type IWDestinationCandidate, type IWDestinationTarget,
+} from '../contracts/iw.js';
+import { IW_MAX_DEST_CANDIDATES } from '../services/iw/destinationPicker.js';
+import { IW_MAX_NEARBY_BODIES, IW_MAX_UTTERANCE_CHARS } from '../services/iw/turnBudget.js';
 import { getUserLanguage } from '../utils/controllerUtils.js';
 import { iwFault, iwLog } from '../services/iw/iwDebugLog.js';
 
@@ -207,19 +211,6 @@ export class ImmersiveWorldRuntimeController {
   }
 
   /**
-   * POST /api/immersiveWorld/line → `text/event-stream`
-   *
-   * The authored half of the world speaking (§ 14 Q42). Same event vocabulary as `takeTurn`
-   * — any number of `delta`, then one of `line` | `frozen` | `refused`, then `end` — so the
-   * client's transport is one reader rather than two.
-   *
-   * ⚠️ **`frozen` HERE DOES NOT MEAN THE SAME THING IT MEANS ON A TURN.** A frozen turn
-   * freezes the scene and shows a banner, because the learner said something and got nothing
-   * back. A frozen render means one authored beat could not be put into words; the script
-   * skips it and plays on. The client must not treat them alike, and the two live on
-   * different routes partly so that difference is impossible to miss.
-   */
-  /**
    * Decide who the learner was talking to (§ 4.2). **Plain JSON, not SSE.**
    *
    * ⚠️ **THE ONE IW MODEL ENDPOINT THAT DOES NOT STREAM**, and the reason is the shape of the
@@ -307,6 +298,67 @@ export class ImmersiveWorldRuntimeController {
     res.json({ line: segmented[raw] ?? null });
   }
 
+  /**
+   * POST /api/immersiveWorld/destination → `{ target: IWDestinationTarget | null, detail }`
+   *
+   * Where an `ai_walk` step sends its performer (§ 5.4, 2026-09-23). **Plain JSON**, for the
+   * router's reason: the answer is one identifier nobody watches appear.
+   *
+   * ⚠️ **IT NEVER 500s ON A PICKING FAILURE.** A dead model, a NONE and a missing scene all
+   * come back `200 {"target": null}` — the client skips the walk for all of them. The single
+   * non-200 is the daily cap (429), because that is a money bound and must be visible.
+   */
+  async pickDestination(req: Request, res: Response): Promise<void> {
+    const userId = this.userIdOr401(req, res);
+    if (!userId) return;
+
+    const parsed = parseDestinationBody(req.body);
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error, code: 'ERR_IW_TURN_BAD_REQUEST' });
+      return;
+    }
+
+    try {
+      const result = await this.service.pickDestination(userId, parsed.request);
+      if (result.kind === 'refused') {
+        res.status(429).json({
+          error: refusalMessage(result.refusal),
+          code: 'ERR_IW_BUDGET',
+          refusal: result.refusal,
+        });
+        return;
+      }
+      if (result.kind === 'no-scene') {
+        iwFault('destination', `no-scene sceneId=${result.sceneId} — the client is holding a scene id that does not resolve`);
+        res.json({ target: null, detail: 'no such scene' });
+        return;
+      }
+      iwLog('destination', `${parsed.request.npcId} → ${describeTarget(result.target)} — ${result.detail}`, {
+        brief: parsed.request.brief,
+        candidates: parsed.request.candidates.length,
+      });
+      res.json({ target: result.target, detail: result.detail });
+    } catch (error) {
+      // Logged loudly for the router's reason: a picker that always throws is invisible from
+      // outside — every ai_walk just quietly stops walking.
+      iwFault('destination', 'picker threw — the walk is skipped', error);
+      res.json({ target: null, detail: 'picker failed' });
+    }
+  }
+
+  /**
+   * POST /api/immersiveWorld/line → `text/event-stream`
+   *
+   * The authored half of the world speaking (§ 14 Q42). Same event vocabulary as `takeTurn`
+   * — any number of `delta`, then one of `line` | `frozen` | `refused`, then `end` — so the
+   * client's transport is one reader rather than two.
+   *
+   * ⚠️ **`frozen` HERE DOES NOT MEAN THE SAME THING IT MEANS ON A TURN.** A frozen turn
+   * freezes the scene and shows a banner, because the learner said something and got nothing
+   * back. A frozen render means one authored beat could not be put into words; the script
+   * skips it and plays on. The client must not treat them alike, and the two live on
+   * different routes partly so that difference is impossible to miss.
+   */
   async renderLine(req: Request, res: Response): Promise<void> {
     const userId = this.userIdOr401(req, res);
     if (!userId) return;
@@ -523,9 +575,14 @@ function parseRouteBody(body: any): { request: import('../services/ImmersiveWorl
   if (typeof sceneId !== 'string' || !sceneId) return { error: 'sceneId is required' };
   if (typeof utterance !== 'string' || !utterance.trim()) return { error: 'utterance is required' };
   if (!Array.isArray(body.cast) || body.cast.length === 0) return { error: 'cast is required' };
+  // ⚠️ NO LENGTH CAP, BUT DEDUPED (2026-09-23). The router is shown the whole scene cast now
+  // that there is no hearing gate (§ 4c withdrawn) — a cap would hide the farthest NPC from a
+  // learner naming them. The real bound is the scene: `ImmersiveWorldService` drops any id
+  // that is not one of its members. Deduping is what makes that bound hold against a crafted
+  // body that repeats one real id a thousand times.
+  const seen = new Set<string>();
   const cast = body.cast
-    .filter((m: any) => m && typeof m.npcId === 'string' && m.npcId)
-    .slice(0, IW_MAX_LISTENERS_PER_UTTERANCE)
+    .filter((m: any) => m && typeof m.npcId === 'string' && m.npcId && !seen.has(m.npcId) && seen.add(m.npcId))
     .map((m: any) => ({
       npcId: m.npcId,
       distance: Number.isFinite(m.distance) ? Math.max(0, Math.trunc(m.distance)) : 0,
@@ -548,6 +605,49 @@ function parseRouteBody(body: any): { request: import('../services/ImmersiveWorl
       heard: Array.isArray(body.heard) ? body.heard.filter((h: any) => typeof h === 'string').slice(-8) : [],
     },
   };
+}
+
+/**
+ * The destination picker's body (§ 5.4's `ai_walk`).
+ *
+ * Same "not a schema validator" contract as {@link parseTurnBody}. Candidates are coerced to
+ * the two target shapes and bounded; whether each one belongs to the scene is the SERVICE's
+ * check (`resolveCandidates`), because that needs the scene row and this does not have it.
+ */
+function parseDestinationBody(body: any): { request: import('../services/ImmersiveWorldService.js').IWDestinationHttpRequest } | { error: string } {
+  if (!body || typeof body !== 'object') return { error: 'A JSON body is required' };
+  const { sceneId, npcId, brief } = body;
+  if (typeof sceneId !== 'string' || !sceneId) return { error: 'sceneId is required' };
+  if (typeof npcId !== 'string' || !npcId) return { error: 'npcId is required' };
+  if (typeof brief !== 'string' || !brief.trim()) return { error: 'brief is required' };
+  if (!Array.isArray(body.candidates)) return { error: 'candidates is required' };
+
+  const candidates: IWDestinationCandidate[] = [];
+  for (const c of body.candidates.slice(0, IW_MAX_DEST_CANDIDATES * 2)) {
+    if (!c || typeof c !== 'object') continue;
+    const distance = Number.isFinite(c.distance) ? Math.max(0, Math.trunc(c.distance)) : 0;
+    if (c.kind === 'place' && typeof c.tag === 'string' && c.tag) {
+      candidates.push({ kind: 'place', tag: c.tag, distance });
+    } else if (c.kind === 'actor' && typeof c.actorId === 'string' && c.actorId) {
+      candidates.push({ kind: 'actor', actorId: c.actorId, distance });
+    }
+  }
+
+  return {
+    request: {
+      sceneId,
+      npcId,
+      brief: brief.trim().slice(0, IW_MAX_ACTION_INSTRUCTION_LENGTH),
+      candidates,
+      heard: heardLines(body.heard),
+    },
+  };
+}
+
+/** A target in a log line. */
+function describeTarget(target: IWDestinationTarget | null): string {
+  if (!target) return '(nowhere)';
+  return target.kind === 'place' ? `place "${target.tag}"` : `actor ${target.actorId}`;
 }
 
 function parseLineBody(body: any): { request: import('../services/ImmersiveWorldService.js').IWLineHttpRequest } | { error: string } {
@@ -585,10 +685,39 @@ function parseLineBody(body: any): { request: import('../services/ImmersiveWorld
 function parsePerception(p: any): import('../services/iw/turnState.js').IWContextInput {
   return {
     knownWords: strings(p.knownWords),
-    nearby: Array.isArray(p.nearby) ? p.nearby.slice(0, IW_MAX_LISTENERS_PER_UTTERANCE * 3) : [],
-    heard: Array.isArray(p.heard) ? p.heard.slice(0, 12) : [],
+    nearby: Array.isArray(p.nearby) ? p.nearby.slice(0, IW_MAX_NEARBY_BODIES) : [],
+    heard: heardLines(p.heard),
     holding: holdingList(p.holding),
   };
+}
+
+/**
+ * `heard`, normalized to the prompt's `{ speaker, text }` shape (`turnState.ts` → `HeardLine`).
+ *
+ * ⚠️ **THE CLIENT SENDS STRINGS, AND FOR A WHILE NOTHING NOTICED** (found 2026-09-23). The
+ * runtime keeps memory as pre-labelled lines — `"the customer: 你好"` (`useIWSceneRuntime`'s
+ * `heardRef`) — and this used to pass them straight through as if they were `HeardLine`
+ * objects. `renderContextSections` then printed every one as `undefined said: "undefined"`,
+ * so in live play every NPC turn and every authored line was written with NO memory of the
+ * scene. The bench never saw it because it builds `HeardLine` objects directly.
+ *
+ * Both shapes are accepted: a string is split at its FIRST `": "` (a label never contains
+ * one; Chinese speech uses the full-width `：`, so a colon inside the line survives), and an
+ * object is taken field by field. Anything else is dropped. Bounded like every other list here.
+ */
+export function heardLines(value: unknown): HeardLine[] {
+  if (!Array.isArray(value)) return [];
+  const out: HeardLine[] = [];
+  for (const h of value.slice(-12)) {
+    if (typeof h === 'string') {
+      const at = h.indexOf(': ');
+      if (at > 0) out.push({ speaker: h.slice(0, at).slice(0, 80), text: h.slice(at + 2).slice(0, IW_MAX_UTTERANCE_CHARS * 2) });
+      else if (h.trim()) out.push({ speaker: 'somebody', text: h.slice(0, IW_MAX_UTTERANCE_CHARS * 2) });
+    } else if (h && typeof h === 'object' && typeof (h as any).speaker === 'string' && typeof (h as any).text === 'string') {
+      out.push({ speaker: (h as any).speaker.slice(0, 80), text: (h as any).text.slice(0, IW_MAX_UTTERANCE_CHARS * 2) });
+    }
+  }
+  return out;
 }
 
 /**

@@ -20,6 +20,10 @@ import {
     POP_DURATION_MS,
     WRONG_FEEDBACK_MS,
     POST_DONE_SETTLE_MS,
+    DANGER_VIGNETTE_BG,
+    CANCEL_ZONE_COLORS,
+    COLOURED_BUBBLE_RING,
+    NEUTRAL_BUBBLE_RING,
 } from "../bubbles/constants";
 import { PAYOUT_BY_COLOR, DRAIN_ONLY_FILL, rollColor } from "./spawnTable";
 import { planSpawnBatch, type HydraBoardPair } from "./spawnPlanner";
@@ -71,12 +75,29 @@ import type { ColorBuffers } from "./useColorBuffers";
  *      the whole message, darker meant harder. Replaced by request; see YELLOW_DRAIN
  *      for the full trade.
  *
- * ═══ THE LADDER IS NOW YELLOW / BLUE (2026-08-24) ═══
+ * ═══ THE LADDER IS NOW YELLOW / BLUE (2026-08-24), ON THE v2 MID TIER (2026-09-23) ═══
  *
- *              body                        char ink   read
- *   English    #E7E7EA  COLORS.grey        dark       inert — carries no payout info
- *   bloom      #D2EBFF  COLORS.blu         dark       net +1, the known words
- *   drain      #F5E7B4  COLORS.yel         dark       net −1, the hard words
+ *              body                         ring              char ink   read
+ *   English    #E7E7EA  COLORS.grey         --line2 (neutral)  dark      inert — carries no payout info
+ *   bloom      #A9DFFF  COLORS.bluM         --ink (coloured)   dark      net +1, the known words
+ *   drain      #FFE66E  COLORS.yelM         --ink (coloured)   dark      net −1, the hard words
+ *
+ * SHELF SYSTEM v2 (artboard 16, `#hyd`). The ladder's MECHANICS and hues are unchanged;
+ * only the tier moved. v2 says bubbles are the MID tier ("Mid: bubbles"), so the two
+ * rungs went from the Surface pastels (`yel`/`blu`) to `yelM`/`bluM`, and they now take
+ * the design's ring rule — a coloured bubble is ringed in ink, a neutral one in
+ * `--line2` (COLOURED_BUBBLE_RING / NEUTRAL_BUBBLE_RING, src/games/bubbles/constants).
+ * The ink ring is a real gain for this ladder: it is a second, non-hue channel between
+ * a payout bubble and scenery, which the value table below shows it badly needed.
+ *
+ * NOT adopted from the artboard: it colours the ENGLISH bubbles (`#hyd .bub:not(.zh)
+ * {background:var(--grn)}`) and makes the Chinese side neutral (`--header` / lent
+ * `--grey`). That would move the payout signal off the word bubble entirely, which is a
+ * redesign of the game rather than a repaint, so it is flagged instead
+ * (docs/HYDRA_BUBBLES.md § 2).
+ *
+ * The contrast figures in the tables below were measured against the v1 Surface bodies
+ * and are kept as the history of the choice, not re-derived.
  *
  * ALL THREE TAKE BLACK TEXT, and that is still the constraint on any replacement: the
  * two tiers are one object at two settings, and a rung whose glyphs invert to white
@@ -100,7 +121,7 @@ import type { ColorBuffers } from "./useColorBuffers";
  * the ramp's 93% tier, so bloom-vs-English is carried by chroma alone (a blue tint vs a
  * neutral). It is tolerable because bloom is the bubble you WANT to clear: mistaking
  * scenery for bloom costs a wasted look, not a wrong match.
- * ⚠️ With a yellow drain, lightening bloom to `bluTint` #EEF8FF no longer closes any gap
+ * ⚠️ With a yellow drain, lightening bloom to `bluTint` #F0F7FF no longer closes any gap
  * — drain is no longer on hue 250 — so it is now a free move that helps BOTH weak reads
  * at once (bloom off the grey, and a value gap back into the ladder). It costs a
  * near-white bubble on the white `.play` panel. That is the one lever to reach for first.
@@ -135,7 +156,8 @@ import type { ColorBuffers } from "./useColorBuffers";
  * documented to leave the tone overlay alone, and `TONE_COLORS` are design-owned
  * literals. THE ONLY REAL FIX IS TO LEAVE HUE 250 — a ladder on purple (hue 300,
  * `COLORS.pur`/`purA`) has no tone color anywhere near it and would free the whole
- * lightness range. Teal (195) does not help: tone 2 #05C793 sits next to it.
+ * lightness range. (A hue-195 cyan would not have helped either — tone 2 #05C793 sits
+ * next to it — and the palette no longer has one.)
  */
 /**
  * The two rungs: `COLORS.yel` for drain, `COLORS.blu` for bloom.
@@ -151,9 +173,9 @@ import type { ColorBuffers } from "./useColorBuffers";
  *          ramp's 93–94% tier, so drain-vs-bloom and drain-vs-scenery are carried by hue
  *          and chroma alone. This is the same weakness the charcoal/gold pair had, and it
  *          is weakest for a colour-blind player. The room to fix it is in BLOOM, not
- *          drain: `COLORS.bluTint` #EEF8FF opens a value gap against both the yellow and
+ *          drain: `COLORS.bluTint` #F0F7FF opens a value gap against both the yellow and
  *          the grey, at the cost of a near-white bubble on the white `.play` panel. That
- *          is a one-token swap on `YELLOW_LIGHT` below.
+ *          is a one-token swap on `BLUE_LIGHT` below.
  *   WON  — tone-3 pinyin, which was "the real constraint on this whole file". Tone 3 is
  *          #779BE7, a light BLUE, and it was nearly invisible on a hue-250 body (1.25:1
  *          on the old drain). On a hue-92 yellow it is separated by hue instead of
@@ -163,21 +185,25 @@ import type { ColorBuffers } from "./useColorBuffers";
  *          the app trains as "mastered" while containing Unfamiliar + Target. Drain no
  *          longer makes that claim; bloom's half-true one is unchanged.
  *
- * `COLORS.yel` and not `COLORS.org`: org (hue 70) IS `CATEGORY_COLORS.Target`, and drain
- * is Unfamiliar + Target — a bubble wearing Target's exact fill would read as a band
- * label rather than as a tier. `yel` exists in the ramp precisely to be a gold that is
- * not Target's orange (see its comment in theme/colors.ts).
+ * ⚠️ v2 REOPENED THE TARGET COLLISION ON DRAIN. This used to read "`yel` and not `org`,
+ * because org IS Target" — but v2 moved Target to yellow (`BAND_HUES.Target = "yel"`,
+ * utils/categoryColors.ts), so drain now wears Target's hue exactly as bloom wears
+ * Mastered's. Both halves are half-true (drain = Unfamiliar + Target, bloom = Comfortable
+ * + Mastered), which is symmetrical rather than wrong — but it is no longer the "gold
+ * that is not a band" this comment used to promise. Flagged for the user; switching is
+ * the one constant below.
  *
  * BOTH RUNGS STILL TAKE BLACK TEXT, which remains the constraint on any replacement: the
  * two tiers must be one object at two settings, and a rung whose glyphs invert to white
  * reads as a different KIND of object. `inkOnFill` derives that automatically, so a
  * future swap cannot strand dark text on a dark body.
  */
-const YELLOW_DRAIN = COLORS.yel;  // #F5E7B4 — drain: harder words, higher cost
-const BLUE_LIGHT = COLORS.blu;    // #D2EBFF — bloom: known words, pays out
+const YELLOW_DRAIN = COLORS.yelM; // --yelM MID tier — drain: harder words, higher cost
+const BLUE_LIGHT = COLORS.bluM;   // --bluM MID tier — bloom: known words, pays out
 
 /**
- * Bubble fills — a FLAT body, border color == body color.
+ * Bubble fills — a FLAT body with the v2 ink ring (a coloured bubble; see the ladder
+ * note above). The history below is from before v2 brought rings back.
  *
  * The bubble is the one place in the app where color is not decoration: the player
  * reads the payout tier straight off it while bubbles are moving (§ 2). The border is
@@ -190,8 +216,8 @@ const BLUE_LIGHT = COLORS.blu;    // #D2EBFF — bloom: known words, pays out
  * than the ring ever carried.)
  */
 const FILL_BY_COLOR: Record<HydraColor, BubbleFill> = {
-    drain: { bg: YELLOW_DRAIN, border: YELLOW_DRAIN },
-    bloom: { bg: BLUE_LIGHT, border: BLUE_LIGHT },
+    drain: { bg: YELLOW_DRAIN, border: COLOURED_BUBBLE_RING },
+    bloom: { bg: BLUE_LIGHT, border: COLOURED_BUBBLE_RING },
 };
 
 /**
@@ -226,7 +252,9 @@ const FILL_BY_COLOR: Record<HydraColor, BubbleFill> = {
  * bloom toward a deeper ochre), not to lighten this bubble back to white — the whole
  * point of the token is that both games' scenery is the same grey.
  */
-const DEFINITION_FILL: BubbleFill = { bg: COLORS.grey, border: COLORS.grey };
+// v2: the neutral `--line2` ring (NEUTRAL_BUBBLE_RING), the same as Bubble Match's
+// meaning bubble — scenery is still scenery in both games.
+const DEFINITION_FILL: BubbleFill = { bg: COLORS.grey, border: NEUTRAL_BUBBLE_RING };
 
 const fillForBody = (body: BubbleBody, color: HydraColor | undefined): BubbleFill =>
     body.kind === "definition" ? DEFINITION_FILL : FILL_BY_COLOR[color ?? "drain"];
@@ -1005,26 +1033,21 @@ const HydraStage: React.FC<HydraStageProps> = ({
 
             The bar is the FILL RATIO, not progress: an endless run has no denominator,
             and fill is the number that actually ends it (LOSE_FILL_RATIO) as well as the
-            one the spawn table is keyed on. It goes red on the danger band, so the bar
-            and the vignette raise the alarm together. */}
+            one the spawn table is keyed on. It is ink in every state (v2 has no red ink);
+            the danger band is raised by the vignette and the squeeze label. */}
         <GameHud className="hydra-stage__hud">
             {squeeze && !dangerDismissed ? (
                 <GameHudLabel
                     className="hydra-stage__squeeze"
-                    // The label names the DRAIN tier, so it takes drain's HUE — but its
-                    // INK (`COLORS.yelA`), not its body fill. The bubbles wear the 94%
-                    // pastel; a pastel is a fill that things sit on, and as text on the
-                    // HUD's own tint it would be a smudge (the palette states this rule
-                    // for every pastel in the app). Same hue, right tier: the warning and
-                    // the bubbles it is about still read as one thing, and this one is
-                    // legible. It was `BLUE_DARK` when drain was a mid-value blue, which
-                    // was the one lightness where a body colour could double as ink.
+                    // Ink, like every HUD fact in v2 (the palette has no per-hue ink
+                    // tier; a pastel as text on the HUD's own tint would be a smudge).
+                    // It was the drain hue's dark ink `yelA` in v1.
                     //
                     // The copy says what the board can now DO, not which tier is
                     // spawning. "drain only" is the internal name (types.ts) and means
                     // nothing to a player; "shrink only" is the same fact stated as the
                     // consequence they are about to live with.
-                    color={COLORS.yelA}
+                    color={COLORS.onSurface}
                 >
                     shrink only
                 </GameHudLabel>
@@ -1035,7 +1058,8 @@ const HydraStage: React.FC<HydraStageProps> = ({
             <GameHudBar
                 className="hydra-stage__fill-bar"
                 fraction={fillBucket}
-                color={danger && !dangerDismissed ? COLORS.dangerInk : COLORS.teaA}
+                // v2 draws every round/fill bar in ink (artboard 16 `.play .hud` bar).
+                color={COLORS.onSurface}
             />
         </GameHud>
         <Box
@@ -1063,8 +1087,8 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     inset: 0,
                     pointerEvents: "none",
                     zIndex: 40,
-                    background:
-                        "radial-gradient(125% 125% at 50% 50%, rgba(244,67,54,0) 18%, rgba(244,67,54,0.45) 48%, rgba(229,57,53,0.78) 76%, rgba(198,40,40,0.95) 100%)",
+                    // Shared with the other bubble stage; the red MARK tier (v2).
+                    background: DANGER_VIGNETTE_BG,
                     opacity: danger && !dangerDismissed ? 1 : 0,
                     transition: "opacity 0.35s ease",
                     animation: danger && !dangerDismissed ? "hydraDangerPulse 0.9s ease-in-out infinite" : "none",
@@ -1122,8 +1146,8 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     // renders ON TOP of the strip while hovering it.
                     zIndex: 5,
                     borderTop: "2px dashed",
-                    borderColor: overCancelZone ? "rgba(244,67,54,0.85)" : "rgba(0,0,0,0.12)",
-                    backgroundColor: overCancelZone ? "rgba(244,67,54,0.06)" : "rgba(0,0,0,0.02)",
+                    borderColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].border,
+                    backgroundColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].bg,
                     transition: "background-color 0.15s ease, border-color 0.15s ease",
                 }}
             >
@@ -1132,7 +1156,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
                     sx={{
                         fontSize: SIZE.body,
                         fontWeight: WEIGHT.bold,
-                        color: overCancelZone ? "#F44336" : "#9a9a9a",
+                        color: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].label,
                         letterSpacing: 0.3,
                     }}
                 >

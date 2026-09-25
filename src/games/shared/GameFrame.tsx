@@ -71,9 +71,8 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
                 margin: "14px",
                 borderRadius: "24px",
                 backgroundColor: COLORS.white,
-                // On the accent ground the app's ink-alpha hairline disappears (it is
-                // 10% ink over a 52%-lightness colour); the design switches to a white
-                // alpha there, which reads as a lit edge on the panel instead.
+                // On the accent ground the 10% `--line` hairline is too faint against a
+                // coloured ground; the design steps it up to `--line2`.
                 border: `1px solid ${hue ? ON_ACCENT_LINE : COLORS.rowBorder}`,
                 overflow: "hidden",
                 display: "flex",
@@ -133,10 +132,11 @@ export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, clas
             // from the pastel to a ~97% tint and none the other way, so the tint is
             // what the design is converging on — and it is the only one of the two that
             // leaves the strip legibly lighter than a pastel-filled widget sitting in
-            // it. The hairline under it becomes the hue's INK: on a tinted strip the
-            // ink-alpha hairline is too faint to close the shape.
+            // it. The hairline under it is full INK (`#bm .play .hud{border-bottom:1px
+            // solid var(--ink)}`): on a tinted strip the ink-alpha hairline is too
+            // faint to close the shape.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
-            borderBottom: divider ? `1px solid ${hue ? RAMP[hue].ink : COLORS.rowBorder}` : "none",
+            borderBottom: divider ? `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}` : "none",
         }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
         {children}
@@ -249,7 +249,7 @@ export interface GameTimerProps {
     value: React.ReactNode;
     /** Track fill, 0…1. Clamped here, because a deadline clock can overshoot a tick past zero. */
     fraction: number;
-    /** Fill colour of the track. Defaults to the ink ramp; pass a hue's ink to signal urgency. */
+    /** Fill colour of the track. Defaults to ink, which is also what v2 draws for urgency. */
     fillColor?: string;
     /** Colour of the numerals. Defaults to the primary ink. */
     valueColor?: string;
@@ -298,7 +298,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             // Same tinted ground and same accent hairline as the HUD strip — the two
             // stack on one panel and have to read as one band of chrome.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
-            borderBottom: `1px solid ${hue ? RAMP[hue].ink : COLORS.rowBorder}`,
+            borderBottom: `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}`,
             opacity: dimmed ? 0.35 : 1,
             transition: "opacity 200ms linear",
         }}
@@ -362,9 +362,9 @@ export interface GameCenteredProps {
  * Extracted from four byte-identical `renderCentered` helpers (Bubble Match, Hydra,
  * Match Speed, Word Search) which had drifted only in their class name. It is here
  * rather than in each page because it is the one shape that replaces the panel, and
- * because the accent ground gives it a second job: text drawn straight onto a
- * 52%-lightness ground has to be WHITE, and a page that forgot would ship black-on-
- * accent. Children inherit the colour, so a message inside this must NOT set its own.
+ * because the accent ground gives it a second job: text drawn straight onto the
+ * ground takes ON_ACCENT_INK (ink since v2; white on v1's dark ground). Children
+ * inherit the colour, so a message inside this must NOT set its own.
  */
 export const GameCentered: React.FC<GameCenteredProps> = ({ children, className }) => {
     const hue = useGameSurfaceHue();

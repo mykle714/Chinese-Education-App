@@ -1,3 +1,4 @@
+import { alpha } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, CircularProgress, IconButton, Snackbar, Typography } from '@mui/material';
@@ -25,6 +26,7 @@ import IWSpeechBubbles from './IWSpeechBubbles';
 import { fetchKnownWords, loadPlayableScene } from './iwPlayApi';
 import { interactivePlaces } from './iwSceneActors';
 import { useIWSceneRuntime } from './useIWSceneRuntime';
+import { COLORS } from '../../../theme/colors';
 
 /**
  * IWPlayPage — `/immersive-world/:sceneId`. One stall you can talk to (§ 12 phase 2).
@@ -177,11 +179,10 @@ export default function IWPlayPage() {
   // transition the composer teleports to its final position while the keyboard is
   // still sliding up behind it — two events instead of one.
   //
-  // ⚠️ EITHER KEYBOARD, not just ours. The learner reaches the OS keyboard two ways
-  // from this very page — the `ABC` key, and the composer's dictionary tray, which
-  // is `data-beginner-keyboard="off"` precisely so it raises a latin keyboard — and
-  // on both the beginner inset is 0. Reserving off that alone left the OS keyboard
-  // covering the bottom of the scene with nothing moving out of its way.
+  // ⚠️ EITHER KEYBOARD, not just ours. A Spanish learner only ever gets the OS
+  // keyboard (the handwriting one is zh-only), and there the beginner inset is 0.
+  // Reserving off that alone left the OS keyboard covering the bottom of the scene
+  // with nothing moving out of its way.
   const keyboardInset = useKeyboardInset();
   const keyboardTransition = useKeyboardTransition('padding-bottom');
 
@@ -208,13 +209,14 @@ export default function IWPlayPage() {
       // keyboard's own curve so the two move as one surface (§ 6z).
       //
       // ⚠️ THIS IS ALSO WHAT KEEPS THE SCENE CENTRED. `IWSceneStage` draws the
-      // board at the CENTRE of its canvas, so the world point under the centre is
-      // `-pan / zoom` — independent of the canvas size. Shrinking the box (and
-      // letting the stage's ResizeObserver hand the new size to Pixi) therefore
-      // re-centres the scene inside what is left of the viewport on its own, with
-      // no pan correction to apply, unwind, or get wrong. Do not "fix" a
-      // keyboard-time camera offset anywhere else: if the scene drifts behind the
-      // keyboard, this padding or that observer is what stopped working.
+      // board at the CENTRE of its canvas, so shrinking the box (and letting the
+      // stage's ResizeObserver hand the new size to Pixi) re-centres the scene
+      // inside what is left of the viewport on its own. The reverse — the box
+      // growing back when the keyboard closes — is deliberately NOT a shift: the
+      // stage cancels it with a pan correction (its renderer `resize` handler), so
+      // the scene moves when a keyboard appears and holds still when it leaves.
+      // If the scene drifts behind the keyboard, this padding or that observer is
+      // what stopped working.
       contentSx={{
         p: 0,
         position: 'relative',
@@ -238,12 +240,9 @@ export default function IWPlayPage() {
             through `useTTS`, so muting on entering a quiet room is as time-sensitive here as
             it is on the flp, and it should not cost a trip to /settings.
 
-            ⚠️ It is NOT the composer's `IWVolumeChip`, despite both being `HeaderCycleChip`s
-            with volume glyphs. This one is the PHONE's output route (off/passthrough/media,
-            persisted app-wide); that one is how loudly the PLAYER speaks inside the scene
-            (whisper/say/shout, per-utterance). They sit on different rows — this in the
-            header, that in the writing bar — precisely so the two are never read as one
-            control with two copies.
+            This is the PHONE's output route (off/passthrough/media, persisted app-wide). The
+            composer used to carry a second volume-glyph chip for how loudly the PLAYER spoke
+            (whisper/say/shout); it was removed with § 4c on 2026-09-23.
           */}
           <AudioModeChip className="iw-play-page__audio-chip" />
         </>
@@ -302,7 +301,7 @@ export default function IWPlayPage() {
             sx={{
               position: 'absolute', inset: 0, zIndex: 5,
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 1, p: 3, bgcolor: 'rgba(0,0,0,0.72)',
+              gap: 1, p: 3, bgcolor: alpha(COLORS.onSurface, 0.72),
             }}
           >
             {popupUrl
@@ -320,9 +319,9 @@ export default function IWPlayPage() {
       {scene && (
         <IWComposer
           language={scene.language}
-          disabled={runtime.sending || runtime.frozen}
-          sending={runtime.sending}
+          floor={runtime.floor}
           onSend={runtime.say}
+          onContinue={runtime.continueLine}
         />
       )}
 

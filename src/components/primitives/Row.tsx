@@ -38,7 +38,7 @@ export interface RowProps {
      * avatar (the Account profile row's tappable picker) owns the whole slot.
      */
     avatar?: React.ReactNode;
-    /** Ramp hue for the avatar's pastel fill + glyph ink. Defaults to the neutral grey pair. */
+    /** Ramp hue for the avatar's MID fill (the glyph is always ink). Defaults to the neutral grey pair. */
     hue?: RampHue;
     title: React.ReactNode;
     /** Second line. Truncates with an ellipsis — it is a single line by design. */
@@ -101,7 +101,10 @@ export const Row: React.FC<RowProps> = ({
     className,
     sx,
 }) => {
-    const { fill, ink } = RAMP[hue];
+    // v2: avatars are the hue's MID tier ("Mid: … avatars", artboards 5 and 8) and the
+    // glyph on them is ink — there is no per-hue ink tier any more.
+    const fill = RAMP[hue].mid;
+    const ink = COLORS.onSurface;
     // `sx` here is always a plain object literal from `rowLinkProps`, never MUI's
     // array/callback form — typing it as such keeps it spreadable below.
     const { sx: linkSx, ...link } = rowLinkProps(to, state, onClick) as {

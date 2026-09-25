@@ -3,7 +3,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import InfoTip from "./InfoTip";
 import { StatCard } from "./primitives";
 import { CATEGORY_BOUNDARIES } from "../../server/contracts/mastery";
-import { getBandInk } from "../utils/categoryColors";
+import { getBandMid } from "../utils/categoryColors";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 
@@ -37,9 +37,11 @@ import { FONTS } from "../theme/fonts";
  * on both hosts. The slot renders inside a `<p>`, which is why every node here is a
  * `span`: a `div` in there is invalid HTML and React says so at runtime.
  *
- * Each term takes its DESTINATION band's ink (`getBandInk`) — the same four hues the
- * shelf, the band chips and the mini-card pips use — so "cards that reached Mastered"
- * is the blue figure on every surface in the app.
+ * Each term's figure sits on its DESTINATION band's MID-tier highlighter pill
+ * (`getBandMid`) — the same four hues the shelf, the band pills and the mastery cells
+ * use — so "cards that reached Mastered" is the blue figure on every surface in the
+ * app. v2 has no per-hue ink for the figure itself, so the hue moved from the TEXT to a
+ * highlighter behind it (the design's `mark{background:var(--orgK);border-radius:999px}`).
  *
  * Rendered by: `src/pages/AccountPage.tsx` (the signed-in user's own, page-wide) and
  * `src/features/profile/ProfileStatsCard.tsx` (one per language, inside a panel that
@@ -117,8 +119,12 @@ const VelocityEquation: React.FC<{ counts: number[] }> = ({ counts }) => (
                         fontSize: 17,
                         fontWeight: 600,
                         letterSpacing: "-0.01em",
-                        // The band the cards ARRIVED in — the one the learner earned.
-                        color: getBandInk(boundary.to),
+                        // The band the cards ARRIVED in — the one the learner earned —
+                        // as a highlighter pill behind ink figures.
+                        color: COLORS.onSurface,
+                        backgroundColor: getBandMid(boundary.to),
+                        borderRadius: "999px",
+                        padding: "1px 6px",
                     }}
                 >
                     {counts[i]}

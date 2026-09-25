@@ -20,6 +20,7 @@ import {
     FOREIGN_CARD_BG,
     POP_DURATION_MS,
     SELECTED_CARD_BG,
+    SELECTED_CARD_BORDER,
     WRONG_CARD_BG,
     WRONG_CARD_INK,
     WRONG_FEEDBACK_MS,
@@ -121,9 +122,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     );
 
     // Resting surface per column. The two columns are told apart by TYPE, not colour
-    // (see the palette note in constants.ts): the foreign column is cjk 19/700 on the
-    // paper ground, the english column sans 13/500 on white. Every fill below is
-    // therefore free to mean state and nothing else.
+    // (see the palette note in constants.ts): the foreign column is cjk 19/700, the
+    // english column sans 13/500, both on white (v2). Every fill below is therefore
+    // free to mean state and nothing else.
     // Annotated `string` on purpose: COLORS is `as const`, so inference would pin
     // each of these to the literal hex it was initialised with.
     let background: string = isForeign ? FOREIGN_CARD_BG : ENGLISH_CARD_BG;
@@ -143,9 +144,10 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
         background = CORRECT_CARD_BG;
         borderColor = CORRECT_CARD_BG;
     } else if (state === "selected") {
-        // `.msc.pick` — the design fills the selected card rather than outlining it.
+        // `.msc.pick` — the design fills the selected card AND gives it a 2px ink edge
+        // (v2). The second pixel is the inset ring below, not a wider border.
         background = SELECTED_CARD_BG;
-        borderColor = SELECTED_CARD_BG;
+        borderColor = SELECTED_CARD_BORDER;
         textColor = fc.onSurface;
     }
 
@@ -234,6 +236,10 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 borderRadius: "14px",
                 backgroundColor: background,
                 border: `1px solid ${borderColor}`,
+                // The selected card's second pixel of ink edge (`.msc.pick` is 2px). An
+                // inset shadow, so the border box — and the gloss's wrap — never moves.
+                // Dropped while exiting: the pop is green, not a pick.
+                boxShadow: state === "selected" && !card.exiting ? `inset 0 0 0 1px ${SELECTED_CARD_BORDER}` : "none",
                 color: textColor,
                 cursor: "pointer",
                 overflow: "hidden",

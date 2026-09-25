@@ -46,6 +46,10 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
   // Completed strokes (source of truth). Current in-progress stroke is separate.
   const inkRef = useRef<Ink>(initialInk ? initialInk.map((s) => ({ ...s })) : []);
   const currentRef = useRef<Stroke | null>(null);
+  // Strokes taken off by `undo`, most recent last. Only `redo` reads it; a new
+  // stroke or a `clear` empties it, because replaying an undone stroke on top of
+  // different ink would resurrect a stroke out of its drawing order.
+  const redoRef = useRef<Ink>([]);
   // Stable refs for values the (mount-only) effect's draw helpers need to read live.
   const disabledRef = useRef(disabled);
   const blockedAttemptRef = useRef(onBlockedAttempt);
@@ -61,6 +65,7 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
     (): WritingCanvasHandle => ({
       clear: () => {
         inkRef.current = [];
+        redoRef.current = [];
         currentRef.current = null;
         redrawAll();
         notifyChange();
@@ -68,11 +73,22 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
       undo: () => {
         // Drop the last completed stroke (LIFO — reverse of draw order).
         if (inkRef.current.length === 0) return;
+        redoRef.current = [...redoRef.current, inkRef.current[inkRef.current.length - 1]];
         inkRef.current = inkRef.current.slice(0, -1);
         currentRef.current = null;
         redrawAll();
         notifyChange();
       },
+      redo: () => {
+        if (redoRef.current.length === 0) return;
+        const stroke = redoRef.current[redoRef.current.length - 1];
+        redoRef.current = redoRef.current.slice(0, -1);
+        inkRef.current = [...inkRef.current, stroke];
+        currentRef.current = null;
+        redrawAll();
+        notifyChange();
+      },
+      canRedo: () => redoRef.current.length > 0,
       getInk: () => inkRef.current,
       isEmpty: () => inkRef.current.length === 0,
     }),
@@ -163,6 +179,8 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
       e.stopPropagation();
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
       inkRef.current = [...inkRef.current, stroke];
+      // A fresh stroke forks the history: whatever was undone is no longer "next".
+      redoRef.current = [];
       currentRef.current = null;
       redrawAll();
       notifyChange();

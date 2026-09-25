@@ -11,8 +11,8 @@
  * ⚠️ WHY THE OS KEYBOARD NEEDED ITS OWN ANSWER
  *
  * `useBeginnerKeyboardInset` reports OUR surface, and it is correct — but it is
- * zero on a field marked `data-beginner-keyboard="off"` (the immersive world's
- * dictionary tray is exactly that), where the keyboard declines to mount at all
+ * zero on a field marked `data-beginner-keyboard="off"`, or for a learner the
+ * keyboard does not serve (Spanish), where the keyboard declines to mount at all
  * and the plain OS keyboard covers the same pinned controls our own keyboard was
  * carefully moved above. `useKeyboardViewport` already measures where the OS
  * keyboard is (it has to, to size our surface to match); this just publishes that

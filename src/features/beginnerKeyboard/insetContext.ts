@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY PAGES OPT IN RATHER THAN THE KEYBOARD PUSHING THEM
  *
- * The keyboard is portaled into the app's overlay host (`nearestOverlayHost`), so
+ * The keyboard is portaled into the frame-level overlay host (`frameOverlayHost`), so
  * it is not in any page's layout flow and cannot shrink one by existing. That is
  * deliberate: most pages SCROLL, and a scrolling page handles an occluded bottom
  * correctly on its own — the caret is scrolled into view and nothing is lost.

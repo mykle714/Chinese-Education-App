@@ -34,6 +34,7 @@ import AudioModeChip from "../../components/AudioModeChip";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS } from "../../theme/colors";
+import { BAND_COLORS } from "../../utils/categoryColors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import { SHADOW } from "../../theme/shadows";
@@ -205,8 +206,8 @@ const Bucket = styled(Box)<{ mainColor: string; accentColor: string; highlight?:
         padding: 8,
         backgroundColor: mainColor,
         borderRadius: 12,
-        // The ramp's ring in addition to the drop shadow: post-redesign `mainColor` is a
-        // pastel (~1.15:1 on paper) AND this tile renders at 0.23 opacity when it is not
+        // The ramp's ring in addition to the drop shadow: `mainColor` is a pale band MID
+        // (~1.2:1 on paper) AND this tile renders at 0.23 opacity when it is not
         // the active drop target, so without an edge it disappears entirely.
         // ⚠️ Even with the ring, 0.23 may now be too faint — check on a device.
         boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}, ${SHADOW.raised}`,
@@ -258,7 +259,7 @@ const OnDeckSection = styled(Box)({
     // Rounded top corners on a plain white slab.
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    background: "#FFFFFF",
+    background: COLORS.white,
     // A hairline highlight along the very top edge + a broad shadow cast downward sell
     // the "platform floating above the page" depth cue.
     boxShadow: [
@@ -379,11 +380,11 @@ const SortTallyCorner = styled(Box)<{ side: "left" | "right" }>(({ side }) => ({
     pointerEvents: "none", // purely informational — never intercepts a drag
 }));
 
-// The number, tinted with its bucket's SEMANTIC INK. The bucket TILES fill with the
-// matching utcm pastels (COLORS.redMain === CATEGORY_COLORS.Unfamiliar,
-// COLORS.blueMain === CATEGORY_COLORS.Mastered), so the tally, the drop buckets and
-// the decks page still speak one color language for the same two states — the tally
-// just uses the readable member of the pair, since it is text on paper.
+// The number, in its bucket's SEMANTIC ink name (dangerInk / infoInk — both `--ink` in
+// v2, kept for intent). The bucket TILES fill with the matching band's tile pair
+// (BAND_COLORS.Unfamiliar / .Mastered), so the drop buckets and the Account shelf
+// speak one colour language for the same two states; the tally is text on paper, and
+// text is always ink.
 const SortTallyValue = styled(Typography)({
     fontSize: SIZE.caption,
     fontWeight: WEIGHT.bold,
@@ -723,8 +724,11 @@ const SortCardsPage: React.FC = () => {
     const bucketRectsRef = useRef<Map<string, DOMRect>>(new Map());
 
     const buckets = useMemo<BucketZone[]>(() => [
-        { id: "library", label: "Add to\nLearn Now", mainColor: COLORS.redMain, accentColor: COLORS.redAccent },
-        { id: "already-learned", label: "Already Learned", mainColor: COLORS.blueMain, accentColor: COLORS.blueAccent },
+        // Band-coloured through BAND_COLORS (the tile pair: MID body + TINT inner), never
+        // hand-picked hexes: a card added to Learn Now enters the Unfamiliar band and an
+        // "already learned" card enters Mastered, so each bucket wears the band it feeds.
+        { id: "library", label: "Add to\nLearn Now", mainColor: BAND_COLORS.Unfamiliar.main, accentColor: BAND_COLORS.Unfamiliar.accent },
+        { id: "already-learned", label: "Already Learned", mainColor: BAND_COLORS.Mastered.main, accentColor: BAND_COLORS.Mastered.accent },
     ], []);
 
     // Pack queue: (re)fetched on mount AND whenever the level dropdown changes — a
@@ -1296,7 +1300,7 @@ const SortCardsPage: React.FC = () => {
                         size="small"
                         onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
                         sx={{
-                            backgroundColor: COLORS.infoInk, color: "white", fontSize: SIZE.micro, fontWeight: WEIGHT.bold,
+                            backgroundColor: COLORS.infoInk, color: COLORS.white, fontSize: SIZE.micro, fontWeight: WEIGHT.bold,
                             letterSpacing: TRACKING.caps, cursor: "pointer",
                         }}
                     />

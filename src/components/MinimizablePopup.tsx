@@ -1,8 +1,10 @@
+import { alpha } from "@mui/material/styles";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Box, IconButton, useTheme } from "@mui/material";
 import CloseFullscreenRoundedIcon from "@mui/icons-material/CloseFullscreenRounded";
 import OpenInFullRoundedIcon from "@mui/icons-material/OpenInFullRounded";
 import { SHADOW } from "../theme/shadows";
+import { COLORS } from "../theme/colors";
 
 // Resting visual constants for the minimized "tiny square" puck. Measured in
 // px so the collapse transform can land the card exactly on top of the square.
@@ -82,7 +84,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     accentContrast,
     positioning = "absolute",
     zIndex = 200,
-    scrimColor = "rgba(20, 20, 28, 0.32)",
+    scrimColor = COLORS.scrim,
     children,
 }) => {
     const theme = useTheme();
@@ -155,7 +157,8 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                 // When collapsed the scrim clears away so only the puck reads —
                 // and stops intercepting clicks meant for the puck behind it.
                 ...(minimized && {
-                    backgroundColor: "rgba(20, 20, 28, 0)",
+                    // The scrim's own ink at zero alpha, so the fade does not pass through grey.
+                    backgroundColor: alpha(COLORS.onSurface, 0),
                     pointerEvents: "none",
                 }),
             }}
@@ -202,7 +205,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                             // the shrink reads as heading for the puck it lands on.
                             ...(corner === "top-left" ? { left: 8 } : { right: 8 }),
                             color: puckColor ? puckBg : fc.textSecondary,
-                            "&:hover": { backgroundColor: "rgba(0,0,0,0.06)" },
+                            "&:hover": { backgroundColor: COLORS.rowHoverBg },
                         }}
                     >
                         <CloseFullscreenRoundedIcon fontSize="small" />

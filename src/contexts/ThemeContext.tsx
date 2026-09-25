@@ -260,6 +260,10 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     // the `COLORS.dangerInk` border and heading of the section they sit in —
                     // two reds on one modal. One token, so red means one thing.
                     error: { main: COLORS.dangerInk },
+                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
+                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
+                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
+                    success: { main: COLORS.successInk },
                     primary: {
                         main: '#90caf9',
                         light: '#bbdefb',
@@ -313,6 +317,10 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     // the `COLORS.dangerInk` border and heading of the section they sit in —
                     // two reds on one modal. One token, so red means one thing.
                     error: { main: COLORS.dangerInk },
+                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
+                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
+                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
+                    success: { main: COLORS.successInk },
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',
@@ -366,6 +374,10 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     // the `COLORS.dangerInk` border and heading of the section they sit in —
                     // two reds on one modal. One token, so red means one thing.
                     error: { main: COLORS.dangerInk },
+                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
+                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
+                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
+                    success: { main: COLORS.successInk },
                     primary: {
                         main: '#2e7d32',
                         light: '#4caf50',
@@ -420,6 +432,10 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                     // the `COLORS.dangerInk` border and heading of the section they sit in —
                     // two reds on one modal. One token, so red means one thing.
                     error: { main: COLORS.dangerInk },
+                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
+                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
+                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
+                    success: { main: COLORS.successInk },
                     primary: {
                         main: '#1976d2',
                         light: '#42a5f5',

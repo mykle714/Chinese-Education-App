@@ -6,10 +6,11 @@
  * and these are the parts most worth pinning: what a tap means, and which of the
  * two candidate sources is live.
  *
- * Spec: docs/BEGINNER_KEYBOARD.md § 6r (modality, commit semantics), § 6n, § 6x.
+ * Spec: docs/BEGINNER_KEYBOARD.md § 6r (modality, commit semantics), § 6n, § 6x,
+ * § 6z-4 (hint bubbles).
  */
 import type { GlyphCandidate } from '../../components/handwriting/glyphMatcher';
-import type { LookupCandidate } from '../../components/handwriting/glyphLookup';
+import type { HintCharacter, LookupCandidate } from '../../components/handwriting/glyphLookup';
 
 export type CandidateMode = 'glyph' | 'result';
 
@@ -23,6 +24,45 @@ export interface Candidate {
   action: 'append' | 'commit';
   /** True for a § 6q word-fallback result, which the row may want to mark. */
   isWord: boolean;
+  /**
+   * § 6z-4: a common character this glyph, added to the buffer, is on track to
+   * spell. Present only on GLYPH-mode chips, and only while the buffer is
+   * non-empty; the row paints it as a tappable bubble over the chip.
+   */
+  hint?: HintCharacter;
+}
+
+/**
+ * § 6z-4 — attach a hint bubble to each glyph chip.
+ *
+ * The gate is the spec's: ink on the canvas (the caller only passes glyph
+ * candidates) AND at least one component already locked into the buffer. With an
+ * empty buffer a single drawn glyph says too little about the target for a
+ * suggestion to be anything but noise.
+ *
+ * `findHint` is injected, like `expand` in `bufferAfterSelect`, so the rule stays
+ * testable without loading the binary index.
+ */
+export function withHints(
+  candidates: readonly Candidate[],
+  buffer: readonly string[],
+  findHint: (buffer: readonly string[], glyph: string) => HintCharacter | null,
+): Candidate[] {
+  if (buffer.length === 0) return [...candidates];
+  return candidates.map((candidate) => {
+    const hint = findHint(buffer, candidate.text);
+    return hint ? { ...candidate, hint } : candidate;
+  });
+}
+
+/**
+ * § 6z-4 — what tapping a hint bubble does: COMMIT the hinted character, exactly
+ * as tapping its chip in the result row would. It goes through the same
+ * `selectCandidate` path, so the § 6r rule that a commit clears buffer and ink
+ * applies unchanged.
+ */
+export function hintCommit(hint: HintCharacter): Candidate {
+  return { text: hint.text, action: 'commit', isWord: false };
 }
 
 /**

@@ -6,9 +6,9 @@
  * through `cycleChipWidthCh` to be measured, so callers import them directly, and a
  * file that exports both components and helpers loses fast refresh.
  *
- * Used by: PageHeader.tsx (HeaderCycleChip), AudioModeChip.tsx,
- * src/features/immersiveworld/play/IWVolumeChip.tsx.
- * Documented in: docs/AUDIO_PLAYBACK.md, docs/IMMERSIVE_WORLD.md § 9a.
+ * Used by: PageHeader.tsx (HeaderCycleChip), AudioModeChip.tsx. (The immersive-world
+ * volume chip was the other caller until § 4c was withdrawn, 2026-09-23.)
+ * Documented in: docs/AUDIO_PLAYBACK.md.
  */
 
 /** The chip's full label size, in px. Small already — it is a header control. */
@@ -18,8 +18,8 @@ export const CYCLE_CHIP_FONT_PX = 10;
  * How many characters a label may run to before the chip starts shrinking its type.
  *
  * A cycling chip is as wide as its LONGEST label in every state, so one long word
- * sizes the whole control — `whisper` sizes the volume chip and `default` sizes the
- * audio chip, even while the eye is on `say` or `mute`. Rather than abbreviate the
+ * sizes the whole control — `default` sizes the audio chip, even while the eye is
+ * on `mute`. Rather than abbreviate the
  * long word (which the AUDIO_PLAYBACK.md § "labels" rule forbids: a label must be a
  * word the learner sees elsewhere in the app), the chip renders just that word a
  * little smaller and keeps the width the short ones want.

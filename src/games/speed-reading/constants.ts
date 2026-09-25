@@ -1,6 +1,6 @@
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
-import type { RampHue } from "../../theme/colors";
+import { COLORS, type RampHue } from "../../theme/colors";
 
 /** `wins` table key, shared with the Games hub's badge. */
 export const GAME_KEY = "speedReading";
@@ -119,14 +119,23 @@ export const TOPUP_BATCH = 5;
  * and only one half of the two ever lights, so the total colour on screen is
  * comparable to what the two cards used to produce.
  */
-export const ZONE_TINT_CORRECT = "rgba(5, 199, 147, 0.14)";
-export const ZONE_TINT_WRONG = "rgba(239, 71, 111, 0.14)";
+/*
+ * v2: the MID tier of green / red (artboard 15 caption "Mid: picked word" — the tapped
+ * half IS this app's picked word, since the option cards were removed). The same two
+ * tokens fill the HUD's round ticks (SpeedReadingRoundTicks), so the flash and the tick
+ * that lands a beat later are literally one colour. They were off-palette 14% washes of
+ * the old tone-2 green / tone-1 red.
+ */
+export const ZONE_TINT_CORRECT = COLORS.grnM;
+export const ZONE_TINT_WRONG = COLORS.redM;
 /**
  * Hairline down the middle, so the two halves read as two targets before the
  * player has tapped either. Deliberately fainter than `COLORS.border` — it is a
  * seam, not a frame.
  */
-export const ZONE_DIVIDER = "rgba(255, 255, 255, 0.08)";
+// `--line` (ink 0.10). It was a white 8% alpha, which on v2's white play panel drew
+// nothing at all.
+export const ZONE_DIVIDER = COLORS.rowBorder;
 /** Horizontal breathing room around one option word, px, per side. */
 export const OPTION_WORD_PADDING_X_PX = 12;
 /**
@@ -216,6 +225,9 @@ export const MEDAL_LABEL: Record<Exclude<Medal, null>, string> = {
  *
  * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
  * the registry reads this, and the page passes it to `gameSurfaceSx` /
- * `GameSurfaceProvider`. Tapping a blu row must open a blu screen.
+ * `GameSurfaceProvider`. Tapping a yellow row must open a yellow screen.
+ *
+ * Yellow since v2 (artboard 15, `#spr` on `--yelK`); it was blue until the hub hues
+ * were brought in line with the artboards.
  */
-export const GAME_HUE: RampHue = "blu";
+export const GAME_HUE: RampHue = "yel";

@@ -139,7 +139,8 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                 border: highlighted
                     ? "1px solid transparent"
                     : `1px solid ${COLORS.rowBorder}`,
-                backgroundColor: highlighted ? RAMP.org.fill : COLORS.white,
+                // Artboard 8's own row: `background:var(--orgM)` (the org MID tier).
+                backgroundColor: highlighted ? RAMP.org.mid : COLORS.white,
                 p: "11px 13px",
             }}
         >

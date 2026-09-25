@@ -135,9 +135,23 @@ export const HINT_COST = 1;
  * gloss in the word list, so the two would pair up. The word list no longer has a
  * hinted state (the reveal names the word outright — see docs/WORD_SEARCH_GAME.md
  * §3), and the redesign has a palette member for exactly this job, so the constant
- * is now an alias for `COLORS.warnInk` (--orgA) rather than its own hue.
+ * is now an alias for `COLORS.warnInk` rather than its own hue.
+ *
+ * v2: `warnInk` is plain INK now (the palette removed every per-hue ink), so this no
+ * longer tints anything — text can only be ink. Where the hint needs to STAND OUT from
+ * neighbouring ink text (the hinted gloss in the word list), it uses HINT_HIGHLIGHT_BG
+ * below instead.
  */
 export const HINT_ACCENT_COLOR = COLORS.warnInk;
+
+/**
+ * The hinted gloss's highlighter fill in the word list — the orange MID tier, the same
+ * fill the board paints the hint's revealed cells with (`.now`/hint reveal in
+ * WordSearchGrid). It replaced a text tint that v2 turned into plain ink, which had
+ * silently erased the hinted state; a fill is v2's only way to mark a word, and using
+ * the board's own hint colour keeps the gloss visibly attached to the cells it names.
+ */
+export const HINT_HIGHLIGHT_BG = COLORS.orgM;
 
 /**
  * Trailing mark on a **No Pinyin** (component) hint island that still has

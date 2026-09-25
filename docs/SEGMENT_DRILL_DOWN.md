@@ -119,7 +119,7 @@ and drill rungs so the two can never disagree:
 | 1 | manual override (`exampleSentenceDefinitionPronunciationOverride`) | manual override |
 | 2 | the tagged cluster's lead gloss (`ddt`) | the tagged cluster's own `reading`, tone-converted and syllable-count-guarded by `senseReading` |
 | 3 | the breakdown's **stored** gloss | the breakdown's stored pinyin |
-| 4 | translation-context match against the flat `definitions` | the entry-level `pronunciation` column |
+| 4 | translation-context match against the flat `definitions` | the entry's **default** sense reading — `resolveDisplayPronunciation` (`server/utils/definitions.ts`): the highest-`frequencyScore` cluster's `reading`, the raw `pronunciation` column only when there are no clusters or the reading is mis-shaped |
 
 Where the **tag** at row 2 comes from depends on the caller: a top-level segment is
 labelled by the example-sentence tagging pass (`senseDict`), a single-character rung by

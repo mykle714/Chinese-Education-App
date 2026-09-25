@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { useMemo } from "react";
 import { Box, Typography, useTheme } from "@mui/material";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
@@ -150,7 +151,7 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
 
     // Rules INSIDE the grouped box take the AI hue; a neutral hairline would cut the
     // orange tint in half.
-    const rule = grouped ? "1px solid rgba(255,158,90,0.35)" : `1px solid ${fc.border}`;
+    const rule = grouped ? `1px solid ${alpha(COLORS.aiGenerated, 0.35)}` : `1px solid ${fc.border}`;
     // The ungrouped block is separated from whatever is above it by a hairline on its
     // FIRST FACT rather than on the container, so a paragraph handed in sits above that
     // line (artboard 20) instead of inside the fenced region (artboard 20b\'s box).

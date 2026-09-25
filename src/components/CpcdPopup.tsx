@@ -3,6 +3,7 @@ import { Box, Popper, Typography } from "@mui/material";
 import type { PopperProps } from "@mui/material";
 import { FONTS } from "../theme/fonts";
 import { SIZE } from "../theme/scale";
+import { COLORS } from "../theme/colors";
 
 /**
  * The small white caption card that floats above a cpcd run.
@@ -89,7 +90,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
             onPointerLeave={onPointerLeave}
             onPointerCancel={onPointerCancel}
             sx={{
-                backgroundColor: "#FFFFFF",
+                backgroundColor: COLORS.white,
                 border: "1px solid",
                 borderColor: "divider",
                 borderRadius: "8px",
@@ -104,7 +105,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
                     gap: 0.5,
                     // Grey the whole card while pressed so a registered tap is obvious.
                     transition: "background-color 100ms ease",
-                    backgroundColor: pressed ? "action.selected" : "#FFFFFF",
+                    backgroundColor: pressed ? "action.selected" : COLORS.white,
                 }),
             }}
         >

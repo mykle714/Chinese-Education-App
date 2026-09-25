@@ -58,7 +58,7 @@ const ApplyDesignButton: React.FC<{
           textTransform: "none",
           fontWeight: WEIGHT.semibold,
           borderRadius: "999px",
-          color: "#fff",
+          color: COLORS.white,
           backgroundColor: COLORS.successInk,
           "&:hover": { backgroundColor: COLORS.successInk, filter: "brightness(0.95)" },
         }}

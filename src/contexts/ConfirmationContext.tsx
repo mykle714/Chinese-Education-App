@@ -9,6 +9,7 @@ import {
     Typography,
     Backdrop
 } from '@mui/material';
+import { COLORS } from '../theme/colors';
 
 // Define the confirmation options interface
 interface ConfirmationOptions {
@@ -106,7 +107,7 @@ export function ConfirmationProvider({ children }: ConfirmationProviderProps) {
                 BackdropComponent={Backdrop}
                 BackdropProps={{
                     sx: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent overlay
+                        backgroundColor: COLORS.modalScrim, // the framework's blocking-modal scrim
                     }
                 }}
                 PaperProps={{

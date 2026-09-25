@@ -244,13 +244,13 @@ HSK levels, and the UI re-adds an HSK badge from them.
 
 ### Users (`server/routes/userRoutes.ts`)
 
-- `GET /api/users` - Get all users
-- `GET /api/users/:id` - Get a specific user by ID
+- `GET /api/users/:id` - Get your OWN user row (self-only — another id is a 403; use `/api/users/:userId/profile` for others)
 - `POST /api/users` - Create a new user (admin)
 - `PUT /api/users/language` - Change the learner's active language
 - `PUT /api/users/avatar` - Set/clear the icons8 avatar
 - `PUT /api/users/goals` - Set the reading/writing mastery-goal flags
 - `PUT /api/users/displaySettings` - Account display preferences (segment spacing)
+- `PUT /api/users/demographics` - Set/clear gender + date of birth (migration 164; null = prefer not to answer)
 - `GET /api/users/me/wins` - This week's badges + lifetime win counts
 - `POST /api/users/me/wins` - Record one game win
 - `GET /api/users/me/velocity` - 7-day utcm band-step rate, per language

@@ -8,7 +8,7 @@
  * up as a failing test with a number to compare, rather than as a keyboard that
  * quietly got worse.
  *
- * Spec: docs/BEGINNER_KEYBOARD.md § 6h, § 6k, § 6n, § 6q.
+ * Spec: docs/BEGINNER_KEYBOARD.md § 6h, § 6k, § 6n, § 6q, § 6z-4.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
@@ -19,6 +19,7 @@ import {
   lookupCharacters,
   lookupWords,
   lookupBuffer,
+  findHintCharacter,
 } from '../components/handwriting/glyphLookup';
 
 const ASSETS = path.resolve(__dirname, '../assets/handwriting');
@@ -258,5 +259,42 @@ describe('lookupBuffer — the fallback trigger', () => {
       return Array.from({ length: index.bagSizes[record] }, (_, k) => index.components[index.bags[start + k]]);
     });
     expect(lookupBuffer(buffer, index, null)).toEqual([]);
+  });
+});
+
+describe('§ 6z-4 hint search', () => {
+  it('carries index v2: the COMMON flag and a reading per character', () => {
+    let common = 0;
+    for (let i = 0; i < index.flags.length; i++) if (index.flags[i] & 2) common++;
+    // Measured on dev 2026-09-24: characters in a zh headword scored 4–5.
+    expect(common).toBe(763);
+    expect(index.readings.length).toBe(index.chars.length);
+    expect(index.readings[index.charIndex.get('是')!]).toBe('shì');
+  });
+
+  it('suggests the character the buffer plus the glyph completes', () => {
+    // The motivating case: 日 locked in, 疋 on the canvas.
+    expect(findHintCharacter(['日'], '疋', index)).toEqual({ text: '是', pronunciation: 'shì', distance: 0 });
+    // The glyph is expanded exactly as a tap would put it in the buffer (§ 6x):
+    // 尔 becomes ⺈ 小, so 亻 + 尔 must reach 你.
+    expect(findHintCharacter(['亻'], '尔', index)?.text).toBe('你');
+    expect(findHintCharacter(['木', '目'], '心', index)?.text).toBe('想');
+  });
+
+  it('suggests a character still in progress, fewest missing parts first', () => {
+    const hint = findHintCharacter(['氵'], '口', index);
+    expect(hint).not.toBeNull();
+    expect(hint!.distance).toBeGreaterThan(0);
+  });
+
+  it('only ever suggests COMMON characters', () => {
+    for (const [buffer, glyph] of [[['日'], '疋'], [['口'], '口'], [['氵'], '口'], [['木'], '木']] as const) {
+      const hint = findHintCharacter(buffer, glyph, index);
+      if (hint) expect(index.flags[index.charIndex.get(hint.text)!] & 2).toBe(2);
+    }
+  });
+
+  it('returns null when no common character contains the pair', () => {
+    expect(findHintCharacter(['龠'], '龠', index)).toBeNull();
   });
 });

@@ -4,9 +4,9 @@ import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
 import { type PageHeaderSize } from "./PageHeader";
-import { FOOTER_HEIGHT, FOOTER_TOTAL_HEIGHT, FOOTER_TOTAL_CLEARANCE } from "./MobileFooter";
+import { FOOTER_TOTAL_HEIGHT, FOOTER_TOTAL_CLEARANCE } from "./MobileFooter";
+import { edgeFadeAboveBand, edgeFadeBelowBand, trackScrollEdgeFade } from "./scrollEdgeFade";
 import { COLORS } from "../theme/colors";
-import { SAFE_BOTTOM } from "../theme/safeArea";
 
 // Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
 // Discover, Home, Account). It encodes two design rules so individual pages don't
@@ -53,13 +53,22 @@ const EDGE_FADE_BOTTOM_BAND = 34;
 // 74 would finish the inset's worth of pixels ABOVE the bar's real top edge, leaving a
 // visible sliver of un-faded content there. A CSS string, so the masks below are
 // template calcs rather than arithmetic. See src/theme/safeArea.ts.
-const EDGE_FADE_BOTTOM_START = `calc(${FOOTER_HEIGHT + EDGE_FADE_BOTTOM_BAND}px + ${SAFE_BOTTOM})`;
+//
+// SCROLL-AWARE: both bands only appear where content is actually cut off. The fade
+// eases the line between SCROLLED content and the wall, so a band on an edge with
+// nothing past it is wrong. At rest, the top band would eat the page header (which
+// lives INSIDE this scroll area). At the end of a list, the bottom band would fade a
+// last row the bar is not covering. Each band's height is the content cut off at that
+// edge, clamped to the band size (`edgeFadeAboveBand` / `edgeFadeBelowBand`, fed by
+// `trackScrollEdgeFade` on ScrollArea). The fully-transparent run under the bar itself
+// stays on unconditionally, because the bar covers it anyway.
+const EDGE_FADE_BOTTOM_START = `calc(${FOOTER_TOTAL_HEIGHT} + ${edgeFadeBelowBand(EDGE_FADE_BOTTOM_BAND)})`;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
 // the top band is dropped so the first rows stay fully opaque (only the bottom
 // fades out behind the floating footer).
-const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${EDGE_FADE_TOP}px, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
-// Bottom band only — no top fade. Also used by the /decks sheet, whose top edge is
-// its own grabber (nothing there should dissolve).
+const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${edgeFadeAboveBand(EDGE_FADE_TOP)}, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
+// Bottom band only — no top fade. Also used by the Mastery Centers page variant of
+// DecksPanelBody, which tracks its own scroller the same way.
 export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
 
 // Positioning context for the footer bar + full-height flex column.
@@ -202,6 +211,9 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
 }) => (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
         <ScrollArea
+            // Feeds the scroll-aware edge-fade bands (see EDGE_FADE_BOTTOM_START).
+            // Harmless on a non-scrollable page: it wears no mask to read the vars.
+            ref={trackScrollEdgeFade}
             className="mobile-tab-screen__scroll"
             scrollable={scrollable}
             topFade={topFade}

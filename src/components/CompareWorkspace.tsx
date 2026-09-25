@@ -9,6 +9,7 @@ import LongDefinitionDisplay from "./LongDefinitionDisplay";
 import { useDictionarySearch } from "../hooks/useDictionarySearch";
 import { useWordComparison } from "../hooks/useWordComparison";
 import { dictionaryEntryToVocabEntry } from "../utils/dictEntryAdapter";
+import { resolveDisplayPronunciation } from "../utils/definitionUtils";
 import type { VocabEntry, DictionaryEntry, Language, LongDefinitionPart } from "../types";
 import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
 import { FONTS } from "../theme/fonts";
@@ -211,7 +212,7 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
                     justifyContent="center"
                     language={entry.language}
                     text={entry.entryKey}
-                    pronunciation={entry.pronunciation}
+                    pronunciation={resolveDisplayPronunciation(entry)}
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                 />

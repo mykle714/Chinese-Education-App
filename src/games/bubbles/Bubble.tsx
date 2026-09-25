@@ -4,6 +4,7 @@ import ForeignText from "../../components/ForeignText";
 import { LentCardBadge } from "../../components/LentCardBadge";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
 import { FONTS } from "../../theme/fonts";
+import { COLORS } from "../../theme/colors";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleFill, BubbleStatus } from "./types";
 import {
@@ -87,8 +88,13 @@ const definitionFontSize = (text: string, radius: number): number => {
  * real constraint on how dark any WORD bubble's fill may go — see the palette note in
  * HydraStage.
  */
-const LIGHT_INK = "#FFFFFF";
-const DARK_INK = "#3a3a3a";
+//
+// v2: both are framework tokens. DARK_INK is `--ink2` (`COLORS.iconColor`, #3C3A42),
+// which replaced the near-identical off-palette `#3a3a3a` (the threshold derivation
+// above holds to within rounding). Every v2 fill is a pale ground, so in practice every
+// bubble now resolves to DARK_INK — the rule stays as a guard against a future dark fill.
+const LIGHT_INK = COLORS.white;
+const DARK_INK = COLORS.iconColor;
 const inkOnFill = (hex: string): string => {
     const h = hex.replace("#", "");
     if (h.length !== 6) return DARK_INK; // non-hex fill (rgba etc.) — assume light body
@@ -222,10 +228,10 @@ const Bubble: React.FC<BubbleProps> = ({
                     borderRadius: "40%",
                     backgroundColor: bg,
                     // ONE ring weight for every bubble in every game, feedback status
-                    // included. The design's `.bub` has no ring at all — its edge comes
-                    // from the inset gloss below — so 2px is a geometry constant, not a
-                    // channel: it keeps a bubble's border box the same size whether its
-                    // border color matches its body (which it now always does) or not.
+                    // included — 2px is a geometry constant, not a channel. The ring's
+                    // COLOUR is the game's: v2 rings a coloured bubble in ink and a
+                    // neutral one in `--line2` (COLOURED_BUBBLE_RING / NEUTRAL_BUBBLE_RING
+                    // in ./constants, artboards 12 and 16).
                     border: `2px solid ${border}`,
                     // `.bub` (docs/SHELF_REDESIGN.md § 12). Three shadows, and each does
                     // a different job: a white inset along the top edge and a dark inset
@@ -285,7 +291,7 @@ const Bubble: React.FC<BubbleProps> = ({
                             // Override the glyph color ONLY on a dark body. Passing
                             // the light-body ink here instead would silently lighten
                             // every word bubble in both games from the theme's primary
-                            // ink (#17161A) to #3a3a3a — the definition text's color,
+                            // ink (#17161A) to `--ink2` — the definition text's color,
                             // which is a different job. undefined = theme default.
                             //
                             // The pinyin overlay is unaffected either way: ForeignText
@@ -372,7 +378,9 @@ const Bubble: React.FC<BubbleProps> = ({
                             // Matches the bubble's own squircle — a circular veil inside
                             // a soft square leaves four unlit corners.
                             borderRadius: "40%",
-                            backgroundColor: "rgba(90,90,90,0.32)",
+                            // `--scrim` (ink at 0.28): the framework's own wash,
+                            // replacing an off-palette `rgba(90,90,90,0.32)` grey.
+                            backgroundColor: COLORS.scrim,
                             pointerEvents: "none",
                         }}
                     />

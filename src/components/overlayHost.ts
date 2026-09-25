@@ -43,6 +43,10 @@
  * hold (`useHideFooter`) for as long as it is up, or the bar sits on top of its action
  * bar — the same 74px of missing buttons, by a different route.
  *
+ * The one overlay that must NOT take a suppression hold is the beginner keyboard: by
+ * design the footer stays put and the keyboard simply covers it. It hosts at the frame
+ * (`frameOverlayHost`) and out-stacks the bar there.
+ *
  * Callers: `SheetPanel` (the flp eip, the decks sheet, scp, both cdps and the compare
  * sheet — `src/components/sheet/SheetPanel.tsx`), `ChallengeSheet` and `SteppedHelpPopup`
  * (Study Challenge). Documented in docs/UX_AND_NAVIGATION.md.
@@ -50,12 +54,26 @@
  * LAYER: shared UI utility. It knows about the phone frame and about stacking
  * contexts, and nothing about any feature.
  */
+/**
+ * The FRAME-level host alone: the positioned phone frame, or `document.body` for an
+ * element outside the frame entirely (e.g. inside an MUI dialog, which portals to body).
+ *
+ * Use this instead of `nearestOverlayHost` when the overlay must paint above the
+ * frame-level chrome (the footer bar) rather than merely above its own page. A host
+ * found inside a transformed page Surface is its own stacking context, so no z-index
+ * inside it can beat the footer; a host here competes with the footer directly.
+ * Caller: `BeginnerKeyboardHost` (docs/BEGINNER_KEYBOARD.md § 7a).
+ */
+export function frameOverlayHost(el: HTMLElement): HTMLElement {
+    // Until 2026-09-13 this first looked for an inner `.mobile-demo-frame__viewport`
+    // box; that box existed only to reserve an unpaintable strip that turned out not to
+    // exist, and is gone.
+    return (el.closest(".mobile-demo-frame") ?? document.body) as HTMLElement;
+}
+
 export function nearestOverlayHost(el: HTMLElement): HTMLElement {
-    // The frame-level host is the positioned phone frame (see the warning above), and
-    // `document.body` for a page outside the frame entirely. Until 2026-09-13 this first
-    // looked for an inner `.mobile-demo-frame__viewport` box; that box existed only to
-    // reserve an unpaintable strip that turned out not to exist, and is gone.
-    const frameHost = (el.closest(".mobile-demo-frame") ?? document.body) as HTMLElement;
+    // The frame-level host is the positioned phone frame (see the warning above).
+    const frameHost = frameOverlayHost(el);
     const frameRect = frameHost.getBoundingClientRect();
     for (let node = el.parentElement; node && node !== frameHost; node = node.parentElement) {
         const cs = getComputedStyle(node);

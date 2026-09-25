@@ -4,6 +4,7 @@ import ForeignText from "../../components/ForeignText";
 import { wordBoxSize, type TouchedSides } from "../../../server/services/memoryMapSpawn";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 import type { WordOutcome } from "./types";
+import { OUTCOME_FILL } from "./constants";
 import { COLORS } from "../../theme/colors";
 import { PIXELS_PER_WORLD_UNIT } from "./constants";
 import { useTapGesture } from "./useTapGesture";
@@ -106,13 +107,6 @@ interface MemoryMapWordProps {
     onTap: (word: MemoryMapWordData) => void;
 }
 
-/** Hue per outcome. Hue ALONE carries the result — no icons, no patterns (Q23). */
-const OUTCOME_COLOR: Record<WordOutcome, string> = {
-    green: COLORS.successInk,
-    orange: COLORS.warnInk,
-    red: COLORS.dangerInk,
-};
-
 const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
     word,
     borders,
@@ -162,7 +156,9 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
 
     // A flash overrides the resting colour so a wrong tap is legible even on a word
     // that already wears one — though in practice only uncoloured words can be hit.
-    const color = flashing ? COLORS.dangerInk : outcome ? OUTCOME_COLOR[outcome] : COLORS.onSurface;
+    // (v2: a fill, not a text colour — see OUTCOME_FILL. The flash takes the red MARK
+    // tier, one step louder than a settled red outcome.)
+    const fill = flashing ? COLORS.redMk : outcome ? OUTCOME_FILL[outcome] : COLORS.background;
 
     // Fences are drawn in a neutral line colour rather than the word's hue: a boundary
     // belongs to BOTH parcels, so colouring it by one of them would make an answered
@@ -218,7 +214,8 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 // scatter of cards — which is the entire reason the boxes are placed
                 // tangent in the first place.
                 //
-                backgroundColor: COLORS.background,
+                // v2: an answered (or flashing) word's parcel takes its outcome fill.
+                backgroundColor: fill,
                 // ── FENCES ───────────────────────────────────────────────────
                 // A line ONLY where this word actually abuts a neighbour. The coastline
                 // stays open to the water, and because both boxes in a pair draw their
@@ -241,10 +238,11 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 pointerEvents: fading ? "none" : "auto",
                 // ── THE ARMED RING ───────────────────────────────────────────
                 // The first tap does not answer; it ARMS the word, and this ring is the
-                // whole affordance for that (§ 3.3a). Deliberately BLUE rather than any
-                // of the three outcome hues: green/orange/red are results, and a word
-                // that is merely selected has no result yet — borrowing one of those
-                // colours would say the answer had already been graded.
+                // whole affordance for that (§ 3.3a). Deliberately INK (`infoInk`,
+                // which v2 made ink; it was blue in v1) rather than any of the three
+                // outcome hues: green/orange/red are results, and a word that is merely
+                // selected has no result yet — borrowing one of those colours would say
+                // the answer had already been graded.
                 //
                 // Outside the box (`0 0 0 Npx`, no inset) so it never covers a shared
                 // fence, and lifted above the neighbours it abuts so half the ring is
@@ -257,8 +255,10 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 "@keyframes memory-map-pulse": {
                     // Glow rather than scale: scaling would make a word overlap the
                     // neighbours it was carefully placed tangent to.
-                    "0%, 100%": { filter: `drop-shadow(0 0 2px ${COLORS.dangerInk})` },
-                    "50%": { filter: `drop-shadow(0 0 12px ${COLORS.dangerInk})` },
+                    // The red MARK tier: a glow is a fill, and `dangerInk` is plain
+                    // ink in v2, which would glow grey-black.
+                    "0%, 100%": { filter: `drop-shadow(0 0 2px ${COLORS.redMk})` },
+                    "50%": { filter: `drop-shadow(0 0 12px ${COLORS.redMk})` },
                 },
             }}
         >
@@ -304,7 +304,7 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                     // The whole point of a reading drill (see the docblock).
                     showPinyin={false}
                     bold
-                    characterColor={color}
+                    characterColor={COLORS.onSurface}
                 />
             </Box>
         </Box>

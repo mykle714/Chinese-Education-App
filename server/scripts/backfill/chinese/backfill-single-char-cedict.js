@@ -21,9 +21,9 @@
  *
  * SOURCE OF TRUTH
  * ---------------
- * The bundled CC-CEDICT dump at server/cedict_ts.u8. The transform chain below is
- * copied VERBATIM from the scripts that produced the existing rows so the output
- * is byte-identical to the live pipeline:
+ * The bundled CC-CEDICT dump at server/cedict_ts.u8. The transform chain (now in
+ * ./lib/cedictPinyin.js) is copied VERBATIM from the scripts that produced the
+ * existing rows so the output is byte-identical to the live pipeline:
  *   - convertPinyinToToneMarks  ← scripts/import-cedict-pg.ts
  *   - fixUColon / extractTones  ← backfill/chinese/backfill-pinyin-ucolon.js
  *   - toNumberedPinyin          ← backfill/chinese/backfill-numbered-pinyin.js
@@ -59,6 +59,9 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 
 import db from '../../../db.js';
 import { initRunLog } from '../run-log.js';
+import {
+  convertPinyinToToneMarks, fixUColon, extractTones, toNumberedPinyin, parseCEDICTLine,
+} from './lib/cedictPinyin.js';
 
 const SCRIPT_VERSION = 1; // bump when this script's logic changes
 const { stampEntries } = initRunLog({ script: 'chinese/backfill-single-char-cedict', version: SCRIPT_VERSION });
@@ -73,112 +76,9 @@ const VERIFY = process.argv.includes('--verify');
 const REFRESH = process.argv.includes('--refresh');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Transform chain — copied verbatim from the existing pipeline scripts.
+// Transform chain — lives in ./lib/cedictPinyin.js (shared with
+// backfill-search-readings.js so both produce byte-identical column forms).
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * import-cedict-pg.ts: numbered pinyin ("nu:3") → tone-marked ("nǚ").
- *
- * DIVERGENCE FROM import-cedict-pg.ts (verified against live rows):
- *   1. The tone mark on an "ou" final belongs on the 'o' (sǒu, not soǔ). The
- *      importer's "last vowel" fallback gets this wrong; we special-case "ou".
- *   2. CEDICT capitalizes proper-noun readings (Jiāo, Tán); the live table is
- *      uniformly lowercase, so callers lowercase rawPinyin before this runs.
- */
-function convertPinyinToToneMarks(pinyinWithNumbers) {
-  const toneMarks = {
-    a: ['a', 'ā', 'á', 'ǎ', 'à'],
-    e: ['e', 'ē', 'é', 'ě', 'è'],
-    i: ['i', 'ī', 'í', 'ǐ', 'ì'],
-    o: ['o', 'ō', 'ó', 'ǒ', 'ò'],
-    u: ['u', 'ū', 'ú', 'ǔ', 'ù'],
-    ü: ['ü', 'ǖ', 'ǘ', 'ǚ', 'ǜ'],
-  };
-  return pinyinWithNumbers
-    .split(' ')
-    .map(syllable => {
-      const match = syllable.match(/^([a-züÜ]+)([1-5])$/i);
-      if (!match) return syllable; // e.g. "nu:3" (has ':') passes through to fixUColon
-      let [, letters, toneStr] = match;
-      const tone = parseInt(toneStr, 10);
-      letters = letters.replace(/v/g, 'ü').replace(/V/g, 'Ü');
-      let vowelIndex = letters.search(/[aeAE]/);
-      if (vowelIndex === -1) {
-        const ouIndex = letters.search(/ou/i); // "ou" final → mark the o
-        if (ouIndex !== -1) {
-          vowelIndex = ouIndex;
-        } else {
-          const vowelMatches = Array.from(letters.matchAll(/[iouüIOUÜ]/g));
-          if (vowelMatches.length > 0) vowelIndex = vowelMatches[vowelMatches.length - 1].index;
-        }
-      }
-      if (vowelIndex !== -1) {
-        const vowel = letters[vowelIndex];
-        const toneMarkedVowel = toneMarks[vowel]?.[tone] || vowel;
-        letters = letters.substring(0, vowelIndex) + toneMarkedVowel + letters.substring(vowelIndex + 1);
-      }
-      return letters;
-    })
-    .join(' ');
-}
-
-/** backfill-pinyin-ucolon.js: CEDICT "u:" ASCII stand-in → proper ü tone marks. */
-const U_COLON_REPLACEMENTS = [
-  ['u:e1', 'üē'], ['u:e2', 'üé'], ['u:e3', 'üě'], ['u:e4', 'üè'],
-  ['u:1', 'ǖ'], ['u:2', 'ǘ'], ['u:3', 'ǚ'], ['u:4', 'ǜ'], ['u:5', 'ü'],
-];
-function fixUColon(pronunciation) {
-  let result = pronunciation;
-  for (const [from, to] of U_COLON_REPLACEMENTS) result = result.replaceAll(from, to);
-  return result;
-}
-
-const TONE_MARK_MAP = {
-  ā: 1, á: 2, ǎ: 3, à: 4, ē: 1, é: 2, ě: 3, è: 4, ī: 1, í: 2, ǐ: 3, ì: 4,
-  ō: 1, ó: 2, ǒ: 3, ò: 4, ū: 1, ú: 2, ǔ: 3, ù: 4, ǖ: 1, ǘ: 2, ǚ: 3, ǜ: 4,
-};
-/** backfill-pinyin-ucolon.js: per-syllable tone digits, neutral = 0. */
-function extractTones(pronunciation) {
-  return pronunciation
-    .split(' ')
-    .map(syllable => {
-      for (const char of syllable) if (TONE_MARK_MAP[char] !== undefined) return TONE_MARK_MAP[char];
-      return 0;
-    })
-    .join('');
-}
-
-/** backfill-numbered-pinyin.js: tone-marked pronunciation → numbered pinyin (ü→v). */
-const DIACRITIC_MAP = {
-  ā: ['a', 1], á: ['a', 2], ǎ: ['a', 3], à: ['a', 4],
-  ē: ['e', 1], é: ['e', 2], ě: ['e', 3], è: ['e', 4],
-  ī: ['i', 1], í: ['i', 2], ǐ: ['i', 3], ì: ['i', 4],
-  ō: ['o', 1], ó: ['o', 2], ǒ: ['o', 3], ò: ['o', 4],
-  ū: ['u', 1], ú: ['u', 2], ǔ: ['u', 3], ù: ['u', 4],
-  ǖ: ['v', 1], ǘ: ['v', 2], ǚ: ['v', 3], ǜ: ['v', 4],
-};
-function toNumberedPinyin(pronunciation) {
-  return pronunciation
-    .split(' ')
-    .map(syllable => {
-      let result = '';
-      let tone = null;
-      for (const char of syllable) {
-        if (DIACRITIC_MAP[char]) {
-          const [base, toneNum] = DIACRITIC_MAP[char];
-          result += base;
-          tone = toneNum;
-        } else if (char === 'ü') {
-          result += 'v';
-        } else {
-          result += char;
-        }
-      }
-      if (tone !== null) result += tone;
-      return result;
-    })
-    .join(' ');
-}
 
 /** backfill-split-semicolon-definitions.js: split "a; b" glosses into separate entries. */
 function expandDefinitions(definitions) {
@@ -193,16 +93,6 @@ function expandDefinitions(definitions) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CC-CEDICT parse (cached)
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Parse a CEDICT line → { simplified, rawPinyin, glosses[] } (import-cedict-pg.ts regex). */
-function parseCEDICTLine(line) {
-  if (line.startsWith('#') || line.trim() === '') return null;
-  const match = line.match(/^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\/(.+)/);
-  if (!match) return null;
-  const [, , simplified, rawPinyin, defsStr] = match;
-  const glosses = defsStr.replace(/\/\s*$/, '').split('/').filter(d => d.trim().length > 0);
-  return { simplified, rawPinyin, glosses };
-}
 
 /**
  * Build (or load) a map of single-character simplified headword → ordered readings.

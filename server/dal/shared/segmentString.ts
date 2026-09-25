@@ -1,5 +1,5 @@
 import { DictionaryEntry, ParticleClassifierEntry, DefinitionCluster, BreakdownMap } from '../../types/index.js';
-import { ddt } from '../../utils/definitions.js';
+import { ddt, resolveDefaultPronunciation } from '../../utils/definitions.js';
 import { numberedToTonedPinyin, readingSyllableCount } from '../../utils/pinyinTones.js';
 
 /**
@@ -384,7 +384,8 @@ export interface SegmentDrillRung {
  * `staleGloss` > translation-context match against the flat definitions.
  * Pronunciation priority: manual override > the tagged cluster's own `reading`
  * (tone-converted and syllable-count-guarded by `senseReading`) > `stalePronunciation` >
- * the entry-level column.
+ * the entry's default-sense reading (`resolveDefaultPronunciation`: the highest-
+ * frequencyScore cluster's `reading`, falling back to the entry-level column).
  *
  * `staleGloss`/`stalePronunciation` are the values the BREAKDOWN stores alongside its
  * sense label. They sit BELOW the live cluster resolution deliberately: the label is the
@@ -419,10 +420,21 @@ function resolveSenseView(
     ?? stale?.gloss
     ?? pickDefinitionForTranslatedSentence(meta, translatedContext);
 
+  // Last resort when nothing sense-aware is known: the entry's DEFAULT sense — its
+  // highest-frequencyScore cluster's reading — NOT the raw `pronunciation` column. The column
+  // is the unreviewed copy of a heteronym's reading (行 stored `háng` while its top clusters
+  // read `xing2`), so an untagged segment — an IW bubble, a Reader document — would otherwise
+  // print whichever CEDICT entry happened to seed the column.
+  // ⚠️ resolveDefaultPronunciation, NOT the card resolver resolveDisplayPronunciation: the
+  // card one skips gloss-less particle clusters, which would read 了 as `liǎo` in every
+  // sentence. Both keep the syllable-count guard and fall back to the column when unclustered.
   const pronunciation = meta.overridePronunciation
     ?? senseReading(matchedCluster?.reading, text)
     ?? stale?.pronunciation
-    ?? meta.pronunciation;
+    ?? (resolveDefaultPronunciation({
+      pronunciation: meta.pronunciation || null,
+      definitionClusters: meta.definitionClusters,
+    }) || undefined);
 
   return {
     ...(definition ? { definition } : {}),

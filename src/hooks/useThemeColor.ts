@@ -9,7 +9,7 @@ import { COLORS } from "../theme/colors";
  * toolbar, and the strip behind the clock/battery on iOS Safari — is drawn by the
  * browser, not by the page, and it takes its colour from `<meta name="theme-color">`
  * (falling back to the document background). Nothing in the React tree can paint it.
- * So a game that floods its `LeafPage` with a saturated accent used to sit under a
+ * So a game that floods its `LeafPage` with its hue's ground used to sit under a
  * paper-white strip. This hook is the bridge: a component says what colour the ground
  * is, and the meta tag follows it.
  *

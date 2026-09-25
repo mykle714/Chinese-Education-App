@@ -75,6 +75,13 @@ export interface TileDraw {
 }
 
 /**
+ * How far a non-dirt decor sprite (grass-family, common prop, tree) sits ABOVE its cell's
+ * surface z. Exported because the iw tap outline (`IWTapFeedback`) tucks itself just behind a
+ * tapped prop, and must know the prop's depth without re-deriving it.
+ */
+export const RAISED_DECOR_Z_LIFT = 0.15;
+
+/**
  * Decompose a tile field into positioned, depth-sorted sprite draws.
  *
  * `countPerf` is opt-out because the chunk baker calls this many times per frame
@@ -141,7 +148,7 @@ export function buildDraws(
       // Dirt-family decor sits BELOW the grass surfaces (above the dirt slab at z − 0.5, below
       // the light cap at z) so grass painted over the cell covers it; every other decor family
       // stays ABOVE the surface.
-      decorZ: decorUrl && isDirtDecorUrl(decorUrl) ? z - 0.1 : z + 0.15,
+      decorZ: decorUrl && isDirtDecorUrl(decorUrl) ? z - 0.1 : z + RAISED_DECOR_Z_LIFT,
     });
   }
 

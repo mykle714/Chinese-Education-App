@@ -1,20 +1,20 @@
 import { FONTS } from "../../theme/fonts";
+import { COLORS } from "../../theme/colors";
 import { MARK_TYPE_COLORS } from "../../utils/masteryCompute";
 
-// Semantic indicator colors — theme-invariant (functional, not surface).
+// Swipe feedback colors (swipe right = correct, swipe left = incorrect).
 //
-// These are the drag-overlay tints: swipe right = correct, swipe left = incorrect.
-//
-// ⚠️ LITERAL ON PURPOSE. The shelf design's swipe-coaching artboard spells these two
-// values inline — `.shint.l { color:#EF476F }` (left / incorrect) and
-// `.shint.r { color:#05C793 }` (right / correct) in `shelf-system.css`. They are the
-// same saturated green and red as the Production and Reading marks, and for the same
-// reason: each is used as a LABEL color and as a wash capped at 0.3 opacity, and a
-// pastel at 30% over a beige card face is indistinguishable from no overlay at all.
-// A previous pass aliased them to COLORS.successInk / dangerInk and the overlay went
-// muddy; do not re-point them at the ramp.
-export const CORRECT_COLOR   = "#05C793";
-export const INCORRECT_COLOR = "#EF476F";
+// v2 (docs/SHELF_REDESIGN.md § A1b) splits what used to be one pair of saturated
+// literals (#05C793 / #EF476F) by JOB:
+//   - the WASH over the dragged card takes the MARK tier (grnMk / redMk) — the
+//     fluorescent tier is the only one that still reads at the overlay's 0.3 opacity
+//     cap over a cream card face; a surface pastel at 30% is indistinguishable from none;
+//   - the coaching LABEL (`.shint.l` / `.shint.r`) is `var(--danger)` / `var(--success)`
+//     in v2, which are both ink — the words "Again" / "Got it" carry the meaning.
+export const CORRECT_WASH   = COLORS.grnMk;
+export const INCORRECT_WASH = COLORS.redMk;
+export const CORRECT_LABEL   = COLORS.successInk;
+export const INCORRECT_LABEL = COLORS.dangerInk;
 // (The streak-flame "fire active" color moved to theme/colors.ts → COLORS.fireActive,
 // since only MinutePointsFireBadge used it — it was never a flashcard color.)
 
@@ -48,9 +48,8 @@ export const CARD_FLIP_TRANSITION = `transform ${CARD_FLIP_MS}ms linear`;
 
 // Tab accent colors — decorative, consistent across all themes.
 //
-// Same story as CORRECT/INCORRECT above: these three were literal copies of the
-// recognition / writing / reading mark hues. Aliased to MARK_TYPE_COLORS so the eip
-// tab strip moves with the ramp instead of drifting off it (D2). They stay
+// Aliased to MARK_TYPE_COLORS (the recognition / writing / reading MARK tier) so the
+// eip tab strip moves with the ramp instead of drifting off it (D2). They stay
 // DECORATIVE — a tab's color does not mean "this tab is about reading"; the sharing
 // is a palette economy, not a semantic claim.
 

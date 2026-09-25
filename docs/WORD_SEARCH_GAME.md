@@ -497,9 +497,10 @@ Vertical stack inside the standard leaf-page content area:
   through and faded, still present, because the list is also the record of what the run
   has covered and the fade is what makes the remaining work countable at a glance.
   A **third** state was added 2026-08-28: the **hinted** word (`hintEntryKey`, passed down
-  from `WordSearchPage`) is tinted in `HINT_ACCENT_COLOR` — the ink the `.hintbar`
-  lightbulb, charge dots and reveal mask already use — so the mask is visibly attached to
-  the gloss it is spelling. It used to have no state at all, on the theory that the reveal
+  from `WordSearchPage`) is marked — since v2 with a `HINT_HIGHLIGHT_BG` highlighter fill
+  (`COLORS.orgM`, the board's own hint-reveal colour; `src/games/word-search/constants.ts`),
+  because v2 made `HINT_ACCENT_COLOR` plain ink and a text tint could no longer tell it
+  apart — so the mask is visibly attached to the gloss it is spelling. It used to have no state at all, on the theory that the reveal
   one row above already named it; but the reveal names it in PINYIN (or in component
   glyphs), which is exactly what the player cannot yet read, so nothing on screen connected
   the mask to a meaning. The tint is colour only — no weight or size change — so the run's
@@ -642,17 +643,19 @@ box and takes `ceil(max(width, height))`, which both `gridTemplateColumns` and
 ### The selection system
 
 Every highlight — resting, tracing, found, hinted, missed — is **a fill on the cell**,
-from the design's `.wsg span` / `.hit` / `.now` (artboard 13):
+from the design's `.wsg span` / `.hit` / `.now` (artboard 13). Since v2 every lit state is
+the **MID tier** of its hue (caption "Mid: found and active letters"; the design names only
+`.hit`/`.now`, and the other three follow the same tier) — `WordSearchGrid.tsx`:
 
 | State | Fill | Meaning |
 |---|---|---|
 | resting | `COLORS.background` (paper) + the ring | an unclaimed tile |
-| tracing | `COLORS.org` (`.now`) | the in-progress drag |
-| found | `COLORS.grn` (`.hit`) | locked in |
-| reviewing | `COLORS.grn`, ring swapped to `COLORS.grnA` at 1.5px | the found word whose gloss popup is open |
-| hint reveal | `COLORS.org` | "trace THESE" — the same meaning as `.now` |
-| miss | `COLORS.red` | wrong trace; transient, and outranks whatever is under it |
-| bonus | `COLORS.blu` | a real det word or character that wasn't a target — a traced multi-character bonus word (which also shakes), a traced single-character headword, or the tapped character of an unfound target showing its contextual gloss. Outranks the miss fill. |
+| tracing | `COLORS.orgM` (`.now`) | the in-progress drag |
+| found | `COLORS.grnM` (`.hit`), ring swapped to a 1.5px **ink** ring (v2 `#ws .wsg span.hit`) | locked in |
+| reviewing | `COLORS.grnM`, ink ring at **2.5px** (the app's addition — the design has no reviewed state) | the found word whose gloss popup is open |
+| hint reveal | `COLORS.orgM` | "trace THESE" — the same meaning as `.now` |
+| miss | `COLORS.redM` | wrong trace; transient, and outranks whatever is under it |
+| bonus | `COLORS.bluM` | a real det word or character that wasn't a target — a traced multi-character bonus word (which also shakes), a traced single-character headword, or the tapped character of an unfound target showing its contextual gloss. Outranks the miss fill. |
 
 #### The board has no ground (2026-08-24)
 
@@ -912,7 +915,8 @@ the pinyin→units split lives in `pinyinUnits.ts`, the matching gloss tint live
 in `WordSearchWordList.tsx`, and the grid-side yellow location reveal + shake
 live in `WordSearchGrid.tsx`; tunables are in `constants.ts`
 (`HINT_BAR_UNITS = 8`, `HINT_COST = 1`, `HINT_LETTER_BLANK = "_"`,
-`HINT_REMAINDER_MARK = "—"`, `HINT_ACCENT_COLOR` — now an alias for `COLORS.warnInk`).
+`HINT_REMAINDER_MARK = "—"`, `HINT_ACCENT_COLOR` — an alias for `COLORS.warnInk`, which
+v2 made plain ink; `HINT_HIGHLIGHT_BG`).
 
 Revealing a word's grid **location** was too easy a hint (v1's cell-pulse
 mechanic); v2 replaces it with a cheap, hangman-style **pinyin reveal** so a
@@ -926,11 +930,9 @@ hint nudges recall without handing over the answer.
   [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). The **lightbulb is black**: the arm
   state is already carried by the glyph's FILL axis and the button's opacity, and a third
   channel on one 16px icon made the button look like a warning rather than a tool. A
-  **banked charge dot is the game's accent ink** (`RAMP[useGameSurfaceHue()].ink`, i.e.
-  purple) rather than `COLORS.warnInk` — the dots are the one thing on the row that counts
-  up as the run goes, so they should read as part of the game, and they now match the ground
-  the whole screen is flooded with. `HINT_ACCENT_COLOR` is unchanged and still gold; it
-  colours the pinyin REVEAL, not the row's controls.
+  **banked charge dot is ink** (v2 `#ws .hintbar .chg i{background:var(--ink)}`; it was the
+  game's purple ink before v2 removed the ink tier — `WordSearchHintBar.tsx`).
+  `HINT_ACCENT_COLOR` colours the pinyin REVEAL, and is plain ink in v2 too.
 - **Reveal granularity (`pinyinUnits.ts`):** a hint reveals one **phonetic
   unit** at a time, not one raw Latin letter — `syllableToPinyinUnits` splits
   each syllable into its initial consonant / medial glide / final (e.g.

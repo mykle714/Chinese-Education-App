@@ -22,6 +22,7 @@ import { type IWNpcOption, type IWScene } from '../../../server/contracts/iw';
 import { WEIGHT } from '../../theme/scale';
 import { isForcedDirectionTool, isPlaceTool, type IWEditorTool, type IWPaintTool } from './useIWSceneDraft';
 import { CAST_HOTKEYS, type IWEditorTools } from './useIWEditorTools';
+import { COLORS } from '../../theme/colors';
 
 /**
  * IWSceneToolsPanel — the scene editor's PALETTE: every control that arms the next click on
@@ -74,8 +75,11 @@ export interface IWSceneToolsPanelProps {
  * The dark ground this column brings with it — see the header note. Exported because the
  * COLUMN (`IWEditorColumn`) paints the scroll body behind this panel, and a lighter strip
  * under a short palette would read as a seam.
+ *
+ * The framework's `--ink` (was a near-identical hand-picked `#1C1B20`): the palette's one
+ * near-black, so this dark column and the app's ink text are the same colour.
  */
-export const IW_TOOLS_PANEL_BG = '#1C1B20';
+export const IW_TOOLS_PANEL_BG = COLORS.onSurface;
 
 /** One palette entry. Mirrors the night market editor's `ToolDef` field for field. */
 interface PaintToolDef { tool: IWPaintTool; label: string; icon: React.ReactNode; hotkey: string }

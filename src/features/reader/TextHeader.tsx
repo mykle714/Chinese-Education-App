@@ -1,6 +1,7 @@
 import { Box, Typography, Chip, CircularProgress } from "@mui/material";
 import { WEIGHT } from '../../theme/scale';
 import type { Text } from "../../types";
+import { COLORS } from "../../theme/colors";
 
 interface TextHeaderProps {
     selectedText: Text;
@@ -22,7 +23,7 @@ function TextHeader({
     return (
         <Box
             className="reader-page-text-header"
-            sx={{ mb: 3, pb: 2, borderBottom: '1px solid rgba(0, 0, 0, 0.08)' }}
+            sx={{ mb: 3, pb: 2, borderBottom: `1px solid ${COLORS.rowBorder}` }}
         >
             <Typography
                 className="reader-page-text-title"

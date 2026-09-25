@@ -30,7 +30,7 @@ function GoalBadge({ label, icon, on }: { label: string; icon: React.ReactNode; 
                 px: 1,
                 py: 0.4,
                 borderRadius: 999,
-                backgroundColor: on ? COLORS.greenAccent : COLORS.iconBg,
+                backgroundColor: on ? COLORS.grnM : COLORS.iconBg, // v2: pills are MID tier
                 color: on ? COLORS.onSurface : COLORS.textSecondary,
                 border: `1px solid ${on ? "transparent" : COLORS.rowBorder}`,
                 opacity: on ? 1 : 0.75,

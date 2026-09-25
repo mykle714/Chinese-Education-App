@@ -504,7 +504,7 @@ hue's near-white tint on the HUD strip.
   header clears it with `SAFE_TOP`. Nothing game-specific is involved.
 - **Safari tabs / Android Chrome:** the browser paints its own chrome from
   `<meta name="theme-color">`, so `GameSurfaceProvider` also calls
-  `useThemeColor(RAMP[hue].ink)` (`src/hooks/useThemeColor.ts`) for as long as the game
+  `useThemeColor(RAMP[hue].mid)` (`src/hooks/useThemeColor.ts`) for as long as the game
   is mounted — on the provider rather than in each game, so both colours come from the
   one `hue`. Default (every non-game screen) is `COLORS.background`, declared in
   `index.html`.
@@ -514,11 +514,14 @@ strip is filled by iOS from the background it captured at launch, and no runtime
 reaches it. See [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS
 status bar.
 
-**Which hue a game gets is `GameDef.hue`, NOT the artboard's.** The artboards paint Match
-Speed blue, Speed Reading yellow and Hydra green; the shipped hub rows call those three
-green, blue and teal. The hub mapping wins — a green hub row must not open a blue screen —
-and the artboard's yellow is not in the app's ramp at all. Bubble Match (red) and Word
-Search (purple) agree either way.
+**Which hue a game gets is `GameDef.hue` — and since v2 that EQUALS the artboard's.** Each
+game's `GAME_HUE` (its own `constants.ts`) drives both the hub row and the ground, so the
+two cannot drift. The hues are the artboards' own (SHELF_REDESIGN.md artboards 12–16):
+Bubble Match `red`, Word Search `pur`, Match Speed `blu`, Speed Reading `yel`, Hydra
+Bubbles `grn`; Memory Map, which has no artboard, keeps `org`. Until 2026-09-24 three of
+them differed from the artboards (Match Speed green, Speed Reading blue, Hydra teal) and
+this paragraph explained why the hub won; teal then left the palette and the three moved.
+Source: `src/games/shared/gameSurface.ts` header ("WHICH HUE A GAME GETS").
 
 **The header flips are CSS descendant selectors, the panel's are not.** The header route
 avoids threading an `onAccent` flag through `LeafPage` → `PageHeader` →
@@ -545,8 +548,8 @@ absolutely-positioned overlays INSIDE their stages, at `top: 8`, so bubbles drif
 the text and each field's measured bounds were larger than the area a bubble could
 actually be read in; both stages now return a fragment — HUD row, then measured field.
 Match Speed's `MatchSpeedTimerBar` delegates to `GameTimer` and keeps only
-`RUN_DURATION_MS`, its 10-second urgency threshold and its colours — whose resting track
-is now `RAMP[GAME_HUE].ink`, since the clock sits on a strip tinted with that same hue.
+`RUN_DURATION_MS`, its 10-second urgency threshold and its colours — ink in every state
+(v2: the clock drains in ink, and "urgent" is `dangerInk`, which v2 also made ink).
 
 Speed Reading has a `GameHud` as of the A6b pass: a round counter over
 `SpeedReadingRoundTicks`. Its HUD is the one that is a COLUMN rather than a row of facts
@@ -1278,9 +1281,10 @@ with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
   was lost, so it can never be cleared), the bubble itself is tinted **light red**
   (the `nomatch` status) for as long as it's held, instead of the usual grey held
   dim — a grab-time "no match" cue, not a persistent marker. Colors:
-  `CORRECT_BUBBLE_BG` (light green) and `NOMATCH_BUBBLE_BG` (light red) in
-  `constants.ts`; the vivid `WRONG_BUBBLE_BG` red stays reserved for the wrong-drop
-  shake. The rAF loop, which
+  `CORRECT_BUBBLE_BG` (`COLORS.grnM`, ink ring) and `NOMATCH_BUBBLE_BG` (`COLORS.red`,
+  the palest red, with a neutral `--line2` ring so it cannot pass for a red word bubble)
+  in `src/games/bubbles/constants.ts`; the louder `WRONG_BUBBLE_BG` (`COLORS.redMk`, the
+  red Mark tier) stays reserved for the wrong-drop shake. The rAF loop, which
   self-stops on settle behind the full end popup, is **kept alive throughout
   cleanup** so bubbles keep separating/settling as they're dragged and cleared.
   Clearing the whole field triggers no win (the run is already decided). Autoplay
@@ -1592,7 +1596,12 @@ pool of 20 pairs; Hydra's is a board that **grows on its own**.
   pinyin. Both exit the same way, via a purple ladder; docs/HYDRA_BUBBLES.md § 2.2 has the
   numbers. The identifiers moved with it — `HydraColor` is
   `"drain" | "bloom"`, named for the board effect, so the next palette pass renames
-  nothing.
+  nothing. **2026-08-24 the ladder became yellow / blue** (drain `yel`, bloom `blu`), and
+  **v2 (2026-09-23) moved both rungs to the MID tier** (`COLORS.yelM` / `COLORS.bluM`) and
+  gave them the design's ink ring, with the grey English bubble ringed in `--line2` — the
+  same coloured-gets-ink / neutral-gets-line rule Bubble Match uses
+  (`COLOURED_BUBBLE_RING` / `NEUTRAL_BUBBLE_RING`, `src/games/bubbles/constants.ts`).
+  Current state and trade-offs: docs/HYDRA_BUBBLES.md § 2.2.
 - **Two client-side color buffers** (`useColorBuffers`), one per tier, popped at
   spawn and topped up asynchronously. This is what makes the color system tractable:
   the game never asks "what color is this card?", because the card came out of that

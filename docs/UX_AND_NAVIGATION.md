@@ -125,6 +125,27 @@ over it:
 | A **page** (footer bar floats over the scroll area) | 28px | 34px ending on the bar's top edge, plus a fully-transparent run for the bar's own height | `EDGE_FADE_MASK` / `EDGE_FADE_MASK_NO_TOP` — `src/components/MobileTabScreen.tsx` |
 | A **sheet or panel** (no footer: a modal sheet holds `useHideFooter` for its lifetime) | 20px | 24px ending at the surface's own bottom edge | `SHEET_EDGE_FADE_MASK` / `sheetEdgeFadeSx` — `src/components/sheet/sheetStyled.ts` |
 
+**The bands are scroll-aware: a fade only appears where content is actually cut off.**
+The fade exists solely to ease the line between *scrolled* content and the scroller's
+wall. A band on an edge with nothing past it is a bug. Before this rule, the page's top
+band ate the top 28px of the page **header** at rest (the header lives inside the scroll
+area so it can scroll away), which visibly faded /arena's full-bleed division banner.
+Each band's height is the px of content scrolled past that edge, clamped to the band
+size. So at `scrollTop = 0` there is no top band, it grows in over the first 28px of
+scroll, and at the end of a list the bottom band shrinks away the same way. The page's
+fully-transparent run under the footer bar stays on regardless, because the bar covers it.
+
+Mechanism: `trackScrollEdgeFade(el)` (`src/components/scrollEdgeFade.ts`) writes
+`--edge-fade-above` / `--edge-fade-below` onto the scroller from a passive scroll
+listener, plus Resize/Mutation observers for content that changes height without a
+scroll. It writes straight to the element style in a rAF, with no React state. The masks
+read them through `edgeFadeAboveBand(band)` / `edgeFadeBelowBand(band)`, i.e.
+`min(var(--edge-fade-…, band), band)`. **Every scroller that wears one of these masks
+must be tracked.** An untracked one falls back to the full, always-on bands, which is the
+old behaviour. Tracked today: `MobileTabScreen` → `ScrollArea` (ref callback), `SheetBody` and
+`DecksPanelBody` (`useScrollEdgeFade`), `InfoCardPanelBody`'s panes, and
+`ChallengeSheet`'s scroller.
+
 Only the **bottom** differs in kind. A page reserving the footer's height makes sense; a
 *panel* doing it spends ~164px of the surface on emptiness, which is why the two families
 exist (see docs/DECKS_FEATURE.md for the case that forced the split). The panel's bands are

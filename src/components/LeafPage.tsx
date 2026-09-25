@@ -67,8 +67,9 @@ export interface LeafPageProps {
      * repainting the ground also changes what has to be drawn on top of it.
      *
      * Its one caller today is the game surface (`gameSurfaceSx`,
-     * docs/SHELF_REDESIGN.md § A6b), which floods the page with a saturated accent
-     * and therefore has to flip the title, chevron, chips and streak badge to white.
+     * docs/SHELF_REDESIGN.md § A6b), which floods the page with the hue's MID tier
+     * and restyles the header's chips and streak badge to sit on it (v2 keeps the
+     * title and chevron ink — the mid ground is light enough to carry it).
      */
     surfaceSx?: SxProps<Theme>;
     contentSx?: SxProps<Theme>;

@@ -4,6 +4,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { FOOTER_TOTAL_CLEARANCE } from "../../../components/MobileFooter";
 import type { SheetPanelBodyHandle } from "../../../components/sheet/SheetPanel";
 import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
+import { useScrollEdgeFade } from "../../../components/scrollEdgeFade";
 
 /**
  * `SheetBody` — the plumbing every `SheetPanel` body needs, with none of the content.
@@ -36,6 +37,8 @@ const SheetBody = forwardRef<SheetPanelBodyHandle, SheetBodyProps>(function Shee
 ) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    // Feeds the scroll-aware edge-fade bands on the scroller (sheetEdgeFadeSx).
+    useScrollEdgeFade(scrollRef);
 
     // Getters rather than captured values: SheetPanel reads the handle inside an
     // effect that may run before these refs are attached on a later re-render.

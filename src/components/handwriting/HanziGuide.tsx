@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import HanziWriter from "hanzi-writer";
 import { loadCharData } from "./loadCharData";
+import { COLORS } from "../../theme/colors";
 
 interface HanziGuideProps {
   character: string;
@@ -30,7 +31,7 @@ export default function HanziGuide({
   size,
   outlineVisible,
   loopAnimation = false,
-  outlineColor = "rgba(0,0,0,0.16)",
+  outlineColor = COLORS.border, // --line2, an ink alpha
 }: HanziGuideProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<HanziWriter | null>(null);

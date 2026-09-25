@@ -1,8 +1,7 @@
 import React from "react";
 import { Box } from "@mui/material";
 import Icon from "../../components/Icon";
-import { COLORS, RAMP } from "../../theme/colors";
-import { useGameSurfaceHue } from "../shared/gameSurface";
+import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { LEADING } from "../../theme/scale";
 import { HINT_BAR_UNITS } from "./constants";
@@ -46,12 +45,9 @@ interface WordSearchHintBarProps {
 const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onHint, children }) => {
     // Charges are capped at the bar's width; a full bar simply stops filling.
     const banked = Math.min(units, HINT_BAR_UNITS);
-    // A banked charge is drawn in THE GAME'S accent ink (`#ws .hintbar .chg i{background:
-    // var(--purA)}`), not in the app's warning gold. The dots are the one thing on this
-    // row that counts up as the run goes, so they read as part of the game rather than
-    // as a caution — and they now match the ground the whole screen is flooded with.
-    const hue = useGameSurfaceHue();
-    const chargeInk = hue ? RAMP[hue].ink : COLORS.warnInk;
+    // A banked charge is an INK dot (`#ws .hintbar .chg i{background:var(--ink)}` in v2 —
+    // it was the game's own purple ink in v1, a tier v2 removed).
+    const chargeInk = COLORS.onSurface;
 
     return (
         <Box

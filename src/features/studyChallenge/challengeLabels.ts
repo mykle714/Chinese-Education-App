@@ -220,7 +220,8 @@ export function challengeActionLabel(action: ChallengeAction): string {
 }
 
 /**
- * The control's fill colour (design F2/F3).
+ * The control's fill colour (design F2/F3). v2: the MID tier of each hue — the control
+ * is a pill, and pills take mid (the design's `--{hue}K` = `--{hue}M`).
  *
  * ⚠️ THE COLOUR NAMES THE KIND OF TAP, NOT WHOSE TURN IT IS. An earlier rule painted
  * everything green when the ball was in the viewer's court, which made "Take Test" and
@@ -245,16 +246,16 @@ export function challengeActionLabel(action: ChallengeAction): string {
 export function challengeActionColor(action: ChallengeAction): string {
     switch (action) {
         case "incoming":
-            return COLORS.grn;
+            return COLORS.grnM;
         case "waiting":
-            return COLORS.red;
+            return COLORS.redM;
         case "study":
-            return COLORS.org;
+            return COLORS.orgM;
         case "issue":
-            return COLORS.pur;
+            return COLORS.purM;
         case "test":
         case "results":
-            return COLORS.blu;
+            return COLORS.bluM;
         default:
             return COLORS.iconBg;
     }

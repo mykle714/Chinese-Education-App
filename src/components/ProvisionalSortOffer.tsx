@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
@@ -112,7 +113,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
             corner="top-left"
             // Distinct from the neutral end-of-run puck sitting in the other corner.
             puckColor={COLORS.infoInk}
-            accentContrast="#FFFFFF"
+            accentContrast={COLORS.white}
             minimized={minimized}
             onMinimize={onMinimize}
             onRestore={onRestore}
@@ -120,7 +121,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
             // Above the end-of-run popup (200), with a lighter scrim: the field is
             // already dimmed once and dimming it twice reads as a broken overlay.
             zIndex={zIndex}
-            scrimColor="rgba(20, 20, 28, 0.18)"
+            scrimColor={alpha(COLORS.onSurface, 0.18)}
         >
             <Typography
                 className="provisional-sort-offer__title"

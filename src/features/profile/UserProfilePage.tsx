@@ -360,7 +360,7 @@ function UserProfilePage() {
                                 fontSize: SIZE.body,
                                 fontWeight: WEIGHT.semibold,
                                 color: COLORS.onSurface,
-                                backgroundColor: COLORS.purpleAccent,
+                                backgroundColor: COLORS.purM, // v2: buttons are MID tier
                                 borderRadius: 3,
                                 px: 2,
                                 py: 0.75,

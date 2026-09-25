@@ -1,5 +1,5 @@
 import React from 'react';
-import { stripParentheses } from '../utils/definitionUtils';
+import { stripParentheses, resolveDisplayPronunciation } from '../utils/definitionUtils';
 import type { VocabEntry } from '../types';
 import { SIZE, WEIGHT } from '../theme/scale';
 import {
@@ -33,6 +33,10 @@ const FlashCard: React.FC<FlashCardProps> = ({
 }) => {
     // Content is now updated immediately when props change
     // Timing control is handled by the parent component (FlashcardsPage)
+
+    // Sense-aware pinyin (chosen sense, else the highest-frequencyScore cluster), never the
+    // raw column — see resolveDisplayPronunciation.
+    const pronunciation = resolveDisplayPronunciation(entry);
 
     return (
         <Box
@@ -103,14 +107,14 @@ const FlashCard: React.FC<FlashCardProps> = ({
                             sx={{
                                 fontWeight: WEIGHT.bold,
                                 color: 'primary.main',
-                                mb: showPronunciation && entry.pronunciation ? 1 : 3
+                                mb: showPronunciation && pronunciation ? 1 : 3
                             }}
                         >
                             {entryKey}
                         </Typography>
 
                         {/* Pronunciation display - only shown if enabled and exists */}
-                        {showPronunciation && entry.pronunciation && (
+                        {showPronunciation && pronunciation && (
                             <Typography
                                 className="flash-card__front-pronunciation"
                                 variant="body1"
@@ -122,7 +126,7 @@ const FlashCard: React.FC<FlashCardProps> = ({
                                     opacity: 0.8
                                 }}
                             >
-                                {entry.pronunciation}
+                                {pronunciation}
                             </Typography>
                         )}
 

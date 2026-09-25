@@ -1,5 +1,5 @@
 import React from 'react';
-import { stripParentheses } from '../utils/definitionUtils';
+import { stripParentheses, resolveDefaultPronunciation } from '../utils/definitionUtils';
 import {
     Box,
     Card,
@@ -89,7 +89,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
                                 color="text.secondary"
                                 sx={{ mb: 1.5, fontStyle: 'italic' }}
                             >
-                                {dictionaryEntry.pronunciation}
+                                {resolveDefaultPronunciation(dictionaryEntry)}
                             </Typography>
 
                             <Divider className="vocab-display-card__dict-divider" sx={{ mb: 1.5 }} />

@@ -1104,7 +1104,8 @@ to that set's CollectionViewPage. They differ only in what fills them, which is 
 point: a built-in collection, a mastery bar and a user-authored deck are all just "a set
 of your cards", and the page should not argue otherwise.
 
-A spine is a book seen edge-on — a pastel body, an inset white highlight down its right
+A spine is a book seen edge-on — a body in the ramp's MID tier (Shelf System v2: "Mid:
+deck spines, pack spines, document spines, bucket spines"), an inset white highlight down its right
 side, a **dark strap down its left** (`.sp::after`; without it the shape reads as a
 rounded rectangle, and that strap is the whole illusion), the set's name at the top and
 its count as a mono numeral at the foot. It is purely presentational: a label, a colour,
@@ -1134,18 +1135,21 @@ carries the count. The Mastery Center **pages** have room and do band.
 Colors come from `builtinCollectionEntries` for the built-ins (which reads
 `BAND_COLORS.All`, `LEARN_NOW_COLORS` and `MASTERY_BAR_COLORS` out of
 `src/utils/categoryColors.ts`) and from `deckTileColors(id)` for a user deck — the
-same id-derived palette as `deckAccentColor`. **All** is the one grey spine: every other
+same id-derived palette as `deckAccentColor` (its `.main` is the deck hue's MID tier). A
+**challenge** deck's spine is `COLORS.orgM` regardless of id (docs/STUDY_CHALLENGE.md
+§ "Where they render on `/decks`"). **All** is the one grey spine: every other
 color on the page names a set, and All is their union rather than another member, so it
-takes a neutral instead of another hue. **Learn Now** takes the gold `--yel` — a hue no
-band owns, so it cannot be misread as Comfortable green, which still means the band on
-mini-card chips and the Account bucket row. It was purple until 2026-09-01; gold is the
+takes a neutral instead of another hue. **Learn Now** takes the gold `--yel`. ⚠️ Since
+Shelf System v2 (2026-09-23) Target is ALSO yellow, so yellow means both the Target band
+(pills, cells) and Learn Now / Study Mix — an open collision tracked on `LEARN_NOW_HUE` in
+`src/utils/categoryColors.ts`. It was purple until 2026-09-01; gold is the
 **Study Mix** card's own hue (`HAND_HUES.mix`), and Study Mix plays exactly the Learn Now
 set, so the hand and the filter now name the same cards in the same colour.
 
 The three **Mastered** spines come from `MASTERY_BAR_COLORS` (same file), one hue per bar
 rather than three blues. `reading` and `writing` are single-mark-type bars, so each takes
-ITS MARK's hue — red and orange, the same hues those marks paint on the cdp track and the
-mini-card strip. `core` blends recognition and production, has no single mark hue to
+ITS MARK's hue — red and orange, the hues `MARK_TYPE_COLORS` gives those skills (mastery
+cells themselves are band-coloured since 2026-09-23). `core` blends recognition and production, has no single mark hue to
 borrow, and keeps Mastered blue.
 
 Since 2026-08-31 those pairs are **derived from a `RampHue` key**, not hand-copied hexes:

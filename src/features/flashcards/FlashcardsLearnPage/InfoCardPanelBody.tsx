@@ -4,6 +4,7 @@ import AddIcon from "@mui/icons-material/Add";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
+import { trackScrollEdgeFade } from "../../../components/scrollEdgeFade";
 import SensePicker from "../card/SensePicker";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import InfoCardTabContent from "./InfoCardTabContent";
@@ -232,6 +233,16 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             track.style.transform = "";
         }
     }, [selectedTab]);
+
+    // Every pane is its own scroller with its own edge-fade mask (sheetEdgeFadeSx), so
+    // each one feeds its own scroll-aware bands. The panes are mounted for the panel's
+    // whole life (see paneRefs), so attaching once on mount covers them all.
+    useLayoutEffect(() => {
+        const cleanups = paneRefs.current
+            .filter((pane): pane is HTMLDivElement => pane !== null)
+            .map(trackScrollEdgeFade);
+        return () => cleanups.forEach((cleanup) => cleanup());
+    }, []);
 
     // New entry in the same panel (entry-tab switch / breakdown drill-in):
     // start every pane back at its top — scroll positions are per-pane now.

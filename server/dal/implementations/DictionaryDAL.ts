@@ -3,8 +3,8 @@ import { dbManager as defaultDbManager, DatabaseManager } from '../base/Database
 import type { Language, DictionarySearchRanking } from '../../types/index.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
-import { resolveShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
-import { ShortDefinitionPronunciationOverride, ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
+import { generateShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
+import { ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, SEGMENTATION_MAX_TOKEN_CHARS, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart, LongDefinitionCitation } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
@@ -64,7 +64,6 @@ const DICTIONARY_COLUMNS = `
   breakdown, synonyms,
   "exampleSentences",
   "matchException",
-  "shortDefinitionPronunciationOverride",
   "exampleSentenceDefinitionPronunciationOverride",
   "frequencyScore",
   "wordForms"
@@ -259,6 +258,18 @@ function buildTokenPinyinPattern(tokens: string[], requireDigit: boolean): strin
 }
 
 /**
+ * Re-anchor a `^`-anchored pinyin regex so it matches ANY one reading inside
+ * `dictionaryentries_zh."searchReadings"` (migration 165) — a pipe-separated list such as
+ * 'xíng|háng|héng|xing2|hang2|heng2' — instead of only the start of the string. A reading
+ * starts at the string's start or right after a `|`. Callers append their own tail
+ * (`($|\|)` for a complete-reading match). See scripts/backfill/chinese/lib/searchReadings.js
+ * and docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md.
+ */
+function anyReadingPattern(anchoredPattern: string): string {
+  return `(^|\\|)${anchoredPattern.replace(/^\^/, '')}`;
+}
+
+/**
  * Dictionary Data Access Layer implementation
  * Handles all database operations for CC-CEDICT dictionary entries
  */
@@ -305,14 +316,16 @@ export class DictionaryDAL implements IDictionaryDAL {
       createdAt: row.createdAt,
       word1: row.word1,
       word2: row.word2,
-      pronunciation: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null)?.pronunciation ?? row.pronunciation,
+      // The raw column. Surfaces render resolveDisplayPronunciation (sense-aware), never this
+      // directly — the entry-level manual override that used to replace it here was dropped
+      // (migration 166) because it outranked the reviewed per-sense cluster readings.
+      pronunciation: row.pronunciation,
       numberedPinyin: row.numberedPinyin ?? null,
       tone: row.tone ?? null,
       partsOfSpeech: row.partsOfSpeech ?? null,
       difficulty: row.difficulty ?? null,
       definitions,
-      shortDefinitionPronunciationOverride: (row.shortDefinitionPronunciationOverride as ShortDefinitionPronunciationOverride | null) ?? null,
-      shortDefinition: resolveShortDefinition(definitions, row.shortDefinitionPronunciationOverride),
+      shortDefinition: generateShortDefinition(definitions),
       exampleSentenceDefinitionPronunciationOverride: (row.exampleSentenceDefinitionPronunciationOverride as ExampleSentenceDefinitionPronunciationOverride | null) ?? null,
       // Stored as JSONB (migration 70): a per-SENSE array for zh, a per-POS object for
       // es/legacy rows. Hydrated to the single string the API/renderer expect, narrowed
@@ -517,10 +530,21 @@ export class DictionaryDAL implements IDictionaryDAL {
       paramIdx = params.length;
       pronunciationClause = `\n          OR pronunciation ~ $3`;
       pronunciationExclusion = `\n        AND NOT (pronunciation ~ $4)`;
+      // A heteronym's OTHER readings (了 liǎo, 行 háng) live in "searchReadings", so a word is
+      // findable under every reading, not only its primary column (migration 165). Same
+      // accent-agnostic regex, re-anchored per reading; the column-level 'g' exclusion above
+      // cannot see inside the list, so it is folded in as a lookahead ("han" must not find
+      // háng, exactly as it must not find a primary "háng").
+      paramIdx += 1;
+      pronunciationClause += `\n          OR "searchReadings" ~ $${paramIdx}`;
+      params.push(`${anyReadingPattern(regexPattern)}(?!g)`);
       if (numberedPinyinPattern) {
         paramIdx += 1;
         numberedPinyinClause = `\n          OR "numberedPinyin" ~* $${paramIdx}`;
         params.push(numberedPinyinPattern);
+        paramIdx += 1;
+        numberedPinyinClause += `\n          OR "searchReadings" ~* $${paramIdx}`;
+        params.push(anyReadingPattern(numberedPinyinPattern));
       }
     }
 
@@ -536,8 +560,13 @@ export class DictionaryDAL implements IDictionaryDAL {
     // first. Matching is whole-word only, via the Postgres word-boundary anchor \y, so "art"
     // matches "art"/"fine art" but not "start".
     // Case-insensitive (~*) since the query term is lowercased but card text may be capitalised.
-    // Guarded by a minimum length so trivial single-letter searches don't scan the table.
-    const definitionsSearchEnabled = searchTerm.trim().length >= 2;
+    // Runs for EVERY non-empty term, single letters included: "I" (我, 本人) and Spanish "a"/"o"/"y"
+    // are real one-letter words, and a floor of 2 made them unfindable by meaning. It costs no index
+    // (this regex is a sequential scan at any length); what grows is the ranking's per-row sense
+    // unnest over a large match set — measured on dev 2026-09-24, the worst case (es "a", ~19k
+    // matches) took ~260 ms vs ~80 ms for a typical term. The empty-term guard stays because
+    // `\y\y` would match every row; callers already reject an empty term upstream.
+    const definitionsSearchEnabled = searchTerm.trim().length >= 1;
     // Escape regex metacharacters in the user term, then anchor it to word boundaries.
     const escapedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const wholeWordDefinitionPattern = `\\y${escapedTerm}\\y`;
@@ -604,7 +633,7 @@ export class DictionaryDAL implements IDictionaryDAL {
       rescues it — an exact headword outranks anything that merely mentions it.
 
       Both rankings fall back to the historical two-bucket word-first expression when no English
-      search ran (a sub-2-character term): with no gloss predicate there is nothing to test
+      search ran (only an empty term, now that 1-character terms search glosses): with no gloss predicate there is nothing to test
       completeness or Englishness against.
     */
 
@@ -625,7 +654,7 @@ export class DictionaryDAL implements IDictionaryDAL {
     /*
       Whether to take the windowed "interleaved head" query path below. It tracks whether a real
       ladder was built as well as the ranking, NOT `rankBy` alone: when the ladder degrades to
-      the two-bucket expression (a sub-2-character term), sampling a head off those buckets
+      the two-bucket expression (an empty term — a defensive path only), sampling a head off those buckets
       would re-order results by a rule the caller did not ask for. Degrading should mean
       degrading all the way to the flat query.
     */
@@ -649,8 +678,11 @@ export class DictionaryDAL implements IDictionaryDAL {
       const completeWordParts = [`lower(word1) = ${nextRankParam(searchTerm.trim())}`];
       if (isZh) {
         completeWordParts.push(`pronunciation ~ ${nextRankParam(`${regexPattern}$`)}`);
+        // Any of the heteronym's other readings, matched whole ("hang" IS 行's háng).
+        completeWordParts.push(`"searchReadings" ~ ${nextRankParam(`${anyReadingPattern(regexPattern)}($|\\|)`)}`);
         if (numberedPinyinPattern) {
           completeWordParts.push(`"numberedPinyin" ~* ${nextRankParam(`${numberedPinyinPattern}$`)}`);
+          completeWordParts.push(`"searchReadings" ~* ${nextRankParam(`${anyReadingPattern(numberedPinyinPattern)}($|\\|)`)}`);
         }
       }
 
@@ -789,9 +821,14 @@ export class DictionaryDAL implements IDictionaryDAL {
     limit: number,
     offset: number
   ): Promise<{ entries: DictionaryEntry[], total: number }> {
-    // $1 = language, $2..$(n+1) = patterns, then LIMIT/OFFSET.
-    const orClause = patterns.map((_, i) => `"numberedPinyin" ~* $${i + 2}`).join('\n          OR ');
-    const baseParams: any[] = [language, ...patterns];
+    // $1 = language, $2..$(n+1) = patterns, $(n+2)..$(2n+1) = the same patterns re-anchored for
+    // "searchReadings" (a heteronym's other readings, migration 165), then LIMIT/OFFSET.
+    const n = patterns.length;
+    const orClause = [
+      ...patterns.map((_, i) => `"numberedPinyin" ~* $${i + 2}`),
+      ...patterns.map((_, i) => `"searchReadings" ~* $${i + 2 + n}`),
+    ].join('\n          OR ');
+    const baseParams: any[] = [language, ...patterns, ...patterns.map(anyReadingPattern)];
     const limitPlaceholder = `$${baseParams.length + 1}`;
     const offsetPlaceholder = `$${baseParams.length + 2}`;
 

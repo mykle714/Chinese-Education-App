@@ -941,16 +941,24 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     //
                                     // Order matters: a miss is transient and outranks the
                                     // found/hint fills underneath it.
+                                    //
+                                    // v2: every lit state is a MID-tier fill (artboard 13
+                                    // caption "Mid: found and active letters" — `.hit`
+                                    // `--grnM`, `.now` `--orgM`). The design only names
+                                    // those two; the bonus and miss fills are the same
+                                    // kind of thing (a cell state), so they take the same
+                                    // tier of their own hues rather than a louder or
+                                    // quieter one.
                                     backgroundColor: isBonusCell
-                                        ? COLORS.blu                  // a real word/character that wasn't a target
+                                        ? COLORS.bluM                 // a real word/character that wasn't a target
                                         : isInvalidCell
-                                        ? COLORS.red                  // wrong trace — flashes, then clears
+                                        ? COLORS.redM                 // wrong trace — flashes, then clears
                                         : selected
-                                        ? COLORS.org                  // `.now` — tracing right now
+                                        ? COLORS.orgM                 // `.now` — tracing right now
                                         : isFound
-                                        ? COLORS.grn                  // `.hit` — locked in
+                                        ? COLORS.grnM                 // `.hit` — locked in
                                         : isHintCell
-                                        ? COLORS.org                  // hint reveal: "trace THESE" — same meaning as `.now`
+                                        ? COLORS.orgM                 // hint reveal: "trace THESE" — same meaning as `.now`
                                         : COLORS.background,          // resting paper tile
                                     // EVERY cell carries the palette's inset ring
                                     // (`COLORS.markOutline`) — this is what lets the board
@@ -960,13 +968,17 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // rule the palette states for every pastel in the app,
                                     // and the board is now one more caller of it.
                                     //
-                                    // The reviewed word (its gloss popup is open) REPLACES
-                                    // the ring with the hue's own ink at 1.5px, rather than
-                                    // stacking a second one — the palette's way of making a
-                                    // pastel a distinct state without inventing a second
-                                    // green.
+                                    // A FOUND cell replaces it with a 1.5px INK ring
+                                    // (`#ws .wsg span.hit{box-shadow:inset 0 0 0 1.5px
+                                    // var(--ink)}` in v2), rather than stacking a second one.
+                                    // The reviewed word (its gloss popup is open) is a found
+                                    // word too, so it needs one more step to stay distinct:
+                                    // a 2.5px ink ring. (The design has no reviewed state;
+                                    // the heavier ring is this app's addition.)
                                     boxShadow: isPopup
-                                        ? `inset 0 0 0 1.5px ${COLORS.grnA}`
+                                        ? `inset 0 0 0 2.5px ${COLORS.onSurface}`
+                                        : isFound
+                                        ? `inset 0 0 0 1.5px ${COLORS.onSurface}`
                                         : `inset 0 0 0 1px ${COLORS.markOutline}`,
                                     // A lit cell darkens its glyph to full ink so the
                                     // character stays the loudest thing in its own tile.
@@ -1056,7 +1068,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 <Box
                     className="word-search__gloss-popup"
                     sx={{
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: COLORS.white,
                         border: "1px solid",
                         borderColor: "divider",
                         borderRadius: "8px",

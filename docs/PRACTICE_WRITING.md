@@ -116,7 +116,7 @@ starts the stroke, instead of being swallowed. No timer/cooldown, no lock spinne
   disabled calls `onBlockedAttempt`; if it returns `true` (caller unlocked in
   response, e.g. Memorize) the same pointerdown falls through and starts a stroke,
   otherwise it's swallowed (no stroke started).
-- Imperative handle (`WritingCanvasHandle`): `clear` / `undo` / `getInk` / `isEmpty`.
+- Imperative handle (`WritingCanvasHandle`): `clear` / `undo` / `redo` / `canRedo` / `getInk` / `isEmpty`. `redo` / `canRedo` are used only by the Beginner Keyboard (docs/BEGINNER_KEYBOARD.md § 6r); Practice Writing has no redo key.
 - **Touch/selection safety:** `touchAction: none` (no scroll / edge-swipe) plus
   `userSelect/WebkitUserSelect/WebkitTouchCallout: none` so a draw gesture can never
   start a text selection that bleeds into the page underneath. (See also the global

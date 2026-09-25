@@ -1,4 +1,4 @@
-import type { IWVolume } from '../../contracts/iw.js';
+import { renderLearnerLine } from './learnerProfile.js';
 import type { TurnOffer } from './turnOffers.js';
 
 /**
@@ -40,7 +40,7 @@ import type { TurnOffer } from './turnOffers.js';
  * Referenced by: docs/IMMERSIVE_WORLD.md § 4.1, § 5.5, § 9.4, § 11.
  */
 
-/** One body this NPC can perceive, already filtered by the § 4 hearing/visibility gate. */
+/** One other body in the scene. There is no hearing/visibility filter (§ 4, § 4c withdrawn). */
 export interface NearbyBody {
   /** How the NPC refers to them — a name for someone they know, else a description. */
   label: string;
@@ -78,6 +78,15 @@ export interface IWContextInput {
   heard: readonly HeardLine[];
   /** What the NPC is holding, in their own terms. Omitted entirely when empty. */
   holding?: readonly string[];
+  /**
+   * What the learner looks like — `describeLearner`'s phrase, e.g. "a woman in her thirties"
+   * (migration 164, `learnerProfile.ts`). Omitted when the learner has not told us.
+   *
+   * ⚠️ SERVER-SUPPLIED ONLY. `parsePerception` in the runtime controller never reads it from
+   * the request body; `ImmersiveWorldService` sets it from the account. A client-supplied copy
+   * would be free text reaching the prompt outside the learner's quoted span (§ 11).
+   */
+  learner?: string;
 }
 
 export interface TurnStateInput extends IWContextInput {
@@ -114,7 +123,7 @@ export interface CollectGoal {
 /** What prompted this NPC's turn. */
 export type TurnEvent =
   /** Somebody said something this NPC heard. `addressed` = they were plainly the target. */
-  | { kind: 'utterance'; speaker: string; text: string; addressed: boolean; volume?: IWVolume }
+  | { kind: 'utterance'; speaker: string; text: string; addressed: boolean }
   /** Somebody arrived in earshot without speaking. */
   | { kind: 'approach'; who: string }
   /** A complication or event fired and this NPC noticed it. */
@@ -147,17 +156,9 @@ function renderNearby(nearby: readonly NearbyBody[]): string {
 function renderEvent(event: TurnEvent): string {
   switch (event.kind) {
     case 'utterance': {
-      // ⚠️ THE VOLUME IS COLOUR, NOT A GATE (§ 4c). Whether this NPC hears the line at all was
-      // settled before the turn was requested — an NPC out of range is never asked. What
-      // reaches the prompt is only the register: somebody whispered to should answer like
-      // somebody whispered to, and being shouted at across a room is worth knowing about.
-      // Absent (an older client, or a scripted beat) reads exactly as it always did.
-      const said = event.volume === 'whisper' ? 'whispered'
-        : event.volume === 'shout' ? 'shouted'
-          : event.addressed ? 'said' : 'say';
       return event.addressed
-        ? `JUST NOW, ${event.speaker} ${said} to you: "${event.text}"`
-        : `JUST NOW you overheard ${event.speaker} ${said}, not to you: "${event.text}"`;
+        ? `JUST NOW, ${event.speaker} said to you: "${event.text}"`
+        : `JUST NOW you overheard ${event.speaker} say, not to you: "${event.text}"`;
     }
     case 'approach':
       return `JUST NOW, ${event.who} walked up to you and said nothing.`;
@@ -189,6 +190,12 @@ export function renderContextSections(input: IWContextInput): string[] {
     'NEARBY (tile distance from you):',
     renderNearby(input.nearby),
   ];
+
+  // Beside NEARBY because it is the same kind of fact — what this NPC can see of a body in the
+  // scene. Absent, not "(unknown)", when the learner has not told us: an NPC told the customer
+  // is "unknown" would reasonably treat that as something odd about them.
+  const learnerLine = renderLearnerLine(input.learner);
+  if (learnerLine) sections.push('', learnerLine);
 
   if (input.holding?.length) {
     sections.push('', 'YOU ARE HOLDING:', bullets(input.holding, ''));

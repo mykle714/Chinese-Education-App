@@ -383,7 +383,15 @@ only once that tap has been *confirmed*; see § 3.3a. Tapping empty space never 
 Hue alone carries the result — no icons, no patterns. Accepted knowingly: the game has
 no fail condition, so a misread colour costs the player nothing real.
 
-**On the third miss the English prompt itself turns red.** That is the entire
+**Since v2 the hue is the parcel's FILL, not the glyphs' colour** — the MID tier of each
+(`COLORS.grnM` / `orgM` / `redM`, `OUTCOME_FILL` in `src/games/memory-map/constants.ts`),
+with ink glyphs; the wrong-tap flash is `redMk` and the pulse glow `redMk`
+(`MemoryMapWord.tsx`). The text tint it replaced (`successInk` / `warnInk` / `dangerInk`)
+became plain ink in v2 and would have erased the result. The end popup's tally counts sit
+on the same three fills (`MemoryMapPage.tsx`).
+
+**On the third miss the English prompt bar turns red** (since v2 the bar's fill,
+`COLORS.redM`, with ink text — `MemoryMapPrompt.tsx`; it was red text before v2). That is the entire
 find-the-failed-word affordance: the red prompt tells you to stop recalling and start
 looking for a pulsing word. No camera ease, no edge arrow, no directional hint —
 searching is the game, and the red prompt is what stops the player thinking they are
@@ -392,8 +400,9 @@ still being tested.
 ### 3.3a Answering takes two taps: select, then confirm
 
 **The first tap on an uncoloured word ARMS it; a second tap on the SAME word answers.**
-The armed word wears a blue ring (`SELECT_RING_PX`, `COLORS.blueMain` — deliberately
-none of the three outcome hues, because a selected word has no result yet). Tapping a
+The armed word wears an ink ring (`SELECT_RING_PX`, `COLORS.infoInk`, which v2 made ink;
+it was blue before — deliberately none of the three outcome hues, because a selected word
+has no result yet). Tapping a
 different word moves the ring; **tapping open water drops it**.
 
 Why: the parcels are small, the board is dense, and the finger that answers is the same

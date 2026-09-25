@@ -1,4 +1,5 @@
-import { COLORS, type RampHue } from "../../theme/colors";
+import { COLORS, RAMP, type RampHue } from "../../theme/colors";
+import { COLOURED_BUBBLE_RING, NEUTRAL_BUBBLE_RING } from "../bubbles/constants";
 import type { MarkType } from "../../types";
 import type { LevelConfig } from "./types";
 
@@ -100,6 +101,16 @@ export const LEVEL_CONFIGS: LevelConfig[] = [
 // bounds.top and the shared physics has no ceiling concept of its own.
 export const MIN_PLAY_HEIGHT = 0; // px — the ceiling closes the play area completely
 
+/**
+ * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
+ * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ *
+ * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
+ * the registry reads this, and the page passes it to `gameSurfaceSx` /
+ * `GameSurfaceProvider`. Tapping a red row must open a red screen.
+ */
+export const GAME_HUE: RampHue = "red";
+
 // ---- Base bubble palette (kind-keyed) ------------------------------------
 // TWO COLOURS, AND THE RULE IS EXACTLY ONE BIT WIDE (docs/SHELF_REDESIGN.md § 12):
 // the game's red accent means "this bubble is a foreign word", inert grey means "this
@@ -113,21 +124,22 @@ export const MIN_PLAY_HEIGHT = 0; // px — the ceiling closes the play area com
 // ladder — which is why this palette is per-game and the shared `Bubble` takes a
 // `fill` prop rather than knowing either scheme.
 //
-// The borders match their fills: the design's `.bub` has no ring at all, its edge
-// comes from the inset gloss (see Bubble.tsx). A same-colour border keeps the
-// element's geometry identical to a bubble that DOES want a ring (Hydra's tier
-// weights) instead of making the two games' bubbles different sizes.
-export const WORD_BUBBLE_BG = COLORS.red;
-export const WORD_BUBBLE_BORDER = COLORS.red;
+// ── SHELF SYSTEM v2 (artboard 12, `#bm`) ─────────────────────────────────────────
+// The artboard's base rule paints `.bub.zh` the game hue's MID tier (`--redK` = `--redM`)
+// and meaning bubbles `--grey`, and its caption says the same: "Two colours only: every
+// Chinese word carries the game's own red accent, every meaning is neutral … Mid:
+// bubbles". The artboard's LATER override block then inverts it (`.bub.zh` white,
+// `.bub:not(.zh)` red). We follow the CAPTION and the base rule, not the override:
+// the whole point of this palette is that the coloured bubble is the one the player
+// hunts (the Chinese word), and the inversion would put the game's accent on the
+// meaning side for no stated reason. Hydra Bubbles makes the same choice — colour on
+// the word side, where its payout tier lives.
+//
+// From the override we DO keep its ring rule, because it is not side-specific: the
+// coloured bubble wears an ink ring, the neutral one a `--line2` ring (see
+// COLOURED_BUBBLE_RING / NEUTRAL_BUBBLE_RING in ../bubbles/constants).
+export const WORD_BUBBLE_BG = RAMP[GAME_HUE].mid;
+export const WORD_BUBBLE_BORDER = COLOURED_BUBBLE_RING;
 export const DEFINITION_BUBBLE_BG = COLORS.grey;
-export const DEFINITION_BUBBLE_BORDER = COLORS.grey;
+export const DEFINITION_BUBBLE_BORDER = NEUTRAL_BUBBLE_RING;
 
-/**
- * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
- * flooded with (docs/SHELF_REDESIGN.md § A6b).
- *
- * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
- * the registry reads this, and the page passes it to `gameSurfaceSx` /
- * `GameSurfaceProvider`. Tapping a red row must open a red screen.
- */
-export const GAME_HUE: RampHue = "red";

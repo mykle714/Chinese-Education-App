@@ -182,7 +182,7 @@ export const BoardRow: React.FC<BoardRowProps> = ({
             gap: "11px",
             padding: "9px 13px",
             position: "relative",
-            backgroundColor: highlighted ? RAMP.org.fill : ZONE_ROW_BG[zone],
+            backgroundColor: highlighted ? RAMP.org.surface : ZONE_ROW_BG[zone],
             // `position: relative` is load-bearing: the separator the PARENT draws is a
             // ::before on this element (see Board), and it is absolutely positioned.
         }}
@@ -297,33 +297,18 @@ export interface BoardZoneProps {
 /**
  * Colours for a divider: its ground, its caption, and its rule.
  *
- * ⚠️ HALF A DEPARTURE FROM THE ARTBOARD — it used to be a whole one. The design writes
- * these captions as `#0B5C46` and `#7A1024`, and this note used to call BOTH of them
- * off-ramp darks that were refused on principle.
- *
- * That was right about the green and wrong about the red. `#7A1024` converts to
- * oklch(38% 0.138 18), which IS the design's own `--redA` — our `redA` had simply
- * drifted (it sat at oklch(54% 0.15 20) until the 2026-09-21 palette alignment). So
- * `RAMP.red.ink` now renders the artboard's demotion caption exactly, and the red half
- * of this departure no longer exists.
- *
- * The green half stands: `#0B5C46` is oklch(42% 0.081 169) — a dark TEAL-green that is
- * genuinely no ramp entry (`--grnA` is oklch(53% 0.12 145), 24 degrees away). Minting it
- * for two words of caption is how a palette starts leaking, so promotion keeps
- * `RAMP.grn.ink`: a step lighter than the artboard, still clear of 4.5:1. Revisit only
- * if the green zone ever needs to shout louder than the app's semantic green.
+ * v2 (`shelf-system-v2.css` → `.bd .zone.up` / `.dn`): the ground is the hue's MID tier
+ * (`--grnK` / `--redK`, K = M — artboard 9: "Mid: promotion / demotion dividers"), the
+ * caption is INK, and the rule is ink at the artboard's own .32 / .30 alpha. The v1
+ * captions in dark green / wine went with the ink tier; direction is carried by the
+ * arrow and the words, the hue only says which zone you are looking at.
  */
 const ZONE_DIVIDER: Record<
     BoardZoneTone,
     { bg: string; ink: string; rule: string; arrow: string | null }
 > = {
-    // The rule is its own caption's ink, softened — `alpha()` rather than a hand-written
-    // rgba(), because these two used to be literal copies and the red one silently
-    // drifted off its ink when the palette moved (it was still `#B54249` at 30% after
-    // `redA` became `#78182B`). A rule that is "the caption colour, quieter" should be
-    // derived from the caption colour. The artboard's own alphas are kept: .32 / .30.
-    promote: { bg: RAMP.grn.fill, ink: RAMP.grn.ink, rule: alpha(RAMP.grn.ink, 0.32), arrow: "arrow_upward" },
-    relegate: { bg: RAMP.red.fill, ink: RAMP.red.ink, rule: alpha(RAMP.red.ink, 0.30), arrow: "arrow_downward" },
+    promote: { bg: RAMP.grn.mid, ink: COLORS.onSurface, rule: alpha(COLORS.onSurface, 0.32), arrow: "arrow_upward" },
+    relegate: { bg: RAMP.red.mid, ink: COLORS.onSurface, rule: alpha(COLORS.onSurface, 0.30), arrow: "arrow_downward" },
     // No arrow on the neutral rule: `hold` is the absence of a direction, and an arrow
     // that pointed nowhere would be the one piece of this divider a reader had to decode.
     hold: { bg: COLORS.background, ink: COLORS.textSecondary, rule: COLORS.wood, arrow: null },

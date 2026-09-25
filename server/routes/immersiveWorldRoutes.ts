@@ -61,6 +61,9 @@ router.post('/api/immersiveWorld/turn', authenticateToken, handle(immersiveWorld
 router.post('/api/immersiveWorld/line', authenticateToken, handle(immersiveWorldRuntimeController.renderLine, immersiveWorldRuntimeController));
 // § 4.2 — who was the learner talking to. Plain JSON (one id), unlike its two SSE neighbours.
 router.post('/api/immersiveWorld/addressee', authenticateToken, handle(immersiveWorldRuntimeController.routeAddressee, immersiveWorldRuntimeController));
+// § 5.4 — where an `ai_walk` step goes: an index into a closed list the client built and the
+// server re-checks. Plain JSON, like /addressee.
+router.post('/api/immersiveWorld/destination', authenticateToken, handle(immersiveWorldRuntimeController.pickDestination, immersiveWorldRuntimeController));
 // § 5.3b — the learner's OWN line, segmented so their bubble carries pinyin and tappable
 // words like an NPC's. Separate from /turn because the bubble it describes is replaced by the
 // reply: on the turn stream it would arrive too late to paint anything.

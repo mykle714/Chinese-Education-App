@@ -571,7 +571,7 @@ Both popups are on screen together, so they must never read as one thing:
 | | Collapses to | Puck color |
 |---|---|---|
 | End-of-run popup (`GameEndPopup`) | top-**right** | neutral card color |
-| Sort offer (`ProvisionalSortOffer`) | top-**left** | blue accent (`COLORS.blueMain`), white icon |
+| Sort offer (`ProvisionalSortOffer`) | top-**left** | ink (`COLORS.infoInk`), white icon |
 
 Minimizing the offer is the "not right now, but don't take it away" answer — it lives on
 as the corner puck for the rest of the round; **Not now** dismisses it for good. The

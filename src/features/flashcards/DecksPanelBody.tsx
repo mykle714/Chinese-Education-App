@@ -13,6 +13,7 @@ import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import { SAFE_BOTTOM } from "../../theme/safeArea";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import { SHEET_EDGE_FADE_MASK } from "../../components/sheet/sheetStyled";
+import { useScrollEdgeFade } from "../../components/scrollEdgeFade";
 import type { SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
 import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
@@ -235,6 +236,8 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
     const showDecks = section === "all" || section === "decks";
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    // Feeds the scroll-aware edge-fade bands on the scroller (either mask below).
+    useScrollEdgeFade(scrollRef);
 
     // ── Back restore: put the scroller back where the learner left it ────────────
     // Deps-free on purpose, guarded by a once-flag: in the SHEET variant this body lives
@@ -416,7 +419,13 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                                         glyph={collectionGlyph({ kind: "deck", deckId: deck.id })}
                                         variant={isSheet ? "base" : spineHeight(deck.cardCount)}
                                         height={isSheet ? SHEET_SPINE_HEIGHT : undefined}
-                                        color={deckTileColors(deck.id).main}
+                                        // v2 Challenges shelf: a live challenge spine is
+                                        // `--orgM` (orange = "the deck, not the challenge",
+                                        // the `study` pill's hue in challengeActionColor).
+                                        // The design paints a FINISHED challenge `--grey`,
+                                        // but DeckSummary carries no challenge status, so
+                                        // every preset deck takes the live colour for now.
+                                        color={COLORS.orgM}
                                         animationDelay={Math.min(index, 5) * 70}
                                         onClick={() => onOpenPath(`/flashcards/deck/${deck.id}`)}
                                     />

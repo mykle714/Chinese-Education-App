@@ -1,6 +1,7 @@
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
+import { edgeFadeAboveBand, edgeFadeBelowBand } from "../scrollEdgeFade";
 
 /**
  * Styled surfaces for `SheetPanel` — the app's modal/persistent bottom sheet.
@@ -110,15 +111,22 @@ export const InfoSheetGrabber = styled(Box)(({ theme }) => ({
 // smaller box and a page-sized band eats a visible fraction of it.
 const SHEET_EDGE_FADE_TOP_BAND = 20;
 export const SHEET_EDGE_FADE_BAND = 24;
+//
+// SCROLL-AWARE, like the page masks: each band's height is the content actually cut
+// off at that edge, clamped to the band. So a panel at rest has no top fade over its
+// first row, and a panel scrolled to the end has no bottom fade over its last. The
+// scroller must be tracked (`trackScrollEdgeFade` / `useScrollEdgeFade`,
+// components/scrollEdgeFade). An untracked one falls back to the full bands.
 export const SHEET_EDGE_FADE_MASK =
-    `linear-gradient(to bottom, transparent 0, #000 ${SHEET_EDGE_FADE_TOP_BAND}px, ` +
-    `#000 calc(100% - ${SHEET_EDGE_FADE_BAND}px), transparent 100%)`;
+    `linear-gradient(to bottom, transparent 0, #000 ${edgeFadeAboveBand(SHEET_EDGE_FADE_TOP_BAND)}, ` +
+    `#000 calc(100% - ${edgeFadeBelowBand(SHEET_EDGE_FADE_BAND)}), transparent 100%)`;
 // Bottom band only. For a scroller whose first row must stay solid — nothing uses this
 // today; it exists so "no top fade" is a stated choice rather than a re-derived string.
 export const SHEET_EDGE_FADE_MASK_NO_TOP =
-    `linear-gradient(to bottom, #000 0, #000 calc(100% - ${SHEET_EDGE_FADE_BAND}px), transparent 100%)`;
+    `linear-gradient(to bottom, #000 0, #000 calc(100% - ${edgeFadeBelowBand(SHEET_EDGE_FADE_BAND)}), transparent 100%)`;
 
-// Spread into any scroller's `sx` to wear the fade. Both spellings, because
+// Spread into any scroller's `sx` to wear the fade, and track that scroller
+// (`trackScrollEdgeFade`) so the bands only show where content is cut off. Both spellings, because
 // iOS Safari still needs the prefixed property.
 export const sheetEdgeFadeSx = {
     maskImage: SHEET_EDGE_FADE_MASK,

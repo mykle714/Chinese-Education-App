@@ -7,7 +7,7 @@
  * modules; no DOM, no fetch.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6r (layout and modes), § 6h/§ 6k (lookup and
- * ranking), § 6q (the word fallback).
+ * ranking), § 6q (the word fallback), § 6z-4 (hint bubbles on glyph chips).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * THE CANDIDATE ROW IS MODAL — ONE ROW, TWO MEANINGS
@@ -24,7 +24,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Ink } from '../../components/handwriting/types';
 import { matchGlyphs } from '../../components/handwriting/glyphMatcher';
-import { expandGlyph, lookupBuffer } from '../../components/handwriting/glyphLookup';
+import { expandGlyph, findHintCharacter, lookupBuffer } from '../../components/handwriting/glyphLookup';
 import type { GlyphTemplates } from '../../components/handwriting/glyphTemplates';
 import type { GlyphLookupIndex, GlyphWordPool } from '../../components/handwriting/glyphLookup';
 import {
@@ -33,6 +33,7 @@ import {
   bufferAfterSelect,
   toGlyphCandidates,
   toResultCandidates,
+  withHints,
   type Candidate,
   type CandidateMode,
 } from './compositionRules';
@@ -107,6 +108,18 @@ export function useComposition({ templates, index, words }: CompositionDeps): Co
   }, [ink, templates, hasInk]);
 
   /**
+   * § 6z-4: the glyph chips, each carrying a hint bubble when it plus the buffer
+   * is on track to spell a common character.
+   *
+   * A separate memo from the matcher's so a buffer change re-derives only the
+   * hints (≤ 12 scans of the ~760 common records), not the ink match.
+   */
+  const hintedGlyphCandidates = useMemo<Candidate[]>(() => {
+    if (!index) return glyphCandidates;
+    return withHints(glyphCandidates, buffer, (current, glyph) => findHintCharacter(current, glyph, index));
+  }, [glyphCandidates, buffer, index]);
+
+  /**
    * Buffer → character candidates, falling back to words when empty (§ 6q).
    *
    * The buffer IS the component list — expansion happened at append time — so
@@ -118,7 +131,7 @@ export function useComposition({ templates, index, words }: CompositionDeps): Co
   }, [buffer, index, words]);
 
   const mode = activeMode(hasInk);
-  const candidates = hasInk ? glyphCandidates : resultCandidates;
+  const candidates = hasInk ? hintedGlyphCandidates : resultCandidates;
 
   const reset = useCallback(() => {
     setBuffer([]);

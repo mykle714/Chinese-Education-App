@@ -93,13 +93,20 @@ export class UserController {
       // an old client or a scripted signup omits it and the service falls back to
       // 'UTC' — but supplying it is what keeps the account off the column default
       // for the window between signup and the first login/minute point.
-      const { email, name, password, tz } = req.body;
+      //
+      // `gender` / `birthDate` (migration 164) are asked on the signup form, where "Prefer not
+      // to answer" sends null. Optional here for the same reason as `tz` — an older client or a
+      // scripted signup omits them and the account is simply born "not told".
+      // UserService.createUser validates both (validateDemographics) and 400s a bad value.
+      const { email, name, password, tz, gender, birthDate } = req.body;
 
       const newUser = await this.userService.createUser({
         email,
         name,
         password,
-        timezone: tz
+        timezone: tz,
+        gender,
+        birthDate,
       });
 
       await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
@@ -337,6 +344,30 @@ export class UserController {
   }
 
   /**
+   * Set or clear the learner's gender / date of birth (migration 164).
+   * PUT /api/users/demographics — Body: { gender?: 'male' | 'female' | null, birthDate?: 'YYYY-MM-DD' | null }
+   *
+   * Both optional; at least one required; `null` = "Prefer not to answer". Validation is
+   * entirely UserService.validateDemographics (shared with signup), whose ValidationError
+   * handleError maps to a 400. Read by the iw learner description and body —
+   * docs/IMMERSIVE_WORLD.md § 5.5.
+   */
+  async updateDemographics(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        res.status(401).json({ error: 'User not authenticated', code: 'ERR_NOT_AUTHENTICATED' });
+        return;
+      }
+      const { gender, birthDate } = req.body ?? {};
+      const updatedUser = await this.userService.updateDemographics(userId, { gender, birthDate });
+      res.json(updatedUser);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  /**
    * Update the user's profile avatar (the icons8 icon they picked).
    * PUT /api/users/avatar
    *
@@ -515,13 +546,28 @@ export class UserController {
   }
 
   /**
-   * Get user profile by ID
+   * Get the caller's OWN user row by ID.
    * GET /api/users/:id
+   *
+   * ⚠️ SELF-ONLY (2026-09-23). This used to return ANY account's `findById` row to any signed-in
+   * caller — email, timezone, and since migration 164 gender and date of birth. The row is
+   * private by nature, so another account's id is refused outright rather than filtered field
+   * by field (a filter has to be remembered every time a column is added; a refusal does not).
+   * What other people may see about an account is `GET /api/users/:userId/profile`
+   * (UserProfileController), which selects public fields explicitly.
+   *
+   * 403 rather than 404: the id is not secret (it appears on friend lists and boards), so
+   * pretending it does not exist would protect nothing.
    */
   async getUserById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      
+      const callerId = (req as any).user?.userId;
+      if (!callerId || callerId !== id) {
+        res.status(403).json({ error: 'You can only read your own account', code: 'ERR_FORBIDDEN' });
+        return;
+      }
+
       const user = await this.userService.getUserProfile(id);
       res.json(user);
     } catch (error) {
@@ -529,18 +575,8 @@ export class UserController {
     }
   }
 
-  /**
-   * Get all users (admin function)
-   * GET /api/users
-   */
-  async getAllUsers(req: Request, res: Response): Promise<void> {
-    try {
-      const users = await this.userService.getAllUsers();
-      res.json(users);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // NOTE: getAllUsers (GET /api/users) was deleted 2026-09-23 — it exposed every account's
+  // password hash to any signed-in caller. See the note in server/routes/userRoutes.ts.
 
   // NOTE: GET /api/users/:id/totalMinutePoints was removed by migration 130. There is no single
   // "total minute points" any more — each language has its own wallet. The client reads

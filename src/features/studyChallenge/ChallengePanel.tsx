@@ -379,7 +379,7 @@ function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
                             onClick={handleConfirm}
                             disabled={busy || loading || words.length === 0}
                             startIcon={<CheckIcon />}
-                            sx={{ ...sheetActionSx, flex: 1, backgroundColor: COLORS.grn }}
+                            sx={{ ...sheetActionSx, flex: 1, backgroundColor: COLORS.grnM /* v2: buttons are MID */ }}
                         >
                             {target.mode === "issue" ? "Send challenge" : "Accept"}
                         </Button>
@@ -420,8 +420,8 @@ function ChallengePanel({ target, onClose, onChanged }: ChallengePanelProps) {
                 }}
             >
                 {editable
-                    ? <VerifiedIcon sx={{ fontSize: 16, color: COLORS.bluA }} />
-                    : <ScheduleIcon sx={{ fontSize: 16, color: COLORS.orgA }} />}
+                    ? <VerifiedIcon sx={{ fontSize: 16, color: COLORS.infoInk }} />
+                    : <ScheduleIcon sx={{ fontSize: 16, color: COLORS.warnInk }} />}
                 {editable
                     ? "Tap a card to mark it as known"
                     : `Expires ${deadlineLabel(challenge?.deadlines.acceptDeadline)}`}

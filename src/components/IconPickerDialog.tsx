@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
     Dialog,
@@ -318,7 +319,7 @@ function IconPickerDialog({
                                     border: isSelected
                                         ? `2px solid ${COLORS.infoInk}`
                                         : `1px solid ${COLORS.border}`,
-                                    backgroundColor: isSelected ? "rgba(119,155,231,0.12)" : "transparent",
+                                    backgroundColor: isSelected ? alpha(COLORS.bluMk, 0.14) : "transparent",
                                     transition: "background-color 0.15s ease, border-color 0.15s ease",
                                     "&:hover": { backgroundColor: COLORS.rowHoverBg },
                                 }}

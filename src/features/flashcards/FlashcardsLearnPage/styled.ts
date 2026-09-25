@@ -1,6 +1,6 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha, keyframes } from "@mui/material/styles";
-import { CORRECT_COLOR, INCORRECT_COLOR, FC_FONT } from "../constants";
+import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { COLORS } from "../../../theme/colors";
@@ -411,7 +411,7 @@ export const SwipeHintLabel = styled(Box, {
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
     letterSpacing: "0.02em",
-    color: side === "left" ? INCORRECT_COLOR : CORRECT_COLOR,
+    color: side === "left" ? INCORRECT_LABEL : CORRECT_LABEL,
     opacity: visible ? 1 : 0,
     transform: visible ? "translateY(0)" : "translateY(-4px)",
     transition: "opacity 0.28s ease, transform 0.28s ease",

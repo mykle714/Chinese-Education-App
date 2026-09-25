@@ -14,8 +14,8 @@
 // wire contract cannot import a theme token; the two are no longer trusted to stay in
 // sync by hand — src/__tests__/cardColor.test.ts asserts they are identical, so a
 // repaint of the tokens below is a red build until the server copy follows (and until
-// a migration remaps already-stored fills; see migration 153). Built from design tokens
-// (COLORS) rather than inline hex so the swatches stay re-themeable.
+// a migration remaps already-stored fills; see migration 153). The neutrals are built
+// from design tokens; the five hue swatches are pinned literals (see below).
 
 import { COLORS } from "../theme/colors";
 
@@ -49,11 +49,19 @@ export const CARD_COLOR_OPTIONS: CardColorOption[] = [
     { label: "white", value: "#FFFFFF", swatch: "#FFFFFF" },
     { label: "black", value: "#000000", swatch: "#000000" },
     // Row 2 (pastel hues): red / green / blue / yellow / purple.
-    { label: "red", value: COLORS.redAccent, swatch: COLORS.redAccent },
-    { label: "green", value: COLORS.greenAccent, swatch: COLORS.greenAccent },
-    { label: "blue", value: COLORS.blueAccent, swatch: COLORS.blueAccent },
-    { label: "yellow", value: COLORS.yellowAccent, swatch: COLORS.yellowAccent },
-    { label: "purple", value: COLORS.purpleAccent, swatch: COLORS.purpleAccent },
+    //
+    // ⚠️ PINNED LITERALS, not ramp tokens (since the v2 repaint, docs/SHELF_REDESIGN.md
+    // § A1b). These are STORED DATA: vet."cardColor" holds the raw hex, and
+    // resolveCardColor() drops any value not in this list back to the theme default. v2
+    // nudged the Tint tier's hues by ~1 ΔE, which would have stranded every stored fill
+    // behind a remap migration (the migration-153 trap) for a change nobody can see. So
+    // the swatches are frozen at the hexes users already chose; each notes the tint it
+    // descends from. Re-point them only together with a data migration.
+    { label: "red", value: "#FFF2F2", swatch: "#FFF2F2" },       // ≈ --redTint (v1)
+    { label: "green", value: "#F0FAF0", swatch: "#F0FAF0" },     // = --grnTint
+    { label: "blue", value: "#EEF8FF", swatch: "#EEF8FF" },      // ≈ --bluTint (v1)
+    { label: "yellow", value: "#FFF5EA", swatch: "#FFF5EA" },    // ≈ --orgTint (v1)
+    { label: "purple", value: "#F8F4FF", swatch: "#F8F4FF" },    // = --purTint
 ];
 
 /**

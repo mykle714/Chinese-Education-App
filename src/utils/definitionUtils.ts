@@ -291,8 +291,16 @@ export function resolveDisplayPronunciation(
   entry: Pick<VocabEntry, 'pronunciation' | 'definitionClusters' | 'selectedSense'>,
   senseIndexOverride?: number,
 ): string | null {
-  const columnPinyin = entry.pronunciation ?? null;
-  const reading = readingCluster(entry, senseIndexOverride)?.reading;
+  return clusterReadingOrColumn(readingCluster(entry, senseIndexOverride), entry.pronunciation ?? null);
+}
+
+/**
+ * A cluster's numbered `reading`, tone-marked — or the `pronunciation` column when there is
+ * no cluster, no reading, or a reading whose syllable count disagrees with the column (see the
+ * guard note on `resolveDisplayPronunciation`). Shared by both pronunciation resolvers.
+ */
+function clusterReadingOrColumn(cluster: DefinitionCluster | null, columnPinyin: string | null): string | null {
+  const reading = cluster?.reading;
   if (!reading) return columnPinyin;
   const toned = numberedToTonedPinyin(reading);
   if (!toned) return columnPinyin;
@@ -300,6 +308,30 @@ export function resolveDisplayPronunciation(
     return columnPinyin;
   }
   return toned;
+}
+
+/**
+ * **The default-reading resolver — for surfaces that show a word WITHOUT one chosen sense.**
+ * Client twin of `resolveDefaultPronunciation` in `server/utils/definitions.ts`.
+ *
+ * The entry's default sense is its highest-`frequencyScore` cluster among ALL clusters (a tie
+ * going to the earlier one in array order — backfill-cluster-definitions' Stage C.5 orders
+ * ties deliberately). Unlike `readingCluster`, gloss-less grammatical clusters are NOT skipped:
+ * that skip is a CARD rule (a card prints one sense's gloss, so a particle cluster must not
+ * donate its reading to it), and applied to a list row it reads 了 as `liǎo` — its particle
+ * senses (`le`, score 5) carry only parenthetical glosses.
+ *
+ * Use it where the row prints the FLAT definitions list — the dictionary search row, the iw
+ * lookup results, the community search header, the Reader's dictionary card. Use
+ * `resolveDisplayPronunciation` wherever one sense's gloss is shown (cards, the eip, games).
+ * See docs/DEFINITION_CLUSTERS.md.
+ */
+export function resolveDefaultPronunciation(
+  entry: Pick<VocabEntry, 'pronunciation' | 'definitionClusters'>,
+): string | null {
+  const clusters = Array.isArray(entry.definitionClusters) ? entry.definitionClusters.filter(Boolean) : [];
+  const top = [...clusters].sort((a, b) => (b.frequencyScore ?? -1) - (a.frequencyScore ?? -1))[0] ?? null;
+  return clusterReadingOrColumn(top, entry.pronunciation ?? null);
 }
 
 /**

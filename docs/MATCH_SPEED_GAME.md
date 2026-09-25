@@ -995,8 +995,8 @@ colours unambiguous — a filled card is always saying something about what just
 
 | State | Treatment |
 |---|---|
-| idle | paper (foreign) or white (english), hairline border |
-| selected | `COLORS.blu` fill, border blended into it (`.msc.pick`) |
+| idle | white (both columns since v2, `.msc`), hairline border |
+| selected | `COLORS.blu` fill with a 2px **ink** edge (`.msc.pick`, v2): the 1px border in ink plus a 1px inset ring, so the border box never changes (`SELECTED_CARD_BORDER`, `src/games/match-speed/constants.ts`; `MatchSpeedCard.tsx`) |
 | wrong | `COLORS.red` fill + `dangerInk` text, ~400ms, **board stays live** |
 | partner-hint (cleanup only) | `COLORS.grn` — the same green a correct match pops |
 

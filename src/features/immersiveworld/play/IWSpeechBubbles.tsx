@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Box, IconButton } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import ForeignText from '../../../components/ForeignText';
 import SegmentedSentenceDisplay from '../../../components/SegmentedSentenceDisplay';
 import { revealedText } from '../../../engine/iw/revealSchedule';
@@ -98,15 +100,53 @@ import type { IWBubble } from './useIWSceneRuntime';
  * Referenced by: docs/IMMERSIVE_WORLD.md § 5.3a, § 6.4, § 14 Q41.
  */
 
-/** One glyph per emote. It drives a face; it is never rendered as words (§ 5.1 line 3). */
-const EMOTE_GLYPH: Record<IWEmote, string> = {
+/**
+ * One emoji per emote, released as a puff above the bubble when a line starts (§ 5.3a). It is
+ * never rendered as words (§ 5.1 line 3). `neutral` is empty: no mood, no puff.
+ */
+const EMOTE_EMOJI: Record<IWEmote, string> = {
   neutral: '',
-  curious: '?',
-  pleased: '♪',
-  confused: '…',
-  impatient: '!',
-  amused: '~',
+  curious: '🤔',
+  pleased: '😊',
+  confused: '😕',
+  impatient: '😤',
+  amused: '😄',
 };
+
+/** How long one mood puff lives, in either motion. Long enough to be noticed mid-reveal. */
+const EMOTE_PUFF_MS = 1400;
+/** Rendered emoji size. The puff's physics works on its CENTRE, so this is also its extent. */
+const EMOTE_PUFF_PX = 22;
+/** Anchored float: how far the puff drifts straight up over its life. */
+const EMOTE_FLOAT_RISE_PX = 34;
+/**
+ * Docked launch, in px and px/s. Upward speed and gravity together set the arc's apex
+ * (v² / 2g ≈ 45px), which is kept short on purpose — a docked bubble is at the TOP of the
+ * layer, so height above it is exactly the space the layer clips away.
+ */
+const EMOTE_LAUNCH = {
+  upMin: 230, upMax: 290,
+  sideMin: 70, sideMax: 150,
+  gravity: 700,
+  /** Degrees per second of tumble, signed to the side it flies toward. */
+  spin: 140,
+} as const;
+/**
+ * The puff layer's z-index: in front of the page header (which sets none) and the footer
+ * (`FooterPresenter`, 100), BEHIND sheets and their scrims (`SheetPanel`, 1200+) — an eip
+ * opened by tapping a word mid-puff must not have an emoji flying across it.
+ */
+const EMOTE_PUFF_Z_INDEX = 1100;
+/** Fraction of the life spent fully opaque before the fade begins. */
+const EMOTE_PUFF_HOLD = 0.55;
+
+/**
+ * The "this is you" marker's colour — a scarlet chosen to stay legible on BOTH grounds a board
+ * can have: the page-light dirt plateau and the charcoal wood void (`iwBoardVoid.ts`). A local
+ * constant rather than a theme token because the theme's semantic reds were all set to ink by
+ * the shelf redesign (`COLORS.dangerInk`), and this is not a danger signal anyway.
+ */
+const PLAYER_MARKER_COLOR = '#E0242F';
 
 export interface IWSpeechBubblesProps {
   bubbles: IWBubble[];
@@ -143,10 +183,17 @@ export default function IWSpeechBubbles({
   bubbles, lineSegments, speakerNames, positions, language, onReplay, onSegmentOpen,
 }: IWSpeechBubblesProps) {
   const layerRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The mood puffs' own layer, painted above EVERY tag. State rather than a ref because the
+   * puffs portal into it, so they have to re-render once it exists.
+   */
+  const [puffLayer, setPuffLayer] = useState<HTMLDivElement | null>(null);
   /** Every mounted tag's root, keyed by ACTOR id. Written on mount/unmount. */
   const nodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
   /** The list order, as a ref: the frame loop needs it without being re-registered per render. */
   const orderRef = useRef<{ actorId: string; speaking: boolean }[]>([]);
+  /** The learner's "this is you" arrow. Positioned by the same frame loop as the tags. */
+  const playerMarkerRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * One entry per body that has something to show: everybody with a name, plus anybody
@@ -226,6 +273,22 @@ export default function IWSpeechBubbles({
         node.style.visibility = 'visible';
         node.dataset.docked = placed.t > 0.99 ? 'true' : 'false';
       }
+
+      // The learner's arrow hangs off the same head anchor their bubble does, so the two
+      // would stack in one patch of air. While they speak the bubble already says "this is
+      // you", so the arrow steps aside rather than fighting it for the space.
+      const markerEl = playerMarkerRef.current;
+      if (markerEl) {
+        const anchor = positions.current.get(IW_ACTOR_PLAYER);
+        const playerSpeaking = orderRef.current.some(t => t.actorId === IW_ACTOR_PLAYER && t.speaking);
+        if (!anchor || playerSpeaking) {
+          markerEl.style.visibility = 'hidden';
+        } else {
+          markerEl.style.transform =
+            `translate3d(${Math.round(anchor.x)}px, ${Math.round(anchor.y)}px, 0) translate(-50%, -100%)`;
+          markerEl.style.visibility = 'visible';
+        }
+      }
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
@@ -240,6 +303,27 @@ export default function IWSpeechBubbles({
       // hit-test). See the tag's own note for why an idle nametag stays transparent.
       sx={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}
     >
+      {/**
+        * THE LEARNER'S "THIS IS YOU" ARROW. The learner wears no nametag (see `tags`), so on a
+        * board of look-alike sprites this is what finds them at a glance. DOM rather than Pixi
+        * so it keeps one screen size at every zoom rung, like the tags beside it. Static, and
+        * first in the layer so every nametag and bubble paints over it.
+        */}
+      <Box
+        ref={playerMarkerRef}
+        className="iw-player-marker"
+        aria-hidden
+        sx={{
+          position: 'absolute', top: 0, left: 0, visibility: 'hidden',
+          display: 'flex', color: PLAYER_MARKER_COLOR,
+          // A dark halo, so the scarlet separates from warm wood and light dirt alike.
+          filter: 'drop-shadow(0 0 1.5px rgba(0,0,0,0.75)) drop-shadow(0 1px 2px rgba(0,0,0,0.35))',
+        }}
+      >
+        {/* The glyph box has ~8px of empty air under the chevron; pull it down so the point,
+            not the box, sits at the anchor's gap above the head. */}
+        <KeyboardArrowDownRoundedIcon className="iw-player-marker__icon" sx={{ fontSize: 30, mb: '-8px' }} />
+      </Box>
       {tags.map(({ actorId, bubble }) => (
         <ActorTag
           key={actorId}
@@ -258,8 +342,35 @@ export default function IWSpeechBubbles({
           language={language}
           onReplay={onReplay}
           onSegmentOpen={onSegmentOpen}
+          puffLayer={puffLayer}
         />
       ))}
+      {/**
+        * ⚠️ **THE PUFFS ARE NOT DRAWN INSIDE THEIR TAGS, OR EVEN INSIDE THIS LAYER.**
+        *
+        * Not inside a tag: each tag is its own stacking context (it is positioned by
+        * `transform`), so anything inside it can never paint above a tag later in the list — a
+        * launched puff falling past the docked bubble below its own went BEHIND it — and inside
+        * its own tag it tied with the line's `zIndex: 1` word highlights, which come later in the
+        * DOM and so won.
+        *
+        * Not inside this layer: it is `overflow: hidden`, and so is the page's content box, so a
+        * puff launched off a docked bubble at the top edge was cut off at the page header. The
+        * puffs are instead portaled to a FIXED, full-viewport layer on `document.body`, which
+        * paints over the page header ({@link EMOTE_PUFF_Z_INDEX}). {@link EmotePuff} tracks its
+        * tag's position itself, in viewport px.
+        */}
+      {createPortal(
+        <Box
+          ref={setPuffLayer}
+          className="iw-actor-tags__puffs"
+          sx={{
+            position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden',
+            zIndex: EMOTE_PUFF_Z_INDEX,
+          }}
+        />,
+        document.body,
+      )}
     </Box>
   );
 }
@@ -273,7 +384,7 @@ export default function IWSpeechBubbles({
  * than swapping one component for another: the box the name sits in persists, so its size
  * change is a transition and the name visibly settles into the corner.
  */
-function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay, onSegmentOpen }: {
+function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay, onSegmentOpen, puffLayer }: {
   actorId: string;
   /** The line this body is speaking, or null — which is the whole state distinction. */
   bubble: IWBubble | null;
@@ -284,8 +395,16 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
   register(node: HTMLDivElement | null): void;
   onReplay(text: string): void;
   onSegmentOpen?(segment: string): void;
+  /** Where this tag's mood puff is drawn — above every tag, not inside this one. */
+  puffLayer: HTMLDivElement | null;
 }) {
   const speaking = bubble !== null;
+  /** This tag's root, for the puff to track. `register` still hands it up to the layer too. */
+  const tagRef = useRef<HTMLDivElement | null>(null);
+  const setTagNode = useCallback((node: HTMLDivElement | null) => {
+    tagRef.current = node;
+    register(node);
+  }, [register]);
   const [shown, setShown] = useState('');
 
   // Reveal only — WHERE this tag goes is the layer's job (docking needs to see every bubble at
@@ -338,7 +457,7 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
 
   return (
     <Box
-      ref={register}
+      ref={setTagNode}
       className={`iw-actor-tag iw-actor-tag--${speaking ? 'speaking' : 'idle'} iw-actor-tag--${actorId}`}
       sx={{
         position: 'absolute', top: 0, left: 0, visibility: 'hidden',
@@ -348,6 +467,13 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
         // it would silently eat every tap aimed at the tile above a head, which reads as the
         // world ignoring you rather than as a label being in the way.
         pointerEvents: speaking ? 'auto' : 'none',
+        // ⚠️ **A BUBBLE PAINTS OVER EVERY IDLE NAMETAG.** DOM order alone would do the
+        // opposite: `tags` lists speakers FIRST (for ledge slots), so every idle tag after them
+        // would paint on top of a bubble it overlaps — a neighbour's name sitting across the
+        // line being read. The line is what the learner is looking at; a name is chrome.
+        // (This also makes each tag a stacking context, so the mood puff's own `zIndex` is
+        // scoped to its bubble — still over idle tags, since the bubble itself is.)
+        zIndex: speaking ? 1 : 0,
         // A column: a header row (name + emote + replay) over the spoken line. See the
         // header block below for why the chrome sits above the speech rather than beside it.
         display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0.15,
@@ -376,11 +502,11 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
       }}
     >
       {/**
-        * The header row: WHO this is, HOW they feel, and the replay button — everything that
-        * is not the line itself. Idle, it is the entire tag.
+        * The header row: WHO this is and the replay button — everything that is not the line
+        * itself. Idle, it is the entire tag. The mood is NOT here any more; see the puff below.
         *
-        * ⚠️ **THE CHROME IS ABOVE THE SPEECH, NOT BESIDE IT.** The emote glyph and the replay
-        * icon used to sit at the end of the text row, where they competed for the bubble's
+        * ⚠️ **THE CHROME IS ABOVE THE SPEECH, NOT BESIDE IT.** The emote glyph (since replaced
+        * by the puff) and the replay icon used to sit at the end of the text row, where they competed for the bubble's
         * 260px with the one thing worth reading and pushed a line into an extra wrap. On their
         * own row they cost height only when they have something to say, and they read as what
         * they are: attribution, not words the speaker said.
@@ -395,7 +521,7 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
         * left its speaker behind (see {@link bubbleDock}), and the name is then the only thing
         * that says whose words these are.
         */}
-      {(speaker || (bubble && (EMOTE_GLYPH[bubble.emote] || bubble.replayable))) && (
+      {(speaker || bubble?.replayable) && (
         <Box
           className="iw-actor-tag__header"
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}
@@ -446,11 +572,6 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
               </Box>
             )}
           </Box>
-          {bubble && EMOTE_GLYPH[bubble.emote] && (
-            <Box className="iw-actor-tag__emote" sx={{ flexShrink: 0, fontSize: 14, opacity: 0.75 }}>
-              {EMOTE_GLYPH[bubble.emote]}
-            </Box>
-          )}
           {bubble?.replayable && (
             <IconButton
               className="iw-actor-tag__replay"
@@ -463,6 +584,24 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
             </IconButton>
           )}
         </Box>
+      )}
+      {/**
+        * The mood puff (2026-09-23): the line's emote as an emoji released once as the line
+        * starts. It replaced a static glyph in the header row, which sat there for the whole
+        * line as one more piece of chrome to read; a mood is an event — the moment somebody says
+        * something WITH a feeling — so it is shown as one. See {@link EmotePuff} for its two
+        * motions (float over a head, launch off a docked bubble).
+        *
+        * ⚠️ **PORTALED INTO THE PUFF LAYER, NOT A CHILD OF THE TAG**, so it paints in front of
+        * every bubble (see the layer's note). It still belongs to this tag in React terms — it
+        * unmounts with the line — and follows the tag by reading its box every frame.
+        *
+        * ⚠️ **KEYED BY `startedAt`**, so each new line remounts it and replays the animation —
+        * the tag element itself survives consecutive lines from one speaker (see `tags`).
+        */}
+      {bubble && EMOTE_EMOJI[bubble.emote] && puffLayer && createPortal(
+        <EmotePuff key={bubble.startedAt} emote={bubble.emote} tagRef={tagRef} />,
+        puffLayer,
       )}
       {bubble && (
         <Box className="iw-actor-tag__line">
@@ -494,6 +633,133 @@ function ActorTag({ actorId, bubble, line, speaker, language, register, onReplay
           )}
         </Box>
       )}
+    </Box>
+  );
+}
+
+/**
+ * One mood puff. It picks its motion from where the bubble is when the line starts:
+ *
+ * - **Anchored** (the bubble sits over its speaker's head): it rises straight up off the
+ *   bubble's top edge and fades — a thought leaving the head it belongs to.
+ * - **Docked** (the speaker is off screen and the bubble has travelled to the ledge at the top
+ *   of the layer, {@link bubbleDock}): it LAUNCHES from a random point inside the bubble, up and
+ *   out to a random side, then falls under gravity as it fades. The anchored float would rise
+ *   straight into the layer's clipped top edge here and be cut off almost at once; a launch
+ *   spends most of its life falling back down into view instead.
+ *
+ * ⚠️ **THE MOTION IS DECIDED ONCE, ON THE FIRST FRAME, AND NEVER SWITCHED.** It reads the
+ * tag's `data-docked`, which the layer's positioning loop writes every frame. That loop's
+ * callback is queued ahead of this one, so the first read already reflects the new line's
+ * placement. A bubble that docks or un-docks MID-puff keeps its original motion — the puff
+ * is over in under a second and a half, and a mid-flight change of physics reads as a glitch.
+ *
+ * ⚠️ **POSITION IS WRITTEN, NOT RENDERED** — the same rule as the tags themselves (see the file
+ * header): the simulation writes `style.transform` and `style.opacity` from an animation frame
+ * and sets no React state, so a puff costs no re-renders.
+ *
+ * Reduced motion: neither path moves; the emoji appears in place and fades.
+ */
+function EmotePuff({ emote, tagRef }: {
+  emote: IWEmote;
+  /** The tag this puff belongs to. The puff lives in another layer, so it cannot use its parent. */
+  tagRef: React.MutableRefObject<HTMLDivElement | null>;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    const tag = tagRef.current;
+    const layer = el?.parentElement;
+    if (!el || !tag || !layer) return undefined;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let raf = 0;
+    let t0 = 0;
+    /** Where, in the tag's own px, the puff's centre starts, and how it then moves. */
+    let path: (s: number) => { x: number; y: number; rot: number } = () => ({ x: 0, y: 0, rot: 0 });
+
+    const frame = (now: number) => {
+      if (!t0) {
+        t0 = now;
+        const w = tag.offsetWidth;
+        const h = tag.offsetHeight;
+        if (tag.dataset.docked === 'true') {
+          // Launch from anywhere in the bubble, toward either side.
+          const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+          const x0 = rand(0.15, 0.85) * w;
+          const y0 = rand(0.2, 0.8) * h;
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          const vx = dir * rand(EMOTE_LAUNCH.sideMin, EMOTE_LAUNCH.sideMax);
+          const vy = -rand(EMOTE_LAUNCH.upMin, EMOTE_LAUNCH.upMax);
+          path = still
+            ? () => ({ x: x0, y: y0, rot: 0 })
+            // Plain projectile motion: s is seconds since launch.
+            : (sec) => ({
+              x: x0 + vx * sec,
+              y: y0 + vy * sec + 0.5 * EMOTE_LAUNCH.gravity * sec * sec,
+              rot: dir * EMOTE_LAUNCH.spin * sec,
+            });
+        } else {
+          // Float: start centred just above the top edge and ease upward.
+          const x0 = w / 2;
+          const y0 = -EMOTE_PUFF_PX / 2 - 2;
+          path = still
+            ? () => ({ x: x0, y: y0, rot: 0 })
+            : (sec) => {
+              const k = Math.min(1, (sec * 1000) / EMOTE_PUFF_MS);
+              return { x: x0, y: y0 - EMOTE_FLOAT_RISE_PX * (1 - (1 - k) * (1 - k)), rot: 0 };
+            };
+        }
+      }
+      raf = requestAnimationFrame(frame);
+      // A tag whose body is not drawn this frame is hidden by the layer loop; hide with it.
+      if (tag.style.visibility === 'hidden') {
+        el.style.visibility = 'hidden';
+        return;
+      }
+      el.style.visibility = 'visible';
+      // The path is in the TAG's own px, so the puff rides the bubble as it moves. Its box is
+      // read after the layer loop has placed it this frame (that callback is queued first).
+      const tagBox = tag.getBoundingClientRect();
+      const layerBox = layer.getBoundingClientRect();
+      const ox = tagBox.left - layerBox.left;
+      const oy = tagBox.top - layerBox.top;
+      const elapsed = now - t0;
+      const k = elapsed / EMOTE_PUFF_MS;
+      if (k >= 1) {
+        // Done: leave it invisible rather than unmounting — the next line's puff replaces it.
+        el.style.opacity = '0';
+        cancelAnimationFrame(raf);
+        return;
+      }
+      const { x, y, rot } = path(elapsed / 1000);
+      // A quick pop-in (first 10%), a hold, then a linear fade to nothing.
+      const scale = Math.min(1, 0.6 + 4 * k);
+      const opacity = k < EMOTE_PUFF_HOLD ? Math.min(1, k * 10) : 1 - (k - EMOTE_PUFF_HOLD) / (1 - EMOTE_PUFF_HOLD);
+      el.style.transform =
+        `translate3d(${(ox + x).toFixed(1)}px, ${(oy + y).toFixed(1)}px, 0) translate(-50%, -50%) rotate(${rot.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+      el.style.opacity = opacity.toFixed(3);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [tagRef]);
+
+  return (
+    <Box
+      ref={ref}
+      className={`iw-actor-tag__emote-puff iw-actor-tag__emote-puff--${emote}`}
+      aria-hidden
+      sx={{
+        position: 'absolute', top: 0, left: 0,
+        fontSize: EMOTE_PUFF_PX, lineHeight: 1,
+        pointerEvents: 'none',
+        // Hidden until the first frame has placed it, so it never flashes at the tag's corner.
+        opacity: 0,
+        willChange: 'transform, opacity',
+      }}
+    >
+      {EMOTE_EMOJI[emote]}
     </Box>
   );
 }

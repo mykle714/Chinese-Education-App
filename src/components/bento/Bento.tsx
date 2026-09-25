@@ -116,13 +116,12 @@ export interface BentoTileProps {
     /** `.s` — one short line on what is there. Optional; a self-evident tile skips it. */
     subtitle?: ReactNode;
     /**
-     * Which ramp hue the tile wears. A KEY rather than a colour, because the tile
-     * needs TWO tiers of the same hue at once — the pastel `fill` for its body and
-     * the matching `ink` for its ghost glyph — and passing them separately is the one
-     * palette mistake that typechecks and survives review (see `RAMP`).
+     * Which ramp hue the tile wears. A KEY rather than a colour, so every hub names
+     * its hues the same way (see `RAMP`). The body is the hue's MID tier — v2 captions
+     * every hub "Colour tiers — Mid: every bento tile" (artboards 1, 3, 4, 8).
      *
-     * Text is `COLORS.onSurface` (title) and `COLORS.textSecondary` (subtitle) on
-     * every hue; never white, which is ~1.1:1 against a 93% pastel.
+     * Text AND the ghost glyph are ink (`COLORS.onSurface`, subtitle
+     * `COLORS.textSecondary`) on every hue: v2 has no per-hue ink tier.
      */
     hue: RampHue;
     /**
@@ -199,7 +198,10 @@ export const BentoTile: React.FC<BentoTileProps> = ({
     const alertPin = pinTone === "alert";
     const spansGrid = fullWidth || v.span === 2;
     const link = tileLinkProps(to, state, onClick);
-    const { fill, ink } = RAMP[hue];
+    // v2: MID body, INK ghost glyph (the design sets `color:var(--ink)` on the tile
+    // and lets the 15%-opacity glyph inherit it).
+    const fill = RAMP[hue].mid;
+    const ink = COLORS.onSurface;
     return (
         <Box
             className={`bento-tile bento-tile--${variant}${className ? ` ${className}` : ""}`}
@@ -450,7 +452,7 @@ export const BentoSubTile: React.FC<BentoSubTileProps> = ({
             flexDirection: "column",
             justifyContent: "flex-end",
             overflow: "hidden",
-            background: RAMP[hue].fill,
+            background: RAMP[hue].mid,
             cursor: to || onClick ? "pointer" : "default",
         }}
     >
@@ -458,7 +460,7 @@ export const BentoSubTile: React.FC<BentoSubTileProps> = ({
             <Icon
                 name={icon}
                 size={56}
-                color={RAMP[hue].ink}
+                color={COLORS.onSurface}
                 className="bento-subtile__ghost"
                 sx={{ position: "absolute", top: -8, right: -6, opacity: 0.16, pointerEvents: "none" }}
             />

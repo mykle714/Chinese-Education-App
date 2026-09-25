@@ -43,7 +43,8 @@ export interface SettingsSectionProps {
     description?: React.ReactNode;
     /**
      * Recolours the border and the heading — the design's only `.set` modifier, used
-     * for the danger zone (artboard 11b draws it at 1.5px in `#EF476F`).
+     * for the danger zone (artboard 11b draws it at 1.5px in `var(--danger)`, which v2
+     * sets to ink).
      */
     tone?: "default" | "danger";
     children?: React.ReactNode;
@@ -70,8 +71,9 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
                     padding: "15px 16px",
                     borderRadius: "18px",
                     backgroundColor: COLORS.white,
-                    // The danger variant thickens the line as well as recolouring it —
-                    // a red hairline at 1px reads as a tint, not a warning.
+                    // The danger variant thickens the line as well as darkening it to
+                    // ink (`--danger` is ink in v2) — at 1px it would read as any other
+                    // hairline, not a warning.
                     //
                     // ⚠️ 2px, NOT the artboard's 1.5px. A fractional border width is
                     // snapped to whole device pixels, so at dpr 1 (every desktop

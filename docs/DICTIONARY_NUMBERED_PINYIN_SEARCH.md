@@ -140,15 +140,22 @@ the shared `WHERE` in a subquery that numbers each row within its bucket
 (`ROW_NUMBER() OVER (PARTITION BY <bucket> ORDER BY …)`) and orders on
 `CASE WHEN "bucketPos" <= 2 THEN 0 ELSE 1 END, "rankBucket", "bucketPos"`. `relevance` keeps the
 flat query, so it never pays for a window it does not use. When the ladder degrades to the
-historical two-bucket word-first expression (a sub-2-character term, no gloss predicate)
-`english-first` degrades **all the way**, taking the flat path too, rather than
+historical two-bucket word-first expression (no gloss predicate — only an empty term, which
+callers already reject, so this is a defensive path) `english-first` degrades **all the way**, taking the flat path too, rather than
 sampling a head off buckets the caller never asked for.
 
-**Spanish keeps two buckets.** es has no `pronunciation` column, so its only non-English signal
-is the word1 prefix and there is no pinyin for a complete/partial split to be about; it keeps
-the plain gloss-first/headword-second order. When the term is under two characters no
-definitions clause is built at all, and `english-first` degrades to `relevance` for both
-languages because there is no predicate left to rank on.
+**Spanish uses the same four buckets**, with the headword in pinyin's slot (decided
+2026-09-09, reversing an earlier two-buckets-for-es call): es has no `pronunciation` column, so
+"complete word" means `word1` equals the term and "partial word" means it is a prefix. The
+two-bucket version buried exact headwords under Wiktionary glosses that quote them ("casa" ranked
+11th behind "diminutive of \"casa\"").
+
+**Single-character terms search glosses too** (2026-09-24). There is no 2-character floor on the
+English-definition predicate, so "I" finds 我/本人 and es "a"/"o"/"y" find their headwords. The
+gloss regex is a sequential scan at any length, so the only added cost is ranking a larger match
+set: on dev the worst case (es "a", ~19k matches) measured ~260 ms against ~80 ms for a typical
+term; zh single letters stayed ~100–125 ms. Code: `server/dal/implementations/DictionaryDAL.ts` →
+`searchByWord1` (`definitionsSearchEnabled`).
 
 An unrecognised value is a **400**, not a silent fall back to the default, so a client typo
 surfaces as a broken request rather than quietly-wrong ordering.

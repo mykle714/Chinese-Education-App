@@ -9,6 +9,28 @@ import { ValidationError } from '../../types/dal.js';
  * User Data Access Layer implementation
  * Handles all database operations for User entities
  */
+/**
+ * Turn pg's DATE value for `users."birthDate"` (migration 164) into the wire's `YYYY-MM-DD`.
+ *
+ * node-postgres parses a DATE into a JS Date at LOCAL midnight of the server process. Sent as
+ * is, that serializes through `toISOString()` as a UTC instant — which, on any server east of
+ * UTC, is the PREVIOUS day. So the local getters are read back here, recovering the exact
+ * calendar date pg was given. Done per-column rather than with a global `setTypeParser(1082)`
+ * because other DATE columns (`user_languages."lastStreakDate"`, `userworkpoints.date`) have
+ * readers written against the Date behaviour.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 5.5 (the learner description).
+ */
+function withIsoBirthDate<T extends User | null | undefined>(user: T): T {
+  if (!user) return user;
+  const raw = (user as { birthDate?: unknown }).birthDate;
+  if (raw instanceof Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    user.birthDate = `${raw.getFullYear()}-${pad(raw.getMonth() + 1)}-${pad(raw.getDate())}`;
+  }
+  return user;
+}
+
 export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> implements IUserDAL {
   constructor(dbManager: DatabaseManager = defaultDbManager) {
     super(dbManager, 'Users', 'id'); // Use proper table name with camelCase columns
@@ -47,7 +69,8 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       return await client.query('SELECT * FROM Users WHERE email = $1', [normalizedEmail]);
     });
 
-    return result.recordset[0] || null;
+    // SELECT * — so birthDate arrives as a pg Date, and login returns this row to the client.
+    return withIsoBirthDate(result.recordset[0] || null);
   }
 
   /**
@@ -97,10 +120,15 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     // answer). The arena and the streak read the column in SQL and were unaffected,
     // which is why the bug was confined to Study Challenge.
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isTemplateAuthor", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "gender", "birthDate", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
-    return result.recordset[0] || null;
+    // ⚠️ "gender" and "birthDate" (migration 164) are PRIVATE to the account, as are email and
+    // timezone. Every client path through this read is the caller's OWN row (/api/auth/me,
+    // GET /api/users/:id — self-only, see UserController.getUserById — and the iw learner
+    // lookup). Never return this row for ANOTHER user; public profile reads select their own
+    // columns (UserDAL.findPublicProfileById).
+    return withIsoBirthDate(result.recordset[0] || null);
   }
 
   /**
@@ -152,7 +180,15 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       };
     }
     
-    return await super.update(id, data);
+    // RETURNING * — normalize birthDate for the same reason as findByEmailWithPassword.
+    return withIsoBirthDate(await super.update(id, data));
+  }
+
+  /**
+   * Override create for the same RETURNING * reason — register returns this row verbatim.
+   */
+  async create(data: UserCreateData): Promise<User> {
+    return withIsoBirthDate(await super.create(data));
   }
 
   /**

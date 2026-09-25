@@ -30,8 +30,12 @@
  */
 import { useEffect, useState } from 'react';
 
-/** Fallback keyboard height when nothing can be measured (desktop, or first paint). */
-const DEFAULT_HEIGHT = 320;
+/**
+ * Fallback keyboard height when nothing can be measured (desktop, or first paint).
+ * Exported for `BeginnerKeyboardHost`, which uses it until it has a SETTLED OS
+ * measurement rather than trusting a live one mid-animation.
+ */
+export const DEFAULT_HEIGHT = 320;
 
 /** Below this, a viewport shrink is a URL bar or a scroll, not a keyboard. */
 const MIN_KEYBOARD_HEIGHT = 120;

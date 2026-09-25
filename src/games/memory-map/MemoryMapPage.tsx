@@ -4,7 +4,7 @@ import { Box, Button, Typography } from "@mui/material";
 import { GameLeafPage } from "../shared/GameSurface";
 import { ON_ACCENT_INK } from "../shared/gameSurface";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
-import { GAME_HUE } from "./constants";
+import { GAME_HUE, OUTCOME_FILL } from "./constants";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import GameEndPopup from "../runtime/GameEndPopup";
 import ForeignText from "../../components/ForeignText";
@@ -376,13 +376,29 @@ const MemoryMapPage: React.FC = () => {
                         >
                             {(
                                 [
-                                    ["green", run.tally.green, COLORS.successInk, "knew it"],
-                                    ["orange", run.tally.orange, COLORS.warnInk, "recovered"],
-                                    ["red", run.tally.red, COLORS.dangerInk, "missed"],
+                                    ["green", run.tally.green, "knew it"],
+                                    ["orange", run.tally.orange, "recovered"],
+                                    ["red", run.tally.red, "missed"],
                                 ] as const
-                            ).map(([key, count, color, label]) => (
+                            ).map(([key, count, label]) => (
                                 <Box key={key} className={`memory-map-end__tally-item memory-map-end__tally-item--${key}`}>
-                                    <Typography sx={{ fontSize: SIZE.title, fontWeight: WEIGHT.bold, color }}>
+                                    {/* v2: the count sits on its outcome's fill (the same
+                                        OUTCOME_FILL the map's parcels wear) in ink — the
+                                        semantic inks it used to be tinted with are all
+                                        plain ink now, which would have made the three
+                                        counts indistinguishable. */}
+                                    <Typography
+                                        className="memory-map-end__tally-count"
+                                        sx={{
+                                            fontSize: SIZE.title,
+                                            fontWeight: WEIGHT.bold,
+                                            color: COLORS.onSurface,
+                                            backgroundColor: OUTCOME_FILL[key],
+                                            borderRadius: "8px",
+                                            px: 1,
+                                            mb: 0.5,
+                                        }}
+                                    >
                                         {count}
                                     </Typography>
                                     <Typography sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary }}>

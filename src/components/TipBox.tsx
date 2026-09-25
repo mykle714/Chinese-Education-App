@@ -35,9 +35,9 @@ const TipCard = styled(Box)(() => ({
     margin: "16px 18px 0",
     padding: "13px 15px",
     borderRadius: "16px",
-    // A pastel fill with its OWN ink on it — the ramp's canonical "icon on a coloured
-    // ground" pair. Large and occupied, so no `markOutline` (see BentoTile).
-    backgroundColor: RAMP.org.fill,
+    // `.tip{background:var(--org)}` — the org SURFACE, with an ink icon on it (v2 dropped
+    // the per-hue ink). Large and occupied, so no `markOutline` (see BentoTile).
+    backgroundColor: RAMP.org.surface,
     cursor: "pointer",
     userSelect: "none",
     transition: "filter 120ms ease",
@@ -71,8 +71,8 @@ const TipBox: React.FC<{ className?: string }> = ({ className }) => {
             aria-label="Show another tip"
         >
             {/* Was a 💡 emoji, which renders in the platform's own colours and clashes
-                with a flat pastel ground. The ramp's orange ink keeps it in-palette. */}
-            <Icon name="lightbulb" size={18} color={RAMP.org.ink} sx={{ flexShrink: 0, marginTop: "1px" }} />
+                with a flat pastel ground. v2 draws the glyph in ink (`.tip .ms`). */}
+            <Icon name="lightbulb" size={18} color={COLORS.onSurface} sx={{ flexShrink: 0, marginTop: "1px" }} />
             <Typography
                 className="tip-box__text"
                 sx={{ fontSize: 12.5, color: COLORS.iconColor, fontFamily: FONTS.sans, lineHeight: 1.45 }}

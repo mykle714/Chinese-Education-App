@@ -12,7 +12,7 @@ import { FONTS } from "../theme/fonts";
  */
 interface KeyGroup {
     keys: string[];
-    /** Ramp pastel filling every key in the group. Undefined = no fill (es). */
+    /** Ramp MARK-tier fill for every key in the group. Undefined = no fill (es). */
     fill?: string;
 }
 
@@ -20,13 +20,14 @@ interface KeyGroup {
 // The fills walk the ramp in the order the vowels are taught (a-e-i-o-u-ü) rather
 // than by any meaning, so the color is a GROUPING device and nothing more.
 //
-// The i-row's `#F7F0C6` is oklch(95% 0.055 100), the one keypad fill the design
-// specifies inline instead of via a ramp variable: the ramp has no yellow between
-// --org (hue 70) and --grn (hue 145), and six vowels need six distinguishable hues.
+// v2: the keys are the MARK tier (artboard 7's caption: "Mark: dictionary vowel keys"),
+// the fluorescent highlighter, one hue per vowel: a→red, e→org, i→yel, o→grn, u→blu,
+// ü→pur. v1 painted them with the pale surfaces and had to borrow an inline yellow for
+// the i-row because the ramp had no yellow then; `--yelMk` retires that literal.
 const ZH_ROWS: KeyGroup[][] = [
-    [{ keys: ['ā', 'á', 'ǎ', 'à'], fill: COLORS.red }, { keys: ['ē', 'é', 'ě', 'è'], fill: COLORS.org }],
-    [{ keys: ['ī', 'í', 'ǐ', 'ì'], fill: '#F7F0C6' }, { keys: ['ō', 'ó', 'ǒ', 'ò'], fill: COLORS.grn }],
-    [{ keys: ['ū', 'ú', 'ǔ', 'ù'], fill: COLORS.blu }, { keys: ['ǖ', 'ǘ', 'ǚ', 'ǜ'], fill: COLORS.pur }],
+    [{ keys: ['ā', 'á', 'ǎ', 'à'], fill: COLORS.redMk }, { keys: ['ē', 'é', 'ě', 'è'], fill: COLORS.orgMk }],
+    [{ keys: ['ī', 'í', 'ǐ', 'ì'], fill: COLORS.yelMk }, { keys: ['ō', 'ó', 'ǒ', 'ò'], fill: COLORS.grnMk }],
+    [{ keys: ['ū', 'ú', 'ǔ', 'ù'], fill: COLORS.bluMk }, { keys: ['ǖ', 'ǘ', 'ǚ', 'ǜ'], fill: COLORS.purMk }],
 ];
 
 // es: accented vowels then the letters/punctuation Spanish needs that a US keyboard
@@ -55,7 +56,7 @@ export interface PinyinKeypadProps {
  * focused/measurable) and restores focus + cursor placement afterward.
  *
  * Rendered as the design's `.kp` KEYCAPS (docs/SHELF_REDESIGN.md, artboard 7): a flat 30×30
- * square at radius 8 with a ramp pastel ground and ink glyph. It is deliberately NOT a MUI
+ * square at radius 8 with a ramp MARK-tier ground and ink glyph. It is deliberately NOT a MUI
  * `Button` — a contained Button is a pill with an elevation shadow and a ripple, which read as
  * three separate "this submits something" signals on a control that only types a letter. A
  * keycap has to look like a key, and every key on the pad is equally weighted.

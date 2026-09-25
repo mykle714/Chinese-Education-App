@@ -169,10 +169,9 @@ function AccountPage() {
                 border: "none",
                 padding: 0,
                 cursor: "pointer",
-                // The artboard's own pair: the blue pastel with its `*A` ink, not the
-                // solid `infoInk` disc this used to be.
-                backgroundColor: COLORS.blu,
-                color: COLORS.bluA,
+                // Artboard 5's avatar: `--bluK` (= the blue MID tier) with an ink initial.
+                backgroundColor: COLORS.bluM,
+                color: COLORS.onSurface,
                 boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                 fontFamily: FONTS.sans,
                 fontSize: 17,

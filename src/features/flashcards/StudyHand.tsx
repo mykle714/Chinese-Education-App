@@ -320,7 +320,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             // touch on BOTH axes once it clears the gesture's slop — the
                             // page/sheet beneath is scrolled from anywhere but this card.
                             ...(isFront ? { touchAction: "none" } : {}),
-                            backgroundColor: RAMP[card.hue].fill,
+                            backgroundColor: RAMP[card.hue].surface,  // v2 "Surface: … the fanned cards"
                             borderRadius: "22px",
                             border: `1px solid ${COLORS.border}`,
                             padding: isFront ? "15px 16px 14px" : "10px 16px 14px",
@@ -440,11 +440,11 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                             a card reads as "fetching", two read as noise. */}
                                         <SlotNumber value={card.figure} className="study-hand__figure-value" />
                                     </Typography>
-                                    {/* The gold hairline under the figure — `.bignum:after`.
+                                    {/* The ink hairline under the figure — `.bignum:after` (v2 draws it in ink).
                                         It is the only rule on the card, and it exists to stop
                                         a 118px numeral floating in the middle of an empty
                                         panel. */}
-                                    <Box sx={{ width: 34, height: 2, borderRadius: "1px", backgroundColor: RAMP[card.hue].ink, opacity: 0.5, marginTop: "11px" }} />
+                                    <Box sx={{ width: 34, height: 2, borderRadius: "1px", backgroundColor: COLORS.onSurface, opacity: 0.5, marginTop: "11px" }} />
                                 </Box>
 
                                 <Box

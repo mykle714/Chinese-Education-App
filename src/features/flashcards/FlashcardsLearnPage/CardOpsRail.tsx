@@ -178,7 +178,7 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
 
             <Box
                 className="card-ops-rail__separator"
-                sx={{ width: "1px", backgroundColor: "rgba(23,22,26,0.1)", margin: "6px 3px", flexShrink: 0 }}
+                sx={{ width: "1px", backgroundColor: COLORS.rowBorder, margin: "6px 3px", flexShrink: 0 }}
             />
 
             <Box

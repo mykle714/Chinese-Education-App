@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
+import { Box, ButtonBase, CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
+import { alpha, darken, keyframes } from '@mui/material/styles';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SendIcon from '@mui/icons-material/Send';
 import SearchIcon from '@mui/icons-material/Search';
 import BackspaceIcon from '@mui/icons-material/Backspace';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import { apiGet } from '../../../api/http';
 import IWLookupResults from './IWLookupResults';
-import IWVolumeChip from './IWVolumeChip';
-import { IW_MAX_UTTERANCE_CHARS, IW_VOLUME_LABELS, type IWVolume } from '../../../../server/contracts/iw';
+import { IW_MAX_UTTERANCE_CHARS } from '../../../../server/contracts/iw';
 import type { DictionaryEntry } from '../../../types';
+import type { IWFloor } from './useIWSceneRuntime';
+import { IW_SELECT_BLUE_CSS } from './iwTapColors';
+import { COLORS } from '../../../theme';
 
 /**
  * IWComposer — how a beginner with no IME says something (§ 9a, § 14 Q4b/Q4c).
@@ -66,16 +70,26 @@ import type { DictionaryEntry } from '../../../types';
  * **unassigned**, not relocated — if it comes back it must arrive as something other than a
  * standing word list, and BACKLOG item 1's keyboard is the natural owner.
  *
- * ── The volume control (§ 4c) ─────────────────────────────────────────────────────────────
- * One `HeaderCycleChip`, the same control as the audio-mode chip: one word saying which
- * volume is live, one tap to the next, fixed width so nothing shuffles under the thumb. See
- * `IWVolumeChip` for why it is not three buttons and not three icons.
+ * ── No volume control (§ 4c, withdrawn 2026-09-23) ────────────────────────────────────────
+ * There used to be a whisper/say/shout chip in this row. It is gone with the hearing gate it
+ * drove: everybody in a scene hears every line, and WHO the learner meant is worked out from
+ * position, facing and the sentence itself (§ 4.2), not from a range the learner picked.
  *
  * ⚠️ **IT IS NOT A BOUND ON INPUT** (§ 9a, § 7). The character counter here is a courtesy so
  * a learner is not surprised by a refusal; the real cap is `IW_MAX_UTTERANCE_CHARS` on the
  * server, which assumes this component was bypassed entirely.
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 9a, § 12 phase 2, § 14 Q4b, § 14 Q4c, § 14 Q29.
+ * ── THE CONTINUE BAR (§ 5.3d, 2026-09-23) ─────────────────────────────────────────────────
+ * Whenever the learner does not hold the floor, the WHOLE composer band becomes one solid blue
+ * bar, edge to edge — it is not a disabled text box with a spinner in the send button (which
+ * is what it replaced), and not a pill inset inside the band either: the entire strip is the
+ * tap target, so the learner can hit it without looking down.
+ * `waiting` is the bar inert, with a soft three-dot pulse (a turn in flight, a line queued but
+ * not painted yet); `continue` is the bar live, and tapping it dismisses the NPC line on screen.
+ * The draft in the text box survives the swap — `text` is state here, not in the input — so an
+ * ambient line that interrupts a half-typed sentence costs the learner nothing.
+ *
+ * Referenced by: docs/IMMERSIVE_WORLD.md § 5.3d, § 9a, § 12 phase 2, § 14 Q4b, § 14 Q4c, § 14 Q29.
  */
 
 /**
@@ -100,15 +114,45 @@ interface LookupPage {
 /** Debounce on the lookup field. Long enough that typing a word is one query, not five. */
 const LOOKUP_DEBOUNCE_MS = 300;
 
+/**
+ * The text row's height: a `size="small"` IconButton (18–20px glyph + 5px padding each side).
+ * The Continue bar takes the same height so swapping one for the other never moves the stage.
+ */
+const IW_COMPOSER_ROW_HEIGHT = 34;
+
+/**
+ * The whole composer band with the tray closed: the row, the band's `p: 1` (8px) above and
+ * below, and its 1px top border. The Continue bar replaces the entire band at this height.
+ */
+const IW_COMPOSER_BAND_HEIGHT = IW_COMPOSER_ROW_HEIGHT + 2 * 8 + 1;
+
+/**
+ * How far a pressed/hovered band darkens off the selection blue — enough to register under a
+ * thumb, not so much that the band reads as a different colour.
+ */
+const IW_CONTINUE_BAND_PRESS_DARKEN = 0.12;
+
+/** The waiting bar's three dots, each a staggered copy of this one breath. */
+const dotBreath = keyframes`
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 0.9; transform: translateY(-2px); }
+`;
+
 export interface IWComposerProps {
   language: 'zh' | 'es';
-  /** A turn is in flight, or the scene is frozen: the send button is inert. */
-  disabled: boolean;
-  sending: boolean;
-  onSend(text: string, volume: IWVolume): void;
+  /**
+   * Who may speak next (`useIWSceneRuntime` → `IWFloor`). `open` is the text box; `waiting`
+   * and `continue` are the bar; `frozen` is the text box with send permanently inert.
+   */
+  floor: IWFloor;
+  onSend(text: string): void;
+  /** The Continue tap. Only ever called while `floor === 'continue'`. */
+  onContinue(): void;
 }
 
-export default function IWComposer({ language, disabled, sending, onSend }: IWComposerProps) {
+export default function IWComposer({ language, floor, onSend, onContinue }: IWComposerProps) {
+  const disabled = floor !== 'open';
+  const showBar = floor === 'waiting' || floor === 'continue';
   const [text, setText] = useState('');
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -128,27 +172,22 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
   const totalPagesRef = useRef(1);
   const loadingMoreRef = useRef(false);
   const termRef = useRef('');
-  /**
-   * ⚠️ **IT DOES NOT RESET AFTER A LINE, AND THAT IS DELIBERATE.** A learner who leans in to
-   * whisper is usually about to whisper again; snapping back to a normal voice every send
-   * would make the quiet exchange the one thing in the scene you cannot have twice in a row.
-   * The button label carries the current setting, so a stale one is visible rather than a trap.
-   */
-  const [volume, setVolume] = useState<IWVolume>('talk');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lookupRef = useRef<HTMLInputElement | null>(null);
 
   /**
    * Opening the quick dictionary FOCUSES its field, which is the whole point of the button:
    * the learner pressed it because they cannot write the word, so the thing they need next is
-   * a cursor in an English/pinyin field and the OS keyboard under it. Two consequences fall
-   * out of the focus for free (no extra code, and none wanted):
+   * a cursor in the lookup field.
    *
-   *   • the tray is `data-beginner-keyboard="off"`, and that `off` shadows the composer's
-   *     `keep` (nearest wins — `eligibility.ts`), so the `focusin` DISMISSES any handwriting
-   *     keyboard raised from the sentence field rather than retargeting it at this one;
-   *   • with the handwriting bar gone and a plain text input focused, the phone raises its
-   *     own latin keyboard.
+   * ⚠️ WHICH KEYBOARD COMES UP IS NOT DECIDED HERE. The lookup field is an ordinary eligible
+   * field inside the composer's `keep` region, so for a Chinese learner the focus hands the
+   * handwriting keyboard over to it (or leaves the OS keyboard up, if the session is on `ABC`
+   * — the choice is a session preference, BEGINNER_KEYBOARD.md § 6z-3). It is NOT marked
+   * `data-beginner-keyboard="off"` any more (2026-09-24): that forced the latin OS keyboard
+   * up on every open, and the learner now reaches it the same way as from any other field —
+   * the switch bar's `ABC` segment. A Spanish learner has no handwriting keyboard, so they
+   * get the OS keyboard as before.
    *
    * It runs in an effect rather than in the click handler because the field does not exist
    * until the tray has rendered. React flushes a discrete click's state synchronously, so the
@@ -180,7 +219,8 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
   useEffect(() => {
     const term = query.trim();
     resetPaging(term);
-    if (!dictionaryOpen || term.length < 2) { setResults([]); return; }
+    // One character is enough: "I" and Spanish "a"/"o"/"y" are whole words.
+    if (!dictionaryOpen || !term) { setResults([]); return; }
     let cancelled = false;
     setLooking(true);
     const timer = setTimeout(() => {
@@ -245,21 +285,26 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
 
   const send = useCallback(() => {
     if (!canSend) return;
-    onSend(text.trim(), volume);
+    onSend(text.trim());
     setText('');
     setQuery('');
     setResults([]);
     // The tray is emptied with the sentence, so its paging cursor has to go back to the
     // start too — otherwise the next query would resume from a stale page number.
     resetPaging('');
-  }, [canSend, onSend, text, volume, resetPaging]);
+  }, [canSend, onSend, text, resetPaging]);
+
+  // The Continue bar REPLACES the band rather than sitting inside it (§ 5.3d). An early return
+  // is safe here — every hook is above — and the composer stays mounted, so the draft, the
+  // tray's open state and its results are all still there when the text box comes back.
+  if (showBar) return <IWContinueBar ready={floor === 'continue'} onContinue={onContinue} />;
 
   return (
     <Box
       className="iw-composer"
       /*
         Every control in here acts on the sentence being composed — the helper toggle, the
-        dictionary chips, backspace, the volume chip, send. The handwriting keyboard treats
+        dictionary chips, backspace, send. The handwriting keyboard treats
         focus as a TRIGGER and dismisses on anything not explicitly kept (BEGINNER_KEYBOARD.md
         § 6z), and a `<button>` takes focus when clicked on desktop, so without this the
         keyboard closed the moment the learner reached for send. Marked on the whole composer
@@ -292,15 +337,12 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
           <Box
             className="iw-composer__lookup"
             /*
-              ⚠️ THE QUICK DICTIONARY IS QUERIED IN ENGLISH (or pinyin) — it is the one
-              field in the composer that must NOT raise the handwriting keyboard: the
-              learner is here precisely because they cannot write the word yet. `off`
-              shadows the composer's `keep` because the nearest declaration wins
-              (BEGINNER_KEYBOARD.md § 7a / `eligibility.ts`), so focusing this field also
-              dismisses a keyboard raised from the sentence field and hands the learner
-              back to the OS one.
+              No `data-beginner-keyboard` of its own: the field inherits the composer's
+              `keep`, so it is eligible for the handwriting keyboard like the sentence field
+              and tapping between the two retargets the keyboard rather than dismissing it.
+              The query is usually English or pinyin, and the learner switches to the OS
+              keyboard with the switch bar's `ABC` when it is (see the focus effect above).
             */
-            data-beginner-keyboard="off"
             sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
           >
             <SearchIcon sx={{ fontSize: 16, opacity: 0.6 }} />
@@ -366,8 +408,8 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
         )}
         {/*
           The counter now appears only as the limit gets close. It used to sit there
-          permanently at half opacity, which cost a slot in a row that has to hold a volume
-          control on a phone — and a courtesy warning is not a warning until there is
+          permanently at half opacity, which cost a slot in a row that is already tight
+          on a phone — and a courtesy warning is not a warning until there is
           something to warn about (the real cap is the server's; see the header).
         */}
         {glyphs > IW_MAX_UTTERANCE_CHARS * 0.7 && (
@@ -379,18 +421,11 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
           </Box>
         )}
         {/*
-          One word, one tap to the next volume — the app's `HeaderCycleChip`, the same control
-          as the audio-mode chip (§ 4c). It replaced a three-button segmented group that could
-          not share a phone row with the field.
+          A bare icon, not a pill — on a phone this row holds the dictionary toggle, the field,
+          backspace and this. `aria-label` keeps the verb for anybody not reading the row
+          visually.
         */}
-        <IWVolumeChip volume={volume} onChange={setVolume} />
-        {/*
-          A bare icon, not a pill. The volume group now carries the words, and a labelled
-          button beside it would say the same thing twice while spending the width the three
-          labels need — on a phone this row holds the dictionary toggle, the field, three volumes
-          and this. `aria-label` keeps the verb for anybody not reading the row visually.
-        */}
-        <Tooltip title={`${IW_VOLUME_LABELS[volume]} it`}>
+        <Tooltip title="Say it">
           <span>
             <IconButton
               className="iw-composer__send"
@@ -398,13 +433,83 @@ export default function IWComposer({ language, disabled, sending, onSend }: IWCo
               color="primary"
               disabled={!canSend}
               onClick={send}
-              aria-label={`${IW_VOLUME_LABELS[volume]} it`}
+              aria-label="Say it"
             >
-              {sending ? <CircularProgress size={16} color="inherit" /> : <SendIcon sx={{ fontSize: 20 }} />}
+              <SendIcon sx={{ fontSize: 20 }} />
             </IconButton>
           </span>
         </Tooltip>
       </Box>
     </Box>
+  );
+}
+
+/**
+ * The band the composer turns into while an NPC holds the floor (§ 5.3d): one solid blue
+ * strip, full width, square-edged, the whole of it the tap target.
+ *
+ * ⚠️ **THE BLUE IS THE STAGE'S SELECTION BLUE (`iwTapColors.ts`), NOT THE THEME PRIMARY.** The
+ * same light blue outlines whatever a tap on the board selected and rings the person you are
+ * addressing, so "blue" means one thing on this surface: the live thing, the one to act on. A
+ * light fill needs dark text — white on it is ~1.6:1 — so the label is the app's ink
+ * (`COLORS.onSurface`), like text on every other v2 surface colour.
+ *
+ * ONE element in both states, so going from waiting to ready changes only its contents and
+ * shade — nothing moves or resizes under the learner's thumb. Waiting is the same blue washed
+ * toward the page (inert, three-dot pulse); ready is the full blue with **Continue ›**. Its
+ * height is the text band's (`IW_COMPOSER_BAND_HEIGHT`), so the stage above does not jump.
+ */
+function IWContinueBar({ ready, onContinue }: { ready: boolean; onContinue(): void }) {
+  return (
+    <ButtonBase
+      className={`iw-composer__continue-bar${ready ? ' iw-composer__continue-bar--ready' : ''}`}
+      disabled={!ready}
+      onClick={onContinue}
+      aria-label={ready ? 'Continue' : 'Waiting for them to speak'}
+      sx={theme => {
+        const band = IW_SELECT_BLUE_CSS;
+        const pressed = darken(band, IW_CONTINUE_BAND_PRESS_DARKEN);
+        return {
+          width: '100%',
+          flexShrink: 0,
+          minHeight: IW_COMPOSER_BAND_HEIGHT,
+          borderRadius: 0,
+          gap: 0.25,
+          fontSize: 16,
+          fontWeight: 700,
+          letterSpacing: 0.3,
+          color: COLORS.onSurface,
+          // Waiting is the band's blue washed toward the page ground rather than a grey: the
+          // band keeps its identity across both states, and only "can I tap it" changes.
+          bgcolor: ready ? band : alpha(band, 0.45),
+          transition: theme.transitions.create('background-color', { duration: 180 }),
+          // Pressed/hovered settles one step darker than the band.
+          '&:active': { bgcolor: pressed },
+          '@media (hover: hover)': { '&:hover': { bgcolor: ready ? pressed : undefined } },
+          // `disabled` would grey the dots out via MUI's defaults; the waiting state styles itself.
+          '&.Mui-disabled': { color: COLORS.onSurface },
+        };
+      }}
+    >
+      {ready ? (
+        <>
+          <span className="iw-composer__continue-label">Continue</span>
+          <ChevronRightIcon className="iw-composer__continue-chevron" sx={{ fontSize: 20, mr: -0.75 }} />
+        </>
+      ) : (
+        <Box className="iw-composer__waiting-dots" sx={{ display: 'flex', gap: 0.75 }}>
+          {[0, 1, 2].map(i => (
+            <Box
+              key={i}
+              className="iw-composer__waiting-dot"
+              sx={{
+                width: 5, height: 5, borderRadius: '50%', bgcolor: 'currentColor',
+                animation: `${dotBreath} 1.2s ease-in-out ${i * 0.16}s infinite`,
+              }}
+            />
+          ))}
+        </Box>
+      )}
+    </ButtonBase>
   );
 }

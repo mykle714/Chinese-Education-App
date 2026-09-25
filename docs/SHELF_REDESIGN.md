@@ -25,8 +25,9 @@ The design lives in the user's Claude Design project **"Cow"**
 
 | File | What it is |
 |---|---|
-| `App Redesign - Shelf System.html` | 27 phone artboards, one per screen. The spec. |
-| `shelf-system.css` | The stylesheet those artboards share — token + primitive definitions. |
+| `App Redesign - Shelf System v2.html` | **The spec since 2026-09-23** — the same 20 artboards redrawn in the v2 "highlighter palette". Each artboard's caption ends with a `Colour tiers —` line naming which tier each element takes; that line is the per-screen colour spec. |
+| `shelf-system-v2.css` | **The palette's source of truth since 2026-09-23.** Four fill tiers per hue, no ink tier. See § A1b. |
+| `App Redesign - Shelf System.html` + `shelf-system.css` | v1. Still the reference for LAYOUT on artboards v2 did not redraw (v2 has no 19–27); superseded for colour. |
 
 **Per-flow spec files.** A screen whose STATES matter more than its layout gets its own
 file, drawn against the same `shelf-system.css`. These are spec, not exploration — each
@@ -55,7 +56,8 @@ used to list are **no longer in the project** — the list above is what
 > saturated hue for tone ink only, and strip hue from skill type entirely. It also ends
 > on an unresolved open question about which hue the ramp should run on. **None of it is
 > built, and `--m1..m4` / `--t1..t4` exist in no other file.** The palette's source of
-> truth is `shelf-system.css` (plus the `--yel` and `--gld` additions recorded in A1).
+> truth is `shelf-system-v2.css` (§ A1b); before 2026-09-23 it was `shelf-system.css`
+plus the `--yel` and `--gld` additions recorded in A1.
 
 **PART B NOW COVERS THE WHOLE ARTBOARD SET.** This file was originally written against
 artboards 1–18 (with a numbering hole at 17). As of 2026-08-24 the spec file holds **27**
@@ -268,6 +270,10 @@ real ramp entry to build from.
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
 
+⚠️ **v2 reverses this rule — see § A1b decision 1.** For a v2 token use `oklch_to_hex`
+(per-channel clip, what the design preview renders). The text below is the v1 reasoning,
+kept because it is still right about HUE; v2 knowingly trades hue for tier separation.
+
 ⚠️ **Clamp per channel and you will get the hue wrong.** Several of the design's values
 sit outside sRGB — `--blu`, `--yelA` and `--gld` all do — and squashing each channel into
 range independently moves the colour off its own hue axis. The CSS Color 4 rule is to
@@ -351,6 +357,80 @@ re-export `CATEGORY_COLORS` from `src/utils/categoryColors.ts`.
 `src/theme/scale.ts` → `SIZE`, `WEIGHT`, `LEADING`, `TRACKING`;
 `src/theme/index.ts`; `src/utils/categoryColors.ts` → `CATEGORY_COLORS`;
 `index.html`; `src/index.css`. **Size: M.**
+
+### A1b · Shelf System v2 — the highlighter palette (2026-09-23)
+
+**Status: DONE (token layer + call sites), not yet deployed.** Supersedes the colour
+parts of A1, the A1 addendum above, **D2**, **D2a** and **D2b**. Source:
+`shelf-system-v2.css` and the `Colour tiers —` line of each artboard caption in
+`App Redesign - Shelf System v2.html`.
+
+**What v2 changed.** v1 gave each hue a pastel FILL and a dark INK (`--redA` …). v2
+removes the ink tier and gives each hue four FILL tiers:
+
+| Tier | Token (red) | `RAMP` field | Used for (caption wording) |
+|---|---|---|---|
+| Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Reading/Writing Centers, the fanned Study Mix cards, Learn Now, the Mastered section, community previews, theme swatches, Match Speed's picked card |
+| Mid | `COLORS.redM` (the design's `--redK` aliases it) | `mid` | every bento tile, shelf spines, rows, band pills, avatars, bubbles, a game's whole-screen ground, arena zone dividers |
+| Mark | `COLORS.redMk` | `mark` | "fluorescent" — the dictionary vowel keypad, mastery cells, mini-card mastery bars |
+| Tint | `COLORS.redTint` | `tint` | game HUD / timer strips, arena zone rows |
+
+`grey` keeps only `grey` + `greyA`; `tea` is not shipped (decision 7); `yel`
+adds `yelMkD`, a deeper mark for 3.5px bars on the cream card face; `gld` keeps
+`gld` / `gldTint` / `gldFrame` and lost `gldA`.
+
+**Code:** `src/theme/colors.ts` → `COLORS` and `RAMP` (now `{surface, mid, mark, tint}`;
+the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BAND_HUES`,
+`CATEGORY_COLORS` (surface), `BAND_MID` / `getBandMid`, `BAND_MARK` / `getBandMark`
+(which replaced `BAND_INK` / `getBandInk`), `BAND_COLORS` (main = mid, accent = tint).
+
+**Decisions the user made on 2026-09-23** (binding):
+1. **Hex = per-channel clip, not gamut-map** — a reversal of A1's rule. Most v2 values
+   are outside sRGB (many outside Display-P3). Hue-preserving gamut-mapping collapses
+   red/org/blu/pur Surface ≈ Mid ≈ Mark into one pastel (`redMk` → `#FFC8C5` against
+   `red` `#FFD1D3`), erasing the tier system; the design preview shows the browser's
+   per-channel clamp, which keeps them apart (`#FFC9CD` / `#FFB8BC` / `#FF888D`). The
+   app matches the preview: use `oklch_to_hex` below, **not** `gamut_map`, for any v2
+   token. Every clipped value is marked `clipped` in `colors.ts`.
+2. **The ink tier is removed fully.** `dangerInk` / `successInk` / `infoInk` / `warnInk`
+   are all `--ink` (`#17161A`), as `--danger:var(--ink)` & co. in v2. The names are kept
+   so a call site still says what the colour is for. Consequences: the Delete Account
+   button, the arena promotion banner, error text and the swipe hints are ink; Match
+   Speed's urgent clock is carried by its pulse alone (its caption still says "red and
+   pulsing" — the tokens win).
+3. **Target is yellow** (`BAND_HUES.Target = "yel"`), per artboard 18 ("Target yellow").
+   ⚠️ **Open collision:** Learn Now / Study Mix are also yellow (`LEARN_NOW_HUE`). The
+   design avoids it by drawing Learn Now purple; the user kept Learn Now yellow. One
+   constant to change if it reads badly on device.
+4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` and
+   the `MiniVocabCard` strip both use `getBandMark`. `MARK_TYPE_COLORS` survives only for
+   surfaces that name a SKILL (Bubble Match's track toggle, the eip `TAB_COLORS`), and
+   is now the Mark tier of each skill's hue rather than four literals.
+5. **Off-palette literals in UI chrome moved onto tokens.** Out of scope, deliberately:
+   Night Market scene art, the card-icon editor, the parked Dark/Ocean/Nature themes,
+   and stored per-card colours.
+6. **Game grounds are the MID tier** of each game's hub hue (A6b's rule stands). On
+   2026-09-24 the hub hues themselves moved to the artboards' — Hydra green, Match Speed
+   blue, Speed Reading yellow — so hub row, ground and artboard now all agree.
+   The header stays ink; chips are a half-white pill with a `--line2` ring, inverting
+   to solid ink when on. See `src/games/shared/gameSurface.ts` → `gameSurfaceSx`.
+
+7. **Teal left the palette (2026-09-24).** v2 still declares `--tea`, but no v2 artboard
+   uses it and it is the one hue with no Mark tier. `tea` / `teaM` / `teaTint` /
+   `tealAccent` were deleted from `COLORS` and `RAMP`; its three users moved — Hydra
+   Bubbles to green (decision 6), the Immersive World and Scene Editor hp tiles to blue.
+
+**Other changes worth knowing:**
+- **The fie card-fill swatches are pinned** (`src/utils/cardColor.ts` →
+  `CARD_COLOR_OPTIONS`) to the hexes users already stored. v2 nudged four tints by
+  ~1 ΔE; following them would have stranded every stored `vet."cardColor"` behind a
+  migration-153-style remap for an invisible change. **No migration.**
+- Swipe feedback split by job (`src/features/flashcards/constants.ts`): the card WASH is
+  the Mark tier (`CORRECT_WASH` / `INCORRECT_WASH`), the coaching LABEL is ink.
+- `COLORS.rowHoverBg` moved 0.04 → 0.05 to equal `--hover`.
+- The mastery window's cells grew 15 → 20px and the mini-card strip 3 → 3.5px, as v2 draws them.
+- `VelocityStatCard` figures moved their band hue from the TEXT onto a Mid-tier
+  highlighter pill behind ink figures.
 
 ### A1 addendum · Elevation (added 2026-08-24)
 
@@ -1248,6 +1328,11 @@ clipped by the panel's radius.
 
 ## A6b · Game surface COLOUR — the 60/30/10 accent ground
 
+> **v2 (2026-09-23, § A1b decision 6):** the ground is now the hue's **MID** tier, not its
+> ink, and the header, chips, HUD hairline and bars are **ink** rather than white. The
+> hub-hue rule and the two mechanisms below are unchanged. Current code:
+> `src/games/shared/gameSurface.ts` → `gameSurfaceSx`, `ON_ACCENT_INK`, `ON_ACCENT_LINE`.
+
 **Status: DONE (2026-08-23).** Depends on A6, A1, A2b. Shared by entries **12–16** and
 Memory Map.
 
@@ -1263,23 +1348,23 @@ inside a single activity for minutes with no navigation on screen. Flooding the 
 what makes "I am in Word Search" a fact you cannot lose track of, and it is also what turns
 the panel from a card on a page into a board.
 
-### The hue comes from the hub row, not from the artboard
+### The hue comes from the hub row — which now equals the artboard
 
 | Game | Hub row (`GameDef.hue`) | Artboard | Ground shipped |
 |---|---|---|---|
 | Bubble Match | red | red | **red** |
 | Word Search | pur | purple | **pur** |
-| Match Speed | grn | blue | **grn** |
-| Speed Reading | blu | yellow | **blu** |
-| Hydra Bubbles | tea | green | **tea** |
+| Match Speed | blu | blue | **blu** |
+| Speed Reading | yel | yellow | **yel** |
+| Hydra Bubbles | grn | green | **grn** |
 | Memory Map | org | — | **org** |
 
-Three of five artboard hues disagree with the shipped hub, whose mapping is already
-visible and already documented as deliberate ("a persistent per-game color, not a random
-one" — the `tealAccent` comment in `theme/colors.ts`). Copying the artboard would mean a
-green hub row opening a blue screen, so the ground is DERIVED from the hub hue and the
-artboards are treated as five screens drawn before the hub had settled. The design's yellow
-is not in the app's ramp at all, which settles Speed Reading on its own.
+The ground is still DERIVED from the hub hue, so a hub row and the screen it opens cannot
+drift apart. Until 2026-09-24 three of the five artboard hues disagreed with the hub
+(Match Speed green, Speed Reading blue, Hydra teal) and the hub won; when teal left the
+palette (decision 7 above) the three were moved onto the artboards' hues, so the table now
+agrees everywhere. Source: `src/games/shared/gameSurface.ts` header ("WHICH HUE A GAME
+GETS") and each game's `GAME_HUE`.
 
 Each game owns its hue as `GAME_HUE` in its own `constants.ts`. `GAME_REGISTRY` imports it
 (the same trick it already used for `MARK_TYPE`, which keeps the registry cycle-free), so
@@ -1293,7 +1378,7 @@ the hub row and the ground read one constant.
 | The panel (`GameFrame` border, `GameHud`/`GameTimer` ground + hairline, `GameCentered` ink) | React context — `GameSurfaceProvider` / `useGameSurfaceHue()` | A HUD label's colour is overridable per call site (a lives counter turning red); a blanket descendant rule would silently clobber it. The context is also null-by-default, so every one of these components still draws its pre-A6b self with no provider — which is what keeps them mountable bare in a test. |
 
 `GameLeafPage` (`src/games/shared/GameSurface.tsx`) is what a page actually uses: it takes
-one `hue` and does the ground, the flips and the provider together, so "this game is teal"
+one `hue` and does the ground, the flips and the provider together, so "this game is green"
 is stated once per page and cannot be stated inconsistently.
 
 There is a THIRD surface the ground has to reach: the phone's status-bar strip. In the iOS
@@ -1468,6 +1553,10 @@ zone-tinted row get different classes. Exactly the separators around the most im
 rows would go missing.
 
 ### ✅ `.msb` — the mastery window (DONE 2026-08-24)
+
+> **v2 (2026-09-23):** cells are coloured by the track's BAND in the Mark tier
+> (`getBandMark`), not by mark type; the band pill is the Mid tier (`getBandMid`); cells
+> are 20px tall. See § A1b decision 4.
 
 `src/components/mastery/MasteryWindow.tsx` → the eight-cell window, its `.tick` cut-point
 markers, the `.hd4` heading (track name + band pill + figure) and the `.cd3` cooldown
@@ -2225,9 +2314,16 @@ pastels.
 
 ## 11 + 11b · Settings — `/settings` **and a new route** — **Size: L**
 
-**Status: not started.** The only entry that adds a route.
+**Status: BUILT.** (This line read "not started" long after it shipped — corrected 2026-09-23.)
+`SettingsPage` is `SettingsSection`/`OptionRow`/`SwitchRow` throughout, and 11b is
+`src/pages/AccountSecurityPage.tsx`. The only entry that added a route.
 
-**Today.** One 674-line `SettingsPage` inside `LeafPage`, built from stacked MUI
+**Since the redesign:** two "About you" cards — **Gender** and **Date of birth** (migration
+164, each with "Prefer not to answer") — sit between Learning Language and Narration. They are a
+separate component, `src/pages/settings/AboutYouSections.tsx`, because the page was already past
+~600 lines. Why they exist: docs/IMMERSIVE_WORLD.md § 5.5a.
+
+**Before the redesign.** One 674-line `SettingsPage` inside `LeafPage`, built from stacked MUI
 `Paper`/`Card` blocks: theme (four full `Radio` option cards), learning language,
 narration, display, the password-change form, and the delete-account danger zone
 with its confirm `Dialog`.
@@ -2588,7 +2684,9 @@ bubble, so there is no mid-run modal to style (HYDRA_BUBBLES.md § 6.4).
 **The header keeps its `pinyin` chip**, matching the artboard — unlike Word Search (13),
 Hydra's pinyin display genuinely is a live toggle.
 
-- **The screen is TEAL (2026-08-23, A6b)** — the hub row's hue, not the artboard's green.
+- **The screen is GREEN (2026-09-24)** — the artboard's hue, which the hub row now matches.
+  It was TEAL from 2026-08-23 (A6b, the hub row's hue at the time) until teal left the
+  palette.
   Artboard 16's revised bubble ink (`.bub.zh` muted with `.py` at full ink) was **not**
   adopted: that artboard's bubble colours were already stale, its Chinese/English
   assignment is inverted from what ships, and `Bubble` DERIVES its ink from the fill
@@ -2836,6 +2934,8 @@ artboard — changes colour and type on day one, under its existing layout. Expe
 visually mixed app during Part B and do not treat that as a regression.
 
 ### D2 · The pastel ramp replaces `CATEGORY_COLORS` — as PASTELS
+> **SUPERSEDED 2026-09-23 by § A1b.** v2 removed the ink tier this decision is built
+> on, and bands now use three fill tiers (surface / mid / mark). Kept for history.
 **Revised 2026-08-20 after a first pass got this wrong.** The first implementation
 mapped the four categories onto the ramp's *saturated* `*A` members. That read too
 dark, and the design's own CSS contradicts it — see "Evidence" below. The categories
@@ -2889,6 +2989,11 @@ spines. `core` keeps Mastered blue; it blends recognition and production and has
 single mark hue to borrow.
 
 ### D2b · Tone colors and mark colors did NOT move
+> **PARTLY SUPERSEDED 2026-09-23 by § A1b.** Tone colours still stand (`--t1..t4` are
+> v2 tokens). `MARK_TYPE_COLORS`, `MASTERY_READY_COLOR` and `CORRECT_COLOR` /
+> `INCORRECT_COLOR` moved: marks onto the Mark tier (and mastery cells onto the band),
+> the ready check onto ink, the swipe colours split into a Mark-tier wash and an ink
+> label (`CORRECT_WASH` / `CORRECT_LABEL` …).
 **Added 2026-08-20, correcting a pass that moved them.** The redesign changed
 *surfaces*. It did not change the two saturated sets the design draws directly on the
 paper ground, and both are now marked LITERAL ON PURPOSE in code:

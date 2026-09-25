@@ -452,8 +452,17 @@ export function resolveDisplayPronunciation(entry: {
   definitionClusters?: SenseCluster[] | null;
   selectedSense?: string | null;
 }): string | null {
-  const columnPinyin = entry.pronunciation ?? null;
-  const reading = readingCluster(entry)?.reading;
+  return clusterReadingOrColumn(readingCluster(entry), entry.pronunciation ?? null);
+}
+
+/**
+ * A cluster's numbered `reading`, tone-marked — or the `pronunciation` column when there is
+ * no cluster, no reading, or a reading whose syllable count disagrees with the column (cpcd
+ * zips syllables to characters positionally, so a mis-shaped reading would shift every
+ * character's pinyin one column). Shared by both pronunciation resolvers below.
+ */
+function clusterReadingOrColumn(cluster: SenseCluster | null, columnPinyin: string | null): string | null {
+  const reading = cluster?.reading;
   if (!reading) return columnPinyin;
   const toned = numberedToTonedPinyin(reading);
   if (!toned) return columnPinyin;
@@ -463,16 +472,40 @@ export function resolveDisplayPronunciation(entry: {
   return toned;
 }
 
-// Inline type to avoid a circular dependency with server/types/index.ts
-type ShortDefinitionPronunciationOverride = { definition?: string | null; pronunciation?: string | null };
+/**
+ * The entry's DEFAULT-SENSE cluster: the highest `frequencyScore` among ALL its clusters,
+ * a tie going to the earlier one in array order (backfill-cluster-definitions' Stage C.5
+ * orders tied clusters deliberately, and every read-side sort is stable).
+ *
+ * Unlike `readingCluster`, this does NOT prefer clusters with displayable English. That
+ * preference is a CARD rule — a card prints one sense's gloss, and a gloss-less particle
+ * cluster must not donate its reading to it. Where no single gloss is shown it is the wrong
+ * rule: 了's two particle senses (`le`, score 5) carry only parenthetical glosses, so the
+ * card rule would read 了 as `liǎo` (score 2) in every sentence.
+ */
+export function defaultSenseCluster(clusters: SenseCluster[] | null | undefined): SenseCluster | null {
+  if (!Array.isArray(clusters)) return null;
+  const pool = clusters.filter(Boolean);
+  return [...pool].sort((a, b) => (b?.frequencyScore ?? -1) - (a?.frequencyScore ?? -1))[0] ?? null;
+}
 
 /**
- * Resolve the short definition for a dictionary entry.
- * Returns the manual override if one is set; otherwise falls back to generateShortDefinition().
+ * The pinyin to show when NO sense is chosen and no single sense's gloss is on screen — the
+ * default sense's reading (`defaultSenseCluster`), falling back to the column exactly as
+ * `resolveDisplayPronunciation` does. The client twin lives in src/utils/definitionUtils.ts.
+ *
+ * Use it for: an untagged sentence segment (`resolveSenseView` in
+ * server/dal/shared/segmentString.ts — IW bubbles, Reader documents), surfaces that list a
+ * word with its FLAT definitions (dictionary search rows, synonyms, Word Search bonus words,
+ * the validator document title), and the det primary column itself
+ * (backfill-search-readings.js --repair-primary). Card surfaces, which print one sense's
+ * gloss, use `resolveDisplayPronunciation` instead. See docs/DEFINITION_CLUSTERS.md.
  */
-export function resolveShortDefinition(definitions: string[], override?: ShortDefinitionPronunciationOverride | null): string | null {
-  if (override?.definition != null) return override.definition;
-  return generateShortDefinition(definitions);
+export function resolveDefaultPronunciation(entry: {
+  pronunciation?: string | null;
+  definitionClusters?: SenseCluster[] | null;
+}): string | null {
+  return clusterReadingOrColumn(defaultSenseCluster(entry.definitionClusters), entry.pronunciation ?? null);
 }
 
 /**

@@ -43,7 +43,7 @@
  * `masteredCollectionBar` live in server/contracts/wire.ts, so the two sides cannot
  * drift on the spelling of `mastered-reading`. See docs/DECKS_FEATURE.md.
  */
-import { COLORS } from "../../theme/colors";
+import { RAMP, type RampHue } from "../../theme/colors";
 import {
     ALL_COLLECTION_ID,
     LEARN_NOW_COLLECTION_IDS,
@@ -271,7 +271,7 @@ export function collectionMarkFields(
 }
 
 /**
- * A deck's persistent pastel accent, derived from its id rather than stored.
+ * A deck's persistent accent (its hue's TINT), derived from its id rather than stored.
  *
  * The `decks` table deliberately has no `color` column: a derived color is stable
  * for the life of the deck, costs no migration, and cannot drift out of sync with
@@ -281,30 +281,27 @@ export function collectionMarkFields(
  * Modulo over the id gives adjacent decks different colors, which is what the eye
  * actually wants in a list; it is not trying to be unique per deck.
  */
-export const DECK_ACCENTS = [
-    COLORS.blueAccent,
-    COLORS.greenAccent,
-    COLORS.yellowAccent,
-    COLORS.purpleAccent,
-    COLORS.redAccent
-] as const;
+/**
+ * The hue of each deck slot, in modulo order. A HUE KEY list rather than two parallel
+ * hex arrays, so a deck's tile body and its accent cannot come from different hues.
+ * (v1 kept two index-aligned arrays, and the purple slot's body had to borrow the ink
+ * `purA` because there was no purple surface token.) Org, not yel, in the third slot:
+ * yellow is the Target band in v2, and artboard 2 paints its "Travel" deck spine `--orgM`.
+ */
+const DECK_HUES = ["blu", "grn", "org", "pur", "red"] as const satisfies readonly RampHue[];
+
+/** The near-white TINT of each deck hue — a deck row's accent. */
+export const DECK_ACCENTS = DECK_HUES.map((hue) => RAMP[hue].tint);
 
 export function deckAccentColor(deckId: number): string {
     return DECK_ACCENTS[Math.abs(deckId) % DECK_ACCENTS.length];
 }
 
 /**
- * The saturated body tone paired with each entry of DECK_ACCENTS, for the deck TILE
- * (which needs two tones: a card body and a lighter inner fill). Index-aligned with
- * DECK_ACCENTS, so `deckTileColors` can read both from one modulo.
+ * The MID-tier body for each deck hue — a deck SPINE (artboard 2: "Mid: deck spines").
+ * Index-aligned with DECK_ACCENTS through DECK_HUES.
  */
-const DECK_MAINS = [
-    COLORS.blueMain,
-    COLORS.greenMain,
-    COLORS.yellowMain,
-    COLORS.purA,     // no `purpleMain` token — the ramp's purple accent is the pair partner
-    COLORS.redMain
-] as const;
+const DECK_MAINS = DECK_HUES.map((hue) => RAMP[hue].mid);
 
 /** A deck's two-tone tile palette, derived from its id exactly as its accent is. */
 export function deckTileColors(deckId: number): { main: string; accent: string } {

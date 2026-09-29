@@ -83,12 +83,12 @@ path: a pack inserted on dev is overwritten by the next pull.
 
 Why this works without any id translation: `"entryIds"` holds det surrogate ids, and
 the same pull restores `dictionaryentries_zh`/`_es` with PPE's ids, so the ids line up
-by construction. Two ordering rules follow, both enforced by the skill:
+by construction. Two rules follow, both built into the skill:
 
 | Rule | Why |
 |---|---|
-| Restore `sort_packs` **after** the det tables | `trg_sort_packs_sync_entry_words` (migration 96) fires on the restore's `COPY` and re-derives `"entryWords"` from local det. |
 | Never pull `sort_packs` without det | `"entryIds"` has no FK; against a stale det they would silently point at the wrong words. |
+| Restore with `pg_restore --disable-triggers` | `trg_sort_packs_sync_entry_words` (migration 96) would fire on the `COPY`, and its function names `dictionaryentries_zh`/`_es` without a schema; `pg_restore` runs with an empty `search_path`, so the COPY aborts and the table is left empty. The dump already carries PPE's `"entryWords"`, which are correct because the ids match. |
 
 The table dump also carries `sort_packs_id_seq`'s value, so dev's sequence tracks
 PPE's (which is deliberately left past withdrawn ids — see § 2.2).

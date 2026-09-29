@@ -453,7 +453,8 @@ explicitly EXCLUDED from `/data-ppe-to-dev`, or a routine dev refresh silently o
 the freshly-computed groups with PPE's copy of what dev just sent.
 ⚠️ **TEMPORARY (2026-08-28): a pull will undo dev's `frequencyScore` repair.** Dev's det
 rows were repaired to satisfy `frequencyScore == MAX(definitionClusters[*].frequencyScore)`
-(430 zh + 562 es rows); PPE has not been repaired yet, so a pull re-imports the drift.
+(430 zh + 562 es rows). As of the 2026-09-28 pull PPE's **zh is consistent** but **es still
+drifts (521 rows)**, so a pull re-imports the es drift.
 Either run `scripts/backfill/shared/repair-frequency-score-drift.js` against PPE first, or
 re-run it on dev after the pull — it is deterministic, costs nothing and is idempotent.
 **Delete this note once PPE has been repaired.**

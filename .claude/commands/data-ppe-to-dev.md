@@ -13,7 +13,8 @@ a stale snapshot. Refresh dev *down* from PPE; never restore these dumps upward.
 > reads the same on both.
 
 Structurally this mirrors [`/template-pull`](./template-pull.md) (PPE half = SOURCE,
-Local half = TARGET, transport = Git LFS because you have no cross-machine SSH).
+Local half = TARGET, transport = Git LFS — the dumps travel through the repo even
+though the dev box can now SSH to PPE, so both checkouts keep the same snapshot).
 
 > **Not this skill:** PPE's client-diagnostics telemetry
 > (`client-perf-*.jsonl` / `client-error-*.jsonl`) lives on the PPE **host
@@ -29,7 +30,7 @@ Local half = TARGET, transport = Git LFS because you have no cross-machine SSH).
 | 3 | `dictionaryentries_es` | `database/dictionaryentries_es-data.dump` | TRUNCATE + restore (full overwrite) |
 | 4 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` | TRUNCATE + restore (full overwrite) |
 | 5 | `validations` | `database/validations-data.dump` | TRUNCATE + restore (full overwrite) |
-| 6 | `sort_packs` | `database/sort_packs-data.dump` | TRUNCATE + restore (full overwrite) — must come AFTER the det restores |
+| 6 | `sort_packs` | `database/sort_packs-data.dump` | TRUNCATE + restore **with `--disable-triggers`** (full overwrite) — after the det restores |
 
 > ⚠️ **This overwrites your local det.** `dictionaryentries_zh`/`_es`,
 > `particlesandclassifiers`, `validations` and `sort_packs` are TRUNCATE+restored wholesale — any
@@ -75,14 +76,18 @@ on the box that runs the job. See
   unconstrained, so no ordering dependency on the det restores — but pull det +
   validations together anyway so their ids line up (`entryId` = det surrogate id).
 - **`sort_packs` — plain overwrite, restored LAST.** Authored discover sort packs
-  are hand-curated **on PPE** (see `docs/SORT_PACKS_IMPLEMENTATION.md` § 2.1). Two
-  things tie it to the det restores:
+  are hand-curated **on PPE** (see `docs/SORT_PACKS_IMPLEMENTATION.md` § 2.1).
   - `"entryIds"` holds det surrogate ids (no FK). They are only meaningful because
     the det tables were just restored with PPE's ids in the same pull — never pull
     `sort_packs` without the det tables.
-  - `trg_sort_packs_sync_entry_words` (migration 96) fires on the restore's `COPY`
-    and re-derives `"entryWords"` from the local det, so det must already be in place
-    or every pack restores with an empty `entryWords`.
+  - **Restore it with `--disable-triggers`.** `trg_sort_packs_sync_entry_words`
+    (migration 96) would otherwise fire on the restore's `COPY`, and its function
+    names `dictionaryentries_zh` unqualified — `pg_restore` runs with an empty
+    `search_path`, so the COPY aborts with `relation "dictionaryentries_zh" does
+    not exist` and leaves the table **empty** (hit on the first pull, 2026-09-28).
+    Skipping the trigger is correct, not a workaround: the dump already carries
+    PPE's `"entryWords"`, which match because the ids match. The table has no FKs,
+    so `--disable-triggers` skips nothing else.
 
   The `-t sort_packs` dump also carries `SEQUENCE SET sort_packs_id_seq`, so dev's
   id sequence ends up where PPE's is (PPE deliberately keeps it past withdrawn ids).
@@ -95,8 +100,9 @@ on the box that runs the job. See
 
 Read [machineEnvironment.md](../../machineEnvironment.md) (gitignored, present on
 every machine) to determine dev vs PPE. A full sync has **two halves that run on two
-different machines**, and you can only run the half for the machine you are on — you
-have no SSH access to the other one:
+different machines**. From the dev box, run BOTH yourself — the PPE half over SSH (see
+[`/ssh-ppe`](./ssh-ppe.md)), then the Local half locally. Only on a box without that
+key do you fall back to a hand-off:
 
 - **On PPE** → you are the **SOURCE**. Run the [PPE half](#ppe-half--source)
   yourself (dump → commit → push), then hand the user the
@@ -176,12 +182,13 @@ docker exec cow-postgres psql -U cow_user -d cow_db -c 'ALTER TABLE icons8_live 
 docker exec cow-postgres psql -U cow_user -d cow_db -c 'SELECT COUNT(*) FROM icons8;'   # >= PPE count
 
 # 2. det + pct + validations + sort_packs — TRUNCATE + restore (icons8 rows now all
-#    present, so iconId FKs resolve). sort_packs MUST stay last: its entryWords trigger
-#    reads the det tables restored just before it.
+#    present, so iconId FKs resolve). sort_packs goes last and needs --disable-triggers
+#    (its entryWords trigger cannot resolve det under pg_restore's empty search_path).
 for T in dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations sort_packs; do
+  EXTRA=""; [ "$T" = sort_packs ] && EXTRA="--disable-triggers"
   docker cp "database/${T}-data.dump" "cow-postgres:/tmp/${T}_dump.dump"
   docker exec cow-postgres psql -U cow_user -d cow_db -c "TRUNCATE TABLE \"$T\";"
-  docker exec cow-postgres pg_restore -U cow_user -d cow_db -t "$T" --data-only "/tmp/${T}_dump.dump"
+  docker exec cow-postgres pg_restore -U cow_user -d cow_db -t "$T" --data-only $EXTRA "/tmp/${T}_dump.dump"
   docker exec cow-postgres psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"$T\";"   # == PPE count
 done
 ```

@@ -373,10 +373,19 @@ removes the ink tier and gives each hue four FILL tiers:
 | Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Reading/Writing Centers, the fanned Study Mix cards, Learn Now, the Mastered section, community previews, theme swatches, Match Speed's picked card |
 | Mid | `COLORS.redM` (the design's `--redK` aliases it) | `mid` | every bento tile, shelf spines, rows, band pills, avatars, bubbles, a game's whole-screen ground, arena zone dividers |
 | Mark | `COLORS.redMk` | `mark` | "fluorescent" — the dictionary vowel keypad, mastery cells, mini-card mastery bars |
+
+**The app's Mark tier is darker than the design's (user, 2026-09-28).** Every `*Mk` token
+(`red`/`org`/`yel`/`grn`/`blu`/`pur`) is the design's oklch value with **L lowered 5
+points**, chroma and hue unchanged, then per-channel clipped as usual — e.g. `redMk`
+`oklch(88% .24 22)` → `oklch(83% .24 22)`, `#FF888D` → `#FF767D`. It applies app-wide, so
+every Mark consumer (vowel keypad, CPCD tone marks, games, challenge results, usage charts,
+`MARK_TYPE_COLORS`) moved with it. `tea` (mark = mid) and `gld` are untouched. **Code:**
+`src/theme/colors.ts` → `COLORS.*Mk`.
 | Tint | `COLORS.redTint` | `tint` | game HUD / timer strips, arena zone rows |
 
 `grey` keeps only `grey` + `greyA`; `tea` is not shipped (decision 7); `yel`
-adds `yelMkD`, a deeper mark for 3.5px bars on the cream card face; `gld` keeps
+added `yelMkD`, a deeper mark for 3.5px bars on the cream card face (deleted 2026-09-28:
+the darkened `yelMk` is deeper than it was); `gld` keeps
 `gld` / `gldTint` / `gldFrame` and lost `gldA`.
 
 **Code:** `src/theme/colors.ts` → `COLORS` and `RAMP` (now `{surface, mid, mark, tint}`;
@@ -389,7 +398,8 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    are outside sRGB (many outside Display-P3). Hue-preserving gamut-mapping collapses
    red/org/blu/pur Surface ≈ Mid ≈ Mark into one pastel (`redMk` → `#FFC8C5` against
    `red` `#FFD1D3`), erasing the tier system; the design preview shows the browser's
-   per-channel clamp, which keeps them apart (`#FFC9CD` / `#FFB8BC` / `#FF888D`). The
+   per-channel clamp, which keeps them apart (`#FFC9CD` / `#FFB8BC` / `#FF888D` — the
+   design's Mark; the app's is darkened to `#FF767D`, see the table above). The
    app matches the preview: use `oklch_to_hex` below, **not** `gamut_map`, for any v2
    token. Every clipped value is marked `clipped` in `colors.ts`.
 2. **The ink tier is removed fully.** `dangerInk` / `successInk` / `infoInk` / `warnInk`
@@ -403,7 +413,8 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    design avoids it by drawing Learn Now purple; the user kept Learn Now yellow. One
    constant to change if it reads badly on device.
 4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` and
-   the `MiniVocabCard` strip both use `getBandMark`. `MARK_TYPE_COLORS` survives only for
+   the mini-card strip both use `getBandMark` (identical colours since 2026-09-28, when
+   the mini strip's deeper-Target variant was retired). `MARK_TYPE_COLORS` survives only for
    surfaces that name a SKILL (Bubble Match's track toggle, the eip `TAB_COLORS`), and
    is now the Mark tier of each skill's hue rather than four literals.
 5. **Off-palette literals in UI chrome moved onto tokens.** Out of scope, deliberately:
@@ -1314,7 +1325,7 @@ swipe out of this game" invisible to whoever reads the page.
 | Match Speed | Framed. `MatchSpeedTimerBar` now **delegates to `GameTimer`** and keeps only what is Match-Speed-specific: `RUN_DURATION_MS`, the 10s urgency threshold, its colours. ~60 lines of duplicated clock styling gone. |
 | Bubble Match | Framed. `BubbleStage` measures its own container, so this just re-bounds the field — no constant changed. |
 | Hydra Bubbles | Framed, same as Bubble Match. |
-| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. The reconciliation was a re-ordering, not a new primitive: the clock is now the MIDDLE child, so the one element that can vanish is the one whose absence moves nothing under `space-between`. It used to be first, which is why the hint meter beside it had to be absolutely positioned. |
+| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. Since 2026-09-25 it holds only the clock, centred (the mode label and found count were removed), and the whole strip is omitted when the timer setting is off — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
 | Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
 | Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
 
@@ -1556,11 +1567,12 @@ rows would go missing.
 
 > **v2 (2026-09-23):** cells are coloured by the track's BAND in the Mark tier
 > (`getBandMark`), not by mark type; the band pill is the Mid tier (`getBandMid`); cells
-> are 20px tall. See § A1b decision 4.
+> are 20px tall. The app's Mark tier is 5% L darker than the artboard's (2026-09-28). See § A1b decision 4.
 
 `src/components/mastery/MasteryWindow.tsx` → the eight-cell window, its `.tick` cut-point
-markers, the `.hd4` heading (track name + band pill + figure) and the `.cd3` cooldown
-legend, plus the `.sec2` rule and `Segmented` track switch above it. **This is the app's
+markers, the `.hd4` heading (track name + band pill + inline cooldown timer + figure), plus the
+`Segmented` track switch above it. (The `.cd3` cooldown legend under the cells and the
+`.sec2` `Mastery` rule were both dropped 2026-09-28.) **This is the app's
 only mastery visualization (D7)**; scale it down for inline/list contexts rather than
 substituting a different shape. `.trk2` and `.mst` are deliberately **not built**, and
 `MasteryProgressBar` — which WAS a `.mst` — is deleted.
@@ -2563,6 +2575,8 @@ glyph. Chinese only, by design.
   revision split them from one row of 4px pips into **two rows of ten at 8px**, and the
   height is the point: a colour has to be seen peripherally, because that is the only way
   it will be seen at all with the player's eyes on the words.
+  *(2026-09-25: back to **one row of twenty**, keeping the 8px height — see
+  [SPEED_READING_GAME.md](./SPEED_READING_GAME.md) § "The round ticks".)*
 - **Why the run needed them.** This game's score is a TIME and a wrong answer is paid for
   in seconds rather than in a lost round, so mid-run there was nothing on screen saying how
   the run was going — a slow clean run and a fast sloppy one read identically. The pips are
@@ -2713,7 +2727,9 @@ Hydra's pinyin display genuinely is a live toggle.
   not a percentage, so it is drawn as eight discrete cells with the Target and
   Comfortable cut points ticked between them. The core bar's fractional pbh renders as a
   PARTIAL last cell rather than rounding, because rounding makes two genuinely different
-  cards read the same. Per-track cooldowns survive as the `.cd3` legend.
+  cards read the same. The cooldown survived as the `.cd3` legend — one row per bar
+  since the 2026-09-25 know merge (docs/MASTERY_REWORK.md § 6) — until 2026-09-28, when
+  the legend was dropped and the countdown moved inline beside the band pill.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
 - **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare raises the
   compare SHEET over the page (the cdp has no tab strip to host a Compare tab in).
@@ -3063,7 +3079,9 @@ Two consequences worth stating, because they are where this could go wrong:
   keeps the track the learner chose.
 
 Built as `MasteryWindow` + the `Segmented` primitive. The rule in
-`docs/MASTERY_REWORK.md` is amended to match.
+`docs/MASTERY_REWORK.md` is amended to match. **2026-09-28:** the `Mastery` overline and
+its hairline were dropped; the switch now stands alone, right-aligned (class
+`mastery-window__switch-row`).
 
 ### D7 · One mastery rendering: `.msb` — **HONOURED 2026-08-24**
 
@@ -3224,7 +3242,9 @@ board rather than a plane floating over one.
 offset than `float` (a small rail) but a LOWER alpha, because at card size a `float` alpha
 reads as dirt under the card. Pick by what the thing is: `rest` · `raised` · `chip` ·
 `float` · `lifted` · `menu` · `popover` · `board` · `spine`/`spineSwatch`, plus the three
-upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`).
+upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`). One
+app-authored role has no artboard source: `recessed`, an inset shadow for an empty well
+pressed into a surface (the sort page's card crater, `SortCardsPage.tsx` → `CardCrater`).
 
 **Where it is wired.** The light theme's `flashcard.cardShadow` / `.cardShadowSubtle` /
 `.sheetShadow` now resolve to `SHADOW.lifted` / `.raised` / `.panelUp`, so every call site
@@ -3245,9 +3265,6 @@ re-derived (D4).
 - **`LibraryDuo`** — no longer shelf material at all: it shares `SHADOW.cardRest` with the
   fdp's Centers rail and the hand's resting cards (see D9's narrowing), so `SHADOW.spine`
   would break that pairing rather than tidy it.
-- **The scp's LOCKED card** — the artboards never draw a pressed-in card, so there is no
-  design value for "recessed". Left hand-authored, but re-inked to the shadow hue so it is
-  not the one pure-black shadow left on the page.
 - **Game internals** (`BubbleStage`, `Bubble`, `WordSearchGrid`) and the icon editor's
   canvas handles (`CardIconCanvas`) — these are rendering surfaces with their own physical
   look, not app chrome.
@@ -3275,7 +3292,7 @@ into the open rather than a new decision:
    Ocean / Nature keep their own faces and are not re-derived (D4).
 2. **Four surfaces were not reading the theme at all** and had to be converted, or they would
    have stayed grey while the flashcard went cream: `MiniVocabCard`, `QuickMarkCard`,
-   `ChallengeWordCard` and the scp's `CardShell`. All four are card faces; all four hard-coded
+   `ChallengeWordCard` and the scp's `CardShell` (since folded into the shared `MiniCard`). All four are card faces; all four hard-coded
    `COLORS.card`. They looked correct only because the light theme's face happened to be that
    same token — which also meant a mini card silently ignored Dark / Ocean / Nature.
 3. **The fie's `auto` and `grey` swatches are now actually different.** `cardColor.ts` has

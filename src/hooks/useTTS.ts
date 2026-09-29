@@ -263,10 +263,19 @@ export function useTTS() {
         }
     }, [settings.autoplay, ttsLang, settingsVoice]);
 
-    // Cancel on unmount so a stale utterance can't outlive the page.
+    // Cancel on unmount so a stale utterance can't outlive the page — but ONLY an
+    // utterance THIS instance started. The providers are app-wide singletons, so an
+    // unconditional cancel() here let any unmounting instance silence narration a
+    // different instance owns. That is how the scp lost the first word of its first
+    // pack: the header AudioModeChip mounts in the same commit the pack lands in,
+    // StrictMode's dev remount ran its cleanup AFTER the page's autoplay effect had
+    // started word one, and the cancel bumped the provider generation mid-fetch.
+    // `activeProviderRef` is set for the whole of speakText (fetch + playback) and
+    // cleared in its finally, so it is exactly "this instance has something in flight".
+    // See docs/AUDIO_PLAYBACK.md § "Only the speaker stops on unmount".
     useEffect(() => {
         return () => {
-            cancel();
+            if (activeProviderRef.current) cancel();
         };
     }, [cancel]);
 

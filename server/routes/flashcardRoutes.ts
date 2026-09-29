@@ -5,7 +5,6 @@ import { onDeckVocabService, flashcardMarkService } from '../dal/setup.js';
 import { MODE_CONFIGS, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { ReviewMark, MarkType, MARK_TYPES } from '../types/index.js';
 import { DALError } from '../types/dal.js';
-import { parseFlpForeignTrack } from '../contracts/wire.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -20,8 +19,8 @@ import { handle } from './asyncHandler.js';
  * THE ONE PIECE OF ORCHESTRATION LEFT HERE is the composition below: `mark` records
  * the mark and, for the flp only, hands back a replacement card. Those are two
  * concerns riding one URL — seven of the eight client call sites send `excludeIds: []`
- * and discard `newCard`, and four request fields (`mode`, `deckId`, `collection`,
- * `foreignTrack`) exist solely to steer a refill the games never read. Splitting the
+ * and discard `newCard`, and three request fields (`mode`, `deckId`, `collection`)
+ * exist solely to steer a refill the games never read. Splitting the
  * refill onto its own endpoint is now a routing change and nothing more, because the
  * service returns `categoryBeforeMark` rather than picking the card itself. It is not
  * done here because it changes the flp's wire contract and needs its call site
@@ -32,8 +31,7 @@ import { handle } from './asyncHandler.js';
 const router = Router();
 
 // Coerce an incoming mark `type` to a valid MarkType. Defensive default:
-// an absent/unknown type falls back to 'recognition' (the historical default
-// flp foreign-first face — a pinyin-off zh session now sends 'reading' explicitly).
+// an absent/unknown type falls back to 'recognition' (the flp's foreign-first face).
 function resolveMarkType(raw: unknown): MarkType {
   return MARK_TYPES.includes(raw as MarkType) ? (raw as MarkType) : 'recognition';
 }
@@ -57,7 +55,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   const {
     cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds,
     mode: rawMode, deckId: rawDeckId, collection: rawCollection,
-    foreignTrack: rawForeignTrack, surface: rawSurface,
+    surface: rawSurface,
   } = req.body || {};
 
   if (!userId) {
@@ -126,13 +124,6 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
         ? { kind: 'builtin', id: markedBuiltin }
         : undefined;
 
-  // The flp session's foreign-first track (docs/MASTERY_REWORK.md). Steers only the
-  // REPLACEMENT card — the mark itself was typed by `type` above. The client echoes
-  // back whatever it launched the loop with so the refill is steered on the same two
-  // tracks the loop is; other surfaces omit it and get the historical
-  // recognition/production pair.
-  const foreignTrack = parseFlpForeignTrack(rawForeignTrack);
-
   // excludeIds is the list of card ids currently in the client's working loop, so the
   // replacement picker avoids handing back a duplicate.
   const excludeIds: number[] = Array.isArray(rawExcludeIds)
@@ -153,7 +144,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   try {
     newCard = await onDeckVocabService.getNextLibraryCardWithFallback(
       userId, markResult.categoryBeforeMark, markResult.language,
-      excludeIds, allowedCategories, collection, foreignTrack
+      excludeIds, allowedCategories, collection
     );
   } catch (refillError) {
     console.error(`Replacement pick failed after a committed mark (card ${cardId}):`, refillError);

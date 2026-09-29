@@ -41,7 +41,7 @@ bottom of the fill ladder. Code: `server/services/FlashcardMarkService.ts` →
 [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
 [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).*
 
-**What changed.** A card's per-type cooldown is a hard **"next markable at"**: a mark
+**What changed.** A card's cooldown (one clock per bar since 2026-09-25) is a hard **"next markable at"**: a mark
 landing inside the window is not recorded. Enforced once, server-side, at
 `POST /api/flashcards/mark`, so no surface opts in or out.
 

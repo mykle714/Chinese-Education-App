@@ -1,6 +1,6 @@
 # Night Market Feature
 
-> 🚩 **Behind a feature flag — currently ON.** `nightMarket` in
+> 🚩 **Behind a feature flag — currently OFF (since 2026-09-25).** `nightMarket` in
 > `server/contracts/featureFlags.ts` ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2d). Turning
 > it off unmounts **all three** of the feature's routers (`/api/nightMarket/*`,
 > `/api/nightMarketTemplates/*`, `/api/nightMarketSandbox/*`), removes the four

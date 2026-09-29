@@ -21,9 +21,11 @@ export type { MasteryGoals, MasteryBar, MasteryBarSegment } from "../../server/c
 export {
   COOLDOWN_MS_BY_CATEGORY,
   lastCorrectMarkTimestamp,
-  cooldownRemainingMs,
-  isTypeOnCooldown,
-  readyMarkTypes,
+  lastCorrectOnBar,
+  barReadyAt,
+  barCooldownRemainingMs,
+  isBarOnCooldown,
+  isMarkOnCooldown,
 } from "../../server/contracts/cooldown";
 export type { MasteryBarId } from "../../server/contracts/wire";
 export {

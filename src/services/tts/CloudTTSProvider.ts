@@ -466,7 +466,7 @@ export class CloudTTSProvider implements TTSProvider {
                 if (myGeneration === this.generation) {
                     el.onended = null;
                     el.onerror = null;
-                    el.onloadedmetadata = null;
+                    el.onplaying = null;
                     this.elementPlaying = false;
                     this.elementCleanup = null;
                 }
@@ -478,13 +478,21 @@ export class CloudTTSProvider implements TTSProvider {
             // Resolve (never reject) on error: a decode/network failure must not
             // hang the caller's "playing" indicator.
             el.onerror = cleanup;
-            // Duration is unknown until metadata lands, so the watchdog starts
-            // generous and tightens to the real length once we know it.
-            el.onloadedmetadata = () => {
+            // The watchdog starts generous and tightens to the clip's REMAINING
+            // length once sound is actually coming out — on `playing`, not on
+            // `loadedmetadata`. Metadata for a blob URL lands almost instantly, but
+            // audible playback can start much later (the output device waking up,
+            // iOS activating its audio session on the first word of a run). Timing
+            // from metadata let the watchdog resolve while the word was still
+            // playing, so a sequenced caller (the scp pack autoplay's gap) started
+            // the next word early and cut this one off.
+            el.onloadedmetadata = null;
+            el.onplaying = () => {
                 if (settled) return;
                 if (!Number.isFinite(el.duration)) return;
                 if (watchdog !== null) clearTimeout(watchdog);
-                watchdog = setTimeout(cleanup, Math.ceil(el.duration * 1000) + 750);
+                const remainingMs = Math.max(0, (el.duration - el.currentTime) * 1000);
+                watchdog = setTimeout(cleanup, Math.ceil(remainingMs) + 750);
             };
 
             this.elementPlaying = true;
@@ -495,7 +503,7 @@ export class CloudTTSProvider implements TTSProvider {
             } catch {
                 // Not seekable yet — harmless, a fresh src starts at 0 anyway.
             }
-            // Fallback watchdog for the case where metadata never arrives (the
+            // Fallback watchdog for the case where playback never starts (the
             // element can stall silently on iOS when the tab loses audio focus).
             watchdog = setTimeout(cleanup, 15000);
 
@@ -559,6 +567,11 @@ export class CloudTTSProvider implements TTSProvider {
                 cleanup();
                 resolve();
             };
+            // Context-clock time the clip will have finished by. The watchdog below
+            // runs on the WALL clock, which can run ahead of the context's: a context
+            // that is 'running' may still not be advancing while its output device
+            // wakes up. See the watchdog for how this is used.
+            const endsAtContextTime = ctx.currentTime + playbackSeconds;
             try {
                 source.start(0);
             } catch {
@@ -574,8 +587,23 @@ export class CloudTTSProvider implements TTSProvider {
             // promise forever and leaving the caller's "playing" indicator stuck
             // on. Resolve shortly after the clip's own duration so the promise
             // always settles. Margin covers scheduling/decoding slop.
-            const watchdogMs = Math.ceil(playbackSeconds * 1000) + 750;
-            watchdog = setTimeout(() => {
+            //
+            // The wall-clock deadline alone is wrong when playback starts late: a
+            // context that is running but whose clock stalled while the output device
+            // woke up has not finished the clip by then, and stopping it would cut
+            // the word short (and let a sequenced caller start the next word early).
+            // So when the deadline hits and the context is still running and its
+            // clock has not reached the clip's end, re-arm for the remaining time.
+            // Bounded: only a few re-arms, so a clock that never advances still settles.
+            const MAX_REARMS = 3;
+            let rearms = 0;
+            const onDeadline = () => {
+                const remainingSec = endsAtContextTime - ctx.currentTime;
+                if (isContextRunning(ctx) && remainingSec > 0.05 && rearms < MAX_REARMS) {
+                    rearms += 1;
+                    watchdog = setTimeout(onDeadline, Math.ceil(remainingSec * 1000) + 750);
+                    return;
+                }
                 // Stop the (possibly still-scheduled) source so a resumed context
                 // can't replay it after we've resolved.
                 try {
@@ -585,7 +613,8 @@ export class CloudTTSProvider implements TTSProvider {
                 }
                 cleanup();
                 resolve();
-            }, watchdogMs);
+            };
+            watchdog = setTimeout(onDeadline, Math.ceil(playbackSeconds * 1000) + 750);
         });
     }
 

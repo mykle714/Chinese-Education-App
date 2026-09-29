@@ -11,12 +11,12 @@ One registry file switches whole features, and individual games, on and off:
 | `studyChallenge` | Weekly head-to-head between friends ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)) | **OFF** |
 | `community` | **Sharing** card designs with other learners ([COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)) | ON |
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
-| `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | ON |
+| `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | ON |
 | `GAME_FLAGS['<gameId>']` | One switch per game, six of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | all ON |
 
-**`studyChallenge` is the only thing currently switched off.** Every other flag exists so
-it *can* be switched off, and documents what would go away if it were.
+**`studyChallenge` and `nightMarket` are the only things currently switched off.** Every other
+flag exists so it *can* be switched off, and documents what would go away if it were.
 
 Before this, the app had no flag mechanism at all — CLAUDE.md records the previous house
 practice plainly ("Half B has **no feature flag** — it went live the moment the containers
@@ -79,7 +79,7 @@ Gates **sharing**, not **authoring**.
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/community` |
 | Entry points | `src/pages/HomePage.tsx` — the Community tile, the **only** navigational entry |
 | | `src/features/profile/UserProfilePage.tsx` → `ProfileDesignGrid` (another account's designs, with its own vote flow) |
-| | `src/data/tips.ts` — the Community tip, which would otherwise point at a 404 |
+| | `src/data/tips.ts` — the Community tip (`feature: "community"`), which would otherwise point at a 404 |
 
 **NOT gated:** designing your own cards. The card icon editor, `CardIconLayer`,
 `cardIconLayout.ts`, `VocabEntryService.updateIconLayout` and the `author` column
@@ -110,7 +110,7 @@ Gates **sharing**, not **authoring**.
   `users."geoCell"` value is read or written differently because of the flag.
 
 
-### 2d. `nightMarket` — ON
+### 2d. `nightMarket` — OFF
 
 The widest flag: the feature owns **three** server namespaces and **four** routes.
 
@@ -121,6 +121,7 @@ The widest flag: the feature owns **three** server namespaces and **four** route
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/night-market`, `/night-market/user/:userId`, `/night-market/template-editor`, `/night-market/template-sandbox` |
 | Entry points | `src/pages/HomePage.tsx` — the hero tile, **and** the two `isTemplateAuthor` tiles below the hairline |
 | | `src/features/profile/UserProfilePage.tsx` — the "Visit their night market" button, the only way to reach `/night-market/user/:userId` |
+| | `src/data/tips.ts` — the Night Market tip (`feature: "nightMarket"`) |
 
 **Authoring grant vs flag.** The Template Editor and Template Sandbox are already gated by
 `users.isTemplateAuthor`, and that is *not* a substitute: the grant answers "may you
@@ -172,6 +173,7 @@ inherit a default and vanish from the hub.
 |---|---|
 | Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** The hub (`GamesPage`), `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests all derive from this array |
 | Server | `server/controllers/GamesController.ts` → `isGameEnabled` on all three handlers (`getAssets`, `getProgress`, `saveProgress`) |
+| Tips | `src/data/tips.ts` — a tip naming a game carries `game: "<slug>"` (Bubble Match, Word Search) and is filtered by `isGameEnabled`. Not derived from `GAME_REGISTRY`, so it is a second client site to remember |
 
 A disabled game's route therefore **stops existing** rather than 404-ing from a live row.
 Because `GAME_COMPONENTS` derives from the same filtered array, the registry's boot-time
@@ -213,6 +215,8 @@ the same reason, and its game assertions from `GAME_REGISTRY`, which is already 
    Two of the five feature flags have one; assume yours does too until you have checked.
 4. Add its paths to `FLAGGED_OFF_PATHS` in `src/routes/routeMeta.ts`.
 5. Guard every client entry point (tiles, shelves, buttons, badge fetches, tips).
+   For tips, tag the entry in `src/data/tips.ts` with `feature:` (or `game:` for a game) —
+   `TIPS` filters on it, so a tip about a switched-off feature never shows.
 
 **DI wiring in `server/dal/setup.ts` is deliberately NOT gated.** Services are injected into
 other services — `StudyChallengeService` into `FriendsService` as the unfriend resolver,

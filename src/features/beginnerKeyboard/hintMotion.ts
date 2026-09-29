@@ -23,7 +23,7 @@ export const HINT_MOTION = {
    * a "has the learner paused?" filter.
    */
   enterDelayMs: 750,
-  /** Extra pause per bubble, left to right. */
+  /** Extra pause per bubble, in a random order within each batch (§ 6z-4 "Motion"). */
   staggerMs: 70,
   growMs: 340,
   popMs: 240,

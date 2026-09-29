@@ -8,6 +8,7 @@
  * Consumed by:
  *   - backfill-character-components.js  (writes dictionaryentries_zh.components)
  *   - generate-component-font.js        (subsets the webfont to the components in use)
+ *   - generate-handwriting-templates.js (componentStrokesOf → in-context variants, § 6z-5)
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * SOURCE DATA & LICENSING — read before changing this file
@@ -120,13 +121,13 @@ const STROKES = new Set([...'一丨丶丿乙亅乚乛乀乁㇀㇉丷']);
 const isSolidRadical = (char) => RADICALS.has(char) && !STROKES.has(char);
 
 /**
- * Fetch (and cache) the decomposition source. Network is only touched on a cold
- * cache; every later run reads the local file.
+ * Fetch (and cache) the decomposition source and parse every entry. Network is
+ * only touched on a cold cache; every later run reads the local file.
  *
  * @param {{ refresh?: boolean }} [opts] refresh: re-download even if cached.
- * @returns {Promise<Map<string, string>>} character → raw IDS string
+ * @returns {Promise<Map<string, { ids: string, matches: Array<number[] | null> | null }>>}
  */
-export async function loadDecompositions({ refresh = false } = {}) {
+export async function loadDecompositionEntries({ refresh = false } = {}) {
     if (refresh || !fs.existsSync(CACHE_PATH)) {
         fs.mkdirSync(CACHE_DIR, { recursive: true });
         console.log(`⬇️  Fetching decomposition data → ${path.relative(SERVER_DIR, CACHE_PATH)}`);
@@ -149,7 +150,10 @@ export async function loadDecompositions({ refresh = false } = {}) {
         try {
             const entry = JSON.parse(line);
             if (entry?.character && entry?.decomposition) {
-                map.set(entry.character, entry.decomposition);
+                map.set(entry.character, {
+                    ids: entry.decomposition,
+                    matches: Array.isArray(entry.matches) ? entry.matches : null,
+                });
             }
         } catch {
             malformed++;
@@ -162,13 +166,166 @@ export async function loadDecompositions({ refresh = false } = {}) {
     return map;
 }
 
+/**
+ * The decomposition source as character → raw IDS string — the shape
+ * `componentsOf` takes.
+ *
+ * @param {{ refresh?: boolean }} [opts] refresh: re-download even if cached.
+ * @returns {Promise<Map<string, string>>} character → raw IDS string
+ */
+export async function loadDecompositions(opts) {
+    const entries = await loadDecompositionEntries(opts);
+    return new Map([...entries].map(([char, entry]) => [char, entry.ids]));
+}
+
 /** Immediate parts of one character straight from its IDS, structure stripped. */
-function rawParts(char, ids) {
-    const seq = ids.get(char);
+function rawParts(char, idsOf) {
+    const seq = idsOf(char);
     if (!seq) return [];
     return [...seq].filter(
         (part) => !IDC.test(part) && part !== UNKNOWN_PART && part !== char
     );
+}
+
+// ⿲ and ⿳ describe three side-by-side / stacked parts; every other operator two.
+const TERNARY_IDC = new Set(['⿲', '⿳']);
+
+/**
+ * Parse an IDS string into a tree, so a makemeahanzi `matches` PATH ([1, 0] =
+ * "child 0 of child 1") can be resolved to the leaf it names.
+ *
+ * Leaves are numbered in PREORDER, which is also their order in the IDS string —
+ * so the kept leaves line up one-for-one with `rawParts`.
+ *
+ * @returns {{ resolve: (path: number[]) => number | null, leaves: string[] } | null}
+ *          null when the string is not a single well-formed IDS expression.
+ */
+function parseIdsTree(seq) {
+    const chars = [...seq];
+    const leaves = [];
+    let pos = 0;
+    function node() {
+        const c = chars[pos++];
+        if (c === undefined) throw new Error('truncated IDS');
+        if (!IDC.test(c)) {
+            leaves.push(c);
+            return { leaf: leaves.length - 1 };
+        }
+        const arity = TERNARY_IDC.has(c) ? 3 : 2;
+        const children = [];
+        for (let k = 0; k < arity; k++) children.push(node());
+        return { children };
+    }
+    let root;
+    try {
+        root = node();
+    } catch {
+        return null;
+    }
+    if (pos !== chars.length) return null;
+    return {
+        leaves,
+        resolve(path) {
+            let current = root;
+            for (const step of path) {
+                current = current.children?.[step];
+                if (!current) return null;
+            }
+            // A path that stops at an operator names several leaves at once —
+            // no single part owns the stroke.
+            return current.leaf ?? null;
+        },
+    };
+}
+
+/**
+ * The one recursion behind both `componentsOf` and `componentStrokesOf`, so the
+ * parts a character decomposes to and the parts its strokes are labelled with
+ * can never disagree.
+ *
+ * Returns the parts (RULE 1 / RULE 2 in this file's header) and, when `matchesOf`
+ * knows the character, a per-stroke array of indices INTO `parts` (null for a
+ * stroke no single part owns). Labels are indices rather than glyphs so the two
+ * 人 of 从 stay distinguishable.
+ */
+function decompose(char, idsOf, matchesOf) {
+    return expand(char, 0, new Set([char]));
+
+    function expand(current, depth, seen) {
+        const partsHere = rawParts(current, idsOf);
+        const parts = [];
+        // Per raw part: where its output starts in `parts`, and its sub-labels when
+        // it was opened up.
+        const placements = [];
+        for (const part of partsHere) {
+            // Stop at radicals, at the depth cap, and on the self-referential cycles a
+            // few source entries contain (X decomposes to Y which decomposes back to X).
+            if (RADICALS.has(part) || depth >= 3 || seen.has(part)) {
+                placements.push({ start: parts.length, sub: null });
+                parts.push(part);
+                continue;
+            }
+            // RULE 2: only accept the expansion if it is a clean compound of solid
+            // radicals; otherwise this part is more recognisable left whole.
+            const sub = expand(part, depth + 1, new Set([...seen, part]));
+            if (sub.parts.length >= 2 && sub.parts.every(isSolidRadical)) {
+                placements.push({ start: parts.length, sub });
+                parts.push(...sub.parts);
+            } else {
+                placements.push({ start: parts.length, sub: null });
+                parts.push(part);
+            }
+        }
+        return { parts, labels: matchesOf ? labelStrokes(current, partsHere, placements) : null };
+    }
+
+    /**
+     * Project `current`'s makemeahanzi `matches` onto the parts `expand` chose.
+     * A stroke inside a part that was opened up takes that part's OWN label for
+     * it — its k-th stroke within the part is the part's k-th stroke, because the
+     * two files index strokes in the same order (§ 3e). If the stroke counts do
+     * not line up, the part's strokes are left unlabelled rather than guessed.
+     */
+    function labelStrokes(current, partsHere, placements) {
+        const matches = matchesOf(current);
+        const seq = idsOf(current);
+        if (!matches || !seq) return null;
+        const tree = parseIdsTree(seq);
+        if (!tree) return null;
+
+        // Map every tree leaf to its raw-part index; ？ and self-references were
+        // dropped from rawParts, so they map to nothing.
+        const leafToPart = new Map();
+        let rawIndex = 0;
+        tree.leaves.forEach((leaf, leafIndex) => {
+            if (leaf === UNKNOWN_PART || leaf === current) return;
+            leafToPart.set(leafIndex, rawIndex++);
+        });
+        // Defensive: the preorder leaves must BE rawParts, or indices would skew.
+        if (rawIndex !== partsHere.length) return null;
+
+        const strokePart = matches.map((pathOrNull) => {
+            if (!Array.isArray(pathOrNull)) return null;
+            const leaf = tree.resolve(pathOrNull);
+            return leaf === null ? null : leafToPart.get(leaf) ?? null;
+        });
+        const strokesPerPart = new Map();
+        for (const part of strokePart) {
+            if (part !== null) strokesPerPart.set(part, (strokesPerPart.get(part) || 0) + 1);
+        }
+
+        const seenInPart = new Map();
+        return strokePart.map((part) => {
+            if (part === null) return null;
+            const k = seenInPart.get(part) || 0;
+            seenInPart.set(part, k + 1);
+            const { start, sub } = placements[part];
+            if (!sub) return start;
+            if (!sub.labels || sub.labels.length !== strokesPerPart.get(part)) return null;
+            const inner = sub.labels[k];
+            return inner === null ? null : start + inner;
+        });
+    }
 }
 
 /**
@@ -184,25 +341,32 @@ export function componentsOf(char, ids) {
     // RULE 1: a radical is already the smallest unit a learner recognises. Revealing
     // "the parts of 口" would be revealing strokes, so it has no hint to give.
     if (RADICALS.has(char)) return [];
+    return decompose(char, (c) => ids.get(c), null).parts;
+}
 
-    return expand(char, 0, new Set([char]));
-
-    function expand(current, depth, seen) {
-        const parts = [];
-        for (const part of rawParts(current, ids)) {
-            // Stop at radicals, at the depth cap, and on the self-referential cycles a
-            // few source entries contain (X decomposes to Y which decomposes back to X).
-            if (RADICALS.has(part) || depth >= 3 || seen.has(part)) {
-                parts.push(part);
-                continue;
-            }
-            // RULE 2: only accept the expansion if it is a clean compound of solid
-            // radicals; otherwise this part is more recognisable left whole.
-            const sub = expand(part, depth + 1, new Set([...seen, part]));
-            parts.push(...(sub.length >= 2 && sub.every(isSolidRadical) ? sub : [part]));
-        }
-        return parts;
-    }
+/**
+ * `componentsOf`, plus which of those parts each of the character's strokes
+ * belongs to (§ 3e's "bridge", § 6z-5's variant source).
+ *
+ * `labels[s]` is an index into `parts` for stroke s (same stroke order as
+ * hanzi-writer-data), or null when the source cannot attribute that stroke to a
+ * single part. `labels` itself is null when the character has no `matches`.
+ *
+ * Consumed by generate-handwriting-templates.js, which cuts each component's
+ * strokes out of every character that contains it.
+ *
+ * @param {string} char
+ * @param {Map<string, { ids: string, matches: Array<number[] | null> | null }>} entries
+ *        from loadDecompositionEntries()
+ * @returns {{ parts: string[], labels: Array<number | null> | null }}
+ */
+export function componentStrokesOf(char, entries) {
+    if (RADICALS.has(char)) return { parts: [], labels: null };
+    return decompose(
+        char,
+        (c) => entries.get(c)?.ids,
+        (c) => entries.get(c)?.matches ?? null,
+    );
 }
 
 /**

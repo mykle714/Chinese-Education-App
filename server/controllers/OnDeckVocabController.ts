@@ -10,7 +10,6 @@ import {
   isRollingSupplySurface,
   masteredCollectionBar,
   parseMasteryBar,
-  parseFlpForeignTrack,
 } from '../contracts/wire.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { DeckService } from '../services/DeckService.js';
@@ -174,7 +173,7 @@ export class OnDeckVocabController {
 
   /**
    * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
-   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>&foreignTrack=<recognition|reading|optional>
+   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>
    * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
    * The optional `deck` / `collection` params restrict the loop to one collection
    * (docs/DECKS_FEATURE.md); the client must send the same restriction to the mark
@@ -191,12 +190,6 @@ export class OnDeckVocabController {
         rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
       const language = await getUserLanguage(userId);
       const collection = await this.resolveCollection(req, userId);
-      // Which track this session's FOREIGN-FIRST face exercises (docs/MASTERY_REWORK.md).
-      // The client sends 'reading' when it is showing zh cards with "Show pinyin" off;
-      // anything else (absent, unknown, or an es session) means the historical
-      // 'recognition'. Coerced rather than 400'd: a bad value must only mis-steer a
-      // face, never break a study session.
-      const foreignTrack = parseFlpForeignTrack(req.query.foreignTrack);
 
       // flp never blocks on deck size any more: top the user up to the flp baseline
       // first, so a learner with an empty deck still gets a full working loop. The
@@ -209,7 +202,7 @@ export class OnDeckVocabController {
       // deck is never lent anything (docs/PROVISIONAL_CARDS.md § 4b).
       const { lentIds } = await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds, foreignTrack);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -266,12 +259,8 @@ export class OnDeckVocabController {
   /**
    * The fdp's three StudyHand figures (Challenge/Review/Mix): cooldown-aware ready
    * counts per CORE utcm band, plus how long until the soonest Review-band card wakes.
-   * GET /api/onDeck/flpReadyCounts[?foreignTrack=recognition|reading]
+   * GET /api/onDeck/flpReadyCounts
    * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, reviewNextReadyMs: number|null }
-   *
-   * `foreignTrack` follows the same client-computes-it-and-passes-it-as-a-param
-   * convention as `getDistributedWorkingLoop` — the client already knows the learner's
-   * "Show pinyin" setting, so there is nothing for the server to derive.
    *
    * Deliberately narrow: unlike `getCollectionCards`, this never joins the dictionary
    * or runs the enrichment pipeline, since every figure here is computed from
@@ -282,9 +271,8 @@ export class OnDeckVocabController {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const foreignTrack = parseFlpForeignTrack(req.query.foreignTrack);
       const language = await getUserLanguage(userId);
-      const result = await this.onDeckVocabService.getFlpReadyCounts(userId, language, foreignTrack);
+      const result = await this.onDeckVocabService.getFlpReadyCounts(userId, language);
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getFlpReadyCounts');
@@ -490,7 +478,7 @@ export class OnDeckVocabController {
       // Board mode decides the PRIMARY mark type of this board (docs/MASTERY_REWORK.md
       // § "Games select by their own mark type"): No-Pinyin is a reading review,
       // Pinyin is a production review. That type buckets the pool by its own mark
-      // history and gates its per-type cooldown. Default to PPE (Pinyin) if
+      // history and gates freshness on its bar's cooldown clock. Default to PPE (Pinyin) if
       // the mode param is absent/unrecognized.
       //
       // PRIMARY, because a No-Pinyin find also writes a `production` mark

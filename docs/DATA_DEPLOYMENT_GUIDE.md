@@ -37,14 +37,11 @@ These were the only tables the push was ever allowed to touch. All others contai
 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` | Particles and classifiers reference data (pct) | TRUNCATE + restore |
 | `icons8` | `database/icons8-data.dump` | Icon cache (search results + downloaded bytes) | **Merge only, never TRUNCATE** |
 
-> ℹ️ **`sort_packs` is reference data but is NOT on this list — do not add it.** Authored
-> discover sort packs ship as **seed migrations** instead (the first is
-> `131-seed-zh-sort-packs.sql`), because their `entryIds` are det surrogate ids that are
-> not portable across environments; a seed resolves them by `word1` on the target box.
-> Assuming this table rode along with a data deploy is what left production with an empty
-> `sort_packs` — and therefore a sort flow serving only single cards — from migration 93
-> until migration 131. See
-> [SORT_PACKS_IMPLEMENTATION.md §2.1](./SORT_PACKS_IMPLEMENTATION.md).
+> ℹ️ **`sort_packs` was never on this list.** Assuming it rode along with a data deploy
+> is what left PPE with an empty `sort_packs` — and therefore a sort flow serving only
+> single cards — from migration 93 until seed migration 131. Since 2026-09-28 packs are
+> authored **on PPE** and carried **down** by the surviving `/data-ppe-to-dev` skill.
+> See [SORT_PACKS_IMPLEMENTATION.md §2.1](./SORT_PACKS_IMPLEMENTATION.md).
 
 **Foreign keys**: `dictionaryentries_zh.iconId` and `dictionaryentries_es.iconId` FK-reference
 `icons8("icons8Id")` (`ON DELETE SET NULL`, migration 72). `users.avatarIconId` also references

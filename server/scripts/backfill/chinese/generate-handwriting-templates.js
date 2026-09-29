@@ -90,11 +90,14 @@
  *
  *   --discoverable   narrow to glyphs reachable from discoverable words
  *                    (smaller, and NOT what the client expects — diagnostic only)
+ *   --no-variants    skip the § 6z-5 in-context variants (diagnostic A/B only)
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from '../../../db.js';
+import { loadDecompositionEntries, componentStrokesOf } from './lib/decompose.js';
+import { cutComponents, selectVariants } from './lib/componentVariants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // chinese/ is at server/scripts/backfill/chinese → server/ is three levels up.
@@ -118,8 +121,12 @@ const LICENSE_FILE = path.join(OUTPUT_DIR, 'hanzi-writer-data-ARPHICPL.txt');
 // The geometry is imported from the CLIENT so the two cannot drift. See the
 // header of src/components/handwriting/inkGeometry.ts.
 const GEOMETRY_MODULE = path.join(REPO_ROOT, 'src', 'components', 'handwriting', 'inkGeometry.ts');
+// Likewise the scorer: variants are chosen by the distance the runtime ranks with (§ 6z-5).
+const SCORING_MODULE = path.join(REPO_ROOT, 'src', 'components', 'handwriting', 'strokeScoring.ts');
 
 const discoverableOnly = process.argv.includes('--discoverable');
+// Diagnostic: emit the standalone templates only, to A/B the § 6z-5 variants.
+const skipVariants = process.argv.includes('--no-variants');
 
 /** Header magic, so a truncated or wrong file fails loudly at parse rather than silently mis-scoring. */
 const MAGIC = 'HWCT';
@@ -136,6 +143,13 @@ const FORMAT_VERSION = 2;
  */
 const KIND_COMPONENT = 1;
 const KIND_CHARACTER = 2;
+/**
+ * § 6z-5: an in-context variant — a component's strokes cut out of a character
+ * that contains it. Carries the glyph's own role bits too, so the asset may hold
+ * one glyph several times; the runtime keeps each glyph's best template.
+ * Mirrored by `KIND_VARIANT` in src/components/handwriting/glyphTemplates.ts.
+ */
+const KIND_VARIANT = 4;
 
 /**
  * Collect the glyph inventory: every distinct component, every single-character
@@ -171,12 +185,15 @@ async function loadGlyphInventory() {
           ${reachable}`,
     );
 
+    // Commonest first: the same order is the § 6z-5 variant pass's sample
+    // priority, so a per-component sample cap drops only rare characters.
     const { rows: characterRows } = await client.query(
       `SELECT c.word1
          FROM dictionaryentries_zh c
         WHERE c.language = 'zh'
           AND char_length(c.word1) = 1
-          ${discoverableOnly ? 'AND c.discoverable = TRUE' : ''}`,
+          ${discoverableOnly ? 'AND c.discoverable = TRUE' : ''}
+        ORDER BY c."frequencyScore" DESC NULLS LAST, c.word1`,
     );
 
     /** @type {Map<string, number>} glyph → kind bitfield */
@@ -193,7 +210,10 @@ async function loadGlyphInventory() {
 
     // Sorted so the asset is byte-stable across runs: an unstable order would
     // make every regeneration a spurious binary diff in git.
-    return [...inventory.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    return {
+      inventory: [...inventory.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      charactersByFrequency: characterRows.map((row) => row.word1),
+    };
   } finally {
     client.release();
   }
@@ -213,7 +233,9 @@ async function loadGlyphInventory() {
  *                        table grows past it — see § 7b)
  *   then, per glyph:
  *     codepoint  u32    (u32 rather than u16 — some radicals sit outside the BMP)
- *     kind       u8     KIND_COMPONENT | KIND_CHARACTER bitfield
+ *     kind       u8     KIND_COMPONENT | KIND_CHARACTER | KIND_VARIANT bitfield
+ *                       (a glyph may repeat: its variants follow the sorted
+ *                       standalone block, § 6z-5)
  *     strokes    u8
  *     coords     i8 × strokes × points × 2   (x, y interleaved)
  *
@@ -226,6 +248,81 @@ async function loadGlyphInventory() {
  * load time — storing them would inflate the asset and add a second thing that
  * can drift out of sync with the coordinates it summarizes.
  */
+/** A glyph's raw hanzi-writer medians (y-up), or null when it has no stroke data. */
+function readMedians(glyph) {
+  const file = path.join(HANZI_DATA_DIR, `${glyph}.json`);
+  if (!fs.existsSync(file)) return null;
+  const { medians } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return Array.isArray(medians) && medians.length > 0 ? medians : null;
+}
+
+/**
+ * § 6z-5 — append IN-CONTEXT VARIANTS: each component's strokes cut out of the
+ * characters that contain it, reduced to a few representative forms by
+ * lib/componentVariants.js. Mutates `templates`.
+ *
+ * Sources are every character with both stroke data and a makemeahanzi `matches`
+ * entry — not only det headwords, since a traditional character is as good a
+ * sample of a component's shape as a simplified one. Det headwords go first,
+ * commonest first, so the per-component sample cap drops rare characters.
+ */
+async function appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace }) {
+  const { shapeCost } = await import(SCORING_MODULE);
+  const entries = await loadDecompositionEntries();
+
+  const componentKinds = new Map(inventory.filter(([, kind]) => kind & KIND_COMPONENT));
+  const standalone = new Map(templates.map((t) => [t.char, t.strokes]));
+
+  const inDet = new Set(charactersByFrequency);
+  const rest = [...entries.keys()].filter((char) => !inDet.has(char)).sort();
+  const sources = [...charactersByFrequency.filter((char) => entries.has(char)), ...rest];
+
+  /** @type {Map<string, Array<{ source: string, shape }>>} */
+  const samples = new Map();
+  let sampleCount = 0;
+  let sourceCount = 0;
+  for (const source of sources) {
+    const medians = readMedians(source);
+    if (!medians) continue;
+    const { parts, labels } = componentStrokesOf(source, entries);
+    // A cut of the whole character is just its own template again.
+    const cuts = cutComponents(parts, labels, medians, (glyph) => componentKinds.has(glyph) && glyph !== source);
+    if (cuts.length === 0) continue;
+    sourceCount++;
+    for (const cut of cuts) {
+      if (!samples.has(cut.component)) samples.set(cut.component, []);
+      samples.get(cut.component).push({ source, shape: toTemplateSpace(cut.medians) });
+      sampleCount++;
+    }
+  }
+
+  let variantCount = 0;
+  let componentsWithVariants = 0;
+  const rescued = [];
+  const supported = [];
+  // Inventory order is sorted, so variants are appended in a byte-stable order.
+  for (const [component, kind] of componentKinds) {
+    const own = standalone.get(component) ?? null;
+    const variants = selectVariants(own, samples.get(component) ?? [], shapeCost);
+    if (variants.length === 0) continue;
+    componentsWithVariants++;
+    if (!own) rescued.push(component);
+    for (const variant of variants) {
+      templates.push({
+        char: component,
+        codePoint: component.codePointAt(0),
+        kind: kind | KIND_VARIANT,
+        strokes: variant.shape,
+      });
+      variantCount++;
+      supported.push({ label: `${component}←${variant.source}(${variant.support})`, support: variant.support });
+    }
+  }
+
+  const top = supported.sort((a, b) => b.support - a.support).slice(0, 12).map((s) => s.label);
+  return { variantCount, componentsWithVariants, sampleCount, sourceCount, rescued, top };
+}
+
 function serialize(templates, pointsPerStroke, quantScale) {
   let size = 12;
   for (const t of templates) size += 4 + 1 + 1 + t.strokes.length * pointsPerStroke * 2;
@@ -271,7 +368,7 @@ async function generateHandwritingTemplates() {
 
   const { POINTS_PER_STROKE, QUANT_SCALE, fingerprint } = await import(GEOMETRY_MODULE);
 
-  const inventory = await loadGlyphInventory();
+  const { inventory, charactersByFrequency } = await loadGlyphInventory();
   if (inventory.length === 0) {
     throw new Error(
       'No glyphs found in dictionaryentries_zh. Run backfill-character-components.js first.',
@@ -284,13 +381,16 @@ async function generateHandwritingTemplates() {
   let componentCount = 0;
   let characterCount = 0;
 
+  // ⚠️ Convert y-up medians into the y-down space captured ink lives in. The
+  // shared `fingerprint` normalizes about the bounding-box centre, so negation
+  // commutes with it — flipping here and flipping after normalization give
+  // identical templates. It is done HERE because this is the only place the
+  // foreign coordinate system enters the app.
+  const toTemplateSpace = (medians) => fingerprint(medians.map((stroke) => stroke.map(([x, y]) => [x, -y])));
+
   for (const [glyph, kind] of inventory) {
-    const file = path.join(HANZI_DATA_DIR, `${glyph}.json`);
-    let medians = null;
-    if (fs.existsSync(file)) {
-      ({ medians } = JSON.parse(fs.readFileSync(file, 'utf8')));
-    }
-    if (!Array.isArray(medians) || medians.length === 0) {
+    const medians = readMedians(glyph);
+    if (!medians) {
       // hanzi-writer-data is SIMPLIFIED-only, so most misses are traditional
       // headwords. They are unrecognizable rather than merely unranked — a
       // learner writing 語 gets confident nonsense with no signal that the
@@ -299,17 +399,19 @@ async function generateHandwritingTemplates() {
       else missing.character.push(glyph);
       continue;
     }
-    // ⚠️ Convert y-up medians into the y-down space captured ink lives in. The
-    // shared `fingerprint` normalizes about the bounding-box centre, so negation
-    // commutes with it — flipping here and flipping after normalization give
-    // identical templates. It is done HERE because this is the only place the
-    // foreign coordinate system enters the app.
-    const strokes = fingerprint(medians.map((stroke) => stroke.map(([x, y]) => [x, -y])));
+    const strokes = toTemplateSpace(medians);
     totalStrokes += strokes.length;
     if (kind & KIND_COMPONENT) componentCount++;
     if (kind & KIND_CHARACTER) characterCount++;
     templates.push({ char: glyph, codePoint: glyph.codePointAt(0), kind, strokes });
   }
+
+  // Counted before the variant pass, so the standalone figures below stay
+  // comparable with every earlier run of this script.
+  const standaloneCount = templates.length;
+  const variantReport = skipVariants
+    ? null
+    : await appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace });
 
   const buffer = serialize(templates, POINTS_PER_STROKE, QUANT_SCALE);
 
@@ -322,11 +424,21 @@ async function generateHandwritingTemplates() {
 
   console.log(`  scope:         ${discoverableOnly ? 'discoverable-reachable (DIAGNOSTIC)' : 'all glyphs'}`);
   console.log(`  inventory:     ${inventory.length.toLocaleString()}`);
-  console.log(`  templates:     ${templates.length.toLocaleString()}`);
+  console.log(`  templates:     ${standaloneCount.toLocaleString()} standalone (+ variants below)`);
   console.log(`    components:  ${componentCount.toLocaleString()}`);
   console.log(`    characters:  ${characterCount.toLocaleString()}`);
   console.log(`  strokes:       ${totalStrokes.toLocaleString()} (avg ${(totalStrokes / templates.length).toFixed(2)})`);
   console.log(`  points/stroke: ${POINTS_PER_STROKE}, quant scale ${QUANT_SCALE}`);
+  if (variantReport) {
+    console.log(`  variants:      ${variantReport.variantCount.toLocaleString()} across ${variantReport.componentsWithVariants.toLocaleString()} components (§ 6z-5)`);
+    console.log(`    samples:     ${variantReport.sampleCount.toLocaleString()} component cuts from ${variantReport.sourceCount.toLocaleString()} characters`);
+    if (variantReport.rescued.length) {
+      console.log(`    rescued:     ${variantReport.rescued.length} component(s) with no standalone drawing now have a template: ${variantReport.rescued.join(' ')}`);
+    }
+    console.log(`    top forms:   ${variantReport.top.join('  ')}`);
+  } else {
+    console.log('  variants:      SKIPPED (--no-variants — diagnostic only)');
+  }
   if (missing.component.length) {
     console.log(`\n  ⚠️ ${missing.component.length} COMPONENT(s) have no stroke data and are UNRECOGNIZABLE:`);
     console.log(`     ${missing.component.join(' ')}`);

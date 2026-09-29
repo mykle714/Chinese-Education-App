@@ -26,7 +26,7 @@ import {
   IW_MAX_NPC_ACTIONS,
   IW_MAX_SCENE_DIM,
   IW_MAX_SCENE_NAME_LENGTH,
-  IW_MAX_SCENE_NOTES_LENGTH,
+  IW_MAX_SCENE_NOTES_LENGTH, IW_MAX_INTRO_TEXT_LENGTH,
   IW_MAX_COLLECT_GOAL_LENGTH,
   IW_MAX_COLLECT_TURNS,
   IW_MAX_WAIT_SECONDS,
@@ -159,6 +159,12 @@ export function validateScene(scene: IWScene): IWSceneProblem[] {
   // An empty brief is fine — the scene simply tells the model nothing extra.
   if (str(scene.sceneNotes).length > IW_MAX_SCENE_NOTES_LENGTH) {
     add('sceneNotes', `Scene notes must be ≤ ${IW_MAX_SCENE_NOTES_LENGTH} characters`);
+  }
+
+  // The learner-facing intro (migration 167). Length only, and only as a warning, for the same
+  // reason as the brief above — and an empty intro is simply "no card on load".
+  if (str(scene.introText).length > IW_MAX_INTRO_TEXT_LENGTH) {
+    add('introText', `Intro must be ≤ ${IW_MAX_INTRO_TEXT_LENGTH} characters`);
   }
 
   // ── Board geometry ────────────────────────────────────────────────────────

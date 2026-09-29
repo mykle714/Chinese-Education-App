@@ -13,19 +13,20 @@ import {
 } from '../types/index.js';
 import {
   computeCoreCategory,
-  computeTypeCategory,
   appendTypedMark,
   bandsClimbed,
   barCategory,
   barForMarkType,
 } from '../utils/masteryCompute.js';
-import { isTypeOnCooldown } from './cardQueueRanking.js';
+import { isMarkOnCooldown } from './cardQueueRanking.js';
+import { isFlpOnlyMark } from '../contracts/mastery.js';
+import { FLP_MARK_SURFACE } from '../contracts/wire.js';
 
 /**
  * FlashcardMarkService — the single owner of "a learner reviewed a card".
  *
  * LAYER: service. Owns every rule about what a mark does to a card's history:
- * the cooldown gate, the rolling per-type window, the mastery-crossing stamp and
+ * the cooldown + flp-only gates, the rolling per-type window, the mastery-crossing stamp and
  * the velocity log. Holds no SQL and no `req`/`res`; the vet reads/writes go through
  * `IVocabEntryDAL` and the transaction runner is injected
  * (docs/BACKEND_LAYERING.md § 3).
@@ -51,7 +52,7 @@ import { isTypeOnCooldown } from './cardQueueRanking.js';
  *
  * ONE MARK PER CALL, deliberately. A surface exercising two tracks at once calls
  * twice rather than passing a list — Word Search's No-Pinyin board writes reading +
- * production for one find (docs/WORD_SEARCH_GAME.md). Each call is then cooldown-gated,
+ * production for one find (docs/WORD_SEARCH_GAME.md). Each call is then gated,
  * banded and (for the flp) refilled on its own track, which is the behaviour that
  * surface wants; widening the input to N types would push a multi-bar result shape
  * onto every other caller to serve one.
@@ -67,18 +68,23 @@ export interface ApplyMarkInput {
   isCorrect: boolean;
   markType: MarkType;
   /**
-   * Which surface produced this mark ("bubble-match", "flp", …). PURELY DIAGNOSTIC —
-   * nothing branches on it. It exists so the suppressed-mark log can tell apart the
-   * two reasons a mark is dropped (docs/HYDRA_BUBBLES.md § 8.1).
+   * Which surface produced this mark ("bubble-match", "flp", …). ONE rule branches on
+   * it: a know mark on a card at core pbh ≥ 6 is recorded only when this is
+   * `FLP_MARK_SURFACE` (`isFlpOnlyMark`, docs/MASTERY_REWORK.md § 6). Otherwise it
+   * feeds the suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1).
+   *
+   * Client-asserted and not verified — acceptable because the only thing a forged
+   * 'flp' buys is a mark on the learner's OWN card, which the flp could write anyway.
    */
   surface?: string;
 }
 
 export interface ApplyMarkResult {
   /**
-   * The mark was NOT recorded because its track had not finished cooling
-   * (docs/HYDRA_BUBBLES.md § 8). A success, not an error — the review genuinely
-   * happened, it just changed no history.
+   * The mark was NOT recorded — either its bar's clock had not finished cooling
+   * (docs/HYDRA_BUBBLES.md § 8), or it is a know mark from a non-flp surface on a card
+   * at core pbh ≥ 6 (docs/MASTERY_REWORK.md § 6). A success, not an error — the review
+   * genuinely happened, it just changed no history.
    */
   suppressed: boolean;
   /** The card's language. The caller needs it to scope a same-language refill. */
@@ -154,27 +160,41 @@ export class FlashcardMarkService {
       const existingHistory: TypedMarkHistory = state.typedMarkHistory;
       const language = state.language;
 
-      // ── COOLDOWN IS A HARD "NEXT MARKABLE AT" (docs/HYDRA_BUBBLES.md § 8) ────
-      // A mark on a track that has not finished cooling is NOT RECORDED. Enforced
-      // here, at the single chokepoint every surface writes through, so no game and
-      // no future surface has to know the rule exists — which is the whole design.
+      // ── TWO GATES, ONE OUTCOME: THE MARK IS NOT RECORDED ─────────────────────
+      // Enforced here, at the single chokepoint every surface writes through, so no
+      // game and no future surface has to know the rules exist — which is the design.
+      //
+      //   cooldown — cooldown is a hard "next markable at" (docs/HYDRA_BUBBLES.md § 8).
+      //              Timed per BAR: recognition and production share the know clock,
+      //              so a correct mark on either rests both (docs/MASTERY_REWORK.md § 6).
+      //   flp-only — once core pbh ≥ 6 a recognition/production mark counts only from
+      //              the flp (`isFlpOnlyMark`). Judged on the history AS IT STANDS, so an
+      //              incorrect flp mark that drops pbh under 6 reopens the card to games
+      //              on the next mark with no state to clear. Incorrect game marks are
+      //              dropped too: above the line a game can neither build nor erode it.
       //
       // Reported as a success: the caller genuinely did the review and the games
       // score the clear regardless. Failing the call would turn an invisible policy
-      // into a visible one and force every caller to learn about cooldowns.
-      const cooldownWindow = computeTypeCategory(existingHistory, markType);
-      if (isTypeOnCooldown(existingHistory, markType, Date.now(), cooldownWindow)) {
+      // into a visible one and force every caller to learn about it.
+      const surface = typeof input.surface === 'string' ? input.surface.slice(0, 40) : 'unknown';
+      const suppressedBy: 'cooldown' | 'flp-only' | null =
+        isMarkOnCooldown(existingHistory, markType, Date.now())
+          ? 'cooldown'
+          : surface !== FLP_MARK_SURFACE && isFlpOnlyMark(existingHistory, markType)
+            ? 'flp-only'
+            : null;
+      if (suppressedBy) {
         // ⚠️ INSTRUMENTED, NOT SILENT (docs/HYDRA_BUBBLES.md § 8.1,
         // docs/DEFERRED_WORK.md). `getGameVocabPool` fill tier 4 hands out COOLED
         // cards whenever the fresh tiers cannot fill a board, so this guard drops
         // marks that are recorded today. The frequency is unknown, which is why it
         // ships logged: the log is what a follow-up reads to decide whether tier 4
         // should be deleted in favour of lending. `surface` distinguishes tier-4
-        // suppression from the deck/collection suppression that is INTENDED (§ 6.3).
-        const surface = typeof input.surface === 'string' ? input.surface.slice(0, 40) : 'unknown';
+        // suppression from the deck/collection suppression that is INTENDED (§ 6.3);
+        // `reason` separates the two gates.
         console.log(
           `[MarkSuppressed] user=${String(userId).substring(0, 8)}… card=${cardId} ` +
-            `language=${language} type=${markType} window=${cooldownWindow} ` +
+            `language=${language} type=${markType} reason=${suppressedBy} ` +
             `surface=${surface} isCorrect=${isCorrect}`
         );
         const unchanged = computeCoreCategory(existingHistory);

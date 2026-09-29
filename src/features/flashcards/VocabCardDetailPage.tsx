@@ -694,16 +694,15 @@ const VocabCardDetailPage: React.FC = () => {
                             </Box>
 
                             {/* MASTERY (docs/MASTERY_REWORK.md, artboard 18).
-                                `MasteryWindow` renders the eight-mark window plus its own
-                                `Mastery` rule and the Know / Read / Write switch; the
+                                `MasteryWindow` renders the eight-mark window under its
+                                Know / Read / Write switch (no section label — the
+                                `Mastery` rule was dropped 2026-09-28); the
                                 `lens` is which track it opens on, so a card reached from a
                                 Mastery Center still reports that skill first. The old
                                 vertical bar + its SectionCard wrapper are gone — see D6/D7
                                 in docs/SHELF_REDESIGN.md.
 
-                                Negative side margin cancels ContentArea's 16px so the
-                                section rule runs to the design's 22px page gutter, which
-                                is what every other converted section sits on. */}
+                                The window pads itself to the design's 22px page gutter. */}
                             <MasteryWindow
                                 className="vocab-card-detail__mastery"
                                 entry={entry}

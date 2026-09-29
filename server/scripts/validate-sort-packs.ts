@@ -2,11 +2,13 @@
  * Build/deploy validation for authored sort packs (sort_packs, migration 93; sentence
  * columns dropped in migration 95).
  *
- * LAYER: reference-data integrity check (read-only). Run before deploying sort_packs
- * to PPE (or in CI). Flags structural problems: empty/oversized packs, non-existent
+ * LAYER: reference-data integrity check (read-only). Run on PPE after authoring a pack
+ * (PPE is the source of truth for sort_packs; dev receives it via /data-ppe-to-dev —
+ * docs/SORT_PACKS_IMPLEMENTATION.md § 2.1), or in CI. Flags structural problems: empty/oversized packs, non-existent
  * entryIds, level out of 1..6.
  *
- * Usage (from server/):  npx tsx scripts/validate-sort-packs.ts
+ * Usage (dev, from server/):  npx tsx scripts/validate-sort-packs.ts
+ * Usage (PPE):  docker exec cow-backend node dist/scripts/validate-sort-packs.js
  * Exit code 0 = all valid; 1 = at least one violation (fails the pipeline).
  */
 import dotenv from 'dotenv';
@@ -14,7 +16,9 @@ dotenv.config({ path: '.env' });
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
-const MAX_CARDS_PER_PACK = 3;
+// Mirrored by src/features/discover/SortCardsPage.tsx → MAX_CARDS_PER_PACK (undo depth +
+// the compact dock layout, docs/SORT_CARDS_REQUIREMENTS.md §4.5, are sized off it).
+const MAX_CARDS_PER_PACK = 4;
 
 interface PackRow {
   id: number;

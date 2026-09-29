@@ -57,6 +57,11 @@ cycle order, and adding it to a new header is one tag. A surface that must hide 
 (Bubble Match on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
+It reads **`useTTSSettings`, not `useTTS`**. The chip never plays anything, and a
+`useTTS` instance is a *playback* instance — mounting one in a header once let the
+chip's own lifecycle cancel another surface's narration (§ 4, "Only the speaker stops
+on unmount").
+
 Each state shows a speaker glyph plus one word: `volume_off`/**mute** ·
 `volume_up`/**default** · `graphic_eq`/**media**. The glyphs make it legible as an
 audio control before the label is read; the labels are the `/settings` picker's
@@ -232,6 +237,33 @@ zhòng are genuinely different audio.
 *Code:* `CloudTTSProvider` → `getOrFetchBlob`, `getOrDecodeBuffer`,
 `getOrCreateUrl`, `evictOldestUrls`, `bufferKey`.
 
+### 3b. Erhua (儿化) — one fused `<phoneme>` for the pair (2026-09-28)
+
+The pinyin hint is one `<phoneme>` per Han character, and Google voices each tag as its
+own syllable. The det stores a rhotacizing 儿 as a bare `r` syllable (一会儿 =
+`yī huì r`), so the naive hint `…<phoneme ph="hui4">会</phoneme><phoneme ph="r5">儿</phoneme>`
+was heard as three sounds, *yi · hui · r*, instead of *yī huìr*.
+
+`buildPinyinSsml` now folds a 儿 whose syllable is a bare `r` (or `r5`) into the
+preceding Han character's tag: `<phoneme ph="hui4r">会儿</phoneme>`. Two alternatives
+were A/B-tested by ear and rejected: `ph="hui4 r5"` in a single tag, and dropping the
+hint on the pair (either still split the syllable or varied by word). Rules:
+
+- A full-syllable 儿 (儿子 *ér zi*) is untouched. Only a bare `r` fuses.
+- Fusion never crosses a non-Han character. A 儿 after punctuation keeps its own tag.
+- A fused-syllable pinyin (`huìr` against 会儿) is still a count mismatch and bails to
+  plain text, as before.
+
+**Cache.** Text and pinyin are unchanged by the fix, so the disk key alone would keep
+serving the old split MP3s. `cacheKey` therefore appends `ERHUA_SSML_VERSION` when the
+pinyin has an erhua syllable. That re-synthesizes erhua words only and leaves every
+other cached clip hit. Bump the constant if the erhua SSML changes again. The old split
+MP3s are orphaned on disk rather than deleted.
+
+*Code:* `server/services/TTSService.ts` → `buildPinyinSsml`, `isErhuaSyllable`,
+`hasErhuaSyllable`, `ERHUA_SSML_VERSION`, `TTSService.cacheKey`.
+*Tests:* `server/__tests__/pinyinSsml.test.ts`.
+
 ### 3a. `prepare()` — synthesize and decode WITHOUT playing (2026-09-06)
 
 Every other entry point plays and forgets: `speak()` fetches, decodes and starts the clip as
@@ -297,6 +329,61 @@ breaks the silence of `off`.
 > it plays audio in `off` **and** lights the speaker button's spinner, because
 > `speakingKey` is only ever set for a narration that actually runs. Speed
 > Reading's round-landing effect did exactly this until 2026-08-28.
+
+### Only the speaker stops on unmount
+
+Both providers are app-wide singletons, so a `useTTS` instance's unmount cleanup can
+silence narration some *other* instance started. The cleanup therefore cancels only
+when **this** instance has an utterance in flight (`activeProviderRef` is set for the
+whole of `speakText` — fetch and playback — and cleared in its `finally`). A page that
+leaves mid-word still stops its own word; a component that never spoke stops nothing.
+
+It used to cancel unconditionally, and the scp lost the **first word of its first
+pack** in dev (2026-09-28): the header `AudioModeChip` mounts in the same commit the
+pack lands in, StrictMode's dev remount ran the chip's cleanup *after* the page's
+autoplay effect had started word one, and the cancel bumped the provider generation
+while that word was still fetching — so it was dropped and the loop moved on. The
+chip now also reads `useTTSSettings` directly (§ 1), which removes that instance
+entirely; the ownership check is what protects every other pairing.
+
+*Code:* `src/hooks/useTTS.ts` → the "Cancel on unmount" effect.
+
+### A manual press ends an autoplay sequence
+
+A multi-word autoplay run (the scp pack) awaits each word in turn. A speaker press
+mid-run cancels the current word, whose promise resolves — and the loop's *next*
+`autoSpeakSentence` would then cancel the word the learner asked for. So every manual
+narration on the scp (card speaker buttons and the eip's) first ends the run; the
+rest of the pack is not resumed afterwards.
+
+The run leaves a **600 ms gap** between words (`AUTOPLAY_GAP_MS`), so the pack is
+heard as separate words rather than one phrase. The stop check comes *after* the gap,
+so a press that lands during the silence still ends the run before the next word.
+
+### A word's promise settles when its sound ends, not on a wall-clock guess
+
+A sequenced caller (the scp gap above) is only as good as `speak()`'s promise, and
+`CloudTTSProvider` settles that promise with a **watchdog** as well as the
+end-of-clip event, because the end event is not guaranteed to fire (backgrounding, an
+interrupted context). The watchdog is timed from when **sound starts**, not from when
+playback was requested. The first word of a run can start audibly late while the
+output device wakes up or iOS activates its audio session. A watchdog armed before
+that fired mid-word, the loop's gap began, and the next word cut this one off. That
+was the "second word plays too soon after a slow first word" bug.
+
+- **passthrough (`<audio>`)** arms the tight watchdog on `playing`, for the clip's
+  *remaining* length + 750 ms. It used to arm on `loadedmetadata`, which lands
+  almost at once for a blob URL. Until `playing` fires, a 15 s fallback applies.
+- **media (Web Audio)** records the context-clock time the clip ends at. When the
+  wall-clock deadline hits while the context is still running but its clock has not
+  reached that time, the watchdog re-arms for the remainder (at most 3 times, so a
+  frozen clock still settles). Only then does it stop the source and resolve.
+
+*Code:* `src/services/tts/CloudTTSProvider.ts` → `playViaElement`, `playViaWebAudio`.
+
+*Code:* `src/features/discover/SortCardsPage.tsx` → `packAutoplayRunRef`,
+`AUTOPLAY_GAP_MS`, `stopPackAutoplay`, `handlePlayCardAudio`, `handleEipSpeak`, `handleEipSpeakSentence`,
+and the pack autoplay effect.
 
 ### The fallback rule
 
@@ -684,7 +771,9 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `src/hooks/useMarkArpeggio.ts` — per-surface reset of the arpeggio ladder, Match Speed + Bubble Match only (§ 7)
 - `src/api/flashcards.ts` — `markFlashcard` fires the arpeggio for `ARPEGGIO_SURFACES` (§ 7)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
-- `src/features/discover/SortCardsPage.tsx` — `unlockAudio` (no local latch, § 5)
+- `src/features/discover/SortCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
+  `stopPackAutoplay` (§ 4)
+- `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites
 - [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) — `expo-audio`'s
   `playsInSilentMode` is this setting, natively, if the app ever ports

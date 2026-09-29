@@ -74,7 +74,7 @@ export const FEATURE_FLAGS = {
    * off still resolves or expires on schedule, instead of hanging mid-week and
    * reappearing as a stale row if the flag is turned back on.
    *
-   * ⚠️ THE ONLY FLAG CURRENTLY OFF.
+   * ⚠️ CURRENTLY OFF (alongside `nightMarket`).
    */
   studyChallenge: false,
 
@@ -125,8 +125,10 @@ export const FEATURE_FLAGS = {
    * Unlike arena's injected service this one WRITES rows — deliberately, for that
    * reason. Nor is the origin-hub seeding on registration gated
    * (`UserController.seedNightMarketHub`), for the same "no cliff on re-enable" reason.
+   *
+   * ⚠️ CURRENTLY OFF (switched off 2026-09-25).
    */
-  nightMarket: true,
+  nightMarket: false,
 
   /**
    * Immersive World — the once-a-day conversation with an NPC in a scene

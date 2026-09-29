@@ -4,10 +4,8 @@ import { tonedToNumberedPinyin } from "./textUtils";
 import {
   activeBars,
   barProgressBarHeight,
-  cooldownRemainingMs,
-  computeTypeCategory,
+  barCooldownRemainingMs,
   BAR_LABELS,
-  BAR_MARK_TYPES,
   type MasteryBarId,
   type MasteryGoals,
 } from "./masteryCompute";
@@ -381,57 +379,35 @@ const pronunciationKey = (entry: VocabEntry): string => {
 };
 
 /**
- * Milliseconds until every track of ONE BAR is off cooldown — the maximum remaining
- * window across that bar's mark types (`server/contracts/cooldown.ts`).
+ * Milliseconds until ONE BAR's cooldown clock runs out (`barCooldownRemainingMs`,
+ * `server/contracts/cooldown.ts`).
  *
- * ── Why the maximum, and not the soonest-ready track ──────────────────────────
- * "When can I drill this at all?" is the more natural question, but its key (the
- * MINIMUM) is degenerate: a track with no correct mark reports 0, so on the two-track
- * core bar nearly every part-drilled card would score 0 and the ordering would
- * collapse into one enormous tie. The maximum has no such problem: an untouched track
- * contributes 0 and simply loses, so the key is the bar's longest-resting track, and
- * it moves whenever ANY of the bar's tracks is marked.
+ * A clock belongs to a bar, not a mark type: since the know merge (2026-09-25,
+ * docs/MASTERY_REWORK.md § 6) recognition and production share the core bar's clock,
+ * windowed by the core band. So this key is the very number the cdp prints under the
+ * bar, the flp queues on, and the mark-time gate enforces — there is no longer a
+ * per-track caveat to carry.
  *
  * What it means to a learner:
  *   Shortest    — the cards nothing is holding back: never studied, or fully rested.
  *                 This is the "what have I been neglecting" ordering.
  *   Longest     — the cards deepest into their rest, which is roughly the ones most
- *                 recently and most strongly marked (a Mastered track rests 6 months,
+ *                 recently and most strongly marked (a Mastered bar rests 6 months,
  *                 an Unfamiliar one 5 minutes).
  *
  * ── Why per BAR and not all four types ────────────────────────────────────────
- * It used to span all four mark types on the argument that an ordering must be
- * GOAL-INDEPENDENT. It still is — the key names its bar, and a goal toggle changes
- * nothing about what any key computes; only which keys the menu offers. What changed
- * is that a surface now has a LENS (the fdp reads core, a Mastery Center reads its own
- * skill), and a single all-four-types number cannot answer "what reading have I been
- * neglecting": a card whose recognition has rested for six months would outrank one
- * whose reading track is genuinely the stalest thing on the page.
+ * A surface has a LENS (the fdp reads core, a Mastery Center reads its own skill), and
+ * a single all-bars number cannot answer "what reading have I been neglecting": a card
+ * whose know clock is six months deep would outrank one whose reading is genuinely the
+ * stalest thing on the page. The key stays goal-independent — it names its bar; a goal
+ * toggle changes only which keys the menu offers.
  *
  * ⚠️ **0 is a real value, not a missing one**, so cooldown is NOT a DATE_KEY: a
  * never-studied card is genuinely ready and belongs at the TOP of "Shortest", not
  * sunk to the bottom with the dateless cards.
- *
- * WINDOW CATEGORY: the card's PER-TYPE category, which is what the games enforce and
- * what the cdp prints under the mastery window (MasteryWindow → `cooldownRows`). The flp
- * widens the window to the card's core category because one flp card shows two types
- * at once, so a flp refill can hold a track back slightly longer than this number —
- * the same caveat the cdp display carries, and for the same reason: a sort can only
- * name one window, and the per-type one is the track's own.
  */
-const cooldownKey = (entry: VocabEntry, bar: MasteryBarId, now: number): number => {
-  let longest = 0;
-  for (const type of BAR_MARK_TYPES[bar]) {
-    const remaining = cooldownRemainingMs(
-      entry.typedMarkHistory,
-      type,
-      now,
-      computeTypeCategory(entry.typedMarkHistory, type)
-    );
-    if (remaining > longest) longest = remaining;
-  }
-  return longest;
-};
+const cooldownKey = (entry: VocabEntry, bar: MasteryBarId, now: number): number =>
+  barCooldownRemainingMs(entry.typedMarkHistory, bar, now);
 
 /** Alphabetical key for the dd — the definition the card face actually renders. */
 const definitionKey = (entry: VocabEntry): string =>

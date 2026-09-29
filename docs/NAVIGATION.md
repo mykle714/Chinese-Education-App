@@ -29,7 +29,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    used by the Discover + Games hubs; `HubMenu` was deleted 2026-08-21 — see
    [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
    **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**
-   (plus a validator-only **Tester Dashboard** row and two template-author-only rows).
+   (plus a validator- or admin-only **Tester Dashboard** tile and template-author-only tiles).
    There is deliberately **no Compare Words row**: Compare is a sheet raised over the
    word you are already looking at, not a destination — see
    [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
@@ -79,21 +79,28 @@ The drawer's two global controls moved onto `AccountPage`:
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
 is now the Home menu.
 
-**Validator-gated.** The surface is for testers/curators, not ordinary learners,
-so it is gated on `users.isValidator` (migration 104, see
-[DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) in two places, mirroring
-the `isTemplateAuthor` gate on the Night Market template editor:
+**Validator- or admin-gated.** The surface is for testers/curators, not ordinary
+learners, so it is gated on `users.isValidator` (migration 104, see
+[DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) **or** `users.isAdmin`
+(migration 168) in two places, mirroring the `isTemplateAuthor` gate on the Night
+Market template editor:
 
-- `src/pages/HomePage.tsx` — the `tester-dashboard` hub row is spread in only when
-  `user?.isValidator`, so non-validators never see the entry point.
-- `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved,
-  non-validator user to `/` (`replace: true`), covering deep links and bookmarks.
+- `src/pages/HomePage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
+  spread in only when `user?.isValidator || user?.isAdmin`, so nobody else sees the
+  entry point.
+- `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved user who is
+  neither to `/` (`replace: true`), covering deep links and bookmarks.
 
-The route in `src/App.tsx` stays `allowPublic` on purpose: a validator may be a
-public account, and the generic `isPublic` redirect must not pre-empt the
-validator gate. This is a **UX gate, not a security boundary** — the page only
-renders the caller's own minute-point data, and those endpoints remain
-user-scoped server-side.
+The route (`src/routes/routeMeta.ts`, `/tester-dashboard`) is `access: "any"` on
+purpose: a validator may be a public account, and the generic `isPublic` redirect
+must not pre-empt the role gate. For the personal widgets this is a **UX gate, not a
+security boundary** — they render the caller's own minute-point data from user-scoped
+endpoints.
+
+**User Usage section (admin-only).** Below the leaderboard, an account with
+`users.isAdmin` also sees cross-user usage (`UsageDashboardSection`). That one reads
+OTHER accounts' data, so it has a real server-side gate as well — see
+[USAGE_DASHBOARD.md](./USAGE_DASHBOARD.md).
 
 ## Related
 

@@ -491,14 +491,14 @@ Vertical stack inside the standard leaf-page content area:
 
 - **Word list (top):** the 9 targets shown as their **English glosses** (a
   recall drill — you read the meaning and hunt the Chinese in the grid), set as **one
-  inline run at 11px, separated by faint middots** (changed 2026-08-24). **Two** states
+  inline run at `SIZE.bodyLg` (16px; 11px until 2026-09-25), separated by faint middots** (changed 2026-08-24). **Two** states
   and only two: **pending** — full ink, still the loud one relative to its neighbours
   because a pending gloss is the game's actual instruction; and **found** — struck
   through and faded, still present, because the list is also the record of what the run
   has covered and the fade is what makes the remaining work countable at a glance.
   A **third** state was added 2026-08-28: the **hinted** word (`hintEntryKey`, passed down
   from `WordSearchPage`) is marked — since v2 with a `HINT_HIGHLIGHT_BG` highlighter fill
-  (`COLORS.orgM`, the board's own hint-reveal colour; `src/games/word-search/constants.ts`),
+  (`COLORS.org`, the board's own hint-reveal colour; `src/games/word-search/constants.ts`),
   because v2 made `HINT_ACCENT_COLOR` plain ink and a text tint could no longer tell it
   apart — so the mask is visibly attached to the gloss it is spelling. It used to have no state at all, on the theory that the reveal
   one row above already named it; but the reveal names it in PINYIN (or in component
@@ -534,25 +534,46 @@ Vertical stack inside the standard leaf-page content area:
 ### The play panel, top to bottom
 
 Shelf redesign entry 13 (`docs/SHELF_REDESIGN.md`). Everything below lives inside
-`GameFrame`'s `.play` panel, above the grid:
+`GameFrame`'s `.play` panel:
 
 | Row | Component | Content |
 |---|---|---|
-| HUD | `GameHud` | `Pinyin · production` (No Pinyin: `reading & production`) — *clock* — `4 of 7 found` |
-| hint | `WordSearchHintBar` | button · charges · reveal (§5a) |
-| list header | a `.shelfhd` pair of `Label`s | "Find these words" / "trace to select" |
+| HUD | `GameHud` | the clock, centred. Not rendered at all when the timer setting is off |
 | glosses | `WordSearchWordList` | the target glosses, inline and middot-separated (§ above) |
+| grid | `WordSearchGrid` | the board; `flex: 1`, so it takes all remaining height |
+| hint | `WordSearchHintBar` | button (charge bars under it) · reveal (§5a). Last row, pinned to the panel's bottom edge; hairline on its TOP |
 
-**The clock is the MIDDLE child of the HUD, and that is load-bearing.** It is the one
-element that can vanish (the settings sheet hides its text), and under `space-between`
-only a middle child can be removed without moving anything else. It used to be first,
-which forced the hint meter beside it to be absolutely positioned so `space-between`
-would not drift it as the timer's text changed width.
+**There is no list header.** The "Find these words" / "trace to select" caption pair that
+used to sit between the hint row and the glosses was removed (2026-09-25); the gloss list
+sits directly under the HUD. The hint row moved to the BOTTOM of the panel (2026-09-25), below
+the grid — in thumb reach, and out from between the HUD and the words the eye reads first. The trace gesture is no longer stated anywhere on the play panel.
 
-**The mode is stated, not offered.** Artboard 13 draws a `pinyin` chip in the header;
-that was not adopted. Pinyin display is fixed by which hub entry launched the run, so
-there is nothing to toggle — a chip that looks like a switch and is not is worse than no
-chip, and it would be a second statement of what the HUD already says.
+**Type on the play panel (2026-09-25).** Every text element of the panel — the HUD's
+clock, the gloss list, and the hint reveal — is set at ONE size,
+`SIZE.bodyLg` (16px), from the app's type tokens (`src/theme/scale.ts`); change them
+together. Faces follow `src/theme/fonts.ts`'s roles:
+
+| Element | Face | Weight | Where |
+|---|---|---|---|
+| clock | `FONTS.mono` (data: timers), normal case, no tracking | regular | `HUD_TEXT_SX` in `WordSearchPage.tsx`, overriding `GameHudLabel`'s overline voice (local to this game) |
+| gloss list | `FONTS.sans` | `WEIGHT.medium` | `WordSearchWordList.tsx` |
+| pinyin reveal | `FONTS.mono` (the blanks need a fixed pitch) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
+| component reveal | `FONTS.hanziComponents` (the only face with the rare component glyphs) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
+
+Line heights are `LEADING.tight`. The grid takes whatever height these rows leave.
+
+**The HUD is the clock alone, centred** (`justifyContent: center` via `GameHud`'s `sx`).
+There is **no found count** (removed 2026-09-25): the gloss list already strikes through
+each found word, so `N/M found` restated it. Because the clock is the strip's only
+content, the **whole HUD strip is omitted when the settings sheet hides the timer** —
+no empty tinted bar; the grid (`flex: 1`) takes the height back. That reflow only happens
+from the settings sheet, never mid-trace.
+
+**The mode is not stated at all** (2026-09-25). The HUD used to lead with the mode label
+(`Pinyin · production`, `No Pinyin · reading & production`); it was removed. The mode is
+fixed by which hub entry launched the run and is visible on the board itself (pinyin is on
+the grid or it is not), so no chip, toggle or label repeats it. `modeConfig.label` is still
+used by the hub, not by the play page.
 
 ### Header controls
 
@@ -643,19 +664,23 @@ box and takes `ceil(max(width, height))`, which both `gridTemplateColumns` and
 ### The selection system
 
 Every highlight — resting, tracing, found, hinted, missed — is **a fill on the cell**,
-from the design's `.wsg span` / `.hit` / `.now` (artboard 13). Since v2 every lit state is
-the **MID tier** of its hue (caption "Mid: found and active letters"; the design names only
-`.hit`/`.now`, and the other three follow the same tier) — `WordSearchGrid.tsx`:
+from the design's `.wsg span` / `.hit` / `.now` (artboard 13). Every lit state is the
+**SURFACE tier** of its hue (`COLORS.grn`/`org`/`red`/`blu` = `RAMP[hue].surface`) —
+changed 2026-09-25 from the MID tier artboard 13's caption names ("Mid: found and active
+letters"): a cell fill is a large pastel field behind a character, which is the surface
+tier's job, and the paler fill leaves the glyph and its pinyin more contrast. All states
+share the one tier so none reads louder than the others. The word list's hinted-gloss
+highlight (`HINT_HIGHLIGHT_BG`) moves with the hint fill — `WordSearchGrid.tsx`:
 
 | State | Fill | Meaning |
 |---|---|---|
 | resting | `COLORS.background` (paper) + the ring | an unclaimed tile |
-| tracing | `COLORS.orgM` (`.now`) | the in-progress drag |
-| found | `COLORS.grnM` (`.hit`), ring swapped to a 1.5px **ink** ring (v2 `#ws .wsg span.hit`) | locked in |
-| reviewing | `COLORS.grnM`, ink ring at **2.5px** (the app's addition — the design has no reviewed state) | the found word whose gloss popup is open |
-| hint reveal | `COLORS.orgM` | "trace THESE" — the same meaning as `.now` |
-| miss | `COLORS.redM` | wrong trace; transient, and outranks whatever is under it |
-| bonus | `COLORS.bluM` | a real det word or character that wasn't a target — a traced multi-character bonus word (which also shakes), a traced single-character headword, or the tapped character of an unfound target showing its contextual gloss. Outranks the miss fill. |
+| tracing | `COLORS.org` (`.now`) | the in-progress drag |
+| found | `COLORS.grn` (`.hit`), ring swapped to a 1.5px **ink** ring (v2 `#ws .wsg span.hit`) | locked in |
+| reviewing | `COLORS.grn`, ink ring at **2.5px** (the app's addition — the design has no reviewed state) | the found word whose gloss popup is open |
+| hint reveal | `COLORS.org` | "trace THESE" — the same meaning as `.now` |
+| miss | `COLORS.red` | wrong trace; transient, and outranks whatever is under it |
+| bonus | `COLORS.blu` | a traced **multi-character** real det word that wasn't a target (it also shakes). Outranks the miss fill. A **single-cell tap** never paints blue (2026-09-25) — a one-character headword or one character of a target showing its contextual gloss keeps the orange tracing fill and just opens its popup. |
 
 #### The board has no ground (2026-08-24)
 
@@ -755,14 +780,13 @@ tap-cell-by-cell building** — a lone tap is simply a one-cell path.
     > bonus satisfies that predicate too (it is the shake condition), so red won
     > every time. The fill now tests `isBonusCell` first and `isInvalidCell`
     > second; `isInvalidCell` still governs the shake alone.
-  - **Bonus word, 1 character (blue, no shake, no auto-clear).**
+  - **Bonus word, 1 character (stays orange, no shake, no auto-clear).**
     A lone tap is just a one-cell query, so if that single character is itself
-    a det headword, it resolves here: the tapped cell turns the same blue with
-    **no shake**, and its definition popup appears with no timer until
-    dismissed. A single character is a much smaller "find" than a whole word,
-    so it skips the shake — but not the color, because blue is what "you
-    uncovered a real meaning that isn't a target" means on this board and one
-    character means exactly that.
+    a det headword, it resolves here: the tapped cell **keeps its orange
+    selection fill** with **no shake**, and its definition popup appears with no
+    timer until dismissed. Until 2026-09-25 it turned the bonus blue; it no
+    longer does — a tap is not a trace, so it gets no "find" colour. Blue is
+    reserved for a traced multi-character bonus word (`isMultiCharBonus`).
   - **Dismissing a bonus match:** any new `onPointerDown` — starting a fresh
     drag, tapping a found word (which opens that word's own popup instead),
     or a background tap (`WordSearchPage`'s `handleBackgroundPointerDown` →
@@ -864,9 +888,9 @@ helps the player *learn* the word by seeing each character's contextual sense
   target character the contextual sense wins over its generic standalone gloss.
 - Renders through the **same** `Popper`/`activePopup` path as the found-word and
   bonus popups (`charPopup` → `{ entryKey: char, pinyin, definition }`), anchored
-  over the single cell via `anchorRectForCells`. The tapped cell **stays lit and
-  turns blue** (`charPopupCells` → `isBonusCell` in the fill chain), the same blue
-  a bonus-word match paints — the two mean the same thing to the player. Before
+  over the single cell via `anchorRectForCells`. The tapped cell **stays lit in the
+  orange selection fill** (it is still the one-cell `path`); it used to turn the bonus
+  blue via a `charPopupCells` set, removed 2026-09-25 along with that colour. Before
   2026-08-29 `submit` cleared the path here, which left the popup floating with
   nothing on the board pointing at it. There is no auto-dismiss; any new
   `onPointerDown`/`clearSelection` closes it and clears the highlight.
@@ -900,15 +924,19 @@ A lightweight, client-only assist layer (no server/DB involvement). State lives 
 `hintLocationRevealed`, `hintShakeNonce`).
 
 **One mechanic, one row.** `WordSearchHintBar.tsx` is now the whole `.hintbar`: the
-button, the charge dots, and the reveal, left to right — press this, you have this many,
-here is what you bought. It takes `WordSearchHintRow` as its `children`. Before the shelf
+button (with its charge bars stacked underneath it), and the reveal, left to right — press
+this, you have this many, here is what you bought. It takes `WordSearchHintRow` as its `children`. Before the shelf
 redesign these were three widgets in three places (button in the page header, meter
 absolutely centred in the HUD, reveal on its own line under the gloss list), and the
 player had to work out that they were one thing.
 
 **Charges, not a gauge.** With `HINT_COST` at 1, the eight-segment meter with its
 threshold line after the first segment was already just "how many hints you have" drawn
-as a gauge. It is `HINT_BAR_UNITS` dots now; `.chg` filled = banked.
+as a gauge. It is `HINT_BAR_UNITS` short bars now, stacked directly under the hint
+button and spanning exactly its width (`.word-search__hint-control` column; each bar is
+`flex: 1`, so the button sets the width); `.chg` filled = banked, and no threshold line.
+The bars are not dimmed with the disarmed button — the count matters most when you can't
+hint.
 
 The letter-hint display is `WordSearchHintRow.tsx`,
 the pinyin→units split lives in `pinyinUnits.ts`, the matching gloss tint lives
@@ -923,14 +951,14 @@ mechanic); v2 replaces it with a cheap, hangman-style **pinyin reveal** so a
 hint nudges recall without handing over the answer.
 
 - **Earning:** each successful find adds **one** charge, capped at `HINT_BAR_UNITS` (8).
-  A charge is one dot. The button itself carries the armed/disarmed state (full opacity
+  A charge is one bar. The button itself carries the armed/disarmed state (full opacity
   and an inert handler when `hintUnits < HINT_COST` or nothing is left unfound) — its
   shape never changes as it arms, so the control does not move under the finger.
 - **The row's colours changed with the accent ground** (2026-08-23,
   [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). The **lightbulb is black**: the arm
   state is already carried by the glyph's FILL axis and the button's opacity, and a third
   channel on one 16px icon made the button look like a warning rather than a tool. A
-  **banked charge dot is ink** (v2 `#ws .hintbar .chg i{background:var(--ink)}`; it was the
+  **banked charge bar is ink** (v2 `#ws .hintbar .chg i{background:var(--ink)}`; it was the
   game's purple ink before v2 removed the ink tier — `WordSearchHintBar.tsx`).
   `HINT_ACCENT_COLOR` colours the pinyin REVEAL, and is plain ink in v2 too.
 - **Reveal granularity (`pinyinUnits.ts`):** a hint reveals one **phonetic
@@ -1003,7 +1031,7 @@ hint nudges recall without handing over the answer.
 - **Matching gloss treatment (reinstated 2026-08-28).** The hinted word's gloss in the
   top list is tinted `HINT_ACCENT_COLOR`, pairing it with the mask (§3). This was dropped
   when the list was chips — a solid ink pill left no quieter state for "hinted" to occupy
-  — but the list is now an inline 11px run, where a colour change is available and cheap.
+  — but the list is now an inline 16px run, where a colour change is available and cheap.
   Without it the mask spells a word in pinyin the player cannot yet read, with nothing on
   screen saying which meaning it belongs to.
 - **Spending (`useHint` / `canUseHint` in `WordSearchPage.tsx`):**
@@ -1230,7 +1258,7 @@ Frontend (`src/games/word-search/`):
 - `WordSearchWordList.tsx` — the English-gloss prompt chips: solid ink `.chip.on` while
   pending, struck through and faded once found (§3).
 - `WordSearchHintBar.tsx` — the whole `.hintbar` row: the hint button, `HINT_BAR_UNITS`
-  charge dots, and the reveal slot it renders its `children` into (§5a).
+  charge bars under it, and the reveal slot it renders its `children` into (§5a).
 - `WordSearchHintRow.tsx` — the reveal, filling the hint row's right-hand slot. Renders whichever currency the board spends (`currency` prop): the
   Pinyin board's per-syllable islands — nothing at all until that character's
   length is bought, then one `HINT_LETTER_BLANK`

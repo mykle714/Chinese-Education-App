@@ -54,7 +54,9 @@ describe('buildDebugSnapshot', () => {
     const ink = inkFromMedians('木');
     const snapshot = buildDebugSnapshot({ ...base, ink, buffer: submit('日'), mode: 'glyph' });
 
-    expect(snapshot.v).toBe(2);
+    expect(snapshot.v).toBe(3);
+    // A non-empty buffer withholds the § 6z-8 direct chip.
+    expect(snapshot.direct).toBeNull();
     expect(snapshot.strokeCount).toBe(ink.length);
     expect(snapshot.ink).toHaveLength(ink.length);
     expect(snapshot.buffer).toEqual(['日']);
@@ -62,6 +64,11 @@ describe('buildDebugSnapshot', () => {
     // worth debugging are the ones where the other is the wrong one.
     expect(snapshot.suggested.length).toBeGreaterThan(0);
     expect(snapshot.results.length).toBeGreaterThan(0);
+  });
+
+  it('records the § 6z-8 direct-commit chip the row led with', () => {
+    const snapshot = buildDebugSnapshot({ ...base, ink: inkFromMedians('木'), buffer: [], mode: 'glyph' });
+    expect(snapshot.direct).toBe('木');
   });
 
   it('rebases timestamps onto the first sampled point', () => {

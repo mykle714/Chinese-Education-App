@@ -23,8 +23,9 @@ interface FrequencyScoreDotsProps {
  * presentation layer, colors passed in by the caller so it adapts to the flashcard
  * theme vs. the app palette.
  *
- * The user-facing caption above this meter reads "Commonality" (SortCardsPage,
- * VocabCardDetailBody, InfoCardPanelBody) — kept because it now matches the data.
+ * The user-facing caption above this meter reads "Commonality" (VocabCardDetailBody,
+ * InfoCardPanelBody) — kept because it now matches the data. SortCardsPage instead
+ * labels each card with its tier ("Used sometimes", …; `COMMONALITY_TIER_LABELS`).
  * Until migration 122 this scored REGISTER, not frequency.
  */
 export default function FrequencyScoreDots({

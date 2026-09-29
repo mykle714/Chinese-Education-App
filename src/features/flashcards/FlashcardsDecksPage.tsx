@@ -20,8 +20,6 @@ import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import type { VocabEntry } from "../../types";
 import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
-import { foreignPromptTrack } from "../../../server/contracts/wire";
-import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
@@ -252,10 +250,9 @@ const FlashcardsDecksPage: React.FC = () => {
     // long-running account has.
     //
     // READINESS IS THE flp'S RULE, not this page's: `flpReadyCountsByBand` restates
-    // `rankFlpEligible`'s eligibility test (≥1 of the session's two mark types off
-    // cooldown, windowed by the card's CORE category) on top of the shared cooldown
-    // contract. See src/utils/flpReadiness.ts for why that differs from the card grid's
-    // own cooldown sort, which is a per-TYPE measure.
+    // `rankFlpEligible`'s eligibility test (the know clock has run out, windowed by the
+    // card's CORE band — docs/MASTERY_REWORK.md § 6) on top of the shared cooldown
+    // contract.
     //
     // Fetched from the server (`/api/onDeck/flpReadyCounts`) INDEPENDENTLY of the full
     // card library: the endpoint reads only `{ id, typedMarkHistory }` behind
@@ -263,12 +260,7 @@ const FlashcardsDecksPage: React.FC = () => {
     // this page used to run client-side against `panel.allCards` — so these figures
     // land long before the fully-enriched collection fetch does, without a second
     // definition of "rested" that could drift from the pool it predicts.
-    const { settings: learnSettings } = useFlashcardLearnSettings();
-    // Which two tracks the session will present — the same derivation the flp makes, so
-    // the count cools on exactly the tracks the learner is about to be shown.
-    const foreignTrack = foreignPromptTrack(panel.language ?? "zh", learnSettings.showPinyin);
-
-    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts(foreignTrack);
+    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts();
     const ready = useCallback((name: string): number => readyCounts[name] || 0, [readyCounts]);
     const challengePool = figuresLoaded ? ready("Unfamiliar") + ready("Target") : undefined;
     const reviewPool = figuresLoaded ? ready("Comfortable") + ready("Mastered") : undefined;

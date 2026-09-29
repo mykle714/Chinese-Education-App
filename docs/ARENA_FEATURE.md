@@ -339,8 +339,15 @@ familiar when the live board arrives on Tuesday.
 
 **Every state scrolls.** `/arena` passes no `scrollable` prop, so it takes `NodePage`'s
 default. The docked Waiting/Out layout is produced by flex growth (the content column, the
-page column and the seat-field dock are all `flex: 1 0 auto` — grow, never shrink — so the
+page column and the seat field are all `flex: 1 0 auto` — grow, never shrink — so the
 seat field fills the gap and the action sits against the footer), *not* by `overflow: hidden`.
+**The seat grid resizes so the action stays docked on a short screen.** `ArenaSeatField`'s
+outer box is a CSS size container (`containerType: "size"`), so its content does not
+force its height: it takes whatever the column has spare, and the grid sizes its cells
+from that (`100cqh`) — 60px tall at full size, down to a 28px floor, with width shrinking
+by the same pixels so a cell keeps its shape. Only below the floor does the page scroll.
+Code: `src/features/arena/ArenaSeatField.tsx` → `CELL_HEIGHT`, `CELL_WIDTH`,
+`MIN_FIELD_HEIGHT_PX`.
 The column must never carry `minHeight: 0`: that lets it SHRINK to the viewport instead of
 scrolling, which is how the first cut overlapped the seat grid onto Join and squeezed the
 live board (an `overflow: hidden` flex item, so its min-height is 0) until its rows clipped

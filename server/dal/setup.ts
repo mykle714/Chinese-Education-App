@@ -56,6 +56,9 @@ import { MemoryMapService } from '../services/MemoryMapService.js';
 import { MemoryMapController } from '../controllers/MemoryMapController.js';
 import { LeaderboardService } from '../services/LeaderboardService.js';
 import { LeaderboardController } from '../controllers/LeaderboardController.js';
+import { UsageStatsDAL } from './implementations/UsageStatsDAL.js';
+import { UsageDashboardService } from '../services/UsageDashboardService.js';
+import { UsageDashboardController } from '../controllers/UsageDashboardController.js';
 import { TTSService } from '../services/TTSService.js';
 import { TTSController } from '../controllers/TTSController.js';
 import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js';
@@ -251,6 +254,11 @@ const winsController = new WinsController(winsDAL);
 const velocityController = new VelocityController(categoryPromotionDAL, userDAL);
 const communityLayoutController = new CommunityLayoutController(communityLayoutService);
 const leaderboardController = new LeaderboardController(leaderboardService);
+// The User Usage dashboard (docs/USAGE_DASHBOARD.md): a read-only cross-user DAL, and a
+// service that owns the users.isAdmin gate (migration 168) — userDAL is only for that check.
+const usageStatsDAL = new UsageStatsDAL();
+const usageDashboardService = new UsageDashboardService(userDAL, usageStatsDAL);
+const usageDashboardController = new UsageDashboardController(usageDashboardService);
 const ttsController = new TTSController(ttsService);
 const friendsController = new FriendsController(friendsService);
 const arenaController = new ArenaController(arenaService);
@@ -340,6 +348,9 @@ export {
   communityLayoutController,
   leaderboardService,
   leaderboardController,
+  usageStatsDAL,
+  usageDashboardService,
+  usageDashboardController,
   ttsService,
   ttsController,
   friendshipDAL,

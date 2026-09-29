@@ -10,21 +10,24 @@ import StreakCounter from "../components/StreakCounter";
 import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
 import { usePageTitle } from "../hooks/usePageTitle";
+import UsageDashboardSection from "../features/usageDashboard/UsageDashboardSection";
 
 // Tester Dashboard — the former landing page content (study time, streak, monthly
-// calendar, leaderboard). Reached from the Home menu (the row is validator-only, see
-// HomePage.tsx); the back arrow returns there.
+// calendar, leaderboard) plus, for admins only, the User Usage section
+// (docs/USAGE_DASHBOARD.md). Reached from the Home menu (the row is validator- or
+// admin-only, see HomePage.tsx); the back arrow returns there.
 function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
     const navigate = useNavigate();
     const { user, isAuthenticated } = useAuth();
 
-    // Validator-only surface (users.isValidator, migration 104). Once auth resolves,
-    // bounce non-validators to Home so a deep link / stale bookmark can't reach it.
-    // The data shown is the caller's own minute-point data, so this is a UX gate, not
-    // a security boundary — the underlying endpoints stay user-scoped.
+    // Validator- or admin-only surface (users.isValidator, migration 104; users.isAdmin,
+    // migration 168). Once auth resolves, bounce everyone else to Home so a deep link /
+    // stale bookmark can't reach it. This is a UX gate, not a security boundary: the
+    // personal widgets read user-scoped endpoints, and the cross-user usage endpoint is
+    // gated on isAdmin by the server (UsageDashboardService).
     useEffect(() => {
-        if (isAuthenticated && user && !user.isValidator) navigate("/", { replace: true });
+        if (isAuthenticated && user && !user.isValidator && !user.isAdmin) navigate("/", { replace: true });
     }, [isAuthenticated, user, navigate]);
 
     const {
@@ -75,6 +78,14 @@ function TesterDashboardPage() {
                         <Box sx={{ minWidth: 0 }}>
                             <LeaderboardPlaceholder />
                         </Box>
+
+                        {/* Admin-only cross-user usage (migration 168). Last, so the
+                            personal widgets above keep their position for everyone. */}
+                        {user?.isAdmin && (
+                            <Box className="tester-dashboard-page__usage" sx={{ minWidth: 0 }}>
+                                <UsageDashboardSection />
+                            </Box>
+                        )}
                     </Box>
                 </Container>
             </Box>

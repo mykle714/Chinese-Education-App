@@ -39,6 +39,7 @@ pbh = progress bar height
 nme = night market editor
 nms = night market sandbox
 bk = beginner keyboard
+shp = SteppedHelpPopup
 
 
 ## Terminology: "Learn Now" cards
@@ -185,7 +186,7 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 → See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Home/Discover/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
 ### Feature Flags
-→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge is currently the only flag switched OFF.**
+→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge and Night Market are currently the only flags switched OFF.**
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
@@ -443,7 +444,8 @@ belong in the owning doc's question log).
 PPE is the **source of truth** for the det/reference tables; there is no dev → PPE
 push any more (the `/data-deploy` skill was deleted). Use the `/data-ppe-to-dev` skill
 to pull `icons8`, `dictionaryentries_zh`, `dictionaryentries_es`,
-`particlesandclassifiers` and `validations` **down** to a dev box.
+`particlesandclassifiers`, `validations` and `sort_packs` **down** to a dev box
+(sort packs are authored on PPE — [docs/SORT_PACKS_IMPLEMENTATION.md](./docs/SORT_PACKS_IMPLEMENTATION.md) § 2.1).
 **One planned exception, not yet built:** `gloss_meaning_groups`
 ([docs/GLOSS_CONFUSABILITY.md](./docs/GLOSS_CONFUSABILITY.md) § 5a) would be the only table
 whose source of truth is **DEV** — it is GPU-computed derived data pushed **up**. It must be
@@ -536,6 +538,7 @@ For layering rules (where a file goes, and which layer may do what):
 - In all locations where the code doesn't quite seem to make sense or have a clear goal, flag it and bring it to my attention. Tell me what your guess is for what the code does and tell me how you would clarify/improve it.
 - Make sure to confirm all new tables and columns with me in a question form.
 - Don't automatically validate with puppeteer. I will let you know if I want you to use puppeteer.
+- When working with colors, make sure that the colors are being picked from our color framework. Bring up instances of diverging from the framework.
 
 ## Code Quality Standards
 When reviewing or writing code, actively look for and address:

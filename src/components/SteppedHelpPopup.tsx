@@ -1,9 +1,10 @@
-import { alpha } from "@mui/material/styles";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Box, ButtonBase, Typography } from "@mui/material";
+import { Box, ButtonBase } from "@mui/material";
 import Icon from "./Icon";
 import { nearestOverlayHost } from "./overlayHost";
+import SteppedHelpStep from "./SteppedHelpStep";
+import { useSwipePager } from "../hooks/useSwipePager";
 import { useHideFooter } from "../hooks/useHideFooter";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
@@ -66,13 +67,16 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
     }, [showing]);
     useHideFooter(showing);
 
-    if (!showing) return null;
     // Guard the index rather than resetting it in an effect: `steps` can change
     // identity between the two explainers on the same page, and an effect would race
     // the render that is already using the stale index.
-    const step = steps[Math.min(index, steps.length - 1)];
-    const last = index >= steps.length - 1;
-    const shot = resolveShot(step.shot);
+    const current = Math.min(index, Math.max(0, steps.length - 1));
+    const last = current >= steps.length - 1;
+    // Swipe left/right over the pages turns them, mirroring Next/Back. Called before the
+    // early return below, as every hook must be.
+    const swipe = useSwipePager(current, steps.length, setIndex);
+
+    if (!showing) return null;
 
     return (
         <>
@@ -100,86 +104,52 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                             overflow: "hidden",
                         }}
                     >
-                        {/* The image, with the step's heading and the close control floated over
-                            it under a scrim gradient — the shot is the largest thing in the card,
-                            so putting chrome beside it rather than on it would shrink the one
-                            part that carries the instruction. */}
+                        {/* THE SWIPE VIEWPORT. Every step is rendered side by side in one
+                            strip and the strip is translated, so a swipe drags the real
+                            neighbouring page into view rather than cross-fading on release.
+                            A side effect worth keeping: the strip is as tall as its tallest
+                            page, so the card no longer changes height between steps and
+                            Next does not jump under the thumb. */}
                         <Box
-                            className="stepped-help__shot"
-                            sx={{
-                                position: "relative",
-                                aspectRatio: "3 / 4",
-                                borderBottom: `1px solid ${COLORS.rowBorder}`,
-                                overflow: "hidden",
-                                backgroundColor: COLORS.white,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                textAlign: "center",
-                                // The hatch shows through wherever there is no image yet.
-                                backgroundImage: `repeating-linear-gradient(135deg,${COLORS.rowHoverBg} 0 6px,${alpha(COLORS.onSurface, 0.015)} 6px 12px)`,
-                            }}
+                            className="stepped-help__viewport"
+                            {...swipe.handlers}
+                            sx={{ position: "relative", overflow: "hidden", touchAction: "none", cursor: swipe.dragging ? "grabbing" : "grab" }}
                         >
-                            {shot ? (
-                                <Box
-                                    component="img"
-                                    className="stepped-help__shot-image"
-                                    src={shot}
-                                    alt={step.shotDescription}
-                                    draggable={false}
-                                    sx={{ width: "100%", height: "100%", objectFit: "cover", userSelect: "none" }}
-                                />
-                            ) : (
-                                <Typography
-                                    className="stepped-help__shot-placeholder"
-                                    sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.06em", color: alpha(COLORS.onSurface, 0.34), lineHeight: 1.5, px: 2.5 }}
-                                >
-                                    screenshot · {step.shotDescription}
-                                </Typography>
-                            )}
-
                             <Box
-                                className="stepped-help__shot-chrome"
+                                className="stepped-help__strip"
                                 sx={{
-                                    position: "absolute",
-                                    left: 0,
-                                    right: 0,
-                                    top: 0,
                                     display: "flex",
-                                    alignItems: "flex-start",
-                                    gap: 1.25,
-                                    px: 1.75,
-                                    pt: 1.75,
-                                    pb: 4.25,
-                                    background: `linear-gradient(to bottom,${alpha(COLORS.onSurface, 0.82)} 0%,${alpha(COLORS.onSurface, 0.62)} 48%,${alpha(COLORS.onSurface, 0)} 100%)`,
+                                    transform: `translateX(calc(${-current * 100}% + ${swipe.dragDx}px))`,
+                                    // Off while dragging so the strip tracks the finger 1:1;
+                                    // on otherwise, so a release, Back, or Next all glide.
+                                    transition: swipe.dragging ? "none" : "transform 280ms cubic-bezier(.2,.8,.2,1)",
+                                    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
                                 }}
                             >
-                                <Box sx={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                                    <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.bodyLg, fontWeight: WEIGHT.semibold, letterSpacing: "-0.015em", color: COLORS.white }}>
-                                        {step.heading}
-                                    </Typography>
-                                    <Typography sx={{ fontFamily: FONTS.label, fontSize: SIZE.micro, letterSpacing: "0.11em", textTransform: "uppercase", color: "rgba(255,255,255,.88)", mt: 0.5 }}>
-                                        step {Math.min(index, steps.length - 1) + 1} of {steps.length}
-                                    </Typography>
-                                </Box>
-                                <ButtonBase
-                                    className="stepped-help__close"
-                                    onClick={onClose}
-                                    aria-label="Close"
-                                    sx={{ flexShrink: 0, borderRadius: "999px", p: 0.75, backgroundColor: "rgba(255,255,255,.9)", color: COLORS.onSurface }}
-                                >
-                                    <Icon name="close" size={18} color={COLORS.onSurface} />
-                                </ButtonBase>
+                                {steps.map((entry, stepIndex) => (
+                                    <SteppedHelpStep
+                                        key={entry.shot}
+                                        step={entry}
+                                        position={stepIndex}
+                                        total={steps.length}
+                                        shotUrl={resolveShot(entry.shot)}
+                                        title={substitute(entry.title, tokens)}
+                                    />
+                                ))}
                             </Box>
-                        </Box>
 
-                        <Box className="stepped-help__caption" sx={{ px: 2.25, pt: 1.9 }}>
-                            <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
-                                {substitute(step.title, tokens)}
-                            </Typography>
-                            <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: COLORS.textSecondary, lineHeight: 1.5, mt: 0.5, textWrap: "pretty" }}>
-                                {step.body}
-                            </Typography>
+                            {/* The close control floats over the viewport rather than
+                                riding a page, so it stays under the thumb mid-swipe. It
+                                stops pointerdown so pressing it never starts a drag. */}
+                            <ButtonBase
+                                className="stepped-help__close"
+                                onClick={onClose}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                aria-label="Close"
+                                sx={{ position: "absolute", top: 14, right: 14, borderRadius: "999px", p: 0.75, backgroundColor: "rgba(255,255,255,.9)", color: COLORS.onSurface }}
+                            >
+                                <Icon name="close" size={18} color={COLORS.onSurface} />
+                            </ButtonBase>
                         </Box>
 
                         <Box
@@ -196,16 +166,46 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                                             // The current dot stretches rather than changing colour
                                             // alone: at 6px a fill change is easy to miss, a width
                                             // change is not.
-                                            width: dotIndex === index ? 16 : 6,
-                                            backgroundColor: dotIndex === index ? COLORS.onSurface : COLORS.border,
+                                            width: dotIndex === current ? 16 : 6,
+                                            backgroundColor: dotIndex === current ? COLORS.onSurface : COLORS.border,
                                             transition: "width 160ms ease, background-color 160ms ease",
                                         }}
                                     />
                                 ))}
                             </Box>
+                            {/* Back is the secondary action, so it is an outlined ghost pill
+                                beside the solid Next rather than a second filled one. It is
+                                absent (not disabled) on step 1: a dead button there reads as
+                                broken, and since the dots take `flex: 1` on the left, its
+                                arrival on step 2 moves neither the dots nor Next. */}
+                            {current > 0 && (
+                                <ButtonBase
+                                    className="stepped-help__back"
+                                    onClick={() => setIndex(current - 1)}
+                                    aria-label="Previous step"
+                                    sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 0.75,
+                                        px: 1.6,
+                                        py: 1.25,
+                                        borderRadius: "999px",
+                                        // Inset shadow rather than a border so the pill's box is
+                                        // the same height as Next's and the two sit on one line.
+                                        boxShadow: `inset 0 0 0 1px ${COLORS.border}`,
+                                        color: COLORS.onSurface,
+                                        fontFamily: FONTS.sans,
+                                        fontSize: SIZE.body,
+                                        fontWeight: WEIGHT.semibold,
+                                    }}
+                                >
+                                    <Icon name="arrow_back" size={15} color={COLORS.onSurface} />
+                                    Back
+                                </ButtonBase>
+                            )}
                             <ButtonBase
                                 className="stepped-help__next"
-                                onClick={() => (last ? onClose() : setIndex((n) => n + 1))}
+                                onClick={() => (last ? onClose() : setIndex(current + 1))}
                                 sx={{
                                     display: "flex",
                                     alignItems: "center",

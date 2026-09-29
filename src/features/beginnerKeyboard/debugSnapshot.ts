@@ -37,11 +37,11 @@
  */
 import type { Ink } from '../../components/handwriting/types';
 import { explainGlyphMatch, matchGlyphs } from '../../components/handwriting/glyphMatcher';
-import { expandGlyph, lookupBuffer } from '../../components/handwriting/glyphLookup';
+import { appearsInWord, expandGlyph, lookupBuffer, makeHintFinder } from '../../components/handwriting/glyphLookup';
 import type { MatchExplanation } from '../../components/handwriting/glyphMatcher';
 import type { GlyphTemplates } from '../../components/handwriting/glyphTemplates';
 import type { GlyphLookupIndex, GlyphWordPool } from '../../components/handwriting/glyphLookup';
-import type { CandidateMode } from './compositionRules';
+import { directCommitCandidate, rankGlyphs, type CandidateMode } from './compositionRules';
 
 /**
  * How deep the dump's candidate lists go.
@@ -85,8 +85,12 @@ interface DumpedStroke {
 }
 
 export interface DebugSnapshot {
-  /** Bumped to 2 when the buffer became a flat component list (2026-09-09). */
-  v: 2;
+  /**
+   * Bumped to 2 when the buffer became a flat component list (2026-09-09), and to
+   * 3 when `suggested` moved to ROW order and gained `rankCost`/`variant`/`hint`
+   * (§ 6z-5 / § 6z-6, 2026-09-27).
+   */
+  v: 3;
   at: string;
   mode: CandidateMode;
   canvasSize: number;
@@ -99,8 +103,30 @@ export interface DebugSnapshot {
   buffer: string[];
   strokeCount: number;
   ink: DumpedStroke[];
-  /** Matcher output for the ink. Empty when there is no ink or no templates. */
-  suggested: { char: string; cost: number; kind: number; action: 'append' | 'commit' }[];
+  /**
+   * The glyph row for the ink, in the order the ROW shows it (after § 6z-6's
+   * buffer-fit re-ranking), 40 deep. Empty when there is no ink or no templates.
+   *
+   * `cost` is the matcher's own (variant prior included); `rankCost` is what the
+   * row sorted by — they differ only for a glyph with a buffer-fit `hint`.
+   * `variant` marks a win by an in-context template (§ 6z-5). `hint` is the
+   * bubble's character and how many components it is still short (`你+0` =
+   * tapping this glyph completes 你).
+   */
+  suggested: {
+    char: string;
+    cost: number;
+    rankCost: number;
+    kind: number;
+    variant: boolean;
+    hint: string | null;
+    action: 'append' | 'commit';
+  }[];
+  /**
+   * § 6z-8: the green direct-commit chip the row led with, or null when it showed
+   * none. Answers "why did (or didn't) my whole character offer a one-tap commit?".
+   */
+  direct: string | null;
   /** Lookup output for the buffer. Empty when the buffer is empty or unloaded. */
   results: { text: string; distance: number; isWord: boolean }[];
   /**
@@ -152,30 +178,38 @@ export function buildDebugSnapshot({
   index,
   words,
 }: DebugSnapshotInput): DebugSnapshot {
-  const matches =
-    templates && ink.length > 0 ? matchGlyphs(ink, templates, { limit: DEBUG_CANDIDATE_LIMIT }) : [];
+  // The same ranking the row runs (§ 6z-6), over the whole matcher output, so the
+  // dump shows the order the learner saw rather than the raw ink order.
+  const hintFor = index && buffer.length > 0 ? makeHintFinder(buffer, index) : null;
+  const allRanked = templates && ink.length > 0 ? rankGlyphs(matchGlyphs(ink, templates), buffer, hintFor) : [];
+  const ranked = allRanked.slice(0, DEBUG_CANDIDATE_LIMIT);
+  const direct = index ? directCommitCandidate(allRanked, buffer, (char) => appearsInWord(char, index)) : null;
   // The FULL result list, not the display cut — the target's rank is the point,
   // and it is routinely past the row's 12 (that is the bug being chased).
   const allResults = index && buffer.length > 0 ? lookupBuffer(buffer, index, words, 0) : [];
   const results = allResults.slice(0, DEBUG_CANDIDATE_LIMIT);
 
   return {
-    v: 2,
+    v: 3,
     at: new Date().toISOString(),
     mode,
     canvasSize,
     buffer: [...buffer],
     strokeCount: ink.length,
     ink: dumpInk(ink),
-    suggested: matches.map((match) => ({
+    suggested: ranked.map(({ match, hint, cost }) => ({
       char: match.char,
       // Six decimals: costs cluster tightly enough that three hides real ties.
       cost: Number(match.cost.toFixed(6)),
+      rankCost: Number(cost.toFixed(6)),
       kind: match.kind,
+      variant: match.variant,
+      hint: hint ? `${hint.text}+${hint.distance}` : null,
       // § 6x: the glyph row does exactly one thing now. Kept in the dump anyway
       // so a reader does not have to remember which side of that change it is on.
       action: 'append' as const,
     })),
+    direct: direct?.text ?? null,
     results: results.map((result) => ({
       text: result.text,
       distance: result.distance,

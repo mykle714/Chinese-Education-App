@@ -995,9 +995,9 @@ feature; promote to `src/components/` if a second surface needs it),
 * **The words are drawn as the app's mini preview cards, not as text rows.** Both the
   confirmation sheet and the detail page's word set render each word through
   `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — literally the same tile
-  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) draw, since all three take
-  their face from `miniCardFaceSx` (`src/components/miniCardFace.ts`, extracted
-  2026-09-01 after the three copies drifted apart), carrying the word +
+  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) draw, since all of them
+  render the shared `MiniCard` (`src/components/MiniCard.tsx`; the face extracted
+  2026-09-01 after the copies drifted apart, the contents on 2026-09-28), carrying the word +
   pinyin (always via `ForeignText`), the **English lead gloss**, the
   conversation-frequency badge and the icons8 icon. The English is not decoration: "do
   I already know this word" cannot be answered from the characters alone, because a
@@ -1908,6 +1908,19 @@ nothing. Steps and their shot filenames live in `challengeHelpSteps.ts`; the fil
 `import.meta.glob`, so adding a step is a data change plus a dropped file. **A step whose
 file does not exist yet renders a labelled placeholder frame**, which is why the
 explainers are usable before the screenshots are captured.
+
+Navigation is a footer of step dots, an outlined **Back** pill (absent on step 1, not
+disabled) and a solid **Next** that becomes **Done** on the last step; the scrim and the
+close control dismiss from any step. The pages also **swipe**: every step is rendered
+side by side in one strip that follows the finger (or a mouse drag), commits to the
+neighbour past 20% of the width or on a flick, and rubber-bands past either end. The
+gesture runs on pointer events rather than a native scroll-snap pager (contrast
+`ChallengeDetailPage`) because the popup portals to the frame-level overlay host, where
+the shell's global `touch-action: none` ceiling would block a native pan. Because the
+strip is as tall as its tallest page, the card no longer changes height between steps.
+(`src/components/SteppedHelpPopup.tsx` → `SteppedHelpPopup`;
+`src/components/SteppedHelpStep.tsx` → `SteppedHelpStep`, one page;
+`src/hooks/useSwipePager.ts` → `useSwipePager`, the gesture)
 
 ### 5.5 The between-games scoreboard
 

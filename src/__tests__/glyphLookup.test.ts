@@ -20,6 +20,7 @@ import {
   lookupWords,
   lookupBuffer,
   findHintCharacter,
+  expandGlyph,
 } from '../components/handwriting/glyphLookup';
 
 const ASSETS = path.resolve(__dirname, '../assets/handwriting');
@@ -298,3 +299,32 @@ describe('§ 6z-4 hint search', () => {
     expect(findHintCharacter(['龠'], '龠', index)).toBeNull();
   });
 });
+
+describe('§ 6z-7 look-alike components', () => {
+  it('translates an alias into its canonical form on the way into the buffer', () => {
+    expect(expandGlyph('囗', index)).toEqual(['口']);
+    expect(expandGlyph('曰', index)).toEqual(['日']);
+    // A whole character's bag is folded too: 国's frame arrives as 口.
+    expect(expandGlyph('国', index)).toEqual(['口', '玉']);
+  });
+
+  it('finds characters built on either member of a pair', () => {
+    // 国 is stored as 囗 + 玉 — a drawn box must still reach it.
+    expect(lookupCharacters(['口', '玉'], index).map((c) => c.text)).toContain('国');
+    // The accepted cost: 口 土 answers both 吉 (口士) and 吐 (口土).
+    const both = lookupCharacters(['口', '土'], index).map((c) => c.text);
+    expect(both).toContain('吉');
+    expect(both).toContain('吐');
+    // 卩 folds onto 阝, so 印 / 即 come back for it.
+    expect(lookupCharacters(['阝'], index).map((c) => c.text)).toContain('印');
+  });
+
+  it('rescues every headword in the class for a one-component buffer (§ 6n)', () => {
+    const texts = lookupCharacters(['日'], index).map((c) => c.text);
+    expect(texts).toContain('日');
+    expect(texts).toContain('曰');
+    // 阝 is not a headword itself, but its alias 卩 is.
+    expect(lookupCharacters(['阝'], index).find((c) => c.text === '卩')?.distance).toBe(0);
+  });
+});
+

@@ -60,27 +60,27 @@ export const COLORS = {
 
     pur: "#EDD8FF",      // oklch(92%   0.085  300) clipped
     purM: "#F2CDFF",     // oklch(91.5% 0.1425 300) clipped
-    purMk: "#F2ABFF",    // oklch(88%   0.24   300) clipped
+    purMk: "#E19AFF",    // oklch(83%   0.24   300) clipped — darkened 5% L, 2026-09-28
     purTint: "#F8F4FF",  // oklch(97.5% 0.018  300) clipped
 
     blu: BLU_SURFACE,    // oklch(91%   0.09   264) clipped
     bluM: "#A9DFFF",     // oklch(90.5% 0.145  261.5) clipped
-    bluMk: "#69D0FF",    // oklch(87%   0.24   259) clipped
+    bluMk: "#59BFFF",    // oklch(82%   0.24   259) clipped — darkened 5% L, 2026-09-28
     bluTint: "#F0F7FF",  // oklch(97.5% 0.018  259) clipped
 
     red: RED_SURFACE,    // oklch(90%   0.08    15) clipped
     redM: "#FFB8BC",     // oklch(90.5% 0.14    18.5) clipped
-    redMk: "#FF888D",    // oklch(88%   0.24    22) clipped
+    redMk: "#FF767D",    // oklch(83%   0.24    22) clipped — darkened 5% L, 2026-09-28
     redTint: "#FFF2F1",  // oklch(97.5% 0.018   22) clipped
 
     org: "#FFDEB0",      // oklch(93%   0.08    65) clipped
     orgM: "#FFD07C",     // oklch(92%   0.14    63.5) clipped
-    orgMk: "#FFA900",    // oklch(88%   0.24    62) clipped
+    orgMk: "#FF9800",    // oklch(83%   0.24    62) clipped — darkened 5% L, 2026-09-28
     orgTint: "#FFF4EB",  // oklch(97.5% 0.018   62) clipped
 
     grn: GRN_SURFACE,    // oklch(93%   0.08   150)
     grnM: "#ABF5B4",     // oklch(90.5% 0.115  147.5)
-    grnMk: "#63F06F",    // oklch(85%   0.21   145)
+    grnMk: "#50DF5F",    // oklch(80%   0.21   145) — darkened 5% L, 2026-09-28
     grnTint: "#F0FAF0",  // oklch(97.5% 0.018  145)
 
     // tea has no Mark tier in the design; RAMP.tea.mark falls back to teaM.
@@ -92,11 +92,10 @@ export const COLORS = {
     // (artboard 18: "Target yellow"). It also still carries Study Mix / Learn Now.
     yel: YEL_SURFACE,    // oklch(94%   0.085   92) clipped
     yelM: "#FFE66E",     // oklch(92.5% 0.1425  97) clipped
-    yelMk: "#F9D900",    // oklch(88%   0.24   102) clipped
-    // A DEEPER yellow mark for small marks on a light face. The design draws the
-    // mini-card mastery strip (artboard 17, 3.5px bars on the cream card face) with
-    // this instead of `yelMk`, which at that size disappears into the cream.
-    yelMkD: "#EEC900",   // oklch(84%   0.19    97) clipped
+    // Darkened 5% L on 2026-09-28, which also made it deep enough for the mini-card's
+    // 3.5px strip on the cream face — the separate `yelMkD` (#EEC900) that strip used
+    // to take was retired in the same pass.
+    yelMk: "#E8C800",    // oklch(83%   0.24   102) clipped — darkened 5% L, 2026-09-28
     yelTint: "#F9F7EA",  // oklch(97.5% 0.018  102)
 
     // ── `--gld`, the action metal ─────────────────────────────────
@@ -279,7 +278,8 @@ export type ColorToken = keyof typeof COLORS;
  *
  *   surface  90–94%  large fills: cards, sheets, centers, panels
  *   mid      ~91%    tiles, spines, rows, pills, avatars, bubbles, a game's ground
- *   mark     84–88%  fluorescent: dictionary keys, mastery cells, mini-card bars
+ *   mark     80–83%  fluorescent: dictionary keys, mastery cells, mini-card bars
+ *                    (the design's 84–88%, darkened 5% L app-wide on 2026-09-28)
  *   tint     97.5%   the near-white second tone (HUD strips, zone rows)
  *
  * There is NO ink member any more (v2 removed the tier): text and icons on every one

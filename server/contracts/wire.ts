@@ -470,10 +470,10 @@ export interface ReviewMark {
 /**
  * The four mastery mark types. A mark's type is decided by the surface that
  * produced it (docs/MASTERY_REWORK.md §1):
- *   recognition — flp foreign-first review (pinyin shown) + Bubble Match
+ *   recognition — flp foreign-first review (pinyin shown or not) + Bubble Match
  *   production  — flp English-first review + Word Search "Pinyin" mode
- *   reading     — flp foreign-first review with pinyin OFF + Word Search "No Pinyin"
- *                 mode + Speed Reading
+ *   reading     — Bubble Match with pinyin OFF + Word Search "No Pinyin" mode +
+ *                 Speed Reading + Memory Map
  *   writing     — Practice Writing drill
  */
 export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
@@ -486,34 +486,24 @@ export const MARK_TYPES: readonly MarkType[] = [
 ] as const;
 
 /**
- * Which track the flp's FOREIGN-FIRST face exercises for one session
- * (docs/MASTERY_REWORK.md § "The flp's foreign-first face is per-session").
+ * Which track a FOREIGN→MEANING drill exercises — today only Bubble Match's per-run
+ * track (docs/MASTERY_REWORK.md § 1a).
  *
- * A zh card shown foreign-first WITH pinyin can be answered off the phonetic aid, so
- * it tests recognition of the meaning. With "Show pinyin" off, the learner must get
- * there from the characters alone — which is exactly what the reading track means, and
- * why Word Search's No-Pinyin mode already emits `reading`.
+ * A zh prompt shown WITH pinyin can be answered off the phonetic aid, so it tests
+ * recognition of the meaning. With "Show pinyin" off the learner must get there from
+ * the characters alone — which is exactly what the reading track means.
  *
  * Chinese only: 'es' has no phonetic layer to hide, so the toggle changes nothing on
- * an es card and its foreign-first face stays `recognition`.
- */
-export type FlpForeignTrack = Extract<MarkType, 'recognition' | 'reading'>;
-
-export const FLP_FOREIGN_TRACKS: readonly FlpForeignTrack[] = ['recognition', 'reading'] as const;
-
-/**
- * The two tracks an flp session can present, given its foreign-first track. THE one
- * definition — the server cools/steers on it, the client maps its faces through it, so
- * the face a learner sees can never disagree with the mark that gets written.
+ * an es card and the track stays `recognition`.
  *
- * English-first is always `production`; only the foreign-first half varies.
+ * NOT the flp any more (2026-09-25): the flp writes only know marks
+ * (recognition/production) whatever the pinyin setting, until a dedicated reading
+ * flp exists. Was `FlpForeignTrack`.
  */
-export const flpMarkTypes = (foreignTrack: FlpForeignTrack): readonly MarkType[] =>
-  [foreignTrack, 'production'];
+export type ForeignPromptTrack = Extract<MarkType, 'recognition' | 'reading'>;
 
 /**
- * THE rule that decides a foreign→meaning drill's track, shared by every surface that
- * shows one: the flp's Chinese-side-one face and Bubble Match (§ 1a).
+ * THE rule that decides a foreign→meaning drill's track (§ 1a).
  *
  * `showPinyin` is the learner's own display setting. Latin-script languages pass
  * through as `recognition` whatever it says — 'es' has no phonetic layer to hide, so
@@ -523,21 +513,17 @@ export const flpMarkTypes = (foreignTrack: FlpForeignTrack): readonly MarkType[]
 export function foreignPromptTrack(
   language: string | null | undefined,
   showPinyin: boolean
-): FlpForeignTrack {
+): ForeignPromptTrack {
   return language === 'zh' && !showPinyin ? 'reading' : 'recognition';
 }
 
 /**
- * Narrow a raw wire value (`?foreignTrack=` / the mark body's `foreignTrack`) to a
- * track. Anything unrecognized — absent, misspelled, or a non-flp mark type — falls
- * back to 'recognition', the historical foreign-first face. Deliberately permissive:
- * a bad value may only mis-steer which face a card shows, never fail a review.
+ * The `surface` value the flp sends with every mark. NOT merely diagnostic: it is the
+ * one surface whose know marks still count once a card's core pbh reaches
+ * `FLP_ONLY_CORE_PBH` (`isFlpOnlyMark`, contracts/mastery.ts), so the server branches
+ * on it. Shared so the client's call site and the server's check cannot drift apart.
  */
-export function parseFlpForeignTrack(raw: unknown): FlpForeignTrack {
-  return FLP_FOREIGN_TRACKS.includes(raw as FlpForeignTrack)
-    ? (raw as FlpForeignTrack)
-    : 'recognition';
-}
+export const FLP_MARK_SURFACE = 'flp' as const;
 
 /**
  * Per-card typed mark streams: each type keeps its own <=8 most-recent marks.
@@ -715,6 +701,11 @@ export interface UserProfile {
   isValidator?: boolean;
   /** May author Night Market templates (migration 115). Distinct from isValidator. */
   isTemplateAuthor?: boolean;
+  /**
+   * May open cross-user operator views — the User Usage section of the tester dashboard
+   * (migration 168, docs/USAGE_DASHBOARD.md). Distinct from isValidator.
+   */
+  isAdmin?: boolean;
   /** FK to icons8("icons8Id") — the icon chosen as profile avatar (migration 77). */
   avatarIconId?: string | null;
   /** Account opts into the Reading mastery goal (migration 101, docs/MASTERY_REWORK.md). */
@@ -1394,14 +1385,6 @@ export interface VocabEntryBase {
    * See docs/MATCH_SPEED_GAME.md § Backend change and docs/MASTERY_REWORK.md.
    */
   gameCategory?: FlashcardCategory;
-  /**
-   * flp face-steering (docs/MASTERY_REWORK.md § Per-type cooldown): the subset of
-   * flp-reviewable mark types ('recognition'/'production') whose PER-TYPE cooldown has
-   * elapsed. The client shows the matching face; both present ⇒ a weighted flip
-   * biased toward the track with less progress (src/utils/flpFaceSteering.ts). Absent on
-   * cards not routed through flp selection (games, dictionary lookups).
-   */
-  readyMarkTypes?: MarkType[];
   /** Starter pack sorting bucket. Required on the server; absent on det-fallback entries. */
   starterPackBucket?: StarterPackBucket | null;
 

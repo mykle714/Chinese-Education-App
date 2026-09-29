@@ -31,8 +31,6 @@ import { useEffect, useRef, useState } from 'react';
 
 export interface PresenceItem<T> {
   key: string;
-  /** Left-to-right position, used only to rank a batch for the stagger. */
-  order: number;
   value: T;
 }
 
@@ -49,7 +47,7 @@ export interface RenderedItem<T> extends PresenceItem<T> {
 export interface PresenceTiming {
   /** Pause before the first bubble of a batch grows in. */
   enterDelayMs: number;
-  /** Extra pause per bubble after the first, left to right. */
+  /** Extra pause per bubble after the first, in a random order within the batch. */
   staggerMs: number;
   /** How long the pop plays before the bubble is unmounted. */
   exitMs: number;
@@ -65,13 +63,20 @@ export interface PresenceTiming {
  *                             can arm the removal timer
  * - not wanted, never seen  → drop at once (still inside its entrance delay)
  * - not wanted, popping     → leave it to finish
- * - newly wanted            → enter, staggered left to right within this batch
+ * - newly wanted            → enter, staggered in a RANDOM order within this batch
+ *
+ * The stagger shuffles which bubble takes which slot (decided 2026-09-28): a
+ * left-to-right sweep read as a mechanical scan across the row, where a random
+ * order reads as bubbles surfacing on their own. The slots themselves stay evenly
+ * spaced, so the rhythm and the batch's total length are unchanged. `random` is
+ * injectable so the tests can pin an order.
  */
 export function reconcilePresence<T>(
   previous: readonly RenderedItem<T>[],
   desired: readonly PresenceItem<T>[],
   timing: Pick<PresenceTiming, 'enterDelayMs' | 'staggerMs'>,
   now: number,
+  random: () => number = Math.random,
 ): { next: RenderedItem<T>[]; exiting: { key: string; exitId: number }[] } {
   const wanted = new Map(desired.map((item) => [item.key, item]));
   const exiting: { key: string; exitId: number }[] = [];
@@ -95,9 +100,10 @@ export function reconcilePresence<T>(
     }
   }
 
-  const entering = desired
-    .filter((item) => !known.has(item.key) || previous.some((p) => p.key === item.key && p.phase === 'out'))
-    .sort((a, b) => a.order - b.order);
+  const entering = shuffle(
+    desired.filter((item) => !known.has(item.key) || previous.some((p) => p.key === item.key && p.phase === 'out')),
+    random,
+  );
   entering.forEach((item, rank) => {
     const delayMs = timing.enterDelayMs + rank * timing.staggerMs;
     const entry: RenderedItem<T> = { ...item, phase: 'in', delayMs, exitId: 0, visibleAt: now + delayMs };
@@ -108,6 +114,16 @@ export function reconcilePresence<T>(
   });
 
   return { next, exiting };
+}
+
+/** Fisher–Yates shuffle into a new array — every order equally likely. */
+function shuffle<T>(items: readonly T[], random: () => number): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
 }
 
 /**

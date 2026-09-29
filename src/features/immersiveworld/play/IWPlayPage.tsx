@@ -21,6 +21,7 @@ import { saveSelectedSense } from '../../../utils/vocabApi';
 import { senseLabelForIndex } from '../../../utils/definitionUtils';
 import IWComposer from './IWComposer';
 import { useKeyboardInset, useKeyboardTransition } from '../../beginnerKeyboard';
+import IWSceneIntroCard from './IWSceneIntroCard';
 import IWSceneStage from './IWSceneStage';
 import IWSpeechBubbles from './IWSpeechBubbles';
 import { fetchKnownWords, loadPlayableScene } from './iwPlayApi';
@@ -70,6 +71,8 @@ export default function IWPlayPage() {
   const [authoredSegments, setAuthoredSegments] = useState<Record<string, IWLineSegments>>({});
   const [knownWords, setKnownWords] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The author's intro card (`IWScene.introText`, migration 167) is up and the world is held. */
+  const [introOpen, setIntroOpen] = useState(false);
 
   const runtime = useIWSceneRuntime(scene, npcs, authoredSegments);
   const { settings: learnSettings } = useFlashcardLearnSettings();
@@ -130,13 +133,25 @@ export default function IWPlayPage() {
     loadPlayableScene(sceneId)
       .then(payload => {
         if (cancelled) return;
+        // The intro card (migration 167). The hold is taken BEFORE the scene is handed to the
+        // runtime, so there is no frame in which the world runs uncovered behind the card.
+        // Same § 5.3c hold the eip sheet uses; `handleDismissIntro` lifts it.
+        if (payload.scene.introText?.trim()) {
+          setPaused(true);
+          setIntroOpen(true);
+        }
         setScene(payload.scene);
         setNpcs(payload.npcs);
         setAuthoredSegments(payload.lineSegments ?? {});
       })
       .catch(() => { if (!cancelled) setLoadError('That scene is not available.'); });
     return () => { cancelled = true; };
-  }, [sceneId]);
+  }, [sceneId, setPaused]);
+
+  const handleDismissIntro = useCallback(() => {
+    setIntroOpen(false);
+    setPaused(false);
+  }, [setPaused]);
 
   // The learner's own words (§ 9.4), on their own schedule. The scene opens without them:
   // vocabulary is GUIDANCE, so a turn taken before the list lands is written slightly less
@@ -323,6 +338,12 @@ export default function IWPlayPage() {
           onSend={runtime.say}
           onContinue={runtime.continueLine}
         />
+      )}
+
+      {/* The author's intro (migration 167), over the WHOLE body — stage and composer — so
+          nothing can be said or tapped into a held world. See IWSceneIntroCard's header. */}
+      {scene && introOpen && (
+        <IWSceneIntroCard sceneName={scene.name} text={scene.introText} onDismiss={handleDismissIntro} />
       )}
 
       {/* § 5.3c's eip. Mounted only while open so the sheet's open animation replays on every

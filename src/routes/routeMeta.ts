@@ -187,7 +187,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     access: "any",
     shell: "frame",
     chrome: "leaf",
-    note: "Validator-only; the page bounces non-validators and the Home hub hides its row. 'any' so the generic isPublic redirect can't pre-empt the validator gate.",
+    note: "Validator- or admin-only; the page bounces everyone else and the Home menu hides its tile. 'any' so the generic isPublic redirect can't pre-empt that gate.",
   },
   {
     path: "/settings",

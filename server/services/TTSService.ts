@@ -56,6 +56,8 @@ type VoiceLangKey = 'zh' | 'es' | 'en';
  * Cache: infinite TTL on disk. Keyed by
  * sha256(`${provider}:${resolvedVoiceName}:${text}:${pinyin}`) — see `cacheKey`. The voice
  * name is in the key, so adding a voice adds cache slots and never invalidates existing ones.
+ * Erhua words (pinyin with a bare `r`) also carry `ERHUA_SSML_VERSION` in the key.
+ * Docs: docs/AUDIO_PLAYBACK.md § 3b (erhua fusion).
  * The text our flashcards expose is immutable; if it ever changes, the row's
  * `ttsVoice` column should be nulled to trigger re-synthesis.
  *
@@ -264,9 +266,15 @@ export class TTSService {
     // Normalize so callers can pass null/undefined/'' interchangeably without
     // splitting the cache.
     const normalized = (pinyin || '').trim();
+    // Erhua words get a versioned key suffix. Their MP3s were synthesized with 儿 as a
+    // separate <phoneme ph="r5"> (heard as "yi · hui · r"); `buildPinyinSsml` now fuses it
+    // into the previous syllable, but text + pinyin are unchanged, so without the suffix
+    // every erhua word would keep serving its old split recording from disk. Scoped to
+    // erhua pinyin only, so no other word's cached audio is invalidated.
+    const erhuaSuffix = hasErhuaSyllable(normalized) ? `:${ERHUA_SSML_VERSION}` : '';
     return crypto
       .createHash('sha256')
-      .update(`${this.voiceTag(lang, voiceKey)}:${text}:${normalized}`)
+      .update(`${this.voiceTag(lang, voiceKey)}:${text}:${normalized}${erhuaSuffix}`)
       .digest('hex');
   }
 
@@ -396,6 +404,15 @@ const HAN_CHAR = /\p{Script=Han}/u;
  * so every sentence fell through to the plain-text path and the provider guessed
  * each reading — narrating 行家 as *xíng jiā* against the *háng jiā* on screen.
  *
+ * **Erhua (儿化) fusion.** Our pinyin gives the rhotacizing 儿 its own bare `r` syllable
+ * (一会儿 = "yī huì r"), which keeps syllables 1:1 with characters. But Google voices each
+ * `<phoneme>` as its own unit, so a separate `ph="r5"` tag is heard as a third syllable
+ * ("yi · hui · r"). When 儿 carries a bare `r` and directly follows another Han character,
+ * both characters go into ONE tag with the `r` appended to the previous syllable:
+ * `<phoneme ph="hui4r">会儿</phoneme>`. This was chosen by listening test (2026-09-28)
+ * over `ph="hui4 r5"` in one tag and over dropping the hint on the pair — only the fused
+ * form was heard as *huìr*. A 儿 read as a full syllable (儿子 *ér zi*) is untouched.
+ *
  * Bail-out conditions (in order):
  *   1. No pinyin at all.
  *   2. Syllable count ≠ Han-character count. "中" + "zhōng" works, "你好吗" +
@@ -411,16 +428,47 @@ export function buildPinyinSsml(text: string, pinyin?: string | null): string | 
   const hanCount = chars.filter(c => HAN_CHAR.test(c)).length;
   if (syllables.length === 0 || syllables.length !== hanCount) return null;
 
-  const parts: string[] = [];
+  // Build a list of phoneme units first (rather than strings) so an erhua 儿 can be
+  // folded into the unit before it. A `plain` unit is a non-Han character emitted as
+  // SSML text, and it breaks adjacency: 儿 after punctuation is never fused across it.
+  const units: Array<{ ph: string; text: string } | { plain: string }> = [];
   let s = 0;
   for (const ch of chars) {
     if (!HAN_CHAR.test(ch)) {
-      parts.push(xmlEscape(ch));
+      units.push({ plain: ch });
       continue;
     }
-    const ph = toNumberedPinyin(syllables[s++]);
+    const syllable = syllables[s++];
+    const prev = units[units.length - 1];
+    if (ch === '儿' && isErhuaSyllable(syllable) && prev && 'ph' in prev) {
+      // Fuse: hui4 + r → hui4r, 会 + 儿 → 会儿. Google reads the tone digit before the
+      // `r` and rhotacizes the syllable instead of voicing a separate one.
+      prev.ph += 'r';
+      prev.text += ch;
+      continue;
+    }
+    const ph = toNumberedPinyin(syllable);
     if (!ph) return null;
-    parts.push(`<phoneme alphabet="pinyin" ph="${ph}">${xmlEscape(ch)}</phoneme>`);
+    units.push({ ph, text: ch });
   }
+  const parts = units.map(u => ('plain' in u
+    ? xmlEscape(u.plain)
+    : `<phoneme alphabet="pinyin" ph="${u.ph}">${xmlEscape(u.text)}</phoneme>`));
   return `<speak>${parts.join('')}</speak>`;
+}
+
+/**
+ * Bumped whenever the SSML we send for erhua words changes, so their disk-cached MP3s are
+ * re-synthesized (see `TTSService.cacheKey`). Only affects keys whose pinyin has a bare `r`.
+ */
+const ERHUA_SSML_VERSION = 'erhua-fused-v1';
+
+/** A rhotacizing 儿's syllable: a bare `r` (optionally with a neutral-tone 5). */
+function isErhuaSyllable(syllable: string): boolean {
+  return /^r5?$/i.test(syllable);
+}
+
+/** Whether a space-separated pinyin string contains an erhua syllable. */
+export function hasErhuaSyllable(pinyin: string): boolean {
+  return pinyin.split(/\s+/).some(isErhuaSyllable);
 }

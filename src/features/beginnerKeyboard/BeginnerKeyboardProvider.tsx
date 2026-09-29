@@ -70,6 +70,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import BeginnerKeyboardHost from './BeginnerKeyboardHost';
 import type { KeyboardSource } from './KeyboardSwitchBar';
+import { EMPTY_DRAFT, type CompositionDraft } from './compositionRules';
 import {
   asEditableField,
   isEligibleField,
@@ -148,6 +149,21 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
     writeStoredSource(next);
   }, []);
 
+  /**
+   * § 6z-9: the half-built character — buffer and ink — carried across fields.
+   *
+   * ⚠️ Held HERE for the same reason as `source`: the host is remounted per field
+   * (`fieldKey`), and its composition state died with it. Opening the iw quick
+   * dictionary mid-character focuses a second field, so the learner's strokes
+   * and locked-in parts vanished the moment they reached for help. A ref, not
+   * state: nothing here renders from it; the keyboard seeds from it on mount and
+   * writes every change back.
+   *
+   * Cleared only when the keyboard really goes away — `release` (after the exit
+   * animation) and `closeNow` — and, inside the keyboard, by a commit.
+   */
+  const draftRef = useRef<CompositionDraft>(EMPTY_DRAFT);
+
   // The document listeners are registered once and must not be torn down and
   // rebuilt on every field change, so they read the target through a ref.
   const fieldRef = useRef<EditableField | null>(null);
@@ -168,10 +184,14 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
    * `Slide` over the system keyboard — § 6z-2), so an inline arrow here would
    * restart that timer on every render of this provider.
    */
-  const release = useCallback(() => setField(null), []);
+  const release = useCallback(() => {
+    draftRef.current = EMPTY_DRAFT;
+    setField(null);
+  }, []);
 
   /** Drop it immediately, no transition — for when the page it belonged to is gone. */
   const closeNow = useCallback(() => {
+    draftRef.current = EMPTY_DRAFT;
     setOpen(false);
     setField(null);
   }, []);
@@ -281,6 +301,7 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
           onClosed={release}
           onInsetChange={handleInset}
           debug={debug}
+          draft={draftRef}
         />
       )}
     </BeginnerKeyboardInsetContext.Provider>

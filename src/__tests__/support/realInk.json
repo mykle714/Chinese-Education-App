@@ -1,5 +1,5 @@
 {
- "_readme": "Real hand-drawn ink captured from a device via the author debug dump (docs/BEGINNER_KEYBOARD.md § 6w). Canvas coordinates, y-down, exactly as WritingCanvas produced them. Do not regenerate from medians.",
+ "_readme": "Real hand-drawn ink captured from a device via the author debug dump (docs/BEGINNER_KEYBOARD.md § 6w). Canvas coordinates, y-down, exactly as WritingCanvas produced them. Do not regenerate from medians. `samples` resolve from the ink alone; `inContext` samples are components drawn the way they look INSIDE a character, and resolve only with their `buffer` (§ 6z-5 variants + § 6z-6 buffer-fit ranking).",
  "samples": [
   {
    "glyph": "尔",
@@ -559,6 +559,90 @@
       131.3,
       132.9,
       136.1
+     ]
+    }
+   ]
+  }
+ ],
+ "inContext": [
+  {
+   "glyph": "⺈",
+   "buffer": [
+    "亻",
+    "小"
+   ],
+   "target": "你",
+   "canvasSize": 221,
+   "note": "learner writing 你, drawing its flat middle ⺈ after 亻 and 小, captured 2026-09-27",
+   "strokes": [
+    {
+     "x": [
+      67.1,
+      67.1,
+      64.9,
+      63.5,
+      62,
+      61.3,
+      58.4,
+      55.5,
+      54,
+      52.5,
+      51.1,
+      48.9,
+      46,
+      43.1
+     ],
+     "y": [
+      23.2,
+      25.4,
+      30.5,
+      33.4,
+      37.8,
+      41.4,
+      44.3,
+      47.2,
+      49.4,
+      50.9,
+      52.3,
+      53.8,
+      55.2,
+      56.7
+     ]
+    },
+    {
+     "x": [
+      67.1,
+      71.5,
+      84.5,
+      104.2,
+      127.5,
+      146.4,
+      160.9,
+      166.7,
+      166,
+      163.1,
+      161.6,
+      159.5,
+      158,
+      155.1,
+      153.6
+     ],
+     "y": [
+      40.7,
+      40.7,
+      41.4,
+      42.9,
+      44.3,
+      44.3,
+      44.3,
+      43.6,
+      47.2,
+      49.4,
+      55.2,
+      60.3,
+      64.7,
+      67.6,
+      69
      ]
     }
    ]

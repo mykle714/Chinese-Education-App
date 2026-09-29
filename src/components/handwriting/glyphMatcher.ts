@@ -26,8 +26,9 @@
  * WHY A TWO-STAGE CASCADE
  *
  * The set is 7,258 glyphs, not 895, because the learner may draw a whole
- * character and there is no mode switch to say which they meant. Scoring all of
- * them with the full scorer costs ~1.3 s — far too slow for a keystroke.
+ * character and there is no mode switch to say which they meant — plus 317
+ * in-context variants since § 6z-5, so 7,575 templates. Scoring all of them with
+ * the full scorer costs over a second — far too slow for a keystroke.
  *
  * So each submission runs a CHEAP pass first: every stroke is reduced to its
  * centroid (2 floats instead of 16), which makes a template ~60× cheaper to
@@ -44,19 +45,11 @@
  */
 import type { Ink } from './types';
 import type { GlyphTemplates } from './glyphTemplates';
-import { KIND_COMPONENT, KIND_CHARACTER } from './glyphTemplates';
+import { KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT } from './glyphTemplates';
 import { POINTS_PER_STROKE, normalizeStrokes, resampleStroke, type Point, type PolyStroke } from './inkGeometry';
-
-/**
- * Cost charged for a template stroke the learner never drew (or vice versa).
- *
- * Tuning note: this is the knob that decides how badly a missing/extra stroke is
- * punished. Too low and a 3-stroke scribble matches every 8-stroke glyph; too
- * high and it becomes the hard stroke-count gate we deliberately rejected. The
- * value is empirical — roughly the mean point distance between two genuinely
- * different strokes in the normalized box.
- */
-const UNMATCHED_STROKE_COST = 0.35;
+// The scoring primitives live in their own asset-free module so the offline
+// generator can select variants by the same distance (§ 6z-5).
+import { assignmentCost, strokeCost } from './strokeScoring';
 
 /**
  * How many coarse survivors reach the full scorer.
@@ -67,13 +60,45 @@ const UNMATCHED_STROKE_COST = 0.35;
  */
 const CANDIDATE_POOL = 200;
 
+/**
+ * § 6z-5: a multiplier on the cost of every IN-CONTEXT VARIANT template — a mild
+ * prior for a glyph's standalone form over the shape it takes squeezed into a
+ * character.
+ *
+ * Why it exists: variants widen what each glyph matches, and that cuts both
+ * ways. Left-side 矢 (as in 知) is a real, common form, and it sits close enough
+ * to a sloppy standalone 尔 that the two checked-in real 尔 samples scored it
+ * 0.162 / 0.154 against 尔's own 0.178 / 0.168 — 矢 would have won both. At 1.15
+ * 尔 wins both with a ~5% margin, while the 2026-09-27 ⺈ sample still lifts from
+ * rank 589 to single digits.
+ *
+ * ⚠️ Tuned on THREE real samples (src/__tests__/support/realInk.json). Treat it
+ * as a starting point to revisit with every new debug dump, not a measurement.
+ */
+const VARIANT_COST_FACTOR = 1.15;
+
+/** A template's raw cost, adjusted for whether it is a variant. */
+function templateCost(kind: number, raw: number): number {
+  return kind & KIND_VARIANT ? raw * VARIANT_COST_FACTOR : raw;
+}
+
 export interface GlyphCandidate {
   /** The glyph. */
   char: string;
   /** Match cost — LOWER is better. Not a probability; only the ordering is meaningful. */
   cost: number;
-  /** KIND_COMPONENT | KIND_CHARACTER — decides whether a tap appends or commits. */
+  /**
+   * KIND_COMPONENT | KIND_CHARACTER — the glyph's roles. The KIND_VARIANT bit is
+   * stripped here and reported as `variant` instead, because it describes which
+   * TEMPLATE won, not what the glyph is.
+   */
   kind: number;
+  /**
+   * True when the winning template was an in-context variant (§ 6z-5) — the
+   * glyph's shape cut out of a character that contains it — rather than its
+   * standalone drawing. Carried for the debug dump; the row does not care.
+   */
+  variant: boolean;
 }
 
 export interface MatchOptions {
@@ -109,89 +134,6 @@ function centroidsOf(drawn: PolyStroke[]): Float32Array {
     out[i * 2 + 1] = sumY / drawn[i].length;
   }
   return out;
-}
-
-/**
- * Distance between one drawn stroke and one template stroke, taking the better of
- * the two traversal directions.
- *
- * `coords` is the flat template array; `base` is the float index of the template
- * stroke's first x. Reading straight out of the Float32Array avoids materializing
- * a per-stroke object for all ~77,000 template strokes.
- */
-function strokeCost(drawn: PolyStroke, coords: Float32Array, base: number, points: number): number {
-  let forward = 0;
-  let reversed = 0;
-  for (let i = 0; i < points; i++) {
-    const [dx, dy] = drawn[i];
-    const f = base + i * 2;
-    forward += Math.hypot(dx - coords[f], dy - coords[f + 1]);
-    const r = base + (points - 1 - i) * 2;
-    reversed += Math.hypot(dx - coords[r], dy - coords[r + 1]);
-  }
-  return Math.min(forward, reversed) / points;
-}
-
-/**
- * Greedy assignment of drawn strokes onto template strokes, charging
- * UNMATCHED_STROKE_COST for anything left over on either side.
- *
- * Greedy rather than optimal (Hungarian): at ~10 strokes the greedy choice is
- * almost always the optimal one, and the difference is not worth an O(n³) step.
- *
- * `cost` is the per-pair distance function, so the coarse and full passes share
- * this assignment logic instead of duplicating it — the only thing that changes
- * between the two stages is how expensive comparing one pair is.
- */
-function assignmentCost(
-  drawnCount: number,
-  strokeCount: number,
-  used: Uint8Array,
-  cost: (drawnIndex: number, templateStroke: number) => number,
-  /**
-   * Optional observer for the pairings chosen. Used only by `explainGlyphMatch`
-   * (§ 6w) — threaded through rather than duplicated into a second greedy loop,
-   * so the explanation can never describe an assignment the scorer did not make.
-   */
-  record?: (drawnIndex: number, templateStroke: number, pairCost: number) => void,
-): number {
-  used.fill(0, 0, strokeCount);
-  let total = 0;
-
-  for (let i = 0; i < drawnCount; i++) {
-    let best = Infinity;
-    let bestIndex = -1;
-    for (let j = 0; j < strokeCount; j++) {
-      if (used[j]) continue;
-      const c = cost(i, j);
-      if (c < best) {
-        best = c;
-        bestIndex = j;
-      }
-    }
-    if (bestIndex < 0) {
-      // The learner drew more strokes than the template has: the surplus is
-      // unmatched, and pays the same constant as a missing one.
-      total += UNMATCHED_STROKE_COST;
-      record?.(i, -1, UNMATCHED_STROKE_COST);
-      continue;
-    }
-    used[bestIndex] = 1;
-    total += best;
-    record?.(i, bestIndex, best);
-  }
-
-  // Template strokes the learner never drew.
-  for (let j = 0; j < strokeCount; j++) {
-    if (!used[j]) {
-      total += UNMATCHED_STROKE_COST;
-      record?.(-1, j, UNMATCHED_STROKE_COST);
-    }
-  }
-
-  // Divide by the LARGER count so a template cannot look good merely by having
-  // few strokes to explain — otherwise 一 would rank near the top of everything.
-  return total / Math.max(drawnCount, strokeCount, 1);
 }
 
 /**
@@ -243,18 +185,34 @@ export function matchGlyphs(
 
   // ── Stage 2: full scorer on the survivors only.
   const strokeStride = points * 2;
-  const candidates: GlyphCandidate[] = survivors.map(({ index }) => {
+  const scored: GlyphCandidate[] = survivors.map(({ index }) => {
     const strokeCount = templates.strokeCounts[index];
     const base = templates.offsets[index];
+    const kind = templates.kinds[index];
     return {
       char: templates.chars[index],
-      kind: templates.kinds[index],
-      cost: assignmentCost(drawn.length, strokeCount, used, (d, j) =>
-        strokeCost(drawn[d], templates.coords, base + j * strokeStride, points),
+      kind: kind & ~KIND_VARIANT,
+      variant: (kind & KIND_VARIANT) !== 0,
+      cost: templateCost(
+        kind,
+        assignmentCost(drawn.length, strokeCount, used, (d, j) =>
+          strokeCost(drawn[d], templates.coords, base + j * strokeStride, points),
+        ),
       ),
     };
   });
-  candidates.sort((a, b) => a.cost - b.cost);
+  scored.sort((a, b) => a.cost - b.cost);
+
+  // § 6z-5: a component can own several templates (its standalone drawing plus
+  // in-context variants), so the same glyph may survive more than once. Keep
+  // only its best — sorted ascending, so the first occurrence IS the best — or
+  // the row would show one glyph as two chips.
+  const seen = new Set<string>();
+  const candidates = scored.filter((candidate) => {
+    if (seen.has(candidate.char)) return false;
+    seen.add(candidate.char);
+    return true;
+  });
 
   return limit > 0 ? candidates.slice(0, limit) : candidates;
 }
@@ -279,6 +237,11 @@ export interface MatchExplanation {
   rank: number;
   drawnStrokes: number;
   templateStrokes: number;
+  /**
+   * True when the best-scoring of the glyph's templates was an in-context
+   * variant (§ 6z-5). The pairings describe THAT template.
+   */
+  variant: boolean;
   pairings: StrokePairing[];
 }
 
@@ -304,7 +267,6 @@ export function explainGlyphMatch(
   templates: GlyphTemplates,
   char: string,
 ): MatchExplanation {
-  const index = templates.chars.indexOf(char);
   const drawn = fingerprintInk(ink);
   const empty: MatchExplanation = {
     char,
@@ -313,23 +275,36 @@ export function explainGlyphMatch(
     rank: -1,
     drawnStrokes: drawn.length,
     templateStrokes: 0,
+    variant: false,
     pairings: [],
   };
-  if (index < 0 || drawn.length === 0) return empty;
+  if (drawn.length === 0) return empty;
 
   const points = templates.pointsPerStroke;
-  const strokeCount = templates.strokeCounts[index];
-  const base = templates.offsets[index];
   const used = new Uint8Array(255);
-  const pairings: StrokePairing[] = [];
 
-  const cost = assignmentCost(
-    drawn.length,
-    strokeCount,
-    used,
-    (d, j) => strokeCost(drawn[d], templates.coords, base + j * points * 2, points),
-    (d, j, pairCost) => pairings.push({ drawn: d, template: j, cost: Number(pairCost.toFixed(6)) }),
-  );
+  // § 6z-5: a glyph may own several templates. Explain the one the matcher would
+  // actually have credited — its cheapest — so the pairings and the rank agree.
+  let best: { index: number; cost: number; pairings: StrokePairing[] } | null = null;
+  for (let index = 0; index < templates.chars.length; index++) {
+    if (templates.chars[index] !== char) continue;
+    const base = templates.offsets[index];
+    const pairings: StrokePairing[] = [];
+    // The same variant adjustment the ranking applies, so `cost` and `rank` agree.
+    // The pairings stay raw: they explain the geometry, not the prior.
+    const cost = templateCost(
+      templates.kinds[index],
+      assignmentCost(
+        drawn.length,
+        templates.strokeCounts[index],
+        used,
+        (d, j) => strokeCost(drawn[d], templates.coords, base + j * points * 2, points),
+        (d, j, pairCost) => pairings.push({ drawn: d, template: j, cost: Number(pairCost.toFixed(6)) }),
+      ),
+    );
+    if (best === null || cost < best.cost) best = { index, cost, pairings };
+  }
+  if (best === null) return empty;
 
   // Rank over the WHOLE corpus, not the cascade's pool — the glyph being absent
   // from the pool is itself a finding, and a pool-relative rank would hide it.
@@ -337,12 +312,13 @@ export function explainGlyphMatch(
   return {
     char,
     found: true,
-    cost: Number(cost.toFixed(6)),
+    cost: Number(best.cost.toFixed(6)),
     rank: all.findIndex((candidate) => candidate.char === char),
     drawnStrokes: drawn.length,
-    templateStrokes: strokeCount,
-    pairings,
+    templateStrokes: templates.strokeCounts[best.index],
+    variant: (templates.kinds[best.index] & KIND_VARIANT) !== 0,
+    pairings: best.pairings,
   };
 }
 
-export { POINTS_PER_STROKE, KIND_COMPONENT, KIND_CHARACTER, CANDIDATE_POOL };
+export { POINTS_PER_STROKE, KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT, CANDIDATE_POOL, VARIANT_COST_FACTOR };

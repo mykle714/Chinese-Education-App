@@ -11,11 +11,11 @@ import { COLORS } from "../../theme/colors";
  * sloppy one read the same. The pips are the run's shape, and because they hold their
  * position they also say WHERE it went wrong, which "17/20 correct" at the end does not.
  *
- * WHY A GRID AND NOT A ROW. Twenty pips in one row are 14px wide each and the two-pixel
- * gap between them is the only thing separating a red from its neighbours. The design's
- * revision splits them into TWO ROWS OF TEN at 8px tall, which is enough height for a
- * colour to be seen peripherally — which is the only way it will be seen, since the
- * player's eyes are on the words.
+ * ONE ROW OF TWENTY (changed 2026-09-25). The design's revision drew TWO ROWS OF TEN so
+ * a player could count pips as tens; it went back to a single row so the strip reads as
+ * one left-to-right timeline and the HUD is one pip-row shorter. The 8px HEIGHT from that
+ * revision is kept — it is what lets a colour be seen peripherally (the player's eyes are
+ * on the words), and a row of twenty makes each pip narrower, not shorter.
  *
  * ── THE COLOURS (v2, artboard 15) ───────────────────────────────────────────────
  * Correct `--grnK`, wrong `--redK` (K = the MID tier, `COLORS.grnM` / `redM`), pending
@@ -38,9 +38,8 @@ export interface SpeedReadingRoundTicksProps {
     /** How many rounds the run has in total — the number of pips drawn. */
     total: number;
     /**
-     * Pips per row. Ten is the design's, and it is also the only value that makes the
-     * grid readable as tens: a player counting pips to find round 14 counts one row
-     * plus four.
+     * Pips per row. Defaults to `total` — every pip on one row. Pass a smaller value to
+     * wrap into a grid (e.g. 10 → two rows of ten, readable as tens).
      */
     perRow?: number;
     className?: string;
@@ -54,14 +53,16 @@ const TICK_COLOR: Record<RoundTick, string> = {
 const SpeedReadingRoundTicks: React.FC<SpeedReadingRoundTicksProps> = ({
     results,
     total,
-    perRow = 10,
+    perRow = total,
     className,
 }) => {
-    // Rows are derived from the total rather than fixed at two, so changing
-    // TARGET_ROUNDS cannot silently drop pips off the end of the strip.
-    const rowCount = Math.ceil(total / perRow);
+    // Rows are derived from the total rather than fixed, so changing TARGET_ROUNDS or
+    // `perRow` cannot silently drop pips off the end of the strip. `Math.max(1, …)`
+    // guards a zero/negative `perRow` from producing an infinite row count.
+    const pipsPerRow = Math.max(1, perRow);
+    const rowCount = Math.ceil(total / pipsPerRow);
     const rows = Array.from({ length: rowCount }, (_, row) =>
-        Array.from({ length: Math.min(perRow, total - row * perRow) }, (_, col) => row * perRow + col)
+        Array.from({ length: Math.min(pipsPerRow, total - row * pipsPerRow) }, (_, col) => row * pipsPerRow + col)
     );
 
     return (
@@ -79,7 +80,7 @@ const SpeedReadingRoundTicks: React.FC<SpeedReadingRoundTicksProps> = ({
                     className={`speed-reading__ticks-row speed-reading__ticks-row--${i + 1}`}
                     // Every pip is `flex: 1` inside its row, so a partial last row's pips
                     // are WIDER than the rest instead of leaving a gap the eye reads as
-                    // missing rounds. With a multiple of `perRow` this never comes up.
+                    // missing rounds. With a multiple of `pipsPerRow` this never comes up.
                     sx={{ display: "flex", gap: "4px" }}
                 >
                     {row.map((index) => {

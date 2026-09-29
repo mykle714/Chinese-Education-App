@@ -8,33 +8,38 @@
  * (the suite has no DOM); its decisions live in compositionRules.ts precisely so
  * they can be checked here.
  *
- * Spec: docs/BEGINNER_KEYBOARD.md § 6n, § 6r, § 6q, § 6z-4.
+ * Spec: docs/BEGINNER_KEYBOARD.md § 6n, § 6r, § 6q, § 6z-4, § 6z-6.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { parseGlyphTemplates } from '../components/handwriting/glyphTemplates';
-import { matchGlyphs } from '../components/handwriting/glyphMatcher';
+import { matchGlyphs, type GlyphCandidate } from '../components/handwriting/glyphMatcher';
 import {
+  appearsInWord,
   expandGlyph,
-  findHintCharacter,
   lookupBuffer,
+  makeHintFinder,
   parseGlyphLookup,
   parseGlyphWords,
+  type HintCharacter,
 } from '../components/handwriting/glyphLookup';
 import {
   activeMode,
+  BUFFER_FIT_DISCOUNT,
   bufferAfterRemove,
   bufferAfterSelect,
+  directCommitCandidate,
+  rankGlyphs,
   toGlyphCandidates,
   toResultCandidates,
-  withHints,
   hintCommit,
   type Candidate,
 } from '../features/beginnerKeyboard/compositionRules';
 import { CANDIDATE_DISPLAY_LIMIT } from '../features/beginnerKeyboard/useComposition';
 import type { Ink } from '../components/handwriting/types';
 import { inkFromMedians } from './support/inkFromMedians';
+import realInk from './support/realInk.json';
 
 const ASSETS = path.resolve(__dirname, '../assets/handwriting');
 
@@ -55,11 +60,15 @@ function submit(glyph: string): string[] {
   return expand(glyph);
 }
 
+/** The glyph row exactly as `useComposition` builds it: match → rank by buffer fit → cut. */
+function glyphRow(ink: Ink, buffer: readonly string[]): Candidate[] {
+  const hintFor = buffer.length > 0 ? makeHintFinder(buffer, index) : null;
+  return toGlyphCandidates(rankGlyphs(matchGlyphs(ink, templates), buffer, hintFor).slice(0, CANDIDATE_DISPLAY_LIMIT));
+}
+
 /** The row as the keyboard would build it, for whatever is currently active. */
 function rowFor(ink: Ink, buffer: string[]): Candidate[] {
-  if (ink.length > 0) {
-    return toGlyphCandidates(matchGlyphs(ink, templates, { limit: CANDIDATE_DISPLAY_LIMIT }));
-  }
+  if (ink.length > 0) return glyphRow(ink, buffer);
   if (buffer.length === 0) return [];
   return toResultCandidates(lookupBuffer(buffer, index, words, CANDIDATE_DISPLAY_LIMIT));
 }
@@ -71,7 +80,7 @@ describe('what a tap in the glyph row means (§ 6x)', () => {
     // 尔 to the text field — which is the bug § 6x exists to fix. There is no
     // predicate that separates "meant as a part" from "meant as a word", because
     // for 尔, 木 and 你 the honest answer is both.
-    const row = toGlyphCandidates(matchGlyphs(inkFromMedians('木'), templates, { limit: 20 }));
+    const row = glyphRow(inkFromMedians('木'), []);
     expect(row.length).toBeGreaterThan(0);
     expect(row.every((candidate) => candidate.action === 'append')).toBe(true);
   });
@@ -225,20 +234,13 @@ describe('end to end — draw, append, commit', () => {
 });
 
 describe('§ 6z-4 hint bubbles', () => {
-  const findHint = (buffer: readonly string[], glyph: string) => findHintCharacter(buffer, glyph, index);
-
   it('attaches no hints while the buffer is empty', () => {
-    const row = toGlyphCandidates(matchGlyphs(inkFromMedians('疋'), templates, { limit: CANDIDATE_DISPLAY_LIMIT }));
-    expect(withHints(row, [], findHint).some((candidate) => candidate.hint)).toBe(false);
+    expect(glyphRow(inkFromMedians('疋'), []).some((candidate) => candidate.hint)).toBe(false);
   });
 
   it('walks 日 → draw 疋 → tap the bubble → commit 是, clearing the buffer', () => {
     const buffer = submit('日');
-    const row = withHints(
-      toGlyphCandidates(matchGlyphs(inkFromMedians('疋'), templates, { limit: CANDIDATE_DISPLAY_LIMIT })),
-      buffer,
-      findHint,
-    );
+    const row = glyphRow(inkFromMedians('疋'), buffer);
     const chip = row.find((candidate) => candidate.text === '疋');
     expect(chip, '疋 should be among the glyph guesses for its own ink').toBeDefined();
     expect(chip!.hint?.text).toBe('是');
@@ -249,3 +251,102 @@ describe('§ 6z-4 hint bubbles', () => {
     expect(bufferAfterSelect(buffer, commit, expand)).toEqual([]);
   });
 });
+
+describe('§ 6z-6 buffer-fit re-ranking', () => {
+  const match = (char: string, cost: number): GlyphCandidate => ({ char, cost, kind: 1, variant: false });
+  const hint = (text: string, distance: number): HintCharacter => ({ text, pronunciation: '', distance });
+
+  it("keeps the matcher's order untouched while the buffer is empty", () => {
+    const matches = [match('冖', 0.1), match('⺈', 0.18)];
+    const ranked = rankGlyphs(matches, [], () => hint('你', 0));
+    expect(ranked.map((r) => r.match.char)).toEqual(['冖', '⺈']);
+    expect(ranked.every((r) => r.hint === null && r.cost === r.match.cost)).toBe(true);
+  });
+
+  it('discounts a glyph that completes a common character, and one that is one short', () => {
+    const matches = [match('冖', 0.1), match('八', 0.12), match('⺈', 0.18)];
+    const hints: Record<string, HintCharacter> = { '⺈': hint('你', 0), 八: hint('只', 1) };
+    const ranked = rankGlyphs(matches, ['亻', '小'], (glyph) => hints[glyph] ?? null);
+    expect(ranked.map((r) => r.match.char)).toEqual(['八', '⺈', '冖']);
+    expect(ranked[0].cost).toBeCloseTo(0.12 * BUFFER_FIT_DISCOUNT.oneShort);
+    expect(ranked[1].cost).toBeCloseTo(0.18 * BUFFER_FIT_DISCOUNT.completes);
+  });
+
+  it('never overturns a confident drawing — the prior is at most a halving', () => {
+    // A glyph drawn at a third of the fitting glyph's cost keeps first place.
+    const ranked = rankGlyphs([match('冖', 0.05), match('⺈', 0.15)], ['亻', '小'], (glyph) =>
+      glyph === '⺈' ? hint('你', 0) : null,
+    );
+    expect(ranked[0].match.char).toBe('冖');
+  });
+
+  it('§ 6z-7: shows one 口 chip for a drawn box, at the better of the two costs', () => {
+    const ranked = rankGlyphs([match('囗', 0.05), match('口', 0.08), match('日', 0.1)], [], null);
+    expect(ranked.map((r) => r.match.char)).toEqual(['口', '日']);
+    expect(ranked[0].cost).toBeCloseTo(0.05);
+    // Order-independent: the better cost wins wherever it appears.
+    const reversed = rankGlyphs([match('口', 0.08), match('日', 0.1), match('囗', 0.05)], [], null);
+    expect(reversed.find((r) => r.match.char === '口')?.cost).toBeCloseTo(0.05);
+    // And against real ink, 囗 never takes a chip of its own.
+    expect(glyphRow(inkFromMedians('囗'), []).map((c) => c.text)).not.toContain('囗');
+    expect(glyphRow(inkFromMedians('囗'), [])[0].text).toBe('口');
+  });
+
+  it('puts ⺈ first for the real 2026-09-27 sample, carrying the bubble that explains why', () => {
+    // The motivating dump: a learner writing 你 has 亻 and 小 in the buffer and
+    // draws the flat middle ⺈ — which, on ink alone, is closest to 冖.
+    for (const sample of realInk.inContext) {
+      const ink: Ink = sample.strokes.map((stroke) => ({ xs: stroke.x, ys: stroke.y, ts: stroke.x.map((_, i) => i * 16) }));
+      const row = glyphRow(ink, sample.buffer);
+      expect(row[0].text, `${sample.note}: row was ${row.map((c) => c.text).join('')}`).toBe(sample.glyph);
+      expect(row[0].hint?.text).toBe(sample.target);
+    }
+  });
+});
+
+describe('§ 6z-8 the direct-commit chip', () => {
+  /** The chip exactly as `useComposition` derives it. */
+  function directFor(ink: Ink, buffer: readonly string[]) {
+    const hintFor = buffer.length > 0 ? makeHintFinder(buffer, index) : null;
+    const ranked = rankGlyphs(matchGlyphs(ink, templates), buffer, hintFor);
+    return directCommitCandidate(ranked, buffer, (char) => appearsInWord(char, index));
+  }
+
+  it('offers a whole drawn character as a one-tap commit, alongside its append chip', () => {
+    // The motivating case: 我 used to cost two taps (append → find it in the result row).
+    const ink = inkFromMedians('我');
+    expect(directFor(ink, [])).toEqual({ text: '我', action: 'commit', isWord: false });
+    // The blue section still leads with the same glyph, for the learner who wanted its parts.
+    const first = glyphRow(ink, [])[0];
+    expect(first).toMatchObject({ text: '我', action: 'append' });
+    expect(bufferAfterSelect([], first, expand)).toEqual(expand('我'));
+  });
+
+  it('stays silent for bound forms that never appear in a multi-character word', () => {
+    for (const glyph of ['亻', '氵']) expect(directFor(inkFromMedians(glyph), []), glyph).toBeNull();
+    // The real flat-⺈ sample's top guess is 冖, which builds no word either.
+    const sample = realInk.inContext[0];
+    const ink: Ink = sample.strokes.map((stroke) => ({ xs: stroke.x, ys: stroke.y, ts: stroke.x.map((_, i) => i * 16) }));
+    expect(directFor(ink, [])).toBeNull();
+  });
+
+  it('is withheld while parts are in the buffer — a commit would discard them', () => {
+    expect(directFor(inkFromMedians('我'), ['亻'])).toBeNull();
+  });
+
+  it('commits through the ordinary rule: buffer and ink clear (§ 6r)', () => {
+    const direct = directFor(inkFromMedians('口'), [])!;
+    expect(direct.text).toBe('口');
+    expect(bufferAfterSelect([], direct, expand)).toEqual([]);
+  });
+
+  it('only ever repeats the first chip the blue section shows', () => {
+    const ranked = [
+      { match: { char: '亻', cost: 0.1, kind: 1, variant: false }, hint: null, cost: 0.1 },
+      { match: { char: '我', cost: 0.2, kind: 2, variant: false }, hint: null, cost: 0.2 },
+    ];
+    // 我 qualifies, but it is not the top guess — no chip.
+    expect(directCommitCandidate(ranked, [], (char) => char === '我')).toBeNull();
+  });
+});
+

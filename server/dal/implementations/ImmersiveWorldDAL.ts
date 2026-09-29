@@ -26,7 +26,7 @@ import { ValidationError } from '../../types/dal.js';
  */
 
 /** Every column of an `iw_scenes` row, in the order the row type expects. */
-const SCENE_COLUMNS = `id, language, name, published, "sceneNotes",
+const SCENE_COLUMNS = `id, language, name, published, "sceneNotes", "introText",
   "completerNpcId", "completionAction",
   "playerStartCol", "playerStartRow", "playerStartFacing",
   "companionStartCol", "companionStartRow", "companionStartFacing",
@@ -47,6 +47,7 @@ interface SceneRow {
   name: string;
   published: boolean;
   sceneNotes: string;
+  introText: string;
   completerNpcId: string;
   completionAction: string;
   playerStartCol: number;
@@ -104,6 +105,8 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       // Defaulted like the jsonb blobs, and for the same reason: a row written before the
       // column existed (migration 160) must not hand the editor an `undefined` text field.
       sceneNotes: row.sceneNotes ?? '',
+      // Same defensive default, for a row read before migration 167: '' means "no intro card".
+      introText: row.introText ?? '',
       completerNpcId: row.completerNpcId,
       completionAction: row.completionAction as IWScene['completionAction'],
       playerStartCol: row.playerStartCol,
@@ -138,6 +141,7 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
       scene.name.trim(),
       scene.published === true,
       typeof scene.sceneNotes === 'string' ? scene.sceneNotes : '',
+      typeof scene.introText === 'string' ? scene.introText : '',
       scene.completerNpcId,
       scene.completionAction,
       scene.playerStartCol,
@@ -198,13 +202,13 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
     const { rows } = await this.run<SceneRow>(client, (c) =>
       c.query(
         `INSERT INTO iw_scenes (
-           language, name, published, "sceneNotes",
+           language, name, published, "sceneNotes", "introText",
            "completerNpcId", "completionAction",
            "playerStartCol", "playerStartRow", "playerStartFacing",
            "companionStartCol", "companionStartRow", "companionStartFacing",
            width, height,
            layout, "npcCast", complications, events, conversations, interactions
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
          RETURNING ${SCENE_COLUMNS}`,
         this.sceneParams(scene)
       )
@@ -217,13 +221,13 @@ export class ImmersiveWorldDAL implements IImmersiveWorldDAL {
     const { rows } = await this.run<SceneRow>(client, (c) =>
       c.query(
         `UPDATE iw_scenes SET
-           language = $2, name = $3, published = $4, "sceneNotes" = $5,
-           "completerNpcId" = $6, "completionAction" = $7,
-           "playerStartCol" = $8, "playerStartRow" = $9, "playerStartFacing" = $10,
-           "companionStartCol" = $11, "companionStartRow" = $12, "companionStartFacing" = $13,
-           width = $14, height = $15,
-           layout = $16, "npcCast" = $17, complications = $18, events = $19,
-           conversations = $20, interactions = $21,
+           language = $2, name = $3, published = $4, "sceneNotes" = $5, "introText" = $6,
+           "completerNpcId" = $7, "completionAction" = $8,
+           "playerStartCol" = $9, "playerStartRow" = $10, "playerStartFacing" = $11,
+           "companionStartCol" = $12, "companionStartRow" = $13, "companionStartFacing" = $14,
+           width = $15, height = $16,
+           layout = $17, "npcCast" = $18, complications = $19, events = $20,
+           conversations = $21, interactions = $22,
            "updatedAt" = NOW()
          WHERE id = $1
          RETURNING ${SCENE_COLUMNS}`,

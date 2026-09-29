@@ -7,7 +7,7 @@ sees in Sort Cards (scp), so we can **hand-curate** a deliberate beginner experi
 
 > **Direction update.** The original plan here was a `discoverOrder` integer column
 > that re-sorted individual cards. That has been **superseded** by **authored sort
-> packs** (`sort_packs`) — the curation unit is now a small pack (up to 3 cards, no
+> packs** (`sort_packs`) — the curation unit is now a small pack (up to 4 cards, no
 > sentence involved), not a single re-ordered card. The export below is still the right starting
 > point (it tells us which beginner words exist, in what order), but the hand-crafted
 > output is now authored packs, ordered by `sort_packs.packOrder`, not a per-card
@@ -128,12 +128,13 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
 ## 4. Hand-curation workflow
 
 1. Export the CSV (§2) to see which beginner words exist at each level, in order.
-2. Group words into **authored packs**: up to 3 cards each. No sentence is authored —
+2. Group words into **authored packs**: up to 4 cards each. No sentence is authored —
    just group cards that make sense to sort together (by `id` / `word1`).
-3. Import the packs into `sort_packs` (one row per pack), assigning `packOrder` to
-   control the beginner sequence within each level.
-4. Ship `sort_packs` to PPE via a **seed migration** — no data-sync skill carries this
-   table (see `docs/SORT_PACKS_IMPLEMENTATION.md` §2.1).
+3. Insert the packs into **PPE's** `sort_packs` (one row per pack), assigning
+   `packOrder` to control the beginner sequence within each level. PPE is the source
+   of truth for this table; don't author on dev.
+4. Run the validator on PPE (`docker exec cow-backend node dist/scripts/validate-sort-packs.js`), then `/data-ppe-to-dev` to bring the packs down
+   to dev (see `docs/SORT_PACKS_IMPLEMENTATION.md` §2.1).
 
 ---
 
@@ -149,14 +150,14 @@ CREATE TABLE sort_packs (
   language         VARCHAR  NOT NULL,            -- 'zh' | 'es'
   level            SMALLINT NOT NULL,            -- 1..6, the pack's difficulty band
   "packOrder"      INTEGER  NOT NULL,            -- curation sort key within a level
-  "entryIds"       INTEGER[] NOT NULL            -- up to 3 det ids, the draggable cards
+  "entryIds"       INTEGER[] NOT NULL            -- up to 4 det ids, the draggable cards
 );
 ```
 
 - **No sentence.** `sort_packs` originally carried authored `sentenceForeign`/
   `sentenceEnglish` columns purely to constrain curation ("every card appears in a
   coherent sentence"); they were never fetched or rendered by the client and were
-  dropped in migration 95. Authoring is now just picking up to 3 `entryIds`.
+  dropped in migration 95. Authoring is now just picking up to 4 `entryIds`.
 - **`entryIds`** reference the per-language det table (`dictionaryentries_zh` /
   `_es`). Cards already in the user's library render locked + "sorted!"; a pack whose
   cards are *all* already sorted is skipped at serve time.
@@ -169,7 +170,7 @@ fallback packs-of-1 built on the fly from any remaining un-packed, un-skipped wo
 Level drift is nearest-first.
 
 **Build/deploy validation test (required):** `server/scripts/validate-sort-packs.ts`.
-For every `sort_packs` row it asserts structural validity: 1–3 `entryIds`, level in
+For every `sort_packs` row it asserts structural validity: 1–4 `entryIds`, level in
 1..6, and every `entryId` exists in the per-language det table.
 
 ---

@@ -2,7 +2,10 @@
 
 > **Status: BUILT and mounted app-wide.** The recognizer (§ 6t), the reverse
 > lookup (§ 6u), the keyboard surface (§ 6v), its appear/dismiss model (§ 6z) and
-> the switch bar (§ 6z-2) all ship. §§ 1–4 are the ORIGINAL investigation — how
+> the switch bar (§ 6z-2) all ship, as do in-context component variants (§ 6z-5)
+> and buffer-fit re-ranking of the glyph row (§ 6z-6), look-alike components
+> sharing one chip (§ 6z-7), the green direct-commit chip (§ 6z-8), and the
+> half-built character surviving a change of field (§ 6z-9). §§ 1–4 are the ORIGINAL investigation — how
 > small a unit the decomposition system can hand us, and the complete inventory of
 > those units — kept because the numbers still describe the corpus; read them as
 > the record of how the design was reached, not as open questions. What genuinely
@@ -273,8 +276,16 @@ belongs to, at exactly the depth we stop at. Verified:
     stroke→component  行 行 行 行 行 行
 ```
 
-**This is not built.** It is a ~40-line recursion parallel to `componentsOf`,
-and it does not exist in the codebase today.
+**Built 2026-09-27** as `componentStrokesOf` (`server/scripts/backfill/chinese/lib/decompose.js`)
+— not a parallel recursion but the SAME one: `componentsOf` and
+`componentStrokesOf` share one internal `decompose`, so the parts a character
+decomposes to and the parts its strokes are labelled with cannot disagree
+(verified: `componentsOf` output byte-identical over all 9,574 source entries
+before and after the refactor). Labels are indices into `parts`, not glyphs, so
+从's two 人 stay distinct; `matches` paths are resolved through a parsed IDS tree,
+so nested paths like 赢's `[1, 0]` land on the right leaf. Over the whole source,
+8,602 decomposable characters label every stroke and 716 leave at least one
+stroke null. Its first consumer is § 6z-5.
 
 ### Coverage and the four ways it breaks
 
@@ -1613,14 +1624,16 @@ component→character lookup exists yet.
 |---|---|
 | `src/components/handwriting/inkGeometry.ts` | `resampleStroke`, `normalizeStrokes`, `fingerprint`, and the two build constants `POINTS_PER_STROKE` (8) and `QUANT_SCALE` (254) |
 | `server/scripts/backfill/chinese/generate-handwriting-templates.js` | offline generator → `src/assets/handwriting/glyph-templates.bin` |
-| `src/components/handwriting/glyphTemplates.ts` | `parseGlyphTemplates`, `loadGlyphTemplates` (lazy, session-cached), `KIND_COMPONENT`/`KIND_CHARACTER` |
-| `src/components/handwriting/glyphMatcher.ts` | `fingerprintInk`, `matchGlyphs`, `CANDIDATE_POOL` |
+| `src/components/handwriting/glyphTemplates.ts` | `parseGlyphTemplates`, `loadGlyphTemplates` (lazy, session-cached), `KIND_COMPONENT`/`KIND_CHARACTER`/`KIND_VARIANT` |
+| `src/components/handwriting/strokeScoring.ts` | `UNMATCHED_STROKE_COST`, `strokeCost`, `assignmentCost`, `shapeCost` — asset-free so the generator scores variants with the runtime's own metric (§ 6z-5) |
+| `src/components/handwriting/glyphMatcher.ts` | `fingerprintInk`, `matchGlyphs` (keeps each glyph's best template), `explainGlyphMatch`, `CANDIDATE_POOL`, `VARIANT_COST_FACTOR` |
 | `src/__tests__/glyphMatcher.test.ts` | 16 tests, all passing |
 
 Renamed from `component*` on 2026-09-07 when the asset stopped being
 components-only; `component-templates.bin` was deleted in the same pass.
 
-**The asset shipped at 1,252 KB** for 7,258 glyphs / 77,416 strokes. That is 12×
+**The asset shipped at 1,252 KB** for 7,258 glyphs / 77,416 strokes (1,275.5 KB
+since § 6z-5 appended 317 in-context variants). That is 12×
 the components-only asset, and it is the right trade: it is a one-off download
 cached for the session, § 7b expects the det table to keep growing anyway, and it
 is what makes whole-character recognition possible at all.
@@ -1729,9 +1742,12 @@ hanzi-writer medians, so a drifted generator fails the suite.
 #### Asset format
 
 Little-endian, **format version 2**: `"HWCT"`, version, points-per-stroke, quant
-bits, reserved, `u32` count; then per glyph a `u32` codepoint (not `u16` — some
+bits, reserved, `u32` count; then per template a `u32` codepoint (not `u16` — some
 radicals sit outside the BMP), a `u8` **kind** bitfield, a `u8` stroke count, and
-`int8` interleaved x/y. The client decodes into one flat `Float32Array` rather
+`int8` interleaved x/y. Since § 6z-5 a codepoint may repeat: the sorted standalone
+block is followed by in-context variants carrying `KIND_VARIANT` (bit 2) on top of
+the glyph's own role bits. That is a new flag, not a format change — a reader that
+ignores the bit still scores correctly — so the version stayed at 2. The client decodes into one flat `Float32Array` rather
 than ~620k small arrays, so the scoring loop walks memory instead of chasing
 pointers.
 
@@ -1742,7 +1758,7 @@ during a data expansion.
 
 #### One tuning knob to revisit against real ink
 
-`UNMATCHED_STROKE_COST` (0.35) in `glyphMatcher.ts` sets how hard a
+`UNMATCHED_STROKE_COST` (0.35) in `strokeScoring.ts` sets how hard a
 missing or extra stroke is punished. Too low and a three-stroke scribble matches
 every eight-stroke component; too high and it becomes the hard stroke-count gate
 that § 6s rejected. It is the first thing to tune when real ink is available, and
@@ -2013,7 +2029,8 @@ secure, copied to the clipboard (the label says which):
 | `ink` | the strokes, in canvas px, timestamps rebased onto the first sample |
 | `canvasSize` | scale context — separates "drew it tiny in a corner" from a matcher failure |
 | `buffer` | the components already submitted — flat, and so also the exact list the lookup searched (there was a separate `leaves` field until the buffer went flat; see § 6x) |
-| `suggested` | matcher output **with costs**, 40 deep |
+| `suggested` | the glyph row **in row order** (after § 6z-6's buffer-fit re-ranking), 40 deep: `cost` (matcher), `rankCost` (what the row sorted by), `variant` (§ 6z-5 template won), `hint` (`你+0` = the bubble's character + components still missing) — snapshot `v: 3` |
+| `direct` | the § 6z-8 green direct-commit chip the row led with, or `null` |
 | `results` | buffer lookup output, 40 deep |
 | `target` | the intended character: its expansion, its rank in the **full** result list, its own cost, and the per-stroke pairings the scorer chose |
 | `assets` | which of the three assets had loaded, so a thin dump is not read as a bad match |
@@ -2153,6 +2170,11 @@ one extra tap, and it is the same two taps every time.** The modality § 6r call
 "the one risk worth naming" is now a distinction between the two rows rather than
 between chips inside one row.
 
+> **Amended 2026-09-28 (§ 6z-8):** the extra tap is gone for the common case. A
+> glyph-mode row may now LEAD with one green direct-commit chip repeating the top
+> guess. The glyph chips themselves still only append — § 6z-8 does not pick
+> "part or word" for the learner; it offers both side by side.
+
 ### It also softens § 6k's partial-buffer problem
 
 Measured over the 200 discoverable decomposable characters, before expansion:
@@ -2255,7 +2277,7 @@ tapping back into the field.
 
 | event | result |
 |---|---|
-| focusin on an **eligible field** | opens the keyboard, or **retargets** an open one — `open` never goes false, so there is no exit/enter flicker between two fields |
+| focusin on an **eligible field** | opens the keyboard, or **retargets** an open one — `open` never goes false, so there is no exit/enter flicker between two fields. A retarget **keeps the half-built character** — ink and buffer carry over (§ 6z-9) |
 | focusin or pointerdown inside **our own surface** | nothing |
 | focusin or pointerdown inside a **`data-beginner-keyboard="keep"`** region | nothing |
 | the **close chevron** in the switch bar | closes (it moved out of the keyboard's footer — § 6z-2) |
@@ -2549,7 +2571,7 @@ than snapping on like tooltips.
 
 | moment | behaviour |
 |---|---|
-| appear | after a **750 ms** pause, then **+70 ms per bubble** left to right; each grows up out of its tail (scale 0.2 → 1.08 → 1, 340 ms). The pause is long on purpose (raised from 260 ms): mid-character every stroke churns the hints, and a bubble replaced before its pause ends is dropped unseen — so bubbles only surface once the learner stops writing |
+| appear | after a **750 ms** pause, then **+70 ms per bubble** in a **random order** (shuffled per batch, 2026-09-28 — a left-to-right sweep read as a mechanical scan; the slots stay evenly spaced, so the rhythm and total length are unchanged); each grows up out of its tail (scale 0.2 → 1.08 → 1, 340 ms). The pause is long on purpose (raised from 260 ms): mid-character every stroke churns the hints, and a bubble replaced before its pause ends is dropped unseen — so bubbles only surface once the learner stops writing |
 | disappear | **pop**: a quick swell to ×1.3 while fading, leaving a thin ring that expands and dissolves (240 ms) |
 | a stroke re-ranks the chips | bubbles **never slide**. A bubble survives only if its chip kept the same **slot**, glyph and hint (keyed `position\|glyph\|hint`); a chip that moved pops its bubble and grows a new one over its new slot, with the newcomers entering as one staggered batch |
 | sliding the strip | every bubble **pops as soon as the strip moves**; once it has been still for **180 ms** the chips are re-measured and the bubbles regrow, staggered, over wherever the chips came to rest |
@@ -2573,9 +2595,12 @@ popped bubble stays mounted, so the animation and the unmount cannot drift.
 ### Cost
 
 The search scans only the ~760 COMMON records (cached per index in a `WeakMap`),
-not all 9,855: **≈ 0.04 ms per chip**, so a 12-chip row re-derives in under
-half a millisecond per stroke. It is a separate memo from the ink match, so a
-buffer change re-derives only the hints.
+not all 9,855. Since § 6z-6 it runs for every matcher survivor (~200), not just
+the 12 chips, so `makeHintFinder` narrows the COMMON records to those containing
+the buffer **once per buffer**, and each glyph re-checks only those survivors:
+**≈ 0.5 ms for the whole ~200-glyph pool** (measured 2026-09-27, buffer 木 / 口),
+against ~35 ms for the ink match itself. It is a separate memo from the ink
+match, so a buffer change re-derives only the hints and the ranking.
 
 ### Data — index format v2
 
@@ -2598,10 +2623,13 @@ drift differed.
   `COMMON_FREQ_THRESHOLD`, `FLAG_COMMON`, `INDEX_FORMAT_VERSION`, `loadCharacters`
   (the `common` CTE), `serializeIndex`
 - `src/components/handwriting/glyphLookup.ts` → `FLAG_COMMON`, `readings`,
-  `findHintCharacter`, `HintCharacter`, `commonRecords`
+  `makeHintFinder` (and its one-shot wrapper `findHintCharacter`), `HintCharacter`,
+  `commonRecords`
 - `src/features/beginnerKeyboard/compositionRules.ts` → `Candidate.hint`,
-  `withHints`, `hintCommit`
-- `src/features/beginnerKeyboard/useComposition.ts` → `hintedGlyphCandidates`
+  `rankGlyphs` (attaches hints AND applies § 6z-6's re-rank; replaced
+  `withHints`), `toGlyphCandidates`, `hintCommit`
+- `src/features/beginnerKeyboard/useComposition.ts` → `glyphMatches`, `hintFor`,
+  `glyphCandidates`
 - `src/features/beginnerKeyboard/CandidateRow.tsx` → `measureAnchors` (the chip
   centres; the bubbles cannot live inside the scroller, whose `overflow-x: auto`
   also clips vertically), `beginner-keyboard__hint-layer`
@@ -2616,8 +2644,320 @@ drift differed.
 - `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` → `handleSelectHint`
 - Tests: `src/__tests__/glyphLookup.test.ts` (§ 6z-4 hint search),
   `src/__tests__/beginnerKeyboardComposition.test.ts` (§ 6z-4 hint bubbles —
-  日 → draw 疋 → tap → 是), `src/__tests__/hintBubblePresence.test.ts`
+  日 → draw 疋 → tap → 是; § 6z-6 re-ranking), `src/__tests__/hintBubblePresence.test.ts`
   (stagger, keep-without-restart, move → respawn, pop, silent drop, revival, scroll)
+
+## 6z-5. BUILT 2026-09-27 — in-context component variants
+
+**A component now has, besides its standalone drawing, up to three templates of
+the shape it takes INSIDE characters.** A learner draws a component the way it
+looks in the character they are writing, not the way it looks alone.
+
+### The sample that found it
+
+A real dump (§ 6w), buffer `[亻, 小]`, the learner writing 你 and drawing its
+middle ⺈: a short 丿 and a wide, flat 𠃌 with a small hook. **⺈ ranked 589th; 冖
+ranked first.** The only ⺈ template was hanzi-writer's standalone `⺈.json` — a
+long diagonal across the whole box and a long descending hook. Normalization
+keeps aspect ratio, so a 124×46 px drawing cannot score well against a square
+template: both strokes cost ~0.30, next to the 0.35 charged for a stroke that is
+simply *missing*.
+
+### How the variants are made (offline)
+
+```
+  makemeahanzi matches  ──► componentStrokesOf (§ 3e)  ──►  你 = 亻亻 ⺈⺈ 小小小
+  hanzi-writer medians  ──► same stroke order          ──►  cut ⺈'s 2 strokes out,
+                                                            normalize them alone
+          every character containing ⺈ = one sample (77 for ⺈, ~1,300 for 口)
+                                   │
+                  greedy set cover (lib/componentVariants.js)
+                                   ▼
+           ≤ 3 representatives per component, appended as KIND_VARIANT
+```
+
+| rule | value | why |
+|---|---|---|
+| distance | `shapeCost` from `strokeScoring.ts` | the runtime's own scorer — variants chosen by any other metric would look different to the function that ranks them |
+| a sample stands in for another | cost ≤ `COVER_RADIUS` **0.08** | in-context samples typically sit 0.03–0.15 from the standalone; the distinct forms (⺈ in 尔, ~0.20) sit well outside |
+| seed | whatever the standalone already covers | a component whose context shapes all resemble it gets **no** variants |
+| ship a form | covers ≥ `MIN_SUPPORT` **4** samples and ≥ **3%** of them | below that it is a calligraphic one-off or a mislabelled stroke |
+| per component | ≤ **3** variants, ≤ **400** samples (commonest characters first) | the asset and the coarse pass both scale with it |
+| a sample is used only if | every stroke of its character is labelled, and its stroke count equals the standalone's | a null label or a count mismatch almost always means a labelling fault |
+| no standalone drawing | the modal stroke count stands in | such a component had **no** template; a variant can give it one |
+
+**Result (2026-09-27):** 317 variants across 201 components, from 21,729 cuts of
+8,593 characters; the asset grew 1,252 → 1,275.5 KB. The standalone block is
+**byte-identical** to before (verified), and regeneration is deterministic. The
+best-supported forms read like a calligraphy primer: 口 as in 咸 (279 samples),
+left-side 木 as in 札 (266), 日 (260), 女 as in 如, 火 as in 灯, 足 as in 跑.
+
+`--no-variants` regenerates without them, for A/B only — the client expects them.
+
+### The runtime
+
+- **One chip per glyph.** `matchGlyphs` keeps each glyph's best-scoring template
+  and drops the rest; `explainGlyphMatch` explains that same best template and
+  reports `variant: true` when it won.
+- **`VARIANT_COST_FACTOR` = 1.15** multiplies every variant's cost — a mild prior
+  for a glyph's standalone form. Variants widen what every glyph matches, and
+  that cuts both ways: left-side 矢 (as in 知) is a real, common form that sits
+  close to a sloppy standalone 尔, and scored **0.162 / 0.154** against 尔's own
+  **0.178 / 0.168** on the two checked-in real 尔 samples. At 1.15 尔 wins both
+  by ~5%.
+
+**The ⺈ sample now ranks 8th on ink alone** (cost 0.184, by a variant cut
+from the 尔 family; was 589th). Ink alone still prefers 冖 — the drawing really
+is flat — and § 6z-6 is what settles it.
+
+⚠️ **Both constants are tuned on three real samples.** Every new dump is a
+chance to revisit `VARIANT_COST_FACTOR` and `COVER_RADIUS`; nothing here is a
+measurement in the sense § 6j's numbers are.
+
+### Code
+
+- `server/scripts/backfill/chinese/lib/decompose.js` → `decompose` (the shared
+  recursion), `componentStrokesOf`, `parseIdsTree`, `loadDecompositionEntries`
+- `server/scripts/backfill/chinese/lib/componentVariants.js` → `cutComponents`,
+  `selectVariants`, `COVER_RADIUS`, `MIN_SUPPORT`, `MIN_SUPPORT_SHARE`,
+  `MAX_VARIANTS_PER_COMPONENT`, `MAX_SAMPLES_PER_COMPONENT`
+- `server/scripts/backfill/chinese/generate-handwriting-templates.js` →
+  `appendVariants`, `KIND_VARIANT`, `--no-variants`
+- `src/components/handwriting/strokeScoring.ts` → `shapeCost` (plus the scoring
+  primitives moved out of `glyphMatcher.ts`)
+- `src/components/handwriting/glyphTemplates.ts` → `KIND_VARIANT`
+- `src/components/handwriting/glyphMatcher.ts` → `VARIANT_COST_FACTOR`,
+  `templateCost`, the dedupe in `matchGlyphs`, `GlyphCandidate.variant`,
+  `MatchExplanation.variant`
+- Tests: `server/__tests__/componentVariants.test.ts` (labelling, cutting,
+  cover), `src/__tests__/glyphMatcher.test.ts` (one chip per glyph; the real ⺈
+  sample reaches the row via a variant; both real 尔 samples still rank 尔
+  first), `src/__tests__/support/realInk.json` → `inContext`
+
+## 6z-6. BUILT 2026-09-27 — buffer-fit re-ranking of the glyph row
+
+**While the buffer is non-empty, a glyph whose tap would put the learner on
+track to a COMMON character has its match cost discounted before the row is
+sorted.** The ink cannot tell a hurried ⺈ from 冖; the buffer can — with `[亻, 小]`
+locked in, 你 is exactly one ⺈ away and 冖 completes nothing.
+
+| buffer + glyph … | multiplier (`BUFFER_FIT_DISCOUNT`) |
+|---|---|
+| **is** a common character's whole bag (hint distance 0) | **× 0.5** |
+| is one component short of one (distance 1) | **× 0.75** |
+| anything else, or an empty buffer | × 1 — the matcher's order stands |
+
+- **It is the § 6z-4 hint, reused.** "On track to a COMMON character" is exactly
+  the question the hint bubble already answers, so `rankGlyphs` asks it once per
+  glyph and uses the one answer for both the bubble and the discount. **A chip
+  that jumped up the row always carries the bubble explaining why.**
+- **A confident drawing is never overridden.** At most a halving, so the prior
+  can only overturn a top match that was already half as good — it steps in
+  where the ink was ambiguous and nowhere else.
+- **It ranks the whole matcher output, then cuts to 12.** A fitting glyph can
+  climb from far past the visible row; truncating first would drop it unseen.
+- **Always on**, not only when an author has set a 🎯 target — the target is a
+  debug-only notion (§ 6w), and the keyboard is open recognition (§ 6c).
+- The debug dump runs the same `rankGlyphs`, so `suggested` is in row order
+  (§ 6w).
+
+**Result:** on the 2026-09-27 sample, ⺈ (0.184 × 0.5 = 0.092) now leads 冖
+(0.108), carrying the bubble 你. Without § 6z-5's variant it would still come
+second (0.299 × 0.5 = 0.150) — the two fixes are complementary.
+
+⚠️ **The accepted cost:** a learner writing a character that is NOT common gets
+a row that leans toward the common characters their buffer could spell. That is
+the same bias the result row's § 6k ordering already has, and the discount is
+bounded, but it is a bias. Tuned on one real sample; revisit with every dump.
+
+### Code
+
+- `src/features/beginnerKeyboard/compositionRules.ts` → `BUFFER_FIT_DISCOUNT`,
+  `bufferFitFactor`, `RankedGlyph`, `rankGlyphs`, `toGlyphCandidates`
+- `src/components/handwriting/glyphLookup.ts` → `makeHintFinder`
+- `src/features/beginnerKeyboard/useComposition.ts` → `glyphMatches` (untruncated),
+  `hintFor`, `glyphCandidates`
+- `src/features/beginnerKeyboard/debugSnapshot.ts` → `buildDebugSnapshot`
+  (`suggested` in row order, `rankCost`, `variant`, `hint`; snapshot `v: 3`)
+- Tests: `src/__tests__/beginnerKeyboardComposition.test.ts` → "§ 6z-6 buffer-fit
+  re-ranking" (order kept on an empty buffer, both tiers, the confident-drawing
+  bound, and the real ⺈ sample leading with bubble 你)
+
+## 6z-7. BUILT 2026-09-27 — look-alike components share one chip
+
+**口/囗, 阝/卩, 日/曰 and 土/士 are one component each as far as the keyboard is
+concerned.** A drawn box shows one 口 chip, enters the buffer as 口, and the
+search finds characters built on either member — 国 (stored `囗 玉`) as well as
+叫.
+
+### Why shape cannot separate them
+
+Each pair differs in role or proportion, not stroke shape. The matcher
+normalizes every drawing to its own bounding box, which is exactly what erases
+size — and a learner fills the canvas whichever one they mean. Measured
+2026-09-27: 口 ↔ 囗 templates sit 0.139 apart (a clean drawing separates them; a
+real square box lands between), and a § 6z-5 囗 variant sits only 0.116 from
+clean 口 ink. 卩 ↔ 阝 are 0.027 apart. § 6z-6 does not rescue it either: the
+learner draws 国's frame FIRST, while the buffer is still empty. And a wrong
+guess is silent — tap 口, add 玉, and 国 simply never appears.
+
+So the search stops asking, and the learner resolves the ambiguity by tapping
+the character they meant (the standing rule, § 6h).
+
+| class | canonical (shown) | characters: canonical vs alias |
+|---|---|---|
+| 口 囗 | **口** | 880 vs 80 |
+| 阝 卩 | **阝** | 137 vs 18 |
+| 日 曰 | **日** | 313 vs 15 |
+| 土 士 | **土** | 320 vs 40 |
+
+The canonical form is the one building more characters — the shape a learner
+most expects to see (口 confirmed by the product call; the rest follow the rule).
+
+### Where it happens
+
+- **Index, at parse** (`glyphLookup.ts` → `mergeComponentAliases`): each alias's
+  bag slots are remapped to the canonical id, and `componentIds` maps the alias
+  to that id. Every consumer — containment, the hint search, the derived word
+  bags, `expandGlyph` — then sees 国 as `[口, 玉]` with no alias logic of its own.
+  `expandGlyph('囗')` returns `['口']`.
+- **§ 6n rescue** (`lookupCharacters`): a one-component buffer rescues every
+  headword in its class, so `[日]` still offers 曰 and `[阝]` offers 卩.
+- **Glyph row** (`compositionRules.ts` → `mergeLookAlikes`, run inside
+  `rankGlyphs`): 囗's chip folds into 口's at the better of the two costs.
+
+⚠️ **Keyboard-only.** `dictionaryentries_zh.components` still says 囗 for 国, and
+no other feature reading that column changes. No asset was regenerated.
+
+⚠️ **The accepted cost:** results widen. `口 土` now answers both 吉 (口士) and
+吐 (口土); `日 日` answers 昌 (日曰) as well as 昍.
+
+### Code
+
+- `src/components/handwriting/componentAliases.ts` → `COMPONENT_ALIASES`,
+  `canonicalComponent`, `aliasClass`
+- `src/components/handwriting/glyphLookup.ts` → `mergeComponentAliases`,
+  `expandGlyph`, the class-wide rescue in `lookupCharacters`
+- `src/features/beginnerKeyboard/compositionRules.ts` → `mergeLookAlikes`, `rankGlyphs`
+- Tests: `src/__tests__/glyphLookup.test.ts` → "§ 6z-7 look-alike components";
+  `src/__tests__/beginnerKeyboardComposition.test.ts` → the one-chip case
+
+## 6z-8. BUILT 2026-09-28 — the direct-commit chip
+
+**While the learner is drawing with an empty buffer, the glyph row may open with
+one chip on a GREEN ground: the top guess, which commits straight to the field.**
+The same glyph stays first among the blue chips, for the learner who wanted its
+parts.
+
+```
+┌── green ──┐┌─────── blue ─────────┐
+│ [█我█]     ││ [我] [找] [武] [戗] …  │
+└───────────┘└──────────────────────┘
+ tap → 我 goes     tap → 我's parts go
+ into the field    into the buffer
+```
+
+**Why:** since § 6x every glyph chip appends, so drawing 我 put its parts `[扌, 戈]`
+in the buffer and the learner had to find 我 again in the result row.
+§ 6x's objection to a per-glyph commit rule still stands — no predicate can tell
+"meant as a part" from "meant as a word" — so this does not choose: it offers
+both.
+
+### The rules (confirmed 2026-09-28)
+
+| question | decision |
+|---|---|
+| which chip | **the top guess only** — the first chip the blue section shows (after § 6z-7's merge), so the green chip always repeats something visible beside it |
+| qualifies when | the character appears in **at least one multi-character det word** (`appearsInWord`, reading the index's `usage` count). Every index record is already a single-character det headword, so "is in det" alone would filter nothing. Measured: 我 70, 你 34, 口 518, 尔 798 qualify; 亻 氵 冖 冂 囗 are all 0 and stay silent — so the real flat-⺈ sample (top guess 冖) offers no green chip |
+| buffer | **empty only.** A commit clears the buffer (§ 6r), so offering one mid-character would silently discard the learner's parts; the § 6z-4 bubbles already offer the commits that make sense there |
+| colour | the result row's green (`grnTint`) — it commits exactly as a result chip does. The two tints are pale, so a hairline divider and the commit chip's filled 2 px border carry the distinction too |
+| placement | outside the scroller, bleeding to the row's edges: it never scrolls away, and reads as a section of the strip rather than a floating chip |
+
+Because the direct chip is a plain `commit` candidate, `selectCandidate`'s
+existing commit rule applies unchanged: buffer and ink clear.
+
+`candidates` itself stays one mode, one meaning (§ 6r): the direct chip is a
+separate `directCandidate` field, not a third kind of entry in the list.
+
+⚠️ `usage` is counted over **every** zh det word, not only discoverable ones, and
+refreshes only when `glyph-lookup.bin` is regenerated.
+
+### Code
+
+- `src/components/handwriting/glyphLookup.ts` → `appearsInWord`
+- `src/features/beginnerKeyboard/compositionRules.ts` → `directCommitCandidate`
+- `src/features/beginnerKeyboard/useComposition.ts` → `rankedGlyphs`,
+  `directCandidate` (`Composition.directCandidate`)
+- `src/features/beginnerKeyboard/CandidateRow.tsx` → `renderChip` (shared by both
+  sections), `beginner-keyboard__direct-section`, `beginner-keyboard__candidate--direct`
+- `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` → passes `directCandidate`
+- `src/features/beginnerKeyboard/debugSnapshot.ts` → `direct`
+- Tests: `src/__tests__/beginnerKeyboardComposition.test.ts` → "§ 6z-8 the
+  direct-commit chip"; `src/__tests__/beginnerKeyboardDebugSnapshot.test.ts`
+
+## 6z-9. FIXED 2026-09-28 — the half-built character survives a change of field
+
+**Moving focus between eligible fields no longer clears the keyboard.** Ink on the
+canvas and components in the buffer carry over to the new field; they are
+cleared only when the keyboard actually closes, or by a commit.
+
+**Found by** the iw quick dictionary: a learner stuck mid-character opens it,
+which FOCUSES its lookup field (`IWComposer.tsx` → the `lookupRef` focus effect)
+— and everything they had drawn and locked in vanished at the exact moment they
+reached for help.
+
+**The cause** was structural, not a reset call. The provider remounts the host
+for every field (`key={fieldKey(field)}` — needed so the `inputMode` cleanup
+runs against the right field), and the composition lived in `useComposition`'s
+local state inside it. Any retarget therefore started from nothing.
+
+**The fix** is the same move § 6z-3 made for the switch choice: the draft
+(`CompositionDraft` = `{ buffer, ink }`) is held by `BeginnerKeyboardProvider` in
+a ref, passed down through the host, seeded into `useComposition` on mount and
+written back on every change. The canvas redraws the carried ink through
+`WritingCanvas`'s existing `initialInk`.
+
+| event | draft |
+|---|---|
+| retarget to another eligible field (opening the quick dictionary) | **kept** |
+| switching to `ABC` and back within a field | **kept** (the handwriting surface unmounts in OS mode; it used to lose the draft too) |
+| commit (a chip, the direct chip, a hint bubble) | cleared — `selectCandidate`'s reset writes the empty draft back |
+| close (chevron, tap outside) | cleared when the exit finishes (`release`) |
+| route change, language switch, field disconnected | cleared at once (`closeNow`) |
+
+Decided in passing: this applies to **every** retarget, not only the quick
+dictionary — a rule keyed to one field would be arbitrary, and carrying an
+unfinished character into the next field is harmless (the learner can clear it).
+
+⚠️ **The unmount reset is gone on purpose.** `BeginnerKeyboard` used to run
+`composition.reset` as an effect cleanup, "so a half-built character is not left
+for the next field". That is exactly the policy reversed here, and under React
+StrictMode (on in `main.tsx`) the cleanup also runs once right after mount in
+dev — it would have wiped every restored draft. Clearing on close now belongs to
+the provider, which owns the draft.
+
+⚠️ **Not carried:** the canvas's redo stack (it lives inside `WritingCanvas`),
+so Redo starts greyed after a retarget. And ink is stored in canvas PIXELS: the
+host's height is seeded from a module-level cache (`observedOsHeight`), so the
+canvas is normally the same size in the next field — but if a fresh OS-keyboard
+height settled in between (e.g. after a stint on `ABC`), the canvas resizes and the
+carried strokes are redrawn at their old coordinates, off-centre or clipped. The
+MATCH is unaffected (the matcher normalizes to the ink's own bounding box); only
+the picture is. Rescaling the ink by the size ratio would fix it if it ever shows.
+
+No automated test: the suite has no DOM, and this is hook plumbing with no pure
+rule left to pin.
+
+### Code
+
+- `src/features/beginnerKeyboard/compositionRules.ts` → `CompositionDraft`, `EMPTY_DRAFT`
+- `src/features/beginnerKeyboard/BeginnerKeyboardProvider.tsx` → `draftRef`,
+  cleared in `release` and `closeNow`
+- `src/features/beginnerKeyboard/BeginnerKeyboardHost.tsx` → `draft` prop (pass-through)
+- `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` → `draft` prop,
+  `initialInk` on `WritingCanvas`
+- `src/features/beginnerKeyboard/useComposition.ts` → `CompositionDeps.draft`
+  (seeding + the write-back effect)
 
 ## 7. Outstanding before we can build
 

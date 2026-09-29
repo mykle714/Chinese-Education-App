@@ -239,7 +239,7 @@ const MatchSpeedPage: React.FC = () => {
      *
      * `exclude` carries every card on the board PLUS every card in the buffer.
      * This is NOT a repeat gate: repeats across a run are prevented by the
-     * server's own per-type cooldown, and when a library is small, falling back to
+     * server's own cooldown, and when a library is small, falling back to
      * a cooled card is correct behavior the client must not block. `exclude`
      * exists solely to prevent a DUPLICATE ON SCREEN — a card on the board or in
      * the buffer has not been marked yet, so it isn't on cooldown and a top-up

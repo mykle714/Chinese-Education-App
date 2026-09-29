@@ -1,8 +1,7 @@
 import { memo } from "react";
-import { Box, ButtonBase, Typography, useTheme } from "@mui/material";
+import { Box, ButtonBase } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import ForeignText from "../../components/ForeignText";
-import { iconImageUrl } from "../../cardIcons/cardIconLayout";
+import MiniCard, { MiniCardFrequencyBadge } from "../../components/MiniCard";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -12,7 +11,7 @@ import {
 } from "./challengeStyles";
 import type { ChallengeReviewWord } from "./reviewWord";
 import { SHADOW } from "../../theme/shadows";
-import { miniCardFaceSx, MINI_CARD_RING } from "../../components/miniCardFace";
+import { MINI_CARD_RING } from "../../components/miniCardFace";
 
 interface ChallengeWordCardProps {
     word: ChallengeReviewWord;
@@ -67,7 +66,6 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
     disabled = false,
     animationDelayMs,
 }) => {
-    const fc = useTheme().palette.flashcard;
     // Selectable only while the set is still editable — the read-only use passes no
     // `onStrike`, and then the card is inert rather than tappable-but-pointless.
     const strikeable = !!onStrike && !!onSelect;
@@ -96,22 +94,24 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                 }),
             }}
         >
-            <Box
+            <MiniCard
                 component={strikeable ? ButtonBase : "div"}
                 className={`challenge-word-card__thumbnail${selected ? " challenge-word-card__thumbnail--selected" : ""}`}
                 onClick={strikeable && !disabled ? () => onSelect!(word) : undefined}
-                disabled={strikeable ? disabled : undefined}
-                aria-pressed={strikeable ? selected : undefined}
+                {...(strikeable && { disabled, "aria-pressed": selected })}
+                language={word.language}
+                entryKey={word.word1}
+                pronunciation={word.pronunciation}
+                // The English. WITHOUT IT THE DECISION IS UNANSWERABLE: "do I already know
+                // this word" cannot be judged from the characters alone, since the reviewer
+                // may know a different sense of a word they recognise.
+                definition={stripParentheses(word.definition ?? "")}
+                iconId={word.iconId}
+                // Selected fills with the mastered blue — the same ink the app uses for a
+                // comfortable/mastered card everywhere else, which is exactly the claim the
+                // strike is about to make.
+                background={selected ? COLORS.blu : undefined}
                 sx={{
-                    // The shared face (src/components/miniCardFace.ts) — the SAME tile
-                    // MiniVocabCard draws on the fdp and QuickMarkCard draws in triage.
-                    // It used to re-declare the geometry with a comment promising it
-                    // matched them, and had already lost the hairline ring.
-                    //
-                    // Selected fills with the mastered blue — the same ink the app uses
-                    // for a comfortable/mastered card everywhere else, which is exactly
-                    // the claim the strike is about to make.
-                    ...miniCardFaceSx({ background: selected ? COLORS.blu : fc.flashCard }),
                     // A ButtonBase defaults to centred flow content; everything inside
                     // this card is absolutely positioned, so the display must stay block
                     // or the icon slot and the gloss both drift.
@@ -126,98 +126,10 @@ const ChallengeWordCardComponent: React.FC<ChallengeWordCardProps> = ({
                     transition: "background-color 140ms ease, box-shadow 140ms ease",
                 }}
             >
-                {/* Conversation-frequency badge — top-left, the same 18px circular tag
-                    Sort Cards and Quick Mark use (1 = almost never spoken … 5 = constant
-                    in daily speech). It is real information for this decision: a rare
-                    word is a fair thing to strike. */}
-                {word.frequencyScore != null && (
-                    <Box
-                        className="challenge-word-card__frequency-badge"
-                        aria-label={`conversation frequency ${word.frequencyScore} of 5`}
-                        sx={{
-                            position: "absolute",
-                            top: 8,
-                            left: 8,
-                            zIndex: 2,
-                            width: 18,
-                            height: 18,
-                            borderRadius: "50%",
-                            backgroundColor: COLORS.onSurface,
-                            color: COLORS.white,
-                            fontSize: SIZE.micro,
-                            fontWeight: WEIGHT.bold,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            boxShadow: SHADOW.rest,
-                        }}
-                    >
-                        {word.frequencyScore}
-                    </Box>
-                )}
-
-                {/* Icon slot — fixed height so every card reserves identical vertical space. */}
-                <Box
-                    className="challenge-word-card__icon-slot"
-                    sx={{ position: "absolute", top: 14, left: 8, right: 8, height: 26, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }}
-                >
-                    {word.iconId && (
-                        <Box
-                            component="img"
-                            className="challenge-word-card__icon"
-                            src={iconImageUrl(word.iconId)}
-                            alt=""
-                            draggable={false}
-                            sx={{ width: 26, height: 26, objectFit: "contain", userSelect: "none" }}
-                        />
-                    )}
-                </Box>
-
-                {/* Word + pronunciation. Foreign text ALWAYS goes through ForeignText — it
-                    is the public container that decides cpcd vs plain Latin text per
-                    language. Never render a foreign word directly. */}
-                <Box
-                    className="challenge-word-card__key-wrapper"
-                    sx={{ position: "absolute", top: 46, left: 8, right: 8, display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0, zIndex: 1 }}
-                >
-                    <ForeignText
-                        className="challenge-word-card__entry-key"
-                        language={word.language}
-                        size="xs"
-                        bold
-                        flexWrap="wrap"
-                        justifyContent="center"
-                        text={word.word1}
-                        pronunciation={word.pronunciation}
-                    />
-                </Box>
-
-                {/* The English — anchored to the bottom, clamped to 2 lines.
-                    WITHOUT IT THE DECISION IS UNANSWERABLE: "do I already know this
-                    word" cannot be judged from the characters alone, since the reviewer
-                    may know a different sense of a word they recognise. */}
-                <Typography
-                    className="challenge-word-card__definition"
-                    sx={{
-                        position: "absolute",
-                        bottom: 8,
-                        left: 8,
-                        right: 8,
-                        fontSize: SIZE.caption,
-                        color: COLORS.textSecondary,
-                        textAlign: "center",
-                        lineHeight: 1.2,
-                        overflow: "hidden",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        minHeight: 24,
-                        zIndex: 1,
-                    }}
-                >
-                    {stripParentheses(word.definition ?? "")}
-                </Typography>
-            </Box>
+                {/* Conversation-frequency badge — real information for this decision: a
+                    rare word is a fair thing to strike. */}
+                <MiniCardFrequencyBadge score={word.frequencyScore} className="challenge-word-card__frequency-badge" />
+            </MiniCard>
 
             {/* The confirm pill — the SECOND tap, and the only one that writes anything.
                 It straddles the card's bottom edge so it reads as belonging to this card

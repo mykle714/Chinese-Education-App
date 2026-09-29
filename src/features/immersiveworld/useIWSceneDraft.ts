@@ -169,6 +169,8 @@ export function blankScene(language: 'zh' | 'es' = 'zh'): IWScene {
     // The scene brief (migration 160) — prose for the model about what this place is and
     // what its place tags mean. Empty is a valid scene; it simply says nothing extra.
     sceneNotes: '',
+    // The learner-facing intro card (migration 167). Empty = the scene opens with no card.
+    introText: '',
     completerNpcId: '',
     // Blank, like `completerNpcId` above: the completion action is one of the completer's
     // own authored actions, so there is nothing to default it to until one has been written.

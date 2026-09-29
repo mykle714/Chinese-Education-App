@@ -85,7 +85,9 @@ function HomePage() {
     // tile no longer leaves the last artboard row half empty), and a tool that can
     // rewrite authored content reads as a tool rather than as another destination.
     const gatedTiles: HomeTile[] = [
-        ...(user?.isValidator
+        // Validators AND admins (users.isAdmin, migration 168 — the tdp's User Usage
+        // section) reach the tester dashboard; the page applies the same pair.
+        ...(user?.isValidator || user?.isAdmin
             ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as HomeTile]
             : []),
         // All three ride the SAME grant (users.isTemplateAuthor, migration 115) — the two

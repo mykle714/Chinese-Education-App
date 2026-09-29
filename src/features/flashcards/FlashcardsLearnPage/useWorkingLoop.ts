@@ -14,10 +14,10 @@ import type {
     SideOneLanguage,
     MarkType,
 } from "../types";
-import type { FlpForeignTrack } from "../../../../server/contracts/wire";
 // Face steering — which language Side 1 shows, and which mark type that face writes.
-// Pure util so the cooldown gate + weaker-track bias can be tested without the hook.
+// Pure util so the weaker-track rule can be tested without the hook.
 import { markTypeForSideOne, sideOneForCard } from "../../../utils/flpFaceSteering";
+import { FLP_MARK_SURFACE } from "../../../../server/contracts/wire";
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
 // ref so this hook can read the latest flip value (for undo snapshots) and drive
@@ -46,14 +46,6 @@ interface UseWorkingLoopArgs {
     // Drives the loop-fetch distribution, the mark replacement pool, and the
     // wind-down behavior when the eligible pool is exhausted.
     mode: StudyMode | null;
-    // Which track this session's FOREIGN-FIRST (Chinese-side-one) face exercises:
-    // 'reading' when the learner has "Show pinyin" off on a zh deck — the characters
-    // are unaided, which is what the reading track means — else 'recognition'
-    // (docs/MASTERY_REWORK.md). Decided by the page from the learn settings + the
-    // account language, and sent to BOTH server calls (the loop fetch and the mark
-    // refill) so the server cools and steers on the same pair of tracks the client
-    // marks. English-first is always 'production' and does not depend on this.
-    foreignTrack: FlpForeignTrack;
     // TTS prefetch — warms the in-session blob cache for newly loaded cards.
     prefetch: (entry: VocabEntry) => void;
     cardDragRef: RefObject<CardDragControls>;
@@ -105,7 +97,6 @@ export function useWorkingLoop({
     token,
     selectedCategory,
     mode,
-    foreignTrack,
     prefetch,
     cardDragRef,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
@@ -132,12 +123,6 @@ export function useWorkingLoop({
     // once promoted to front.
     const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>("zh");
     const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>("zh");
-
-    // True until the first working-loop fetch resolves. Used to force the very
-    // first card the user sees after navigating to /flashcards/learn to show
-    // English on side one, regardless of the random side-one toggle. Subsequent
-    // fetches (e.g. category swaps without unmounting) go back to random.
-    const isFirstWorkingLoopFetchRef = useRef<boolean>(true);
 
     // Current entry derived from the working loop.
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -182,11 +167,6 @@ export function useWorkingLoop({
                 const params = new URLSearchParams();
                 if (selectedCategory) params.set("category", selectedCategory);
                 if (mode) params.set("mode", mode);
-                // Decides which two tracks the server filters, ranks and stamps
-                // `readyMarkTypes` on — it must be the same pair markTypeForSideOne
-                // writes, or a face could be shown for a track that is still cooling
-                // and its mark silently dropped at POST /api/flashcards/mark.
-                params.set("foreignTrack", foreignTrack);
                 // Restrict the loop to the collection this session was launched from
                 // (docs/DECKS_FEATURE.md). Composes with `mode`: a deck opened in Challenge
                 // mode draws that deck's Unfamiliar/Target cards.
@@ -220,18 +200,13 @@ export function useWorkingLoop({
                 // resets isFlipped on card change, but currentIndex stays 0 on a
                 // fresh fetch so that reset may not fire — reset explicitly here.
                 cardDragRef.current?.setIsFlipped(false);
-                // First time the user lands on /flashcards/learn, prefer English on
-                // side one so the first card is (when eligible) the EN prompt. Avoids
-                // the iOS autoplay edge case on Chinese-side-one auto-narration and
-                // gives a consistent initial view. Per-type cooldown still wins: if
-                // the first card's production track is cooling, sideOneForCard falls
-                // back to the recognition face. Subsequent fetches (category swaps
-                // without unmount) go back to the steered, weakness-biased flip.
-                setCurrentSideOneLanguage(
-                    sideOneForCard(cards[0], foreignTrack, isFirstWorkingLoopFetchRef.current)
-                );
-                isFirstWorkingLoopFetchRef.current = false;
-                setNextSideOneLanguage(sideOneForCard(cards[1], foreignTrack));
+                // Each card opens on its weaker know track, recognition on a tie
+                // (docs/MASTERY_REWORK.md § 6). This includes the session's FIRST card,
+                // which used to be forced English-first to dodge an iOS autoplay edge
+                // case on Chinese-side-one auto-narration — that override would break
+                // the rule, so it is gone; see the flag in docs/MASTERY_REWORK.md § 6.
+                setCurrentSideOneLanguage(sideOneForCard(cards[0]));
+                setNextSideOneLanguage(sideOneForCard(cards[1]));
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
@@ -247,14 +222,6 @@ export function useWorkingLoop({
     // on `token` would re-fetch the working loop and reset the card stack
     // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
     // "Never reload on token refresh". prefetch/cardDragRef are stable refs.
-    //
-    // `foreignTrack` is deliberately NOT a dep: toggling "Show pinyin" mid-session
-    // would otherwise refetch the loop and throw away the stack the learner is part
-    // way through, for what is a display toggle. The consequence is bounded — cards
-    // already in the loop keep `readyMarkTypes` stamped for the OLD pair, so until the
-    // stack turns over a foreign-first face may be shown whose (new) track is still
-    // cooling and whose mark the server then drops. Every refill from that point on
-    // (markCard sends `foreignTrack`) is steered correctly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [Boolean(token), selectedCategory, mode]);
 
@@ -282,14 +249,13 @@ export function useWorkingLoop({
                 type: markType,
                 excludeIds,
                 mode: mode ?? undefined,
-                surface: "flp",
-                // Steers the REPLACEMENT card onto this session's track pair; the
-                // mark itself is typed by `type` above.
-                foreignTrack,
+                // NOT merely diagnostic: once a card's core pbh reaches 6 the server
+                // records know marks ONLY from this surface (docs/MASTERY_REWORK.md § 6).
+                surface: FLP_MARK_SURFACE,
                 ...collectionMarkFields(launchCollection),
             });
 
-            // A SUPPRESSED mark (the card's track had not finished cooling —
+            // A SUPPRESSED mark (the card's know clock had not finished cooling —
             // docs/HYDRA_BUBBLES.md § 8) wrote nothing, so there is no timestamp and
             // nothing to undo. Reported as its own result rather than an error: the
             // review DID happen, it just did not change any history, and surfacing it
@@ -322,7 +288,7 @@ export function useWorkingLoop({
         // never go stale — and listing it would rebuild this callback on every
         // render that re-parses the query string.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, foreignTrack]);
+    }, [mode]);
 
     const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
         if (workingLoop.length === 0 || isAnimating) return;
@@ -330,7 +296,7 @@ export function useWorkingLoop({
         const currentCard = workingLoop[currentIndex];
         const isCorrect = direction === "right";
         // The prompt language showing on Side 1 decides the mark type.
-        const markType = markTypeForSideOne(currentSideOneLanguage, foreignTrack);
+        const markType = markTypeForSideOne(currentSideOneLanguage);
         const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMark"> = {
             workingLoop: [...workingLoop],
             currentIndex,
@@ -347,13 +313,13 @@ export function useWorkingLoop({
         setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
         // Promote the peeking card's language to current and choose the new
-        // back-slot card's Side 1 from ITS readyMarkTypes (steered per-type
-        // cooldown). The new back card is two ahead of the outgoing front (the
+        // back-slot card's Side 1 from ITS own history (weaker know track). The new
+        // back card is two ahead of the outgoing front (the
         // card just promoted to front sits one ahead). useCardDrag resets
         // isFlipped=false on card change (keyed off currentIndex).
         setCurrentSideOneLanguage(nextSideOneLanguage);
         const newBackCard = workingLoop[(currentIndex + 2) % workingLoop.length];
-        setNextSideOneLanguage(sideOneForCard(newBackCard, foreignTrack));
+        setNextSideOneLanguage(sideOneForCard(newBackCard));
 
         // Fire mark API in background — newCard replaces the current slot, not the
         // next one, so the UI doesn't need to wait for the response before
@@ -392,7 +358,7 @@ export function useWorkingLoop({
                     // Card passed, but the server has no replacement — wind the loop
                     // down by removing the just-passed card instead of recycling it.
                     //
-                    // This is no longer mode-only. The server honors the per-type
+                    // This is no longer mode-only. The server honors the know
                     // cooldown rather than re-serving a resting card, so ANY session can
                     // legitimately run out: a mode/deck/Mastered round when its allowed
                     // pool is spent, and even an unrestricted round when every card is
@@ -441,7 +407,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode, foreignTrack]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode]);
 
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;

@@ -1,29 +1,38 @@
 /**
- * cooldown.ts — the per-mark-type review cooldown, shared by server and client.
+ * cooldown.ts — the review cooldown, shared by server and client.
  *
  * This used to live entirely in `server/services/cardQueueRanking.ts`, which is a
- * server module the client may not import (docs/FRONTEND_LAYERING.md). The cdp now
+ * server module the client may not import (docs/FRONTEND_LAYERING.md). The cdp
  * DISPLAYS the remaining cooldown under each mastery bar, so the table and the
- * "is this track resting?" predicate had to become a contract — exactly the move
+ * "is this card resting?" predicate had to become a contract — exactly the move
  * `contracts/mastery.ts` made for the pbh formula. `cardQueueRanking` re-exports
- * these, so every existing server import keeps working and there is still one
- * definition.
+ * these, so every server import has one definition to reach.
  *
- * Contract rules (same as wire.ts): no relative VALUE imports, no enums, no Node or
- * DOM globals; callers pass `now` rather than the module reading a clock.
+ * ── ONE CLOCK PER BAR (the "know" merge, 2026-09-25) ─────────────────────────
+ * The cooldown clock used to run per MARK TYPE, so recognition and production rested
+ * independently. They now share ONE clock — the **know** clock, i.e. the core bar's —
+ * started by the newest correct mark on EITHER track. Reading and writing are
+ * single-track bars, so their clocks are unchanged. The window DURATION is the bar's
+ * own utcm band (`barCategory`): core band for know, the track's band for
+ * reading/writing. See docs/MASTERY_REWORK.md § 6.
  *
- * See docs/MASTERY_REWORK.md § Per-type cooldown.
+ * Every caller asks the question per BAR (or per mark type, which resolves to its bar
+ * through `barForMarkType`); there is deliberately no per-track entry point left, so no
+ * surface can accidentally time recognition on its own clock again.
+ *
+ * Contract rules (same as wire.ts): no enums, no Node or DOM globals, and no relative
+ * VALUE imports besides sibling contract modules (as `flpReadiness.ts` already does);
+ * callers pass `now` rather than the module reading a clock.
+ *
+ * Referenced by docs/MASTERY_REWORK.md § 6 and § 7.
  */
-import type { MarkType, TypedMarkHistory } from './wire.js';
+import type { MarkType, MasteryBarId, TypedMarkHistory } from './wire.js';
+import { BAR_MARK_TYPES, barCategory, barForMarkType } from './mastery.js';
 
 /**
  * Per-category cooldown after a correct mark: a card marked correct recently should
  * not come back until its window elapses. Shorter windows for weaker categories, so a
  * struggling card gets more repetition.
- *
- * The timer is always applied PER MARK TYPE (see `isTypeOnCooldown`) — tracks cool
- * down on independent clocks. Only the window's DURATION comes from a category, and
- * WHICH category is the caller's choice (see cardQueueRanking's module docblock).
  */
 export const COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
   Unfamiliar: 5 * 60 * 1000,             // 5 minutes
@@ -33,8 +42,9 @@ export const COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
 };
 
 /**
- * Newest correct-mark timestamp within ONE type's track, or null when that track holds
- * no valid correct mark. Per-type so each track cools down on its own clock.
+ * Newest correct-mark timestamp within ONE track, or null when that track holds no
+ * valid correct mark. A building block for `lastCorrectOnBar` — a track on its own no
+ * longer has a clock.
  */
 export function lastCorrectMarkTimestamp(
   typedMarkHistory: TypedMarkHistory | undefined,
@@ -54,57 +64,66 @@ export function lastCorrectMarkTimestamp(
 }
 
 /**
- * Milliseconds left on ONE mark type's cooldown; 0 when the track is ready.
- *
- * The single source of the arithmetic — `isTypeOnCooldown` is this predicate's
- * boolean face, and the cdp renders the number itself.
- *
- * An unrecognized or absent `windowCategory` means "no cooldown configured" and the
- * track is treated as ready — deliberately permissive, because the alternative (a card
- * whose category could not be computed silently disappearing from every queue) fails
- * invisibly.
+ * Newest correct mark across EVERY track of `bar` — the moment that bar's clock last
+ * started. For core this is the newer of recognition/production, which is the whole
+ * of the know merge: a correct mark on either track rests both.
  */
-export function cooldownRemainingMs(
+export function lastCorrectOnBar(
   typedMarkHistory: TypedMarkHistory | undefined,
-  type: MarkType,
-  now: number,
-  windowCategory: string | null | undefined
-): number {
-  const cooldownMs = COOLDOWN_MS_BY_CATEGORY[windowCategory ?? ''];
-  if (cooldownMs === undefined) return 0;
-
-  const lastCorrect = lastCorrectMarkTimestamp(typedMarkHistory, type);
-  if (lastCorrect === null) return 0;
-
-  return Math.max(0, lastCorrect + cooldownMs - now);
-}
-
-/** Whether ONE mark type of a card is still cooling down. */
-export function isTypeOnCooldown(
-  typedMarkHistory: TypedMarkHistory | undefined,
-  type: MarkType,
-  now: number,
-  windowCategory: string | null | undefined
-): boolean {
-  return cooldownRemainingMs(typedMarkHistory, type, now, windowCategory) > 0;
+  bar: MasteryBarId
+): number | null {
+  let latest: number | null = null;
+  for (const type of BAR_MARK_TYPES[bar]) {
+    const ts = lastCorrectMarkTimestamp(typedMarkHistory, type);
+    if (ts !== null && (latest === null || ts > latest)) latest = ts;
+  }
+  return latest;
 }
 
 /**
- * The subset of `types` whose per-type cooldown has elapsed. Empty ⇒ fully rested.
+ * The instant `bar`'s clock releases the card (epoch ms), or null when the bar holds
+ * no correct mark and so has never been rested. Window = the bar's own band.
  *
- * `windowCategory` is either ONE category applied to every type (Memory Map: a single
- * track, so there is only one category to apply) or a per-type resolver `(type) =>
- * category` (the flp: recognition and production each cool down under their OWN
- * per-type category — see `OnDeckVocabService.flpWindowCategory` — so a card with one
- * track still resting and the other rested is correctly ready on the rested track alone).
+ * Exposed separately from the remaining-ms form because the queue ranking sorts on
+ * WHEN a card became ready, not on how long is left (which is 0 for every ready card).
  */
-export function readyMarkTypes(
+export function barReadyAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  now: number,
-  types: readonly MarkType[],
-  windowCategory: string | null | undefined | ((type: MarkType) => string | null | undefined)
-): MarkType[] {
-  const categoryFor =
-    typeof windowCategory === 'function' ? windowCategory : () => windowCategory;
-  return types.filter((type) => !isTypeOnCooldown(typedMarkHistory, type, now, categoryFor(type)));
+  bar: MasteryBarId
+): number | null {
+  const lastCorrect = lastCorrectOnBar(typedMarkHistory, bar);
+  if (lastCorrect === null) return null;
+  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(typedMarkHistory, bar)] ?? 0;
+  return lastCorrect + window;
+}
+
+/** Milliseconds left on `bar`'s clock; 0 when it is ready (or has never been marked). */
+export function barCooldownRemainingMs(
+  typedMarkHistory: TypedMarkHistory | undefined,
+  bar: MasteryBarId,
+  now: number
+): number {
+  const readyAt = barReadyAt(typedMarkHistory, bar);
+  return readyAt === null ? 0 : Math.max(0, readyAt - now);
+}
+
+/** Whether `bar`'s clock is still running. */
+export function isBarOnCooldown(
+  typedMarkHistory: TypedMarkHistory | undefined,
+  bar: MasteryBarId,
+  now: number
+): boolean {
+  return barCooldownRemainingMs(typedMarkHistory, bar, now) > 0;
+}
+
+/**
+ * Whether a mark of `type` would land on a still-cooling clock — the mark-time gate's
+ * question. A recognition mark and a production mark ask the SAME clock (know).
+ */
+export function isMarkOnCooldown(
+  typedMarkHistory: TypedMarkHistory | undefined,
+  type: MarkType,
+  now: number
+): boolean {
+  return isBarOnCooldown(typedMarkHistory, barForMarkType(type), now);
 }

@@ -85,6 +85,7 @@ import { Box, Slide, useMediaQuery } from '@mui/material';
 import { frameOverlayHost } from '../../components/overlayHost';
 import BeginnerKeyboard from './BeginnerKeyboard';
 import KeyboardSwitchBar, { type KeyboardSource } from './KeyboardSwitchBar';
+import type { CompositionDraft } from './compositionRules';
 import { DEFAULT_HEIGHT, useKeyboardViewport } from './useKeyboardViewport';
 import { insertAtCaret } from './insertAtCaret';
 import type { EditableField } from './eligibility';
@@ -113,6 +114,12 @@ interface BeginnerKeyboardHostProps {
    * Decided by the provider, which is the layer that holds auth.
    */
   debug?: boolean;
+  /**
+   * § 6z-9: the half-built character. Owned by the provider for the same reason
+   * as `source` — this host is remounted per field, and the draft must outlive
+   * that. Passed straight through to the keyboard.
+   */
+  draft: { current: CompositionDraft };
 }
 
 /**
@@ -153,6 +160,7 @@ export default function BeginnerKeyboardHost({
   onClosed,
   onInsetChange,
   debug,
+  draft,
 }: BeginnerKeyboardHostProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewport = useKeyboardViewport();
@@ -346,7 +354,7 @@ export default function BeginnerKeyboardHost({
             parked bar would have been stranded in mid-air over the page for the
             frames before the keyboard arrived underneath it. */}
         {switchBar}
-        <BeginnerKeyboard onCommit={commit} height={keyboardHeight} debug={debug} />
+        <BeginnerKeyboard onCommit={commit} height={keyboardHeight} debug={debug} draft={draft} />
       </Box>
     </Slide>,
     host,

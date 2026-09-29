@@ -13,7 +13,9 @@
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6h (containment), § 6k (ranking),
  * § 6n (the atomic rescue), § 6q (the 2–4 character word fallback),
- * § 6z-4 (the hint bubble's common-character search).
+ * § 6z-4 (the hint bubble's common-character search), § 6z-6 (the same search
+ * driving the glyph row's buffer-fit re-ranking), § 6z-7 (look-alike components
+ * merged at parse), § 6z-8 (the direct-commit gate, `appearsInWord`).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY A LINEAR SCAN AND NOT AN INVERTED INDEX
@@ -31,6 +33,7 @@
  */
 import lookupUrl from '../../assets/handwriting/glyph-lookup.bin?url';
 import wordsUrl from '../../assets/handwriting/glyph-words.bin?url';
+import { COMPONENT_ALIASES, aliasClass } from './componentAliases';
 
 const INDEX_MAGIC = 'HWLK';
 const WORDS_MAGIC = 'HWWD';
@@ -52,7 +55,10 @@ const FLAG_COMMON = 2;
 export interface GlyphLookupIndex {
   /** Component character for component id i. */
   components: string[];
-  /** Component character → id. */
+  /**
+   * Component character → id. § 6z-7: an ALIAS (囗) maps to its canonical form's
+   * id (口's), so a buffer holding either counts as the same component.
+   */
   componentIds: Map<string, number>;
   /** Headword character for record i. */
   chars: string[];
@@ -70,7 +76,7 @@ export interface GlyphLookupIndex {
   bagOffsets: Uint32Array;
   /** Component count for record i. 0 = atomic (§ 6n). */
   bagSizes: Uint8Array;
-  /** All component ids, concatenated. */
+  /** All component ids, concatenated. § 6z-7: alias ids already remapped to canonical. */
   bags: Uint16Array;
 }
 
@@ -177,7 +183,36 @@ export function parseGlyphLookup(buffer: ArrayBuffer): GlyphLookupIndex {
     cursor += 1 + view.getUint8(cursor); // skip the reading, decoded in pass one
   }
 
+  mergeComponentAliases(componentIds, bags);
+
   return { components, componentIds, chars, charIndex, freq, flags, readings, usage, bagOffsets, bagSizes, bags };
+}
+
+/**
+ * § 6z-7 — fold each look-alike component into its canonical form, in place.
+ *
+ * Done ONCE at parse rather than per query: every consumer of the index —
+ * containment, the hint search, the word pool (whose bags are derived from these)
+ * and `expandGlyph` — then sees 国 as `[口, 玉]` with no alias handling of its
+ * own. The alias's own entry in `components` is left in place but no bag
+ * references it any more.
+ *
+ * A pair with either member missing from the asset is skipped: merging onto an
+ * id that does not exist would corrupt every bag holding the alias.
+ */
+function mergeComponentAliases(componentIds: Map<string, number>, bags: Uint16Array): void {
+  const remap = new Map<number, number>();
+  for (const [alias, canonical] of Object.entries(COMPONENT_ALIASES)) {
+    const aliasId = componentIds.get(alias);
+    const canonicalId = componentIds.get(canonical);
+    if (aliasId === undefined || canonicalId === undefined) continue;
+    remap.set(aliasId, canonicalId);
+    componentIds.set(alias, canonicalId);
+  }
+  if (remap.size === 0) return;
+  // `components` needs no change: it is indexed by id, and the canonical id
+  // already names the canonical glyph.
+  for (let k = 0; k < bags.length; k++) bags[k] = remap.get(bags[k]) ?? bags[k];
 }
 
 /**
@@ -354,10 +389,15 @@ export function lookupCharacters(
   // holds nothing, so it can never contain a buffer. A one-component buffer
   // whose component is itself a headword therefore enters at distance 0, which
   // is what makes 人 口 木 大 子 reachable at all.
+  //
+  // § 6z-7: the rescue covers the component's whole look-alike class — the
+  // learner who drew a wide 曰 got a 日 chip, and 曰 must still come back here.
   if (buffer.length === 1) {
-    const self = index.charIndex.get(buffer[0]);
-    if (self !== undefined && !hits.some((hit) => hit.record === self)) {
-      hits.push({ record: self, distance: 0 });
+    for (const member of aliasClass(buffer[0])) {
+      const self = index.charIndex.get(member);
+      if (self !== undefined && !hits.some((hit) => hit.record === self)) {
+        hits.push({ record: self, distance: 0 });
+      }
     }
   }
 
@@ -448,7 +488,10 @@ export function lookupWords(
  */
 export function expandGlyph(glyph: string, index: GlyphLookupIndex): string[] {
   // Already in the alphabet: pass through. This branch is what protects 丁.
-  if (index.componentIds.has(glyph)) return [glyph];
+  // § 6z-7: "through" means to the canonical form — 囗 enters the buffer as 口 —
+  // which reading the name back off the (possibly remapped) id gives for free.
+  const componentId = index.componentIds.get(glyph);
+  if (componentId !== undefined) return [index.components[componentId]];
 
   const record = index.charIndex.get(glyph);
   if (record === undefined) return [glyph];
@@ -459,6 +502,21 @@ export function expandGlyph(glyph: string, index: GlyphLookupIndex): string[] {
   const out: string[] = [];
   for (let i = 0; i < size; i++) out.push(index.components[index.bags[start + i]]);
   return out;
+}
+
+/**
+ * § 6z-8 — does this character appear in at least one MULTI-character det word?
+ *
+ * The gate for the glyph row's direct-commit chip. Every record in the index is
+ * already a single-character det headword, so "is it in the det table" would
+ * filter nothing — 亻 and 氵 are headwords too. Appearing inside a real word is
+ * what separates a character a learner would write on its own (我 in 70 words,
+ * 口 in 518) from a bound form that only ever builds others (亻 氵 冖 冂 囗, all 0).
+ * Reads the generator's `usage` count, so no new data is needed.
+ */
+export function appearsInWord(char: string, index: GlyphLookupIndex): boolean {
+  const record = index.charIndex.get(char);
+  return record !== undefined && index.usage[record] > 0;
 }
 
 export interface HintCharacter {
@@ -506,32 +564,63 @@ function commonRecords(index: GlyphLookupIndex): Uint32Array {
  * non-empty buffer, so the would-be buffer always holds ≥ 2 components and an
  * atomic character (empty bag) can never be what it spells.
  *
- * Returns null when no common character contains the would-be buffer.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY A FINDER FACTORY (§ 6z-6)
+ *
+ * The hint also drives the glyph row's buffer-fit re-ranking, which asks it of
+ * EVERY matcher survivor (~200 per stroke), not just the 12 displayed chips. A
+ * character containing buffer + glyph necessarily contains the buffer alone, so
+ * the common records are narrowed to those ONCE per buffer here, and each glyph
+ * re-checks only the survivors — typically a handful rather than ~760.
+ *
+ * The returned function yields null when no common character contains the
+ * would-be buffer.
  */
+export function makeHintFinder(
+  buffer: readonly string[],
+  index: GlyphLookupIndex,
+): (glyph: string) => HintCharacter | null {
+  const scratch = new Int32Array(index.components.length);
+  const bufferOnly = bufferCounts(buffer, index);
+  // A buffer holding a component the index does not know can spell nothing.
+  if (bufferOnly === null) return () => null;
+
+  const narrowed: number[] = [];
+  for (const record of commonRecords(index)) {
+    const size = index.bagSizes[record];
+    if (size < buffer.length) continue;
+    if (contains(index.bags, index.bagOffsets[record], size, bufferOnly, scratch)) narrowed.push(record);
+  }
+
+  return (glyph: string) => {
+    const prospective = [...buffer, ...expandGlyph(glyph, index)];
+    const counts = bufferCounts(prospective, index);
+    if (counts === null) return null;
+
+    let best: { record: number; distance: number } | null = null;
+    for (const record of narrowed) {
+      const size = index.bagSizes[record];
+      if (size < prospective.length) continue;
+      if (!contains(index.bags, index.bagOffsets[record], size, counts, scratch)) continue;
+      const hit = { record, distance: size - prospective.length };
+      if (best === null || compareCharacters(hit, best, index) < 0) best = hit;
+    }
+    if (best === null) return null;
+    return {
+      text: index.chars[best.record],
+      pronunciation: index.readings[best.record],
+      distance: best.distance,
+    };
+  };
+}
+
+/** One-shot form of `makeHintFinder`, for a single glyph against a buffer. */
 export function findHintCharacter(
   buffer: readonly string[],
   glyph: string,
   index: GlyphLookupIndex,
 ): HintCharacter | null {
-  const prospective = [...buffer, ...expandGlyph(glyph, index)];
-  const counts = bufferCounts(prospective, index);
-  if (counts === null) return null;
-
-  const scratch = new Int32Array(index.components.length);
-  let best: { record: number; distance: number } | null = null;
-  for (const record of commonRecords(index)) {
-    const size = index.bagSizes[record];
-    if (size < prospective.length) continue;
-    if (!contains(index.bags, index.bagOffsets[record], size, counts, scratch)) continue;
-    const hit = { record, distance: size - prospective.length };
-    if (best === null || compareCharacters(hit, best, index) < 0) best = hit;
-  }
-  if (best === null) return null;
-  return {
-    text: index.chars[best.record],
-    pronunciation: index.readings[best.record],
-    distance: best.distance,
-  };
+  return makeHintFinder(buffer, index)(glyph);
 }
 
 /**

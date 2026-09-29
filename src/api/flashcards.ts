@@ -27,6 +27,7 @@
 import { apiPost } from './http';
 import { playMarkArpeggio } from '../services/audio/markArpeggio';
 import type { MarkType, ReviewMark, VocabEntry } from '../types';
+import type { FLP_MARK_SURFACE } from '../../server/contracts/wire';
 
 /**
  * Every surface that may record a mark. Add a case here when a new game starts
@@ -34,7 +35,7 @@ import type { MarkType, ReviewMark, VocabEntry } from '../types';
  * `[MarkSuppressed]` log analysis already groups on.
  */
 export type MarkSurface =
-    | "flp"
+    | typeof FLP_MARK_SURFACE
     | "bubble-match"
     | "hydra-bubbles"
     | "match-speed"
@@ -87,27 +88,21 @@ export interface MarkFlashcardRequest {
     /**
      * Which surface produced this mark.
      *
-     * PURELY DIAGNOSTIC — no server behavior branches on it. It exists so the
-     * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) can tell apart the two
+     * ONE server rule branches on it: once a card's core pbh reaches 6, know
+     * (recognition/production) marks are recorded only from `"flp"`
+     * (`FLP_MARK_SURFACE`, docs/MASTERY_REWORK.md § 6) — so a know-writing surface
+     * that omits it has its marks dropped above the line. Otherwise diagnostic: the
+     * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) uses it to tell apart the
      * reasons a mark gets dropped: a card served by fill tier 4 (cooled cards on an
      * ordinary run — the collision we do NOT want and are measuring), versus a
      * deck/collection round that deliberately ignores cooldown (§ 6.3 — intended).
      * Without it the log is one undifferentiated count and answers nothing.
      *
-     * A UNION, not a free string, precisely because it is diagnostic: a typo in a
+     * A UNION, not a free string: a typo in a
      * free-text field silently opens a new bucket in the log and the analysis quietly
      * under-counts the surface it was meant to measure. Nothing would ever fail.
      */
     surface?: MarkSurface;
-    /**
-     * flp working-loop only: which track this session's FOREIGN-FIRST face exercises
-     * ('reading' for a zh session with "Show pinyin" off, else 'recognition' —
-     * docs/MASTERY_REWORK.md). Steers only the REPLACEMENT card: without it the refill
-     * would be picked and stamped on a track pair the client is no longer marking, and
-     * the very next mark could land on a cooling track and be silently dropped.
-     * `type` above still decides which track THIS mark is written to.
-     */
-    foreignTrack?: string;
 }
 
 export interface MarkFlashcardResponse {
@@ -170,7 +165,6 @@ export async function markFlashcard(
         deckId: request.deckId,
         collection: request.collection,
         surface: request.surface,
-        foreignTrack: request.foreignTrack,
     });
 
     // A SUPPRESSED mark is a legitimate success with no timestamp (see the field's

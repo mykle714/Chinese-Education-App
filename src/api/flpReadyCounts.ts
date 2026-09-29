@@ -17,7 +17,6 @@
  * Referenced by docs/DECKS_FEATURE.md § "The card hand".
  */
 import { apiGet, withFallback } from './http';
-import type { FlpForeignTrack } from '../../server/contracts/wire';
 
 export interface FlpReadyCounts {
     /** Ready-now counts keyed by CORE utcm band (Unfamiliar/Target/Comfortable/Mastered). */
@@ -26,9 +25,9 @@ export interface FlpReadyCounts {
     reviewNextReadyMs: number | null;
 }
 
-export function fetchFlpReadyCounts(foreignTrack: FlpForeignTrack): Promise<FlpReadyCounts> {
+export function fetchFlpReadyCounts(): Promise<FlpReadyCounts> {
     return withFallback(
-        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', { params: { foreignTrack } }),
+        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts'),
         'Failed to load card counts'
     );
 }

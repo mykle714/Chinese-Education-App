@@ -86,11 +86,17 @@ export const IW_MAX_SCENE_NAME_LENGTH = 120;
  */
 /**
  * The scene brief (migration 160) — what the scene is, and what its place tags mean. Generous
- * because it is the ONLY prose an author writes about a scene, and because it is read by a
- * model rather than rendered in a fixed-width row; a cap exists only so a runaway paste
- * cannot dominate every NPC's prompt.
+ * because it is the only prose an author writes FOR THE MODEL about a scene, and because it is
+ * read by a model rather than rendered in a fixed-width row; a cap exists only so a runaway
+ * paste cannot dominate every NPC's prompt.
  */
 export const IW_MAX_SCENE_NOTES_LENGTH = 2000;
+/**
+ * The learner-facing intro card (migration 167). Tight on purpose: it is read by a learner on
+ * a phone before they have done anything, over a scene they are waiting to play — a quick
+ * "what to do here", not a briefing document.
+ */
+export const IW_MAX_INTRO_TEXT_LENGTH = 500;
 export const IW_MAX_COMPLICATION_LENGTH = 400;
 /** An event seed is the same kind of one-liner as a complication, so it gets the same cap. */
 export const IW_MAX_EVENT_LENGTH = 400;
@@ -1114,6 +1120,18 @@ export interface IWScene {
    * dropped by 159 for having no reader, and this one exists to be read.
    */
   sceneNotes: string;
+
+  /**
+   * The learner-facing intro (migration 167): a quick "what to do here" shown as a dismissable
+   * card on scene load, with the world held still behind it (`IWSceneIntroCard`). Empty means
+   * no card.
+   *
+   * ⚠️ THE MIRROR IMAGE OF `sceneNotes`, and it must stay that way. This text is written TO THE
+   * LEARNER, out of world, so it may say "your goal is…" — exactly the meta language § 14 Q27
+   * keeps out of a prompt. It must NEVER be composed into a model prompt; anything NPCs should
+   * know belongs in `sceneNotes`.
+   */
+  introText: string;
 
   /**
    * Board geometry, in template cells, plus the direction each body faces when the scene

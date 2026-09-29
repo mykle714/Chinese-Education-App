@@ -1,6 +1,6 @@
 import React from "react";
 import { Box } from "@mui/material";
-import { WEIGHT } from "../../theme/scale";
+import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
 import { HINT_ACCENT_COLOR, HINT_LETTER_BLANK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
@@ -160,7 +160,8 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                 minWidth: 0,
                 // Holds its line open even when empty, so spending the first hint of a
                 // run doesn't shove the grid down by a row.
-                minHeight: "1.4em",
+                // One reveal line box (SIZE.bodyLg × LEADING.tight), held open while empty.
+                minHeight: `calc(${SIZE.bodyLg} * ${LEADING.tight})`,
             }}
         >
             {word && currency === "pinyin" && (
@@ -175,11 +176,16 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                         // shuffle as it fills) at a readable size, in the accent the
                         // gloss chip is tinted with so the two visibly pair up.
                         fontFamily: FONTS.mono,
-                        fontSize: 13,
-                        fontWeight: WEIGHT.bold,
-                        letterSpacing: "2px",
+                        // SIZE.bodyLg — the play panel's one text size, shared with the
+                        // HUD and the gloss list (2026-09-25). Tracking scaled with it
+                        // (2px at 13px) so the blanks keep the same relative pitch.
+                        fontSize: SIZE.bodyLg,
+                        // Regular, not bold (2026-09-25): bold mono blanks read as heavy
+                        // dashes.
+                        fontWeight: WEIGHT.regular,
+                        letterSpacing: "3px",
                         color: HINT_ACCENT_COLOR,
-                        lineHeight: 1.25,
+                        lineHeight: LEADING.tight,
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -219,12 +225,14 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                                 // rare component glyphs (⺮ ⺼ 㐬 …) render in the same face as
                                 // the grid instead of tofu. See src/index.css.
                                 fontFamily: FONTS.hanziComponents,
-                                // `.rv b` — cjk 16/700 with the design's letter spacing.
-                                fontSize: 16,
-                                fontWeight: WEIGHT.bold,
+                                // `.rv b` — cjk with the design's letter spacing, at the play
+                                // panel's shared SIZE.bodyLg and REGULAR weight rather than the
+                                // design's 700 (2026-09-25), matching the mask.
+                                fontSize: SIZE.bodyLg,
+                                fontWeight: WEIGHT.regular,
                                 letterSpacing: "0.03em",
                                 color: HINT_ACCENT_COLOR,
-                                lineHeight: 1.25,
+                                lineHeight: LEADING.tight,
                             }}
                         >
                             {reveal.text}

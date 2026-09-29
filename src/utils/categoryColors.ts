@@ -63,25 +63,20 @@ export const BAND_MID: Record<string, string> = bandTier("mid");
  * replaced the v1 split where the cdp coloured cells by MARK TYPE and the mini card by
  * band — the two mastery surfaces now speak one palette.
  *
- * Consumers: `components/mastery/MasteryWindow.tsx` (cdp window) and
- * `components/MiniVocabCard.tsx` (the thumbnail strip, via `getBandMark(…, "small")`).
+ * Consumers: `components/mastery/MasteryWindow.tsx` (cdp window + cooldown swatch) and
+ * `components/MiniCard.tsx` → `MasteryStrip` (the thumbnail strip). Both take the SAME
+ * colour: the mini strip's deeper-Target `"small"` variant (`--yelMkD`) was retired on
+ * 2026-09-28, when the whole Mark tier was darkened 5% L and `--yelMk` became deep enough
+ * to hold on the cream card face at 3.5px.
  */
 export const BAND_MARK: Record<string, string> = bandTier("mark");
-
-/**
- * The band's mark for a SMALL shape on a light face — the mini-card strip's 3.5px bars.
- * Identical to BAND_MARK except Target, which takes the deeper `--yelMkD`: the design
- * draws artboard 17's mini bars with it because the full-strength `--yelMk` dissolves
- * into the cream card face at that size.
- */
-const BAND_MARK_SMALL: Record<string, string> = { ...BAND_MARK, Target: COLORS.yelMkD };
 
 /**
  * The band's mark colour, falling back to `--greyA` for an unknown/absent category — a
  * neutral rather than a fifth hue, so "no band yet" never reads as a band of its own.
  */
-export const getBandMark = (category?: string, size: "cell" | "small" = "cell"): string =>
-    (category && (size === "small" ? BAND_MARK_SMALL : BAND_MARK)[category]) || COLORS.greyA;
+export const getBandMark = (category?: string): string =>
+    (category && BAND_MARK[category]) || COLORS.greyA;
 
 /**
  * The two-tone pair each band paints a TILE with: `main` the MID-tier body (artboard 5's

@@ -4,5 +4,6 @@ database/dictionaryentries_es-data.dump filter=lfs diff=lfs merge=lfs -text
 database/dictionaryentries_zh-data.dump filter=lfs diff=lfs merge=lfs -text
 database/icons8-data.dump filter=lfs diff=lfs merge=lfs -text
 database/validations-data.dump filter=lfs diff=lfs merge=lfs -text
+database/sort_packs-data.dump filter=lfs diff=lfs merge=lfs -text
 database/nightmarkettemplatedefinitions-data.dump filter=lfs diff=lfs merge=lfs -text
 database/iw_scenes-data.dump filter=lfs diff=lfs merge=lfs -text

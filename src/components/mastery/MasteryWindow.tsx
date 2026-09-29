@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Tooltip, Typography } from "@mui/material";
 import Icon from "../Icon";
-import { Label, SectionRule, Segmented } from "../primitives";
+import { Label, Segmented } from "../primitives";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
@@ -9,10 +9,8 @@ import { getBandMark, getBandMid } from "../../utils/categoryColors";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import {
     masteryBar,
-    computeTypeCategory,
-    cooldownRemainingMs,
+    barCooldownRemainingMs,
     MASTERY_READY_COLOR,
-    MARK_TYPE_LABELS,
     BAR_LABELS,
     masteryWindowCells,
     PBH_THRESHOLDS,
@@ -20,7 +18,7 @@ import {
     type MasteryBar,
     type MasteryBarId,
 } from "../../utils/masteryCompute";
-import type { MarkType, VocabEntry } from "../../types";
+import type { VocabEntry } from "../../types";
 
 /**
  * `MasteryWindow` — the app's ONE rendering of a mastery value (`.msb` in
@@ -57,17 +55,20 @@ import type { MarkType, VocabEntry } from "../../types";
  * ── Colour of the fill: the BAND, not the mark type ─────────────────────────────
  * Every filled cell takes the track's current utcm band in the fluorescent MARK tier
  * (`getBandMark`) — "mastery bars are colored by mastery progress, not the mark type"
- * (2026-09-23; artboard 18: Know green, Target yellow, Write red). The v1 window painted
- * the core track's cells blue-then-green by mark type; the per-type split now lives
- * only in the cooldown rows' labels. The core pbh is fractional (the blend caps the
+ * (2026-09-23; artboard 18: Know green, Target yellow, Write red). The app's Mark tier
+ * is 5% L darker than the artboard's (2026-09-28, `theme/colors.ts`). The v1 window painted
+ * the core track's cells blue-then-green by mark type; since the know merge the
+ * per-type split is not drawn anywhere on the window (the cooldown row is per bar). The core pbh is fractional (the blend caps the
  * stronger track at 6 and adds a third of the weaker), so the last filled cell can be
  * a partial — rendered as a partial cell rather than rounded, because rounding would
  * make two genuinely different cards read the same.
  *
- * Under the window sit the per-track **cooldowns** (`.cd3`): when each mark type of
- * the shown track can next be earned, as a live countdown, with a green check the
- * moment it is ready. The window says how far along the card is; the cooldown says
- * whether you can do anything about it right now.
+ * Beside the band pill sits the shown bar's **cooldown**: when it can next be earned,
+ * as a live countdown, with a green check the moment it is ready. (It was a legend row
+ * under the cells until 2026-09-28.) ONE clock per bar, because a clock belongs to a bar — the Know bar's recognition and production
+ * share a single clock since 2026-09-25 (docs/MASTERY_REWORK.md § 6), so there is no
+ * longer a per-track countdown to show. The window says how far along the card is; the
+ * cooldown says whether you can do anything about it right now.
  *
  * Referenced by docs/MASTERY_REWORK.md and docs/SHELF_REDESIGN.md (§ A7, D6, D7).
  * Replaced `src/features/flashcards/MasteryProgressBar.tsx`, deleted with this pass.
@@ -77,19 +78,8 @@ import type { MarkType, VocabEntry } from "../../types";
 const CELL_HEIGHT = 20;
 /** An empty cell's fill — the design's `--hover` (6% ink). */
 const MASTERY_EMPTY_CELL = COLORS.rowHoverBg;
-/** How often the countdown rows re-render. The clock shows seconds, so: every second. */
+/** How often the countdown re-renders. The clock shows seconds, so: every second. */
 const COOLDOWN_TICK_MS = 1_000;
-
-/**
- * Display order of the cooldown rows, which is NOT the window's paint order.
- *
- * The core window paints recognition before production (so the fill's colour order is
- * stable), but its cooldown rows read production first — that is the track a learner
- * is most often waiting on. Kept as an explicit list rather than a `.reverse()` of the
- * segments: the two orders answer different questions, and a reverse would silently
- * re-order any bar that later grows a third track.
- */
-const COOLDOWN_ROW_ORDER: readonly MarkType[] = ["production", "recognition", "reading", "writing"];
 
 /** The three tracks, in the order the segmented control offers them. */
 const TRACK_OPTIONS = (["core", "reading", "writing"] as const).map((id) => ({
@@ -105,32 +95,6 @@ const TRACK_OPTIONS = (["core", "reading", "writing"] as const).map((id) => ({
  */
 function formatPbh(pbh: number): string {
     return Number.isInteger(pbh) ? String(pbh) : pbh.toFixed(1);
-}
-
-/** Remaining cooldown per mark type of one track, in COOLDOWN_ROW_ORDER. */
-function cooldownRows(
-    bar: MasteryBar,
-    entry: VocabEntry,
-    now: number
-): Array<{ type: MarkType; remainingMs: number }> {
-    const ordered = [...bar.segments].sort(
-        (a, b) => COOLDOWN_ROW_ORDER.indexOf(a.type) - COOLDOWN_ROW_ORDER.indexOf(b.type)
-    );
-    // WINDOW CATEGORY: the card's PER-TYPE category (`computeTypeCategory`), which is
-    // what every game uses. The flp instead widens the window to the card's CORE
-    // category because one flp card shows two mark types at once — so for a card whose
-    // recognition and core bands differ, the flp holds a track back slightly longer
-    // than the number shown here. Flagged rather than papered over: the display can
-    // only name one window, and the per-type one is the track's own.
-    return ordered.map((seg) => ({
-        type: seg.type,
-        remainingMs: cooldownRemainingMs(
-            entry.typedMarkHistory,
-            seg.type,
-            now,
-            computeTypeCategory(entry.typedMarkHistory, seg.type)
-        ),
-    }));
 }
 
 /** The eight-cell window itself, with the Target and Comfortable cut points ticked. */
@@ -149,12 +113,10 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
                     flex: 1,
                     height: CELL_HEIGHT,
                     borderRadius: "3px",
-                    // The empty cell is a hairline-inset tint, not a border: a real
-                    // border would make the filled and empty cells different sizes.
-                    // `--hover` fill + `--outline` ring (`.msb .cells i`); a filled cell
-                    // drops the ring, as the design's `box-shadow:none` on a lit cell.
+                    // The empty cell is a flat `--hover` tint with NO outline ring —
+                    // an unlit window reads as recessed slots, not outlined boxes
+                    // (2026-09-25: the ring on an empty bar was ruled wrong).
                     backgroundColor: MASTERY_EMPTY_CELL,
-                    boxShadow: cell.fill > 0 ? "none" : `inset 0 0 0 1px ${COLORS.markOutline}`,
                     overflow: "hidden",
                 }}
             >
@@ -200,8 +162,8 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
                         width: "62px",
                         textAlign: "center",
                         whiteSpace: "nowrap",
-                        // Info type, not data: these are the four track NAMES
-                        // ("recognition", "production", …). Lowercase rather than the
+                        // Info type, not data: these are the band cut-point NAMES
+                        // ("target", "comfortable"). Lowercase rather than the
                         // usual overline caps only because the tick sits under a 62px
                         // slot — the voice is the same one.
                         fontFamily: FONTS.label,
@@ -217,75 +179,66 @@ const WindowCells: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
     </Box>
 );
 
-/** `.cd3` — one live countdown per mark type of the shown track. */
-const CooldownLegend: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number }> = ({
+/**
+ * The shown bar's live countdown, set inline after the band pill in the heading. The
+ * clock and its window (the bar's own band) come from `barCooldownRemainingMs`, the
+ * same function the mark-time gate and the flp's queue use, so the number shown here
+ * is exactly when a mark will count.
+ *
+ * Until 2026-09-28 this was `CooldownLegend` (`.cd3`), a legend-like row UNDER the
+ * cells: band swatch + bar name + countdown. The swatch and name only repeated what
+ * the heading already says, so the row was dropped and the countdown moved up beside
+ * the badge it belongs to.
+ */
+const CooldownTimer: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number }> = ({
     bar,
     entry,
     now,
-}) => (
-    <Box
-        className="mastery-window__cooldowns"
-        sx={{ display: "flex", flexWrap: "wrap", gap: "3px 14px", paddingTop: "2px" }}
-    >
-        {cooldownRows(bar, entry, now).map(({ type, remainingMs }) => (
-            <Tooltip
-                key={type}
-                title={
-                    remainingMs > 0
-                        ? `${MARK_TYPE_LABELS[type]} rests for another ${formatCooldownRemaining(remainingMs)}`
-                        : `${MARK_TYPE_LABELS[type]} can be reviewed now`
-                }
-                placement="bottom"
+}) => {
+    const remainingMs = barCooldownRemainingMs(entry.typedMarkHistory, bar.id, now);
+    const label = BAR_LABELS[bar.id];
+    return (
+        <Tooltip
+            title={
+                remainingMs > 0
+                    ? `${label} rests for another ${formatCooldownRemaining(remainingMs)}`
+                    : `${label} can be reviewed now`
+            }
+            placement="bottom"
+        >
+            <Box
+                className={`mastery-window__cooldown mastery-window__cooldown--${remainingMs > 0 ? "resting" : "ready"}`}
+                sx={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    alignSelf: "center",
+                    gap: "4px",
+                    color: COLORS.iconColor,
+                    // A resting bar dims as a whole, so "ready" is legible from the
+                    // timer's weight alone.
+                    opacity: remainingMs > 0 ? 0.6 : 1,
+                }}
             >
-                <Box
-                    className={`mastery-window__cooldown-row mastery-window__cooldown-row--${type}`}
+                <Typography
+                    component="span"
+                    className="mastery-window__cooldown-time"
                     sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px",
-                        fontSize: 10.5,
-                        color: COLORS.iconColor,
-                        // A resting track dims as a whole rather than only its swatch,
-                        // so "ready" is legible from the row's weight alone.
-                        opacity: remainingMs > 0 ? 0.6 : 1,
+                        // Mono + tabular figures: the timer re-renders every second,
+                        // and a proportional face makes it jitter as digits change width.
+                        fontFamily: FONTS.mono,
+                        fontVariantNumeric: "tabular-nums",
+                        fontSize: 10,
                     }}
                 >
-                    <Box
-                        className="mastery-window__cooldown-swatch"
-                        sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "2px",
-                            flexShrink: 0,
-                            // The track's band mark, tying each cooldown row to the
-                            // cells above it; the row's LABEL names the mark type.
-                            backgroundColor: getBandMark(bar.category),
-                        }}
-                    />
-                    <Typography component="em" sx={{ fontStyle: "normal", fontWeight: WEIGHT.semibold, fontSize: "inherit" }}>
-                        {MARK_TYPE_LABELS[type]}
-                    </Typography>
-                    <Typography
-                        component="span"
-                        sx={{
-                            // Mono + tabular figures: the row re-renders every second,
-                            // and a proportional face makes it jitter as digits change
-                            // width.
-                            fontFamily: FONTS.mono,
-                            fontVariantNumeric: "tabular-nums",
-                            fontSize: 10,
-                        }}
-                    >
-                        {formatCooldownRemaining(remainingMs)}
-                    </Typography>
-                    {remainingMs <= 0 && (
-                        <Icon name="check_circle" size={12} color={MASTERY_READY_COLOR} fill={1} />
-                    )}
-                </Box>
-            </Tooltip>
-        ))}
-    </Box>
-);
+                    {formatCooldownRemaining(remainingMs)}
+                </Typography>
+                {remainingMs <= 0 && (
+                    <Icon name="check_circle" size={12} color={MASTERY_READY_COLOR} fill={1} />
+                )}
+            </Box>
+        </Tooltip>
+    );
+};
 
 export interface MasteryWindowProps {
     entry: VocabEntry;
@@ -296,9 +249,9 @@ export interface MasteryWindowProps {
      */
     lens?: MasteryBarId;
     /**
-     * Render the `Mastery` section rule and the track switcher above the window. The
-     * default. Pass false where the host already has a header of its own and only the
-     * window is wanted (a list row, a compact panel).
+     * Render the Know / Read / Write track switch above the window. The default. Pass
+     * false where the host already has a header of its own and only the window is
+     * wanted (a list row, a compact panel).
      */
     showHeader?: boolean;
     className?: string;
@@ -329,19 +282,23 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
     return (
         <Box className={className ? `mastery-window ${className}` : "mastery-window"}>
             {showHeader && (
-                <SectionRule
-                    className="mastery-window__rule"
-                    label="Mastery"
-                    right={
-                        <Segmented
-                            className="mastery-window__track-switch"
-                            options={TRACK_OPTIONS}
-                            value={track}
-                            onChange={setTrack}
-                            ariaLabel="Mastery track"
-                        />
-                    }
-                />
+                // Just the track switch, right-aligned on the section's gutter. The
+                // `Mastery` overline + hairline (`SectionRule`) that used to lead into it
+                // was dropped 2026-09-28 — the Know / Read / Write switch names the
+                // section on its own. Padding matches the old rule's so the window below
+                // does not shift.
+                <Box
+                    className="mastery-window__switch-row"
+                    sx={{ display: "flex", justifyContent: "flex-end", padding: "19px 22px 0" }}
+                >
+                    <Segmented
+                        className="mastery-window__track-switch"
+                        options={TRACK_OPTIONS}
+                        value={track}
+                        onChange={setTrack}
+                        ariaLabel="Mastery track"
+                    />
+                </Box>
             )}
 
             <Box className={`mastery-window__track mastery-window__track--${bar.id}`} sx={{ display: "flex", flexDirection: "column", gap: "7px" }}>
@@ -375,13 +332,13 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
                     >
                         {bar.category}
                     </Typography>
+                    <CooldownTimer bar={bar} entry={entry} now={now} />
                     <Label className="mastery-window__count" sx={{ marginLeft: "auto", letterSpacing: "0.04em", textTransform: "none" }}>
                         {formatPbh(bar.pbh)} / {PBH_FULL}
                     </Label>
                 </Box>
 
                 <WindowCells bar={bar} />
-                <CooldownLegend bar={bar} entry={entry} now={now} />
             </Box>
         </Box>
     );

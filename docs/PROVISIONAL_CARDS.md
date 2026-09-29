@@ -840,7 +840,7 @@ artifact should do the same.
 
 * [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the games hub and per-game docs
 * [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — the sort flow this hands off to
-* [MASTERY_REWORK.md](./MASTERY_REWORK.md) — typed marks, per-type cooldowns, utcm banding
+* [MASTERY_REWORK.md](./MASTERY_REWORK.md) — typed marks, the per-bar (know) cooldown, utcm banding
 * [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — `frequencyScore`, the commonality ordering key
 * [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) — the first surface to lend **by tier** (§ 3c) and
   the reason partial refills became per-game (§ 4)

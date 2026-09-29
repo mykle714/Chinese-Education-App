@@ -17,6 +17,7 @@ import {
 import {
     TAB_LABELS,
     FC_FONT,
+    FC_FONT_CJK,
     TAB_SWIPE_AXIS_LOCK_PX,
     TAB_SWIPE_COMMIT_RATIO,
     TAB_SWIPE_EDGE_RUBBER_MAX_PX,
@@ -603,7 +604,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                             // (No Contrast pick is applied here — as before, this header
                             // follows the card theme only, not the per-card override.)
                             color: ddTextColor(currentEntry.language, undefined, fc),
-                            fontFamily: FC_FONT,
+                            // FC_FONT_CJK (FONTS.cjk → `var(--cjk-font)`), not FC_FONT: the dd
+                            // follows the account's Chinese typeface (users."chineseFont",
+                            // written by useChineseFont) exactly like the flp card face's dd
+                            // in card/CardFace.tsx, so the two glosses read as the same text.
+                            fontFamily: FC_FONT_CJK,
                             lineHeight: 1.35,
                         }}
                     >

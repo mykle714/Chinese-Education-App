@@ -227,11 +227,13 @@ function ArenaPage() {
     // absolute positioning — but `overflow: hidden` means a short phone (or a large text
     // size, or a banner that grew) silently CLIPS the action instead of letting the
     // learner reach it, and Join is the only thing on the page worth tapping. The dock
-    // still works while it fits: every box in the chain is `flex: 1 0 auto` (grow, never
-    // shrink) inside a scroller whose own height is definite, so the grid's dock grows on
-    // a tall screen and the whole column simply scrolls once it does not fit. Do NOT
-    // reintroduce `minHeight: 0` anywhere in that chain — it makes the column shrink
-    // instead of scroll, which overlapped the grid onto Join and clipped the board.
+    // works by flex growth instead: every box in the chain is `flex: 1 0 auto` (grow,
+    // never shrink) inside a scroller whose own height is definite. The seat field is the
+    // one flexible piece — a size container that takes the spare height and sizes its
+    // grid to fit it (ArenaSeatField), so on a short screen the GRID shrinks and Join stays
+    // docked at the bottom. Only once the grid hits its minimum cell size does the column
+    // scroll. Do NOT reintroduce `minHeight: 0` anywhere in the chain — it makes the column
+    // shrink instead of scroll, which overlapped the grid onto Join and clipped the board.
     const seatless = !!board && board.state !== "live" && board.state !== "results";
 
     const body = () => {
@@ -267,32 +269,13 @@ function ArenaPage() {
 
                 {seatless && (
                     <>
-                        {/* Flexes to fill whatever is between the clock and the action,
-                            so the grid is centred on any device height. */}
-                        <Box
-                            className="arena-page__seats-dock"
-                            // Grows into spare height but NEVER shrinks below the grid:
-                            // a `minHeight: 0` here let a short viewport squash this box
-                            // to nothing while the grid overflowed it and painted over the
-                            // Join button / entered card below.
-                            //
-                            // COLUMN direction, centred on the main axis. A row-direction
-                            // dock made the grid a row flex item with no intrinsic width
-                            // (25 empty `1fr` cells), so it collapsed to its 4 gaps (~32px)
-                            // and rendered as thin vertical slivers. In a column the grid
-                            // stretches across the page and its margins apply as designed.
-                            sx={{
-                                flex: "1 0 auto",
-                                display: "flex",
-                                flexDirection: "column",
-                                justifyContent: "center",
-                            }}
-                        >
-                            <ArenaSeatField
-                                className="arena-page__seats"
-                                showViewerSeat={board.optedInNextWeek}
-                            />
-                        </Box>
+                        {/* Takes whatever height is between the clock and the action,
+                            and sizes its grid to fit it, so the action stays docked at
+                            the bottom on any device height. See ArenaSeatField. */}
+                        <ArenaSeatField
+                            className="arena-page__seats"
+                            showViewerSeat={board.optedInNextWeek}
+                        />
                         {board.optedInNextWeek ? (
                             <EnteredCard busy={busy} onWithdraw={handleWithdraw} />
                         ) : (

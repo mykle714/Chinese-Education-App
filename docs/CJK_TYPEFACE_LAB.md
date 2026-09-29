@@ -85,7 +85,21 @@ the family — which is what makes it safe for signed-out screens and for any re
 before the preference has loaded.
 
 Setting `--cjk-font` on any element re-faces every Chinese glyph beneath it, because
-all 11 `FONTS.cjk` call sites read the same token. No component takes a font prop.
+every `FONTS.cjk` call site (`FC_FONT_CJK` in `src/features/flashcards/constants.ts` is an
+alias) reads the same token. No component takes a font prop.
+
+**The dd follows the setting too, not just Chinese glyphs.** Every surface that prints a
+dd uses `FONTS.cjk`, so an English gloss is set in the chosen face's Latin glyphs and reads
+as the same text wherever it appears:
+
+- flp card face — `src/features/flashcards/card/CardFace.tsx` (`FC_FONT_CJK`)
+- eip header dd — `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`
+  (`mobile-demo-eic-header-english`, `FC_FONT_CJK`)
+- sense menu labels (each is a candidate dd) — `src/features/flashcards/card/SensePicker.tsx`
+  → `renderSenseItem` (`FONTS.cjk`)
+
+The rest of the sense menu (pinyin reading headings, counter chip, grammar tag) stays on
+its UI faces.
 
 **One writer, and one fallback:**
 

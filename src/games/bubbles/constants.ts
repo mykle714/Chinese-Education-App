@@ -49,9 +49,9 @@ export const DEFINITION_RADIUS_JITTER = 5; // ~4 × 1.2
 // (The drift model was removed in the grow-in-place rework and reinstated here
 // at 20% of its original magnitude — an 80% reduction, see DRIFT_SCALE.) On top
 // of drift there is still (a) a freshly spawned bubble growing in place, (b) the
-// positional shove a growing bubble gives the neighbors it overlaps, and (c) the
-// player's own drag. There is no throw-on-release: a dropped bubble simply
-// resumes drifting with the velocity it had when it was picked up.
+// positional shove a growing bubble gives the neighbors it overlaps, (c) the
+// player's own drag, and (d) THE THROW — air-hockey momentum on release (see
+// "Throw / glide" below). Both bubble games drift and both can throw.
 export const MAX_DT = 1 / 30; // clamp frame delta (sec) to avoid tunneling on lag
 
 // Single knob scaling every drift *magnitude* (speeds and accelerations) against
@@ -61,12 +61,46 @@ export const MAX_DT = 1 / 30; // clamp frame delta (sec) to avoid tunneling on l
 export const DRIFT_SCALE = 0.3;
 export const IDLE_SPEED = 26 * DRIFT_SCALE; // px/sec target drift speed for floating bubbles
 export const WANDER_ACCEL = 8 * DRIFT_SCALE; // px/sec^2 random wander to keep motion lively
-export const MAX_SPEED = 140 * DRIFT_SCALE; // px/sec clamp so a bubble can never run away
+// The top of the DRIFT regime (px/sec). At or below it a bubble is drifting: wander
+// + ease toward IDLE_SPEED. Above it the bubble is GLIDING — it was thrown, or was
+// struck by something thrown — and only THROW_FRICTION acts on it until it slows back
+// under this line. (Was `MAX_SPEED`, a hard clamp, before throwing existed; the hard
+// clamp is now THROW_MAX_SPEED.)
+export const DRIFT_MAX_SPEED = 140 * DRIFT_SCALE;
 export const RESTITUTION = 0.92; // bounciness on wall/bubble collisions (0..1) — a ratio, unscaled
 // Per-frame factor easing a bubble's speed back toward IDLE_SPEED, so collisions
 // can briefly spike velocity without the field ever speeding up permanently and
 // bubbles never fully stop.
 export const IDLE_SPEED_LERP = 0.02;
+
+// ---- Throw / glide (air hockey) ---------------------------------------------
+// Releasing a dragged bubble that is NOT judged (dropped on empty space, on a
+// same-kind bubble, or cancelled in the strip) hands it the pointer's release
+// velocity. It then glides like an air-hockey puck: low friction, elastic bounces
+// off walls and neighbors (which it knocks into motion in turn), and settles back
+// into the ordinary drift once it slows under DRIFT_MAX_SPEED.
+//
+// A release over an opposite-kind bubble is STILL judged as a match, however fast
+// the flick — the throw never overrides the drop rule (chosen 2026-09-25).
+// Mid-flight contact with a partner is a bounce, never a match.
+//
+// Distance a throw travels before friction stops it ≈ v0 / THROW_FRICTION, so a
+// hard 1500 px/s flick coasts ~830 px (about a phone field and a bounce) and takes
+// ~2 s to fall back to drift speed — the "long glide" feel.
+export const THROW_FRICTION = 1.8; // 1/sec exponential decay rate of a gliding bubble's speed
+export const THROW_MAX_SPEED = 1800; // px/sec hard cap on any bubble's speed (release or bounce)
+// Release velocity is measured over the pointer samples in this trailing window, so
+// one jittery final event cannot fling a bubble — and a slow drag reads as slow.
+export const THROW_SAMPLE_WINDOW_MS = 80;
+// A pointer that sat still this long before lifting was a deliberate PLACE, not a
+// throw: the release velocity is zero and the bubble just resumes drifting.
+export const THROW_STALE_MS = 60;
+// Anti-tunneling. Each frame is split into enough substeps that the fastest body
+// moves at most this fraction of the smallest bubble's radius per substep, so a
+// thrown bubble cannot skip clean through a neighbor. Capped for frame cost
+// (O(n²) pair checks × substeps).
+export const SUBSTEP_TRAVEL_FRACTION = 0.5;
+export const MAX_SUBSTEPS = 8;
 
 // ---- Spawn / grow-in ------------------------------------------------------
 // A new bubble appears at a chosen spot at SPAWN_SEED_RADIUS and inflates toward

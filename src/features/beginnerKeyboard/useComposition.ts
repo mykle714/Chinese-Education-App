@@ -7,7 +7,9 @@
  * modules; no DOM, no fetch.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6r (layout and modes), § 6h/§ 6k (lookup and
- * ranking), § 6q (the word fallback), § 6z-4 (hint bubbles on glyph chips).
+ * ranking), § 6q (the word fallback), § 6z-4 (hint bubbles on glyph chips),
+ * § 6z-6 (buffer-fit re-ranking of the glyph row), § 6z-8 (the direct-commit
+ * chip).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * THE CANDIDATE ROW IS MODAL — ONE ROW, TWO MEANINGS
@@ -20,21 +22,28 @@
  *
  * There is no third state and no overlap. Whatever is in the row, its `mode`
  * says what a tap means, and the UI paints from that rather than inferring.
+ *
+ * The one addition (§ 6z-8) is kept OUT of that list on purpose:
+ * `directCandidate` is a separate, single commit chip that a glyph-mode row may
+ * lead with, painted in the result row's green. The `candidates` list itself is
+ * still one mode, one meaning.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Ink } from '../../components/handwriting/types';
 import { matchGlyphs } from '../../components/handwriting/glyphMatcher';
-import { expandGlyph, findHintCharacter, lookupBuffer } from '../../components/handwriting/glyphLookup';
+import { appearsInWord, expandGlyph, lookupBuffer, makeHintFinder } from '../../components/handwriting/glyphLookup';
 import type { GlyphTemplates } from '../../components/handwriting/glyphTemplates';
 import type { GlyphLookupIndex, GlyphWordPool } from '../../components/handwriting/glyphLookup';
 import {
   activeMode,
   bufferAfterRemove,
   bufferAfterSelect,
+  directCommitCandidate,
+  rankGlyphs,
   toGlyphCandidates,
   toResultCandidates,
-  withHints,
   type Candidate,
+  type CompositionDraft,
   type CandidateMode,
 } from './compositionRules';
 
@@ -63,6 +72,12 @@ export interface Composition {
   mode: CandidateMode;
   /** The chips to paint, already truncated. */
   candidates: Candidate[];
+  /**
+   * § 6z-8: the green chip leading the glyph row — the top guess, committed
+   * straight to the field. Null outside GLYPH mode, with a non-empty buffer, or
+   * when the top guess never appears in a multi-character word.
+   */
+  directCandidate: Candidate | null;
   /** True when there is ink on the canvas. */
   hasInk: boolean;
   /**
@@ -86,38 +101,67 @@ export interface CompositionDeps {
   templates: GlyphTemplates | null;
   index: GlyphLookupIndex | null;
   words: GlyphWordPool | null;
+  /**
+   * § 6z-9: the session's half-built character, owned by the provider. Seeds the
+   * state on mount and is kept in step with it, so a remount for a new field
+   * (the host is keyed per field) picks up where the previous one left off.
+   * Omitted, the composition simply starts empty.
+   */
+  draft?: { current: CompositionDraft };
 }
 
-export function useComposition({ templates, index, words }: CompositionDeps): Composition {
-  const [buffer, setBuffer] = useState<string[]>([]);
-  const [ink, setInk] = useState<Ink>([]);
+export function useComposition({ templates, index, words, draft }: CompositionDeps): Composition {
+  const [buffer, setBuffer] = useState<string[]>(() => draft?.current.buffer ?? []);
+  const [ink, setInk] = useState<Ink>(() => draft?.current.ink ?? []);
+
+  // § 6z-9: mirror every change back into the session draft. A commit's reset
+  // writes the empty draft through here too, so nothing else has to clear it.
+  useEffect(() => {
+    if (draft) draft.current = { buffer, ink };
+  }, [draft, buffer, ink]);
 
   const hasInk = ink.length > 0;
 
   /**
-   * Ink → glyph candidates.
+   * Ink → every matcher survivor, UNTRUNCATED.
    *
    * A glyph that is a COMPONENT appends, even when it is also a standalone
    * character — 木 is both, and § 6n's rescue means appending it still gets the
    * learner to 木 in one more tap. Sending it straight to the text field instead
    * would make the commoner intent (木 as part of 想) unreachable.
+   *
+   * Not cut to the display limit here: § 6z-6 re-ranks by buffer fit, and a
+   * glyph that fits can climb from well past the 12th slot.
    */
-  const glyphCandidates = useMemo<Candidate[]>(() => {
-    if (!templates || !hasInk) return [];
-    return toGlyphCandidates(matchGlyphs(ink, templates, { limit: CANDIDATE_DISPLAY_LIMIT }));
-  }, [ink, templates, hasInk]);
+  const glyphMatches = useMemo(
+    () => (templates && hasInk ? matchGlyphs(ink, templates) : []),
+    [ink, templates, hasInk],
+  );
 
   /**
-   * § 6z-4: the glyph chips, each carrying a hint bubble when it plus the buffer
-   * is on track to spell a common character.
-   *
-   * A separate memo from the matcher's so a buffer change re-derives only the
-   * hints (≤ 12 scans of the ~760 common records), not the ink match.
+   * § 6z-4 / § 6z-6: the hint search, narrowed to the current buffer once. Its
+   * own memo so a stroke re-runs only the per-glyph checks, and a buffer change
+   * re-runs only this and the ranking — never the ink match.
    */
-  const hintedGlyphCandidates = useMemo<Candidate[]>(() => {
-    if (!index) return glyphCandidates;
-    return withHints(glyphCandidates, buffer, (current, glyph) => findHintCharacter(current, glyph, index));
-  }, [glyphCandidates, buffer, index]);
+  const hintFor = useMemo(
+    () => (index && buffer.length > 0 ? makeHintFinder(buffer, index) : null),
+    [buffer, index],
+  );
+
+  /** The whole pool, re-ranked by buffer fit and hinted (§ 6z-6), look-alikes merged (§ 6z-7). */
+  const rankedGlyphs = useMemo(() => rankGlyphs(glyphMatches, buffer, hintFor), [glyphMatches, buffer, hintFor]);
+
+  /** The glyph row: the ranked pool cut to the display limit. */
+  const glyphCandidates = useMemo<Candidate[]>(
+    () => toGlyphCandidates(rankedGlyphs.slice(0, CANDIDATE_DISPLAY_LIMIT)),
+    [rankedGlyphs],
+  );
+
+  /** § 6z-8: the direct-commit chip, derived from the same ranking so it repeats the first blue chip. */
+  const directCandidate = useMemo<Candidate | null>(
+    () => (index ? directCommitCandidate(rankedGlyphs, buffer, (char) => appearsInWord(char, index)) : null),
+    [rankedGlyphs, buffer, index],
+  );
 
   /**
    * Buffer → character candidates, falling back to words when empty (§ 6q).
@@ -131,7 +175,7 @@ export function useComposition({ templates, index, words }: CompositionDeps): Co
   }, [buffer, index, words]);
 
   const mode = activeMode(hasInk);
-  const candidates = hasInk ? hintedGlyphCandidates : resultCandidates;
+  const candidates = hasInk ? glyphCandidates : resultCandidates;
 
   const reset = useCallback(() => {
     setBuffer([]);
@@ -172,6 +216,7 @@ export function useComposition({ templates, index, words }: CompositionDeps): Co
     buffer,
     mode,
     candidates,
+    directCandidate,
     hasInk,
     ink,
     onInkChange: setInk,

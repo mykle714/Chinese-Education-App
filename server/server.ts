@@ -24,6 +24,7 @@ import memoryMapRoutes from './routes/memoryMapRoutes.js';
 import nightMarketRoutes from './routes/nightMarketRoutes.js';
 import communityRoutes from './routes/communityRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import friendRoutes from './routes/friendRoutes.js';
 import arenaRoutes from './routes/arenaRoutes.js';
 import studyChallengeRoutes from './routes/studyChallengeRoutes.js';
@@ -138,6 +139,7 @@ if (isFeatureEnabled('nightMarket')) app.use(nightMarketRoutes);
 // from userRoutes.ts and so cannot be covered from here.
 if (isFeatureEnabled('community')) app.use(communityRoutes);
 app.use(leaderboardRoutes);
+app.use(adminRoutes);
 app.use(friendRoutes);
 // Arena is flagged (server/contracts/featureFlags.ts). Unlike community and Study
 // Challenge, arena has NO endpoint outside this router — all six live in

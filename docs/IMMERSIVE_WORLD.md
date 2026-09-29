@@ -3831,6 +3831,31 @@ this field as one more **warning** is the cheap fix, and the shape is already th
 injection into a prompt is phase 2: today the column is authored and stored, and nothing
 composes it into a turn yet.
 
+**And one field for the learner: `introText` (migration 167, 2026-09-25).** The mirror image of
+`sceneNotes`. That box is written *in-world* for the model; this one is written **to the
+learner**, out of world ("You're hungry. Find the noodle stall and order a bowl."), and is
+shown as a dismissable card the moment the scene opens. Empty means no card. Capped at
+`IW_MAX_INTRO_TEXT_LENGTH` (500) as a **warning**, like the brief — a quick "what to do
+here", not a briefing document.
+
+- **Editor** — a multiline field under Scene notes in the details panel, with a live
+  character count. (`src/features/immersiveworld/IWSceneDetailsPanel.tsx`)
+- **Play** — `IWPlayPage` takes § 5.3c's world hold (`useIWSceneRuntime` → `setPaused(true)`)
+  **before** handing the scene to the runtime, so no frame runs uncovered, and mounts
+  `IWSceneIntroCard` over the **whole page body** — stage *and* composer, because a line typed
+  into a held world would sit parked with no visible reason. The gold Start button or a tap on
+  the scrim dismisses it and lifts the hold; a tap on the card itself does nothing. Shown on
+  **every** load — there is no per-learner "seen" state, by decision (2026-09-25).
+  (`src/features/immersiveworld/play/IWPlayPage.tsx` → `handleDismissIntro`,
+  `src/features/immersiveworld/play/IWSceneIntroCard.tsx`)
+- **Server** — no new endpoint: `openScene` already ships the whole `IWScene`.
+  (`server/contracts/iw.ts` → `IWScene.introText`, `server/dal/implementations/ImmersiveWorldDAL.ts`
+  → `SCENE_COLUMNS` / `sceneParams`, `server/services/iw/sceneValidation.ts` → `validateScene`)
+
+⚠️ **`introText` must never be composed into a model prompt.** It may freely say "your goal
+is…" — exactly the meta language § 14 Q27 keeps away from NPCs. Anything an NPC should know
+belongs in `sceneNotes`.
+
 **⚠️ An overlay on the canvas must not eat the click that starts an edit (2026-09-05).** The
 first authoring session reported that bodies and place tags could only be *placed* in part of
 the board, and that reaching the rest meant clicking in the working part and **dragging**
@@ -4535,7 +4560,7 @@ authored without a deploy.
 | Thing | Home | Why |
 |---|---|---|
 | **NPC** (identity, biography, traits, register) | **code** — `server/config/iwNpcs.ts`, in the shape of `nightMarketRegistry.ts` | changing an NPC changes model behaviour; it must be reviewable in a diff and revertable with the prompt it was tuned against (§ 5.6's `character-run.js` regression sweep only means something if the NPC is versioned). It also keeps § 11 layer 1 — the narrowest and strongest safety filter — out of author hands entirely. |
-| **Scene** (cast, companion, completion pair, complications, map, `sceneNotes` — no objective, no scene vocabulary; both were dropped, see § 12 phase 1d) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
+| **Scene** (cast, companion, completion pair, complications, map, `sceneNotes`, `introText` — no objective, no scene vocabulary; both were dropped, see § 12 phase 1d) | **data** — `iw_scenes` ✅ | content grows without deploys; the authoring pressure Q1 put on the critical path lands here |
 
 ### The cast (BUILT — `server/config/iwNpcs.ts`)
 

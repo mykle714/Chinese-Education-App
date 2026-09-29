@@ -118,6 +118,18 @@ export class RateLimitError extends DALError {
   }
 }
 
+/**
+ * The caller is authenticated but lacks the grant this operation needs (HTTP 403).
+ * First used by the `users.isAdmin` gate (migration 168, docs/USAGE_DASHBOARD.md);
+ * older role gates still throw ValidationError (400) for the same condition.
+ */
+export class ForbiddenError extends DALError {
+  constructor(message: string, originalError?: any) {
+    super(message, 'ERR_FORBIDDEN', 403, originalError);
+    this.name = 'ForbiddenError';
+  }
+}
+
 // Transaction wrapper interface
 export interface ITransaction {
   commit(): Promise<void>;

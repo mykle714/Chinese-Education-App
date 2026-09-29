@@ -41,7 +41,7 @@ export const DEFAULT_TEXT_TONES: TextTonePair = {
  * NOT used for Chinese: zh dds render at full contrast (see `ddTextColor`).
  */
 export const DD_TONES: TextTonePair = {
-  dark: "#5A5A60",
+  dark: "#48484E",
   light: "#b8b8bc",
 };
 

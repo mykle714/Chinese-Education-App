@@ -1,8 +1,7 @@
 import React from "react";
 import { HeaderCycleChip } from "./PageHeader";
 import { cycleChipWidthCh } from "./cycleChipSizing";
-import { useTTS } from "../hooks/useTTS";
-import type { AudioMode } from "../hooks/useTTSSettings";
+import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
 
 /**
  * The narration audio-mode chip: ONE header control that reaches all three states
@@ -18,6 +17,11 @@ import type { AudioMode } from "../hooks/useTTSSettings";
  * value/onChange props, so every surface that wants it renders `<AudioModeChip />`
  * and they cannot drift in label, icon, or cycle order. Surfaces that must hide it
  * (Bubble Match on a reading run) simply do not render it.
+ *
+ * Reads `useTTSSettings`, NOT `useTTS`. The chip never plays anything, and `useTTS`
+ * is the playback hook — mounting a playback instance here once let the chip's
+ * StrictMode remount cancel the scp's first autoplay word (docs/AUDIO_PLAYBACK.md
+ * § "Only the speaker stops on unmount").
  *
  * Used by: FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
  * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeaderControls,
@@ -88,7 +92,7 @@ const MODE_CHIP: Record<AudioMode, { icon: string; label: string; ariaLabel: str
 const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(Object.values(MODE_CHIP).map((m) => m.label));
 
 const AudioModeChip: React.FC<{ className?: string }> = ({ className }) => {
-    const { mode, cycleAudioMode } = useTTS();
+    const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
     const chip = MODE_CHIP[mode];
 
     return (

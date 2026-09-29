@@ -12,7 +12,7 @@ to **multi-card sort packs**, plus the new **Skipped Cards page**. It is forward
 
 ## 1. Concept recap (the target behavior)
 
-- The on-deck unit is a **sort pack**: **up to 3 draggable cards**. No sentence is
+- The on-deck unit is a **sort pack**: **up to 4 draggable cards**. No sentence is
   shown in this flow. See requirements §4.5.
 - **Two pack sources:** *authored* packs (curated, stored in `sort_packs`) and
   *system fallback* packs-of-1 (built on the fly from a single fresh word).
@@ -20,7 +20,7 @@ to **multi-card sort packs**, plus the new **Skipped Cards page**. It is forward
   header button that defers all remaining unsorted cards in the pack.
 - A pack the user finishes or skips is **never shown again** (tracked in
   `users.seenPacks`).
-- **Undo** reverses one card action at a time (sort or skip), 3 deep.
+- **Undo** reverses one card action at a time (sort or skip), 4 deep (one full pack).
 - **Skipped Cards page** lists skipped words; tap → action popup; header **Recycle all**.
 
 ---
@@ -41,7 +41,7 @@ CREATE TABLE sort_packs (
   language          VARCHAR   NOT NULL,            -- 'zh' | 'es'
   level             SMALLINT  NOT NULL,            -- 1..6 (matches det.difficulty, mig 92)
   "packOrder"       INTEGER   NOT NULL,            -- curation key within (language, level)
-  "entryIds"        INTEGER[] NOT NULL,            -- up to 3 det ids (the cards)
+  "entryIds"        INTEGER[] NOT NULL,            -- up to 4 det ids (the cards; no DB constraint — the cap lives in validate-sort-packs.ts)
   "entryWords"      TEXT[]    NOT NULL             -- denormalized word1s, trigger-maintained (mig 96)
 );
 CREATE INDEX sort_packs_lang_level_order ON sort_packs(language, level, "packOrder");
@@ -70,53 +70,67 @@ code should treat it as a join key; `entryIds` is authoritative.
 **No authored sentence.** `sentenceForeign`/`sentenceEnglish` were dropped in migration
 95. They were never rendered by the client — they existed only to constrain authoring
 (`validate-sort-packs.ts`, §6, used to assert every `entryIds` card's `word1` occurred in
-the sentence). Authoring a pack is now just picking its up-to-3 `entryIds` directly; no
+the sentence). Authoring a pack is now just picking its up-to-4 `entryIds` directly; no
 sentence is authored or validated.
 
-### 2.1 Getting authored packs into another environment (seed migrations)
+### 2.1 Where packs are authored, and how they reach dev (PPE → dev pull)
 
-`sort_packs` is hand-authored reference data, and no data-sync skill carries it
-(`/data-ppe-to-dev` covers `dictionaryentries_zh`, `dictionaryentries_es`,
-`particlesandclassifiers`, `icons8`, `validations` only — and it only moves PPE →
-dev; the old dev → PPE push skill has been deleted). There is no dump
-file and no import script. **Authored packs travel as seed migrations, which means
-they ship with the ordinary code deploy** — `/deploy` picks the file up in its pending
-migration set like any other, `database/deploy/migrate.sh` applies it in `sort -V`
-order and records it in `schema_migrations`. There is no separate pack-deployment
-step, no out-of-band data push, and nothing to remember: authoring a new pack means
-writing the next seed migration, and it reaches PPE the next time code does.
+**PPE is the source of truth for `sort_packs`.** Packs are hand-authored directly
+against PPE's `cow-postgres` and reach a dev box through the ordinary
+[`/data-ppe-to-dev`](../.claude/commands/data-ppe-to-dev.md) pull, alongside the det
+tables (`database/sort_packs-data.dump`, TRUNCATE + restore). There is no dev → PPE
+path: a pack inserted on dev is overwritten by the next pull.
 
-> **Failure mode if you forget.** An environment with an empty `sort_packs` is not
-> visibly broken — `fetchPacksAtLevel` returns nothing at every level and
+Why this works without any id translation: `"entryIds"` holds det surrogate ids, and
+the same pull restores `dictionaryentries_zh`/`_es` with PPE's ids, so the ids line up
+by construction. Two ordering rules follow, both enforced by the skill:
+
+| Rule | Why |
+|---|---|
+| Restore `sort_packs` **after** the det tables | `trg_sort_packs_sync_entry_words` (migration 96) fires on the restore's `COPY` and re-derives `"entryWords"` from local det. |
+| Never pull `sort_packs` without det | `"entryIds"` has no FK; against a stale det they would silently point at the wrong words. |
+
+The table dump also carries `sort_packs_id_seq`'s value, so dev's sequence tracks
+PPE's (which is deliberately left past withdrawn ids — see § 2.2).
+
+**Authoring a new pack** (e.g. filling the level 3/4 gap), on PPE:
+
+1. `INSERT` the row, resolving `"entryIds"` from `word1` in the same statement. Let
+   the sequence assign `id` (never reuse a freed id — § 2.2). Don't write
+   `"entryWords"`; the trigger derives it.
+2. Run the validator and check it reports no violations. On PPE it must run inside the
+   backend container, from the compiled build (a host `npx tsx` run cannot reach the
+   loopback-only DB, and the container ships only `dist/`):
+   `docker exec cow-backend node dist/scripts/validate-sort-packs.js`
+3. Run the next `/data-ppe-to-dev` to bring it down to dev.
+
+No deploy is involved: the app reads `sort_packs` live, so a pack is served the
+moment its row exists.
+
+> **Failure mode if the table is empty.** An environment with an empty `sort_packs` is
+> not visibly broken — `fetchPacksAtLevel` returns nothing at every level and
 > `getNextPacks` silently falls through to system packs-of-1, so the sort flow serves
 > 100% single cards and no authored pack is ever offered. This is exactly what shipped
 > to PPE between migration 93 and migration 131.
 
-`131-seed-zh-sort-packs.sql` is the reference implementation for such a seed. Its
-rules, which any future pack seed should follow:
+**Legacy: seed migration 131.** Before 2026-09-28 packs were authored on dev and shipped
+up as seed migrations; `131-seed-zh-sort-packs.sql` is the only one, and no more will be
+written. It stays in the migration chain (applied migrations are immutable), so a
+freshly-bootstrapped database still gets its 55 packs, *including* the level-5/6 packs
+PPE later withdrew (§ 2.2). A fresh dev box should therefore run `/data-ppe-to-dev`
+rather than trust 131's output. 131 seeds by `word1` with explicit ids and
+`ON CONFLICT (id) DO NOTHING`, so replaying it can never clobber a PPE-authored pack.
 
-| Rule | Why |
-|---|---|
-| Seed rows **by `word1`**, resolving to `entryIds` at run time | det ids are not portable across environments — PPE is the source of truth for `dictionaryentries_zh` and its ids need not match the authoring box. Safe for `zh` (word1 is unique per language there); do **not** generalize to `es` without re-checking the homograph caveat above. |
-| Insert **explicit `id`s**, then `setval` the sequence past them | `users."seenPacks"` stores raw `sort_packs.id` values, so an id is user-visible state — every environment must agree on which id is which pack. |
-| `ON CONFLICT (id) DO NOTHING` | Idempotent; never clobbers a pack that environment already has under that id. |
-| Skip (with `RAISE WARNING`) any pack whose words don't all resolve; `RAISE NOTICE` the inserted/existing/skipped counts | A dictionary missing one word must not abort a deploy. Read the NOTICE after running — a nonzero skip count means that environment's det table is behind. |
-| Don't write `entryWords` | `trg_sort_packs_sync_entry_words` (migration 96) derives it on INSERT. |
-
-**Authoring a new pack** (e.g. filling the level 3/4 gap): insert it locally, confirm
-`npx tsx server/scripts/validate-sort-packs.ts` passes, then write the next-numbered
-seed migration for the new rows only and commit it. The deploy carries it.
-
-Post-deploy verification, on the target box — part of the normal deploy's verify step:
+Verification, on either box:
 
 ```bash
 docker exec cow-postgres psql -U cow_user -d cow_db \
   -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
 ```
 
-Expected on PPE today: `zh` → **19 packs at level 1, 2 at level 2, and nothing
-else** (21 total). Levels 3 and 4 are legitimately empty (none authored yet); levels 5
-and 6 are empty **by decision** — see below.
+Expected on PPE (2026-09-28): `zh` → **20 packs at level 1, 2 at level 2, and nothing
+else** (22 total). Levels 3 and 4 are legitimately empty (none authored yet); levels 5
+and 6 are empty **by decision** — see below. After a pull, dev must match exactly.
 
 ### 2.2 Levels 5 and 6 have no authored packs
 
@@ -216,7 +230,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 ### 5.2 `src/features/discover/SortCardsPage.tsx`
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
-- Render: up to **3 resized draggable cards** (no sentence band — removed). Autoplay
+- Render: up to **4 draggable MiniCards** (compact 78×112 faces when a 4-card row won't fit — SORT_CARDS_REQUIREMENTS.md §4.5 *Compact dock*) (no sentence band — removed). Autoplay
   is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
   every card's own word audio via `tts.autoSpeakSentence(card.entryKey, card.pronunciation)`
   left to right, once per pack landing on-deck, whenever `tts.autoplay` is true. (The
@@ -233,7 +247,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 - Pack complete → pop head, append buffer, `POST /next-pack` to refill tail.
 - **Skip button** → header `rightContent`; `POST /skip-pack` with remaining unsorted
   card ids → advance.
-- **Undo:** client keeps a stack of the last 3 card actions (`{cardId, bucket|'skip',
+- **Undo:** client keeps a stack of the last 4 card actions (`UNDO_DEPTH`) (`{cardId, bucket|'skip',
   packId}`); undo pops one, calls `POST /undo`, and re-shows the card (bringing its
   pack back on deck if it had advanced).
 
@@ -254,10 +268,10 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 ## 6. Layer 4 — Curation & validation
 
 - Authoring: build `sort_packs` rows from the beginner CSV (sparse `packOrder`) — just
-  group up to 3 `entryIds` per pack, no sentence to write (§2). See
+  group up to 4 `entryIds` per pack, no sentence to write (§2). See
   [DISCOVER_BEGINNER_CURATION.md](./DISCOVER_BEGINNER_CURATION.md) §4–5.
 - **Build/deploy test (required):** `server/scripts/validate-sort-packs.ts`. For every
-  `sort_packs` row it asserts structural validity (1–3 `entryIds`, level in 1..6, every
+  `sort_packs` row it asserts structural validity (1–4 `entryIds`, `MAX_CARDS_PER_PACK`, level in 1..6, every
   `entryId` exists in the per-language det table). Enforced at build time, not runtime.
 - Get `sort_packs` onto PPE via a **seed migration** (§2.1) — there is no data-sync
   skill that moves it, and none that moves anything dev → PPE.

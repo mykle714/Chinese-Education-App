@@ -168,8 +168,8 @@ short viewports, which is a shell-wide change.
 │ ⌄  Speed Reading       0:14 │  header: back · title · count-up clock
 ├─────────────────────────────┤
 │ ROUND 7 OF 20               │  GameHud (a COLUMN, not a row of facts)
-│ ▮▮▮▮▮▮▯▯▯▯                  │  SpeedReadingRoundTicks — 2 rows of 10
-│ ▯▯▯▯▯▯▯▯▯▯                  │  green = right, red = wrong, grey = unplayed
+│ ▮▮▮▮▮▮▯▯▯▯▯▯▯▯▯▯▯▯▯▯        │  SpeedReadingRoundTicks — 1 row of 20
+│                             │  green = right, red = wrong, grey = unplayed
 ├─────────────────────────────┤
 │                             │  ← .speed-reading__board starts HERE
 │         nǐ  hǎo             │  pinyin (large)
@@ -204,7 +204,7 @@ permanent, so the clock never shifts when it appears (`SpeedReadingPage.tsx` →
 
 ### The round ticks (`SpeedReadingRoundTicks`)
 
-One pip per round, in answer order, two rows of ten at 8px tall.
+One pip per round, in answer order, one row of twenty at 8px tall.
 
 **Why the run needs them.** The score here is a TIME and a wrong answer is paid for in
 seconds rather than in a lost round, so before this there was nothing on screen saying how
@@ -212,10 +212,13 @@ the run was actually going: a slow clean run and a fast sloppy one read identica
 pips are the run's shape, and because they hold their position they also say WHERE it went
 wrong, which `17/20 correct` on the end card does not.
 
-**Two rows, not one.** Twenty pips in a single row are 14px wide each and a 2px gap is the
-only thing separating a red from its neighbours. At 8px tall a colour can be seen
-peripherally, which is the only way it will be seen at all — the player's eyes are on the
-words.
+**One row of twenty (changed 2026-09-25).** The design's revision drew two rows of ten so
+pips could be counted as tens; it went back to a single row so the strip reads as one
+left-to-right timeline and the HUD loses a row. The **8px height** from that revision is
+kept — it is what lets a colour be seen peripherally, which is the only way it will be seen
+at all with the player's eyes on the words. A single row makes pips narrower, not shorter.
+The component still wraps into a grid if given a smaller `perRow`
+(`SpeedReadingRoundTicks.tsx` → `perRow`, which defaults to `total`).
 
 **The colours (v2, artboard 15).** Correct `COLORS.grnM`, wrong `COLORS.redM`, pending
 `COLORS.wood`, each lit pip with the `markOutline` inset ring (`SpeedReadingRoundTicks.tsx`

@@ -45,11 +45,22 @@ const SUPPORTED_VERSION = 2;
  */
 export const KIND_COMPONENT = 1;
 export const KIND_CHARACTER = 2;
+/**
+ * § 6z-5: this template is an IN-CONTEXT VARIANT — the component's strokes cut
+ * out of a character that contains it (⺈ as it sits in 尔), not its standalone
+ * drawing. It carries the same role bits as the glyph's standalone template, so
+ * the chars array may hold one glyph several times; the matcher keeps each
+ * glyph's best-scoring template and drops the rest.
+ *
+ * A flag bit rather than a format bump: a reader that ignores it still scores
+ * correctly, it merely reports a variant as if it were the standalone drawing.
+ */
+export const KIND_VARIANT = 4;
 
 export interface GlyphTemplates {
-  /** The glyph for template i. */
+  /** The glyph for template i. NOT unique — a component's variants repeat it (§ 6z-5). */
   chars: string[];
-  /** KIND_COMPONENT | KIND_CHARACTER bitfield for template i. */
+  /** KIND_COMPONENT | KIND_CHARACTER | KIND_VARIANT bitfield for template i. */
   kinds: Uint8Array;
   /** Stroke count for template i. */
   strokeCounts: Uint8Array;

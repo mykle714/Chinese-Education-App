@@ -346,8 +346,8 @@ const HydraBubblesPage: React.FC = () => {
     // NO BACKGROUND PAUSE, deliberately. The app-wide rule
     // (docs/GAMES_FEATURE.md § "Backgrounding pauses the clock") exists so a round
     // cannot run down while nobody is watching — it protects a CLOCK. Hydra has no
-    // clock and nothing that advances on its own: bubbles do not drift
-    // (`stepPhysics(..., { drift: false })`), there is no descending ceiling, and the
+    // clock and nothing that advances against the player: bubbles drift (2026-09-25)
+    // but drift moves no score/fill/spawn, there is no descending ceiling, and the
     // board changes only in response to a match. Backgrounding therefore costs the
     // player nothing, and a tap-to-resume overlay on return is pure friction over a
     // board that is exactly as they left it.

@@ -1116,7 +1116,7 @@ the game.
 | Migration | `database/migrations/151-create-memory-map-placements.sql` |
 | Contract | `server/contracts/wire.ts` — `MEMORY_MAP_CAPACITY`, `MEMORY_MAP_SCALE_RANGE`, `MemoryMapPlacement`, `MemoryMapWord`, `MemoryMapResponse`, `MemoryMapGraduateResponse` |
 | Geometry (pure) | `server/services/memoryMapSpawn.ts` — `wordBoxSize`, `spawnPosition`, `spawnBatch`, `boxesOverlap`, `boxesTouch`, `boxSeparation`, `connectedIslands`, `touchedSidesForAll`, `mapBounds` |
-| Ranking (pure, shared) | `server/services/cardQueueRanking.ts` — `rankCardQueue`, `readyMarkTypes`, `queueArrivalAt` |
+| Ranking (pure, shared) | `server/services/cardQueueRanking.ts` — `rankCardQueue` (called with `{ bar: 'reading' }`), `queueArrivalAt` |
 | DAL | `server/dal/interfaces/IMemoryMapDAL.ts`, `server/dal/implementations/MemoryMapDAL.ts` |
 | Service | `server/services/MemoryMapService.ts` — `loadMap`, `graduate`, `prioritize` |
 | Controller | `server/controllers/MemoryMapController.ts` |

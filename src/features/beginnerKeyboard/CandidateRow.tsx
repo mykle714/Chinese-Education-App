@@ -6,7 +6,7 @@
  * candidate's own `action` carries that.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6p (the bar), § 6r (its modality), § 6z-4
- * (hint bubbles).
+ * (hint bubbles), § 6z-8 (the green direct-commit section).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ THIS ROW IS MODAL, AND THAT IS THE DESIGN'S ONE REAL RISK (§ 6r)
@@ -19,6 +19,14 @@
  * drew" / "Tap to insert"); it was dropped by product decision (2026-09-09) to
  * give the chips the full width, so the two remaining channels are now the whole
  * of the modality signal.
+ *
+ * The one exception to "one mode per row" is § 6z-8's DIRECT-COMMIT SECTION: in
+ * glyph mode the strip may open with a single chip on a GREEN ground — the
+ * result row's own colour, because it commits exactly as a result chip does —
+ * repeating the top guess so a whole character the learner drew goes straight
+ * to the field. It sits OUTSIDE the scroller, so it never scrolls away, and a
+ * hairline divider plus the commit chip's filled border separate it from the
+ * blue chips without relying on the two pale tints alone.
  *
  * ⚠️ NEVER RENDERS EMPTY WHILE THERE IS INK. With no clear button (§ 6r), an
  * empty row would strand the learner with ink they cannot remove: submission is
@@ -66,6 +74,8 @@ import type { Candidate, CandidateMode } from './useComposition';
 
 interface CandidateRowProps {
   candidates: Candidate[];
+  /** § 6z-8: the green direct-commit chip leading a glyph-mode row, or null. */
+  directCandidate: Candidate | null;
   mode: CandidateMode;
   /** True while the templates are still downloading. */
   loading: boolean;
@@ -86,7 +96,14 @@ const MODE_STYLE: Record<CandidateMode, { ground: string; chip: string; accent: 
   result: { ground: COLORS.grnTint, chip: COLORS.white, accent: COLORS.onSurface },
 };
 
-export default function CandidateRow({ candidates, mode, loading, onSelect, onSelectHint }: CandidateRowProps) {
+export default function CandidateRow({
+  candidates,
+  directCandidate,
+  mode,
+  loading,
+  onSelect,
+  onSelectHint,
+}: CandidateRowProps) {
   const style = MODE_STYLE[mode];
 
   // Desktop-only paging arrows for the overflowing chip strip; see the shared hook. The
@@ -197,7 +214,6 @@ export default function CandidateRow({ candidates, mode, loading, onSelect, onSe
       if (!candidate.hint || anchorX == null) return;
       out.push({
         key: `${position}|${candidate.text}|${candidate.hint.text}`,
-        order: anchorX,
         value: { hint: candidate.hint, anchorX },
       });
     });
@@ -209,6 +225,51 @@ export default function CandidateRow({ candidates, mode, loading, onSelect, onSe
     staggerMs: HINT_MOTION.staggerMs,
     exitMs: HINT_MOTION.popMs,
   });
+
+  /**
+   * One chip. Shared by the scroller and the § 6z-8 direct section so the two
+   * cannot drift in shape; `accent` is the owning section's commit-border colour.
+   */
+  const renderChip = (
+    candidate: Candidate,
+    key: string,
+    accent: string,
+    extraClass: string,
+    ref?: (element: HTMLElement | null) => void,
+  ) => (
+    <Box
+      component="button"
+      type="button"
+      key={key}
+      ref={ref}
+      className={`beginner-keyboard__candidate beginner-keyboard__candidate--${candidate.action}${extraClass}`}
+      onClick={() => onSelect(candidate)}
+      sx={{
+        flexShrink: 0,
+        minWidth: 44, // the platform tap-target floor
+        height: 44,
+        px: candidate.text.length > 1 ? 1.25 : 0,
+        border: `1px solid ${candidate.action === 'commit' ? accent : COLORS.border}`,
+        // A commit chip is filled, an append chip is outlined — the second
+        // channel behind the ground colour, so the two tap meanings differ
+        // in shape and not only in colour.
+        borderWidth: candidate.action === 'commit' ? 2 : 1,
+        borderRadius: 2,
+        backgroundColor: style.chip,
+        cursor: 'pointer',
+        fontFamily: FONTS.hanziComponents,
+        fontSize: SIZE.title,
+        lineHeight: 1,
+        color: COLORS.onSurface,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        '&:active': { backgroundColor: COLORS.rowHoverBg },
+      }}
+    >
+      {candidate.text}
+    </Box>
+  );
 
   /** One arrow, in this row's current mode colour. Mounted only while the strip overflows. */
   const arrow = (direction: -1 | 1) => {
@@ -243,6 +304,34 @@ export default function CandidateRow({ candidates, mode, loading, onSelect, onSe
         borderBottom: `1px solid ${COLORS.rowBorder}`,
       }}
     >
+      {directCandidate && (
+        <Box
+          className="beginner-keyboard__direct-section"
+          sx={{
+            // Bleeds to the row's top, bottom and left edges (cancelling the row's
+            // padding) so it reads as a SECTION of the strip, not a floating chip.
+            alignSelf: 'stretch',
+            my: -0.75,
+            ml: -1.25,
+            pl: 1.25,
+            pr: 1,
+            mr: 1,
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+            backgroundColor: MODE_STYLE.result.ground,
+            borderRight: `1px solid ${COLORS.rowBorder}`,
+          }}
+        >
+          {renderChip(
+            directCandidate,
+            `direct-${directCandidate.text}`,
+            MODE_STYLE.result.accent,
+            ' beginner-keyboard__candidate--direct',
+          )}
+        </Box>
+      )}
+
       {arrow(-1)}
 
       <Box
@@ -272,44 +361,19 @@ export default function CandidateRow({ candidates, mode, loading, onSelect, onSe
             {loading ? 'Loading handwriting data…' : 'Draw a component or a whole character'}
           </Typography>
         ) : (
-          candidates.map((candidate, position) => (
-            <Box
-              component="button"
-              type="button"
+          candidates.map((candidate, position) =>
+            renderChip(
+              candidate,
               // Index is part of the key because the same glyph can legitimately
               // appear twice across a re-rank; text alone is not unique.
-              key={`${candidate.text}-${position}`}
-              ref={(element: HTMLElement | null) => {
+              `${candidate.text}-${position}`,
+              style.accent,
+              '',
+              (element: HTMLElement | null) => {
                 chipRefs.current[position] = element;
-              }}
-              className={`beginner-keyboard__candidate beginner-keyboard__candidate--${candidate.action}`}
-              onClick={() => onSelect(candidate)}
-              sx={{
-                flexShrink: 0,
-                minWidth: 44, // the platform tap-target floor
-                height: 44,
-                px: candidate.text.length > 1 ? 1.25 : 0,
-                border: `1px solid ${candidate.action === 'commit' ? style.accent : COLORS.border}`,
-                // A commit chip is filled, an append chip is outlined — the second
-                // channel behind the ground colour, so the two tap meanings differ
-                // in shape and not only in colour.
-                borderWidth: candidate.action === 'commit' ? 2 : 1,
-                borderRadius: 2,
-                backgroundColor: style.chip,
-                cursor: 'pointer',
-                fontFamily: FONTS.hanziComponents,
-                fontSize: SIZE.title,
-                lineHeight: 1,
-                color: COLORS.onSurface,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                '&:active': { backgroundColor: COLORS.rowHoverBg },
-              }}
-            >
-              {candidate.text}
-            </Box>
-          ))
+              },
+            ),
+          )
         )}
       </Box>
 

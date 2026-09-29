@@ -166,6 +166,10 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         fontWeight: selected ? WEIGHT.bold : WEIGHT.medium,
                         letterSpacing: "-0.008em",
                         whiteSpace: "normal",
+                        // Each label is a candidate dd, so it wears the dd's face: FONTS.cjk
+                        // (`var(--cjk-font)`, the account's Chinese typeface) — the same
+                        // token the flp card face and eip header dd use.
+                        fontFamily: FONTS.cjk,
                     }}
                 >
                     {ddt(cluster)}

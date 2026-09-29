@@ -10,7 +10,6 @@
  * Referenced by docs/DECKS_FEATURE.md § "The card hand".
  */
 import type { VocabEntry } from "../types";
-import type { FlpForeignTrack } from "../../server/contracts/wire";
 import {
   flpCooldownRemainingMs as contractFlpCooldownRemainingMs,
   isFlpReady as contractIsFlpReady,
@@ -18,31 +17,25 @@ import {
   nextFlpReadyMs as contractNextFlpReadyMs,
 } from "../../server/contracts/flpReadiness";
 
-export function flpCooldownRemainingMs(
-  entry: VocabEntry,
-  foreignTrack: FlpForeignTrack,
-  now: number
-): number {
-  return contractFlpCooldownRemainingMs(entry.typedMarkHistory, foreignTrack, now);
+export function flpCooldownRemainingMs(entry: VocabEntry, now: number): number {
+  return contractFlpCooldownRemainingMs(entry.typedMarkHistory, now);
 }
 
-export function isFlpReady(entry: VocabEntry, foreignTrack: FlpForeignTrack, now: number): boolean {
-  return contractIsFlpReady(entry.typedMarkHistory, foreignTrack, now);
+export function isFlpReady(entry: VocabEntry, now: number): boolean {
+  return contractIsFlpReady(entry.typedMarkHistory, now);
 }
 
 export function flpReadyCountsByBand(
   entries: readonly VocabEntry[],
-  foreignTrack: FlpForeignTrack,
   now: number
 ): Record<string, number> {
-  return contractFlpReadyCountsByBand(entries, foreignTrack, now);
+  return contractFlpReadyCountsByBand(entries, now);
 }
 
 export function nextFlpReadyMs(
   entries: readonly VocabEntry[],
   bands: readonly string[],
-  foreignTrack: FlpForeignTrack,
   now: number
 ): number | null {
-  return contractNextFlpReadyMs(entries, bands, foreignTrack, now);
+  return contractNextFlpReadyMs(entries, bands, now);
 }

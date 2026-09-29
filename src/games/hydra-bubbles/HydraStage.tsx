@@ -7,6 +7,7 @@ import Bubble from "../bubbles/Bubble";
 import { stepPhysics, planSpawn, fillRatio, clampHeldCenter, type Bounds } from "../bubbles/physics";
 import { GameHud, GameHudBar, GameHudLabel } from "../shared/GameFrame";
 import { makePair, launchBody } from "../bubbles/bodyFactory";
+import { ThrowTracker } from "../bubbles/throwTracker";
 import type { BubbleBody, BubbleFill } from "../bubbles/types";
 import {
     MAX_DT,
@@ -35,10 +36,10 @@ import type { ColorBuffers } from "./useColorBuffers";
  * Hydra Bubbles — the playfield (docs/HYDRA_BUBBLES.md).
  *
  * Its own stage rather than Bubble Match's, because almost none of Bubble Match's
- * field behavior applies: no launcher, no queue, no descending ceiling, no drift,
- * and a spawn planner Bubble Match has no concept of. What IS shared is the bubble
- * itself, the placement/separation math and the fill-ratio measure — all from
- * src/games/bubbles/.
+ * field behavior applies: no launcher, no queue, no descending ceiling, and a spawn
+ * planner Bubble Match has no concept of. What IS shared is the bubble itself, the
+ * whole field simulation (drift + air-hockey throw, 2026-09-25), the placement math
+ * and the fill-ratio measure — all from src/games/bubbles/.
  *
  * THE LOOP. Clear a pair → score +2 → the cleared bubble's COLOR buys 0–3 spawn
  * slots → the planner decides what fills them → the buffers supply cards of the
@@ -342,6 +343,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
     const heldIdRef = useRef<string | null>(null);
     const hoveredIdRef = useRef<string | null>(null);
     const grabOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+    // The held bubble's recent path, turned into a release velocity on an unjudged
+    // drop (the air-hockey throw — src/games/bubbles/throwTracker.ts).
+    const throwRef = useRef(new ThrowTracker());
     const stageRectRef = useRef<DOMRect | null>(null);
     // FULL stage height, including the cancel strip. `boundsRef.height` stops at the
     // strip's top edge (that edge IS the play-area floor), so the drag needs the
@@ -552,9 +556,9 @@ const HydraStage: React.FC<HydraStageProps> = ({
         const bodies = bodiesRef.current;
         const bounds = boundsRef.current;
 
-        // No drift: Hydra's bubbles are placed and stay put (§ 1). Separation still
-        // runs, so a growing bubble shoves its neighbors to make room.
-        stepPhysics(bodies, dt, bounds, { drift: false });
+        // The shared field: drift + throw glide + bounces (§ 1). Hydra drifts since
+        // 2026-09-25, the same shimmer as Bubble Match.
+        stepPhysics(bodies, dt, bounds);
 
         let anyAnimating = false;
         for (const b of bodies) {
@@ -808,6 +812,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
             y: e.clientY - rect.top - body.y,
         };
         setStatus(body, "held", SCALE_HELD);
+        throwRef.current.reset(body.x, body.y);
 
         // Cleanup: light this bubble's partner green as a drop hint. With no partner
         // on the field it can never be matched, so the grabbed bubble itself is
@@ -838,6 +843,7 @@ const HydraStage: React.FC<HydraStageProps> = ({
             const at = clampHeldCenter(held, bounds, fullHeightRef.current, px, py);
             held.x = at.x;
             held.y = at.y;
+            throwRef.current.record(held.x, held.y);
 
             // Tint the strip while the held bubble overlaps it (feedback only — the
             // decision is re-derived on release from the same predicate).
@@ -901,8 +907,10 @@ const HydraStage: React.FC<HydraStageProps> = ({
             clearRevealedPartner();
 
             // Dropped on empty space — not a wrong match, just a drop. Only a drop
-            // ONTO a bubble is a judgement (§ 7.1).
+            // ONTO a bubble is a judgement (§ 7.1). An unjudged release is where the
+            // THROW happens: the bubble leaves with the drag's velocity and glides.
             if (!target) {
+                throwRef.current.applyTo(held);
                 setStatus(held, "idle", SCALE_IDLE);
                 setOverCancelZone(false);
                 forceRender();
@@ -918,6 +926,8 @@ const HydraStage: React.FC<HydraStageProps> = ({
             const correct = held.pairId === target.pairId;
 
             if (inCancelZone && !correct) {
+                // A cancel is unjudged too, so it throws; the floor bounces it back up.
+                throwRef.current.applyTo(held);
                 setStatus(held, "idle", SCALE_IDLE);
                 // The target was lit by onMove while the drag passed over it; put it
                 // back or it stays enlarged on a board that never resolved anything.

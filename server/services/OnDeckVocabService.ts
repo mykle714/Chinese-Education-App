@@ -1,7 +1,7 @@
 import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
-import type { MasteryBarId, FlpForeignTrack } from '../contracts/wire.js';
-import { flpMarkTypes } from '../contracts/wire.js';
+import type { MasteryBarId } from '../contracts/wire.js';
+import { isFlpOnlyMark } from '../contracts/mastery.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
@@ -11,7 +11,7 @@ import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { flpReadyCountsByBand, nextFlpReadyMs } from '../contracts/flpReadiness.js';
-import { rankCardQueue, rankCardQueueCooled, isTypeOnCooldown } from './cardQueueRanking.js';
+import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
@@ -134,20 +134,6 @@ export class OnDeckVocabService {
     private provisionalCardService: ProvisionalCardService
   ) {}
 
-  // The mark types the flp can actually present (docs/MASTERY_REWORK.md § 1): an
-  // English-first prompt is a PRODUCTION review, and a foreign-first prompt is either
-  // a RECOGNITION review (pinyin shown) or a READING one (zh, "Show pinyin" off) —
-  // `foreignTrack`, sent by the client per session and threaded through every
-  // selection path below. Writing marks come from other surfaces (Practice Writing)
-  // and are never shown in the working loop, so flp cooldown eligibility consults only
-  // the session's two tracks — a correct mark earned in another game no longer
-  // suppresses a card from the flp.
-  //
-  // The pair itself is built by `flpMarkTypes` (server/contracts/wire.ts), the one
-  // definition the client's face-steering also maps through, so the face a learner is
-  // shown can never disagree with the mark the client then writes.
-  private static readonly DEFAULT_FOREIGN_TRACK: FlpForeignTrack = 'recognition';
-
   // The bands `getFlpReadyCounts`'s `reviewNextReadyMs` counts down over — the same
   // Comfortable/Mastered split the fdp's Review card draws from
   // (FlashcardsDecksPage.tsx's `reviewPool`), which decides which figure gets the
@@ -155,23 +141,21 @@ export class OnDeckVocabService {
   // the two never quietly diverge.
   private static readonly REVIEW_BANDS: readonly string[] = ['Comfortable', 'Mastered'];
 
-  // The flp's cooldown WINDOW is keyed PER MARK TYPE: recognition and production each
-  // cool down under their OWN per-type category (`computeTypeCategory`), the same one
-  // the cdp already displays under each track. A card is eligible the moment EITHER
-  // track clears its own window — it no longer waits for the whole-card core category's
-  // (generally longer) window, which used to hold a card back even after the cdp showed
-  // both tracks as ready. See docs/MASTERY_REWORK.md § Per-type cooldown.
+  // The flp presents exactly the two KNOW tracks — English-first writes production,
+  // foreign-first writes recognition (with or without pinyin, since 2026-09-25) — and
+  // both rest on ONE clock, the core bar's (docs/MASTERY_REWORK.md § 6). So every flp
+  // selection path gates on this one bar; which of the two faces the card then shows
+  // is the client's call (src/utils/flpFaceSteering.ts), made from the card's own
+  // history, so no per-card stamp is needed.
   //
-  // The cooldown table and the queue maths themselves live in services/cardQueueRanking.ts
-  // — a pure module shared with Memory Map, which needs the identical discipline on the
-  // reading track (docs/MEMORY_MAP_GAME.md § 13.1). They used to be private methods here.
-  private flpWindowCategory(card: VocabEntry, type: MarkType): string | null | undefined {
-    return computeTypeCategory(card.typedMarkHistory, type);
-  }
+  // The cooldown table and the queue maths live in services/cardQueueRanking.ts — a
+  // pure module shared with Memory Map, which ranks the reading clock the same way
+  // (docs/MEMORY_MAP_GAME.md § 13.1).
+  private static readonly FLP_BAR: MasteryBarId = 'core';
 
   /**
-   * The flp-eligible subset of `cards` (≥1 mark type off cooldown), each stamped with
-   * its `readyMarkTypes`, ordered AS A QUEUE: longest-waiting first.
+   * The flp-eligible subset of `cards` (the know clock has run out), ordered AS A
+   * QUEUE: longest-waiting first.
    *
    * This is the flp's one ranking rule, shared by the initial working loop and the
    * mark-endpoint refill so a loop and its replacements are drawn the same way. It
@@ -182,7 +166,7 @@ export class OnDeckVocabService {
    *
    *   1. cards with review history, by arrival time ASC — the card that came off
    *      cooldown earliest is served first (see cardQueueRanking.queueArrivalAt);
-   *   2. never-marked cards (no correct mark in either flp track) — always LAST,
+   *   2. never-marked cards (no correct mark on either know track) — always LAST,
    *      however long they have technically been "available".
    *
    * A never-marked card scores -Infinity, which an ascending sort would put at the
@@ -192,18 +176,8 @@ export class OnDeckVocabService {
    * Ties (notably the whole never-marked tail) keep the caller's incoming order, which
    * is `createdAt DESC` — newest first. Array.sort is stable.
    */
-  private rankFlpEligible(
-    cards: VocabEntry[],
-    now: number,
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
-  ): VocabEntry[] {
-    // The ordering rule itself is shared (rankCardQueue); what the flp adds is stamping
-    // the ready tracks onto the returned card as `readyMarkTypes`, which the client uses
-    // to steer which face it shows.
-    return rankCardQueue(cards, now, {
-      markTypes: flpMarkTypes(foreignTrack),
-      windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
-    }).map(({ card, readyTypes }) => ({ ...card, readyMarkTypes: readyTypes }));
+  private rankFlpEligible(cards: VocabEntry[], now: number): VocabEntry[] {
+    return rankCardQueue(cards, now, { bar: OnDeckVocabService.FLP_BAR }).map(({ card }) => card);
   }
 
   /**
@@ -231,15 +205,23 @@ export class OnDeckVocabService {
     return loopCategories.includes('Unfamiliar');
   }
 
-  // A card is playable in a game when the ONE mark type that game emits is off its
-  // per-type cooldown (bubble-match = recognition; word-search = reading in
-  // No-Pinyin mode, production in Pinyin mode). The window duration comes from that
-  // same track's per-type category, so the whole game path — bucketing and resting
-  // alike — reads only the history of the track it exercises.
-  // See docs/MASTERY_REWORK.md § Per-type cooldown ("Games").
+  // A card is FRESH for a game when a mark of the type that game emits would actually
+  // be recorded — the same two tests `FlashcardMarkService.applyMark` applies, so the
+  // pool never calls a card fresh that the mark gate would then drop:
+  //
+  //   1. the clock of the bar that mark lands in has run out. For a recognition or
+  //      production game that is the shared KNOW clock, so a card just answered in
+  //      the flp is resting for Bubble Match too (docs/MASTERY_REWORK.md § 6);
+  //   2. the mark is not flp-only — once a card's core pbh reaches 6 its know marks
+  //      count only from the flp (`isFlpOnlyMark`), so for a recognition/production
+  //      game the card is filed as COOLED, playable only as backfill.
+  //
+  // BUCKETING stays per mark type (fetchGameCandidates) — only freshness is per bar.
   private isCardGameEligible(card: VocabEntry, markType: MarkType, now: number): boolean {
-    const windowCategory = computeTypeCategory(card.typedMarkHistory, markType);
-    return !isTypeOnCooldown(card.typedMarkHistory, markType, now, windowCategory);
+    return (
+      !isMarkOnCooldown(card.typedMarkHistory, markType, now) &&
+      !isFlpOnlyMark(card.typedMarkHistory, markType)
+    );
   }
 
   /**
@@ -248,7 +230,7 @@ export class OnDeckVocabService {
    * Each partition preserves the SQL RANDOM() order. Games fill their pool from
    * `eligible` first — requested categories, then fallback categories — and only
    * dip into `cooled` as a last resort to reach the required count, so the
-   * per-type cooldown is honored without ever blocking entry more than an
+   * cooldown (and the flp-only line) is honored without ever blocking entry more than an
    * un-cooled library would.
    *
    * BUCKETING IS PER MARK TYPE (docs/MASTERY_REWORK.md § "Games select by their own
@@ -377,7 +359,7 @@ export class OnDeckVocabService {
     now: number,
     maxEntryKeyLen?: number,
     /**
-     * Skip the per-type cooldown filter — for a caller whose ids are NOT a
+     * Skip the freshness filter (cooldown + flp-only) — for a caller whose ids are NOT a
      * preference but an obligation. The only such caller today is a Study Challenge
      * board: all nine contested words must appear in every round
      * (docs/STUDY_CHALLENGE.md § 5.2), and the filler ladder is deliberately the
@@ -790,8 +772,7 @@ export class OnDeckVocabService {
    */
   async getFlpReadyCounts(
     userId: string,
-    language: string,
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    language: string
   ): Promise<{ counts: Record<string, number>; reviewNextReadyMs: number | null }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -811,8 +792,8 @@ export class OnDeckVocabService {
       const now = Date.now();
       const rows = result.rows.map((row) => ({ typedMarkHistory: row.typedMarkHistory ?? undefined }));
       return {
-        counts: flpReadyCountsByBand(rows, foreignTrack, now),
-        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, foreignTrack, now),
+        counts: flpReadyCountsByBand(rows, now),
+        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now),
       };
     } finally {
       client.release();
@@ -923,14 +904,14 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Get the next library card for a correct-mark refill, honoring PER-TYPE
-   * cooldowns (docs/MASTERY_REWORK.md § Per-type cooldown).
+   * Get the next library card for a correct-mark refill, honoring the know
+   * cooldown (docs/MASTERY_REWORK.md § 6).
    *
    * Priority: the preferred category, then Target -> Unfamiliar -> Comfortable ->
    * Mastered, then a COOLING card, and only then a LENT one. At each step we take the
    * head of that category's queue —
-   * the card waiting longest since it came off cooldown (rankFlpEligible) — stamping
-   * `readyMarkTypes` so the client shows a face for a ready type. `excludeIds` keeps cards already in the loop out.
+   * the card waiting longest since it came off cooldown (rankFlpEligible).
+   * `excludeIds` keeps cards already in the loop out.
    *
    * BORROW, THEN COOL, THEN LEND (2026-08-20, replacing the 2026-08-17 lend-first
    * rule). Lending is the bottom of the ladder because it exists for a learner who has
@@ -962,12 +943,7 @@ export class OnDeckVocabService {
     language: string,
     excludeIds: number[] = [],
     allowedCategories?: string[],
-    collection?: CollectionFilter | null,
-    /** The session's foreign-first track — see DEFAULT_FOREIGN_TRACK. The client must
-        echo the same value it launched the loop with, because THIS call is what refills
-        the loop: a refill steered by the wrong track would hand back a card whose face
-        is ready on a track the client is not going to mark. */
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -996,7 +972,7 @@ export class OnDeckVocabService {
         for (const category of categories) {
           const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
           if (cards.length === 0) continue;
-          const ranked = this.rankFlpEligible(cards, now, foreignTrack);
+          const ranked = this.rankFlpEligible(cards, now);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -1008,10 +984,7 @@ export class OnDeckVocabService {
       const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
         for (const category of categories) {
           const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
-          const resting = rankCardQueueCooled(cards, now, {
-            markTypes: flpMarkTypes(foreignTrack),
-            windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
-          });
+          const resting = rankCardQueueCooled(cards, now, { bar: OnDeckVocabService.FLP_BAR });
           if (resting.length > 0) return resting[0];
         }
         return null;
@@ -1030,7 +1003,7 @@ export class OnDeckVocabService {
           const lent = await this.fetchFlpCandidates(
             client, userId, category, language, excludeIds, collection, lentIds
           );
-          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, foreignTrack);
+          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -1057,14 +1030,11 @@ export class OnDeckVocabService {
 
       if (!winner) return null;
 
-      // Enrich only the chosen card (candidates were fetched un-enriched), then
-      // re-apply the readyMarkTypes stamp defensively so face-steering survives
-      // any enrichment step that rebuilds the object.
-      const readyMarkTypes = winner.readyMarkTypes;
+      // Enrich only the chosen card (candidates were fetched un-enriched).
       const enriched = await this.enrichEntriesPipeline([winner], language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
       const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
-      return { ...withUsedIn[0], readyMarkTypes };
+      return withUsedIn[0];
     } finally {
       client.release();
     }
@@ -1072,9 +1042,8 @@ export class OnDeckVocabService {
 
   /**
    * The top `limit` flp-eligible cards of one category for the initial working loop —
-   * the head of that category's queue, longest-waiting first (rankFlpEligible),
-   * stamped with `readyMarkTypes` for client face-steering. `excludeIds` keeps already-picked cards
-   * out. Returns fewer than `limit`, including zero, when the category is spent.
+   * the head of that category's queue, longest-waiting first (rankFlpEligible).
+   * `excludeIds` keeps already-picked cards out. Returns fewer than `limit`, including zero, when the category is spent.
    */
   private async fetchEligibleCategoryCards(
     client: PoolClient,
@@ -1085,12 +1054,11 @@ export class OnDeckVocabService {
     excludeIds: number[],
     now: number,
     collection?: CollectionFilter | null,
-    lentIds: number[] = [],
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    lentIds: number[] = []
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
     const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
-    return this.rankFlpEligible(candidates, now, foreignTrack).slice(0, limit);
+    return this.rankFlpEligible(candidates, now).slice(0, limit);
   }
 
   /**
@@ -1102,7 +1070,7 @@ export class OnDeckVocabService {
    * card the learner chose, so the ladder now reads fresh → borrowed → COOLED → lent
    * (docs/PROVISIONAL_CARDS.md § 4b).
    *
-   * These cards are shown but earn nothing: a mark fired at a still-cooling track is
+   * These cards are shown but earn nothing: a mark fired at a still-cooling clock is
    * dropped at `POST /api/flashcards/mark`. That is the point of the cooldown — a card
    * answered correctly minutes ago has nothing left to teach today — and it is a
    * better answer than growing the learner's deck with words they never chose.
@@ -1116,15 +1084,11 @@ export class OnDeckVocabService {
     excludeIds: number[],
     now: number,
     collection?: CollectionFilter | null,
-    lentIds: number[] = [],
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    lentIds: number[] = []
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
     const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
-    return rankCardQueueCooled(candidates, now, {
-      markTypes: flpMarkTypes(foreignTrack),
-      windowCategoryOf: (card, type) => this.flpWindowCategory(card, type),
-    }).slice(0, limit);
+    return rankCardQueueCooled(candidates, now, { bar: OnDeckVocabService.FLP_BAR }).slice(0, limit);
   }
 
   /**
@@ -1152,8 +1116,7 @@ export class OnDeckVocabService {
     need: number,
     excludeIds: number[],
     now: number,
-    collection?: CollectionFilter | null,
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    collection?: CollectionFilter | null
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
     const { lentIds } = await this.provisionalCardService.acquireLentCards(
@@ -1179,7 +1142,7 @@ export class OnDeckVocabService {
       const candidates = await this.fetchFlpCandidates(
         client, userId, category, language, excludeIds, collection, lentIds
       );
-      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, foreignTrack);
+      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now);
       rows.push(...ranked.slice(0, need - rows.length));
     }
     return rows;
@@ -1194,10 +1157,10 @@ export class OnDeckVocabService {
    * - `categoryFilter`: returns up to 10 cards from that single category (legacy
    *   deck-tap path), ignoring distribution.
    *
-   * PER-TYPE COOLDOWN (docs/MASTERY_REWORK.md § Per-type cooldown): every fetch is
-   * eligibility-filtered — a card is only offered if ≥1 of the session's two flp mark
-   * types (`flpMarkTypes(foreignTrack)`) is off cooldown, and it's stamped with
-   * `readyMarkTypes` so the client steers the shown face. Within each quota the
+   * KNOW COOLDOWN (docs/MASTERY_REWORK.md § 6): every fetch is eligibility-filtered —
+   * a card is only offered once its know clock (shared by recognition and production)
+   * has run out. Which face it then shows is decided client-side from the card's own
+   * history (src/utils/flpFaceSteering.ts). Within each quota the
    * eligible cards are ranked AS A QUEUE, longest-waiting first (rankFlpEligible), so
    * a quota is filled by the cards most overdue for review; cards with no correct mark
    * yet sort last. Enriches cards with related words that share
@@ -1232,10 +1195,7 @@ export class OnDeckVocabService {
     /** Vet ids the caller's baseline top-up lent this session. Selection is
         sorted-only, so without these the lent cards are invisible and the loop would
         lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
-    lentIds: number[] = [],
-    /** The session's foreign-first track — see DEFAULT_FOREIGN_TRACK. Decides which two
-        tracks eligibility, queue order and the `readyMarkTypes` stamp are computed on. */
-    foreignTrack: FlpForeignTrack = OnDeckVocabService.DEFAULT_FOREIGN_TRACK
+    lentIds: number[] = []
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -1258,7 +1218,7 @@ export class OnDeckVocabService {
         // single tapped category.
         loopCategories = [categoryFilter];
         workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, foreignTrack
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds
         );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
@@ -1272,7 +1232,7 @@ export class OnDeckVocabService {
         // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
           const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
+            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds
           );
           workingLoop.push(...rows);
         }
@@ -1307,7 +1267,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchEligibleCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds
         );
         workingLoop.push(...rows);
       }
@@ -1318,7 +1278,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchCooledCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, foreignTrack
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds
         );
         workingLoop.push(...rows);
       }
@@ -1327,7 +1287,7 @@ export class OnDeckVocabService {
       if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
         const lent = await this.lendIntoLoop(
           client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
-          workingLoop.map(c => c.id), now, collection, foreignTrack
+          workingLoop.map(c => c.id), now, collection
         );
         workingLoop.push(...lent);
       }
@@ -1337,14 +1297,6 @@ export class OnDeckVocabService {
       // doesn't march predictably from most- to least-recently-rested. The legacy
       // single-category path keeps its original unshuffled order.
       if (!categoryFilter) shuffleInPlace(workingLoop);
-
-      // Preserve each card's readyMarkTypes stamp across enrichment (enrichment
-      // steps spread the entry, but we re-apply defensively so face-steering is
-      // never dropped by a rebuild).
-      const readyByCardId = new Map<number, MarkType[]>();
-      for (const card of workingLoop) {
-        if (card.readyMarkTypes) readyByCardId.set(card.id, card.readyMarkTypes);
-      }
 
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(workingLoop, language);
@@ -1357,14 +1309,7 @@ export class OnDeckVocabService {
       // and auto-play feel instant. Per-entry failures degrade gracefully:
       // hasAudio=false signals the client to fall back to Web Speech for that
       // card. We don't fail the whole loop if Google has a hiccup on one entry.
-      const withAudio = await this.prewarmAudio(withUsedIn);
-
-      // Re-apply the readyMarkTypes stamp (see readyByCardId above) as the final
-      // step, so client face-steering data is guaranteed present on the response.
-      return withAudio.map(card => {
-        const ready = readyByCardId.get(card.id);
-        return ready ? { ...card, readyMarkTypes: ready } : card;
-      });
+      return await this.prewarmAudio(withUsedIn);
     } finally {
       client.release();
     }
@@ -1596,10 +1541,10 @@ export class OnDeckVocabService {
    * distributed-working-loop endpoint.
    *
    * PER-TYPE SELECTION (docs/MASTERY_REWORK.md § "Games select by their own mark
-   * type" + § Per-type cooldown, "Games"): `gameMarkType` is the mark type this
+   * type" + § 6 "Games honor the same clock"): `gameMarkType` is the mark type this
    * game emits (bubble-match = 'recognition'). It drives BOTH which category
    * bucket each candidate falls in (banded off that track's own 8-mark window) and
-   * the per-type cooldown. The pool is filled FRESH-FIRST — cards whose game mark
+   * freshness (the clock of the bar it lands in, plus the flp-only line). The pool is filled FRESH-FIRST — cards whose game mark
    * type is off cooldown, drawn from the requested categories then the fallback
    * categories — and only tops up with COOLED cards (same category order) as a
    * last resort, so a recently-played library still yields a full board.
@@ -1619,7 +1564,7 @@ export class OnDeckVocabService {
    *     without it. Used for cards the player just cleared: they should feel
    *     retired for a while, but a 21-card library must still assemble a board.
    *     This also covers the race where the client's fire-and-forget mark POST
-   *     hasn't landed yet, so the real per-type cooldown isn't visible to this
+   *     hasn't landed yet, so the real cooldown isn't visible to this
    *     query.
    */
   async getGameVocabPool(
@@ -1840,7 +1785,7 @@ export class OnDeckVocabService {
       //    just-played library still assembles a full board.
       //
       //    For a single-bucket caller this is the tier that MATTERS, and it is
-      //    deliberately allowed to break the per-type cooldown: a genuinely Mastered
+      //    deliberately allowed to break the cooldown: a genuinely Mastered
       //    card that is merely resting is a truthful `bloom` bubble (Hydra's +1 tier),
       //    whereas a minted HSK-1 word placed in that tier by its lend level is not.
       //    Note the consequence —
@@ -1971,7 +1916,7 @@ export class OnDeckVocabService {
    * non-`zh` languages return `sufficient: false` with a language note.
    *
    * PER-TYPE SELECTION (docs/MASTERY_REWORK.md § "Games select by their own mark
-   * type" + § Per-type cooldown, "Games"): `gameMarkType` is the mode's mark type —
+   * type" + § 6 "Games honor the same clock"): `gameMarkType` is the mode's mark type —
    * 'reading' for No-Pinyin, 'production' for Pinyin — and it decides both the
    * category bucket each candidate lands in and its cooldown. Because the two modes
    * bucket off different tracks, the SAME library yields different word sets per

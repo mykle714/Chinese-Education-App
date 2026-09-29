@@ -99,6 +99,22 @@ export const SHADOW = {
     /** `.phd .sw` — the spine reduced to a 26x34 identity swatch. Same shape, smaller. */
     spineSwatch: `2px 2px 6px ${INK(0.14)}, inset -3px 0 7px rgba(255, 255, 255, 0.5)`,
 
+    /**
+     * A RECESS — an empty well pressed into a surface, lit from above so the shadow
+     * falls inside the TOP edge. No artboard equivalent (the designs never draw a
+     * pressed-in shape); this is the sort page's old "already sorted" card shadow,
+     * re-inked, now used for the card crater a dragged/sorted card leaves behind
+     * (SortCardsPage → CardCrater, docs/SORT_CARDS_REQUIREMENTS.md §4.5).
+     */
+    recessed: `inset 0 2px 5px ${INK(0.22)}`,
+    /**
+     * The same recess scaled ~2× for a well roughly twice a MiniCard's size (the sort
+     * page's drop buckets, up to 190px wide — SortCardsPage → Bucket). Offset and blur
+     * double with the box; alpha stays put so it reads as the same material as the
+     * card crater, just a bigger hole.
+     */
+    recessedDeep: `inset 0 4px 10px ${INK(0.22)}`,
+
     // ── Upward shadows ──────────────────────────────────────────────────────────
     // Anything anchored to the bottom edge casts UP onto the page it covers. Same
     // rules, negative Y.

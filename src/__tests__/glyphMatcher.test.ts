@@ -250,6 +250,37 @@ describe('real hand-drawn ink (§ 6y)', () => {
     }
   });
 
+  it('shows each glyph once even though variants give it several templates', () => {
+    // § 6z-5: ⺈ owns its standalone drawing plus in-context variants. Without the
+    // dedupe, one glyph could take two chips in a 12-chip row.
+    const templates = loadTemplates();
+    const { chars } = templates;
+    expect(chars.filter((char) => char === '⺈').length).toBeGreaterThan(1);
+    for (const glyph of ['木', '口', '尔']) {
+      const all = matchGlyphs(inkFromMedians(glyph), templates);
+      expect(new Set(all.map((c) => c.char)).size).toBe(all.length);
+    }
+  });
+
+  it('lifts an in-context ⺈ into the visible row through its § 6z-5 variant', () => {
+    // Before variants, the 2026-09-27 sample ranked ⺈ 589th: its only template
+    // was the tall standalone drawing, and the learner drew the flat form ⺈ takes
+    // inside 你 / 尔. Ink alone still prefers 冖 — the buffer settles it (§ 6z-6,
+    // covered in beginnerKeyboardComposition.test.ts) — but ⺈ must at least
+    // reach the displayed 12 on its own merits, via a variant.
+    const templates = loadTemplates();
+    for (const sample of realInk.inContext) {
+      const ink: Ink = sample.strokes.map((stroke) => ({
+        xs: stroke.x,
+        ys: stroke.y,
+        ts: stroke.x.map((_, i) => i * 16),
+      }));
+      const explained = explainGlyphMatch(ink, templates, sample.glyph);
+      expect(explained.variant, sample.note).toBe(true);
+      expect(explained.rank, sample.note).toBeLessThan(12);
+    }
+  });
+
   it('pairs each drawn stroke with the template stroke of the same index', () => {
     // The signature of a genuine match, and the thing that localized the bug: a
     // mirrored corpus produced a scrambled permutation instead.

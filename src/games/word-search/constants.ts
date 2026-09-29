@@ -119,16 +119,16 @@ export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
 
 /**
  * Hint meter (see docs/WORD_SEARCH_GAME.md §5a). The bar holds `HINT_BAR_UNITS`
- * hollow segments; each successful find fills one. A hint becomes usable once at
- * least `HINT_COST` segments are filled, and spending a hint drains that many.
- * The threshold line in the bar is drawn after `HINT_COST` segments. Tunable.
+ * charge bars (drawn under the hint button); each successful find fills one. A hint
+ * becomes usable once at least `HINT_COST` are filled, and spending a hint drains
+ * that many. Tunable.
  */
 export const HINT_BAR_UNITS = 8;
 export const HINT_COST = 1;
 
 /**
  * The hint accent — the ink every part of the hint mechanic is drawn in: the
- * lightbulb on the `.hintbar` button, the banked charge dots, and the revealed
+ * lightbulb on the `.hintbar` button, the banked charge bars, and the revealed
  * mask text (`WordSearchHintRow`).
  *
  * It used to be a free-floating `#FB8C00` amber that also tinted the hinted word's
@@ -145,13 +145,13 @@ export const HINT_COST = 1;
 export const HINT_ACCENT_COLOR = COLORS.warnInk;
 
 /**
- * The hinted gloss's highlighter fill in the word list — the orange MID tier, the same
+ * The hinted gloss's highlighter fill in the word list — the orange SURFACE tier, the same
  * fill the board paints the hint's revealed cells with (`.now`/hint reveal in
  * WordSearchGrid). It replaced a text tint that v2 turned into plain ink, which had
  * silently erased the hinted state; a fill is v2's only way to mark a word, and using
  * the board's own hint colour keeps the gloss visibly attached to the cells it names.
  */
-export const HINT_HIGHLIGHT_BG = COLORS.orgM;
+export const HINT_HIGHLIGHT_BG = COLORS.org;
 
 /**
  * Trailing mark on a **No Pinyin** (component) hint island that still has

@@ -771,10 +771,11 @@ This is the same mechanism as the section above with a **second source** feeding
 the same `clockPaused` boolean. It is not new machinery.
 
 **The rule protects a CLOCK, so a genuinely clockless game is exempt.** Hydra Bubbles
-opts out (docs/HYDRA_BUBBLES.md § 7.1c): it has no timer, its bubbles do not drift,
-and nothing on its board advances except in response to a match, so a returning player
-finds the run exactly as they left it without any pause machinery — and a
-tap-to-resume overlay would be friction over a board that never moved. A game
+opts out (docs/HYDRA_BUBBLES.md § 7.1c): it has no timer, its bubbles' drift moves
+no score, fill or spawn (and the rAF loop does not run while hidden), and nothing on
+its board changes except in response to a match, so a returning player finds the run
+as they left it without any pause machinery — and a tap-to-resume overlay would be
+friction over a board whose contents never changed. A game
 qualifies for this exemption only if **nothing** advances unattended; if any part of
 it is timed (Hydra's own challenge variant is scored on time to clear) the rule applies
 in full to that part.
@@ -1202,10 +1203,11 @@ they are dropped by the § "next markable at" guard
 > `BentoStripProps.control` (`src/components/bento/Bento.tsx`).
 > Full rationale: [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
 
-Bubble Match is a foreign → meaning drill, so it follows the same rule as the flp's
-Chinese-side-one face: **pinyin shown ⇒ it marks `recognition`; pinyin hidden on a zh
-board ⇒ it marks `reading`**, because the player then reaches the meaning from the
-characters alone. Spanish is unaffected (nothing to hide; always recognition).
+Bubble Match is a foreign → meaning drill: **pinyin shown ⇒ it marks `recognition`;
+pinyin hidden on a zh board ⇒ it marks `reading`**. (The flp's Chinese-side-one face
+followed the same rule until the 2026-09-25 know merge; it now always marks
+`recognition` — MASTERY_REWORK.md § 1a.) Bubble Match switches track because the
+player then reaches the meaning from the characters alone. Spanish is unaffected (nothing to hide; always recognition).
 
 Three consequences worth knowing before touching this game:
 
@@ -1252,9 +1254,26 @@ with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
   currently **0.3** — i.e. 30% of the original tuning, so the field reads as a slow
   shimmer rather than a lava lamp. Set it to `1` for the original float, or `0` for
   a fully static field. Growing and held bubbles do not drift (each owns its own
-  position); a dropped bubble simply resumes the velocity it had when picked up —
-  there is no throw-on-release. Drag a bubble onto its partner to match
-  (bidirectional). Correct → green pop + removal; wrong → red shake + release.
+  position). Drag a bubble onto its partner to match (bidirectional). Correct →
+  green pop + removal; wrong → red shake + release.
+- **Air-hockey throw (2026-09-25, both bubble games).** An UNJUDGED release — onto
+  empty space, onto a same-kind bubble, or a cancel in the strip — hands the bubble
+  the drag's release velocity: `ThrowTracker` (`src/games/bubbles/throwTracker.ts`)
+  records the held bubble's center on every pointermove and measures displacement
+  over the trailing `THROW_SAMPLE_WINDOW_MS` (a pointer that paused `THROW_STALE_MS`
+  before lifting throws nothing), capped at `THROW_MAX_SPEED`. A release over an
+  opposite-kind bubble is **always judged**, however fast the flick; a thrown bubble
+  that strikes its partner mid-flight just bounces. In `stepPhysics` a bubble faster
+  than `DRIFT_MAX_SPEED` is **gliding**: wander and the idle-speed ease are off and
+  only exponential `THROW_FRICTION` acts (a 1500 px/s flick coasts ~830 px, ~2 s),
+  until it drops back into the drift regime. Collisions are the same mass-weighted
+  elastic impulse, so a throw knocks neighbors into their own glide. To keep fast
+  bodies from tunneling, the step is **substepped** — enough substeps that the
+  fastest body moves ≤ `SUBSTEP_TRAVEL_FRACTION` of the smallest radius each, capped
+  at `MAX_SUBSTEPS`; grow-in and velocity updates stay once-per-frame. Walls
+  **mirror** a body that its own motion carried out, and **glide** back (at
+  `MAX_PUSH_SPEED`) one that was already outside (released past an edge, or shoved).
+  Tests: `src/__tests__/bubbleThrowPhysics.test.ts`.
 - **A held bubble may be dragged clean off the field** — left, right and bottom
   alike, by `HELD_OVERDRAG_RADII` of its own radius measured from the STAGE edge.
   `clampHeldCenter` (`physics.ts`) is the single source for how far. What differs
@@ -1448,7 +1467,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   |---|---|---|
   | 1. fresh (requested) | game mark type off cooldown | the requested buckets only |
   | 2. fresh (fallback) | game mark type off cooldown | Target → Comfortable → Unfamiliar → Mastered |
-  | 3. cooled | on the per-type cooldown | requested buckets, then fallback order |
+  | 3. cooled | on its bar's cooldown clock, or know-track at core pbh ≥ 6 (flp-only, MASTERY_REWORK.md § 6) | requested buckets, then fallback order |
   | 4. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
   | 5. **lend** | **re-lent** — or newly minted — provisional cards | whatever is still missing |
 

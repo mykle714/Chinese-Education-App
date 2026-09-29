@@ -76,9 +76,9 @@ Confirmed mark sources:
 
 | Type | Produced by | Sign |
 |---|---|---|
-| **Recognition** | flp **foreign-first** review **with pinyin shown** (zh chars-first / es spanish-first → meaning); **Bubble Match**; **Match Speed** | correct / incorrect |
+| **Recognition** | flp **foreign-first** review, **pinyin shown or not** (zh chars-first / es spanish-first → meaning; § 1a); **Bubble Match**; **Match Speed**; **Hydra Bubbles** | correct / incorrect |
 | **Production** | flp **English-first** review (meaning → foreign); **Word Search "Pinyin" mode** matches | flp: correct/incorrect. Word Search: **positive-only** (a match = positive Production mark; no negatives), and **hinted words emit nothing at all** — see note below |
-| **Reading** | flp **foreign-first** review on a **zh** deck with **"Show pinyin" off** (§ 1a); **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | flp: correct / incorrect. Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
+| **Reading** | **Bubble Match** with pinyin off (§ 1a); **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | flp: correct / incorrect. Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
 | **Writing** | **Practice Writing drill** (`docs/PRACTICE_WRITING.md`), top-1 stroke grading | correct / incorrect |
 
 **Speed Reading emits NEGATIVE reading marks, and that is intended.** It is the
@@ -104,34 +104,32 @@ neither a positive nor a negative reading is warranted. See
 The two Word Search modes already exist and are chosen at launch from the hub
 (fixed per run) — the mode slug cleanly disambiguates Production vs Reading.
 
-### 1a. The flp's foreign-first face is per-session
+### 1a. Pinyin off → the reading track (Bubble Match only; NOT the flp)
 
-> STATUS: **IMPLEMENTED** (2026-08-22). Code: `foreignPromptTrack` (the rule) /
-> `flpMarkTypes` / `FlpForeignTrack` / `parseFlpForeignTrack` (`server/contracts/wire.ts`), `markTypeForSideOne` +
-> `sideOneForCard` (`src/utils/flpFaceSteering.ts`, called from
-> `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`),
-> the `foreignTrack` computed in
-> `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`,
-> `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` + the threaded `foreignTrack` parameter,
-> `OnDeckVocabController.getDistributedWorkingLoop`, `POST /api/flashcards/mark`
-> (`server/routes/flashcardRoutes.ts` — `foreignTrack` steers the REFILL only, so it
-> stays in the route beside the rest of the replacement-card parsing).
+> STATUS: **CHANGED 2026-09-25 — the flp no longer takes part.** Code: `foreignPromptTrack`
+> + `ForeignPromptTrack` (`server/contracts/wire.ts`; the type was `FlpForeignTrack`),
+> read by `src/games/bubble-match/BubbleMatchPage.tsx`. The flp side of this section —
+> `flpMarkTypes`, `parseFlpForeignTrack`, the `?foreignTrack=` wire parameter on
+> `GET /api/onDeck/distributedWorkingLoop`, `GET /api/onDeck/flpReadyCounts` and
+> `POST /api/flashcards/mark`, and `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` — was
+> **deleted** with the know merge (§ 6).
 
-A zh card shown foreign-first **with pinyin** can be answered off the phonetic aid, so
-it tests recognition of the meaning. With the flp's **"Show pinyin"** setting off
-(`useFlashcardLearnSettings`), the learner must get to the meaning **from the
-characters alone** — which is what the Reading track means, and exactly the call Word
-Search's No-Pinyin mode already makes. So:
+A zh prompt shown foreign-first **with pinyin** can be answered off the phonetic aid, so
+it tests recognition of the meaning. Without pinyin the learner must get to the meaning
+**from the characters alone**, which is what the Reading track means — the call Word
+Search's No-Pinyin mode makes.
 
-| Session | Side 1 = English | Side 1 = foreign |
-|---|---|---|
-| zh, pinyin **on** | `production` | `recognition` |
-| zh, pinyin **off** | `production` | **`reading`** |
-| es (any setting) | `production` | `recognition` |
+**The flp writes know marks only, whatever the pinyin setting.** From 2026-08-22 to
+2026-09-25 a pinyin-off zh flp session wrote `reading` on its foreign-first face. That
+was reversed with the know merge (§ 6): the flp's two faces are now always
+`production` (English-first) and `recognition` (foreign-first), and "Show pinyin" is a
+display setting only. Reading marks are planned to come from a **dedicated reading
+flp** (not designed yet). `markTypeForSideOne` (`src/utils/flpFaceSteering.ts`) is the
+mapping.
 
-**Bubble Match follows the same rule**, through the same helper: a pinyin-off zh board
-marks `reading`, and its pool is requested on that track. Two differences, both forced
-by it being a game rather than a loop — see
+**Bubble Match is the rule's one consumer**: a pinyin-off zh board marks `reading`, and
+its pool is requested on that track. Two properties, both forced by it being a game —
+see
 [GAMES_FEATURE.md § "Bubble Match: pinyin picks the track"](./GAMES_FEATURE.md):
 
 * the track is **latched when the board is dealt** and held for the run (including
@@ -162,32 +160,11 @@ by it being a game rather than a loop — see
 > it does.
 
 **Spanish is deliberately excluded**: es renders as plain text with no phonetic layer
-to hide, so the toggle changes nothing on the card and its foreign-first face would
-otherwise swap tracks for a UI change the learner never sees.
-
-**Recognition is not mixed in.** With pinyin off an flp session emits only
-`production` + `reading`; the recognition track then accrues from Bubble Match /
-Match Speed only. Presenting both would mean overriding the display toggle per card.
-
-**The track is a wire parameter, not a client-side relabel.** It is sent on
-`GET /api/onDeck/distributedWorkingLoop?foreignTrack=` and in the `POST
-/api/flashcards/mark` body, because the server filters, ranks and stamps
-`readyMarkTypes` **on the session's two tracks** (§ 6). A client-only mapping would
-show a foreign-first face steered by the recognition cooldown, emit a `reading` mark,
-and have it silently dropped by the mark endpoint's cooldown guard whenever the
-reading track was cooling. `flpMarkTypes(foreignTrack)` is the single definition both
-sides map through.
-
-> **Toggling mid-session is bounded, not free.** The loop fetch is deliberately not
-> keyed on `foreignTrack` (re-fetching would throw away the card stack for a display
-> toggle), so cards already in the loop keep `readyMarkTypes` stamped for the old
-> pair; until the stack turns over, a foreign-first face may be shown whose new track
-> is cooling and whose mark is dropped. Every refill after the toggle is steered
-> correctly.
+to hide, so the toggle changes nothing on the card and must not swap its track.
 
 **These four are the _only_ emitters.** No other game or feature emits Reading or
-Writing marks — Reading comes from the pinyin-off flp session above and Word Search
-No-Pinyin, Writing solely
+Writing marks — Reading comes from pinyin-off Bubble Match, Word Search No-Pinyin,
+Speed Reading and Memory Map; Writing solely
 from the Practice Writing drill.
 
 **Scope: the mark/goal logic is language-agnostic** (nothing in the type/pbh math
@@ -509,34 +486,36 @@ Two rules inside that:
 - **The switch re-seeds on the LENS, not on the entry.** Paging between cards keeps the
   track the learner chose; re-opening a card from a different Center moves it.
 
-**Cooldowns (`.cd3`).** Under the window, one row per mark type in the shown track — so
-the core track shows two — each a live **`4m 1w 3d 5h 37m 26s` countdown**
+**Cooldown.** Inline in the heading, right after the band pill (`MasteryWindow.tsx` →
+`CooldownTimer`): **one countdown for the shown bar** — a clock belongs to a bar since the
+know merge (§ 6), so the Know bar's old two rows (Production, Recognition) became one.
+Until 2026-09-28 it was a legend-like `.cd3` row centered under the cells (band swatch +
+bar name + countdown); the swatch and name only repeated the heading, so the row was
+dropped and the bare countdown moved up beside the badge. It reads
+`barCooldownRemainingMs`, the same function the mark gate enforces. The timer is a live
+**`4m 1w 3d 5h 37m 26s` countdown**
 (`formatCooldownRemaining`, `src/utils/formatDuration.ts`). Same unit discipline as the
 minute-points formatter: leading zero units dropped, **middle zero units kept**, seconds
 always printed. The middle zeros are load-bearing — `m` is both months and minutes, so a
 collapsed `6m 26s` would read as six *minutes*. A **ready track reads `0s`**, not a word,
-so every row has the same shape. Months are a flat 30 days and weeks a flat 7, so the
-180-day Mastered window is exactly `6m 0w 0d 0h 0m 0s`. Mono + `tabular-nums` so the row
-does not jitter as digits change; a resting row is dimmed as a whole, and a ready one adds
-a small green **check** (`MASTERY_READY_COLOR`) so the state is scannable without reading
-digits. The component ticks on a **1s** interval, one interval for the section rather than
-one per row.
+so the timer keeps the same shape. Months are a flat 30 days and weeks a flat 7, so the
+180-day Mastered window is exactly `6m 0w 0d 0h 0m 0s`. Mono + `tabular-nums` so the timer
+does not jitter as digits change; a resting timer is dimmed, and a ready one adds a small
+green **check** (`MASTERY_READY_COLOR`) so the state is scannable without reading digits.
+The component ticks on a **1s** interval, one interval for the whole section.
 
-- Row order is **`COOLDOWN_ROW_ORDER`** — production above recognition — deliberately
-  *not* the window's paint order (the fill paints recognition first, per `BAR_TYPE_ORDER`).
-  Kept as an explicit list rather than a `.reverse()`: the two orders answer different
-  questions, and a reverse would silently re-order any bar that later grows a third track.
 - The window used for the display is the **per-type** category (`computeTypeCategory`) —
   the one every *game* uses. ⚠️ The **flp** widens its window to the card's **core**
   category (§ 6), so on a card whose per-type and core bands differ the flp holds that
   track back slightly longer than the cdp number suggests. The display can only name one
   window; the per-type one is the track's own.
-- Each row is labelled with its `MARK_TYPE_LABELS` name beside its swatch, so the legend
-  the old component carried separately is gone — it was naming colours that now sit next
-  to their own words.
+- No swatch or bar name rides with the timer: the heading it sits in already names the
+  bar and paints its band, so the old legend's labels only repeated it.
 
-**Placement.** Section rule + switch + window, in normal page flow under the hero card.
-There is no `SectionCard` wrapper any more: `MasteryWindow` owns its own `.sec2` rule, and
+**Placement.** Switch + window, in normal page flow under the hero card. The switch sits
+alone, right-aligned on the 22px gutter — the `Mastery` `.sec2` overline + hairline that
+used to lead into it was dropped 2026-09-28 (the Know / Read / Write labels name the
+section on their own). There is no `SectionCard` wrapper any more, and
 what used to be the Definition / Breakdown / Examples boxes beside it have moved into the
 page's pull-up sheet (entry 18). The component lives in `src/components/mastery/` rather
 than in `VocabCardDetailBody` because the read-only **dictionary** cdp has no marks to
@@ -544,8 +523,8 @@ draw and must not import it.
 
 ### Mini cards — the eight-mark window, at hairline scale
 
-`src/components/MiniVocabCard.tsx` draws the **cdp's eight-mark window** along the bottom
-of the 92×132 thumbnail (`BAR_STRIP`: 3px tall, inset 8px each side, 1.5px cell gap) for
+`src/components/MiniCard.tsx` (`MasteryStrip`, fed the lens bar by `MiniVocabCard`) draws
+the **cdp's eight-mark window** along the bottom of the 92×132 thumbnail (`BAR_STRIP`: 3px tall, inset 8px each side, 1.5px cell gap) for
 the surface's lens bar, from the `lens` prop (default `core`, forwarded by
 `MiniVocabCardGrid`).
 
@@ -559,8 +538,9 @@ not invite the estimate the detail page spent a whole component refusing to invi
 
 **Colour — the same rule as the cdp (Shelf System v2, 2026-09-23).** Every filled cell
 takes the lens bar's utcm **band** in the ramp's MARK tier, one hue for the whole window
-(`getBandMark(category, "small")` in `src/components/MiniVocabCard.tsx`). The cdp's
-`MasteryWindow` now does the same (`getBandMark(category)`): *"mastery bars are colored by
+(`getBandMark(category)` in `src/components/MiniCard.tsx` → `MasteryStrip`). The cdp's
+`MasteryWindow` does the same (`getBandMark(category)`), so both surfaces paint identical
+hexes: *"mastery bars are colored by
 mastery progress, not the mark type"* (user, 2026-09-23), which retired the v1 split where
 the cdp coloured cells by mark type and the mini card by band. The band is the question a
 thumbnail is actually asked — *"how well do I know this?"* — which is precisely what the
@@ -589,12 +569,16 @@ ring would be most of the cell, so the mini card uses frame 17's single flat
 
 ⚠️ **The band colour is the MARK tier, not `getCategoryColor`.** `CATEGORY_COLORS` are the
 band SURFACES — pale fills legible only behind a 1px `COLORS.markOutline` ring, and a 3px
-pip cannot carry one. `BAND_MARK` (`src/utils/categoryColors.ts`) is the fluorescent MARK
-tier at each band's own hue, saturated enough to stand at any size, falling back to
-`--greyA` for an absent band so "no band yet" never reads as a fifth band. The mini strip
-uses the `"small"` variant, which swaps Target's `--yelMk` for the deeper `--yelMkD`: at
-3.5px on the cream card face the full-strength yellow dissolves. (v1 used a dark `*A` ink
-tier here, `BAND_INK` / `getBandInk`; v2 removed the ink tier.)
+pip cannot carry one. `BAND_MARK` / `getBandMark` (`src/utils/categoryColors.ts`) is the
+fluorescent MARK tier at each band's own hue, saturated enough to stand at any size,
+falling back to `--greyA` for an absent band so "no band yet" never reads as a fifth band.
+**Tier history:** v1 used a dark `*A` ink tier (`BAND_INK` / `getBandInk`). v2
+(2026-09-23) moved both bars to MARK, with a mini-strip-only `"small"` variant that swapped
+Target's `--yelMk` for a deeper `--yelMkD` because full-strength yellow dissolved into the
+cream card face at 3.5px. On 2026-09-28 the user briefly tried MID, then settled on MARK
+with **every Mark token darkened 5% oklch L app-wide** (`src/theme/colors.ts`); the new
+`--yelMk` (`#E8C800`) is deeper than the old `--yelMkD` (`#EEC900`), so the `"small"`
+variant and `yelMkD` were deleted and both bars take the same colour.
 
 **Layering note — REVERSED 2026-08-31.** The cycle this warned about is gone:
 `theme/colors.ts` now imports **nothing** (its four `*Main` aliases read hoisted local
@@ -653,19 +637,33 @@ window, and its colour is the band.
 
 ---
 
-## 6. Per-type cooldown (flp working-loop selection)
+## 6. The know cooldown (one clock per bar) + flp-only above pbh 6
 
-> STATUS: **IMPLEMENTED**. Code: `server/services/OnDeckVocabService.ts`
-> (cooldown helpers + both selection paths), `server/services/FlashcardMarkService.ts`
-> (the hard mark-time gate), `server/routes/flashcardRoutes.ts` (refill call site),
-> `src/utils/flpFaceSteering.ts` (`sideOneForCard` face-steering, called from
-> `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`; tests in
-> `src/__tests__/flpFaceSteering.test.ts`). Types: `readyMarkTypes` on `VocabEntry`
-> (`server/types/index.ts`, `src/types.ts`).
+> STATUS: **IMPLEMENTED 2026-09-25 ("the know merge")**, replacing the per-type
+> cooldown and the weighted face flip. No migration — `typedMarkHistory` still keeps
+> recognition and production as separate tracks; only the rules read over them changed.
+>
+> Code, by layer:
+> - **Contracts (shared, pure):** `server/contracts/cooldown.ts` (`lastCorrectOnBar`,
+>   `barReadyAt`, `barCooldownRemainingMs`, `isBarOnCooldown`, `isMarkOnCooldown`);
+>   `server/contracts/mastery.ts` (`FLP_ONLY_CORE_PBH`, `isFlpOnlyMark`);
+>   `server/contracts/wire.ts` (`FLP_MARK_SURFACE`); `server/contracts/flpReadiness.ts`
+>   (the fdp ready counts, now just the know clock).
+> - **Service:** `server/services/FlashcardMarkService.ts` → `applyMark` (both gates);
+>   `server/services/OnDeckVocabService.ts` → `FLP_BAR`, `rankFlpEligible`,
+>   `isCardGameEligible`; `server/services/cardQueueRanking.ts` (`rankCardQueue` /
+>   `rankCardQueueCooled`, keyed by `bar`).
+> - **Client:** `src/utils/flpFaceSteering.ts` (`sideOneForCard`, `markTypeForSideOne`),
+>   called from `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`;
+>   `src/components/mastery/MasteryWindow.tsx` → `CooldownLegend`;
+>   `src/utils/vocabSort.ts` → `cooldownKey`.
+> - **Tests:** `server/__tests__/cardQueueRanking.test.ts`,
+>   `server/__tests__/flashcardMark.test.ts` (the flp-only block),
+>   `src/__tests__/flpFaceSteering.test.ts`, `src/__tests__/flpReadiness.test.ts`.
 
-After a **correct** mark, a card is put on a **cooldown** so it doesn't
-immediately reappear in the flp working loop. The window **duration** is keyed on
-a utcm category (weaker = shorter, so weak cards drill more):
+After a **correct** mark, a card is put on a **cooldown** so it doesn't immediately
+come back. The window **duration** is keyed on a utcm category (weaker = shorter, so
+weak cards drill more):
 
 | Category | Window |
 |---|---|
@@ -674,94 +672,91 @@ a utcm category (weaker = shorter, so weak cards drill more):
 | Comfortable | 14 days |
 | Mastered | 6 months (180 days) |
 
-### The timer is PER MARK TYPE
+### One clock per BAR — recognition and production share the know clock
 
-The cooldown clock is measured from that card's **last correct mark _of a given
-type_** (`getLastCorrectMarkTimestampForType`), not the newest correct mark across
-all tracks. So Recognition and Production cool down **independently** — getting a
-card right foreign-first (Recognition) does not suppress it from coming back for an
-English-first (Production) drill.
+A cooldown clock belongs to a **bar**, not a mark type:
 
-The flp can only ever present **two** of the four mark types in one session: an
-English-first prompt → Production, and a foreign-first prompt → the session's
-**`foreignTrack`** (Recognition, or Reading when pinyin is off — § 1a;
-`markTypeForSideOne`). Writing marks come from another surface (Practice Writing) and
-are **never** shown in the loop, so flp cooldown eligibility consults **only** the
-session's pair, `flpMarkTypes(foreignTrack)` (`server/contracts/wire.ts`), threaded
-through every `OnDeckVocabService` selection path. Consequence: a correct mark earned
-in **another game** no longer wrongly suppresses a card from the flp — and a
-pinyin-off session is cooled on the reading track it actually writes to.
+| Bar (label) | Tracks that start its clock | Window keyed on |
+|---|---|---|
+| core (**Know**) | a correct `recognition` **or** `production` mark | the **core** band |
+| reading (**Read**) | a correct `reading` mark | the reading band |
+| writing (**Write**) | a correct `writing` mark | the writing band |
 
-### Eligibility + face steering
+`lastCorrectOnBar(history, bar)` is the newest correct mark across the bar's tracks
+(`BAR_MARK_TYPES`); the card is ready once `lastCorrectOnBar + window(barCategory)` has
+passed. Consequences:
 
-> STATUS: **CHANGED (2026-09-05, "either category")**. The window used to be a single
-> whole-card value — the core category — applied to both tracks alike. It is now
-> resolved **per track**: recognition and production each cool down under their OWN
-> per-type category (`computeTypeCategory`, Section 7), the same one the cdp already
-> displays under each bar. `OnDeckVocabService.flpWindowCategory(card, type)` is the
-> resolver, threaded through `cardQueueRanking`'s `windowCategoryOf` (which now takes
-> `(card, type)` instead of `(card)`). This closes a real inconsistency: the cdp could
-> show a track's cooldown as expired while the old whole-card core-category window still
-> withheld the card from Review. Bucket membership (which utcm quota / whether Review's
-> Comfortable+Mastered filter admits the card at all) is unchanged — only the per-track
-> cooldown check inside that bucket is now per-type.
+- A correct recognition mark rests **production too**, and vice versa. There is no
+  longer "the other face is still available".
+- A card marked correct on **only one** know track is resting — an unmarked track no
+  longer rescues it the way it did under the per-type rule.
+- The cdp shows **one** Know countdown (§ 5), the collection "Sort by → Cooldown" key is
+  that same number, and the flp queues on it — one function
+  (`barCooldownRemainingMs`), so the three can no longer disagree. (Under the per-type
+  rule the cdp/sort used per-type windows while the fdp count used the core window;
+  that split is gone.)
 
-When a card is selected for the loop (both the **initial** `getDistributedWorkingLoop`
-build and the **correct-mark refill** `getNextLibraryCardWithFallback`), the
-service computes the subset of the session's two tracks (`flpMarkTypes(foreignTrack)`
-= {recognition **or** reading, production}) currently off cooldown, each against its
-own per-type category:
+> **History.** Until 2026-09-05 the flp used one whole-card core-band window for both
+> tracks; 2026-09-05 → 2026-09-25 each track cooled on its OWN clock under its own
+> per-type band ("either category"). The know merge replaced both: one clock, core band.
 
-- **≥1 ready** ⇒ the card is eligible; it's stamped with `readyMarkTypes` and the
-  client's `sideOneForCard` **steers the shown face** to a ready type (only
-  production ready → English-first; only the foreign track ready → foreign-first;
-  both ready → the **weakness-biased flip** below). The client maps its faces through
-  the same `foreignTrack` it sent, so the stamp and the mark can never name different
-  tracks.
-- **both cooling** ⇒ the card is **skipped**.
+### Know marks above the line: flp only (`FLP_ONLY_CORE_PBH` = 6)
 
-#### The tie-break: bias toward the track with less progress
+Once a card's **core pbh ≥ 6** (Comfortable and up), a `recognition` / `production`
+mark is **recorded only when it comes from the flp** (`surface === FLP_MARK_SURFACE`).
+Below 6, any surface's know mark counts — and, per the clock above, resets the know
+cooldown.
 
-> STATUS: **IMPLEMENTED** (2026-08-29). Code: `englishFirstProbability` +
-> `FACE_BIAS_PER_MARK` / `FACE_BIAS_MAX` (`src/utils/flpFaceSteering.ts`).
+- **Why 6.** It is the Comfortable cut point and the pbh formula's first-term cap: past
+  it the stronger track adds nothing, and only the weaker one can still move the bar.
+  The flp is the one surface that deliberately deals the weaker track (below), so
+  finishing a card is its job.
+- **Dropped means not recorded** — neither the positive nor the incorrect mark lands,
+  and the know clock does not restart. The game still scores the clear; the endpoint
+  returns `suppressed: true`, exactly like a cooldown drop. The `[MarkSuppressed]` log
+  line carries `reason=flp-only` (vs `reason=cooldown`).
+- **The line is two-way, with no stored state.** `isFlpOnlyMark` reads the history as it
+  stands on every mark, so an incorrect flp mark that drops pbh back under 6 reopens the
+  card to game marks on the very next mark.
+- **Reading and writing are untouched** — they are outside the know bar.
+- **`surface` is client-asserted.** Not verified server-side; a forged `'flp'` only buys
+  a mark on the learner's own card that the flp could write anyway. A know mark with no
+  `surface` fails **closed** above the line.
 
-When **both** tracks are ready the face used to be an even coin flip. It is now a
-**weighted** flip favouring whichever of the two tracks the learner has less progress
-in:
+### flp selection: the know clock decides WHETHER, the history decides WHICH face
 
-```
-gap   = positives(foreignTrack) − positives(production)      // tie-break: attempts
-p(en) = 0.5 ± min(FACE_BIAS_MAX, 0.5 + FACE_BIAS_PER_MARK · |gap|)
-```
+When a card is selected for the loop (the initial `getDistributedWorkingLoop` build and
+the correct-mark refill `getNextLibraryCardWithFallback`), the service offers it only if
+its **know clock** has run out (`rankFlpEligible` → `rankCardQueue(…, { bar: 'core' })`).
+The server no longer stamps anything on the card (`readyMarkTypes` was deleted): with one
+shared clock, both faces are always equally markable.
 
-with `FACE_BIAS_PER_MARK = 0.05` and `FACE_BIAS_MAX = 0.9`. Both counts come from the
-rolling ≤8 `typedMarkHistory` window, so the widest real gap (8 vs 0) lands exactly on
-the cap and the cap is defensive rather than a clamp the normal range hits: a gap of 1
-is a 55/45 nudge, a card drilled to 8 recognition and never produced shows the English
-face 90% of the time.
+The client then picks the face from the card's own `typedMarkHistory`
+(`sideOneForCard`):
 
-Notes on the design:
+| Positives in the rolling ≤8 window | Side 1 | Mark written |
+|---|---|---|
+| production **<** recognition | English | `production` |
+| recognition **<** production | foreign | `recognition` |
+| **tie** (incl. a never-marked card) | foreign | `recognition` |
 
-- **Why the weaker track.** For the core bar it is arithmetic: pbh is
-  `min(6, max(rec, pro)) + min(rec, pro)/3` (§ 3), whose first term is **capped at 6**
-  — past that the stronger track contributes literally nothing and a mark on the weaker
-  one is the only mark that can still move the bar. Below the cap the terms are
-  equal-valued, so the bias costs nothing there.
-- **Why a bias and not a rule.** Always dealing the weaker face makes a session
-  perfectly predictable (mark production → next card is recognition → …), which rewards
-  anticipating the prompt rather than knowing the word. The disfavoured face stays
-  reachable at every gap.
-- **`positives` first, `attempts` as the tie-break.** `positives` is the pbh input, so
-  it is what the bars actually move on; `attempts` separates two tracks holding equal
-  progress from unequal work (3/3 vs 3/8 — the 3/3 track is the less practiced one).
-- **Precedence.** Cooldown is a hard gate and the bias only breaks a genuine tie —
-  dealing a cooling face would produce a mark `POST /api/flashcards/mark` silently
-  drops. The session-opener `preferEnglishFirst` (first card of the first fetch) also
-  outranks the bias.
-- A `reading`-track session compares **across two bars** (production feeds core,
-  reading feeds the reading bar). Intentional: both counts sit on the same 0..8 scale
-  and the question the bias answers is the plainer "which of these have you done less
-  of?".
+- **Positives only** — incorrect marks and attempt counts do not break a tie.
+- **Pinyin does not matter.** The foreign-first face writes `recognition` with pinyin on
+  or off (§ 1a).
+- **Deterministic, deliberately.** This reverses the 2026-08-29 weighted flip
+  (`englishFirstProbability`, `FACE_BIAS_PER_MARK` / `FACE_BIAS_MAX`, deleted), which
+  stayed a *bias* so a session would not be predictable. The trade was made knowingly:
+  the weaker track is now always the one drilled.
+- **The session-opener override is gone.** The first card of a session used to be forced
+  English-first (`preferEnglishFirst`) to dodge an **iOS autoplay edge case on
+  Chinese-side-one auto-narration**. It would break the rule, so it was removed.
+  ⚠️ If that iOS issue resurfaces (first card foreign-first → narration fails to
+  autoplay), the fix belongs in the narration layer, not in face choice.
+- **Faces are chosen from the history the client holds.** A card answered incorrectly
+  stays in the loop with its fetched history, so when it comes round again it opens on
+  the same face — the learner retries the same prompt.
+- **Cooled-tier cards** (served when nothing rested is left) follow the same rule; their
+  marks are dropped by the cooldown gate as before.
 
 ### Ordering: a queue, longest-waiting first
 
@@ -769,50 +764,35 @@ Eligible cards are ranked by `rankFlpEligible` (`OnDeckVocabService.ts`), which 
 **single ordering rule for both flp paths** — the initial loop and the refill draw the
 same way, so a loop and its replacements cannot diverge.
 
-> **The rule itself now lives in `server/services/cardQueueRanking.ts`** (a pure module:
-> `rankCardQueue`, `queueArrivalAt`), over the cooldown primitives in
-> **`server/contracts/cooldown.ts`** (`COOLDOWN_MS_BY_CATEGORY`,
-> `lastCorrectMarkTimestamp`, `cooldownRemainingMs`, `isTypeOnCooldown`,
-> `readyMarkTypes`). The primitives moved into `contracts/` — mirroring what
-> `contracts/mastery.ts` did for the pbh formula — when the cdp started **displaying**
-> the remaining cooldown (§ 5): the client may not import a server service, and a
-> second copy of the table would have drifted. `cardQueueRanking` re-exports them, so
-> every existing server import is unchanged; the client reaches them through
-> `src/utils/masteryCompute.ts`.
-> **A third consumer:** the collection "Sort by" menu's **Cooldown** row
-> (`cooldownKey` in `src/utils/vocabSort.ts`) orders cards by the **maximum** remaining
-> window across all four types — "how long until this card is fully rested" — using the
-> same per-type category the cdp display does. The maximum rather than the soonest-ready
-> track because an unmarked track reports 0, which would flatten nearly every card to
-> "ready". See [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
-> `rankFlpEligible` is a thin wrapper that supplies the flp's two axes — mark types
-> `['recognition','production']`, cooldown window keyed on **each track's own per-type**
-> category (`flpWindowCategory`) — and stamps `readyMarkTypes` onto the result. The
-> extraction happened when Memory Map
-> needed the identical discipline on the **reading** track
-> ([MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 13.1); a second copy would have drifted.
-> The "either category" per-type window (above) is covered by
-> `server/__tests__/cardQueueRanking.test.ts`.
+> **The rule itself lives in `server/services/cardQueueRanking.ts`** (a pure module:
+> `rankCardQueue`, `rankCardQueueCooled`, `queueArrivalAt`), over the cooldown
+> primitives in **`server/contracts/cooldown.ts`** (`COOLDOWN_MS_BY_CATEGORY`,
+> `lastCorrectOnBar`, `barReadyAt`, `barCooldownRemainingMs`). The primitives live in
+> `contracts/` — mirroring what `contracts/mastery.ts` did for the pbh formula —
+> because the cdp **displays** the remaining cooldown (§ 5) and the client may not
+> import a server service. `cardQueueRanking` re-exports them; the client reaches them
+> through `src/utils/masteryCompute.ts`.
+> The one axis a caller picks is the **bar** (`{ bar: 'core' }` for the flp,
+> `{ bar: 'reading' }` for Memory Map — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md)
+> § 13.1); clock and window follow from it, so no caller can choose a window that
+> disagrees with the mark gate. A third consumer is the collection "Sort by →
+> Cooldown" key (`cooldownKey`, `src/utils/vocabSort.ts`), which is the shown bar's
+> `barCooldownRemainingMs` — see [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
 
-The sort key is `flpReadyAt` = the card's **arrival time in the queue**, i.e. when it
-*first* became reviewable:
+The sort key is the card's **arrival time in the queue**, i.e. when its clock released
+it:
 
 ```
-readyAt(card) = MIN over its ready types of ( lastCorrect(type) + window(that type's own category) )
-                  — skipping tracks with no correct mark
+readyAt(card) = lastCorrectOnBar(core) + window(core band)     // queueArrivalAt
+                — -Infinity when neither know track has a correct mark
 
 ranked        = [ cards with history, by readyAt ASC ]   // longest-waiting first
              ++ [ never-marked cards ]                   // always last
 ```
 
-- **MIN, not MAX**, across the ready types — this is what makes it a queue. A card whose
-  recognition track has been ready for ten days is ten days overdue even if its
-  production track only came off cooldown yesterday.
-- Tracks with **no correct mark** are **skipped**, not treated as ready-since-forever.
-  Counting them would score `-Infinity` for any *partially* marked card and drop it into
-  the never-marked tail, which is wrong — the learner has gotten that card right, just in
-  one track.
-- A card scores `-Infinity` only when **neither** flp track has a correct mark. That is
+- A card right on only **one** know track has history and queues by it — it does not
+  sink into the never-marked tail.
+- A card scores `-Infinity` only when **neither** know track has a correct mark. That is
   the definition of "never marked", and those cards sort **last** — so brand-new sorts
   and lent provisional cards are reached only once genuinely rested cards run out.
 
@@ -832,40 +812,58 @@ Because ranking needs `typedMarkHistory`, it is computed in app code and the can
 query (`fetchFlpCandidates`) is deliberately **unlimited** — a partial scan would rank a
 random subset and return the wrong card.
 
-### When everything is cooling: honor it
+### When a quota runs short: borrow, then cool, then lend
 
-There is **no cooled-card last resort**. A resting card is never re-served. Instead:
+> Corrected 2026-09-25: this section used to say "there is no cooled-card last resort",
+> which stopped being true on 2026-08-20. The ladder below is the shipped one
+> (`getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`).
 
-Since 2026-08-17 lending is not only the all-cooling escape hatch: it runs whenever a
-**quota** underfills, ahead of any cross-category borrow (docs/PROVISIONAL_CARDS.md § 4b).
-The gate below is the same one.
+A quota its own category could not fill is covered, in order, by:
 
-| Session | A quota short / all cards cooling ⇒ |
+1. **fresh** cards borrowed from the session's other allowed categories;
+2. **cooling** cards, nearest-to-ready first (`rankCardQueueCooled`) — the learner's own
+   words, shown again early. They earn nothing: the mark is dropped by the cooldown gate;
+3. **lent** provisional cards — only in an unrestricted session (`canLendProvisional`:
+   `Unfamiliar` is servable **and** no collection restriction).
+
+| Session | After tiers 1–2 are spent ⇒ |
 |---|---|
-| Mix, Challenge (unrestricted) | **lend provisional cards** to fill the shortfall (`lendIntoLoop` → `ProvisionalCardService.lendCards`) |
+| Mix, Challenge (unrestricted) | **lend provisional cards** (`lendIntoLoop` → `ProvisionalCardService.acquireLentCards`) |
 | Review, `?collection=mastered`, `?deck=` | return **short or empty**; the client shows a "resting" empty state |
 
-The split is one rule, `canLendProvisional`: lend only when `Unfamiliar` is a servable
-category **and** the round is unrestricted. A lent card is Unfamiliar, so anywhere else it
-would either be filtered straight back out or misrepresent a named set. This is also why
-`POST /api/flashcards/mark` now returns **200 with `newCard: null`** for *every* session
-type instead of 404-ing Study — an unrestricted round can legitimately run dry when the
-dictionary has no more words to lend. See docs/PROVISIONAL_CARDS.md § 6.
+`POST /api/flashcards/mark` returns **200 with `newCard: null`** when there is nothing to
+refill with, for every session type. See docs/PROVISIONAL_CARDS.md § 4b and § 6.
 
 ### Notes / caveats
 
-- **flp and games now agree:** both key the cooldown window's duration on the
-  **per-type** category of the track being timed (Section 7) — the flp resolves it
-  independently for recognition and production, games for the single track they play.
-  This was not always true: before the 2026-09-05 "either category" fix, the flp used
-  one whole-card core-category window for both tracks, which could hold a card back
-  from Review even after its cdp display showed a track's cooldown as expired.
+- **flp, games, cdp and sort all read one clock per bar** (`barCooldownRemainingMs`).
+  The duration is the BAR's band — core for know, per-type for reading/writing (which
+  are single-track, so bar band = track band). Bucketing is a different question and
+  stays per-type for games (§ 7).
+- **The know clock is shared across surfaces.** A correct Bubble Match recognition mark
+  rests the card for the flp (both faces) and for Word Search Pinyin; a correct flp
+  production mark rests it for Bubble Match. Below pbh 6 only, since above it game marks
+  are not recorded at all.
 
-### Games honor the same per-type cooldown
+### Games honor the same clock (and the flp-only line)
 
-Each pool-selecting game gates its pool on the per-type cooldown of the **single
-mark type it emits** (`OnDeckVocabService.isCardGameEligible` / `fetchGameCandidates`,
-`server/controllers/OnDeckVocabController.ts`):
+Each pool-selecting game gates its pool on the **single mark type it emits**
+(`OnDeckVocabService.isCardGameEligible` / `fetchGameCandidates`,
+`server/controllers/OnDeckVocabController.ts`). A card is **fresh** only when a mark of
+that type would actually be recorded — the same two tests the mark gate applies:
+
+1. the clock of the bar that type lands in has run out (the **know** clock for a
+   recognition/production game);
+2. the mark is not flp-only — for a recognition/production game, a card at **core pbh
+   ≥ 6** is filed as **cooled**, so it is served only as backfill and earns nothing.
+
+> **Board-mix consequence (accepted 2026-09-25).** A recognition/production game's
+> Comfortable/Mastered quotas are banded per-type, and a card whose recognition (or
+> production) track is 6+ has core pbh ≥ 6 by construction. So those quotas are now
+> filled from the fallback order (fresh Target/Unfamiliar cards) before any
+> Comfortable/Mastered card is re-served as cooled backfill. Hydra Bubbles' `bloom` tier
+> (the single-bucket caller whose fill "deliberately allowed to break the cooldown")
+> still plays those cards; their marks are dropped.
 
 | Surface | Mark type | Selection path |
 | --- | --- | --- |
@@ -943,8 +941,8 @@ track is one hue. See [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).
 > `?markType=` and **every caller passes it explicitly**; the internal default is
 > a safety net for a malformed request, not a calling convention.
 
-A card is **fresh** for a game when its game mark type is off cooldown, **cooled**
-otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
+A card is **fresh** for a game when a mark of its game mark type would be recorded
+(the two tests above), **cooled** otherwise. `fetchGameCandidates` overfetches a per-category shuffled pool and
 splits it fresh/cooled. Both games fill in five phases (the confirmed policy since
 2026-08-20 — *prefer fresh; borrow before you re-serve a resting card; re-serve a
 resting card before you lend*):
@@ -972,9 +970,10 @@ games lent on every load, effectively forever.
 Word Search's substring-dedup replacement (`pullReplacement`) uses the same
 fresh-then-cooled preference across `[preferredCategory, …fallback]`.
 
-**Cross-surface note:** Bubble Match and flp both emit `recognition`, so a Bubble
-Match win cools that card's recognition face in the flp working loop, and vice
-versa — the per-type clocks are shared across every surface that emits the type.
+**Cross-surface note:** every surface that emits `recognition` or `production` shares
+the one know clock, so a Bubble Match win rests the card for the flp (both faces) and
+for Word Search Pinyin, and vice versa — below core pbh 6. Above it only the flp's
+marks land.
 
 ---
 
@@ -985,7 +984,7 @@ versa — the per-type clocks are shared across every surface that emits the typ
 > `server/dal/shared/vetTable.ts` (`typeCategoryExpr`),
 > `server/utils/masteryCompute.ts` (`computeTypeCategory`),
 > `server/services/OnDeckVocabService.ts` (`fetchGameCandidates`,
-> `isCardGameEligible`, `isTypeOnCooldown`, `getGameVocabPool`,
+> `isCardGameEligible`, `getGameVocabPool`,
 > `getWordSearchGrid`), `server/controllers/OnDeckVocabController.ts`.
 
 A pool-selecting game buckets its candidate words by the **recent mark history of
@@ -1033,22 +1032,24 @@ category expression joins `users` — bands are goal-independent across the boar
 
 | Surface | Buckets by | Cooldown window keyed on |
 | --- | --- | --- |
-| Bubble Match | the run's locked track (§ 1a) per-type category | same track's per-type category |
-| Hydra Bubbles | `recognition` per-type category (the run's locked track under § 6.0) | same track's per-type category |
-| Match Speed | `recognition` per-type category | `recognition` per-type category |
-| Word Search — Pinyin | `production` per-type category | `production` per-type category |
-| Word Search — No-Pinyin | `reading` per-type category | `reading` per-type category |
-| Speed Reading | `reading` per-type category | `reading` per-type category |
-| flp working loop | **core** band (bucket/quota only) | each track's own per-type category (§ 6, "either category") |
+| Bubble Match | the run's locked track (§ 1a) per-type category | **core** band (know clock) for `recognition`; reading band for `reading` |
+| Hydra Bubbles | `recognition` per-type category (the run's locked track under § 6.0) | **core** band (know clock) |
+| Match Speed | `recognition` per-type category | **core** band (know clock) |
+| Word Search — Pinyin | `production` per-type category | **core** band (know clock) |
+| Word Search — No-Pinyin | `reading` per-type category | reading band |
+| Speed Reading | `reading` per-type category | reading band |
+| flp working loop | **core** band (bucket/quota only) | **core** band (know clock, § 6) |
 | decks page counts | **core** band (unchanged) | — |
 
-The flp still buckets on the whole-card core band — it presents **two** mark types on
-one card, and those two are exactly the core bar's tracks, so "which utcm quota a card
-counts toward" and "the core bar" are the same thing by construction. But the cooldown
-**window** is no longer core: since the 2026-09-05 fix (§ 6) each track's window comes
-from that track's own `computeTypeCategory`, so a card can be core-Comfortable (a long
-window) while its production track individually clears a shorter per-type window and
-becomes servable on that track alone.
+The flp buckets on the whole-card core band — it presents **two** mark types on one
+card, and those two are exactly the core bar's tracks, so "which utcm quota a card
+counts toward" and "the core bar" are the same thing by construction. Since the know
+merge (§ 6) its cooldown window is the core band too.
+
+**Bucketing and resting now answer to different bars for know games** (decided
+2026-09-25): a recognition game still BUCKETS by the recognition track's own band (the
+board's difficulty is about the skill being drilled), but RESTS on the know clock,
+windowed by the core band (one clock per bar, § 6).
 
 **The bucket is visible on the wire.** `fetchGameCandidates` stamps each returned
 row with `gameCategory` — the per-type bucket it was actually drawn from — which is
@@ -1063,15 +1064,13 @@ Because the service signature is now a single `gameMarkType: MarkType` (it was a
 `readonly MarkType[]`), per-type bucketing is unambiguous — a game that emitted two
 types would have no single track to band on. Every current game emits exactly one.
 
-### Cooldown windows follow the same track
+### Cooldown windows follow the bar
 
-`isTypeOnCooldown` now takes an explicit `windowCategory`. The **duration** table
-(5 min / 24 h / 14 d / 180 d — `COOLDOWN_MS_BY_CATEGORY`, `server/contracts/cooldown.ts`;
-this line read "7 d / 30 d" until 2026-08-23 and was never right) is unchanged, but
-games look it up under the **per-type**
-category rather than the overall one, so a card that is Mastered overall yet weak in
-Reading rests only 5 minutes before Word Search No-Pinyin may serve it again. The
-flp passes `card.category` and behaves exactly as before.
+The **duration** table (5 min / 24 h / 14 d / 180 d — `COOLDOWN_MS_BY_CATEGORY`,
+`server/contracts/cooldown.ts`) is looked up under the band of the **bar** the mark
+lands in (`barReadyAt`). For reading/writing that is the track's own band, so a card
+that is Mastered overall yet weak in Reading rests only 5 minutes before Word Search
+No-Pinyin may serve it again. For recognition/production it is the core band (§ 6).
 
 ### Known divergence: `available` counts
 
@@ -1406,22 +1405,20 @@ Settled since:
   (the mark + undo path, now `FlashcardMarkService`, and
   `VocabEntryDAL.updateTypedMarkHistory`) had to be live first, so it was applied
   AFTER the container rebuild. **On PPE since 2026-08-17.**
-- `server/contracts/mastery.ts` — **the definition of the bars**; mirrored by
+- `server/contracts/mastery.ts` — **the definition of the bars**, plus
+  `FLP_ONLY_CORE_PBH` / `isFlpOnlyMark` (§ 6); mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
 - `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,
-  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`, and the flp
-  foreign-first track (§ 1a): `FlpForeignTrack`, `FLP_FOREIGN_TRACKS`,
-  `flpMarkTypes`, `parseFlpForeignTrack`.
+  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`, the pinyin-off
+  track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
+  `FLP_MARK_SURFACE` (§ 6).
 - `src/games/bubble-match/BubbleMatchTrackToggle.tsx` (the hub control),
   `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
   `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
   now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
-- `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` (computes the
-  session `foreignTrack` from `useFlashcardLearnSettings().showPinyin` + the account
-  language), `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`,
-  `englishFirstProbability`) and `useWorkingLoop.ts` (the `?foreignTrack=` fetch param
-  and the mark body field);
-  `src/api/flashcards.ts` — `MarkFlashcardRequest.foreignTrack`.
+- `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`) and
+  `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` (sends
+  `surface: FLP_MARK_SURFACE` on every mark); `src/api/flashcards.ts` — `MarkSurface`.
 - `server/dal/shared/vetTable.ts` — `coreCategoryExpr`, `barCategoryExpr`,
   `masteredBarClause`, `typeCategoryExpr`.
 - `server/types/index.ts` — `ReviewMark`, `FlashcardCategory`, `VocabEntry`.
@@ -1431,14 +1428,14 @@ Settled since:
 - `server/controllers/OnDeckVocabController.ts` + `server/routes/onDeckRoutes.ts` —
   `GET /api/onDeck/masteredCounts`, `GET /api/onDeck/collectionCards?collection=`.
 - `server/contracts/cooldown.ts` — `COOLDOWN_MS_BY_CATEGORY`,
-  `lastCorrectMarkTimestamp`, `cooldownRemainingMs`, `isTypeOnCooldown`,
-  `readyMarkTypes`. Re-exported by `server/services/cardQueueRanking.ts` (server) and
+  `lastCorrectMarkTimestamp`, `lastCorrectOnBar`, `barReadyAt`,
+  `barCooldownRemainingMs`, `isBarOnCooldown`, `isMarkOnCooldown`. Re-exported by `server/services/cardQueueRanking.ts` (server) and
   `src/utils/masteryCompute.ts` (client).
-- `src/components/mastery/MasteryWindow.tsx` (cdp window + track switch + per-track
-  cooldowns; replaced `src/features/flashcards/MasteryProgressBar.tsx`),
+- `src/components/mastery/MasteryWindow.tsx` (cdp window + track switch + the per-bar
+  inline cooldown timer; replaced `src/features/flashcards/MasteryProgressBar.tsx`),
   `src/components/primitives/Segmented.tsx` (the `.trkseg` track switch),
 - `src/utils/vocabSort.ts` (`cooldownKey` — the Cooldown sort row),
-  `src/components/MiniVocabCard.tsx` (hairline strip),
+  `src/components/MiniCard.tsx` (hairline strip; `MiniVocabCard.tsx` computes its bar),
   `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window,
   `src/features/flashcards/VocabCardDetailBody.tsx` — `SectionCard`/`SectionLabel`.
 - `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateScene, parseCellKey, isBlocking } from '../services/iw/sceneValidation.js';
-import { IW_MAX_UNLOCK_CUES, type IWScene } from '../contracts/iw.js';
+import { IW_MAX_INTRO_TEXT_LENGTH, IW_MAX_UNLOCK_CUES, type IWScene } from '../contracts/iw.js';
 
 /**
  * Tests for the pure iw scene validator (docs/IMMERSIVE_WORLD.md § 12 phase 1d).
@@ -22,6 +22,7 @@ function validScene(): IWScene {
     name: 'Noodle stall',
     published: false,
     sceneNotes: '王婶’s noodle stall at closing time. “counter” is where she takes payment.',
+    introText: 'Find the noodle stall and order a bowl.',
     completerNpcId: 'wang_shen',
     completionAction: 'pay',
     playerStartCol: 0,
@@ -469,6 +470,20 @@ describe('validateScene events (migration 161)', () => {
  */
 describe('validateScene severity', () => {
   const blocking = (scene: IWScene) => validateScene(scene).filter(isBlocking).map((p) => p.field);
+
+  it('warns, but does not block, on an over-long intro (migration 167)', () => {
+    const scene = validScene();
+    scene.introText = 'x'.repeat(IW_MAX_INTRO_TEXT_LENGTH + 1);
+    const problems = validateScene(scene);
+    expect(problems.some((p) => p.field === 'introText' && !isBlocking(p))).toBe(true);
+    expect(blocking(scene)).not.toContain('introText');
+  });
+
+  it('accepts an empty intro — it just means no card on load', () => {
+    const scene = validScene();
+    scene.introText = '';
+    expect(validateScene(scene).some((p) => p.field === 'introText')).toBe(false);
+  });
 
   it('never blocks over an unfinished scene', () => {
     const scene = validScene();

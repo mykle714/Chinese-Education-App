@@ -5,6 +5,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
 import Bubble from "../bubbles/Bubble";
 import { stepPhysics, planSpawn, fillRatio, clampHeldCenter, type Bounds } from "../bubbles/physics";
+import { ThrowTracker } from "../bubbles/throwTracker";
 import { makePair, launchBody } from "../bubbles/bodyFactory";
 import { selectNextBubble } from "./spawnSelection";
 import type { BubbleBody, BubbleFill } from "../bubbles/types";
@@ -155,6 +156,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     pausedRef.current = paused;
     const revealedPartnerIdRef = useRef<string | null>(null);
     const grabOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+    // The held bubble's recent path, turned into a release velocity on an unjudged
+    // drop (the air-hockey throw — src/games/bubbles/throwTracker.ts).
+    const throwRef = useRef(new ThrowTracker());
     const stageRectRef = useRef<DOMRect | null>(null);
 
     // Lifecycle/control refs.
@@ -575,6 +579,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             grabOffsetRef.current = { x: px - body.x, y: py - body.y };
 
             setStatus(body, "held", SCALE_HELD);
+            throwRef.current.reset(body.x, body.y);
 
             // Cleanup: light the held bubble's correct partner green as a drop hint.
             // If it has no partner on the field (it can never be matched), flag the
@@ -639,6 +644,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             );
             held.x = at.x;
             held.y = at.y;
+            throwRef.current.record(held.x, held.y);
 
             // Tint the cancel strip while the held bubble overlaps it (feedback only).
             const inZone = held.y + held.radius > bounds.height;
@@ -755,7 +761,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     setStatus(target, "wrong", target.targetScale);
                     forceRender();
                     const to = setTimeout(() => {
-                        // Release both back to idle, settling in place (no throw).
+                        // Release both back to idle, settling in place. A judged drop
+                        // never throws — only an unjudged release does.
                         if (bodiesRef.current.includes(held)) setStatus(held, "idle", SCALE_IDLE);
                         if (bodiesRef.current.includes(target)) setStatus(target, "idle", SCALE_IDLE);
                         forceRender();
@@ -763,10 +770,12 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     pendingTimeoutsRef.current.push(to);
                 }
             } else {
-                // No target, or a wrong match dropped in the cancel strip — just
-                // settle back to idle (no mark). The physics wall clamp then lifts
-                // the held bubble back out of the strip on the next frame. (A
-                // partnerless grab was tinted light-red; this clears it too.)
+                // No target, or a wrong match dropped in the cancel strip — an
+                // UNJUDGED release, so it throws: the bubble leaves with the drag's
+                // velocity and glides/bounces (air hockey, throwTracker.ts). No mark.
+                // A bubble released in the strip bounces off the play-area floor back
+                // up. (A partnerless grab was tinted light-red; this clears it too.)
+                throwRef.current.applyTo(held);
                 setStatus(held, "idle", SCALE_IDLE);
                 // A wrong-in-zone drop still has a hovered target lit from onMove —
                 // drop it back to idle too so it doesn't stay enlarged.

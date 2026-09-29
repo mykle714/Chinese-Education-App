@@ -162,7 +162,7 @@ surface, expressed as a `TextTonePair` (`src/utils/cardTextColor.ts`):
 |---|---|---|
 | Foreign-word glyphs | `DEFAULT_TEXT_TONES` | `#000000` / `#FFFFFF` |
 | dd (flp card faces + eip header gloss), **zh** | `DEFAULT_TEXT_TONES` | `#000000` / `#FFFFFF` |
-| dd (flp card faces + eip header gloss), **non-zh (es, …)** | `DD_TONES` | `#5A5A60` / `#b8b8bc` |
+| dd (flp card faces + eip header gloss), **non-zh (es, …)** | `DD_TONES` | `#48484E` / `#b8b8bc` |
 
 For non-Chinese languages the dd is de-emphasized one step off full contrast in whichever
 direction the surface runs — it is supporting text beside the headword, not the headword

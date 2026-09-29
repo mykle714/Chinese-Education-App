@@ -156,21 +156,82 @@ describe('FlashcardMarkService.applyMark', () => {
         expect(promotions.recorded).toHaveLength(0);
     });
 
-    it('cools each track independently — a rested track still records', async () => {
+    it('rests recognition AND production on one know clock — a correct mark on either blocks both', async () => {
+        // docs/MASTERY_REWORK.md § 6: recognition answered just now starts the know
+        // clock (core pbh 1 → Unfamiliar, 5 min), so a production mark inside that
+        // window is dropped exactly like a second recognition mark would be.
         const history: TypedMarkHistory = { recognition: [mark(new Date().toISOString())] };
         const { service, vet } = makeService({ language: 'zh', typedMarkHistory: history, masteredAt: null });
 
-        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'production' });
+        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'production', surface: 'flp' });
+
+        expect(result.suppressed).toBe(true);
+        expect(vet.writes).toHaveLength(0);
+    });
+
+    it('keeps reading on its own clock — a just-answered know track does not rest it', async () => {
+        const history: TypedMarkHistory = { recognition: [mark(new Date().toISOString())] };
+        const { service, vet } = makeService({ language: 'zh', typedMarkHistory: history, masteredAt: null });
+
+        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
 
         expect(result.suppressed).toBe(false);
         expect(vet.writes).toHaveLength(1);
+    });
+
+    describe('flp-only above core pbh 6', () => {
+        // Recognition 6/8 (all rested) → core pbh 6 → Comfortable: the line.
+        const atTheLine = (): TypedMarkHistory => ({ recognition: oldCorrectMarks(6) });
+
+        it('drops a game\'s know mark — correct or not', async () => {
+            for (const isCorrect of [true, false]) {
+                const { service, vet } = makeService({ language: 'zh', typedMarkHistory: atTheLine(), masteredAt: null });
+                const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect, markType: 'production', surface: 'word-search' });
+                expect(result.suppressed).toBe(true);
+                expect(vet.writes).toHaveLength(0);
+            }
+        });
+
+        it('drops a know mark with no surface at all (fails closed, not open)', async () => {
+            const { service, vet } = makeService({ language: 'zh', typedMarkHistory: atTheLine(), masteredAt: null });
+            const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'recognition' });
+            expect(result.suppressed).toBe(true);
+            expect(vet.writes).toHaveLength(0);
+        });
+
+        it('records the flp\'s know mark', async () => {
+            const { service, vet } = makeService({ language: 'zh', typedMarkHistory: atTheLine(), masteredAt: null });
+            const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'production', surface: 'flp' });
+            expect(result.suppressed).toBe(false);
+            expect(vet.writes).toHaveLength(1);
+        });
+
+        it('never touches reading or writing, which are outside the know bar', async () => {
+            const { service, vet } = makeService({ language: 'zh', typedMarkHistory: atTheLine(), masteredAt: null });
+            const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading', surface: 'speed-reading' });
+            expect(result.suppressed).toBe(false);
+            expect(vet.writes).toHaveLength(1);
+        });
+
+        it('reopens to games once an incorrect flp mark drops core pbh under 6', async () => {
+            // Recognition 5 correct + 1 incorrect → pbh 5 (Target): back under the line,
+            // with no stored flag to clear — the gate reads the history as it stands.
+            const history: TypedMarkHistory = {
+                recognition: [...oldCorrectMarks(5), mark('2020-02-01T00:00:00.000Z', false)],
+            };
+            const { service, vet } = makeService({ language: 'zh', typedMarkHistory: history, masteredAt: null });
+            const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'recognition', surface: 'bubble-match' });
+            expect(result.suppressed).toBe(false);
+            expect(vet.writes).toHaveLength(1);
+        });
     });
 
     it('returns the mark displaced from a full 8-slot window', async () => {
         const track = oldCorrectMarks(8);
         const { service, vet } = makeService({ language: 'es', typedMarkHistory: { recognition: track }, masteredAt: null });
 
-        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: false, markType: 'recognition' });
+        // An flp mark: recognition 8/8 is core pbh 6, where only the flp's know marks count.
+        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: false, markType: 'recognition', surface: 'flp' });
 
         expect(result.displacedMark).toEqual(track[0]);
         // The window stays at 8 — the new mark took the evicted slot, not a ninth.

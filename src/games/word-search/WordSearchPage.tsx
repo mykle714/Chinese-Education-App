@@ -15,7 +15,8 @@ import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import { GameLeafPage } from "../shared/GameSurface";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
 import { GAME_HUE } from "./constants";
-import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import { FONTS } from "../../theme/fonts";
 import WordSearchHeaderControls from "./WordSearchHeader";
 import WordSearchSettingsDialog from "./WordSearchSettingsDialog";
 import WordSearchWordList from "./WordSearchWordList";
@@ -23,7 +24,6 @@ import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
 import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
-import { Label } from "../../components/primitives";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
@@ -41,6 +41,25 @@ import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
+
+/**
+ * The HUD's clock, restyled from the shared overline (`GameHudLabel` →
+ * `Label`: 10px, uppercase, tracked, `FONTS.label`) into this game's play-panel text size.
+ *
+ * - `SIZE.bodyLg` — the ONE size every text element of the play panel shares (the gloss
+ *   list in `WordSearchWordList`, the reveal in `WordSearchHintRow`). Change them together.
+ * - `FONTS.mono` — fonts.ts reserves the mono for DATA, timers named specifically; its
+ *   fixed digit advance also stops the clock's width jittering per tick.
+ * - Normal case, no tracking — those belong to the overline voice this no longer is.
+ *
+ * Local to Word Search (2026-09-25); every other game keeps `GameHudLabel`'s default.
+ */
+const HUD_TEXT_SX = {
+    fontFamily: FONTS.mono,
+    fontSize: SIZE.bodyLg,
+    textTransform: "none",
+    letterSpacing: TRACKING.normal,
+} as const;
 
 /**
  * Word Search — page shell + game-flow state machine.
@@ -320,9 +339,8 @@ const WordSearchPage: React.FC = () => {
     // to the blocked phase (insufficient cards / wrong language / network error).
     const fetchGrid = useCallback(async (): Promise<WordSearchResponse | null> => {
         try {
-            // `mode` steers the server's per-type cooldown filter: No-Pinyin gates
-            // on the reading track, Pinyin on production (docs/MASTERY_REWORK.md
-            // § Per-type cooldown). `mode` is set once on mount, so capturing it in
+            // `mode` steers the server's cooldown filter: No-Pinyin gates on the
+            // reading clock, Pinyin on the know clock (docs/MASTERY_REWORK.md § 6). `mode` is set once on mount, so capturing it in
             // this empty-deps callback is stable.
             //
             // An active challenge round's `poolParams` (challengeParamsRef.current)
@@ -828,71 +846,24 @@ const WordSearchPage: React.FC = () => {
                     OUTSIDE it: both cover the full content area and must not be clipped
                     by the panel's radius. */}
                 <GameFrame className="word-search__frame">
-                {/* HUD: what this board IS on the left, how it is going on the right,
-                    the clock in the middle.
+                {/* HUD: the clock alone, centred. Nothing else is stated here.
 
-                    The MODE is stated, not offered — it is fixed by which hub entry the
-                    run was launched from, so there is nothing to toggle (artboard 13
-                    draws a `pinyin` chip in the header; that would be a second statement
-                    of the same fact, and a chip that looks like a switch but is not).
+                    There is no mode label (fixed by the hub entry the run was launched
+                    from, and visible on the board itself) and no found count (the gloss
+                    list below already strikes through each found word, so the count was
+                    a second statement of the same fact).
 
-                    The clock is the MIDDLE child, and that placement is load-bearing.
-                    It is the one element that can vanish (the settings sheet hides it),
-                    and under `space-between` only a middle child can be removed without
-                    moving anything else — the old layout had the clock first and had to
-                    position the hint meter absolutely to stop it drifting. */}
-                <GameHud className="word-search__hud">
-                    {/* No Pinyin's label ("NO PINYIN · READING & PRODUCTION") is long enough
-                        to overflow the HUD row and clip the timer/found-count off the edge
-                        of GameFrame's `overflow:hidden` panel — this is the one HUD fact
-                        allowed to truncate, so those two stay fully visible. */}
-                    <GameHudLabel
-                        className="word-search__hud-mode"
-                        sx={{ minWidth: 0, flexShrink: 1, overflow: "hidden", textOverflow: "ellipsis" }}
-                    >
-                        {modeConfig?.label ?? "Word Search"} · {markTypes.join(" & ") || "recognition"}
-                    </GameHudLabel>
-                    {showTimer && (
-                        <GameHudLabel className="word-search__hud-timer">
+                    The clock is the strip's only content, so when the settings sheet
+                    hides it the WHOLE strip goes rather than leaving an empty tinted bar;
+                    the grid (`flex: 1`) takes the height back. That reflow only happens
+                    from the settings sheet, never mid-trace. */}
+                {showTimer && (
+                    <GameHud className="word-search__hud" sx={{ justifyContent: "center" }}>
+                        <GameHudLabel className="word-search__hud-timer" sx={HUD_TEXT_SX}>
                             {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
                         </GameHudLabel>
-                    )}
-                    <GameHudLabel className="word-search__hud-count">
-                        {found.size} of {data.words.length} found
-                    </GameHudLabel>
-                </GameHud>
-
-                {/* The hint mechanic, whole, on one row: press · charges · reveal. */}
-                <WordSearchHintBar
-                    units={hintUnits}
-                    ready={phase === "playing" && canUseHint()}
-                    onHint={useHint}
-                >
-                    <WordSearchHintRow
-                        word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
-                        revealCount={hintRevealCount}
-                        currency={showPinyin ? "pinyin" : "components"}
-                    />
-                </WordSearchHintBar>
-
-                {/* `.shelfhd` — names the list under it and states the gesture. The
-                    gesture line is the only place the app ever says "trace"; a
-                    first-time player otherwise has to discover that tapping does
-                    nothing. */}
-                <Box
-                    className="word-search__list-header"
-                    sx={{
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "12px",
-                        padding: "11px 15px 0",
-                    }}
-                >
-                    <Label>Find these words</Label>
-                    <Label>trace to select</Label>
-                </Box>
+                    </GameHud>
+                )}
 
                 <WordSearchWordList words={data.words} found={found} hintEntryKey={hintEntryKey} />
 
@@ -912,6 +883,22 @@ const WordSearchPage: React.FC = () => {
                     speak={speakWord}
                     silence={silenceWord}
                 />
+
+                {/* The hint mechanic, whole, on one row: press · charges · reveal. It is the
+                    LAST child of the panel: the grid above takes `flex: 1`, so this row is
+                    pinned to the bottom edge, in thumb reach, and the glosses sit directly
+                    under the HUD where the eye starts. */}
+                <WordSearchHintBar
+                    units={hintUnits}
+                    ready={phase === "playing" && canUseHint()}
+                    onHint={useHint}
+                >
+                    <WordSearchHintRow
+                        word={data.words.find((w) => w.entryKey === hintEntryKey) ?? null}
+                        revealCount={hintRevealCount}
+                        currency={showPinyin ? "pinyin" : "components"}
+                    />
+                </WordSearchHintBar>
                 </GameFrame>
 
                 {/* A challenge round ends on the scoreboard (§ 5.5) — points, not a

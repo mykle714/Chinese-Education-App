@@ -174,6 +174,32 @@ export function coreProgressBarHeight(history: TypedMarkHistory | undefined): nu
 }
 
 /**
+ * The core pbh at and above which the know bar moves ONLY on flp marks (2026-09-25,
+ * docs/MASTERY_REWORK.md § 6 "Know marks above the line"). It is the Comfortable cut
+ * point on purpose: below it a recognition/production mark from any game builds the
+ * card; from Comfortable up, finishing the card is the flp's job, because the flp is
+ * the one surface that deals the WEAKER of the two tracks (the only one that can still
+ * move the bar past the first term's cap).
+ */
+export const FLP_ONLY_CORE_PBH = PBH_BAND.COMFORTABLE;
+
+/**
+ * Whether a mark of `type` on a card with this history counts ONLY when it comes from
+ * the flp. True for recognition/production once core pbh ≥ FLP_ONLY_CORE_PBH; never
+ * true for reading/writing, which are outside the know bar.
+ *
+ * Evaluated against the history AS IT STANDS, not a stored flag, so the line is
+ * two-way: an incorrect flp mark that drops pbh back under 6 reopens the card to game
+ * marks on the very next mark, with no state to clear.
+ *
+ * Consumers: `FlashcardMarkService.applyMark` (drops a non-flp mark) and
+ * `OnDeckVocabService.isCardGameEligible` (files the card as cooled for a game pool).
+ */
+export function isFlpOnlyMark(history: TypedMarkHistory | undefined, type: MarkType): boolean {
+  return barForMarkType(type) === 'core' && coreProgressBarHeight(history) >= FLP_ONLY_CORE_PBH;
+}
+
+/**
  * Any bar's height on the shared 0..PBH_FULL scale. Single-track bars use their raw
  * positive count, so a reading bar is full at a perfect 8/8 window.
  */

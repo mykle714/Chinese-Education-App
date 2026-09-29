@@ -2,6 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 import { HINT_ACCENT_COLOR, HINT_HIGHLIGHT_BG } from "./constants";
 import { stripParentheses } from "../../utils/definitionUtils";
 import type { PlacedWord } from "./types";
@@ -64,12 +65,15 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
             sx={{
                 display: "flex",
                 flexWrap: "wrap",
-                // The gap IS the separator's breathing room: 7px on each side of a middot
-                // against the ~4px of a word space, so the dot groups with neither gloss.
+                // The gap IS the separator's breathing room: 10px on each side of a middot
+                // against the ~5px of a word space, so the dot groups with neither gloss.
+                // (Gaps scaled with the 11px → SIZE.bodyLg type, 2026-09-25, to keep the ratio.)
                 alignItems: "baseline",
-                gap: "0 7px",
-                rowGap: "3px",
-                padding: "9px 15px 0",
+                gap: "0 10px",
+                rowGap: "4px",
+                // The list sits directly under the HUD (the hint row moved to the bottom of
+                // the panel and the old "Find these words" caption is gone).
+                padding: "11px 15px 0",
             }}
         >
             {words.map((w, i) => {
@@ -96,8 +100,8 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                                 aria-hidden
                                 sx={{
                                     fontFamily: FONTS.sans,
-                                    fontSize: 11,
-                                    lineHeight: 1.3,
+                                    fontSize: SIZE.bodyLg,
+                                    lineHeight: LEADING.tight,
                                     color: COLORS.textFaint,
                                     userSelect: "none",
                                 }}
@@ -114,9 +118,12 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                             }${isHinted ? " word-search__word-list-item--hinted" : ""}`}
                             sx={{
                                 fontFamily: FONTS.sans,
-                                fontSize: 11,
-                                fontWeight: 500,
-                                lineHeight: 1.3,
+                                // SIZE.bodyLg — the play panel's one text size, shared
+                                // with the HUD (`WordSearchPage` → HUD_TEXT_SX) and the
+                                // hint reveal (`WordSearchHintRow`).
+                                fontSize: SIZE.bodyLg,
+                                fontWeight: WEIGHT.medium,
+                                lineHeight: LEADING.tight,
                                 // Each gloss stays on ONE line even though the RUN wraps:
                                 // a two-word gloss broken across rows is exactly the
                                 // ambiguity the middot form is prone to.

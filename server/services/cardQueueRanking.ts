@@ -1,10 +1,5 @@
-import type { MarkType, TypedMarkHistory } from '../contracts/wire.js';
-import {
-  COOLDOWN_MS_BY_CATEGORY,
-  cooldownRemainingMs,
-  lastCorrectMarkTimestamp,
-  readyMarkTypes,
-} from '../contracts/cooldown.js';
+import type { MasteryBarId, TypedMarkHistory } from '../contracts/wire.js';
+import { barCooldownRemainingMs, barReadyAt } from '../contracts/cooldown.js';
 
 /**
  * Card queue ranking — "which of these rested cards has been waiting longest?"
@@ -14,24 +9,16 @@ import {
  *
  * ── WHY THIS EXISTS SEPARATELY ───────────────────────────────────────────────
  * This was five private methods on OnDeckVocabService, where it served the flp alone.
- * Memory Map needs the SAME queue discipline on a DIFFERENT track: the flp ranks by
- * readiness on recognition+production and bands by the core utcm category, while
- * Memory Map is a reading drill whose membership rule is the reading track. Copying
- * the logic would have left two implementations of "longest-waiting first, never-marked
- * last" to drift apart — and the second copy would have been the one nobody remembered
- * to fix. See docs/MEMORY_MAP_GAME.md § 13.1.
+ * Memory Map needs the SAME queue discipline on a DIFFERENT clock: the flp ranks on
+ * the know (core) clock, while Memory Map is a reading drill ranked on the reading
+ * clock. Copying the logic would have left two implementations of "longest-waiting
+ * first, never-marked last" to drift apart. See docs/MEMORY_MAP_GAME.md § 13.1.
  *
- * The two axes a caller chooses are:
- *   • `markTypes`     — which tracks count as "ready". flp: recognition + production.
- *                       Memory Map: reading alone.
- *   • window category — which cooldown DURATION applies, PER MARK TYPE. flp: each of
- *                       recognition/production cools down under its OWN per-type
- *                       category, matching what the cdp already displays per track —
- *                       a card is eligible the moment EITHER track is off cooldown
- *                       under its own category, not only when the whole-card core
- *                       category's window has elapsed. Games: the per-type category of
- *                       the single track they exercise. See
- *                       docs/MASTERY_REWORK.md § Per-type cooldown.
+ * The one axis a caller chooses is the BAR whose clock gates the queue — flp: `core`
+ * (the know clock, shared by recognition and production since 2026-09-25); Memory
+ * Map: `reading`. Clock and window both come from `contracts/cooldown.ts`, so a
+ * caller can no longer pick a window that disagrees with the one the mark-time gate
+ * enforces. See docs/MASTERY_REWORK.md § 6.
  *
  * Behaviour is otherwise identical for every caller, which is the point.
  */
@@ -42,70 +29,53 @@ export interface RankableCard {
 }
 
 /**
- * The cooldown table and its per-type predicates now live in
- * `../contracts/cooldown.js` — the cdp displays the remaining cooldown under each
- * mastery bar, and the client may not import a server service. Re-exported here so
- * every existing `from './cardQueueRanking.js'` import keeps working.
+ * The cooldown table and its predicates live in `../contracts/cooldown.js` — the cdp
+ * displays the remaining cooldown under each mastery bar, and the client may not
+ * import a server service. Re-exported here so server callers have one import site.
  */
 export {
   COOLDOWN_MS_BY_CATEGORY,
   lastCorrectMarkTimestamp,
-  cooldownRemainingMs,
-  isTypeOnCooldown,
-  readyMarkTypes,
+  lastCorrectOnBar,
+  barReadyAt,
+  barCooldownRemainingMs,
+  isBarOnCooldown,
+  isMarkOnCooldown,
 } from '../contracts/cooldown.js';
 
 /**
- * The card's ARRIVAL TIME in the queue: the moment it FIRST became reviewable, as
- * epoch ms. Cards are served longest-waiting first, so this is the sort key.
+ * The card's ARRIVAL TIME in the queue: the moment its clock last released it, as
+ * epoch ms (`lastCorrectOnBar + window`). Cards are served longest-waiting first, so
+ * this is the sort key.
  *
- * Per ready type the card came off cooldown at `lastCorrect + window`, where `window`
- * comes from THAT type's own category (`windowCategoryOf`, either one category shared
- * by every type or a per-type resolver); we take the MIN across the ready types,
- * because a card has been waiting since the EARLIEST of them. MIN rather than MAX is
- * what makes this a queue: a card whose recognition track has been ready for ten days
- * is ten days overdue, even if its production track only rested yesterday.
- *
- * Tracks with no correct mark are SKIPPED rather than counted as ready-since-forever.
- * Counting them would score -Infinity for any partially-marked card and drag it into
- * the never-marked tail, which is wrong — the learner HAS gotten that card right, just
- * in one track. -Infinity is returned only when NO ready track carries a correct mark,
- * and that is exactly this module's definition of "never marked".
+ * -Infinity when the bar holds no correct mark at all — this module's definition of
+ * "never marked". For the know clock that means neither recognition nor production
+ * has ever been answered correctly; a card right on just ONE track has history and
+ * queues by it.
  */
 export function queueArrivalAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  readyTypes: readonly MarkType[],
-  windowCategory: string | null | undefined | ((type: MarkType) => string | null | undefined)
+  bar: MasteryBarId
 ): number {
-  const categoryFor =
-    typeof windowCategory === 'function' ? windowCategory : () => windowCategory;
-  let readyAt = Infinity;
-  for (const type of readyTypes) {
-    const lastCorrect = lastCorrectMarkTimestamp(typedMarkHistory, type);
-    if (lastCorrect === null) continue; // no correct mark in this track — see above
-    const window = COOLDOWN_MS_BY_CATEGORY[categoryFor(type) ?? ''] ?? 0;
-    readyAt = Math.min(readyAt, lastCorrect + window);
-  }
-  return readyAt === Infinity ? -Infinity : readyAt;
+  return barReadyAt(typedMarkHistory, bar) ?? -Infinity;
 }
 
-/** One ranked card, with the tracks that made it eligible. */
+/** One ranked card, with the moment it became ready. */
 export interface RankedCard<T> {
   card: T;
-  readyTypes: MarkType[];
   readyAt: number;
 }
 
 /**
- * The rested subset of `cards` (≥1 of `markTypes` off cooldown), ordered AS A QUEUE:
+ * The rested subset of `cards` (the bar's clock has run out), ordered AS A QUEUE:
  * longest-waiting first.
  *
  * TWO TIERS, and the second is the reason this can't be a plain ascending sort:
  *
  *   1. cards with review history, by arrival time ASC — the card that came off
  *      cooldown earliest is served first;
- *   2. never-marked cards (no correct mark in any ready track) — always LAST, however
- *      long they have technically been "available".
+ *   2. never-marked cards (no correct mark on the bar) — always LAST, however long
+ *      they have technically been "available".
  *
  * A never-marked card scores -Infinity, which an ascending sort would put at the
  * FRONT, so the tier is compared before the timestamp. Brand-new sorts and lent
@@ -119,23 +89,15 @@ export function rankCardQueue<T extends RankableCard>(
   cards: T[],
   now: number,
   options: {
-    /** Tracks that count as "ready" for this surface. */
-    markTypes: readonly MarkType[];
-    /** The utcm category whose cooldown window applies, per card and per mark type. */
-    windowCategoryOf: (card: T, type: MarkType) => string | null | undefined;
+    /** The bar whose clock gates this queue. */
+    bar: MasteryBarId;
   }
 ): RankedCard<T>[] {
   const scored: RankedCard<T>[] = [];
 
   for (const card of cards) {
-    const categoryFor = (type: MarkType) => options.windowCategoryOf(card, type);
-    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, categoryFor);
-    if (ready.length === 0) continue;
-    scored.push({
-      card,
-      readyTypes: ready,
-      readyAt: queueArrivalAt(card.typedMarkHistory, ready, categoryFor),
-    });
+    if (barCooldownRemainingMs(card.typedMarkHistory, options.bar, now) > 0) continue;
+    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.bar) });
   }
 
   scored.sort((a, b) => {
@@ -153,8 +115,8 @@ export function rankCardQueue<T extends RankableCard>(
 }
 
 /**
- * The COOLED complement of `rankCardQueue`: the cards with NO ready track, ordered
- * nearest-to-ready first.
+ * The COOLED complement of `rankCardQueue`: the cards whose clock is still running,
+ * ordered nearest-to-ready first.
  *
  * ── WHY A SURFACE EVER WANTS THIS ────────────────────────────────────────────
  * Lending is a last resort, not a substitute for the learner's own deck
@@ -163,47 +125,25 @@ export function rankCardQueue<T extends RankableCard>(
  * shown again early, beats a word they have never seen. The cost is that a mark
  * fired at a still-cooling card is dropped by the guard at `POST /api/flashcards/mark`
  * — the round plays, but those cards earn nothing. That is the accepted trade, and it
- * is the same one the game pools' `cooled` tier has always made; this function exists
- * so the flp can make it too (it previously had no cooled tier at all and simply
- * returned short).
+ * is the same one the game pools' `cooled` tier has always made.
  *
  * ORDERING. Least remaining cooldown first — the card closest to genuinely being due.
- * A card whose window expires in a minute is a far more honest thing to show than one
- * marked correctly thirty seconds ago. Remaining time is the MIN across `markTypes`,
- * mirroring `queueArrivalAt`'s MIN: the card is due as soon as its EARLIEST track is.
  *
- * Never-marked cards cannot appear here — with no correct mark, `cooldownRemainingMs`
- * is 0 for every track, so the card is rested and belongs to `rankCardQueue` instead.
- *
- * `readyTypes` is deliberately EMPTY on every returned card (that is what "cooled"
- * means), so callers must not use it to steer which face to show; the flp falls back
- * to its default face for these.
+ * Never-marked cards cannot appear here — with no correct mark the clock reads 0, so
+ * the card is rested and belongs to `rankCardQueue` instead.
  */
 export function rankCardQueueCooled<T extends RankableCard>(
   cards: T[],
   now: number,
   options: {
-    markTypes: readonly MarkType[];
-    windowCategoryOf: (card: T, type: MarkType) => string | null | undefined;
+    bar: MasteryBarId;
   }
 ): T[] {
   const scored: Array<{ card: T; remainingMs: number }> = [];
 
   for (const card of cards) {
-    const categoryFor = (type: MarkType) => options.windowCategoryOf(card, type);
-    const ready = readyMarkTypes(card.typedMarkHistory, now, options.markTypes, categoryFor);
-    if (ready.length > 0) continue; // rested — rankCardQueue's business, not ours
-
-    let remainingMs = Infinity;
-    for (const type of options.markTypes) {
-      remainingMs = Math.min(
-        remainingMs,
-        cooldownRemainingMs(card.typedMarkHistory, type, now, categoryFor(type))
-      );
-    }
-    // Unreachable in practice (a card with no ready track has a positive remainder on
-    // at least one), but a finite score keeps the sort total if `markTypes` is empty.
-    if (!Number.isFinite(remainingMs)) remainingMs = 0;
+    const remainingMs = barCooldownRemainingMs(card.typedMarkHistory, options.bar, now);
+    if (remainingMs === 0) continue; // rested — rankCardQueue's business, not ours
     scored.push({ card, remainingMs });
   }
 

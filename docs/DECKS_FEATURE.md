@@ -436,7 +436,7 @@ else follows):
 | Sort menu | one row set per **active** bar | that ONE bar's rows |
 | Cooldown row | longest-resting of recognition/production | longest-resting of that bar's track |
 | Each card | ONE strip + badge, **core** band | ONE strip + badge, **that bar's** band |
-| cdp Mastery section | the **core** bar + its two cooldown rows | that bar + its cooldown row |
+| cdp Mastery section | the **core** bar + its cooldown timer | that bar + its cooldown timer |
 
 **Gating.** A Center's fdp **button** appears only when its goal is set
 (`users.readingGoal` / `writingGoal`) — the same gate the bars, the Mastered
@@ -775,9 +775,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    `apiGet`/`withFallback`) and `src/hooks/useFlpReadyCounts.ts` (`{ counts,
    reviewNextReadyMs, loaded }`), called directly from `FlashcardsDecksPage.tsx` rather
    than folded into the shared `useDecksPanel` — the Mastery Center pages that also use
-   `useDecksPanel` don't render `StudyHand`, and the endpoint's `foreignTrack` param
-   depends on `useFlashcardLearnSettings()`, a page-level hook `useDecksPanel` doesn't
-   have. See DEFERRED_WORK.md § "Recently closed" → the decks page `.duebar`, whose
+   `useDecksPanel` don't render `StudyHand`. (The endpoint used to take a `foreignTrack`
+   param derived from the flp's pinyin setting; it was removed with the 2026-09-25 know
+   merge — the figure is now just the know clock, MASTERY_REWORK.md § 6.) See DEFERRED_WORK.md § "Recently closed" → the decks page `.duebar`, whose
    original "this needs server work" reasoning is what this endpoint eventually acted on.
 
    All three are `undefined` until the library lands, and the numeral spins as a
@@ -992,13 +992,25 @@ snapshot. The mechanism, the layer table and the no-enter-slide-on-`POP` rule ar
 > deliberate — the cascade replaying under a restored scroll is the bug — but it means
 > the pop-in is absent until the learner leaves and arrives fresh.
 
-### The mini card's FACE is shared, not copied (2026-09-01)
+### The mini card is ONE component, not copies (2026-09-01, 2026-09-28)
 
 The 92×132 tile the fdp panel draws is not this page's styling — it is the app's one
-mini preview card, and `QuickMarkCard` (Quick Mark triage) and `ChallengeWordCard` (a
-challenge word set) draw the same tile from the same source, `miniCardFaceSx` in
-`src/components/miniCardFace.ts`. Size, radius, fill, the hairline inset ring, the
-elevation, the offscreen containment and the staggered pop-in all live there.
+mini preview card, **`MiniCard`** (`src/components/MiniCard.tsx`). `MiniVocabCard`
+(this page), `QuickMarkCard` (Quick Mark triage), `ChallengeWordCard` (a challenge word
+set) and the scp's on-deck `DraggableCard` all render it. `MiniCard` owns the tile (via
+`miniCardFaceSx` in `src/components/miniCardFace.ts` — size, radius, fill, hairline inset
+ring, elevation, offscreen containment, staggered pop-in) AND its contents: the icon
+slot, the word (ForeignText), the 2-line definition and the optional mastery strip.
+Wrappers pass plain display values plus `children` overlays (corner badges, action
+buttons, the scp's "sorted!" stamp); the conversation-frequency corner badge is the
+shared `MiniCardFrequencyBadge` export. The **mastery strip is opt-in**: a caller passes
+`masteryBar` (only `MiniVocabCard` does, and only while `showMasteryStrip`); omitting it
+also gives the strip's height back to the definition.
+
+2026-09-28: the second extraction. The 2026-09-01 one unified only the tile — each card
+still re-declared its contents (and only `MiniVocabCard` shrank long es headwords), and
+the scp card had adopted neither: it was a 102×150 flex-column card with a 44px icon and
+a recessed look for locked cards.
 
 It was extracted after the three copies drifted: **only the fdp card carried the
 design's 1px inset ring**, so the same word rendered with a hairline border on `/decks`
@@ -1011,9 +1023,10 @@ no decision. The three still differ in what drives them (a `VocabEntry`, a
 (`CardIconLayer`, the badges, the mastery strip) is absolutely positioned against the
 card box, and a real border insets the padding box and shifts all of it by 1px.
 
-**Code:** `src/components/miniCardFace.ts` (`miniCardFaceSx`, `MINI_CARD_RING`,
-`MINI_CARD_WIDTH`/`HEIGHT`/`RADIUS`); consumed by `MiniVocabCard.tsx`,
-`QuickMarkCard.tsx`, `ChallengeWordCard.tsx`; the footprint is also
+**Code:** `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`, the
+mastery strip); `src/components/miniCardFace.ts` (`miniCardFaceSx`, `MINI_CARD_RING`,
+`MINI_CARD_WIDTH`/`HEIGHT`/`RADIUS`); rendered by `MiniVocabCard.tsx`,
+`QuickMarkCard.tsx`, `ChallengeWordCard.tsx`, `SortCardsPage.tsx` → `DraggableCard`; the footprint is also
 `MiniVocabCardGrid`'s layout contract, which is what lets a caller swap `renderCard`
 for one of the other two.
 
@@ -1390,17 +1403,15 @@ the library to the bottom in *both* directions is not one to reorder by. The sta
 still stored and still read (the cdp's mastery window) — only the ordering is gone.
 
 **Cooldown** (`cooldownReady` / `cooldownLongest`, and a per-bar pair each for reading
-and writing) orders by how long until the card is **fully off cooldown in one bar**:
-the MAXIMUM remaining window across **that bar's** mark types (`cooldownKey`, reading
-`server/contracts/cooldown.ts` with each track's PER-TYPE category — the same window the
-cdp prints under each bar).
+and writing) orders by how long until **one bar's** cooldown clock runs out
+(`cooldownKey` → `barCooldownRemainingMs`, `server/contracts/cooldown.ts`). Since the
+2026-09-25 know merge a clock belongs to a bar — recognition and production share the
+Know clock, windowed by the core band (MASTERY_REWORK.md § 6) — so this is the same
+number the cdp prints under the bar, the flp queues on, and the mark gate enforces.
 
-* Why the maximum and not the soonest-ready track: the minimum is **degenerate**. A
-  track with no correct mark reports 0, and outside the reading/writing goals most
-  cards have two such tracks — so nearly every card would score 0 and the ordering
-  would collapse into one enormous tie. The maximum lets an untouched track simply
-  lose, so the key is the longest-resting track and it moves whenever any track is
-  marked.
+* (Before the merge the key was the MAXIMUM across the bar's tracks, each on its own
+  per-type window, because the minimum collapsed into a tie. With one clock per bar
+  there is nothing left to take a max over.)
 * **"Shortest"** is therefore the *what have I been neglecting* ordering (never
   studied, or fully rested); **"Longest"** surfaces the cards deepest into their rest.
 * ⚠️ **0 means "ready", not "no date"** — cooldown is deliberately **not** a `DATE_KEY`,
@@ -1537,7 +1548,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |
 | §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
-| §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`cooldownRemainingMs`) + `server/contracts/mastery.ts` (`computeTypeCategory`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
+| §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`barCooldownRemainingMs`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) (launch params),

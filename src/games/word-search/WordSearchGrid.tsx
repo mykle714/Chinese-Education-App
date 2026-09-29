@@ -295,15 +295,16 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // real det word (see `bonusWords`):
     //   - length >= 2: the flash turns blue instead of red, shakes the same as
     //     a miss, and the word's definition appears in the review-popup style.
-    //   - length === 1: the same blue fill, but no shake (a single character is a
-    //     much smaller "find" than a whole word) — blue plus the definition popup.
+    //   - length === 1: no shake and NO colour change — the cell keeps its orange
+    //     selection fill (a single character is a much smaller "find" than a whole
+    //     word, and a tap is not a trace); only the definition popup appears.
     // Either way a bonus match has NO auto-dismiss timer (unlike a true miss,
     // which auto-clears after MISS_FLASH_MS): it stays up until the player
     // taps elsewhere, handled by `onPointerDown`/`clearSelection` below.
     const [invalid, setInvalid] = useState<{ nonce: number; bonus: BonusWord | null } | null>(null);
     const invalidTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Whether the current bonus match is 2+ characters — the only case that
-    // SHAKES. Both lengths paint blue; a single character just does it quietly.
+    // SHAKES and the only case that paints blue.
     const isMultiCharBonus = (bonus: BonusWord | null): boolean => !!bonus && [...bonus.entryKey].length > 1;
 
     // Let the page clear an in-progress selection on a background tap. Also closes
@@ -368,16 +369,6 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         return set;
     }, [review]);
 
-    // Cells covered by the open single-character definition popup (see `charPopup`).
-    // Painted the same blue as a bonus-word match: both mean "you uncovered a real
-    // meaning that isn't a target word", so they must not read as two different
-    // states. Always exactly one cell today, but kept as a set so the paint rule
-    // matches `reviewedCells`/`foundCells` and survives a multi-cell rung later.
-    const charPopupCells = useMemo(() => {
-        const set = new Set<string>();
-        if (charPopup) for (const [r, c] of charPopup.cells) set.add(key(r, c));
-        return set;
-    }, [charPopup]);
 
     // DOM refs for each cell, keyed the same as `key()`, so bridge geometry can be
     // measured from actual layout (cell size varies with pinyin/font — see
@@ -624,11 +615,12 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                 const cell = grid[r]?.[c];
                 if (cell?.definition) {
                     setInvalid(null);
-                    // The tapped cell KEEPS its highlight and turns blue (see
-                    // `charPopupCells`) — it used to be cleared, which left a
-                    // popup floating with nothing on the board pointing at it.
-                    // The path is already this one cell (set by `onPointerDown`),
-                    // and the next pointer-down replaces it.
+                    // The tapped cell KEEPS its orange selection fill — it used to be
+                    // cleared, which left a popup floating with nothing on the board
+                    // pointing at it. (It also used to turn blue; since 2026-09-25 a
+                    // single tap stays selection-orange — blue is reserved for a
+                    // traced multi-character bonus word.) The path is already this one
+                    // cell (set by `onPointerDown`), and the next pointer-down replaces it.
                     setCharPopup({ char: cell.char, pinyin: cell.pinyin, definition: cell.definition, cells: [selection[0]] });
                     return;
                 }
@@ -879,13 +871,12 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                         // shakes like a miss — but it paints blue, not red: `isBonusCell`
                         // below outranks this in the fill chain.
                         const isInvalidCell = selected && !!invalid && (!invalid.bonus || isMultiCharBonus(invalid.bonus));
-                        // The BLUE "you found a real word/character that isn't a target"
-                        // fill. Three paths reach it and they must look identical, since
-                        // they mean the same thing to the player: a traced multi-character
-                        // det word, a traced single-character headword, and a tap on one
-                        // character of an unfound target word (its contextual gloss popup —
-                        // `charPopupCells`).
-                        const isBonusCell = (selected && !!invalid?.bonus) || charPopupCells.has(key(r, c));
+                        // The BLUE "you traced a real word that isn't a target" fill —
+                        // MULTI-character bonus words only. A single-cell tap (a
+                        // one-character headword, or one character of a target word
+                        // showing its contextual gloss) keeps the orange selection fill
+                        // and just opens its popup (2026-09-25): a tap is not a find.
+                        const isBonusCell = selected && !!invalid?.bonus && isMultiCharBonus(invalid.bonus);
                         // Nonce-keyed keyframe name so back-to-back wrong guesses restart
                         // the shake cleanly (same trick as fie/flp's shake — see
                         // CardIconCanvas.tsx / FlashCardSection.tsx cardShake) — but at a
@@ -942,23 +933,27 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // Order matters: a miss is transient and outranks the
                                     // found/hint fills underneath it.
                                     //
-                                    // v2: every lit state is a MID-tier fill (artboard 13
-                                    // caption "Mid: found and active letters" — `.hit`
-                                    // `--grnM`, `.now` `--orgM`). The design only names
-                                    // those two; the bonus and miss fills are the same
-                                    // kind of thing (a cell state), so they take the same
-                                    // tier of their own hues rather than a louder or
-                                    // quieter one.
+                                    // Every lit state is the SURFACE tier of its hue
+                                    // (`COLORS.grn`/`org`/`red`/`blu`, i.e. `RAMP[hue].surface`),
+                                    // changed 2026-09-25 from the MID tier artboard 13 names
+                                    // ("Mid: found and active letters"). A cell fill is a
+                                    // large pastel field behind a character, which is the
+                                    // surface tier's job; the paler fill also leaves the
+                                    // character and its pinyin more contrast. All four
+                                    // states share one tier so none reads louder than the
+                                    // rest. The hinted gloss in the word list pairs with the
+                                    // hint fill via `HINT_HIGHLIGHT_BG` (constants.ts) — keep
+                                    // the two on the same token.
                                     backgroundColor: isBonusCell
-                                        ? COLORS.bluM                 // a real word/character that wasn't a target
+                                        ? COLORS.blu                  // a real word/character that wasn't a target
                                         : isInvalidCell
-                                        ? COLORS.redM                 // wrong trace — flashes, then clears
+                                        ? COLORS.red                  // wrong trace — flashes, then clears
                                         : selected
-                                        ? COLORS.orgM                 // `.now` — tracing right now
+                                        ? COLORS.org                  // `.now` — tracing right now
                                         : isFound
-                                        ? COLORS.grnM                 // `.hit` — locked in
+                                        ? COLORS.grn                  // `.hit` — locked in
                                         : isHintCell
-                                        ? COLORS.orgM                 // hint reveal: "trace THESE" — same meaning as `.now`
+                                        ? COLORS.org                  // hint reveal: "trace THESE" — same meaning as `.now`
                                         : COLORS.background,          // resting paper tile
                                     // EVERY cell carries the palette's inset ring
                                     // (`COLORS.markOutline`) — this is what lets the board

@@ -76,16 +76,14 @@ Each card carries **two** corner badges:
   Cycle order: `empty → green → blue → empty`. The mark is **local UI state
   until Save**, and stays editable *after* Save too (§6 — Save reconciles).
 
-`MiniVocabCard` draws a UTCM category badge top-left and has no top-right slot / no
-frequency badge, and Quick Mark cards are det rows (not saved `VocabEntry`s). So the
+`MiniVocabCard` has no corner badges (its old utcm letter badge was removed in frame 17), and Quick Mark cards are det rows (not saved `VocabEntry`s). So the
 grid renders a dedicated **`QuickMarkCard`** (`src/components/QuickMarkCard.tsx`) — same
 92×132 thumbnail geometry, but driven by a `DiscoverCard` and carrying the two corner
-badges. ⚠️ **It does not re-declare that geometry** (2026-09-01): the size, radius,
-hairline ring, elevation, containment and pop-in all come from the shared
-`miniCardFaceSx` (`src/components/miniCardFace.ts`), which `MiniVocabCard` and the
-challenge word card also draw. They ARE the same tile and had already drifted — only
-the fdp card carried the design's 1px inset ring — so anything about the tile itself
-belongs in that file, never here. It is plugged in via a new **`renderCard`** prop on `MiniVocabCardGrid` (which
+badges. ⚠️ **It does not re-declare the card**: it renders the shared `MiniCard`
+(`src/components/MiniCard.tsx` — tile, icon slot, word, definition) with its two badges
+as overlays; the frequency badge is `MiniCardFrequencyBadge` from the same file.
+`MiniVocabCard`, the challenge word card and the scp's on-deck card render the same
+component, so anything about the tile or its contents belongs there, never here. It is plugged in via a new **`renderCard`** prop on `MiniVocabCardGrid` (which
 otherwise still owns the loading/error/empty states + the cascade-15 reveal). The
 3-state value + cycle helper live in `src/components/quickMarkState.ts` (kept out of the
 `.tsx` so the card file stays a component-only module for fast-refresh).

@@ -24,8 +24,19 @@ Named for the myth: cut off one head and more grow back. The game id is
 A recognition game built on Bubble Match's infrastructure, with the opposite pressure
 model.
 
-* **No clock. No bubble drift. No descending ceiling.** Bubbles are placed and then
-  stay put.
+* **No clock. No descending ceiling.** Bubbles **drift** with Bubble Match's gentle
+  shimmer, and the player can **throw** them air-hockey style (below).
+* **Drift + throw (2026-09-25).** Hydra used to be the no-drift game — bubbles were
+  placed and stayed put, so the board never re-arranged the spatial memory the player
+  was building. That was reversed by request: both bubble games now run the one shared
+  simulation (`src/games/bubbles/physics.ts` → `stepPhysics`, no per-game options).
+  Releasing a dragged bubble that is **not judged** (empty space, a same-kind bubble,
+  or the cancel strip) throws it with the drag's release velocity
+  (`src/games/bubbles/throwTracker.ts` → `ThrowTracker`); it glides with low friction
+  (`THROW_FRICTION`), bounces off walls and neighbors, knocks them into motion, and
+  settles back into the drift. **A release over an opposite-kind bubble is still judged
+  however fast the flick** — a wrong one still ends the run — and mid-flight contact
+  with a partner is a bounce, never a match. See docs/GAMES_FEATURE.md for the physics.
 * The run starts with **3 bubbles**: 1 Chinese + 2 English (one live pair and one
   stray). Both slots **roll the spawn table at fill 0** (§ 3.1) rather than hard-coding
   a color, so the opening is a consequence of the economy rather than a second, silent
@@ -678,8 +689,8 @@ An endless run needs a rolling supply, unlike Bubble Match's fixed 20 pairs.
 > what they record. The rule being adopted:
 > [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
 
-Hydra is a foreign → meaning drill, so it takes the same rule as Bubble Match and the
-flp: **pinyin shown ⇒ `recognition`; pinyin hidden on a zh board ⇒ `reading`**, because
+Hydra is a foreign → meaning drill, so it takes the same rule as Bubble Match (the flp
+no longer follows it since the 2026-09-25 know merge): **pinyin shown ⇒ `recognition`; pinyin hidden on a zh board ⇒ `reading`**, because
 the player then reaches the meaning from the characters alone. Spanish never switches
 (no phonetic layer to hide).
 
@@ -731,7 +742,15 @@ companion param `?lendLevel=1..6` pins the tier (§ 6.2) and reaches
 
 ### 6.2 Cooldown first, then lend by tier
 
-The per-type cooldown is honored **as far as the supply allows**. Serving a card the
+The cooldown (the know clock, plus the flp-only line at core pbh 6 — MASTERY_REWORK.md § 6) is honored **as far as the supply allows**.
+
+> ⚠️ **Since 2026-09-25 every `bloom` card is flp-only.** Bloom is the recognition
+> track's Comfortable + Mastered bands, i.e. recognition ≥ 6 positives, which puts core
+> pbh ≥ 6 by construction — the line above which only the flp's know marks are recorded
+> (MASTERY_REWORK.md § 6). So bloom bubbles are always drawn from the **cooled** tier,
+> still play and still score (+1 spawn), but their marks are dropped. Drain bubbles
+> (Unfamiliar + Target) are unaffected. This was accepted when the flp-only rule was
+> chosen; if bloom should keep earning marks, the rule needs a Hydra exception. Serving a card the
 learner cannot be marked on is the last thing we do, not the first — see § 8, which
 makes an unmarkable card a genuinely wasted play.
 
@@ -1026,9 +1045,10 @@ strip's job alone.
 Hydra deliberately **opts out** of the app-wide rule that backgrounding pauses a game
 (docs/GAMES_FEATURE.md § "Backgrounding pauses the clock"). That rule protects a
 CLOCK — it exists so a round cannot run down while nobody is watching. Hydra has no
-clock and nothing that advances on its own: bubbles do not drift
-(`stepPhysics(..., { drift: false })`), there is no descending ceiling, and the board
-changes only in response to a match. Backgrounding therefore costs the player nothing,
+clock and nothing that advances against the player: bubbles drift (since 2026-09-25)
+but the drift changes no score, fill or spawn, there is no descending ceiling, and the
+board's CONTENTS change only in response to a match. (The rAF loop does not run in a
+backgrounded tab anyway, so the board does not even move while hidden.) Backgrounding therefore costs the player nothing,
 and a tap-to-resume overlay on return is pure friction over a board that is exactly as
 they left it.
 
@@ -1358,7 +1378,8 @@ As built:
 ```
 src/games/bubbles/          <- shared module, extracted from bubble-match
     types.ts                (BubbleBody, BubbleStatus, BubbleFill)
-    constants.ts            (sizing, drift, spawn, fill/loss, feedback palette)
+    constants.ts            (sizing, drift, throw/glide, spawn, fill/loss, feedback palette)
+    throwTracker.ts         (ThrowTracker — drag path → release velocity)
     physics.ts              (stepPhysics, planSpawn, fillRatio — Hydra's spawn
                              table reads the same fill ratio the loss condition
                              does, see § 3.1)
@@ -1390,9 +1411,9 @@ grey held wash and its kind-keyed palette; the palette now lives in
 the shared cue both games use.
 
 Hydra keeps its own stage rather than adopting Bubble Match's: no launcher, no
-ceiling, no drift integration, and a spawn planner Bubble Match has no concept of.
-What is genuinely shared is the bubble itself, the placement/separation math, and the
-drag interaction.
+ceiling, and a spawn planner Bubble Match has no concept of. What is genuinely shared
+is the bubble itself, the whole field simulation (drift + throw), the placement math,
+and the drag interaction.
 
 ---
 
@@ -1528,8 +1549,9 @@ nothing.
 |---|---|
 | **Shared bubble substrate** (extracted from Bubble Match first, as § 10 required) | |
 | domain types | `src/games/bubbles/types.ts` → `BubbleBody`, `BubbleStatus`, `BubbleFill` |
-| field constants | `src/games/bubbles/constants.ts` → sizing, drift, spawn, `LOSE_FILL_RATIO`, feedback palette |
-| simulation | `src/games/bubbles/physics.ts` → `stepPhysics` (with `StepOptions.drift`), `planSpawn`, `fillRatio` |
+| field constants | `src/games/bubbles/constants.ts` → sizing, drift, `THROW_*`, spawn, `LOSE_FILL_RATIO`, feedback palette |
+| simulation | `src/games/bubbles/physics.ts` → `stepPhysics` (drift + throw glide, substepped), `planSpawn`, `fillRatio` |
+| throw | `src/games/bubbles/throwTracker.ts` → `ThrowTracker` (release velocity; applied only on an unjudged release) |
 | body construction | `src/games/bubbles/bodyFactory.ts` → `makePair`, `launchBody`, `wordRadius`, `definitionRadius` |
 | bubble render | `src/games/bubbles/Bubble.tsx` — takes `fill` (§ 5); everything else about a bubble is fixed there (§ 2.2, § 5.1) |
 | **Hydra** | |

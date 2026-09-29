@@ -43,7 +43,7 @@
  * `undo`); Redo re-appends it. Same contract as clear: ink only, never the
  * buffer. A new stroke or a clear drops the redo history.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import WritingCanvas from '../../components/handwriting/WritingCanvas';
 import type { Ink, WritingCanvasHandle } from '../../components/handwriting/types';
@@ -51,7 +51,7 @@ import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import CandidateRow from './CandidateRow';
 import ComponentBuffer from './ComponentBuffer';
 import { useComposition, type Candidate } from './useComposition';
-import { hintCommit } from './compositionRules';
+import { hintCommit, type CompositionDraft } from './compositionRules';
 import type { HintCharacter } from '../../components/handwriting/glyphLookup';
 import { useGlyphAssets } from './useGlyphAssets';
 import DebugDumpButton from './DebugDumpButton';
@@ -63,6 +63,11 @@ interface BeginnerKeyboardProps {
   height: number;
   /** Author-only: show the § 6w recognizer debug-dump button in the footer row. */
   debug?: boolean;
+  /**
+   * § 6z-9: the session's half-built character, held by the provider so it
+   * survives this component being remounted for a new field.
+   */
+  draft?: { current: CompositionDraft };
 }
 
 /** Padding around the canvas inside its half of the lower region. */
@@ -102,7 +107,7 @@ function inkKeySx(enabled: boolean) {
  */
 const keepFocus = (event: React.MouseEvent) => event.preventDefault();
 
-export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKeyboardProps) {
+export default function BeginnerKeyboard({ onCommit, height, debug, draft }: BeginnerKeyboardProps) {
   const canvasRef = useRef<WritingCanvasHandle>(null);
   const lowerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState(0);
@@ -112,7 +117,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKe
   const [canRedo, setCanRedo] = useState(false);
 
   const assets = useGlyphAssets(true);
-  const composition = useComposition(assets);
+  const composition = useComposition({ ...assets, draft });
 
   // The canvas is a raw <canvas> sized in device pixels at mount, so it needs a
   // resolved number rather than a CSS aspect-ratio. Measured from the lower
@@ -133,10 +138,6 @@ export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKe
     observer.observe(element);
     return () => observer.disconnect();
   }, [height]);
-
-  // Dropping the surface must not leave a half-built character behind for the
-  // next field the learner focuses.
-  useEffect(() => composition.reset, [composition.reset]);
 
   const handleSelect = useCallback(
     (candidate: Candidate) => {
@@ -205,6 +206,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKe
     >
       <CandidateRow
         candidates={composition.candidates}
+        directCandidate={composition.directCandidate}
         mode={composition.mode}
         loading={!assets.ready && !assets.error}
         onSelect={handleSelect}
@@ -341,6 +343,9 @@ export default function BeginnerKeyboard({ onCommit, height, debug }: BeginnerKe
               <WritingCanvas
                 ref={canvasRef}
                 size={canvasSize}
+                // § 6z-9: redraw a half-built character carried over from the
+                // previous field. Read on the canvas's mount only.
+                initialInk={composition.ink}
                 onInkChange={handleInkChange}
                 strokeWidth={8}
               />

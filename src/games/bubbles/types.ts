@@ -54,9 +54,11 @@ export interface BubbleBody {
     /** Center position (px) within the stage. */
     x: number;
     y: number;
-    /** Drift velocity (px/sec). Integrated every frame while the bubble is idle
-        (i.e. neither held nor still growing); nudged by the random wander, eased
-        back toward IDLE_SPEED, and reflected by wall/neighbor bounces. */
+    /** Velocity (px/sec). Integrated every frame while the bubble is neither held
+        nor still growing. Below DRIFT_MAX_SPEED it DRIFTS (random wander, eased back
+        toward IDLE_SPEED); above it — after a throw, or a hit from a thrown bubble —
+        it GLIDES under THROW_FRICTION alone. Reflected by wall/neighbor bounces.
+        Set on release by ThrowTracker.applyTo (src/games/bubbles/throwTracker.ts). */
     vx: number;
     vy: number;
     /** Current, animating collision radius. While `status === "growing"` it lerps

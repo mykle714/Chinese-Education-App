@@ -228,7 +228,7 @@ export class ProvisionalCardService {
    * This is the unconditional primitive `ensureBaseline` is built on, and it exists
    * as its own entry point because the flp working loop needs a case the baseline
    * cannot express: a learner with hundreds of playable cards, all of them resting on
-   * their per-type cooldown. `ensureBaseline` no-ops there (the count is already past
+   * their cooldown. `ensureBaseline` no-ops there (the count is already past
    * the baseline) even though the loop has nothing to serve. The loop asks for the
    * cards it is short and honors the cooldown instead of re-serving a cooling card.
    * See OnDeckVocabService.getDistributedWorkingLoop and docs/PROVISIONAL_CARDS.md.

@@ -5,7 +5,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
   IW_FACINGS, IW_FACING_LABELS,
-  IW_MAX_SCENE_DIM, IW_MIN_SCENE_DIM,
+  IW_MAX_INTRO_TEXT_LENGTH, IW_MAX_SCENE_DIM, IW_MIN_SCENE_DIM,
   type IWNpcOption, type IWScene, type IWSceneCastMember,
 } from '../../../server/contracts/iw';
 import { IW_WARNING_TEXT_SX, warningFieldProps } from './iwSceneWarnings';
@@ -128,6 +128,23 @@ export default function IWSceneDetailsPanel({
             helperText={problem('sceneNotes')
               ?? 'What this place is, and what each named place means. Written in-world — the NPCs read it as it stands.'}
             onChange={(e) => onUpdate({ sceneNotes: e.target.value })}
+          />
+          {/* THE INTRO CARD (migration 167) — the mirror image of the brief above. That box is
+              written in-world for the model; this one is written TO THE LEARNER and shown as a
+              dismissable card on load, with the world held until they tap Start. It may say
+              "your goal is…" freely, which is why it never reaches a prompt. Empty = no card. */}
+          <TextField
+            className="iw-scene-details-panel__intro"
+            label="Intro (shown to the learner)"
+            size="small"
+            multiline
+            minRows={2}
+            value={scene.introText}
+            placeholder="You're hungry after a long day. Find the noodle stall and order a bowl."
+            {...warn('introText')}
+            helperText={problem('introText')
+              ?? `A quick note on what to do, shown as a popup when the scene opens. Leave empty for none. (${scene.introText.length}/${IW_MAX_INTRO_TEXT_LENGTH})`}
+            onChange={(e) => onUpdate({ introText: e.target.value })}
           />
         </Stack>
       </Box>

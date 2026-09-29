@@ -81,9 +81,10 @@ transaction and no lock, while `undoLastMark` had both.
 
 `POST /api/flashcards/mark` does two unrelated things: it records the mark (all eight
 call sites want this) and it hands back a replacement card (only the flp working loop
-wants it). Seven callers send `excludeIds: []` and discard `newCard`, and four request
-fields — `mode`, `deckId`, `collection`, `foreignTrack` — exist solely to steer a
-refill the games never read.
+wants it). Seven callers send `excludeIds: []` and discard `newCard`, and three request
+fields — `mode`, `deckId`, `collection` — exist solely to steer a refill the games never
+read. (`surface` is the one field every caller sends that the MARK itself reads: above
+core pbh 6 a know mark is recorded only from `surface: 'flp'` — MASTERY_REWORK.md § 6.)
 
 Splitting the refill onto its own endpoint is now a **routing change only**, because
 `applyMark` returns `categoryBeforeMark` instead of picking the card itself. It has

@@ -29,9 +29,10 @@ Local half = TARGET, transport = Git LFS because you have no cross-machine SSH).
 | 3 | `dictionaryentries_es` | `database/dictionaryentries_es-data.dump` | TRUNCATE + restore (full overwrite) |
 | 4 | `particlesandclassifiers` | `database/particlesandclassifiers-data.dump` | TRUNCATE + restore (full overwrite) |
 | 5 | `validations` | `database/validations-data.dump` | TRUNCATE + restore (full overwrite) |
+| 6 | `sort_packs` | `database/sort_packs-data.dump` | TRUNCATE + restore (full overwrite) — must come AFTER the det restores |
 
 > ⚠️ **This overwrites your local det.** `dictionaryentries_zh`/`_es`,
-> `particlesandclassifiers` and `validations` are TRUNCATE+restored wholesale — any
+> `particlesandclassifiers`, `validations` and `sort_packs` are TRUNCATE+restored wholesale — any
 > un-pushed local edits to those tables on the dev box are **lost**. PPE is
 > authoritative; that is the point.
 
@@ -73,6 +74,20 @@ on the box that runs the job. See
   even when the referencing validator accounts don't exist locally. `entryId` is also
   unconstrained, so no ordering dependency on the det restores — but pull det +
   validations together anyway so their ids line up (`entryId` = det surrogate id).
+- **`sort_packs` — plain overwrite, restored LAST.** Authored discover sort packs
+  are hand-curated **on PPE** (see `docs/SORT_PACKS_IMPLEMENTATION.md` § 2.1). Two
+  things tie it to the det restores:
+  - `"entryIds"` holds det surrogate ids (no FK). They are only meaningful because
+    the det tables were just restored with PPE's ids in the same pull — never pull
+    `sort_packs` without the det tables.
+  - `trg_sort_packs_sync_entry_words` (migration 96) fires on the restore's `COPY`
+    and re-derives `"entryWords"` from the local det, so det must already be in place
+    or every pack restores with an empty `entryWords`.
+
+  The `-t sort_packs` dump also carries `SEQUENCE SET sort_packs_id_seq`, so dev's
+  id sequence ends up where PPE's is (PPE deliberately keeps it past withdrawn ids).
+  Local `users."seenPacks"` is not touched; on dev it may now hold ids of packs that
+  no longer exist, which is inert.
 
 ---
 
@@ -110,13 +125,13 @@ run the Local half.
 
 ## PPE half — SOURCE (run against `cow-postgres`)
 
-Dumps all five tables in binary custom format and commits them via Git LFS.
+Dumps all six tables in binary custom format and commits them via Git LFS.
 
 ```bash
 cd ~/vocabulary-app
 git pull origin main          # start from a clean main
 
-for T in icons8 dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations; do
+for T in icons8 dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations sort_packs; do
   docker exec cow-postgres pg_dump -U cow_user -d cow_db \
     -t "$T" --data-only -F c -f "/tmp/${T}_dump.dump"
   docker cp "cow-postgres:/tmp/${T}_dump.dump" "database/${T}-data.dump"
@@ -129,12 +144,13 @@ git add database/icons8-data.dump \
         database/dictionaryentries_zh-data.dump \
         database/dictionaryentries_es-data.dump \
         database/particlesandclassifiers-data.dump \
-        database/validations-data.dump
-git commit -m "data: refresh PPE snapshots (icons8, det_zh, det_es, pct, validations)"
+        database/validations-data.dump \
+        database/sort_packs-data.dump
+git commit -m "data: refresh PPE snapshots (icons8, det_zh, det_es, pct, validations, sort_packs)"
 git push origin main
 ```
 
-Confirm the LFS upload completes. **Report the five row counts** — the local half
+Confirm the LFS upload completes. **Report the six row counts** — the local half
 verifies against them.
 
 ---
@@ -159,8 +175,10 @@ docker exec cow-postgres psql -U cow_user -d cow_db -c 'DROP TABLE icons8;'
 docker exec cow-postgres psql -U cow_user -d cow_db -c 'ALTER TABLE icons8_live RENAME TO icons8;'
 docker exec cow-postgres psql -U cow_user -d cow_db -c 'SELECT COUNT(*) FROM icons8;'   # >= PPE count
 
-# 2. det + pct + validations — TRUNCATE + restore (icons8 rows now all present, so iconId FKs resolve)
-for T in dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations; do
+# 2. det + pct + validations + sort_packs — TRUNCATE + restore (icons8 rows now all
+#    present, so iconId FKs resolve). sort_packs MUST stay last: its entryWords trigger
+#    reads the det tables restored just before it.
+for T in dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations sort_packs; do
   docker cp "database/${T}-data.dump" "cow-postgres:/tmp/${T}_dump.dump"
   docker exec cow-postgres psql -U cow_user -d cow_db -c "TRUNCATE TABLE \"$T\";"
   docker exec cow-postgres pg_restore -U cow_user -d cow_db -t "$T" --data-only "/tmp/${T}_dump.dump"
@@ -168,14 +186,14 @@ for T in dictionaryentries_zh dictionaryentries_es particlesandclassifiers valid
 done
 ```
 
-Each det + pct + validations count should **equal** the PPE count from the PPE half;
+Each det + pct + validations + sort_packs count should **equal** the PPE count from the PPE half;
 `icons8` should be **>=** PPE's (local keeps its own extra rows).
 
 ---
 
 ## Important Notes
 
-- **These five tables ONLY.** The `-t <table>` flag must be present on every
+- **These six tables ONLY.** The `-t <table>` flag must be present on every
   `pg_dump`/`pg_restore`. Never dump or restore any other table with this skill —
   everything else is live user data.
 - **Direction is PPE → local only, always.** Never restore these dumps into
@@ -189,10 +207,9 @@ Each det + pct + validations count should **equal** the PPE count from the PPE h
 - **Migration 120 on the target** is what lets `validations` restore without a
   validator-user pre-check. On a box that lacks it, restore the FK-safe way (apply
   120 first) rather than dropping the guard.
-- **Reference tables authored on dev have no sync path.** `sort_packs` is
-  hand-authored on a dev box and was never in the old push skill's allowlist either
-  (see `docs/SORT_PACKS_IMPLEMENTATION.md`); with that skill gone there is no
-  supported way to move it up. Author such data directly against PPE, or add a
-  purpose-built migration.
-- Full context: `docs/DATA_DEPLOYMENT_GUIDE.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
+- **Reference data is authored on PPE, never on dev.** `sort_packs` used to be
+  authored on dev and shipped up as seed migrations (131 is the only one); since
+  2026-09-28 packs are authored directly against PPE and reach dev through this
+  skill. A pack inserted on dev is overwritten by the next pull.
+- Full context: `docs/DATA_DEPLOYMENT_GUIDE.md`, `docs/DATA_VALIDATION_SYSTEM.md`, `docs/SORT_PACKS_IMPLEMENTATION.md`,
   `docs/CARD_ICON_LAYOUT.md`.

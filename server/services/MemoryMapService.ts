@@ -10,6 +10,7 @@ import {
   type MemoryMapWord,
 } from '../contracts/wire.js';
 import { rankCardQueue } from './cardQueueRanking.js';
+import { barForMarkType } from '../contracts/mastery.js';
 import { spawnBatch, wordBoxSize, type MapBox, type Rng } from './memoryMapSpawn.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
 import { ValidationError } from '../types/dal.js';
@@ -233,10 +234,10 @@ export class MemoryMapService {
     for (const rung of MemoryMapService.CATEGORY_LADDER) {
       const inRung = candidates.filter((card) => card.readingCategory === rung);
       const ranked = rankCardQueue(inRung, now, {
-        markTypes: [MemoryMapService.MARK_TYPE],
-        // The cooldown WINDOW comes from the same reading category the rung does —
-        // one track in, one track out (docs/MASTERY_REWORK.md § Per-type cooldown).
-        windowCategoryOf: (card) => card.readingCategory,
+        // The reading bar's clock, windowed by the reading band — the same band the
+        // rung is (`readingCategory` is `typeCategoryExpr('reading')`), so one track
+        // in, one track out (docs/MASTERY_REWORK.md § 6).
+        bar: barForMarkType(MemoryMapService.MARK_TYPE),
       });
       ordered.push(...ranked.map(({ card }) => card));
     }

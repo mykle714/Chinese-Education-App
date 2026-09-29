@@ -50,6 +50,16 @@
       "word1": "手交",
       "reason": "explicit-sexual: only sense is a sex act (handjob / manual stimulation)",
       "droppedAt": "2026-09-23T07:20:00Z"
+    },
+    {
+      "word1": "东亚病夫",
+      "reason": "slur: only sense is the derogatory national epithet 'sick man of East Asia' for China (cedict tags it derog.)",
+      "droppedAt": "2026-09-27T04:18:23Z"
+    },
+    {
+      "word1": "女上位",
+      "reason": "explicit-sexual: only sense is a sex position (woman-on-top)",
+      "droppedAt": "2026-09-28T06:18:33Z"
     }
   ],
   "es": []

@@ -60,6 +60,96 @@
       "word1": "女上位",
       "reason": "explicit-sexual: only sense is a sex position (woman-on-top)",
       "droppedAt": "2026-09-28T06:18:33Z"
+    },
+    {
+      "word1": "二毛子",
+      "reason": "slur: every cedict sense is derogatory (Boxer-era epithet for Chinese Christians / westernized Chinese)",
+      "droppedAt": "2026-09-29T09:17:51Z"
+    },
+    {
+      "word1": "毛子国",
+      "reason": "slur: only sense is a derogatory name for Russia",
+      "droppedAt": "2026-09-29T09:17:51Z"
+    },
+    {
+      "word1": "五打一",
+      "reason": "explicit-sexual: only sense is \"to masturbate (slang)\"",
+      "droppedAt": "2026-09-29T10:18:11Z"
+    },
+    {
+      "word1": "鸡巴",
+      "reason": "explicit-sexual: only senses are vulgar terms for penis",
+      "droppedAt": "2026-09-29T12:17:53Z"
+    },
+    {
+      "word1": "鸡鸡",
+      "reason": "explicit-sexual: only sense is childish term for penis",
+      "droppedAt": "2026-09-29T12:17:53Z"
+    },
+    {
+      "word1": "老毛子",
+      "reason": "slur: only sense is \"Westerner (esp. a Russian) (derog.)\"",
+      "droppedAt": "2026-09-29T16:47:56Z"
+    },
+    {
+      "word1": "毛子",
+      "reason": "slur: dominant modern sense is derogatory \"foreigner / Russian (derog.)\"; remaining senses (hairy fellow, old \"bandit\") are marginal",
+      "droppedAt": "2026-09-29T16:47:56Z"
+    },
+    {
+      "word1": "小鸡鸡",
+      "reason": "explicit-sexual: only sense is 'penis (child's word)'",
+      "droppedAt": "2026-09-29T18:48:29Z"
+    },
+    {
+      "word1": "口活",
+      "reason": "explicit-sexual: only sense is slang for oral sex",
+      "droppedAt": "2026-09-29T20:50:00Z"
+    },
+    {
+      "word1": "爱爱",
+      "reason": "explicit-sexual: only sense is '(coll.) to make love'",
+      "droppedAt": "2026-09-29T21:18:15Z"
+    },
+    {
+      "word1": "作爱",
+      "reason": "explicit-sexual: only sense is 'to make love' (variant of 做爱)",
+      "droppedAt": "2026-09-30T00:47:47Z"
+    },
+    {
+      "word1": "电爱",
+      "reason": "explicit-sexual: only sense is phone-based mutual sexual arousal ('voice-based cybersex')",
+      "droppedAt": "2026-09-30T01:47:57Z"
+    },
+    {
+      "word1": "文爱",
+      "reason": "explicit-sexual: only sense is text-based mutual sexual arousal ('text-based cybersex')",
+      "droppedAt": "2026-09-30T01:47:57Z"
+    },
+    {
+      "word1": "入肉",
+      "reason": "explicit-sexual: only senses are \"to have intercourse\" / \"to fuck\" (vulgar)",
+      "droppedAt": "2026-09-30T11:47:57Z"
+    },
+    {
+      "word1": "牛子",
+      "reason": "explicit-sexual: only sense is \"(dialect) penis\"",
+      "droppedAt": "2026-09-30T18:47:53Z"
+    },
+    {
+      "word1": "指交",
+      "reason": "explicit-sexual — only cedict sense is 'fingering (sexual act)'",
+      "droppedAt": "2026-10-01T00:20:00Z"
+    },
+    {
+      "word1": "内射",
+      "reason": "explicit-sexual — only cedict sense is 'to ejaculate in the vagina or anus'",
+      "droppedAt": "2026-10-01T08:47:59Z"
+    },
+    {
+      "word1": "口射",
+      "reason": "explicit-sexual — only cedict sense is 'to ejaculate inside somebody's mouth'",
+      "droppedAt": "2026-10-01T09:50:00Z"
     }
   ],
   "es": []

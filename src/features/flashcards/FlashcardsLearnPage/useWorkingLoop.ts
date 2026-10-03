@@ -36,8 +36,10 @@ export interface CardDragControls {
     resetDragPosition: () => void;
 }
 
-// Difficulty modes launched from the decks page Review/Challenge buttons. null = Study.
-export type StudyMode = "review" | "challenge";
+// Study modes (server/contracts/studyMode.ts): Review/Challenge from the fdp hand, Reading
+// from the Reading Center. null = Study Mix.
+export type { StudyMode, FlpBar } from "../../../../server/contracts/studyMode";
+import type { StudyMode, FlpBar } from "../../../../server/contracts/studyMode";
 
 interface UseWorkingLoopArgs {
     token: string | null;
@@ -46,6 +48,9 @@ interface UseWorkingLoopArgs {
     // Drives the loop-fetch distribution, the mark replacement pool, and the
     // wind-down behavior when the eligible pool is exhausted.
     mode: StudyMode | null;
+    // The session's flp bar (server/contracts/studyMode.ts): `reading` for the reading flp
+    // (any mode). Drives the loop fetch, the refill, the face and the mark type.
+    bar: FlpBar;
     // TTS prefetch — warms the in-session blob cache for newly loaded cards.
     prefetch: (entry: VocabEntry) => void;
     cardDragRef: RefObject<CardDragControls>;
@@ -97,6 +102,7 @@ export function useWorkingLoop({
     token,
     selectedCategory,
     mode,
+    bar,
     prefetch,
     cardDragRef,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
@@ -167,6 +173,7 @@ export function useWorkingLoop({
                 const params = new URLSearchParams();
                 if (selectedCategory) params.set("category", selectedCategory);
                 if (mode) params.set("mode", mode);
+                if (bar !== "core") params.set("bar", bar);
                 // Restrict the loop to the collection this session was launched from
                 // (docs/DECKS_FEATURE.md). Composes with `mode`: a deck opened in Challenge
                 // mode draws that deck's Unfamiliar/Target cards.
@@ -205,8 +212,8 @@ export function useWorkingLoop({
                 // which used to be forced English-first to dodge an iOS autoplay edge
                 // case on Chinese-side-one auto-narration — that override would break
                 // the rule, so it is gone; see the flag in docs/MASTERY_REWORK.md § 6.
-                setCurrentSideOneLanguage(sideOneForCard(cards[0]));
-                setNextSideOneLanguage(sideOneForCard(cards[1]));
+                setCurrentSideOneLanguage(sideOneForCard(cards[0], bar));
+                setNextSideOneLanguage(sideOneForCard(cards[1], bar));
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
@@ -223,7 +230,7 @@ export function useWorkingLoop({
     // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
     // "Never reload on token refresh". prefetch/cardDragRef are stable refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [Boolean(token), selectedCategory, mode]);
+    }, [Boolean(token), selectedCategory, mode, bar]);
 
     // Mark card with retry logic.
     // `excludeIds` tells the server which cards are already in the working loop,
@@ -249,6 +256,7 @@ export function useWorkingLoop({
                 type: markType,
                 excludeIds,
                 mode: mode ?? undefined,
+                bar: bar === "core" ? undefined : bar,
                 // NOT merely diagnostic: once a card's core pbh reaches 6 the server
                 // records know marks ONLY from this surface (docs/MASTERY_REWORK.md § 6).
                 surface: FLP_MARK_SURFACE,
@@ -288,7 +296,7 @@ export function useWorkingLoop({
         // never go stale — and listing it would rebuild this callback on every
         // render that re-parses the query string.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode]);
+    }, [mode, bar]);
 
     const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
         if (workingLoop.length === 0 || isAnimating) return;
@@ -296,7 +304,7 @@ export function useWorkingLoop({
         const currentCard = workingLoop[currentIndex];
         const isCorrect = direction === "right";
         // The prompt language showing on Side 1 decides the mark type.
-        const markType = markTypeForSideOne(currentSideOneLanguage);
+        const markType = markTypeForSideOne(currentSideOneLanguage, bar);
         const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMark"> = {
             workingLoop: [...workingLoop],
             currentIndex,
@@ -319,7 +327,7 @@ export function useWorkingLoop({
         // isFlipped=false on card change (keyed off currentIndex).
         setCurrentSideOneLanguage(nextSideOneLanguage);
         const newBackCard = workingLoop[(currentIndex + 2) % workingLoop.length];
-        setNextSideOneLanguage(sideOneForCard(newBackCard));
+        setNextSideOneLanguage(sideOneForCard(newBackCard, bar));
 
         // Fire mark API in background — newCard replaces the current slot, not the
         // next one, so the UI doesn't need to wait for the response before
@@ -407,7 +415,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode, bar]);
 
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;

@@ -794,6 +794,14 @@ export interface DictionaryEntryBase {
    * flashcard. See docs/DEFINITION_CLUSTERS.md.
    */
   selectedSense?: string | null;
+  /**
+   * Search results only (`GET /api/dictionary/search`): the `sense` label of the cluster the
+   * search term hit, when that is NOT the entry's default sense — e.g. "ma2" hits 吗's 吗啡
+   * sense. The result row then shows that sense's pinyin with its glosses first
+   * (`resolveSearchRowView`, src/utils/definitionUtils.ts) and the cdp opens on it. Null or
+   * absent everywhere else. Computed by `resolveMatchedSense` (server/utils/searchSenseMatch.ts).
+   */
+  matchedSense?: string | null;
   /** Computed at read time by generateShortDefinition() (server/utils/definitions.ts). */
   shortDefinition?: string | null;
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null;

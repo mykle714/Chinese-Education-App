@@ -3,6 +3,7 @@ import type { IUsageStatsDAL } from '../dal/interfaces/IUsageStatsDAL.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../types/dal.js';
 import { addDaysToDateString } from '../utils/streakDate.js';
 import {
+  USAGE_RECENT_USERS_LIMIT,
   USAGE_WINDOWS,
   type UsageDashboard,
   type UsageFeatureRow,
@@ -28,7 +29,7 @@ const FEATURE_LABELS: Record<UsageFeatureRow['key'], string> = {
  *   2. THE WINDOW — the caller picks from the closed `USAGE_WINDOWS` set; `0` means
  *      "since the first signup". The window is resolved to inclusive dates here.
  *
- * The six reads are independent and run in parallel; each borrows its own pooled
+ * The seven reads are independent and run in parallel; each borrows its own pooled
  * client, so one slow aggregate does not serialize the others.
  *
  * Depended on by: server/controllers/UsageDashboardController.ts, docs/USAGE_DASHBOARD.md.
@@ -61,13 +62,14 @@ export class UsageDashboardService {
         ? (await this.usageStatsDAL.getFirstSignupDate()) ?? until
         : addDaysToDateString(until, -(windowDays - 1));
 
-    const [headline, days, distinct, languages, featureCounts, games] = await Promise.all([
+    const [headline, days, distinct, languages, featureCounts, games, recentUsers] = await Promise.all([
       this.usageStatsDAL.getHeadline(until),
       this.usageStatsDAL.getDailySeries(since, until),
       this.usageStatsDAL.getWindowDistinctUsers(since, until),
       this.usageStatsDAL.getLanguageBreakdown(since, until),
       this.usageStatsDAL.getFeatureCounts(since, until),
       this.usageStatsDAL.getGameWins(since, until),
+      this.usageStatsDAL.getRecentUsers(since, until, USAGE_RECENT_USERS_LIMIT),
     ]);
 
     // Additive totals come from the (already zero-filled) day series; only the
@@ -91,6 +93,7 @@ export class UsageDashboardService {
       languages,
       features: featureCounts.map((f) => ({ ...f, label: FEATURE_LABELS[f.key] })),
       games,
+      recentUsers,
     };
   }
 }

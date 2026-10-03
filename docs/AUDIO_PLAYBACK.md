@@ -444,9 +444,7 @@ which `speak()` can never be in, because it awaits the fetch/decode first.
 
 So the app's *only* recovery is the global `pointerdown` listener, and it must be
 **persistent, not `{ once: true }`**, with `unlock()` **repeatable, not latched**.
-The fast path costs one `ctx.state` read per tap. This is the same shape
-`markArpeggio.getContext()` has (and that `gameSounds.getContext()`, its deleted
-predecessor, always had).
+The fast path costs one `ctx.state` read per tap.
 
 **This was a real bug, fixed 2026-08-28.** `unlock()` held an `audioUnlocked`
 flag that made it a no-op for the rest of the session, and the listener was
@@ -613,58 +611,19 @@ not be.
 
 ## 7. What this setting does NOT cover
 
-**The answer-feedback sound** (`src/services/audio/markArpeggio.ts`) is
-deliberately **out of scope**. It always uses media semantics: it honors the iOS
-silent switch and never disturbs other audio. `passthrough` therefore means "all
-*narration* bypasses mute", not all app audio, and the `AudioModeChip`'s **Mute**
-does not silence it.
+**There is no answer-feedback sound.** Narration is the app's only audio: every
+mark surface (the flp, all games, Practice Writing) marks silently, and
+`markFlashcard` (`src/api/flashcards.ts`) makes no sound call. So the setting
+covers all app audio, and there is one `AudioContext` (CloudTTSProvider's) with
+one unlock listener.
 
-Consequence worth knowing: it owns a **second `AudioContext`** with its own unlock
-state, unaware of the TTS one, and therefore its own persistent `pointerdown`
-listener (§ 5 — repeatable, never latched). If narration and effects are ever
-unified, routing this sink through the element would need the clips to be handed
-to an `<audio>` element as object URLs; it now ships real audio files rather than
-oscillators, so unlike the old blips it *has* bytes to hand over. That is the
-spike.
-
-### The arpeggio
-
-Four marimba notes — **C · E · G · C↑** — walk up on consecutive **correct**
-marks; the fifth correct mark starts again on the low C. A **wrong** mark plays a
-separate truncated low C, cuts any notes still ringing, and resets the ladder. The
-rising pitch is the feature: a single blip says only "right", the pitch says
-"right, and that's your fourth in a row", with no eye movement.
-
-| | |
-|---|---|
-| **Assets** | `src/assets/Marimba/Arp/{C,E,G,C-high}.mp3` + `src/assets/Marimba/wrong.mp3` — mono 128kbps, ~22KB each, ~108KB total, peak-normalized to −1.5 dBFS so the four notes are level with one another. The `.wav` masters beside them are the source; they are 24-bit stereo with **bit-identical channels**, so the mono downmix is lossless. |
-| **Fired from** | `src/api/flashcards.ts` → `markFlashcard`, on the first line, **before** the request — but **only** when `request.surface` is in `ARPEGGIO_SURFACES`: **`match-speed` and `bubble-match`**. Every other surface (flp, Hydra Bubbles, Memory Map, Speed Reading, Word Search, Practice Writing) marks silently — narrowed by request on 2026-09-13. A new surface is silent by default. |
-| **Why pre-`await`** | No network round-trip between the tap and the note, and the call is still inside the tap's user-gesture stack — the only place iOS will start audio. |
-| **Suppressed marks** | Still sound correct. The note follows the learner's **answer**, not the stored mark: cooldown suppression (docs/HYDRA_BUBBLES.md § 8) is invisible server bookkeeping and is only known *after* the response anyway. |
-| **Streak scope** | Module-level counter, reset on mount **and** unmount of `MatchSpeedPage` and `BubbleMatchPage` by `useMarkArpeggio()` (`src/hooks/useMarkArpeggio.ts`). Leaving Match Speed mid-arpeggio and opening Bubble Match starts again on the low C. |
-| **Loading** | All five clips are fetched at module load and decoded on the first `pointerdown`, so the first answer of a session is not silent. A call that beats the decode plays late rather than being dropped. |
-
-**Batching surfaces must stay off the whitelist.** Until 2026-09-13 every surface
-played the sound, and two needed a per-call opt-out (`MarkFlashcardOptions.silent`,
-since deleted): the flp working loop **retries** a failed mark up to three times
-(`useWorkingLoop` → `markCard`), and Word Search's "No Pinyin" board posts one find
-on **two** tracks (`WordSearchPage` → `markWordFound`). Both are now silent, so the
-option had no callers. Adding either back to `ARPEGGIO_SURFACES` would play a chord
-and skip rungs — re-introduce a per-call opt-out first.
-
-Memory Map used to call `playMarkArpeggio(false)` directly on a wrong non-target tap
-(which emits no mark); that call went with the surface. `markFlashcard` is now the
-arpeggio's only caller.
-
-### History
-
-This replaced `src/games/runtime/gameSounds.ts` (deleted 2026-09-05), two WebAudio
-oscillator blips used only by Speed Reading and Memory Map. That module was
-synthesized specifically to avoid shipping assets and paying a fetch before the
-first sound — an argument that does not survive wanting a real instrument. The cost
-is paid down instead by mono mp3s two orders of magnitude smaller than the masters,
-a module-load fetch, and a play-late-rather-than-drop path. The flp and Practice
-Writing had **no** answer sound at all before this.
+Two earlier sound layers are gone, both deleted with their assets: the
+synthesized WebAudio blips in `src/games/runtime/gameSounds.ts` (2026-09-05) and
+the sampled marimba arpeggio that replaced them (`src/services/audio/markArpeggio.ts`,
+`src/hooks/useMarkArpeggio.ts`, `src/assets/Marimba/`; 2026-09-30). A future
+effects layer is an open backlog item ([BACKLOG.md](./BACKLOG.md) § 8); it would
+need its own persistent, repeatable gesture unlock (§ 5) and a decision on
+whether it follows this setting.
 
 There is also **no full-mute state** any more. The old master switch
 ("Speak Chinese words aloud", `TTSSettings.enabled`) silenced everything
@@ -766,10 +725,6 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`; `NARRATION_VOICE_OPTIONS`,
   `VOICE_SAMPLE` and the voice section (§ 6)
 - `server/services/OnDeckVocabService.ts` — `prewarmAudio`, default-voice only (§ 6)
-- `src/services/audio/markArpeggio.ts` — the answer-feedback arpeggio, deliberately
-  out of scope (§ 7); also carries the resume-on-every-gesture pattern (§ 5)
-- `src/hooks/useMarkArpeggio.ts` — per-surface reset of the arpeggio ladder, Match Speed + Bubble Match only (§ 7)
-- `src/api/flashcards.ts` — `markFlashcard` fires the arpeggio for `ARPEGGIO_SURFACES` (§ 7)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
 - `src/features/discover/SortCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
   `stopPackAutoplay` (§ 4)

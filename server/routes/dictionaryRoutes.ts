@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { dictionaryController } from '../dal/setup.js';
+import { dictionaryController, wordOfTheDayController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -9,6 +9,10 @@ import { handle } from './asyncHandler.js';
  * LAYER: HTTP route layer (registration only). Split out of server.ts; paths unchanged.
  */
 const router = Router();
+
+// The global Word of the Day for the caller's local date (?day=YYYY-MM-DD) —
+// docs/READING_WRITING_CENTERS.md § Phase 3.
+router.get('/api/dictionary/word-of-the-day', authenticateToken, handle(wordOfTheDayController.get, wordOfTheDayController));
 
 // Search dictionary entries with pagination
 router.get('/api/dictionary/search', authenticateToken, handle(dictionaryController.search, dictionaryController));

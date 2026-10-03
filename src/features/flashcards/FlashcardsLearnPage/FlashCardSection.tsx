@@ -45,6 +45,10 @@ interface FlashCardSectionProps {
     emptyMessage?: string;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    // The READING flp (`?bar=reading`, any mode, docs/READING_WRITING_CENTERS.md § Phase 4): the
+    // question face shows the characters ALONE — no pinyin, no speaker — and the answer
+    // face always shows pinyin, whatever the learner's showPinyin setting is.
+    readingMode?: boolean;
     // When true, the card's progress category renders as a colored chip on Side 2.
     // Side 1 language for the front-slot card. Side 2 always shows both.
     sideOneLanguage: SideOneLanguage;
@@ -127,6 +131,8 @@ const CardFace: React.FC<{
     isAnimating: boolean;
     showPinyin: boolean;
     showPinyinColor: boolean;
+    /** See FlashCardSectionProps.readingMode. */
+    readingMode?: boolean;
     sideOneLanguage: SideOneLanguage;
     dragPosition: { x: number; y: number };
     dismissThreshold: number;
@@ -161,7 +167,7 @@ const CardFace: React.FC<{
     // Blank this card's content (both faces) while keeping its surface. Set on the peeking
     // BACK card while the front card is mid-flip — see `flipInProgress` in FlashCardSection.
     contentHidden?: boolean;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden }) => {
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -261,7 +267,9 @@ const CardFace: React.FC<{
                 contentHidden={contentHidden}
             >
                 {sideOneLanguage === 'zh'
-                    ? <ChineseBlock entry={entry} showPinyin={showPinyin} showPinyinColor={showPinyinColor} onSpeak={speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
+                    // Reading mode: the pinyin and the speaker would both hand over the
+                    // reading the card is asking for, so the question face drops them.
+                    ? <ChineseBlock entry={entry} showPinyin={readingMode ? false : showPinyin} showPinyinColor={showPinyinColor} onSpeak={readingMode ? undefined : speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
                     : <EnglishBlock
                         entry={entry}
                         selectedSenseIndex={selectedSenseIndex}
@@ -292,7 +300,8 @@ const CardFace: React.FC<{
                     foreign: (
                         <ChineseBlock
                             entry={entry}
-                            showPinyin={showPinyin}
+                            // Reading mode: the reading IS the answer, so it always shows here.
+                            showPinyin={readingMode || showPinyin}
                             showPinyinColor={showPinyinColor}
                             onSpeak={onSpeak}
                             speakingKey={speakingKey}
@@ -353,6 +362,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     emptyMessage,
     showPinyin,
     showPinyinColor,
+    readingMode = false,
     sideOneLanguage,
     nextSideOneLanguage,
     showSwipeHint,
@@ -565,6 +575,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
+                                                readingMode={readingMode}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}
                                                 // Suppress the drag overlay on the newly promoted card while
                                                 // the previous card is still flying out (isAnimating window).

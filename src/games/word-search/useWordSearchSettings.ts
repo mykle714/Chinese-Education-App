@@ -5,7 +5,11 @@ const STORAGE_KEY = "wordSearch.settings";
 
 export interface WordSearchSettings {
     /** Whether the HUD's count-up timer TEXT is visible — the clock itself
-     *  always keeps ticking regardless (see WordSearchPage). */
+     *  always keeps ticking regardless. Toggled by the eye in the HUD strip
+     *  (see WordSearchPage), and also read by the hub's resume card
+     *  (WordSearchHubItem), which drops the parked time when this is false.
+     *  Device-local (localStorage), so it outlives the session.
+     *  docs/WORD_SEARCH_GAME.md §3. */
     showTimer: boolean;
 }
 
@@ -27,8 +31,8 @@ function loadSettings(): WordSearchSettings {
 /**
  * useWordSearchSettings — persists Word Search's own preferences in
  * localStorage, mirroring useFlashcardLearnSettings. Pinyin display is
- * intentionally NOT here: it reuses the shared useFlashcardLearnSettings so
- * the toggle stays in sync with flp (see WordSearchPage / WordSearchSettingsDialog).
+ * intentionally NOT here: it is fixed by which hub entry (Pinyin / No Pinyin)
+ * launched the run, not a preference (docs/WORD_SEARCH_GAME.md §3).
  */
 export function useWordSearchSettings() {
     const [settings, setSettings] = useState<WordSearchSettings>(loadSettings);

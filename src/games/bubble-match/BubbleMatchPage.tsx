@@ -34,7 +34,6 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
-import { useMarkArpeggio } from "../../hooks/useMarkArpeggio";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
 interface GamePoolResponse {
@@ -124,8 +123,16 @@ const BubbleMatchPage: React.FC = () => {
     //
     // Latched on first use (the pool fetch) rather than at mount: `user` — and so the
     // language — arrives asynchronously, and the fetch effect already waits for it.
-    const trackInputRef = useRef({ language: user?.selectedLanguage, showPinyin });
-    trackInputRef.current = { language: user?.selectedLanguage, showPinyin };
+    //
+    // A launch may PIN the track via `location.state.showPinyin`, overriding the shared
+    // setting for this run only (the setting itself is not written). The Reading Center's
+    // games carousel launches with `showPinyin: false`, because a reading-skill page must
+    // deal a reading board whatever the learner's flp pinyin preference is
+    // (docs/READING_WRITING_CENTERS.md). The Games hub passes nothing and keeps the setting.
+    const pinnedShowPinyin = (location.state as { showPinyin?: boolean } | null)?.showPinyin;
+    const effectiveShowPinyin = pinnedShowPinyin ?? showPinyin;
+    const trackInputRef = useRef({ language: user?.selectedLanguage, showPinyin: effectiveShowPinyin });
+    trackInputRef.current = { language: user?.selectedLanguage, showPinyin: effectiveShowPinyin };
     const runTrackRef = useRef<MarkType | null>(null);
     const [runTrack, setRunTrack] = useState<MarkType>(MARK_TYPE);
     const lockRunTrack = useCallback((): MarkType => {
@@ -147,9 +154,6 @@ const BubbleMatchPage: React.FC = () => {
     // touch-action can't stop the history gesture, so this is handled at the
     // touch-event layer (see the hook).
     useBlockEdgeSwipe(true);
-    // Start (and leave) this screen on the low C: the answer-feedback arpeggio
-    // describes a streak within one surface (src/services/audio/markArpeggio.ts).
-    useMarkArpeggio();
 
     // The level tapped on the Games hub, via nav `state` (HubMenuArrayItem /
     // HubMenuRow's `state` prop). There's no in-game picker to fall back to, so

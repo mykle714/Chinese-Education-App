@@ -1,6 +1,7 @@
 import type { TypedMarkHistory } from './wire.js';
-import { computeCoreCategory } from './mastery.js';
+import { barCategory } from './mastery.js';
 import { barCooldownRemainingMs } from './cooldown.js';
+import type { FlpBar } from './studyMode.js';
 
 /**
  * flpReadiness — "how many of these cards could an flp session actually serve me
@@ -13,6 +14,12 @@ import { barCooldownRemainingMs } from './cooldown.js';
  * number the cdp prints under the Know bar and the same test `rankFlpEligible`
  * (`server/services/OnDeckVocabService.ts`) applies, so the figure on the fdp's study
  * hand cannot claim cards the flp would not deal.
+ *
+ * ── Or the reading clock ──────────────────────────────────────────────────────
+ * Every function takes the session's BAR (studyMode.ts), defaulting to core. The
+ * READING flp (docs/READING_WRITING_CENTERS.md § Phase 4) bands and rests its cards on
+ * the reading bar, so the Reading Center's study hand asks with `bar = 'reading'` and
+ * gets figures for exactly the cards a reading session would deal.
  *
  * Isomorphic contract module (same rules as wire.ts): no relative VALUE imports besides
  * sibling contract modules, no enums, no Node or DOM globals; callers pass `now` rather
@@ -43,21 +50,23 @@ export interface FlpReadinessCard {
  */
 export function flpCooldownRemainingMs(
   typedMarkHistory: TypedMarkHistory | undefined,
-  now: number
+  now: number,
+  bar: FlpBar = 'core'
 ): number {
-  return barCooldownRemainingMs(typedMarkHistory, 'core', now);
+  return barCooldownRemainingMs(typedMarkHistory, bar, now);
 }
 
 /** Whether an flp session could deal this card right now. */
 export function isFlpReady(
   typedMarkHistory: TypedMarkHistory | undefined,
-  now: number
+  now: number,
+  bar: FlpBar = 'core'
 ): boolean {
-  return flpCooldownRemainingMs(typedMarkHistory, now) === 0;
+  return flpCooldownRemainingMs(typedMarkHistory, now, bar) === 0;
 }
 
 /**
- * Ready-card counts keyed by CORE utcm band — the shape `categoryCounts` uses, so the
+ * Ready-card counts keyed by the session bar's utcm band (CORE unless `bar` says otherwise) — the shape `categoryCounts` uses, so the
  * two are interchangeable at the call site and a caller can swap a band-total figure for
  * a ready figure without reshaping anything around it.
  *
@@ -65,7 +74,8 @@ export function isFlpReady(
  */
 export function flpReadyCountsByBand(
   entries: readonly FlpReadinessCard[],
-  now: number
+  now: number,
+  bar: FlpBar = 'core'
 ): Record<string, number> {
   const counts: Record<string, number> = {
     Unfamiliar: 0,
@@ -74,8 +84,8 @@ export function flpReadyCountsByBand(
     Mastered: 0,
   };
   for (const entry of entries) {
-    if (!isFlpReady(entry.typedMarkHistory, now)) continue;
-    const band = computeCoreCategory(entry.typedMarkHistory);
+    if (!isFlpReady(entry.typedMarkHistory, now, bar)) continue;
+    const band = barCategory(entry.typedMarkHistory, bar);
     counts[band] = (counts[band] ?? 0) + 1;
   }
   return counts;
@@ -93,12 +103,13 @@ export function flpReadyCountsByBand(
 export function nextFlpReadyMs(
   entries: readonly FlpReadinessCard[],
   bands: readonly string[],
-  now: number
+  now: number,
+  bar: FlpBar = 'core'
 ): number | null {
   let soonest = Infinity;
   for (const entry of entries) {
-    if (!bands.includes(computeCoreCategory(entry.typedMarkHistory))) continue;
-    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now);
+    if (!bands.includes(barCategory(entry.typedMarkHistory, bar))) continue;
+    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, bar);
     // 0 means this card is ready, so there is nothing to count down to.
     if (remaining > 0 && remaining < soonest) soonest = remaining;
   }

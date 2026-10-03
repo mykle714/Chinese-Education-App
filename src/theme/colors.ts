@@ -98,6 +98,16 @@ export const COLORS = {
     yelMk: "#E8C800",    // oklch(83%   0.24   102) clipped — darkened 5% L, 2026-09-28
     yelTint: "#F9F7EA",  // oklch(97.5% 0.018  102)
 
+    // ── `--{hue}Bg`, the PAGE GROUND tier ─────────────────────────
+    // A muted ground a page sits on when the page itself is "in" a hue (≈ −3.5 L from the
+    // surface, chroma matched perceptually to the design's `--bluBg` #C6D9EE). Surface
+    // fills (cards, the white word-of-the-day card) stand off it. Only the two hues a
+    // page uses today are carried — the Reading Center (grn) and the Writing Center (pur),
+    // docs/READING_WRITING_CENTERS.md. The design also defines red/org/yel/blu grounds;
+    // add them here from `shelf-system-v2.css` when a page needs one. Both are in gamut.
+    grnBg: "#C4E7CA",    // oklch(89.5% 0.055  150)
+    purBg: "#DED2F7",    // oklch(88.5% 0.052  300)
+
     // ── `--gld`, the action metal ─────────────────────────────────
     // A saturated gold, the one ramp member that is NOT a pale ground. The arena flow
     // (docs/ARENA_FEATURE.md) needs a single page-level ACTION that is unmistakably the
@@ -156,6 +166,10 @@ export const COLORS = {
     rowBorder: "rgba(23, 22, 26, 0.10)", // --line  — hairlines between rows
     rowHoverBg: "rgba(23, 22, 26, 0.05)", // --hover (was 0.04, off the design by 1%)
     wood: "rgba(23, 22, 26, 0.22)",      // --wood  — the shelf BOARD. Only the shelf uses this.
+    // The design's `rgba(255,255,255,0.72)` — a FROSTED white chip or option sitting on
+    // a hued fill (a spine's pin, a bento pin, a games-carousel option). Lets the hue
+    // through faintly so the chip reads as belonging to its tile.
+    frost: "rgba(255, 255, 255, 0.72)",
     scrim: "rgba(23, 22, 26, 0.28)",     // --scrim — behind sheets
     modalScrim: "rgba(23, 22, 26, 0.45)", // heavier scrim behind blocking modals
 

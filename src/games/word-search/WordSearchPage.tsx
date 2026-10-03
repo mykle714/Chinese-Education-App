@@ -17,8 +17,9 @@ import { GameLeafPage } from "../shared/GameSurface";
 import { GAME_HUE } from "./constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
+import { COLORS } from "../../theme/colors";
+import Icon from "../../components/Icon";
 import WordSearchHeaderControls from "./WordSearchHeader";
-import WordSearchSettingsDialog from "./WordSearchSettingsDialog";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
@@ -54,6 +55,15 @@ type Phase = "loading" | "blocked" | "playing" | "won";
  *
  * Local to Word Search (2026-09-25); every other game keeps `GameHudLabel`'s default.
  */
+/** The HUD eye's square tap target. Larger than its 19px glyph on purpose. */
+const HUD_EYE_TAP_PX = 32;
+/**
+ * Gap from the strip's right edge to the eye's tap target. `GameHud` pads 15px; the
+ * glyph sits ~6.5px inside its 32px target, so 8px here lands the visible glyph on
+ * that same 15px line.
+ */
+const HUD_EYE_EDGE_INSET_PX = 8;
+
 const HUD_TEXT_SX = {
     fontFamily: FONTS.mono,
     fontSize: SIZE.bodyLg,
@@ -156,8 +166,6 @@ const WordSearchPage: React.FC = () => {
     const [found, setFound] = useState<Set<string>>(new Set());
     // Whether the end-of-run popup is collapsed into the corner puck.
     const [popupMinimized, setPopupMinimized] = useState(false);
-    // Settings sheet (pinyin display + timer visibility), behind the header cog.
-    const [settingsOpen, setSettingsOpen] = useState(false);
     const gridRef = useRef<WordSearchGridHandle>(null);
 
     // Hint meter: each successful find adds a unit (capped at HINT_BAR_UNITS); a
@@ -287,12 +295,12 @@ const WordSearchPage: React.FC = () => {
     // No-Pinyin launch simply never resolves to a round.
     //
     // `clockPaused` is declared further down, next to the run clock it protects, so
-    // the two pause SOURCES are restated here rather than reused: the modal sheets
+    // the two pause SOURCES are restated here rather than reused: the modal notice
     // and backgrounding. Both must freeze the −10/s time penalty (§ 5.8).
     const challengeRound = useChallengeRound({
         gameId: "word-search",
         mode: mode ?? null,
-        paused: noticeOpen || settingsOpen || backgrounded,
+        paused: noticeOpen || backgrounded,
         running: phase === "playing",
     });
     // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
@@ -516,13 +524,14 @@ const WordSearchPage: React.FC = () => {
     // ── Popup pause gate ─────────────────────────────────────────────────────
     // No game clock may run while a MODAL popup covers the board. Word Search's
     // clock counts UP and is the run's score, so time spent reading the
-    // provisional-cards notice or changing settings would show up as a worse
-    // result. Both overlays block input, so a frozen clock can't be used to study
-    // the live grid. The in-grid gloss popups are deliberately NOT included: they
+    // provisional-cards notice would show up as a worse result. The notice blocks
+    // input, so a frozen clock can't be used to study the live grid. (The settings
+    // sheet used to be a second source; it was deleted when its only row, timer
+    // visibility, moved into the HUD strip as an inline eye toggle.) The in-grid gloss popups are deliberately NOT included: they
     // are small anchored tooltips that leave the board playable, so pausing on
     // them would hand out a free stopwatch stop. Shared rule across all four games
     // — see docs/GAMES_FEATURE.md § Popups pause the clock.
-    const clockPaused = noticeOpen || settingsOpen;
+    const clockPaused = noticeOpen;
     // Read by the visibility listener below, which fires outside React's render
     // and must not resume a clock a popup is still holding.
     const clockPausedRef = useRef(clockPaused);
@@ -846,24 +855,59 @@ const WordSearchPage: React.FC = () => {
                     OUTSIDE it: both cover the full content area and must not be clipped
                     by the panel's radius. */}
                 <GameFrame className="word-search__frame">
-                {/* HUD: the clock alone, centred. Nothing else is stated here.
+                {/* HUD: the clock, centred, plus the eye that shows/hides it.
 
                     There is no mode label (fixed by the hub entry the run was launched
                     from, and visible on the board itself) and no found count (the gloss
                     list below already strikes through each found word, so the count was
                     a second statement of the same fact).
 
-                    The clock is the strip's only content, so when the settings sheet
-                    hides it the WHOLE strip goes rather than leaving an empty tinted bar;
-                    the grid (`flex: 1`) takes the height back. That reflow only happens
-                    from the settings sheet, never mid-trace. */}
-                {showTimer && (
-                    <GameHud className="word-search__hud" sx={{ justifyContent: "center" }}>
-                        <GameHudLabel className="word-search__hud-timer" sx={HUD_TEXT_SX}>
-                            {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
-                        </GameHudLabel>
-                    </GameHud>
-                )}
+                    The strip is ALWAYS rendered, and the clock inside it is hidden with
+                    `visibility`, not unmounted: it keeps holding the strip's height, so
+                    tapping the eye mid-run never reflows the grid under the player's
+                    finger. The eye is absolutely positioned for the same reason — it is
+                    a 32px tap target and must not make the strip taller than its text.
+                    See docs/WORD_SEARCH_GAME.md §3. */}
+                <GameHud className="word-search__hud" sx={{ justifyContent: "center", position: "relative" }}>
+                    <GameHudLabel
+                        className={`word-search__hud-timer${showTimer ? "" : " word-search__hud-timer--hidden"}`}
+                        sx={{ ...HUD_TEXT_SX, visibility: showTimer ? "visible" : "hidden" }}
+                    >
+                        {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
+                    </GameHudLabel>
+                    <Box
+                        className={`word-search__hud-timer-toggle word-search__hud-timer-toggle--${showTimer ? "shown" : "hidden"}`}
+                        role="button"
+                        aria-pressed={showTimer}
+                        aria-label={showTimer ? "Hide timer" : "Show timer"}
+                        onClick={() => updateWsSettings({ showTimer: !showTimer })}
+                        sx={{
+                            position: "absolute",
+                            top: "50%",
+                            // Timer shown → pinned to the strip's right edge, leaving the
+                            // clock dead-centre. Timer hidden → the eye takes the centre
+                            // the clock vacated. The move is an instant jump — deliberately
+                            // not animated.
+                            left: showTimer
+                                ? `calc(100% - ${HUD_EYE_EDGE_INSET_PX + HUD_EYE_TAP_PX}px)`
+                                : `calc(50% - ${HUD_EYE_TAP_PX / 2}px)`,
+                            transform: "translateY(-50%)",
+                            width: HUD_EYE_TAP_PX,
+                            height: HUD_EYE_TAP_PX,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                        }}
+                    >
+                        {/* The glyph states what a tap will DO, not the current state:
+                            slashed eye while the clock shows (tap to hide), open eye
+                            while it is hidden (tap to show). Full ink like every other
+                            HUD fact — the strip sits on the hue's tint, where --ink2
+                            reads washed out. */}
+                        <Icon name={showTimer ? "visibility_off" : "visibility"} size={19} color={COLORS.onSurface} />
+                    </Box>
+                </GameHud>
 
                 <WordSearchWordList words={data.words} found={found} hintEntryKey={hintEntryKey} />
 
@@ -960,18 +1004,10 @@ const WordSearchPage: React.FC = () => {
                 title="Word Search"
                 // Destination + the "leaving ends this round" confirm (useGameBack).
                 onBack={onBack}
-                rightContent={
-                    <WordSearchHeaderControls onSettingsClick={() => setSettingsOpen(true)} />
-                }
+                rightContent={<WordSearchHeaderControls />}
             >
                 {content}
             </GameLeafPage>
-            <WordSearchSettingsDialog
-                open={settingsOpen}
-                onClose={() => setSettingsOpen(false)}
-                showTimer={showTimer}
-                onToggleShowTimer={(v) => updateWsSettings({ showTimer: v })}
-            />
         </>
     );
 };

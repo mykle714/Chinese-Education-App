@@ -96,6 +96,14 @@ export interface ApplyMarkResult {
    * refill is paced by the band the learner just left, not the one they just reached.
    */
   categoryBeforeMark: FlashcardCategory;
+  /**
+   * The band, BEFORE the mark, of the bar THIS mark moves (`barForMarkType`). For a
+   * know mark that is the core band again; for a reading mark it is the reading band.
+   * The flp's READING mode paces its refill on this rather than on the core band,
+   * because its queue is banded by the reading bar (docs/READING_WRITING_CENTERS.md
+   * § Phase 4).
+   */
+  markedBarCategoryBefore: FlashcardCategory;
   /** The undo key. Null exactly when suppressed: there is no mark to undo. */
   markTimestamp: string | null;
   markType: MarkType;
@@ -205,6 +213,7 @@ export class FlashcardMarkService {
             language,
             category: unchanged,
             categoryBeforeMark: unchanged,
+            markedBarCategoryBefore: barCategory(existingHistory, barForMarkType(markType)),
             markTimestamp: null,
             markType,
             displacedMark: null,
@@ -286,6 +295,7 @@ export class FlashcardMarkService {
           language,
           category,
           categoryBeforeMark,
+          markedBarCategoryBefore: barCategoryBefore,
           markTimestamp: newMark.timestamp,
           markType,
           displacedMark,

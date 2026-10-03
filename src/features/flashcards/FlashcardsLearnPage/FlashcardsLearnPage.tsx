@@ -15,6 +15,7 @@ import { useLaunchCollection } from "../useLaunchCollection";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
+import { parseStudyMode, parseFlpBar } from "../../../../server/contracts/studyMode";
 import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
 import { useToolbarInset } from "../../../cardIcons/editor/useToolbarInset";
 import { useCardSlotPadding } from "./useCardSlotPadding";
@@ -58,11 +59,15 @@ const FlashcardsLearnPage: React.FC = () => {
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [searchParams] = useSearchParams();
     const selectedCategory: string | null = searchParams.get('category');
-    // Difficulty mode (Review/Challenge) launched from the decks page, or null for Study.
-    // An unrecognized value falls back to null, so a stale bookmark of the old
-    // ?mode=easy / ?mode=hard links opens a Study session rather than dead-ending.
-    const rawMode = searchParams.get('mode');
-    const selectedMode: StudyMode | null = rawMode === 'review' || rawMode === 'challenge' ? rawMode : null;
+    // Two independent axes (server/contracts/studyMode.ts). MODE — Review/Challenge, or
+    // null for Study Mix; an unrecognized value falls back to null, so a stale bookmark of
+    // the old ?mode=easy / ?mode=hard links opens a Study session rather than dead-ending.
+    const selectedMode: StudyMode | null = parseStudyMode(searchParams.get('mode')) ?? null;
+    // BAR — `reading` for the READING flp, launched from the Reading Center's study hand in
+    // any of the three modes (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only front,
+    // no narration before the flip, every mark a reading mark (flpFaceSteering).
+    const flpBar = parseFlpBar(searchParams.get('bar'));
+    const readingMode = flpBar === 'reading';
     // The collection this session was launched from, for the empty-state copy below.
     // useWorkingLoop reads the same hook for its fetches; it is a pure derivation of
     // this page's own URL, so calling it twice cannot disagree.
@@ -76,8 +81,9 @@ const FlashcardsLearnPage: React.FC = () => {
     // and comes back empty on purpose. "Resting" is the honest word for that — the
     // learner has these cards, they just aren't due. See docs/PROVISIONAL_CARDS.md.
     const emptyMessage: string | undefined =
-        selectedMode === 'review' ? 'No more review cards remaining.'
-        : selectedMode === 'challenge' ? 'No more challenge cards remaining.'
+        selectedMode === 'review' ? `No more ${readingMode ? 'reading ' : ''}review cards remaining.`
+        : selectedMode === 'challenge' ? `No more ${readingMode ? 'reading ' : ''}challenge cards remaining.`
+        : readingMode ? 'Every card is resting for reading. Check back later!'
         : launchCollection?.kind === 'deck' ? 'Every card in this deck is resting. Check back later!'
         : launchCollection?.kind === 'mastered' ? 'Your mastered cards are all resting. Check back later!'
         : undefined;
@@ -118,7 +124,7 @@ const FlashcardsLearnPage: React.FC = () => {
         handleUndoLastMark,
         provisionalSeen,
         provisionalReviewed,
-    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, prefetch: tts.prefetch, cardDragRef });
+    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, bar: flpBar, prefetch: tts.prefetch, cardDragRef });
 
     const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
 
@@ -298,7 +304,10 @@ const FlashcardsLearnPage: React.FC = () => {
         : currentSideOneLanguage;
     const chineseVisible = shownFaceLanguage === 'zh';
     useEffect(() => {
-        if (!chineseVisible || !currentEntry) return;
+        // A reading session is SILENT: narrating the word would hand the learner the
+        // pronunciation the card is asking them to read (same rule as a reading Bubble
+        // Match run). The answer face's speaker still plays on a tap.
+        if (!chineseVisible || !currentEntry || readingMode) return;
         // autoSpeak is a no-op when autoplay is off, so the setting is enforced
         // in one place rather than re-checked at every narration site.
         tts.autoSpeak(currentEntry);
@@ -680,6 +689,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     emptyMessage={emptyMessage}
                     showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
+                    readingMode={readingMode}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
                     showSwipeHint={showSwipeHint}

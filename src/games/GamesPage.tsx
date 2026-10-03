@@ -8,7 +8,7 @@ import TipBox from "../components/TipBox";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useGameWins } from "../hooks/useGameWins";
 import { GAME_REGISTRY } from "../games/registry";
-import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS } from "../games/bubble-match/constants";
+import { GAME_KEY as BUBBLE_MATCH_GAME_KEY, LEVEL_CONFIGS as BUBBLE_MATCH_LEVELS, LEVEL_HUES as BUBBLE_MATCH_LEVEL_HUES } from "../games/bubble-match/constants";
 import BubbleMatchTrackToggle from "../games/bubble-match/BubbleMatchTrackToggle";
 import { GAME_KEY as MATCH_SPEED_GAME_KEY } from "../games/match-speed/constants";
 import WordSearchHubItem from "../games/word-search/WordSearchHubItem";
@@ -75,14 +75,8 @@ import { MARK_TYPE_LABELS } from "../utils/masteryCompute";
 // tracks and is the control that picks between them. That control has to live here
 // rather than in the game because the choice is made before the board is dealt.
 
-/** Per-level ramp hues for the Bubble Match sub-tiles, keyed by LEVEL_CONFIGS' level
-    number — a difficulty ramp, calm green through to red. Hardcoded, not randomized.
-    This is why Bubble Match's own `GameDef.hue` is only a fallback. */
-const BUBBLE_MATCH_LEVEL_HUES: Record<number, "grn" | "org" | "red"> = {
-    1: "grn",
-    2: "org",
-    3: "red",
-};
+// Per-level hues for the Bubble Match sub-tiles: LEVEL_HUES (bubble-match/constants.ts),
+// shared with the Reading Center's games carousel.
 
 // Word Search also fans out into a strip of sub-tiles (Pinyin / No Pinyin), plus a
 // leading resume tile when a saved board exists — but its mode tiles need custom

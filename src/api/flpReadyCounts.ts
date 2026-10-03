@@ -17,17 +17,19 @@
  * Referenced by docs/DECKS_FEATURE.md § "The card hand".
  */
 import { apiGet, withFallback } from './http';
+import type { FlpBar } from '../../server/contracts/studyMode';
 
 export interface FlpReadyCounts {
-    /** Ready-now counts keyed by CORE utcm band (Unfamiliar/Target/Comfortable/Mastered). */
+    /** Ready-now counts keyed by the requested bar's utcm band (Unfamiliar/Target/Comfortable/Mastered). */
     counts: Record<string, number>;
     /** Time until the soonest Comfortable/Mastered card becomes ready, or null if none is resting. */
     reviewNextReadyMs: number | null;
 }
 
-export function fetchFlpReadyCounts(): Promise<FlpReadyCounts> {
+/** `bar` — the session bar the figures describe: core (fdp) or reading (Reading Center). */
+export function fetchFlpReadyCounts(bar: FlpBar = 'core'): Promise<FlpReadyCounts> {
     return withFallback(
-        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts'),
+        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', bar === 'core' ? undefined : { params: { bar } }),
         'Failed to load card counts'
     );
 }

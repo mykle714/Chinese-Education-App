@@ -8,7 +8,7 @@ import type { CardsFilter } from "./useDecksPanel";
  * returns to it with Back (the ← arrow, the browser button, or iOS's edge swipe).
  *
  * ── What is restored ──────────────────────────────────────────────────────────
- * Which sheet was open and how tall it was (fdp only), the scroll position, the search
+ * Which sheet was open and how tall it was (fdp and the Centers), the sheet's scroll position, the search
  * text, the sort key, the collection filter, and the loaded cards/decks themselves. The
  * cached lists let the page paint its final state on the FIRST frame; the page still
  * refetches in the background and swaps the fresh list in, so a mark made on the cdp
@@ -52,20 +52,27 @@ export interface DecksPanelSnapshot {
     cardsFilter: CardsFilter;
 }
 
-/** fdp: the panel state plus which sheet was up, its height and its scroll. */
-export interface DecksPageSnapshot {
-    panel: DecksPanelSnapshot;
+/** Which decks sheet was up, its height and its scroll — read off `DecksSheets`. */
+export interface DecksSheetsSnapshot {
     openSheet: "cards" | "decks" | null;
     /** The sheet's live height in px when the learner left, or null if none was open. */
     sheetHeight: number | null;
+    /** The open sheet body's scrollTop. */
     scrollTop: number;
 }
 
-/** Mastery Center: the panel state plus the body's scroll. */
-export interface MasteryCenterSnapshot {
+/** fdp: the panel state plus the sheets' state. */
+export interface DecksPageSnapshot extends DecksSheetsSnapshot {
     panel: DecksPanelSnapshot;
-    scrollTop: number;
 }
+
+/**
+ * Mastery Center: the same shape as the fdp — since the 2026-10-02 redesign a Center
+ * carries the fdp's two sheets rather than the panel inline. The Center's own page
+ * scroll is NOT restored: `NodePage` does not expose its scroller (open flag in
+ * docs/READING_WRITING_CENTERS.md).
+ */
+export type MasteryCenterSnapshot = DecksPageSnapshot;
 
 /** Collection / deck page. */
 export interface CollectionPageSnapshot {

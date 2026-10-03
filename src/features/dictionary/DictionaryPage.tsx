@@ -117,8 +117,12 @@ function DictionaryPage() {
     // for that word — a NODE-page slide (in from the right), replacing the old EIP
     // popup. The cdp fetches the full det row itself (breakdown, examples, usedIn,
     // etc.). See docs/LEAF_NODE_PAGES.md + DictionaryCardDetailPage.
+    //
+    // A hit found through a non-default sense (`matchedSense`, see resolveSearchRowView)
+    // passes that sense's label as `?sense=` so the cdp opens on the sense the row showed.
     const handleEntryClick = useCallback((entry: DictionaryEntry) => {
-        slideNavigate(`/dictionary/card/${encodeURIComponent(entry.word1)}`);
+        const senseQuery = entry.matchedSense ? `?sense=${encodeURIComponent(entry.matchedSense)}` : '';
+        slideNavigate(`/dictionary/card/${encodeURIComponent(entry.word1)}${senseQuery}`);
     }, [slideNavigate]);
 
     const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {

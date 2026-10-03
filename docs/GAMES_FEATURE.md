@@ -402,12 +402,8 @@ inherits a shell from it.
   so the popup is modal and its own buttons are the only exits. The rule is
   "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
   and Word Search all have a post-run cleanup mode, Speed Reading has none.
-- **Answer-feedback sound** — no longer lives here. `gameSounds.ts` was deleted on
-  2026-09-05. The shared marimba arpeggio (`src/services/audio/markArpeggio.ts`) is
-  played by `markFlashcard` for **Match Speed and Bubble Match only** — the
-  `ARPEGGIO_SURFACES` whitelist in `src/api/flashcards.ts` (docs/AUDIO_PLAYBACK.md § 7).
-  Every other game marks silently. A new game is silent by default; to give it the
-  sound, add its `MarkSurface` to that set and call `useMarkArpeggio()` on its page.
+- **Answer-feedback sound** — there is none. Every game marks silently; narration
+  (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
 - **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
   backgrounding pause and its tap-to-resume overlay (§ Backgrounding pauses the clock).
 - **The Study Challenge round runner** — five files, and the largest thing in here:
@@ -732,15 +728,16 @@ it to whatever moves on its own:
 | Game | `clockPaused` is true while | What freezes | Code |
 | --- | --- | --- | --- |
 | Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedPage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
-| Word Search | the provisional notice or the settings sheet is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
+| Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
 
 Three consequences worth keeping in mind when adding a popup or a game:
 
-- **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` and Word
-  Search's settings sheet take the whole screen, so a frozen clock cannot be used to
-  study a live board. Word Search's in-grid gloss popups are deliberately
+- **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` takes the whole
+  screen, so a frozen clock cannot be used to study a live board. (Word Search's
+  settings sheet was a second such overlay until it was deleted on 2026-09-30; its
+  replacement, the HUD's eye toggle, is inline and does not pause.) Word Search's in-grid gloss popups are deliberately
   **excluded**: they are small anchored tooltips that leave the board playable, so
   pausing on them would hand the player a free stopwatch stop. Match Speed lost its
   settings-sheet pause source on 2026-08-28 when that sheet was deleted — its
@@ -1099,8 +1096,6 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 - `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
 - `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
 - `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (all four games)
-- `src/services/audio/markArpeggio.ts` — the shared answer-feedback arpeggio
-- `src/hooks/useMarkArpeggio.ts` — resets the arpeggio streak on the two game pages that play it
 - `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
 - `src/games/shared/GameFrame.tsx` — `GameFrame` / `GameHud` / `GameHudLabel` / `GameHudBar` / `GameHint` / `GameTimer`; the `.play` panel every game plays inside (§ Layer 2b)
 - `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry
@@ -1216,6 +1211,11 @@ Three consequences worth knowing before touching this game:
    `BubbleMatchTrackToggle` in its `control` slot, which names both tracks
    (`RECOGNITION ⇄ READING`) and writes the `showPinyin` setting — today the
    **shared** one, and per the section above it should be **Bubble Match's own**.
+   A launch may also **pin** the track for one run with `location.state.showPinyin`
+   (`BubbleMatchPage` → `pinnedShowPinyin`), which overrides the setting without
+   writing it. The Reading Center's games carousel launches with `showPinyin: false`
+   so a reading page always deals a reading board
+   ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)).
 2. **The run latches the track at deal time** (`lockRunTrack`, called from the first
    pool fetch and reused by every Play-Again refill). The pool is bucketed AND cooled
    on that track when it is requested, so a board dealt on one track and marked on
@@ -1396,6 +1396,24 @@ more than that and made a grab feel a beat late:
 The pre-existing `willChange: animating ? "transform" : "auto"` rule in `Bubble` is part
 of the same budget — see its comment for why a permanent `willChange` on ~40 bubbles
 reads as input lag.
+
+### Drag latency — what a bubble status change may cost
+
+The same budget, further along the gesture. While a drag sweeps the field the hover
+target changes every time the held bubble crosses an opposite-kind bubble, and each
+change re-renders two `Bubble`s (old target → `idle`, new target → `hovered`). That
+re-render must stay a shell recolor. Two rules keep it one:
+
+- **The per-frame transform is inline `style`, never `sx`.** `sx` is hashed into an
+  emotion class, and the transform string is unique per render (sub-pixel x/y), so in
+  `sx` every status change inserted a new, permanent rule into the document stylesheet.
+  A rule insertion invalidates style page-wide, and the sheet only grows, so the cost
+  rose with session length. `Bubble`'s `sx` may hold only values from a small closed set
+  (status, kind, radius).
+- **The content subtree is memoized (`content` in `Bubble`).** `CPCDRow`'s
+  `useLayoutEffect` has no dependency list, so its forced-layout measuring pass runs on
+  every *render*, not only on mount (the bullet above understates it). Memoizing the
+  content means a status change no longer re-renders the `CPCDRow` at all.
 
 Referenced code: `src/games/bubbles/Bubble.tsx`,
 `src/games/bubble-match/BubbleStage.tsx` → `onPointerDown`,

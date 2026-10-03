@@ -26,6 +26,7 @@ function savedWordCount(saved: SavedWordSearchState): number {
     return saved.data.words.length || TOTAL_WORDS;
 }
 import { formatTimeMs } from "../../utils/timeUtils";
+import { useWordSearchSettings } from "./useWordSearchSettings";
 import { MARK_TYPE_LABELS } from "../../utils/masteryCompute";
 
 /**
@@ -102,6 +103,9 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
 
     // Whether the resume tile has flipped to its in-place "delete this saved game?"
     // face (armed by the ✕). The erase + collapse only happens on confirm.
+    // Timer visibility is the same device-local preference the in-game HUD eye toggles;
+    // the resume card honours it so a hidden clock stays hidden here too.
+    const { showTimer } = useWordSearchSettings().settings;
     const [confirmingErase, setConfirmingErase] = useState(false);
 
     // Navigate into a fresh game for `mode`. resume:false → WordSearchPage always
@@ -297,7 +301,11 @@ const WordSearchHubItem: React.FC<WordSearchHubItemProps> = ({ game, className }
                                         className="word-search-hub__resume-stats"
                                         sx={{ fontSize: 10.5, color: COLORS.textSecondary, fontFamily: FONTS.mono, whiteSpace: "nowrap" }}
                                     >
-                                        {formatTimeMs(saved.elapsedMs)} · {saved.found.length}/{savedWordCount(saved)}
+                                        {/* The parked time is omitted when the player has
+                                            hidden the in-game clock (the HUD eye toggle) —
+                                            a hidden timer must not leak back out here. */}
+                                        {showTimer && `${formatTimeMs(saved.elapsedMs)} · `}
+                                        {saved.found.length}/{savedWordCount(saved)}
                                     </Typography>
                                     <Typography
                                         className="word-search-hub__resume-mode"

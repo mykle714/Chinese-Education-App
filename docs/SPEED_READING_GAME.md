@@ -412,8 +412,8 @@ there.
 ## Answer feedback: half tint
 
 A pick fires **one** cue, then the round advances after `FEEDBACK_MS` (180ms). There
-is **no answer sound** — the marimba arpeggio is limited to Match Speed and Bubble
-Match (docs/AUDIO_PLAYBACK.md § 7), removed from this game 2026-09-13.
+is **no answer sound** — the app has no answer-feedback sound at all
+(docs/AUDIO_PLAYBACK.md § 7).
 
 ⚠️ `FEEDBACK_MS` was shortened on the premise that the sound reached the player first
 (the old reveal was 600ms, sized for colour only). With the tint now the sole cue, it
@@ -469,10 +469,8 @@ instant.
 
 ### No answer sound
 
-Until 2026-09-05 this game owned two synthesized WebAudio blips
-(`src/games/runtime/gameSounds.ts`, deleted); from then until 2026-09-13 it played the
-shared marimba arpeggio via `markFlashcard`. It now plays neither — `speed-reading` is
-not in `ARPEGGIO_SURFACES` (`src/api/flashcards.ts`), and `onPick` makes no sound call.
+`onPick` makes no sound call, and `markFlashcard` plays nothing for any surface
+(docs/AUDIO_PLAYBACK.md § 7).
 
 ### Auto-narration
 

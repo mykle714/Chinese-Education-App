@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Alert, Snackbar, IconButton } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -42,6 +42,11 @@ import { useCompareSheet } from "../../components/CompareSheet";
 const DictionaryCardDetailPage: React.FC = () => {
     usePageTitle("Dictionary");
     const { word } = useParams<{ word: string }>();
+    // `?sense=<cluster label>` — set by the dictionary search when the hit was found through a
+    // non-default sense ("ma2" → 吗's má sense), so the page opens on the sense the row showed.
+    // It outranks the requester's saved pick: they just chose this sense by tapping it.
+    const [searchParams] = useSearchParams();
+    const linkedSense = searchParams.get("sense");
     const navigate = useNavigate();
     const slideNavigate = useSlideNavigate();
     const { user } = useAuth();
@@ -82,7 +87,9 @@ const DictionaryCardDetailPage: React.FC = () => {
                 // their card agree. Falls back to the default/starred sense otherwise. The
                 // picker here stays local-only: this page has no vet row to write when the word
                 // is not in their library. See docs/DEFINITION_CLUSTERS.md.
-                setSelectedSenseIndex(resolveSelectedSenseIndex(adapted));
+                setSelectedSenseIndex(resolveSelectedSenseIndex(
+                    linkedSense ? { ...adapted, selectedSense: linkedSense } : adapted,
+                ));
             } catch (err: unknown) {
                 if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load word");
             } finally {
@@ -91,11 +98,11 @@ const DictionaryCardDetailPage: React.FC = () => {
         };
         fetchEntry();
         return () => { cancelled = true; };
-        // Keyed on `word` only. This effect used to list `token`, so every ~15-minute
-        // silent refresh re-ran it — refetching the entry AND resetting
-        // selectedSenseIndex to 0, discarding the sense the reader had picked.
-        // See CLAUDE.md "Never reload on token refresh".
-    }, [word]);
+        // Keyed on `word` and the linked `?sense=` only — both are stable for the page's
+        // life. This effect used to list `token`, so every ~15-minute silent refresh re-ran
+        // it — refetching the entry AND resetting selectedSenseIndex to 0, discarding the
+        // sense the reader had picked. See CLAUDE.md "Never reload on token refresh".
+    }, [word, linkedSense]);
 
     // Drill-in: open the cdp of a linked word (breakdown/used-in/example segment).
     // Same slide as the Dictionary → cdp navigation (node-in-from-right).

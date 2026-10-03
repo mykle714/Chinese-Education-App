@@ -3321,6 +3321,12 @@ one four-bucket ladder:
 | 2 | partial word — the term is a leading prefix | 龙虾 lóng xiā | casarse |
 | 3 | partial English — the term sits inside a sense | 寿 "long life" | casón |
 
+> Since 2026-10-03 the complete-word tier is split into a **main** reading (the one the row
+> displays) and an **alternate** reading bucket, and the head samples the two as one group, so the
+> tray's head shape is unchanged. See
+> [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) § "Primary vs
+> alternate readings".
+
 **Every complete match outranks every partial one; English leads the complete pair, the word side
 leads the partial pair.** The asymmetry is the point: a learner who types a whole English word
 usually means it, so an exact gloss is the best answer the dictionary has — but a *partial*

@@ -117,14 +117,21 @@ export function masteryWindowCells(bar: MasteryBar): MasteryWindowCell[] {
  * Bubble Match's track toggle dot and the eip tab strip (`TAB_COLORS`).
  *
  * v2 (docs/SHELF_REDESIGN.md § A1b): the four v1 literals (#779BE7 / #05C793 / #EF476F /
- * #FF8E47) were outside the palette; they are now the MARK tier of the hue each skill
- * has always owned, so a skill dot and a mastery cell are drawn from one register.
+ * #FF8E47) were outside the palette; they are now the MARK tier of the skill's hue, so a
+ * skill dot and a mastery cell are drawn from one register.
+ *
+ * 2026-10-02 (docs/READING_WRITING_CENTERS.md): only the two PUBLIC skills own a hue —
+ * reading GREEN, writing PURPLE, the Reading / Writing Centers' own colours (they were
+ * red / orange). Recognition and production are no longer learner-facing concepts (they
+ * are the two halves of the "know" bar), so they deliberately own NO hue: they take the
+ * neutral mid grey. Anything still naming them to the learner is a leftover — see the
+ * open flags in that doc.
  */
 export const MARK_TYPE_COLORS: Record<MarkType, string> = {
-  recognition: COLORS.bluMk,
-  production: COLORS.grnMk,
-  reading: COLORS.redMk,
-  writing: COLORS.orgMk,
+  recognition: COLORS.greyA,
+  production: COLORS.greyA,
+  reading: COLORS.grnMk,
+  writing: COLORS.purMk,
 };
 
 /**

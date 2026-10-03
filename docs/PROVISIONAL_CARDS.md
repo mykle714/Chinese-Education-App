@@ -640,7 +640,9 @@ on-mode cards exist it plays exactly as designed.
 ### The same asymmetry on flp
 
 flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts`):
-**Review = Comfortable + Mastered**, **Challenge = Unfamiliar + Target**.
+**Review = Comfortable + Mastered**, **Challenge = Unfamiliar + Target**. (The third mode,
+**Reading**, allows all four bands like Study Mix but reads them off the READING bar, so a
+lent card — empty history — bands reading-Unfamiliar and the mode may lend.)
 
 `FlashcardsDecksPage` therefore treats them differently:
 

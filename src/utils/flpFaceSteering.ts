@@ -1,6 +1,7 @@
 import type { VocabEntry } from "../types";
 import type { MarkType, SideOneLanguage } from "../features/flashcards/types";
 import { positiveCount } from "./masteryCompute";
+import type { FlpBar } from "../../server/contracts/studyMode";
 
 /**
  * flpFaceSteering — which face an flp card opens on, and which mark that face writes.
@@ -27,12 +28,14 @@ import { positiveCount } from "./masteryCompute";
  * Which mark type a flp review produces: an English-first prompt asks the learner to
  * PRODUCE the foreign word; a foreign-first prompt asks them to RECOGNIZE it.
  *
- * Always a know track. "Show pinyin" off no longer turns the foreign-first face into a
- * READING review (it did until 2026-09-25) — reading marks will come from a dedicated
- * reading flp instead, so this session's marks stay on the know bar either way.
+ * A know track in every session but one. "Show pinyin" off does NOT turn the
+ * foreign-first face into a reading review (it did until 2026-09-25); reading marks come
+ * from the dedicated READING flp — `bar: "reading"` (any mode), launched from the Reading
+ * Center's study hand (docs/READING_WRITING_CENTERS.md § Phase 4) — where every mark is
+ * `reading`.
  */
-export const markTypeForSideOne = (sideOne: SideOneLanguage): MarkType =>
-    sideOne === "en" ? "production" : "recognition";
+export const markTypeForSideOne = (sideOne: SideOneLanguage, bar: FlpBar = "core"): MarkType =>
+    bar === "reading" ? "reading" : sideOne === "en" ? "production" : "recognition";
 
 /**
  * Choose which language shows on a card's Side 1: the face for whichever know track
@@ -52,7 +55,9 @@ export const markTypeForSideOne = (sideOne: SideOneLanguage): MarkType =>
  * which was kept a bias so a session would not be predictable. The trade was made
  * knowingly: the weaker track is now always the one drilled.
  */
-export const sideOneForCard = (card: VocabEntry | null | undefined): SideOneLanguage => {
+export const sideOneForCard = (card: VocabEntry | null | undefined, bar: FlpBar = "core"): SideOneLanguage => {
+    // The reading flp always opens on the characters: reading them IS the question.
+    if (bar === "reading") return "zh";
     const history = card?.typedMarkHistory;
     const recognition = positiveCount(history?.recognition);
     const production = positiveCount(history?.production);

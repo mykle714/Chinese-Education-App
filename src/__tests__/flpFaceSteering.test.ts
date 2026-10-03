@@ -65,3 +65,19 @@ describe("sideOneForCard — the weaker know track, recognition on a tie", () =>
     expect([...faces]).toEqual(["en"]);
   });
 });
+
+// The READING flp (docs/READING_WRITING_CENTERS.md § Phase 4): always opens on the
+// characters, and every mark it writes is a reading mark — whatever the know history says.
+describe("reading mode", () => {
+  it("opens on the characters even when production is the weaker track", () => {
+    const c = card({ recognition: { pos: 5 }, production: { pos: 2 } });
+    expect(sideOneForCard(c)).toBe("en");
+    expect(sideOneForCard(c, "reading")).toBe("zh");
+  });
+
+  it("marks reading from either face", () => {
+    expect(markTypeForSideOne("zh", "reading")).toBe("reading");
+    expect(markTypeForSideOne("en", "reading")).toBe("reading");
+    expect(markTypeForSideOne("zh", "core")).toBe("recognition");
+  });
+});

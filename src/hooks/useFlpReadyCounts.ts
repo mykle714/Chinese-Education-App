@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import { fetchFlpReadyCounts, type FlpReadyCounts } from "../api/flpReadyCounts";
+import type { FlpBar } from "../../server/contracts/studyMode";
 
 /**
  * The fdp study-hand figures (Challenge/Review/Study Mix), fetched independently of
@@ -10,7 +11,7 @@ import { fetchFlpReadyCounts, type FlpReadyCounts } from "../api/flpReadyCounts"
  * computed server-side against a narrow `{ id, typedMarkHistory }` read so the hand's
  * three figures no longer wait on the fully-enriched collection fetch.
  */
-export function useFlpReadyCounts(): FlpReadyCounts & { loaded: boolean } {
+export function useFlpReadyCounts(bar: FlpBar = "core"): FlpReadyCounts & { loaded: boolean } {
     const { isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [reviewNextReadyMs, setReviewNextReadyMs] = useState<number | null>(null);
@@ -22,7 +23,7 @@ export function useFlpReadyCounts(): FlpReadyCounts & { loaded: boolean } {
 
         (async () => {
             try {
-                const result = await fetchFlpReadyCounts();
+                const result = await fetchFlpReadyCounts(bar);
                 if (cancelled) return;
                 setCounts(result.counts ?? {});
                 setReviewNextReadyMs(result.reviewNextReadyMs ?? null);
@@ -36,7 +37,7 @@ export function useFlpReadyCounts(): FlpReadyCounts & { loaded: boolean } {
         return () => { cancelled = true; };
     // isAuthenticated not the auth token: see CLAUDE.md "Never reload on token
     // refresh".
-    }, [isAuthenticated]);
+    }, [isAuthenticated, bar]);
 
     return { counts, reviewNextReadyMs, loaded };
 }

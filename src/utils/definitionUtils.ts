@@ -1,4 +1,4 @@
-import type { DefinitionCluster, LongDefinitionPart, VocabEntry } from '../types';
+import type { DefinitionCluster, DictionaryEntry, LongDefinitionPart, VocabEntry } from '../types';
 import { numberedToTonedPinyin, readingSyllableCount } from './textUtils';
 
 /**
@@ -332,6 +332,39 @@ export function resolveDefaultPronunciation(
   const clusters = Array.isArray(entry.definitionClusters) ? entry.definitionClusters.filter(Boolean) : [];
   const top = [...clusters].sort((a, b) => (b.frequencyScore ?? -1) - (a.frequencyScore ?? -1))[0] ?? null;
   return clusterReadingOrColumn(top, entry.pronunciation ?? null);
+}
+
+/**
+ * **What a dictionary SEARCH row shows** — its pinyin and its gloss list, honouring the sense
+ * the search term hit.
+ *
+ * The server sets `matchedSense` (`resolveMatchedSense`, server/utils/searchSenseMatch.ts) when
+ * the term hit a sense other than the default one: "ma2" hits 吗's 吗啡 sense, "row" hits 行's
+ * háng sense. Such a row shows THAT sense's reading and leads its gloss list with that sense's
+ * glosses, followed by the rest of the flat `definitions` (de-duplicated). Without a
+ * `matchedSense` — or when its label no longer names a cluster — this is exactly the
+ * default-sense row: `resolveDefaultPronunciation` + the flat `definitions`.
+ *
+ * Used by every surface that renders `/api/dictionary/search` hits: `DictionaryEntryRow`
+ * (dictionary page, Compare slot B), `CommunitySearchBar`, `IWLookupResults`.
+ * See docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md § "Sense matching".
+ */
+export function resolveSearchRowView(
+  entry: Pick<DictionaryEntry, 'pronunciation' | 'definitionClusters' | 'definitions'> & { matchedSense?: string | null },
+): { pronunciation: string | null; definitions: string[] } {
+  const flat = Array.isArray(entry.definitions) ? entry.definitions : [];
+  const cluster = entry.matchedSense && Array.isArray(entry.definitionClusters)
+    ? entry.definitionClusters.find((c) => c?.sense === entry.matchedSense) ?? null
+    : null;
+  if (!cluster) {
+    return { pronunciation: resolveDefaultPronunciation(entry), definitions: flat };
+  }
+  const lead = Array.isArray(cluster.glosses) ? cluster.glosses : [];
+  const leadSet = new Set(lead);
+  return {
+    pronunciation: clusterReadingOrColumn(cluster, entry.pronunciation ?? null),
+    definitions: [...lead, ...flat.filter((d) => !leadSet.has(d))],
+  };
 }
 
 /**

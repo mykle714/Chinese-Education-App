@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material';
 import type { DictionaryEntry, Language } from '../types';
-import { stripParentheses, resolveDefaultPronunciation } from '../utils/definitionUtils';
+import { stripParentheses, resolveSearchRowView } from '../utils/definitionUtils';
 import ForeignText, { isLatinScriptLang } from './ForeignText';
 import Icon from './Icon';
 import { COLORS } from '../theme/colors';
@@ -55,8 +55,13 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: Dictionary
     // The artboard's gloss is a single ellipsized line carrying as many senses as
     // fit ("time; period"), not just the first one — the row has a fixed height
     // either way, so a second gloss is free information rather than extra space.
-    const gloss = entry.definitions && entry.definitions.length > 0
-        ? entry.definitions.map(stripParentheses).filter(Boolean).join('; ')
+    //
+    // A hit found through a NON-default sense ("ma2" → 吗's má sense, "row" → 行's háng) shows
+    // that sense's pinyin with its glosses leading the line; every other hit renders its
+    // default sense exactly as before. See resolveSearchRowView.
+    const rowView = resolveSearchRowView(entry);
+    const gloss = rowView.definitions.length > 0
+        ? rowView.definitions.map(stripParentheses).filter(Boolean).join('; ')
         : 'No definition available';
 
     const isLatin = isLatinScriptLang(language);
@@ -130,8 +135,8 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: Dictionary
                             className="dictionary-entry-row__headword"
                             language={language}
                             text={entry.word1}
-                            // Default-sense reading: this row prints every sense's gloss, not one chosen sense.
-                            pronunciation={resolveDefaultPronunciation(entry)}
+                            // Default-sense reading, or the search-matched sense's (resolveSearchRowView).
+                            pronunciation={rowView.pronunciation}
                             size="sm"
                             bold
                         />

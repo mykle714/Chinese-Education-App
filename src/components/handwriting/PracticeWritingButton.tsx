@@ -13,15 +13,13 @@
  *
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Entry points").
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Badge, Button, Typography } from "@mui/material";
 // Writing practice uses the pencil; the flp icon-layout "edit" uses the brush
 // (the two were swapped per design).
 import EditIcon from "@mui/icons-material/Edit";
 import PracticeWritingPopup from "./PracticeWritingPopup";
-import { useAuth } from "../../AuthContext";
-import { fetchCompletedLevels } from "./completions";
-import { markFlashcard } from "../../api/flashcards";
+import { usePracticeWriting } from "./usePracticeWriting";
 import Icon from "../Icon";
 import { WORD_TOOL_PILL_SX } from "../wordToolPill";
 import { COLORS } from "../../theme/colors";
@@ -60,59 +58,13 @@ export default function PracticeWritingButton({
   size = "small",
   appearance = "labeled",
 }: PracticeWritingButtonProps) {
-  const { token, isAuthenticated } = useAuth();
   const [open, setOpen] = useState(false);
-  // Completed assistance levels for this character (the stars). Owned here so the
-  // superscript count and the popup's per-tab stars share one source of truth.
-  const [completedLevels, setCompletedLevels] = useState<Set<string>>(new Set());
-
-  // Gate: Chinese only (zh_CN recognizer), 1–4 characters. Single characters use
-  // one large panel; 2–4 use the 2×2 grid (top-two for 2 chars; +bottom-left for
-  // 3; all four for 4). Words longer than 4 chars are excluded — the grid only has
-  // four slots (docs/HANDWRITING_RECOGNITION.md "Multi-character grid").
-  // [...character] counts code points so surrogate-pair CJK glyphs count as one.
-  const charCount = [...character].length;
-  const eligible = language === "zh" && charCount >= 1 && charCount <= 4;
-
-  // Load existing stars for this character so the superscript shows before opening.
-  useEffect(() => {
-    if (!eligible || !token) return;
-    let cancelled = false;
-    fetchCompletedLevels("zh", character, token)
-      .then((levels) => {
-        if (!cancelled) setCompletedLevels(new Set(levels));
-      })
-      .catch(() => {
-        /* non-fatal: just show no stars */
-      });
-    return () => {
-      cancelled = true;
-    };
-  // isAuthenticated not `token`: the star count needn't re-fetch on a silent
-  // refresh. See CLAUDE.md "Never reload on token refresh".
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eligible, character, isAuthenticated]);
-
-  // Called by the popup when a level is freshly completed (it returns the new set).
-  const handleLevelsChange = useCallback((levels: string[]) => {
-    setCompletedLevels(new Set(levels));
-  }, []);
-
-  // Record a Writing mastery mark on each Verify attempt (positive iff the whole
-  // word was written correctly). Fire-and-forget, only when we know the vet card.
-  // See docs/MASTERY_REWORK.md.
-  //
-  // These marks play no answer-feedback arpeggio: "practice-writing" is not in
-  // `ARPEGGIO_SURFACES` (src/api/flashcards.ts).
-  const handleWritingMark = useCallback((isCorrect: boolean) => {
-    // Gated on isAuthenticated rather than on the token string: the mark is only
-    // meaningful for a signed-in user, and `isAuthenticated` is the stable identity
-    // (the raw token rotates every ~15 min). markFlashcard supplies the header.
-    if (vocabEntryId == null || !isAuthenticated) return;
-    // excludeIds defaults to []: the drill doesn't use the endpoint's replacement card.
-    markFlashcard({ cardId: vocabEntryId, isCorrect, type: "writing", surface: "practice-writing" })
-      .catch((err) => console.error(`[PracticeWriting] writing mark failed → card ${vocabEntryId}:`, err));
-  }, [vocabEntryId, isAuthenticated]);
+  // Stars (completed assistance levels) + the Writing mark, shared with every other
+  // host of the popup (usePracticeWriting). Gate: Chinese only (zh_CN recognizer),
+  // 1–4 characters — single characters use one large panel, 2–4 the 2×2 grid
+  // (docs/HANDWRITING_RECOGNITION.md "Multi-character grid").
+  const { eligible, completedLevels, onLevelsChange, onWritingMark } =
+    usePracticeWriting(character, { language, vocabEntryId });
 
   if (!eligible) return null;
 
@@ -187,8 +139,8 @@ export default function PracticeWritingButton({
         open={open}
         character={character}
         completedLevels={completedLevels}
-        onLevelsChange={handleLevelsChange}
-        onWritingMark={handleWritingMark}
+        onLevelsChange={onLevelsChange}
+        onWritingMark={onWritingMark}
         onClose={() => setOpen(false)}
       />
     </>

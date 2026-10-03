@@ -7,7 +7,7 @@ import { useDictionarySearch } from "../../hooks/useDictionarySearch";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { CommunityDesign, DictionaryEntry, Language } from "../../types";
-import { resolveDefaultPronunciation } from "../../utils/definitionUtils";
+import { resolveSearchRowView } from "../../utils/definitionUtils";
 
 // Supplementary to the dictionary page's own search — no pagination UI, just enough results to
 // head a handful of per-entry design rows.
@@ -20,30 +20,34 @@ const EntryDesignsSection: React.FC<{
   votedKeys: Set<string>;
   voteDeltas: Map<string, number>;
   onVoteChange: (design: CommunityDesign, voted: boolean) => void;
-}> = ({ entry, language, votedKeys, voteDeltas, onVoteChange }) => (
-  <Box className="community-search-bar__entry-section" sx={{ mb: 2 }}>
-    <Box sx={{ px: 2, mb: 0.5 }}>
-      <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-        {entry.word1}
-        {resolveDefaultPronunciation(entry) ? ` · ${resolveDefaultPronunciation(entry)}` : ""}
-      </Typography>
-      {entry.definitions?.[0] && (
-        <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary }} noWrap>
-          {entry.definitions[0]}
+}> = ({ entry, language, votedKeys, voteDeltas, onVoteChange }) => {
+  // Honours the sense the search term hit (resolveSearchRowView): "row" heads 行 with háng.
+  const { pronunciation, definitions } = resolveSearchRowView(entry);
+  return (
+    <Box className="community-search-bar__entry-section" sx={{ mb: 2 }}>
+      <Box sx={{ px: 2, mb: 0.5 }}>
+        <Typography sx={{ fontSize: SIZE.body, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
+          {entry.word1}
+          {pronunciation ? ` · ${pronunciation}` : ""}
         </Typography>
-      )}
+        {definitions[0] && (
+          <Typography sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary }} noWrap>
+            {definitions[0]}
+          </Typography>
+        )}
+      </Box>
+      <CommunityFeedRow
+        title=""
+        fetchPage={(authors, keys, limit) => fetchEntryFeed(language, entry.word1, authors, keys, limit)}
+        votedKeys={votedKeys}
+        voteDeltas={voteDeltas}
+        onVoteChange={onVoteChange}
+        language={language}
+        emptyHint="No shared designs yet for this word."
+      />
     </Box>
-    <CommunityFeedRow
-      title=""
-      fetchPage={(authors, keys, limit) => fetchEntryFeed(language, entry.word1, authors, keys, limit)}
-      votedKeys={votedKeys}
-      voteDeltas={voteDeltas}
-      onVoteChange={onVoteChange}
-      language={language}
-      emptyHint="No shared designs yet for this word."
-    />
-  </Box>
-);
+  );
+};
 
 /**
  * Community page's search bar (docs/COMMUNITY_PAGE.md) — shares its search behavior

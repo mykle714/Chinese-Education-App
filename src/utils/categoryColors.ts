@@ -121,18 +121,19 @@ export const LEARN_NOW_COLORS = { main: RAMP[LEARN_NOW_HUE].surface, accent: RAM
  * migration 143). Each bar carries its own hue so three DIFFERENT sets do not look
  * interchangeable.
  *
- * `reading` and `writing` are single-mark-type bars and keep the hues their skill
- * centers have always carried (reading red, writing orange); `core` blends recognition
+ * `reading` and `writing` are single-mark-type bars and take their SKILL's hue —
+ * reading green, writing purple (2026-10-02, the Reading / Writing Center redesign,
+ * docs/READING_WRITING_CENTERS.md; they were red / orange). `core` blends recognition
  * and production and keeps the Mastered blue.
  *
- * v2 note: since Target moved to yellow, writing's orange no longer doubles as a band
- * hue. Reading's red still equals Unfamiliar's — on the fdp no band tile appears beside
- * it, so the collision is only latent.
+ * ⚠️ Reading's green equals the Comfortable band's surface. On a Center's Cards sheet no
+ * band tile sits beside the Mastered tile, so the collision is latent (as reading's red
+ * vs Unfamiliar was before it).
  */
 export const MASTERY_BAR_HUES: Record<MasteryBarId, RampHue> = {
     core: "blu",
-    reading: "red",
-    writing: "org",
+    reading: "grn",
+    writing: "pur",
 };
 
 /** The Mastered section is a SURFACE (artboard 2: "Surface: … Mastered section"). */

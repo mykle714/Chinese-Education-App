@@ -21,6 +21,9 @@ import { VocabEntryController } from '../controllers/VocabEntryController.js';
 import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
 import { UserMinutePointsController } from '../controllers/UserMinutePointsController.js';
 import { DictionaryController } from '../controllers/DictionaryController.js';
+import { DailyWordDAL } from './implementations/DailyWordDAL.js';
+import { WordOfTheDayService } from '../services/WordOfTheDayService.js';
+import { WordOfTheDayController } from '../controllers/WordOfTheDayController.js';
 import { TextController } from '../controllers/TextController.js';
 import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
@@ -131,10 +134,14 @@ const studyChallengeDAL = new StudyChallengeDAL();
 // for now — the run/rating/memory tables get their methods when phase 2 has a runtime to
 // call them.
 const immersiveWorldDAL = new ImmersiveWorldDAL();
+// The global Word of the Day — one pinned zh character per local date (migration 169,
+// docs/READING_WRITING_CENTERS.md § Phase 3).
+const dailyWordDAL = new DailyWordDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
+const wordOfTheDayService = new WordOfTheDayService(dailyWordDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 // The single owner of "a learner reviewed a card" — cooldown gate, typed mark
 // windows, mastery crossings and the velocity log (docs/MASTERY_REWORK.md). Depends
@@ -226,6 +233,7 @@ const onDeckVocabController = new OnDeckVocabController(
 );
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
+const wordOfTheDayController = new WordOfTheDayController(wordOfTheDayService);
 const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService);
@@ -310,6 +318,7 @@ export {
   onDeckVocabController,
   userMinutePointsController,
   dictionaryController,
+  wordOfTheDayController,
   textController,
   validationController,
   starterPacksController,

@@ -88,6 +88,70 @@ export interface UsageGameRow {
   users: number;
 }
 
+/**
+ * How many learners the "Recent learners" list returns at most. The list is ordered
+ * most-recently-seen first, so a cap drops the least recent rather than a random slice.
+ */
+export const USAGE_RECENT_USERS_LIMIT = 100;
+
+/** One game's WINS for one learner over the window (see `UsageUserRow.gameWins`). */
+export interface UsageUserGameWins {
+  /** The opaque `wins.game` key, e.g. 'wordSearch'. */
+  game: string;
+  wins: number;
+}
+
+/**
+ * One learner who used the app inside the window — a row of the "Recent learners" list.
+ * "Used" = opened the app (minted a refresh token) OR earned > 0 minute points.
+ *
+ * Deliberately carries `name` only, not `email`: email is private to the account
+ * (UserDAL.findById) and the name is enough to recognise a tester.
+ */
+export interface UsageUserRow {
+  userId: string;
+  name: string;
+  /**
+   * ISO timestamp of the learner's latest token mint inside the window (≈ last time
+   * they had the app open). `null` when they earned minutes in the window without a
+   * token row in it — possible only at the UTC / streak-day edge.
+   */
+  lastSeenAt: string | null;
+  /** Minute points earned in the window, all languages. */
+  minutes: number;
+  /** Distinct (streak) days in the window with > 0 minutes. */
+  daysStudied: number;
+  /** Distinct UTC days in the window with a live session. */
+  daysOpened: number;
+  /** Languages studied (> 0 minutes) in the window, alphabetical. */
+  languages: string[];
+  /** Fresh sign-ins in the window (a refresh token that did not replace an earlier one). */
+  signIns: number;
+  /**
+   * Cards the learner sorted in the window: vet rows in ANY sorted bucket ('library' =
+   * Learn Now, or 'skip'), by `createdAt`. Lent provisional rows are excluded. Wider
+   * than the feature table's "Cards added", which is 'library' only.
+   */
+  cardsSorted: number;
+  /**
+   * utcm band-steps climbed in the window, on the bars the learner is pursuing (core,
+   * plus reading / writing when that goal is on) — docs/VELOCITY.md, but over THIS
+   * window rather than the learner-facing card's sliding 7 days.
+   */
+  velocity: number;
+  /**
+   * Immersive World runs STARTED in the window (`iw_scene_runs` by "startedAt") — a
+   * true play count: a run is logged when it begins, whether or not it is finished.
+   */
+  iwRuns: number;
+  /**
+   * WINS per game in the window, most-won first. ⚠️ NOT a play count: the app logs a
+   * game round only when it is won (`wins`), so lost / abandoned rounds are invisible,
+   * Match Speed logs only a gold run, and Hydra Bubbles / Memory Map log nothing.
+   */
+  gameWins: UsageUserGameWins[];
+}
+
 export interface UsageDashboard {
   windowDays: UsageWindowDays;
   /** First day included in the window (inclusive). */
@@ -101,4 +165,6 @@ export interface UsageDashboard {
   languages: UsageLanguageRow[];
   features: UsageFeatureRow[];
   games: UsageGameRow[];
+  /** Learners who used the app in the window, most recently seen first (capped). */
+  recentUsers: UsageUserRow[];
 }

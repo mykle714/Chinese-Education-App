@@ -8,6 +8,7 @@ import { ExampleSentenceDefinitionPronunciationOverride } from '../../types/inde
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, SEGMENTATION_MAX_TOKEN_CHARS, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart, LongDefinitionCitation } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
+import { parsePinyinQuery, pinyinQueryTokens } from '../../utils/searchSenseMatch.js';
 import { dictTableForLanguage } from '../shared/dictTable.js';
 import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
 import { sanitizeDocumentContent } from '../../utils/sanitizeContent.js';
@@ -256,6 +257,42 @@ function buildTokenPinyinPattern(tokens: string[], requireDigit: boolean): strin
   if (requireDigit && !hasExplicitDigit) return null;
   return `^${tokenPatterns.join('\\s+')}`;
 }
+
+/**
+ * SQL expression: the reading a zh row DISPLAYS by default, in `numberedPinyin` column form
+ * (lowercase, neutral syllables digit-less) — the ranking's notion of a row's MAIN reading.
+ *
+ * Mirrors `resolveDefaultPronunciation` (server/utils/definitions.ts) so the ranking agrees with
+ * what the result row shows: the default-sense cluster (highest `frequencyScore`, earliest on a
+ * tie — `defaultSenseCluster`) supplies its `reading`, unless that reading is missing or its
+ * syllable count disagrees with `pronunciation` (`clusterReadingOrColumn`'s shape guard), in
+ * which case — and for every unclustered row — the `numberedPinyin` column does. Cluster
+ * readings write neutral as `5` (or no digit) and ü as `v`/`u:`; they are normalized to the
+ * column spelling here so one numbered-pinyin regex serves both.
+ *
+ * Why not just the `numberedPinyin` column: it can still hold a heteronym's RARE reading. 么's
+ * column says má while every one of its senses reads `me5`, so for "ma2" the column would rank
+ * 么 alongside 麻 as a primary match while the row itself shows "me".
+ * See docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md § "Primary vs alternate readings".
+ */
+const DEFAULT_READING_SQL = `COALESCE((
+            SELECT CASE
+              WHEN NULLIF(btrim(t.c->>'reading'), '') IS NOT NULL
+               AND (pronunciation IS NULL
+                    OR array_length(regexp_split_to_array(btrim(t.c->>'reading'), '\\s+'), 1)
+                     = array_length(regexp_split_to_array(btrim(pronunciation), '\\s+'), 1))
+              THEN regexp_replace(
+                     replace(lower(btrim(t.c->>'reading')), 'u:', 'v'),
+                     '([a-z])[05](?=\\s|$)', '\\1', 'g')
+            END
+            FROM jsonb_array_elements(
+                   CASE WHEN jsonb_typeof("definitionClusters") = 'array' THEN "definitionClusters" ELSE '[]'::jsonb END
+                 ) WITH ORDINALITY AS t(c, i)
+            WHERE jsonb_typeof(t.c) = 'object'
+            ORDER BY CASE WHEN jsonb_typeof(t.c->'frequencyScore') = 'number'
+                          THEN (t.c->>'frequencyScore')::numeric ELSE -1 END DESC, t.i
+            LIMIT 1
+          ), lower("numberedPinyin"))`;
 
 /**
  * Re-anchor a `^`-anchored pinyin regex so it matches ANY one reading inside
@@ -593,13 +630,15 @@ export class DictionaryDAL implements IDictionaryDAL {
       term is only a piece of one. Crossed with the two readings:
 
         0  complete English   a sense IS the term              ("long" → 长; "me" → 我)
-        1  complete word      the headword or pronunciation IS the term   ("long" → 龙 lóng;
-                              es "casa" → casa)
-        2  partial word       the term is a leading prefix     ("long" → 龙头; es → casarse)
-        3  partial English    the term sits inside a sense     ("long" → 寿 "long life")
+        1  complete word      the headword or the row's MAIN reading IS the term
+                              ("long" → 龙 lóng; es "casa" → casa)
+        2  complete alternate another reading of the row IS the term, but not the one it
+                              displays ("ma2" → 吗, whose default sense reads "ma"). zh only.
+        3  partial word       the term is a leading prefix     ("long" → 龙头; es → casarse)
+        4  partial English    the term sits inside a sense     ("long" → 寿 "long life")
 
       "Word" is `word1` in both languages, plus the pronunciation/numberedPinyin regexes for zh.
-      Buckets 1 and 2 differ by a single trailing `$`: an anchored match versus a prefix.
+      Buckets 1–2 and 3 differ by a single trailing `$`: an anchored match versus a prefix.
 
       Every complete match outranks every partial one; English leads the complete pair, pinyin
       leads the partial pair. The asymmetry is deliberate: someone typing a whole English word
@@ -675,8 +714,26 @@ export class DictionaryDAL implements IDictionaryDAL {
       // exact test into a wildcard one (`searchTerm` is already lowercased above, and lower()
       // is a no-op on hanzi). The pinyin halves are zh-only: es has NULL pronunciation and
       // numberedPinyin, so its complete-word test is the headword alone.
-      const completeWordParts = [`lower(word1) = ${nextRankParam(searchTerm.trim())}`];
+      //
+      // It is split in two (2026-10-03): a complete match on the row's MAIN reading — the one the
+      // row displays by default, `DEFAULT_READING_SQL` — outranks a complete match found only
+      // through another reading (the primary columns when they disagree with the default sense,
+      // or `searchReadings`). Without the split, "ma2" tied 麻 má with 吗/嘛/么, which qualify only
+      // through rare readings and then render as the particles "ma"/"me"; within a tie the
+      // particles' higher frequency put them first. The headword itself counts as primary.
+      const primaryWordParts = [`lower(word1) = ${nextRankParam(searchTerm.trim())}`];
+      const completeWordParts: string[] = [];
       if (isZh) {
+        // Any pinyin-shaped term (numbered, tone-marked or toneless) as a numbered regex. Tones
+        // are optional here — unlike the WHERE's `numberedPinyinPattern` — because this only
+        // orders rows that already qualified, so it cannot hijack an English search.
+        const querySyllables = parsePinyinQuery(searchTerm);
+        const defaultReadingPattern = querySyllables
+          ? buildTokenPinyinPattern(pinyinQueryTokens(querySyllables), false)
+          : null;
+        if (defaultReadingPattern) {
+          primaryWordParts.push(`${DEFAULT_READING_SQL} ~ ${nextRankParam(`${defaultReadingPattern}$`)}`);
+        }
         completeWordParts.push(`pronunciation ~ ${nextRankParam(`${regexPattern}$`)}`);
         // Any of the heteronym's other readings, matched whole ("hang" IS 行's háng).
         completeWordParts.push(`"searchReadings" ~ ${nextRankParam(`${anyReadingPattern(regexPattern)}($|\\|)`)}`);
@@ -690,11 +747,15 @@ export class DictionaryDAL implements IDictionaryDAL {
       // English and a complete word match takes 0, and bucket 3 is the ELSE by elimination —
       // the WHERE guarantees every row matched something, so anything reaching it matched a
       // gloss without matching the word side.
+      // Buckets: 0 complete English, 1 complete MAIN reading/headword, 2 complete ALTERNATE
+      // reading (zh only — es has no readings, so it never lands here), 3 partial word,
+      // 4 partial English.
       rankExpr = `CASE
           WHEN (${completeEnglishExpr}) THEN 0
-          WHEN (${completeWordParts.join(' OR ')}) THEN 1
-          WHEN (${wordMatchExpr}) THEN 2
-          ELSE 3
+          WHEN (${primaryWordParts.join(' OR ')}) THEN 1${completeWordParts.length > 0 ? `
+          WHEN (${completeWordParts.join(' OR ')}) THEN 2` : ''}
+          WHEN (${wordMatchExpr}) THEN 3
+          ELSE 4
         END`;
     }
 
@@ -734,9 +795,9 @@ export class DictionaryDAL implements IDictionaryDAL {
         is coherent: the head occupies the first slots of page 1 and the tail continues across
         pages with no row repeated or skipped.
 
-      The bucket expression is repeated inside `OVER (PARTITION BY …)` because Postgres cannot
-      reference a SELECT alias from the same level's window clause. It is the same generated
-      SQL and the same bound placeholders, so it costs nothing but width.
+      The bucket is computed one subquery level down (`bucketed`) because Postgres cannot
+      reference a SELECT alias from the same level's window clause, and the window partitions
+      on a function of it (the head group — see the query).
     */
     const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
       const whereSql = `
@@ -748,16 +809,24 @@ export class DictionaryDAL implements IDictionaryDAL {
         // The outer list is the plain column NAMES: for es, `dictionaryColumns` aliases its
         // NULL placeholder to the right name inside the subquery, so the names resolve for
         // both languages.
+        //
+        // The head samples per HEAD GROUP rather than per bucket: buckets 1 and 2 (main vs
+        // alternate complete reading) share one group, so the head stays the documented
+        // 0,0,1,1,2,2,3,3 shape — the split only decides which complete-word rows fill that
+        // group's two slots. `bucketPos` orders by bucket first, so main readings fill them first.
         return await client.query(`
           SELECT ${DICTIONARY_COLUMNS}
           FROM (
-            SELECT ${dictionaryColumns(language)},
-              (${rankExpr}) AS "rankBucket",
+            SELECT bucketed.*,
               ROW_NUMBER() OVER (
-                PARTITION BY (${rankExpr})
-                ORDER BY ${RELEVANCE_ORDER_BY}
+                PARTITION BY CASE WHEN "rankBucket" >= 2 THEN "rankBucket" - 1 ELSE "rankBucket" END
+                ORDER BY "rankBucket", ${RELEVANCE_ORDER_BY}
               ) AS "bucketPos"
-            FROM ${table}${whereSql}
+            FROM (
+              SELECT ${dictionaryColumns(language)},
+                (${rankExpr}) AS "rankBucket"
+              FROM ${table}${whereSql}
+            ) bucketed
           ) ranked
           ORDER BY
             CASE WHEN "bucketPos" <= ${HINT_HEAD_PER_BUCKET} THEN 0 ELSE 1 END,

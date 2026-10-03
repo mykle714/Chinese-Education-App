@@ -220,9 +220,7 @@ export class CloudTTSProvider implements TTSProvider {
      * context suspends, and the only place we are allowed to resume it is inside
      * a gesture. A one-shot listener spends the session's single recovery on the
      * user's first tap — typically long before anything has gone wrong — and
-     * leaves nothing for the interruption that actually breaks audio. This is
-     * the same pattern markArpeggio.getContext() uses, and the reason those effects
-     * kept working through interruptions that silenced narration.
+     * leaves nothing for the interruption that actually breaks audio.
      *
      * The per-tap cost is one `ctx.state` read (see unlock → unlockContext).
      * Never removed: the provider is a session-scoped singleton.

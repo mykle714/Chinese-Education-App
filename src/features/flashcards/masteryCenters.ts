@@ -1,14 +1,18 @@
 import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
+import { COLORS, type RampHue } from "../../theme/colors";
+import { MASTERY_BAR_HUES } from "../../utils/categoryColors";
 
 /**
  * masteryCenters.ts — what a Mastery Center IS, shared by the fdp buttons that open
  * one and by the page that renders it.
  *
  * ── What a Center is ──────────────────────────────────────────────────────────
- * A Reading Center and a Writing Center are the same decks panel the fdp carries,
- * read through ONE skill bar instead of the core bar: the same collections, the same
- * decks, the same card grid, with every figure, ordering, strip and badge answering
- * "how is my reading (writing) going" rather than "how well do I know this".
+ * A Reading Center and a Writing Center are skill STUDY pages: the things you do to
+ * train that one skill (word of the day, a drill grid, the skill's games), with the
+ * fdp's decks panel behind the same two pill-raised sheets (Cards / Decks), read
+ * through ONE skill bar instead of the core bar — so every figure, ordering, strip and
+ * badge in those sheets answers "how is my reading (writing) going" rather than "how
+ * well do I know this". See docs/READING_WRITING_CENTERS.md.
  *
  * They exist because the fdp was trying to answer both questions at once. A learner
  * pursuing reading had a Mastered Reading tile wedged into a page whose every other
@@ -30,7 +34,7 @@ import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
  * the same rule `?collection=mastered-reading` follows on the server.
  *
  * Layer: feature module (src/features/flashcards). Pure data.
- * Docs: docs/DECKS_FEATURE.md § "Mastery Centers".
+ * Docs: docs/DECKS_FEATURE.md § "Mastery Centers", docs/READING_WRITING_CENTERS.md.
  */
 
 /** The skill bars that have a Center. Core has no Center — the fdp IS its surface. */
@@ -54,6 +58,33 @@ export const MASTERY_CENTER_TITLES: Record<MasteryCenterBar, string> = {
 export const MASTERY_CENTER_BUTTON_LABELS: Record<MasteryCenterBar, string> = {
     reading: "Reading",
     writing: "Writing",
+};
+
+/**
+ * Each Center's hue — NOT a second table: it IS the skill's bar hue
+ * (`MASTERY_BAR_HUES`), so the fdp rail tile (SURFACE tier), the page ground (`Bg`
+ * tier, below), the Mastered tile in the Center's Cards sheet and every skill dot are
+ * one colour by construction. Reading green, writing purple since 2026-10-02.
+ */
+export const MASTERY_CENTER_HUES: Record<MasteryCenterBar, RampHue> = {
+    reading: MASTERY_BAR_HUES.reading,
+    writing: MASTERY_BAR_HUES.writing,
+};
+
+/**
+ * The page ground each Center sits on — the design's `--grnBg` / `--purBg`. A literal
+ * per Center rather than derived from the hue, because the `Bg` tier exists for these
+ * two hues only (theme/colors.ts).
+ */
+export const MASTERY_CENTER_GROUNDS: Record<MasteryCenterBar, string> = {
+    reading: COLORS.grnBg,
+    writing: COLORS.purBg,
+};
+
+/** The Material Symbols glyph each Center is drawn with (rail tile, sheet tiles). */
+export const MASTERY_CENTER_GLYPHS: Record<MasteryCenterBar, string> = {
+    reading: "menu_book",
+    writing: "draw",
 };
 
 /** Which Centers this account has buttons for, in display order. */

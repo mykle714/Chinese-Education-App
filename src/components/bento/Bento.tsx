@@ -266,7 +266,7 @@ export const BentoTile: React.FC<BentoTileProps> = ({
                             }
                             : {
                                 color: COLORS.onSurface,
-                                background: "rgba(255, 255, 255, 0.72)",
+                                background: COLORS.frost,
                                 padding: "4px 8px",
                             }),
                         borderRadius: "999px",

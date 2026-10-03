@@ -15,9 +15,11 @@ export type {
     UsageFeatureRow,
     UsageGameRow,
     UsageLanguageRow,
+    UsageUserGameWins,
+    UsageUserRow,
     UsageWindowDays,
 } from '../../server/contracts/usage';
-export { USAGE_WINDOWS, DEFAULT_USAGE_WINDOW } from '../../server/contracts/usage';
+export { USAGE_WINDOWS, DEFAULT_USAGE_WINDOW, USAGE_RECENT_USERS_LIMIT } from '../../server/contracts/usage';
 
 /** Fetch the dashboard for one window (`0` = all time). */
 export function fetchUsageDashboard(days: UsageWindowDays): Promise<UsageDashboard> {

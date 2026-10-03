@@ -18,6 +18,13 @@ Per space-separated syllable token in the query:
 | `base0` or `base5` | neutral tone | bare base, no digit |
 | `base` (no digit) | any tone | base with an optional 1–4 digit (includes neutral) |
 
+A heteronym's OTHER readings (了 liǎo, 行 háng) live in `dictionaryentries_zh."searchReadings"`
+(migration 165 — a pipe-separated list of every reading in both column spellings, built by
+`server/scripts/backfill/chinese/lib/searchReadings.js` → `buildSearchReadings`). Both pinyin
+regexes — the accent-agnostic one and the numbered one — also run against it, re-anchored per
+reading by `anyReadingPattern`, so a word is findable under every reading, not only its primary
+columns.
+
 Matching is a **leading-syllable "starts with"** (not anchored at the end), so `"jian4"` alone
 still matches `"jian4 shen1"` — consistent with the rest of `searchByWord1`'s prefix semantics.
 Each token is anchored with a trailing `\y` word-boundary so a syllable can't bleed into a
@@ -48,7 +55,7 @@ either way, so it can never surface or hide a row that the other ranking would n
 
 | Value | Ordering | Used by |
 |---|---|---|
-| `relevance` (default) | the shared four-bucket ladder | the dictionary page, the Community search bar |
+| `relevance` (default) | the shared bucket ladder | the dictionary page, the Community search bar |
 | `english-first` | the same ladder **plus an interleaved head** | the iw composer's hint tray ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a) |
 
 A search is never *only* an English one or *only* a pinyin one — the query above ORs the
@@ -58,20 +65,83 @@ At a small `limit` that is not cosmetic: it decides which reading survives the `
 Postgres. (`long` at `limit 8` under `relevance` returns eight pinyin 龙/垄/拢 rows and never
 ships 长 "long" at all.)
 
-### The shared four-bucket ladder
+### The shared bucket ladder
 
 A match is **complete** when the term *is* the whole field, and **partial** when the term is only
-part of it. Crossing that with the two readings gives four buckets, used by **every** ranking and
-**both** languages:
+part of it. Crossing that with the two readings gives four tiers, used by **every** ranking and
+**both** languages; the complete-word tier is further split into a main and an alternate bucket
+(zh only — see "Primary vs alternate readings" below):
 
 | # | Bucket | Test | `long` (zh) | `casa` (es) |
 |---|---|---|---|---|
 | 0 | complete English | **any** normalized sense `=` normalized term | 长 "long" | — |
-| 1 | complete word | `lower(word1) =` term, or `pronunciation ~ '^…$'` (anchored **both** ends) | 龙 lóng | **casa** |
-| 2 | partial word | `word1 ILIKE 'term%'`, or `pronunciation ~ '^…'` (prefix) | 龙虾 lóng xiā | casarse |
-| 3 | partial English | term is a whole word *inside* a sense | 寿 "long life" | casón "augmentative of casa" |
+| 1 | complete word (main) | `lower(word1) =` term, or the row's **default reading** (`DEFAULT_READING_SQL`) `~ '^…$'` | 龙 lóng | **casa** |
+| 2 | complete word (alternate) — zh only | `pronunciation`, `numberedPinyin` or any `searchReadings` entry `~ '^…$'`, but not the default reading | 吗 for "ma2" | — |
+| 3 | partial word | `word1 ILIKE 'term%'`, or a pinyin regex as a prefix (`'^…'`) | 龙虾 lóng xiā | casarse |
+| 4 | partial English | term is a whole word *inside* a sense | 寿 "long life" | casón "augmentative of casa" |
 
-**Spanish uses the same four buckets**, with `word1` standing in for the pronunciation it does
+### Primary vs alternate readings (added 2026-10-03)
+
+Before the split, every complete reading match tied in one bucket, and the tie broke on
+`frequencyScore`. "ma2" therefore led with 吗/嘛 — which qualify only through their rare má
+reading (吗啡) via `searchReadings` or a stale primary column — and the row then rendered with its
+default sense's neutral "ma", looking like a wrong answer. Bucket 1 now holds only a complete match
+on the reading the row **displays by default**; any other complete reading drops to bucket 2,
+still above every partial match.
+
+**"Main reading" = the default-sense reading, not the `numberedPinyin` column.**
+`DEFAULT_READING_SQL` (`server/dal/implementations/DictionaryDAL.ts`) mirrors
+`resolveDefaultPronunciation` (`server/utils/definitions.ts`): the highest-`frequencyScore` cluster's
+`reading` (earliest on a tie), unless it is missing or its syllable count disagrees with
+`pronunciation`, falling back to the `numberedPinyin` column — and for every unclustered row. Cluster
+readings are normalized to the column spelling (neutral digit-less, ü as `v`). The column alone is not
+enough: 么's column still says má while every sense reads `me5`
+(`backfill-search-readings.js --repair-primary` re-points such columns, but has not been run over the
+whole table).
+
+The term is turned into a numbered regex by `parsePinyinQuery` + `pinyinQueryTokens`
+(`server/utils/searchSenseMatch.ts`) and the existing `buildTokenPinyinPattern`. It accepts
+numbered, tone-marked **and** toneless syllables (toneless = any tone) and needs no tone digit,
+because it only orders rows that the `WHERE` already admitted, so it cannot hijack an English
+search.
+
+The interleaved head (below) samples buckets 1 and 2 as **one head group**, so its shape stays
+`0,0,1,1,2,2,3,3`; main readings fill that group's two slots first.
+
+### Sense matching (added 2026-10-03)
+
+A row qualifies through any reading or gloss but is drawn with its default sense. When the term hit
+a **different** sense, the search response names it, and the row shows that sense instead.
+
+- **Server.** `DictionaryService.searchDictionary` sets `matchedSense` (the cluster's `sense`
+  label, on the wire contract `DictionaryEntryBase`) on every returned entry via
+  `resolveMatchedSense` (`server/utils/searchSenseMatch.ts`). It is null unless the entry has ≥ 2
+  clusters and the term hit a non-default one:
+  1. **Pinyin first.** If the term parses as pinyin and the default sense's displayed reading
+     matches it (leading-syllable match, tones optional), nothing changes. Otherwise the best
+     non-default cluster whose displayed reading matches wins.
+  2. **English second**, only when no pinyin sense was chosen: the default sense's glosses matching
+     the term (whole word, parentheticals stripped) means nothing changes; otherwise the best
+     matching non-default cluster wins.
+  "Best" = a complete match over a partial one, then higher cluster `frequencyScore`, then array
+  order. A match through a reading that no cluster carries (a CEDICT-only reading in
+  `searchReadings`) names no sense; that row renders as before, and the alternate bucket is what
+  keeps it from leading.
+- **Client.** `resolveSearchRowView` (`src/utils/definitionUtils.ts`) returns the row's pinyin
+  (the matched cluster's reading via `clusterReadingOrColumn`, else `resolveDefaultPronunciation`)
+  and its gloss list (the matched cluster's `glosses` first, then the rest of the flat
+  `definitions`, de-duplicated). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
+  and Compare slot B), `src/features/community/CommunitySearchBar.tsx` and
+  `src/features/immersiveworld/play/IWLookupResults.tsx`.
+- **Click-through.** `DictionaryPage` → `handleEntryClick` appends `?sense=<label>` to the cdp
+  route; `DictionaryCardDetailPage` seeds `selectedSenseIndex` from it (outranking the
+  requester's saved pick) through `resolveSelectedSenseIndex`. A gloss-less (particle) sense is
+  absent from the cdp's sense list, so the page falls back to its default sense there.
+
+Examples on dev: "row" → 行 shows háng with "row / line" first; "liao3" → 了 shows liǎo
+"to understand"; "zhang3" → 长 shows zhǎng "to grow".
+
+**Spanish uses the same tiers** (it has no alternate-reading bucket), with `word1` standing in for the pronunciation it does
 not have. It has to: Wiktionary-derived Spanish glosses quote their own headword — casón is
 *"augmentative of casa"*, casita is *"diminutive of casa"* — so with only a gloss bucket and a
 headword bucket, English leading ranked `casa` itself **11th**, behind everything that merely
@@ -164,7 +234,9 @@ surfaces as a broken request rather than quietly-wrong ordering.
 
 | Layer | File | Responsibility |
 |---|---|---|
-| Parsing + SQL | `server/dal/implementations/DictionaryDAL.ts` (`buildNumberedPinyinPattern`, used in `searchByWord1`) | token → regex, `~*` match against `"numberedPinyin"` |
+| Parsing + SQL | `server/dal/implementations/DictionaryDAL.ts` (`buildNumberedPinyinPattern`, `anyReadingPattern`, used in `searchByWord1`) | token → regex, `~*` match against `"numberedPinyin"` and `"searchReadings"` |
+| Default reading | `server/dal/implementations/DictionaryDAL.ts` → `DEFAULT_READING_SQL`; query parsing in `server/utils/searchSenseMatch.ts` → `parsePinyinQuery`, `pinyinQueryTokens` | bucket 1 vs 2 (main vs alternate complete reading) |
+| Sense matching | `server/utils/searchSenseMatch.ts` → `resolveMatchedSense` (called from `DictionaryService.searchDictionary`); client `src/utils/definitionUtils.ts` → `resolveSearchRowView` | `matchedSense` on each hit; the row's pinyin + gloss order; cdp `?sense=` |
 | English clause | `server/dal/implementations/DictionaryDAL.ts` → `STRIPPED_ALL_GLOSSES` | all-senses `~*` match; see the section above for why it is not `definitions[0]` |
 | Ranking | `server/dal/implementations/DictionaryDAL.ts` → `searchByWord1` (`rankExpr`, `completeGlossMatch`, `GLOSS_LEADING_MARKERS`) | builds the bucket ladder from `rankBy`; its params are kept in a separate `rankParams` list because only the entries query has an `ORDER BY` |
 | Controller/Service | `server/controllers/DictionaryController.ts` → `search`, `server/services/DictionaryService.ts` → `searchDictionary` | the pinyin parsing is entirely inside the DAL query; `rankBy` is validated in the controller against `DICTIONARY_SEARCH_RANKINGS` and passed straight through |

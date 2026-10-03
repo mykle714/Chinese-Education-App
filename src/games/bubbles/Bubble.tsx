@@ -188,21 +188,124 @@ const Bubble: React.FC<BubbleProps> = ({
     // reserved space (a bubble has no fixed image slot like the card does).
     const hasIcon = !isWord && !!entry.iconId;
 
+    // The bubble's text/icon content, MEMOIZED so a status change does not re-render
+    // it. Status only recolors the shell (and, via `ink`, the text on a dark feedback
+    // fill); the content itself is a function of the card. Without this, every pickup
+    // and every hover change re-rendered the CPCDRow inside a word bubble, whose
+    // dependency-less `useLayoutEffect` re-runs its forced-layout pinyin measuring
+    // pass on EVERY render, not just on mount.
+    const content = React.useMemo(
+        () => isWord ? (
+                <Box
+                    className="bubble__word"
+                    sx={{
+                        transform: `scale(${contentScale})`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                    }}
+                >
+                    <ForeignText
+                        size="sm"
+                        justifyContent="center"
+                        text={entry.entryKey}
+                        // Sense-resolved, matching the gloss on the paired bubble.
+                        pronunciation={resolveDisplayPronunciation(entry)}
+                        showPinyin={showPinyin}
+                        useToneColor={showPinyinColor}
+                        // Override the glyph color ONLY on a dark body. Passing
+                        // the light-body ink here instead would silently lighten
+                        // every word bubble in both games from the theme's primary
+                        // ink (#17161A) to `--ink2` — the definition text's color,
+                        // which is a different job. undefined = theme default.
+                        //
+                        // The pinyin overlay is unaffected either way: ForeignText
+                        // leaves tone colors alone by design.
+                        characterColor={ink === LIGHT_INK ? LIGHT_INK : undefined}
+                        // Match flp example sentences: nudge long pinyin syllables apart.
+                        pinyinShift
+                    />
+                </Box>
+            ) : (
+                <Box
+                    className="bubble__definition-stack"
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "3px",
+                    }}
+                >
+                    {hasIcon && (
+                        <Box
+                            component="img"
+                            className="bubble__definition-icon"
+                            src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(entry.iconId!)}/image`}
+                            alt=""
+                            // Decorative: not draggable / no pointer events so it
+                            // doesn't fight the bubble drag gesture.
+                            draggable={false}
+                            sx={{ width: 28, height: 28, objectFit: "contain", flexShrink: 0, pointerEvents: "none" }}
+                        />
+                    )}
+                    <Typography
+                        className="bubble__definition"
+                        sx={{
+                            fontSize: definitionFontSize(defText, targetRadius),
+                            // 1.3 (was 1.15) so the last clamped line's descenders
+                            // (q/g/y/p) aren't clipped by the -webkit-box overflow.
+                            lineHeight: 1.3,
+                            fontWeight: 500,
+                            fontFamily: FONTS.cjk,
+                            // Follows the body, so a dark fill (Hydra's drain tier,
+                            // the strong-red wrong flash) gets white text and every
+                            // light one keeps near-ink. See inkOnFill.
+                            color: ink,
+                            textAlign: "center",
+                            // Clamp very long definitions so they never overflow the
+                            // circle. One line fewer when the icon is taking up room.
+                            display: "-webkit-box",
+                            WebkitLineClamp: hasIcon ? 3 : 4,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                        }}
+                    >
+                        {defText}
+                    </Typography>
+                </Box>
+            ),
+        [isWord, entry, contentScale, showPinyin, showPinyinColor, ink, hasIcon, defText, targetRadius]
+    );
+
     return (
         <Box
             ref={(el: HTMLDivElement | null) => registerNode(id, el)}
             className={`bubble bubble--${kind} bubble--${status}`}
             onPointerDown={(e) => onPointerDown(id, e)}
+            // Initial transform; the rAF loop overwrites this each frame. The node is
+            // laid out at full size, so growth shows as a scale and the translate
+            // offset is by targetRadius (see writeTransform).
+            //
+            // ⚠️ INLINE `style`, NEVER `sx`. Everything in `sx` is hashed into an
+            // emotion class, and this string is unique per render (sub-pixel x/y), so
+            // in `sx` every status change — each pickup, each hover change while a
+            // drag sweeps the field, each release — minted a brand-new class and
+            // INSERTED A NEW RULE into the document stylesheet, permanently. A rule
+            // insertion invalidates style for the whole page (which CPCDRow's layout
+            // effect then forced synchronously), and the sheet only ever grew, so the
+            // drag got heavier the longer a session ran. `sx` below must hold only
+            // values drawn from a small closed set (status, kind, radius).
+            // See docs/GAMES_FEATURE.md § Grab latency.
+            style={{
+                transform: `translate(${body.x - targetRadius}px, ${body.y - targetRadius}px) scale(${(targetRadius > 0 ? radius / targetRadius : 1) * body.scale})`,
+            }}
             sx={{
                 position: "absolute",
                 top: 0,
                 left: 0,
                 width: targetRadius * 2,
                 height: targetRadius * 2,
-                // Initial transform; the rAF loop overwrites this each frame. The
-                // node is laid out at full size, so growth shows as a scale and the
-                // translate offset is by targetRadius (see writeTransform).
-                transform: `translate(${body.x - targetRadius}px, ${body.y - targetRadius}px) scale(${(targetRadius > 0 ? radius / targetRadius : 1) * body.scale})`,
                 willChange: animating ? "transform" : "auto",
                 touchAction: "none", // pointer events drive dragging, not scrolling
                 cursor: "grab",
@@ -270,86 +373,7 @@ const Bubble: React.FC<BubbleProps> = ({
                     }),
                 }}
             >
-                {isWord ? (
-                    <Box
-                        className="bubble__word"
-                        sx={{
-                            transform: `scale(${contentScale})`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                        }}
-                    >
-                        <ForeignText
-                            size="sm"
-                            justifyContent="center"
-                            text={entry.entryKey}
-                            // Sense-resolved, matching the gloss on the paired bubble.
-                            pronunciation={resolveDisplayPronunciation(entry)}
-                            showPinyin={showPinyin}
-                            useToneColor={showPinyinColor}
-                            // Override the glyph color ONLY on a dark body. Passing
-                            // the light-body ink here instead would silently lighten
-                            // every word bubble in both games from the theme's primary
-                            // ink (#17161A) to `--ink2` — the definition text's color,
-                            // which is a different job. undefined = theme default.
-                            //
-                            // The pinyin overlay is unaffected either way: ForeignText
-                            // leaves tone colors alone by design.
-                            characterColor={ink === LIGHT_INK ? LIGHT_INK : undefined}
-                            // Match flp example sentences: nudge long pinyin syllables apart.
-                            pinyinShift
-                        />
-                    </Box>
-                ) : (
-                    <Box
-                        className="bubble__definition-stack"
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "3px",
-                        }}
-                    >
-                        {hasIcon && (
-                            <Box
-                                component="img"
-                                className="bubble__definition-icon"
-                                src={`${API_BASE_URL}/api/icons8/${encodeURIComponent(entry.iconId!)}/image`}
-                                alt=""
-                                // Decorative: not draggable / no pointer events so it
-                                // doesn't fight the bubble drag gesture.
-                                draggable={false}
-                                sx={{ width: 28, height: 28, objectFit: "contain", flexShrink: 0, pointerEvents: "none" }}
-                            />
-                        )}
-                        <Typography
-                            className="bubble__definition"
-                            sx={{
-                                fontSize: definitionFontSize(defText, targetRadius),
-                                // 1.3 (was 1.15) so the last clamped line's descenders
-                                // (q/g/y/p) aren't clipped by the -webkit-box overflow.
-                                lineHeight: 1.3,
-                                fontWeight: 500,
-                                fontFamily: FONTS.cjk,
-                                // Follows the body, so a dark fill (Hydra's drain tier,
-                                // the strong-red wrong flash) gets white text and every
-                                // light one keeps near-ink. See inkOnFill.
-                                color: ink,
-                                textAlign: "center",
-                                // Clamp very long definitions so they never overflow the
-                                // circle. One line fewer when the icon is taking up room.
-                                display: "-webkit-box",
-                                WebkitLineClamp: hasIcon ? 3 : 4,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                            }}
-                        >
-                            {defText}
-                        </Typography>
-                    </Box>
-                )}
+                {content}
 
                 {/* The borrowed-card mark (see the `lent` prop). Placed in PERCENTAGES,
                     not the px corner Match Speed's rectangular card uses: the bubble is a

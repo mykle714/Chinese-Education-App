@@ -107,7 +107,16 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * hue, prints the `0`, and adds the corner tag's `zeroMessage` ("All caught up!") beside
  * its name — which says in words what the number cannot.
  *
- * Referenced by docs/SHELF_REDESIGN.md (entry 2) and docs/DECKS_FEATURE.md.
+ * ── The compact variant ───────────────────────────────────────────────────────
+ * `variant="compact"` (the Reading Center, docs/READING_WRITING_CENTERS.md) keeps
+ * EVERYTHING above about behaviour — three modes, the stored fan, tap / throw to promote,
+ * the ineligible commit — and changes only the drawing, to the design's `.rstk` stack: a
+ * tight ±3° fan, and a front card carrying the mode's glyph, its name and a round play
+ * button. NO figures and NO tags: the compact hand is a launcher, not a dashboard, so
+ * `figure`, `figureCaption` and `zeroMessage` are ignored in it.
+ *
+ * Referenced by docs/SHELF_REDESIGN.md (entry 2), docs/DECKS_FEATURE.md and
+ * docs/READING_WRITING_CENTERS.md.
  */
 
 /** The three session modes, in the order they seed the back slots. */
@@ -159,6 +168,8 @@ export interface StudyHandCard {
      * fires in every state, so the host can explain a refusal in its own words.
      */
     eligible?: boolean;
+    /** Material Symbols glyph drawn top-left on a COMPACT front card. Ignored in `full`. */
+    glyph?: string;
 }
 
 export interface StudyHandProps {
@@ -168,6 +179,8 @@ export interface StudyHandProps {
     initialFront?: StudyModeId;
     /** Commit: start this mode's session (or explain why it can't be started). */
     onStudy: (id: StudyModeId) => void;
+    /** `full` (the fdp) or `compact` (the Reading Center) — see the docblock. */
+    variant?: "full" | "compact";
     className?: string;
 }
 
@@ -176,6 +189,17 @@ const SLOTS = {
     backLeft: { top: 40, inset: 20, zIndex: 1, transform: "rotate(-4.5deg) translateX(-14px)" },
     backRight: { top: 86, inset: 20, zIndex: 2, transform: "rotate(4.5deg) translateX(14px)" },
     front: { top: 132, inset: 2, zIndex: 3, transform: "none" },
+} as const;
+
+/**
+ * The compact fan, off the design's `.rstk` (back cards `top:0; bottom:16px` at ±3° /
+ * ±6px, the played `.rfc` card `top:12px; bottom:0` full width). `bottom` is per slot here
+ * because, unlike the full fan, the back cards stop short of the floor.
+ */
+const COMPACT_SLOTS = {
+    backLeft: { top: 0, bottom: 16, inset: 4, zIndex: 1, transform: "rotate(-3deg) translateX(-6px)" },
+    backRight: { top: 0, bottom: 16, inset: 4, zIndex: 2, transform: "rotate(3deg) translateX(6px)" },
+    front: { top: 12, bottom: 0, inset: 0, zIndex: 3, transform: "none" },
 } as const;
 
 /** How long a card takes to travel between slots after a promotion. */
@@ -211,7 +235,8 @@ function afterSwipe(order: HandOrder): HandOrder {
     return [c, a, b];
 }
 
-export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix", onStudy, className }) => {
+export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix", onStudy, variant = "full", className }) => {
+    const compact = variant === "compact";
     // The fan is the single source of truth for where every card sits. Seeded from
     // `initialFront` through FAN_ORDER so the hand opens in the same layout it always has.
     const [order, setOrder] = useState<HandOrder>(() => {
@@ -257,7 +282,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
             {cards.map((card) => {
                 const slot = slotOf(card.id);
                 const isFront = slot === "front";
-                const geometry = SLOTS[slot];
+                const geometry = compact ? COMPACT_SLOTS[slot] : { ...SLOTS[slot], bottom: 0 };
                 // Ineligibility dims the COMMIT only. The card's fill and opacity stay
                 // put: a zero count is a normal, frequent outcome and must not read as a
                 // broken card (see "a zero is not a fault" in the docblock).
@@ -301,7 +326,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             top: geometry.top,
                             left: geometry.inset,
                             right: geometry.inset,
-                            bottom: 0,
+                            bottom: geometry.bottom,
                             zIndex: geometry.zIndex,
                             // While the finger owns the card its transform IS the drag
                             // (the front slot's own transform is `none`, so nothing is
@@ -321,9 +346,9 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             // page/sheet beneath is scrolled from anywhere but this card.
                             ...(isFront ? { touchAction: "none" } : {}),
                             backgroundColor: RAMP[card.hue].surface,  // v2 "Surface: … the fanned cards"
-                            borderRadius: "22px",
+                            borderRadius: compact ? "20px" : "22px",
                             border: `1px solid ${COLORS.border}`,
-                            padding: isFront ? "15px 16px 14px" : "10px 16px 14px",
+                            padding: compact ? "16px 16px 16px 18px" : isFront ? "15px 16px 14px" : "10px 16px 14px",
                             boxShadow: isFront
                                 // The front card carries a shadow ABOVE it as well, so it
                                 // reads as lifted off the two behind rather than pasted on.
@@ -335,6 +360,47 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             overflow: "hidden",
                         }}
                     >
+                        {compact ? (
+                            // COMPACT FACE — the design's `.rfc`: glyph top-left, name and a
+                            // round play button along the foot. Drawn on the played card and on
+                            // the one queued behind it (pre-rendered, as in the full hand);
+                            // the bottom card stays a blank coloured edge.
+                            showsFace && (
+                                <Box className="study-hand__compact-face" sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                                    <Icon name={card.glyph ?? "menu_book"} size={24} color={COLORS.onSurface} sx={{ opacity: 0.72 }} />
+                                    <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "12px" }}>
+                                        <Typography
+                                            component="b"
+                                            className="study-hand__label"
+                                            sx={{ fontFamily: FONTS.sans, fontSize: 24, fontWeight: WEIGHT.bold, letterSpacing: "-0.03em", lineHeight: 1.05, color: COLORS.onSurface, maxWidth: 170 }}
+                                        >
+                                            {card.label}
+                                        </Typography>
+                                        <Box
+                                            component="button"
+                                            type="button"
+                                            className="study-hand__go study-hand__go--round"
+                                            aria-label={isFront ? `Start ${card.label}` : undefined}
+                                            // Inert on the queued card, exactly as the full
+                                            // hand's button is (see its comment below).
+                                            onClick={isFront ? () => onStudy(card.id) : undefined}
+                                            disabled={!isFront}
+                                            tabIndex={isFront ? undefined : -1}
+                                            aria-hidden={isFront ? undefined : true}
+                                            sx={{
+                                                ...(isFront ? {} : { pointerEvents: "none" }),
+                                                width: 52, height: 52, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0,
+                                                // Ineligible dims the COMMIT only, never the card.
+                                                backgroundColor: greyed ? COLORS.greyA : COLORS.onSurface,
+                                                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                                            }}
+                                        >
+                                            <Icon name="play_arrow" size={28} color={COLORS.white} />
+                                        </Box>
+                                    </Box>
+                                </Box>
+                            )
+                        ) : (<>
                         <Box
                             className="study-hand__head"
                             sx={{
@@ -484,6 +550,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                 </Box>
                             </>
                         )}
+                        </>)}
                     </Box>
                 );
             })}

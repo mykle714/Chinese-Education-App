@@ -123,9 +123,17 @@ Search's No-Pinyin mode makes.
 2026-09-25 a pinyin-off zh flp session wrote `reading` on its foreign-first face. That
 was reversed with the know merge (§ 6): the flp's two faces are now always
 `production` (English-first) and `recognition` (foreign-first), and "Show pinyin" is a
-display setting only. Reading marks are planned to come from a **dedicated reading
-flp** (not designed yet). `markTypeForSideOne` (`src/utils/flpFaceSteering.ts`) is the
-mapping.
+display setting only. Reading marks come from the **dedicated reading flp** (built
+2026-10-02): `/flashcards/learn?bar=reading` (plus `&mode=review|challenge`), launched
+from the Reading Center's card hand — the fdp's Challenge / Review / Study Mix hand
+(`FlpStudyHand`) on the reading bar. It always opens on the characters with no pinyin and no
+narration, the answer face always shows pinyin, every mark is `reading`, and the server
+bands, queues and cools that loop on the READING bar (the `bar` parameter,
+`server/contracts/studyMode.ts` → `FlpBar`, threaded through `OnDeckVocabService.ts`;
+the refill paces on `markedBarCategoryBefore`). See
+[READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § Phase 4.
+`markTypeForSideOne` / `sideOneForCard` (`src/utils/flpFaceSteering.ts`, both now taking
+the session's `mode`) are the mapping.
 
 **Bubble Match is the rule's one consumer**: a pinyin-off zh board marks `reading`, and
 its pool is requested on that track. Two properties, both forced by it being a game —
@@ -614,19 +622,25 @@ does not have that failure mode: its length is pbh, an absolute position in an e
 window, and its colour is the band.
 
 - **Colors** — one hue per **mark type** (`MARK_TYPE_COLORS`,
-  `src/utils/masteryCompute.ts`), for surfaces that name a SKILL: the eip tab strip
-  (`TAB_COLORS`, `src/features/flashcards/constants.ts`) and Bubble Match's track toggle.
+  `src/utils/masteryCompute.ts`), for surfaces that name a SKILL: Bubble Match's track
+  toggle. (The eip tab strip, `TAB_COLORS`, used to alias these; since 2026-10-02 it names
+  its own ramp members, because the tabs were never about skills.)
   ⚠️ **NOT for mastery cells** (since 2026-09-23): both the cdp window and the mini-card
   strip colour every filled cell by the track's utcm **band** (`getBandMark`,
   `src/utils/categoryColors.ts`) — see § "Mini cards — the eight-mark window" above.
-  `masteryWindowCells` still returns the owning mark type. Shelf System v2 values — the
-  ramp's MARK tier of the hue each skill has always owned:
-  - Recognition → **Blue** `COLORS.bluMk` (`MARK_TYPE_COLORS.recognition`)
-  - Production → **Green** `COLORS.grnMk` (`MARK_TYPE_COLORS.production`)
-  - Reading → **Red** `COLORS.redMk` (`MARK_TYPE_COLORS.reading`)
-  - Writing → **Orange** `COLORS.orgMk` (`MARK_TYPE_COLORS.writing`)
+  `masteryWindowCells` still returns the owning mark type. Since **2026-10-02** only the
+  two learner-facing skills own a hue — the Reading / Writing Centers' colours
+  ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)):
+  - Reading → **Green** `COLORS.grnMk` (`MARK_TYPE_COLORS.reading`)
+  - Writing → **Purple** `COLORS.purMk` (`MARK_TYPE_COLORS.writing`)
+  - Recognition, Production → **no hue** — neutral `COLORS.greyA`. They are the two
+    halves of the "know" bar and are no longer learner-facing concepts.
 
-  (v1 used four off-palette literals, `#779BE7` / `#05C793` / `#EF476F` / `#FF8E47`.) The
+  The skill's bar uses the same hue key (`MASTERY_BAR_HUES`, `src/utils/categoryColors.ts`
+  — reading `grn`, writing `pur`, core `blu`), so a skill's Mastered tile, its Center and
+  its dot agree. (Before 2026-10-02: recognition blue, production green, reading red,
+  writing orange; v1 used four off-palette literals, `#779BE7` / `#05C793` / `#EF476F` /
+  `#FF8E47`.) The
   cooldown-elapsed check icon is `MASTERY_READY_COLOR`, beside them in the same file —
   `COLORS.successInk`, which v2 sets to ink.
 

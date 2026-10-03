@@ -1,6 +1,5 @@
 import { FONTS } from "../../theme/fonts";
 import { COLORS } from "../../theme/colors";
-import { MARK_TYPE_COLORS } from "../../utils/masteryCompute";
 
 // Swipe feedback colors (swipe right = correct, swipe left = incorrect).
 //
@@ -48,10 +47,11 @@ export const CARD_FLIP_TRANSITION = `transform ${CARD_FLIP_MS}ms linear`;
 
 // Tab accent colors — decorative, consistent across all themes.
 //
-// Aliased to MARK_TYPE_COLORS (the recognition / writing / reading MARK tier) so the
-// eip tab strip moves with the ramp instead of drifting off it (D2). They stay
-// DECORATIVE — a tab's color does not mean "this tab is about reading"; the sharing
-// is a palette economy, not a semantic claim.
+// The ramp's MARK tier, named directly. These used to alias MARK_TYPE_COLORS
+// (recognition / writing / reading) as a palette economy, which meant repainting a
+// SKILL repainted the eip tabs too — and on 2026-10-02 the skills were repainted
+// (reading green, writing purple, recognition no hue). The tabs were never about
+// skills, so they now name their own ramp members and keep the look they had.
 
 // Controls vertical alignment of content within both card faces (front + back)
 export const CARD_FACE_JUSTIFY = 'flex-start';
@@ -77,9 +77,9 @@ export const CARD_BASE_HEIGHT = 426;
 // "examples" shows example sentences.
 // "breakdown" shows per-character rows + the per-character rationale block.
 export const TAB_COLORS = [
-    MARK_TYPE_COLORS.recognition, // blue
-    MARK_TYPE_COLORS.writing,     // orange
-    MARK_TYPE_COLORS.reading,     // red
+    COLORS.bluMk, // definition
+    COLORS.orgMk, // examples
+    COLORS.redMk, // breakdown
 ];
 export const TAB_LABELS = ["definition", "examples", "breakdown"];
 

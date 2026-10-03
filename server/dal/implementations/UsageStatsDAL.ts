@@ -1,12 +1,13 @@
 import { IUsageStatsDAL } from '../interfaces/IUsageStatsDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import { VET_PHYSICAL_TABLES, vetSortedClause } from '../shared/vetTable.js';
+import { VET_PHYSICAL_TABLES, vetProvisionalClause, vetSortedClause } from '../shared/vetTable.js';
 import type {
   UsageDay,
   UsageFeatureRow,
   UsageGameRow,
   UsageHeadline,
   UsageLanguageRow,
+  UsageUserRow,
 } from '../../contracts/usage.js';
 
 /**
@@ -30,6 +31,8 @@ import type {
  *   writing practice    writing_practice_completions
  *   immersive world     iw_scene_runs (by "startedAt")
  *   AI dictionary       dictionary_ai_usage (SUM(count) — one row per user per day)
+ *   recent learners     users ⋈ refresh_tokens ⋈ userminutepoints ⋈ vet ⋈
+ *                       category_promotions ⋈ iw_scene_runs ⋈ wins, one row per learner
  *
  * The database runs in UTC, so `ts::date` on a timestamptz is already the UTC day.
  * refresh_tokens is never purged (RefreshTokenDAL only revokes), so sign-in history
@@ -179,6 +182,104 @@ export class UsageStatsDAL implements IUsageStatsDAL {
        GROUP BY game
        ORDER BY wins DESC, game`,
       [since, until]
+    );
+  }
+
+  async getRecentUsers(since: string, until: string, limit: number): Promise<UsageUserRow[]> {
+    // Sorted = every bucket a learner can sort a card INTO (library or skip), i.e.
+    // anything but a lent provisional row. Bucketed by "createdAt": a lent card later
+    // promoted in place keeps its lend-time createdAt, so it counts on the lend day.
+    const sortedUnion = VET_PHYSICAL_TABLES.map(
+      (t) => `SELECT ve."userId" FROM ${t} ve
+              WHERE NOT (${vetProvisionalClause('ve')})
+                AND ve."createdAt" >= $1::date AND ve."createdAt" < $2::date + 1`
+    ).join(' UNION ALL ');
+
+    // Six per-user aggregates joined onto users. A learner qualifies with EITHER a
+    // session or studied minutes in the window — the same two signals the window
+    // totals count ("opened the app" / "studied"), so the list and the totals agree.
+    // "createdAt" is timestamptz, so to_char under the session's UTC zone + a literal
+    // "Z" is a correct ISO instant.
+    return this.rows<UsageUserRow>(
+      `WITH opens AS (
+         -- Same predecessor LEFT JOIN as getDailySeries: no predecessor = a fresh sign-in.
+         SELECT r."userId",
+                MAX(r."createdAt")                      AS last_seen,
+                COUNT(DISTINCT r."createdAt"::date)     AS days_opened,
+                COUNT(*) FILTER (WHERE prev.id IS NULL) AS sign_ins
+         FROM refresh_tokens r
+         LEFT JOIN refresh_tokens prev ON prev."replacedByHash" = r."tokenHash"
+         WHERE r."createdAt" >= $1::date AND r."createdAt" < $2::date + 1
+         GROUP BY 1
+       ),
+       sorted AS (
+         SELECT "userId", COUNT(*) AS cards FROM (${sortedUnion}) s GROUP BY 1
+       ),
+       climbed AS (
+         -- Velocity (docs/VELOCITY.md): band-steps on the bars the account is pursuing.
+         -- Core always counts; reading / writing only while that goal is on — the same
+         -- read-time goal filter as CategoryPromotionDAL.getVelocityByLanguage.
+         SELECT cp."userId", SUM(cp."bandsClimbed") AS steps
+         FROM category_promotions cp
+         JOIN users cu ON cu.id = cp."userId"
+         WHERE cp."promotedAt" >= $1::date AND cp."promotedAt" < $2::date + 1
+           AND (cp.bar = 'core'
+                OR (cp.bar = 'reading' AND cu."readingGoal")
+                OR (cp.bar = 'writing' AND cu."writingGoal"))
+         GROUP BY 1
+       ),
+       studied AS (
+         SELECT "userId",
+                SUM("minutesEarned")                             AS minutes,
+                COUNT(DISTINCT "streakDate")                     AS days_studied,
+                array_agg(DISTINCT language::text ORDER BY language::text) AS languages
+         FROM userminutepoints
+         WHERE "minutesEarned" > 0 AND "streakDate" BETWEEN $1::date AND $2::date
+         GROUP BY 1
+       ),
+       iw AS (
+         -- Runs STARTED: the row is inserted when a run begins, so this is plays.
+         SELECT "userId", COUNT(*) AS runs
+         FROM iw_scene_runs
+         WHERE "startedAt" >= $1::date AND "startedAt" < $2::date + 1
+         GROUP BY 1
+       ),
+       won AS (
+         -- One JSON array per learner: [{ game, wins }], most-won first. Wins, not
+         -- plays — the wins table is the only per-round record a game writes.
+         SELECT "userId",
+                jsonb_agg(jsonb_build_object('game', game, 'wins', n) ORDER BY n DESC, game) AS games
+         FROM (
+           SELECT "userId", game, COUNT(*)::int AS n
+           FROM wins
+           WHERE "wonAt" >= $1::date AND "wonAt" < $2::date + 1
+           GROUP BY 1, 2
+         ) per_game
+         GROUP BY 1
+       )
+       SELECT u.id                                   AS "userId",
+              u.name                                 AS name,
+              to_char(opens.last_seen AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "lastSeenAt",
+              COALESCE(studied.minutes, 0)::int      AS minutes,
+              COALESCE(studied.days_studied, 0)::int AS "daysStudied",
+              COALESCE(opens.days_opened, 0)::int    AS "daysOpened",
+              COALESCE(studied.languages, '{}')      AS languages,
+              COALESCE(opens.sign_ins, 0)::int       AS "signIns",
+              COALESCE(sorted.cards, 0)::int         AS "cardsSorted",
+              COALESCE(climbed.steps, 0)::int        AS velocity,
+              COALESCE(iw.runs, 0)::int              AS "iwRuns",
+              COALESCE(won.games, '[]'::jsonb)       AS "gameWins"
+       FROM users u
+       LEFT JOIN opens   ON opens."userId"   = u.id
+       LEFT JOIN studied ON studied."userId" = u.id
+       LEFT JOIN sorted  ON sorted."userId"  = u.id
+       LEFT JOIN climbed ON climbed."userId" = u.id
+       LEFT JOIN iw      ON iw."userId"      = u.id
+       LEFT JOIN won     ON won."userId"     = u.id
+       WHERE opens."userId" IS NOT NULL OR studied."userId" IS NOT NULL
+       ORDER BY opens.last_seen DESC NULLS LAST, minutes DESC, u.name
+       LIMIT $3`,
+      [since, until, limit]
     );
   }
 }

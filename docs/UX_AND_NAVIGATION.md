@@ -491,9 +491,11 @@ Several **node** routes share one component, `CollectionViewPage`
 older links keep working.
 
 Two more Flashcards-tab node pages sit beside them — the **Mastery Centers**,
-`/flashcards/reading` and `/flashcards/writing` (`MasteryCenterPage`). Each is the
-`/decks` panel rendered as a page and read through one skill bar; they are reached from
-two buttons under the Study Mix slab, present only when that account goal is set. See
+`/flashcards/reading` and `/flashcards/writing` (`MasteryCenterPage`). Each is a skill
+study page on its skill's ground colour, with the `/decks` panel behind the same two
+pill-raised sheets (read through that one skill bar); they are reached from the Centers
+rail above the fdp's card hand, present only when that account goal is set. See
+[READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) and
 [DECKS_FEATURE.md § Mastery Centers](./DECKS_FEATURE.md).
 
 Two route shapes rather than one `:collectionId` on purpose: a deck is addressed by

@@ -4,6 +4,7 @@ import type {
   UsageHeadline,
   UsageLanguageRow,
   UsageFeatureRow,
+  UsageUserRow,
 } from '../../contracts/usage.js';
 
 /**
@@ -38,4 +39,11 @@ export interface IUsageStatsDAL {
 
   /** Wins per game, most wins first. */
   getGameWins(since: string, until: string): Promise<UsageGameRow[]>;
+
+  /**
+   * Per-learner rows for everyone who opened the app or studied in the window, most
+   * recently seen first, at most `limit` rows. Returns NAMES — the most identifying
+   * read in this DAL, so the isAdmin gate upstream matters most here.
+   */
+  getRecentUsers(since: string, until: string, limit: number): Promise<UsageUserRow[]>;
 }

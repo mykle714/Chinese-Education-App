@@ -329,7 +329,7 @@ const Spine: React.FC<SpineProps> = ({
                         fontFamily: FONTS.mono,
                         fontSize: px(SPINE_SIZES.pinFontSize),
                         color: COLORS.onSurface,
-                        background: "rgba(255, 255, 255, 0.72)",
+                        background: COLORS.frost,
                         borderRadius: px(6),
                         padding: `${px(2)}px ${px(5)}px`,
                         zIndex: 1,

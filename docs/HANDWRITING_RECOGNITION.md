@@ -120,6 +120,15 @@ A **"Practice Writing Me"** button appears on:
 
 Tapping it opens a modal **popup** scoped to that single target character/word.
 
+The **Writing Center** (`/flashcards/writing`) is a third entry point with no button:
+its 6×6 word grid opens the same popup on whichever word tile is tapped
+(`WritingPracticeGrid`, docs/READING_WRITING_CENTERS.md). Every tile is one of the
+learner's cards (1–4 characters, off the writing cooldown), so every Verify there writes a
+Writing mark on that card.
+
+Every host shares one hook, `usePracticeWriting` (`src/components/handwriting/`): the
+completed-level (star) fetch, its sync as levels clear, and the Writing mark on Verify.
+
 ### Popup chrome (floating bars)
 
 The popup chrome is split into **three free-standing, footer-style floating

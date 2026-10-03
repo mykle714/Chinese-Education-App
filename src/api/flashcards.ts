@@ -25,9 +25,9 @@
  * See docs/CORRECTNESS_AND_PERFORMANCE_REVIEW.md finding 3.
  */
 import { apiPost } from './http';
-import { playMarkArpeggio } from '../services/audio/markArpeggio';
 import type { MarkType, ReviewMark, VocabEntry } from '../types';
 import type { FLP_MARK_SURFACE } from '../../server/contracts/wire';
+import type { FlpBar } from '../../server/contracts/studyMode';
 
 /**
  * Every surface that may record a mark. Add a case here when a new game starts
@@ -42,23 +42,9 @@ export type MarkSurface =
     | "memory-map"
     | "speed-reading"
     | "word-search"
-    | "practice-writing";
-
-/**
- * The only surfaces that play the answer-feedback marimba arpeggio
- * (src/services/audio/markArpeggio.ts). Both are tempo-driven matching games where
- * the rising pitch carries streak information the learner has no time to read.
- * Every other surface — the flp, Hydra Bubbles, Memory Map, Speed Reading, Word
- * Search, Practice Writing — marks silently, by request (2026-09-13).
- *
- * ⚠️ Adding a surface here that posts more than one mark per answer (the flp's
- * retry loop, Word Search's two-track No-Pinyin find) would play a chord and skip
- * rungs of the ladder; such a surface needs a per-call opt-out first.
- *
- * A surface added here must also call `useMarkArpeggio()` so its streak starts on
- * the low C. Documented in: docs/AUDIO_PLAYBACK.md § 7.
- */
-const ARPEGGIO_SURFACES: ReadonlySet<MarkSurface> = new Set<MarkSurface>(["match-speed", "bubble-match"]);
+    | "practice-writing"
+    // The Reading Center's word swipe grid (docs/READING_WRITING_CENTERS.md).
+    | "reading-center";
 
 /** A single review mark. `mode` is flp-only — it caps the replacement card's category. */
 export interface MarkFlashcardRequest {
@@ -76,6 +62,12 @@ export interface MarkFlashcardRequest {
      * categories, and yields `newCard: null` when the mode is exhausted.
      */
     mode?: string;
+    /**
+     * flp working-loop only: the session's flp bar (server/contracts/studyMode.ts). A
+     * reading session sends `reading` so its replacement card is chosen by the reading
+     * bar, the bar its queue is built on. Omitted = core.
+     */
+    bar?: FlpBar;
     /**
      * flp working-loop only, and only for a session launched from a collection
      * (docs/DECKS_FEATURE.md): keeps the REPLACEMENT card inside that collection.
@@ -143,25 +135,13 @@ export interface MarkFlashcardResponse {
 export async function markFlashcard(
     request: MarkFlashcardRequest
 ): Promise<MarkFlashcardResponse> {
-    // Fired HERE, at the app's one mark chokepoint, but only for the surfaces in
-    // ARPEGGIO_SURFACES — every other surface marks in silence. Fired BEFORE the
-    // request, for two reasons that both matter on a phone: the learner hears the
-    // note with no network round-trip in the way, and the call is still inside the
-    // tap's user-gesture stack, which is the only place iOS will start audio.
-    //
-    // Consequence: the sound follows the ANSWER, not the stored mark. A mark the
-    // server drops for cooldown (`suppressed`) still sounds correct, which is
-    // right — the learner did get it right. See docs/AUDIO_PLAYBACK.md § 7.
-    if (request.surface && ARPEGGIO_SURFACES.has(request.surface)) {
-        playMarkArpeggio(request.isCorrect);
-    }
-
     const data = await apiPost<Partial<MarkFlashcardResponse>>('/api/flashcards/mark', {
         cardId: request.cardId,
         isCorrect: request.isCorrect,
         type: request.type,
         excludeIds: request.excludeIds ?? [],
         mode: request.mode,
+        bar: request.bar,
         deckId: request.deckId,
         collection: request.collection,
         surface: request.surface,

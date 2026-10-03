@@ -86,6 +86,17 @@ export const LEVEL_CONFIGS: LevelConfig[] = [
     { level: 3, label: "Torture", launchIntervalMs: 800, shrinkSpeedPxPerSec: 42 },
 ];
 
+/** Per-level ramp hues, keyed by LEVEL_CONFIGS' level number — a difficulty ramp, calm
+    green through to red. Read by every surface that offers a level: the Games hub's
+    strip (GamesPage) and the Reading Center's games carousel
+    (docs/READING_WRITING_CENTERS.md), so a level is the same colour wherever it is
+    picked. Hardcoded, not randomized. */
+export const LEVEL_HUES: Record<number, "grn" | "org" | "red"> = {
+    1: "grn",
+    2: "org",
+    3: "red",
+};
+
 // ---- Descending ceiling ---------------------------------------------------
 // Once the whole pool has launched, the play area's TOP wall starts moving down
 // at the level's shrinkSpeedPxPerSec, compressing the field until the area-packing

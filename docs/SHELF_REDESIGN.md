@@ -167,7 +167,7 @@ both clean.
 - **Stragglers converted** (files that held literal copies of the old palette and
   would have been stranded off-ramp): `src/features/flashcards/collectionRef.ts`
   (the two deck-palette arrays); `src/features/flashcards/constants.ts` →
-  `TAB_COLORS` (aliased to `MARK_TYPE_COLORS`); `src/pages/SettingsPage.tsx`
+  `TAB_COLORS` (aliased to `MARK_TYPE_COLORS` at the time; it names its own ramp members since 2026-10-02); `src/pages/SettingsPage.tsx`
   (danger color); `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`.
 - **Stragglers deliberately NOT converted** — the design spells these values out
   literally, so aliasing them to the ramp moves them off the design rather than onto
@@ -1325,7 +1325,7 @@ swipe out of this game" invisible to whoever reads the page.
 | Match Speed | Framed. `MatchSpeedTimerBar` now **delegates to `GameTimer`** and keeps only what is Match-Speed-specific: `RUN_DURATION_MS`, the 10s urgency threshold, its colours. ~60 lines of duplicated clock styling gone. |
 | Bubble Match | Framed. `BubbleStage` measures its own container, so this just re-bounds the field — no constant changed. |
 | Hydra Bubbles | Framed, same as Bubble Match. |
-| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. Since 2026-09-25 it holds only the clock, centred (the mode label and found count were removed), and the whole strip is omitted when the timer setting is off — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
+| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. Since 2026-09-25 it holds only the clock, centred (the mode label and found count were removed), plus — since 2026-09-30 — the eye toggle that shows/hides it; the strip is always rendered — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
 | Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
 | Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
 

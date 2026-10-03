@@ -134,8 +134,7 @@ const MemoryMapPage: React.FC = () => {
         setSelectedId(null);
         const result = run.tapWord(word);
         if (result === "ignored") return;
-        // No answer-feedback arpeggio on this surface (limited to Match Speed and Bubble
-        // Match — `ARPEGGIO_SURFACES` in src/api/flashcards.ts); narration is the only sound.
+        // Narration is the only sound on a tap — the app has no answer-feedback sound.
         speakWord(word);
     };
 

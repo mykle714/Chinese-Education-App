@@ -15,6 +15,8 @@ import {
 } from "../../api/usage";
 import { useUsageDashboard } from "./useUsageDashboard";
 import UsageDailyChart from "./UsageDailyChart";
+import UsageRecentUsers from "./UsageRecentUsers";
+import { gameLabel } from "./usageFormat";
 
 /**
  * UsageDashboardSection — the admin-only User Usage section at the bottom of the tester
@@ -29,6 +31,7 @@ import UsageDailyChart from "./UsageDailyChart";
  *   headline      — accounts + today / 7-day / 30-day active (window-independent)
  *   daily chart   — one metric at a time, picked by a lens switch
  *   window totals — sums + distinct users over the window
+ *   recent        — the individual learners behind those totals, by name
  *   languages     — minutes + active users per study language, with a meter
  *   features      — cards added, wins (per game), writing, iw, AI lookups
  */
@@ -147,6 +150,10 @@ function UsageBody({ data, chartMetric, onChartMetric }: {
                 </Box>
             </SectionCard>
 
+            <SectionCard className="usage-dashboard__recent-users">
+                <UsageRecentUsers users={data.recentUsers} generatedAt={data.generatedAt} />
+            </SectionCard>
+
             <SectionCard className="usage-dashboard__languages">
                 <Label className="usage-dashboard__card-label">By language</Label>
                 <Box sx={{ mt: "4px" }}>
@@ -177,7 +184,7 @@ function UsageBody({ data, chartMetric, onChartMetric }: {
                             <StatLine label={f.label} value={f.events} sub={users(f.users)} />
                             {/* Wins are the one feature with a meaningful sub-breakdown. */}
                             {f.key === "gameWins" && data.games.map((g) => (
-                                <StatLine key={g.game} label={g.game} value={g.wins} sub={users(g.users)} indent />
+                                <StatLine key={g.game} label={gameLabel(g.game)} value={g.wins} sub={users(g.users)} indent />
                             ))}
                         </Box>
                     ))}

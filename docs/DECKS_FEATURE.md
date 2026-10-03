@@ -299,7 +299,8 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
 | `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the **two** sheet pills (Cards / Decks) and the modal sheet's mounting. **Lens `core`.** |
-| `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — the same panel as a **page**, lens `reading` / `writing` |
+| `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — a skill study page with the panel behind the fdp's two pill-raised sheets, lens `reading` / `writing` ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)) |
+| `src/features/flashcards/DecksSheets.tsx` | the two pills + modal sheets + New-deck dialog, shared by the fdp and both Centers |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
 | `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`, `section: "all" \| "cards" \| "decks"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
 | `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. A two-button **filter toggle** over the Cards grid, and the one place the sheet is not spines; see § "The lens's two CONSTANTS" |
@@ -409,15 +410,19 @@ counts, so a collection's definition and its number cannot drift.
 
 `/decks` answers exactly one question: **how well do you KNOW these words**
 (recognition + production — the `core` bar). Reading and writing each get their own
-page, the **Reading Center** and the **Writing Center**, which render *the same panel*
-through their own bar.
+page, the **Reading Center** and the **Writing Center**, which carry *the same panel*
+behind the same two pill-raised sheets, read through their own bar. Since the
+2026-10-02 redesign the page in front of those sheets is a skill study page (word of the
+day, drills, the skill's games) — its anatomy and build phases live in
+[READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md).
 
 | | fdp | Reading Center | Writing Center |
 |---|---|---|---|
 | Route | `/flashcards/decks` | `/flashcards/reading` | `/flashcards/writing` |
 | Lens | `core` | `reading` | `writing` |
-| Frame | modal pull-up sheet (pill-raised) | node page | node page |
-| Study buttons | Review / Challenge / Study Mix | — | — |
+| Frame | tab page; two modal pull-up sheets (pill-raised) | node page; the same two sheets (`DecksSheets`) | node page; the same two sheets |
+| Sheet titles | Cards / Decks | Reading Cards / Reading Decks | Writing Cards / Writing Decks |
+| In front of the sheets | the card hand (Review / Challenge / Study Mix) | reading study page | writing study page |
 
 **Why.** One page was answering two questions at once: a learner pursuing reading had
 a *Mastered Reading* tile wedged among figures that were all core, and **no surface
@@ -465,7 +470,8 @@ deck inside the Reading Center would silently drop the learner into a core view 
 
 **Sharing, not copying.** `useDecksPanel(lens)` owns every fetch and derivation and
 `DecksPanelBody` owns every pixel; the three pages differ only in the lens they pass
-and the frame they mount. The Center page is ~110 lines, almost all of it comment.
+and the frame they mount. The pills + sheets are one shared component too
+(`DecksSheets.tsx`), so the fdp and both Centers mount the identical front layer.
 
 ### `/decks` = a study area + two button-raised pull-up sheets
 
@@ -589,8 +595,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    entirely when it pursues neither (and always for Spanish, which cannot accrue those
    marks) so the hand keeps that space. They sit ABOVE the hand, not in it, because they
    are a different KIND of destination: a place to look at your library by skill, not a
-   session to start. Filled with the ramp's **pastels** (reading `red`, writing the new
-   `yel`) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
+   session to start. Filled with the ramp's **pastels** in the skill's own hue (reading
+   `grn`, writing `pur` — `MASTERY_CENTER_HUES`, the same hue the Center page grounds on;
+   red / yel until 2026-10-02) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
    marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). They also
    carry the hand's hairline and its RESTING elevation — both, with the 15px radius, taken
    from `CARD_SURFACE` (`src/theme/surfaces.ts`), the app's one recipe for "this box is a
@@ -600,7 +607,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    the cdp hero card now join. Its radius stays 15px against the hand's 22px because the
    tile is about half the size. See § "Mastery Centers".
 
-   **(c) The card hand** (`StudyHand`, `.fanw`) — Study Mix, Review and Challenge as a
+   **(c) The card hand** (`StudyHand`, `.fanw`; its data — figures, Review gate, toast,
+   launch URL — in `FlpStudyHand`, shared with the Reading Center, which mounts the same
+   hand on the reading bar) — Study Mix, Review and Challenge as a
    fanned hand of three cards with **one played forward**.
 
    This replaced a Review/Challenge row above a 3:4 Study Mix slab. Three buttons is
@@ -1161,7 +1170,7 @@ set, so the hand and the filter now name the same cards in the same colour.
 
 The three **Mastered** spines come from `MASTERY_BAR_COLORS` (same file), one hue per bar
 rather than three blues. `reading` and `writing` are single-mark-type bars, so each takes
-ITS MARK's hue — red and orange, the hues `MARK_TYPE_COLORS` gives those skills (mastery
+ITS MARK's hue — green and purple since 2026-10-02 (red and orange before), the hues `MARK_TYPE_COLORS` gives those skills (mastery
 cells themselves are band-coloured since 2026-09-23). `core` blends recognition and production, has no single mark hue to
 borrow, and keeps Mastered blue.
 

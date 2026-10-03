@@ -4,21 +4,14 @@ import { DictionaryEntry, VocabEntry, AiDictionaryEntry, WordComparisonResult, L
 import type { Language, DictionarySearchRanking } from '../types/index.js';
 import type { LongDefinitionValue } from '../utils/definitions.js';
 import { resolveDefaultPronunciation } from '../utils/definitions.js';
+import { resolveMatchedSense } from '../utils/searchSenseMatch.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
+import { getAnthropicClient } from './anthropicClient.js';
 
-// One shared Anthropic client for the service's AI helpers (long definition,
-// AI fallback). Constructed lazily so a missing ANTHROPIC_API_KEY only disables
-// the AI paths (callers already null-check) instead of throwing at import time.
-let anthropicClient: Anthropic | null = null;
-function getAnthropicClient(): Anthropic | null {
-  if (anthropicClient) return anthropicClient;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  anthropicClient = new Anthropic({ apiKey });
-  return anthropicClient;
-}
+// The enrichment helpers' client (long definition) is shared app-wide — see
+// anthropicClient.ts. Null when ANTHROPIC_API_KEY is unset (callers null-check).
 
 // Separate client for the dictionary AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md),
 // keyed on its OWN DICT_AI_API_KEY so this feature's usage/billing is isolated from the enrichment
@@ -239,8 +232,16 @@ export class DictionaryService {
       ({ canAskAi, aiEntry, aiNoMatch } = await this.resolveAiCache(trimmedTerm, language));
     }
 
+    // Name the sense each row was found through, when it is not the row's default one, so the
+    // row can show that sense's pinyin/glosses (docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md
+    // § "Sense matching"). Pure post-processing of rows the DAL already ranked.
+    const entries = result.entries.map(entry => ({
+      ...entry,
+      matchedSense: resolveMatchedSense(entry, trimmedTerm),
+    }));
+
     return {
-      entries: result.entries,
+      entries,
       total: result.total,
       canAskAi,
       aiEntry,

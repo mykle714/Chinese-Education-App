@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { onDeckVocabService, flashcardMarkService } from '../dal/setup.js';
-import { MODE_CONFIGS, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import { MODE_CONFIGS, parseStudyMode, parseFlpBar, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { ReviewMark, MarkType, MARK_TYPES } from '../types/index.js';
 import { DALError } from '../types/dal.js';
 import { handle } from './asyncHandler.js';
@@ -100,11 +100,13 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     return res.status(200).json(response);
   }
 
-  // Optional difficulty mode (Review/Challenge). When set, the replacement card must
-  // stay within the mode's allowed categories so a banned category never leaks back
-  // into the loop via a correct-mark refill.
-  const mode: StudyMode | undefined =
-    rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
+  // Optional study mode (Review/Challenge). When set, the replacement card must stay
+  // within the mode's allowed categories so a banned category never leaks back into the
+  // loop via a correct-mark refill.
+  const mode = parseStudyMode(rawMode);
+  // The session's flp bar (studyMode.ts): a reading session's replacement is chosen by
+  // the READING bar, the bar its queue is built on. Echoed by the client like `mode`.
+  const refillBar = parseFlpBar(req.body?.bar);
 
   // Optional collection restriction (docs/DECKS_FEATURE.md). The client echoes back
   // the collection the session was launched from, because THIS endpoint refills the
@@ -134,6 +136,9 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // reached: the flp presents recognition/production, so its pool is paced by the
   // core bar as it stood before this mark.
   const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
+  // A reading session paces the refill on the READING band the learner just left, since
+  // its pool is banded by the reading bar; every other session uses the core band.
+  const preferredCategory = refillBar === 'core' ? markResult.categoryBeforeMark : markResult.markedBarCategoryBefore;
 
   // DEGRADES TO NO REFILL, never to an error. The mark is already committed by this
   // point, so a failure in the picker must not surface to the learner as "failed to
@@ -143,8 +148,8 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   let newCard = null;
   try {
     newCard = await onDeckVocabService.getNextLibraryCardWithFallback(
-      userId, markResult.categoryBeforeMark, markResult.language,
-      excludeIds, allowedCategories, collection
+      userId, preferredCategory, markResult.language,
+      excludeIds, allowedCategories, collection, refillBar
     );
   } catch (refillError) {
     console.error(`Replacement pick failed after a committed mark (card ${cardId}):`, refillError);

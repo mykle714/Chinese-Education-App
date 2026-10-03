@@ -1,26 +1,20 @@
-import { useState, useCallback, useMemo, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useState, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { Box, Alert, Snackbar } from "@mui/material";
+import { Box } from "@mui/material";
 import MobileTabScreen from "../../components/MobileTabScreen";
-import SheetPanel, { type SheetPanelBodyHandle, type SheetPanelHandle } from "../../components/sheet/SheetPanel";
-import { readBackSnapshot, saveBackSnapshot, type DecksPageSnapshot } from "./backRestore";
-import DecksPanelBody from "./DecksPanelBody";
-import NewDeckDialog from "./NewDeckDialog";
+import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
+import DecksSheets, { DECKS_SHEET_PILL_BAND, type DecksSheetsHandle } from "./DecksSheets";
 import { useDecksPanel } from "./useDecksPanel";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import {
     activeMasteryCenters, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
+    MASTERY_CENTER_HUES, MASTERY_CENTER_GLYPHS,
 } from "./masteryCenters";
-import type { MasteryBarId } from "../../utils/masteryCompute";
 import Icon from "../../components/Icon";
-import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
-import SheetPill from "../../components/SheetPill";
-import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
+import FlpStudyHand from "./FlpStudyHand";
 import type { VocabEntry } from "../../types";
-import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
-import { formatCooldownRemaining } from "../../utils/formatDuration";
-import { COLORS, RAMP, type RampHue } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import { CARD_SURFACE } from "../../theme/surfaces";
@@ -96,87 +90,38 @@ import { CARD_SURFACE } from "../../theme/surfaces";
 // with a `--white` sheet), so the tint came out rather than the bar being repainted.
 
 // ── The two pills ─────────────────────────────────────────────────────────────
-// The sheets' only entry points, and the direct counterpart of the flp's More Info
-// pill: capsules floating over the bottom of the study area, under the sheet's own
-// scrim (zIndex 2 vs the scrim's 10) so they dim and go inert while a sheet is up.
-//
-// There are TWO because there are two sheets. One "Sets & Cards" pill used to raise a
-// single panel that stacked four captioned sections — the library duo, Challenges,
-// Decks and a several-hundred-card grid — into one scroller, so the two errands it
-// serves ("where is that word?" and "which set do I open?") were separated by a scroll
-// rather than by a name. Splitting the panel splits its entry point with it: the pill's
-// LABEL is now the answer to which sheet you get, which is what a capsule that says
-// "Sets & Cards" could never be.
-//
-// They are laid out by `SheetPill`'s `align` — each offset half a gap off the frame's
-// midline, so the PAIR is centred whatever the labels measure and neither pill has to
-// know the other's width.
-//
-// They are offset by the FULL footer clearance rather than by FOOTER_HEIGHT, so they
-// clear the floating pill bar with the same gap every other page's last row gets.
-/**
- * Corner-tag copy for a mode whose zero means "there is nothing ready to draw" rather
- * than "you finished". Shared by Challenge and Study Mix, which empty for the same
- * reason; Review's zero gets its own sentence at the call site.
- */
-const ZERO_MESSAGE_MORE_CARDS = "Add more cards!";
-
-const SETS_PILL_HEIGHT = 34;
-// A CSS string, not a number: the clearance carries the home-indicator inset now
-// (FOOTER_TOTAL_CLEARANCE), so the pills sit the same gap above the bar on a notched
-// phone as on one without.
-const SETS_PILL_BOTTOM = FOOTER_TOTAL_CLEARANCE;
-
-// Breathing room between the study area's two rows (Centers rail / the card hand), and — via STUDY_AREA_BOTTOM_PAD — between the hand and the pill.
-//
-// The bottom pad reserves ONLY the pill's own band: `MobileTabScreen`'s content area
-// already pads FOOTER_CLEARANCE for the footer bar, which is exactly where the pill
-// is anchored. Derived rather than typed, or a taller pill would silently overlap the
-// hand's `Study now` button.
+// The pills, both sheets and the New-deck dialog live in `DecksSheets`, shared with
+// the two Mastery Centers. One "Sets & Cards" pill used to raise a single panel that
+// stacked the library duo, Challenges, Decks and a several-hundred-card grid into one
+// scroller; splitting the panel split its entry point with it, so the pill's LABEL is
+// the answer to which sheet you get. See DecksSheets.tsx.
+// Breathing room between the study area's two rows (Centers rail / the card hand).
 const STUDY_AREA_GAP = 12;
-const STUDY_AREA_BOTTOM_PAD = SETS_PILL_HEIGHT + STUDY_AREA_GAP;
+// The bottom pad reserves ONLY the pills' own band: `MobileTabScreen`'s content area
+// already pads FOOTER_CLEARANCE for the footer bar, which is exactly where the pills
+// are anchored. Derived rather than typed, or a taller pill would silently overlap the
+// hand's `Study now` button.
+const STUDY_AREA_BOTTOM_PAD = DECKS_SHEET_PILL_BAND;
 
 const CONTENT_SX = {
     alignItems: "center",
 } as const;
 
-// The Centers rail's two tiles, by mastery bar. Both are PASTELS (D2b: a filled
-// surface takes the ramp's 93% tier, only marks and cells keep a saturated hex), and
-// both are the artboard's own choices — reading on the red axis, writing on the gold
-// one that `--yel` was added for.
-const CENTER_HUES: Record<Exclude<MasteryBarId, "core">, RampHue> = {
-    reading: "red",
-    writing: "yel",
-};
-const CENTER_GLYPHS: Record<Exclude<MasteryBarId, "core">, string> = {
-    reading: "menu_book",
-    writing: "draw",
-};
-
-// The card hand's three modes, in FAN_ORDER. Fill hues are the artboard's: Challenge
-// red (the difficulty end), Review blue, Study Mix the gold `--yel` this design added
-// for exactly this card.
-const HAND_HUES: Record<StudyModeId, RampHue> = {
-    challenge: "red",
-    review: "blu",
-    mix: "yel",
-};
+// This page is the CORE lens, so its sheets carry the bare names.
+const DECKS_SHEET_TITLES = { cards: "Cards", decks: "Decks" } as const;
 
 // Main Component
 const FlashcardsDecksPage: React.FC = () => {
     usePageTitle("Decks");
-    const navigate = useNavigate();
     // Collection pages are node drill-ins that slide over this page, so they use
     // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
     // ── Back restore (backRestore.ts) ─────────────────────────────────────────
     // If this history entry was left from inside a sheet, come back to that sheet at the
     // same height, scroll, search, sort and filter — on the first frame. Read ONCE per
-    // mount; `restoreRef` is dropped when that sheet closes, so reopening it later in
-    // the same visit opens it fresh rather than re-applying a stale height and scroll.
+    // mount; DecksSheets drops the sheet half of it when that sheet closes.
     const { key: locationKey } = useLocation();
     const [restored] = useState(() => readBackSnapshot("decks", locationKey));
-    const restoreRef = useRef<DecksPageSnapshot | null>(restored ?? null);
     // The whole panel, through the CORE lens — this page's one question. Every fetch,
     // count and ordering behind the sheet lives in the hook, shared verbatim with the
     // two Mastery Centers (useDecksPanel.ts).
@@ -184,21 +129,8 @@ const FlashcardsDecksPage: React.FC = () => {
     // Which Center buttons this account gets: one per goal it has set. Read off the
     // panel's memoized goals rather than `user` again, so the two cannot disagree.
     const centers = activeMasteryCenters(panel.goals);
-    // Body of the sets sheet; SheetPanel reads {root, scroll} off this handle to
-    // wire its resize/scroll coupling.
-    const sheetBodyRef = useRef<SheetPanelBodyHandle | null>(null);
-    // The sheet itself — read only for its live height when the learner leaves.
-    const sheetPanelRef = useRef<SheetPanelHandle | null>(null);
-    // WHICH sheet is up, or null for neither. One state rather than two booleans: the
-    // sheets are modal and mutually exclusive, and two flags could describe a state
-    // (both open) that the surface has no rendering for. Mirrors the flp's `isEicOpen`
-    // in its lifetime — the panel is mounted ONLY while a section is named, so each
-    // open replays SheetPanel's 0 → default animation instead of reappearing at
-    // whatever height the last session left it.
-    const [openSheet, setOpenSheet] = useState<"cards" | "decks" | null>(() => restored?.openSheet ?? null);
-    // Toast shown when a greyed Review button is tapped (no eligible cards yet).
-    const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
-    const [newDeckOpen, setNewDeckOpen] = useState(false);
+    // The pills + sheets layer — read only for its state at the moment of leaving.
+    const sheetsRef = useRef<DecksSheetsHandle | null>(null);
 
     // Card Detail is a NODE page that slides over this page. No lens param: this page is
     // the core bar, which is what a card page shows by default.
@@ -209,9 +141,7 @@ const FlashcardsDecksPage: React.FC = () => {
     const rememberPlace = () => {
         saveBackSnapshot("decks", locationKey, {
             panel: panel.snapshot(),
-            openSheet,
-            sheetHeight: sheetPanelRef.current?.getCurrentHeight() ?? null,
-            scrollTop: sheetBodyRef.current?.scroll?.scrollTop ?? 0,
+            ...(sheetsRef.current?.capture() ?? { openSheet: null, sheetHeight: null, scrollTop: 0 }),
         });
     };
     const rememberPlaceRef = useRef(rememberPlace);
@@ -232,100 +162,6 @@ const FlashcardsDecksPage: React.FC = () => {
         },
         [slideNavigate]
     );
-
-    // ── The three modes' figures ─────────────────────────────────────────────
-    //
-    // Each figure is the number of cards THAT MODE COULD DEAL RIGHT NOW: its bands,
-    // counted over the library, minus everything still on cooldown.
-    //
-    //   Challenge   — Unfamiliar + Target      ┐ the two partition the four bands, so
-    //   Review      — Comfortable + Mastered   ┘ Challenge + Review == Study Mix
-    //   Study Mix   — all four
-    //
-    // The identity is the point: the hand shows one pool split two ways, and a learner
-    // can read the split off the three cards. It also forced a correction — Study Mix
-    // used to print Unfamiliar+Target+Comfortable and silently omit Mastered, while its
-    // loop (DEFAULT_LOOP_CONFIG, OnDeckVocabService.ts) has always dealt 1 Mastered card
-    // in 10. The figure was understating the mode's own pool by the largest band a
-    // long-running account has.
-    //
-    // READINESS IS THE flp'S RULE, not this page's: `flpReadyCountsByBand` restates
-    // `rankFlpEligible`'s eligibility test (the know clock has run out, windowed by the
-    // card's CORE band — docs/MASTERY_REWORK.md § 6) on top of the shared cooldown
-    // contract.
-    //
-    // Fetched from the server (`/api/onDeck/flpReadyCounts`) INDEPENDENTLY of the full
-    // card library: the endpoint reads only `{ id, typedMarkHistory }` behind
-    // `vetSortedClause()` and runs the same `server/contracts/flpReadiness.ts` formula
-    // this page used to run client-side against `panel.allCards` — so these figures
-    // land long before the fully-enriched collection fetch does, without a second
-    // definition of "rested" that could drift from the pool it predicts.
-    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts();
-    const ready = useCallback((name: string): number => readyCounts[name] || 0, [readyCounts]);
-    const challengePool = figuresLoaded ? ready("Unfamiliar") + ready("Target") : undefined;
-    const reviewPool = figuresLoaded ? ready("Comfortable") + ready("Mastered") : undefined;
-    const inRotation = figuresLoaded ? (challengePool ?? 0) + (reviewPool ?? 0) : undefined;
-
-    // REVIEW is gated on its READY count: with every Comfortable/Mastered card resting
-    // there is nothing to review, and the flp cannot lend its way out of that — a lent
-    // card has an empty mark history, so it bands Unfamiliar and can never satisfy a
-    // Review pool (docs/PROVISIONAL_CARDS.md).
-    //
-    // Two different zeroes reach this, and they need different messages, so the
-    // countdown below distinguishes them: nothing EARNED yet (a new learner) versus
-    // everything RESTING (a learner who just reviewed).
-    //
-    // CHALLENGE has NO eligibility check at all. Its buckets are exactly the ones
-    // provisioning fills — a lent card is Unfamiliar — so the server can always build
-    // a Challenge loop, even for an account with nothing sorted. Study Mix likewise:
-    // there is NO card-count gate into /flashcards/learn any more, because the
-    // working-loop endpoint lends cards to reach the flp baseline.
-    // TRI-STATE, and the third state is the point: `undefined` means "not counted yet".
-    //
-    // This used to be `(reviewPool ?? 0) > 0`, which collapsed unknown into ineligible and
-    // so declared the mode empty for the whole length of the library fetch. StudyHand paid
-    // that out as a GREY CARD (it greyed the fill and dropped the opacity at the time), so
-    // every visit to this page repainted the Review card grey → blue as the cards landed.
-    // Same mistake the figures already avoid by staying `undefined` rather than showing a
-    // provisional 0 — a zero this page has not earned yet must not reach the UI, as a
-    // number or as a colour.
-    //
-    // StudyHand tests `eligible === false` strictly, so `undefined` renders exactly like an
-    // eligible card, which is the right default: a learner who owns Review cards (the
-    // common case) sees no state change at all when the count arrives.
-    const reviewEligible = reviewPool === undefined ? undefined : reviewPool > 0;
-
-    // `reviewNextReadyMs` (time until the soonest Review card rests out, for the
-    // greyed-card toast) comes straight off `useFlpReadyCounts` above — null when none
-    // is resting, which, given reviewPool is 0 here, means the learner owns none.
-
-    const handCards: StudyHandCard[] = useMemo(() => [
-        // ⚠️ `label` is DISPLAY TEXT ONLY. The ids stay `challenge` / `review` — they are
-        // the `?mode=` query param the flp parses (FlashcardsLearnPage → `selectedMode`)
-        // and the server's own `MODE_CONFIGS` keys. Same split the "Learn Now" rename
-        // made (CLAUDE.md § Terminology): rename what the learner reads, never the wire.
-        //
-        // `zeroMessage` is what the FRONT card's corner tag says in place of nothing when
-        // its pool lands on 0 — the only case in which the front card is tagged at all. It
-        // differs by mode because the two zeroes mean opposite things. Review's pool
-        // empties because the learner CLEARED it — every Comfortable/Mastered card is
-        // resting — so that zero is an achievement. Challenge/Mix empty because there is
-        // nothing ready to draw at all, which is a prompt to go get more.
-        { id: "challenge", label: "Challenge Mix", figure: challengePool, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.challenge },
-        { id: "review", label: "Review Mix", figure: reviewPool, figureCaption: "Cards", zeroMessage: "All caught up!", hue: HAND_HUES.review, eligible: reviewEligible },
-        { id: "mix", label: "Study Mix", figure: inRotation, figureCaption: "Cards", zeroMessage: ZERO_MESSAGE_MORE_CARDS, hue: HAND_HUES.mix },
-    ], [challengePool, reviewPool, inRotation, reviewEligible]);
-
-    // ONE commit handler for all three cards. The mode is a query param on the same
-    // route, so the branch is only about the Review gate.
-    const handleStudy = useCallback((id: StudyModeId) => {
-        // Only a KNOWN-empty Review pool is refused. While the count is still in flight
-        // the tap goes through: the flp does its own provisioning and gating, and blocking
-        // on a number this page has not received yet would make the card feel dead for the
-        // first moment of every visit.
-        if (id === "review" && reviewEligible === false) { setMarkMoreSnackOpen(true); return; }
-        navigate(id === "mix" ? "/flashcards/learn" : `/flashcards/learn?mode=${id}`);
-    }, [navigate, reviewEligible]);
 
     return (
         <>
@@ -381,10 +217,11 @@ const FlashcardsDecksPage: React.FC = () => {
                             single tile takes the full width, which is correct: it is the
                             only other place to go.
 
-                            Coloured by MARK TYPE as a PASTEL, not as the saturated mark
-                            hue: this is a filled surface, and D2b puts surfaces on the
-                            ramp's 93% tier while marks and cells keep the saturated hex.
-                            Reading takes `red`, writing `yel` — the artboard's own two. */}
+                            Coloured by the SKILL's hue as a PASTEL, not as the saturated
+                            mark hue: this is a filled surface, and D2b puts surfaces on
+                            the ramp's 93% tier while marks and cells keep the saturated
+                            hex. Reading green, writing purple — the same hue the Center
+                            it opens grounds on (MASTERY_CENTER_HUES). */}
                         {centers.length > 0 && (
                             <Box
                                 className="flashcards-decks__center-rail"
@@ -416,10 +253,10 @@ const FlashcardsDecksPage: React.FC = () => {
                                             ...CARD_SURFACE,
                                             cursor: "pointer",
                                             padding: "13px 13px 14px",
-                                            backgroundColor: RAMP[CENTER_HUES[bar]].surface,  // v2 "Surface: Reading/Writing Centers"
+                                            backgroundColor: RAMP[MASTERY_CENTER_HUES[bar]].surface,  // v2 "Surface: Reading/Writing Centers"
                                         }}
                                     >
-                                        <Icon name={CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />
+                                        <Icon name={MASTERY_CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />
                                         <Box
                                             component="b"
                                             sx={{
@@ -437,115 +274,28 @@ const FlashcardsDecksPage: React.FC = () => {
                             </Box>
                         )}
 
-                        <StudyHand
-                            className="flashcards-decks__study-hand"
-                            cards={handCards}
-                            onStudy={handleStudy}
-                        />
+                        {/* The card hand — Challenge / Review / Study Mix on the CORE bar.
+                            Figures, Review gate and toast live in FlpStudyHand, shared with
+                            the Reading Center (which mounts it on the reading bar). */}
+                        <FlpStudyHand className="flashcards-decks__study-hand" bar="core" />
                     </Box>
                 </MobileTabScreen>
 
-                {/* The two sheet pills — the sheets' entry points, and the twins of
-                    the flp's More Info pill (shared body: `SheetPill`). They sit INSIDE
-                    the positioned frame (not the scroll area) at zIndex 2, so
-                    SheetPanel's scrim (zIndex 10) covers them while a sheet is up: a
-                    pill dims and stops taking taps exactly when it has nothing left to
-                    do. Left is Cards, right is Decks — the same left-to-right order the
-                    two sheets' contents have on the page's own vocabulary (a card is
-                    the unit, a deck is the container). */}
-                <SheetPill
-                    className="flashcards-decks__cards-pill"
-                    label="Cards"
-                    align="left"
-                    onClick={() => setOpenSheet("cards")}
-                    ariaLabel="Open your cards"
-                    ariaExpanded={openSheet === "cards"}
-                    bottom={SETS_PILL_BOTTOM}
-                    height={SETS_PILL_HEIGHT}
+                {/* The two sheet pills and their modal sheets (shared with the
+                    Centers: DecksSheets). Rendered INSIDE the positioned frame (not the
+                    scroll area): SheetPanel sizes itself from this box, and the pills'
+                    zIndex 2 sits under the sheet's scrim so they dim while a sheet is up. */}
+                <DecksSheets
+                    ref={sheetsRef}
+                    panel={panel}
+                    classPrefix="flashcards-decks"
+                    titles={DECKS_SHEET_TITLES}
+                    restore={restored}
+                    onOpenPath={handleOpenPath}
+                    onOpenCard={handleOpenCard}
                 />
-                <SheetPill
-                    className="flashcards-decks__decks-pill"
-                    label="Decks"
-                    align="right"
-                    onClick={() => setOpenSheet("decks")}
-                    ariaLabel="Open your decks"
-                    ariaExpanded={openSheet === "decks"}
-                    bottom={SETS_PILL_BOTTOM}
-                    height={SETS_PILL_HEIGHT}
-                />
-
-                {/* The open sheet, if any. MODAL, with the eip's stops and scrim:
-                    mounted only while open, dismissed by a downward drag or a scrim tap.
-                    ONE SheetPanel for both sections, keyed on the section so switching
-                    sheets remounts rather than swapping content under a held height. */}
-                {openSheet && (
-                <SheetPanel
-                    key={openSheet}
-                    ref={sheetPanelRef}
-                    // Only the sheet the snapshot was taken in, and only until it closes.
-                    restoreHeight={restoreRef.current?.openSheet === openSheet ? restoreRef.current.sheetHeight : null}
-                    onClose={() => {
-                        restoreRef.current = null;
-                        setOpenSheet(null);
-                    }}
-                    bodyRef={sheetBodyRef}
-                    // The body's scroll element is stable, but its identity changes
-                    // when the deck list first arrives (the empty-state message and
-                    // the tiles mount into it), so re-bind once decks have loaded.
-                    // The section is in the key too: the two bodies are different
-                    // elements, and the Decks one must not inherit the Cards one's
-                    // binding.
-                    bodyKey={`${openSheet}-${panel.decksLoading ? "loading" : "ready"}`}
-                    // Merge header title = the pill that opened the sheet, so a sheet
-                    // pulled to full height still says which of the two you are in.
-                    title={openSheet === "cards" ? "Cards" : "Decks"}
-                >
-                    {({ bindHeaderDrag }) => (
-                        <DecksPanelBody
-                            ref={sheetBodyRef}
-                            panel={panel}
-                            variant="sheet"
-                            section={openSheet}
-                            onOpenPath={handleOpenPath}
-                            onOpenCard={handleOpenCard}
-                            initialScrollTop={restoreRef.current?.openSheet === openSheet ? restoreRef.current.scrollTop : undefined}
-                            onNewDeck={() => setNewDeckOpen(true)}
-                            headerDragBind={bindHeaderDrag}
-                        />
-                    )}
-                </SheetPanel>
-                )}
             </Box>
 
-                {/* Toast: greyed Review tapped. TWO reasons the figure can be 0, and they
-                    call for opposite advice — go earn some cards, or come back later —
-                    so the message branches on whether anything is merely resting. */}
-                <Snackbar
-                    className="flashcards-decks__mark-more-snackbar"
-                    open={markMoreSnackOpen}
-                    autoHideDuration={5000}
-                    onClose={() => setMarkMoreSnackOpen(false)}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        className="flashcards-decks__mark-more-alert"
-                        severity="info"
-                        variant="filled"
-                        onClose={() => setMarkMoreSnackOpen(false)}
-                    >
-                        {reviewNextReadyMs === null
-                            ? "Mark more cards in Study Mix to unlock this deck."
-                            : `All your review cards are resting. Next ready in ${formatCooldownRemaining(reviewNextReadyMs)}.`}
-                    </Alert>
-                </Snackbar>
-
-                <NewDeckDialog
-                    classPrefix="flashcards-decks"
-                    open={newDeckOpen}
-                    onClose={() => setNewDeckOpen(false)}
-                    onCreate={panel.addDeck}
-                />
         </>
     );
 };

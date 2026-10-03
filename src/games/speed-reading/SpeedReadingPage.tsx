@@ -107,9 +107,8 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
  *
  * ── Answer feedback: the tapped half's tint ─────────────────────────────────
  * A pick paints a green/red tint over the half that was tapped. There is no answer
- * sound: the marimba arpeggio is limited to Match Speed and Bubble Match
- * (`ARPEGGIO_SURFACES`, src/api/flashcards.ts). ⚠️ FEEDBACK_MS was shortened when a
- * sound accompanied the tint; with the tint alone it may need lengthening.
+ * sound — the app has no answer-feedback sound at all. ⚠️ FEEDBACK_MS was shortened
+ * when a sound accompanied the tint; with the tint alone it may need lengthening.
  *
  * A ✓/✗ used to float up from the exact tap coordinates, carrying a red +3s on a
  * wrong answer; it was removed by request. ⚠️ Nothing now shows the penalty at

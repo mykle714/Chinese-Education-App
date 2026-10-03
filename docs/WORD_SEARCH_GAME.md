@@ -439,7 +439,8 @@ so its hub count is inherently whole-game. See
 When a saved board exists, `WordSearchHubItem` **prepends a 1:1 square card**
 before the two mode buttons. Its **normal face** is styled like a real hub card:
 a **"Resume"** title (matches `HubMenuCardTitle` — bodyLg / medium / onSurface),
-then the parked board's **timer** (frozen `elapsedMs`) and **X/N found** inlined (N is the
+then the parked board's **timer** (frozen `elapsedMs`; omitted when `showTimer` is off —
+see "The play panel, top to bottom") and **X/N found** inlined (N is the
 SAVED board's own word count — `savedWordCount` reads `saved.data.words.length`, not
 `TOTAL_WORDS`, so a board parked before a size change still counts to its own total)
 on one row, then the **mode** (Pinyin / No Pinyin), with an **✕** inset in the
@@ -476,7 +477,7 @@ Vertical stack inside the standard leaf-page content area:
 
 ```
 ┌─────────────────────────────┐
-│ header (down-arrow · hint · settings cog · fire badge)
+│ header (down-arrow · audio chip · fire badge)
 ├─────────────────────────────┤
 │  9 English glosses, 1–2 compact lines              │  ← "Lv1 Chill" type style
 ├─────────────────────────────┤
@@ -538,7 +539,7 @@ Shelf redesign entry 13 (`docs/SHELF_REDESIGN.md`). Everything below lives insid
 
 | Row | Component | Content |
 |---|---|---|
-| HUD | `GameHud` | the clock, centred. Not rendered at all when the timer setting is off |
+| HUD | `GameHud` | the clock, centred, with the eye toggle that shows/hides it at the right edge. Always rendered — with the clock hidden the strip holds the eye alone, centred |
 | glosses | `WordSearchWordList` | the target glosses, inline and middot-separated (§ above) |
 | grid | `WordSearchGrid` | the board; `flex: 1`, so it takes all remaining height |
 | hint | `WordSearchHintBar` | button (charge bars under it) · reveal (§5a). Last row, pinned to the panel's bottom edge; hairline on its TOP |
@@ -562,12 +563,39 @@ together. Faces follow `src/theme/fonts.ts`'s roles:
 
 Line heights are `LEADING.tight`. The grid takes whatever height these rows leave.
 
-**The HUD is the clock alone, centred** (`justifyContent: center` via `GameHud`'s `sx`).
-There is **no found count** (removed 2026-09-25): the gloss list already strikes through
-each found word, so `N/M found` restated it. Because the clock is the strip's only
-content, the **whole HUD strip is omitted when the settings sheet hides the timer** —
-no empty tinted bar; the grid (`flex: 1`) takes the height back. That reflow only happens
-from the settings sheet, never mid-trace.
+**The HUD is the clock, centred, plus the eye that shows/hides it**
+(`justifyContent: center` via `GameHud`'s `sx`). There is **no found count** (removed
+2026-09-25): the gloss list already strikes through each found word, so `N/M found`
+restated it.
+
+**Timer visibility is toggled in the strip itself** (2026-09-30), not in a settings sheet.
+The control is `word-search__hud-timer-toggle` in `WordSearchPage.tsx`, a 32px tap target
+(`HUD_EYE_TAP_PX`) holding a Material Symbols glyph through the app's `Icon` primitive,
+in full ink (`COLORS.onSurface`) like every other HUD fact:
+
+| `showTimer` | Glyph | Eye position | Clock |
+|---|---|---|---|
+| `true` | `visibility_off` (slashed eye — "hide") | right edge of the strip (`HUD_EYE_EDGE_INSET_PX`), clock stays dead-centre | visible |
+| `false` | `visibility` (open eye — "show") | centre of the strip, where the clock was | `visibility: hidden` |
+
+- The glyph states what a tap will **do**, not the current state: the slashed eye hides
+  the clock, the open eye brings it back.
+- The eye is absolutely positioned; the move between edge and centre is an instant
+  jump, deliberately **not animated**.
+- **The strip never unmounts and never changes height.** The hidden clock is kept in the
+  layout (`visibility: hidden`) precisely so that a toggle mid-run does not reflow the
+  grid under a trace. (Before 2026-09-30 the whole strip was omitted when the timer was
+  off; that was only safe because the toggle lived in a modal sheet.)
+- The toggle does **not** pause the clock — it is an inline control that leaves the board
+  playable, and the pause rule covers input-blocking overlays only
+  ([GAMES_FEATURE.md § Popups pause the clock](./GAMES_FEATURE.md)).
+- `showTimer` flips only the clock TEXT's visibility; the clock keeps ticking regardless,
+  so the finish time / medal stays accurate. Persisted via `useWordSearchSettings`
+  (`wordSearch.settings` in **localStorage** — device-local, survives closing the app;
+  not sessionStorage and not synced to the account).
+- **Hidden means hidden everywhere**: the hub's resume card (`WordSearchHubItem.tsx`,
+  `word-search-hub__resume-stats`) reads the same setting and drops the parked time,
+  showing only `X/N`.
 
 **The mode is not stated at all** (2026-09-25). The HUD used to lead with the mode label
 (`Pinyin · production`, `No Pinyin · reading & production`); it was removed. The mode is
@@ -577,9 +605,9 @@ used by the hub, not by the play page.
 
 ### Header controls
 
-`WordSearchHeader.tsx` fills the leaf-page `rightContent` slot with **the settings cog
-and the fire badge, and nothing else**. Three things have left this slot, and the reason
-is always the same: the header holds settings-shaped controls, not game ones.
+`WordSearchHeader.tsx` fills the leaf-page `rightContent` slot with **the audio-mode
+chip (`AudioModeChip`, `word-search__audio-chip`) and nothing else**; `PageHeader` adds the
+fire badge. Four things have left this slot:
 
 - ~~**Restart button** (`word-search__restart-btn`)~~ — **REMOVED.** A restart
   icon used to sit leftmost and discard the in-progress board via `resetBoard`.
@@ -590,24 +618,14 @@ is always the same: the header holds settings-shaped controls, not game ones.
 - ~~**Hint button** (`word-search__hint-btn`)~~ — **MOVED** into the play panel's
   `.hintbar`, next to its own charges and reveal. Spending a hint is a game action.
   See §5a.
-- **Settings cog** (`word-search__settings-btn`) — opens `WordSearchSettingsDialog`,
-  a small MUI `Dialog` (not the flp `SheetPanel`/drag-resize sheet — that
-  machinery lives inside `features/flashcards` and games don't reach into it;
-  this mirrors its *behavior*, not its implementation) holding:
-  - **Show pinyin** / nested **Color pinyin by tone** — the same two booleans
-    as flp, via the shared `useFlashcardLearnSettings` (`showPinyin`,
-    `showPinyinColor`), so the setting stays in sync with flp. Toggling
-    redraws both the top word list and the grid. Because the prompts are
-    English, pinyin only ever affects the grid (there is no Chinese in the
-    top list to toggle). **⚠️ Stale — kept only as history:** the shipped dialog
-    holds only the timer row; pinyin display became a property of the hub entry (see
-    "Two hub entries"), and per
-    [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md) no game
-    should read or write the flp's shared setting at all.
-  - **Show timer** — Word-Search-only, persisted via `useWordSearchSettings`
-    (`wordSearch.settings` in localStorage). Flips only the timer TEXT's
-    visibility; the clock keeps ticking regardless (so the finish time / medal
-    stays accurate).
+- ~~**Pinyin display rows**~~ — **REMOVED.** Pinyin is a property of the hub entry that
+  launched the run (see "Two hub entries"), and per
+  [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md) no game reads
+  or writes the flp's shared setting.
+- ~~**Settings cog** (`word-search__settings-btn`) + `WordSearchSettingsDialog`~~ —
+  **DELETED 2026-09-30.** The sheet's last row, "Show timer", became the eye toggle in
+  the HUD strip (see "The play panel, top to bottom"), which left it empty. Word Search
+  has no settings sheet; `useWordSearchSettings` still persists `showTimer`.
 - Fire badge (minute points) — rendered by `PageHeader` on every header, flush right of
   these controls; this route is in `MINUTE_POINTS_ELIGIBLE_PAGES`, so it burns orange here.
 
@@ -1275,15 +1293,12 @@ Frontend (`src/games/word-search/`):
   the character itself), distributed round-robin across characters in two phases
   — all non-final parts word-wide, then the character reveals
   (`countComponentUnits` / `buildComponentReveals`; §5a-ii).
-- `WordSearchHeader.tsx` — hint button + settings cog + fire
-  badge (LeafPage `rightContent`); the timer toggle lives in the settings
-  dialog (see §3 Header controls). Pinyin is no longer a toggle — it's fixed by
-  the launched hub mode (§3).
-- `WordSearchSettingsDialog.tsx` — the cog's settings sheet: now **timer
-  visibility only** (`useWordSearchSettings`). The pinyin display rows were
-  removed — pinyin is set by the launched hub mode, not a toggle. See §3.
+- `WordSearchHeader.tsx` — the audio-mode chip (LeafPage `rightContent`), and
+  nothing else (see §3 Header controls). Pinyin is no longer a toggle — it's fixed by
+  the launched hub mode (§3) — and timer visibility is the HUD's eye toggle.
 - `useWordSearchSettings.ts` — localStorage-backed hook for Word-Search-only
-  prefs (currently just `showTimer`), mirrors `useFlashcardLearnSettings`.
+  prefs (currently just `showTimer`, flipped by the HUD eye toggle in
+  `WordSearchPage.tsx`), mirrors `useFlashcardLearnSettings`.
 - `WordSearchHubItem.tsx` — the Games-hub strip (rendered by `GamesPage.tsx`):
   the two mode buttons (start-fresh, with a confirm dialog when a save exists)
   plus the prepended 1:1 resume card (timer / X·12 / mode + ✕ erase, with the

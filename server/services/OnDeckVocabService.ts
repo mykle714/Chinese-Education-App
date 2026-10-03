@@ -2,6 +2,8 @@ import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
 import type { MasteryBarId } from '../contracts/wire.js';
 import { isFlpOnlyMark } from '../contracts/mastery.js';
+import { STUDY_MIX_QUOTAS } from '../contracts/studyMix.js';
+import type { StudyMode, FlpBar } from '../contracts/studyMode.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
@@ -27,11 +29,11 @@ import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciatio
 import { getAllSubstrings, buildDictMap, buildExcludeSet, buildDrillRungs, type SegmentDrillRung } from '../dal/shared/segmentString.js';
 import type { DictionaryEntry } from '../types/index.js';
 
-// Difficulty-targeted study modes launched from the decks page (Review/Challenge
-// buttons). Each mode shapes BOTH the initial working-loop distribution and the
-// replacement-card pool handed back by the mark endpoint, so banned categories
-// never leak in via a correct-mark refill.
-export type StudyMode = 'review' | 'challenge';
+// Study modes and flp bars (server/contracts/studyMode.ts) — two independent axes. The
+// MODE shapes BOTH the initial working-loop distribution and the replacement-card pool
+// handed back by the mark endpoint, so banned categories never leak in via a refill; the
+// BAR decides which bar those categories, the queue and the cooldown are read off.
+export { parseStudyMode, parseFlpBar, type StudyMode, type FlpBar } from '../contracts/studyMode.js';
 
 /**
  * Which collection a game/flp round was launched from (docs/DECKS_FEATURE.md).
@@ -84,14 +86,11 @@ export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
 
 // Default (Mix) working-loop shape — the historical 1-2-2-5 distribution with a
 // Target-first top-up. Lives alongside the mode configs so the loop builder is
-// fully data-driven.
+// fully data-driven. The quotas themselves are a shared contract
+// (`STUDY_MIX_QUOTAS`, server/contracts/studyMix.ts): the Reading Center's word swipe
+// grid samples by the same proportions (docs/READING_WRITING_CENTERS.md).
 const DEFAULT_LOOP_CONFIG: Omit<ModeLoopConfig, 'allowed'> = {
-  quotas: [
-    { category: 'Mastered', count: 1 },
-    { category: 'Comfortable', count: 2 },
-    { category: 'Unfamiliar', count: 2 },
-    { category: 'Target', count: 5 },
-  ],
+  quotas: STUDY_MIX_QUOTAS.map((q) => ({ ...q })),
   fillOrder: ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'],
 };
 
@@ -151,6 +150,10 @@ export class OnDeckVocabService {
   // The cooldown table and the queue maths live in services/cardQueueRanking.ts — a
   // pure module shared with Memory Map, which ranks the reading clock the same way
   // (docs/MEMORY_MAP_GAME.md § 13.1).
+  //
+  // The ONE exception is the reading flp (`bar: 'reading'`, any mode), which marks the
+  // reading track and therefore gates on the reading bar instead — every flp selection
+  // helper below takes the bar as a parameter, defaulting to this one.
   private static readonly FLP_BAR: MasteryBarId = 'core';
 
   /**
@@ -176,8 +179,8 @@ export class OnDeckVocabService {
    * Ties (notably the whole never-marked tail) keep the caller's incoming order, which
    * is `createdAt DESC` — newest first. Array.sort is stable.
    */
-  private rankFlpEligible(cards: VocabEntry[], now: number): VocabEntry[] {
-    return rankCardQueue(cards, now, { bar: OnDeckVocabService.FLP_BAR }).map(({ card }) => card);
+  private rankFlpEligible(cards: VocabEntry[], now: number, bar: MasteryBarId = OnDeckVocabService.FLP_BAR): VocabEntry[] {
+    return rankCardQueue(cards, now, { bar }).map(({ card }) => card);
   }
 
   /**
@@ -772,7 +775,9 @@ export class OnDeckVocabService {
    */
   async getFlpReadyCounts(
     userId: string,
-    language: string
+    language: string,
+    /** Which bar's bands and clock the figures are read off (the Reading Center: reading). */
+    bar: FlpBar = 'core'
   ): Promise<{ counts: Record<string, number>; reviewNextReadyMs: number | null }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -792,8 +797,8 @@ export class OnDeckVocabService {
       const now = Date.now();
       const rows = result.rows.map((row) => ({ typedMarkHistory: row.typedMarkHistory ?? undefined }));
       return {
-        counts: flpReadyCountsByBand(rows, now),
-        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now),
+        counts: flpReadyCountsByBand(rows, now, bar),
+        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now, bar),
       };
     } finally {
       client.release();
@@ -879,7 +884,9 @@ export class OnDeckVocabService {
     excludeIds: number[],
     collection?: CollectionFilter | null,
     /** Vet ids lent to this loop — see fetchGameCandidates. */
-    lentIds: number[] = []
+    lentIds: number[] = [],
+    /** The bar whose band `category` is read off — core except for the reading flp. */
+    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
   ): Promise<VocabEntry[]> {
     // Optional collection restriction; $6 is the next free placeholder after the five below.
     const deck = this.deckPlayFilter(collection, 6);
@@ -891,7 +898,7 @@ export class OnDeckVocabService {
       -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
       -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
       AND (${vetSortedClause()} OR ve.id = ANY($5::int[]))
-      AND ${CORE_CATEGORY_EXPR} = $2
+      AND ${barCategoryExpr(bar)} = $2
       AND ve.id != ALL($3::int[])
       ${deck.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code — but
@@ -943,7 +950,9 @@ export class OnDeckVocabService {
     language: string,
     excludeIds: number[] = [],
     allowedCategories?: string[],
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    /** The session's flp bar (studyMode.ts) — core unless this is a reading session. */
+    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -970,9 +979,9 @@ export class OnDeckVocabService {
       // Take the head of the first category queue that has an eligible card.
       const serveFrom = async (categories: string[]): Promise<VocabEntry | null> => {
         for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], bar);
           if (cards.length === 0) continue;
-          const ranked = this.rankFlpEligible(cards, now);
+          const ranked = this.rankFlpEligible(cards, now, bar);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -983,8 +992,8 @@ export class OnDeckVocabService {
       // dropped at POST /api/flashcards/mark, which is what the cooldown means.
       const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
         for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection);
-          const resting = rankCardQueueCooled(cards, now, { bar: OnDeckVocabService.FLP_BAR });
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], bar);
+          const resting = rankCardQueueCooled(cards, now, { bar });
           if (resting.length > 0) return resting[0];
         }
         return null;
@@ -1001,9 +1010,9 @@ export class OnDeckVocabService {
         if (lentIds.length === 0) return null;
         for (const category of fallbackBase) {
           const lent = await this.fetchFlpCandidates(
-            client, userId, category, language, excludeIds, collection, lentIds
+            client, userId, category, language, excludeIds, collection, lentIds, bar
           );
-          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now);
+          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, bar);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -1054,11 +1063,12 @@ export class OnDeckVocabService {
     excludeIds: number[],
     now: number,
     collection?: CollectionFilter | null,
-    lentIds: number[] = []
+    lentIds: number[] = [],
+    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
-    return this.rankFlpEligible(candidates, now).slice(0, limit);
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, bar);
+    return this.rankFlpEligible(candidates, now, bar).slice(0, limit);
   }
 
   /**
@@ -1084,11 +1094,12 @@ export class OnDeckVocabService {
     excludeIds: number[],
     now: number,
     collection?: CollectionFilter | null,
-    lentIds: number[] = []
+    lentIds: number[] = [],
+    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds);
-    return rankCardQueueCooled(candidates, now, { bar: OnDeckVocabService.FLP_BAR }).slice(0, limit);
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, bar);
+    return rankCardQueueCooled(candidates, now, { bar }).slice(0, limit);
   }
 
   /**
@@ -1116,7 +1127,8 @@ export class OnDeckVocabService {
     need: number,
     excludeIds: number[],
     now: number,
-    collection?: CollectionFilter | null
+    collection?: CollectionFilter | null,
+    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
     const { lentIds } = await this.provisionalCardService.acquireLentCards(
@@ -1140,9 +1152,9 @@ export class OnDeckVocabService {
     for (const category of ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']) {
       if (rows.length >= need) break;
       const candidates = await this.fetchFlpCandidates(
-        client, userId, category, language, excludeIds, collection, lentIds
+        client, userId, category, language, excludeIds, collection, lentIds, bar
       );
-      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now);
+      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, bar);
       rows.push(...ranked.slice(0, need - rows.length));
     }
     return rows;
@@ -1195,10 +1207,18 @@ export class OnDeckVocabService {
     /** Vet ids the caller's baseline top-up lent this session. Selection is
         sorted-only, so without these the lent cards are invisible and the loop would
         lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
-    lentIds: number[] = []
+    lentIds: number[] = [],
+    /** The session's flp bar — `reading` for the reading flp (any mode), else core. */
+    bar: FlpBar = 'core'
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
+    }
+
+    // The reading flp is Chinese-only: a Latin-script card has nothing to read that its
+    // meaning does not already give away, and no es card can accrue reading marks.
+    if (bar === 'reading' && language !== 'zh') {
+      throw new ValidationError('Reading flashcards are only available for Chinese');
     }
 
     const now = Date.now();
@@ -1218,7 +1238,7 @@ export class OnDeckVocabService {
         // single tapped category.
         loopCategories = [categoryFilter];
         workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, bar
         );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
@@ -1232,7 +1252,7 @@ export class OnDeckVocabService {
         // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
           const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds
+            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, bar
           );
           workingLoop.push(...rows);
         }
@@ -1267,7 +1287,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchEligibleCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, bar
         );
         workingLoop.push(...rows);
       }
@@ -1278,7 +1298,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchCooledCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, bar
         );
         workingLoop.push(...rows);
       }
@@ -1287,7 +1307,7 @@ export class OnDeckVocabService {
       if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
         const lent = await this.lendIntoLoop(
           client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
-          workingLoop.map(c => c.id), now, collection
+          workingLoop.map(c => c.id), now, collection, bar
         );
         workingLoop.push(...lent);
       }

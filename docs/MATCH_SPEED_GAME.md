@@ -1158,7 +1158,7 @@ it reads from.
 | Medals | `src/games/match-speed/constants.ts` (`MEDAL_THRESHOLDS`, `medalForScore`); shape modeled on `src/games/word-search/constants.ts` (`medalForTime`) |
 | Timer format | `src/utils/timeUtils.ts` (`formatTimeMs`) — shared with Word Search |
 | End popup, cleanup | `src/games/runtime/GameEndPopup.tsx`; `src/games/bubble-match/BubbleStage.tsx` (`cleanupMode`, `revealed`) |
-| Page shell, header | `src/components/LeafPage.tsx`; `src/games/word-search/WordSearchHeader.tsx` + `WordSearchSettingsDialog.tsx` (the cog-sheet pattern this header follows); `src/hooks/useBlockEdgeSwipe.ts` |
+| Page shell, header | `src/components/LeafPage.tsx`; `src/games/word-search/WordSearchHeader.tsx` (the chip-only header pattern this one shares — neither game has a cog or settings sheet any more); `src/hooks/useBlockEdgeSwipe.ts` |
 | Two-finger (multi-touch) taps | `src/games/match-speed/MatchSpeedCard.tsx` (the card `Box`'s `onPointerDown`); `src/games/match-speed/MatchSpeedBoard.tsx` (`selectedIdRef` / `setSelected`, `findCard`, `handleTap`) |
 | Card sizing (2.4:1) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardHeight` measurement block); `constants.ts` (`CARD_ASPECT`, `ROW_GAP_PX`, `COL_GAP_PX`) |
 | Registry, minute points | `src/games/registry.ts`; `src/constants.ts` |

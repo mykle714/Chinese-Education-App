@@ -65,8 +65,10 @@ markHistory?: ReviewMark[];  // Last 16 flashcard review marks
 
 `applyMark` deliberately does **not** pick a replacement card. Choosing the next card
 the learner sees is `OnDeckVocabService`'s job, and only one of the eight client call
-sites wants it; the route composes the two, using the `categoryBeforeMark` the service
-returns. See "The refill is a second concern on the same URL" below.
+sites wants it; the route composes the two, using the `categoryBeforeMark` (core band)
+the service returns — or, for the reading flp (`bar: 'reading'`, any mode), its
+`markedBarCategoryBefore` (the band of the bar the mark moved), since that loop is banded
+by the reading bar (docs/READING_WRITING_CENTERS.md § Phase 4). See "The refill is a second concern on the same URL" below.
 
 The write path is **transactional and takes a row lock** (`findMarkState(…,
 forUpdate: true)`). Appending to `typedMarkHistory` is a read-modify-write over a whole

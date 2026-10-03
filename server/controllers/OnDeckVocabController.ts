@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { OnDeckVocabService, type StudyMode, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import { OnDeckVocabService, parseStudyMode, parseFlpBar, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
@@ -186,8 +186,9 @@ export class OnDeckVocabController {
 
       const categoryFilter = req.query.category as string | undefined;
       const rawMode = req.query.mode as string | undefined;
-      const mode: StudyMode | undefined =
-        rawMode === 'review' || rawMode === 'challenge' ? rawMode : undefined;
+      const mode = parseStudyMode(rawMode);
+      // Which track the session exercises — `reading` for the Reading Center's hand.
+      const bar = parseFlpBar(req.query.bar);
       const language = await getUserLanguage(userId);
       const collection = await this.resolveCollection(req, userId);
 
@@ -202,7 +203,7 @@ export class OnDeckVocabController {
       // deck is never lent anything (docs/PROVISIONAL_CARDS.md § 4b).
       const { lentIds } = await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds, bar);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -257,9 +258,10 @@ export class OnDeckVocabController {
   };
 
   /**
-   * The fdp's three StudyHand figures (Challenge/Review/Mix): cooldown-aware ready
-   * counts per CORE utcm band, plus how long until the soonest Review-band card wakes.
-   * GET /api/onDeck/flpReadyCounts
+   * The three StudyHand figures (Challenge/Review/Mix): cooldown-aware ready counts per
+   * utcm band of the session bar (core on the fdp; `?bar=reading` on the Reading Center),
+   * plus how long until the soonest Review-band card wakes.
+   * GET /api/onDeck/flpReadyCounts[?bar=reading]
    * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, reviewNextReadyMs: number|null }
    *
    * Deliberately narrow: unlike `getCollectionCards`, this never joins the dictionary
@@ -272,7 +274,8 @@ export class OnDeckVocabController {
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      const result = await this.onDeckVocabService.getFlpReadyCounts(userId, language);
+      // `?bar=reading` — the Reading Center's hand asks for reading-bar figures.
+      const result = await this.onDeckVocabService.getFlpReadyCounts(userId, language, parseFlpBar(req.query.bar));
       res.json(result);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getFlpReadyCounts');

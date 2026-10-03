@@ -93,6 +93,22 @@ on the box that runs the job. See
   id sequence ends up where PPE's is (PPE deliberately keeps it past withdrawn ids).
   Local `users."seenPacks"` is not touched; on dev it may now hold ids of packs that
   no longer exist, which is inert.
+- **`daily_words` — NOT pulled, but parked around the `dictionaryentries_zh` restore.**
+  Migration 169 (Word of the Day) added `daily_words."detId"` →
+  `dictionaryentries_zh(id)`, the **only** FK into any table this skill truncates
+  (verified 2026-10-03 via `pg_constraint`). Its `ON DELETE CASCADE` does not apply to
+  `TRUNCATE`: a plain `TRUNCATE dictionaryentries_zh` is refused outright
+  (`cannot truncate a table referenced in a foreign key constraint`), and the
+  following `pg_restore` then fails on duplicate ids. Nothing is lost when that
+  happens, because the restore aborts atomically, but dev's zh is silently left
+  un-refreshed. So the Local half copies dev's own `daily_words` rows aside, truncates
+  both tables in one statement, restores zh, and puts the rows back (dropping any whose
+  det id PPE no longer has). `daily_words` stays **dev-local**: each box picks its own
+  daily word, so it is never dumped from PPE. If a later migration adds another FK into
+  a truncated table, it needs the same park-and-restore. The check:
+  `SELECT conrelid::regclass, confrelid::regclass FROM pg_constraint WHERE contype='f'
+  AND confrelid::regclass::text IN ('dictionaryentries_zh','dictionaryentries_es',
+  'particlesandclassifiers','validations','sort_packs');`
 
 ---
 
@@ -184,14 +200,30 @@ docker exec cow-postgres psql -U cow_user -d cow_db -c 'SELECT COUNT(*) FROM ico
 # 2. det + pct + validations + sort_packs — TRUNCATE + restore (icons8 rows now all
 #    present, so iconId FKs resolve). sort_packs goes last and needs --disable-triggers
 #    (its entryWords trigger cannot resolve det under pg_restore's empty search_path).
+#    dictionaryentries_zh is referenced by daily_words (migration 169), so park dev's
+#    daily_words rows, truncate BOTH in one statement, and put them back after the restore
+#    (see "daily_words" under "Why icons8 merges" above).
+docker exec cow-postgres psql -U cow_user -d cow_db -c 'DROP TABLE IF EXISTS daily_words_pull_bak; CREATE TABLE daily_words_pull_bak AS SELECT * FROM daily_words;'
 for T in dictionaryentries_zh dictionaryentries_es particlesandclassifiers validations sort_packs; do
   EXTRA=""; [ "$T" = sort_packs ] && EXTRA="--disable-triggers"
+  TRUNC="\"$T\""; [ "$T" = dictionaryentries_zh ] && TRUNC='dictionaryentries_zh, daily_words'
   docker cp "database/${T}-data.dump" "cow-postgres:/tmp/${T}_dump.dump"
-  docker exec cow-postgres psql -U cow_user -d cow_db -c "TRUNCATE TABLE \"$T\";"
+  docker exec cow-postgres psql -U cow_user -d cow_db -c "TRUNCATE TABLE $TRUNC;"
   docker exec cow-postgres pg_restore -U cow_user -d cow_db -t "$T" --data-only $EXTRA "/tmp/${T}_dump.dump"
   docker exec cow-postgres psql -U cow_user -d cow_db -c "SELECT COUNT(*) FROM \"$T\";"   # == PPE count
 done
+
+# 3. Put dev's Word-of-the-Day rows back (only those whose det id survived the overwrite;
+#    ids are PPE ids on both sides, so normally all of them), then drop the parking table.
+docker exec cow-postgres psql -U cow_user -d cow_db -c 'INSERT INTO daily_words SELECT b.* FROM daily_words_pull_bak b WHERE EXISTS (SELECT 1 FROM dictionaryentries_zh d WHERE d.id = b."detId");'
+docker exec cow-postgres psql -U cow_user -d cow_db -c 'SELECT (SELECT count(*) FROM daily_words) AS restored, (SELECT count(*) FROM daily_words_pull_bak) AS parked;'
+docker exec cow-postgres psql -U cow_user -d cow_db -c 'DROP TABLE daily_words_pull_bak;'
 ```
+
+> **Check the zh count before moving on.** If `dictionaryentries_zh` comes back with the
+> OLD local count instead of PPE's, its restore failed and was rolled back. That is what
+> the un-parked FK did on 2026-10-03, and the loop carries on regardless. Scroll up for a
+> `pg_restore: error`.
 
 Each det + pct + validations + sort_packs count should **equal** the PPE count from the PPE half;
 `icons8` should be **>=** PPE's (local keeps its own extra rows).

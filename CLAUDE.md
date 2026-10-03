@@ -59,6 +59,9 @@ this bucket, write "Learn Now"; when touching code/API, keep "library".
 ## Touch & Scroll (mobile)
 → Moved to [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — default components to `touchAction: "none"` (scrolling is opt-in per page via an inner container); the app shell never scrolls; text is app-wide `user-select: none` (cpcd is the desktop-only exception); every game page must call `useBlockEdgeSwipe(true)`.
 
+## Buttons & cards
+Every tappable button and card entity (game cards and their option tiles, the tip box, resume tiles, etc.) carries the app's outline: `border: 1px solid ${COLORS.border}` (--line2). Exceptions: Bento tiles/sub-tiles (large pastel tiles separated by their drop shadow — see docs/BENTO_SYSTEM.md), the Word Search game card's outer frame (`GameCardData.outlined: false` in `buildWordSearchCard`; its resume tile stays outlined), solid-ink controls (e.g. the round play button), and selected tiles that already show a stronger ink ring. Small content-free pastel marks keep the separate inset `COLORS.markOutline` ring.
+
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.
 

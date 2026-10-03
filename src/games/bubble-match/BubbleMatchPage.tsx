@@ -33,6 +33,7 @@ import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
+import { useGameExit } from "../runtime/gameExit";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 
 /** Shape returned by GET /api/onDeck/gamePool. */
@@ -82,8 +83,8 @@ const buildPoolQuery = (markType: MarkType) =>
  * Bubble Match — page shell + game-flow state machine.
  *
  * Flow: loading → (blocked) → playing → (won | lost) → playing (replay) …
- * The level is chosen on the Games hub (one HubMenuArrayItem sub-card per
- * LEVEL_CONFIGS entry — see GamesPage.tsx) and passed in via `location.state.
+ * The level is chosen on the Games hub (one `GameCard` level tile per
+ * LEVEL_CONFIGS entry — see bubbleMatchCard.ts) or the Reading Center carousel, and passed in via `location.state.
  * level`; this page no longer has its own in-game level picker. A run locks
  * in a single set of TOTAL_PAIRS cards (20 pairs = 40 bubbles); the chosen
  * level only sets the launch cadence + ceiling-shrink speed (there is no clock —
@@ -103,6 +104,8 @@ const BubbleMatchPage: React.FC = () => {
     const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Bubble Match");
     const navigate = useNavigate();
+    // Where Back / "Back to …" land: the hub, or the surface that launched us.
+    const gameExit = useGameExit();
     const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -155,8 +158,8 @@ const BubbleMatchPage: React.FC = () => {
     // touch-event layer (see the hook).
     useBlockEdgeSwipe(true);
 
-    // The level tapped on the Games hub, via nav `state` (HubMenuArrayItem /
-    // HubMenuRow's `state` prop). There's no in-game picker to fall back to, so
+    // The level tapped on the Games hub, via nav `state` (set by the
+    // `onSelectLevel` passed to buildBubbleMatchCard). There's no in-game picker to fall back to, so
     // a direct/stray visit with no valid level (e.g. a manual URL) redirects to
     // the Games hub (see the redirect effect below) rather than silently
     // defaulting. `initialLevel` still resolves to a safe value so the hooks
@@ -510,10 +513,10 @@ const BubbleMatchPage: React.FC = () => {
             <Button
                 className="bubble-match__replay-btn bubble-match__replay-btn--back"
                 variant="outlined"
-                onClick={() => navigate("/games")}
+                onClick={() => navigate(gameExit.path, { state: gameExit.state })}
                 sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
             >
-                Back to Games
+                Back to {gameExit.label}
             </Button>
         </Box>
     );
@@ -532,8 +535,8 @@ const BubbleMatchPage: React.FC = () => {
                 <Typography className="bubble-match__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
-                <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate("/games")}>
-                    Back to Games
+                <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate(gameExit.path, { state: gameExit.state })}>
+                    Back to {gameExit.label}
                 </Button>
             </>
         );

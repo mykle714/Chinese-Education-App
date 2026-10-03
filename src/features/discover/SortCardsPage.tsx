@@ -14,23 +14,19 @@ import { FOOTER_CLEARANCE, FOOTER_TOTAL_CLEARANCE } from "../../components/Mobil
 import { SAFE_BOTTOM } from "../../theme/safeArea";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
-import InfoCardSection from "../flashcards/FlashcardsLearnPage/InfoCardSection";
-import EipTabStrip from "../flashcards/FlashcardsLearnPage/EipTabStrip";
-import TooManyTabsSnackbar from "../flashcards/FlashcardsLearnPage/TooManyTabsSnackbar";
+import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
 import { fetchProvisionalSortSet } from "../../api/provisional";
 import ProvisionalSortDonePopup from "../../components/ProvisionalSortDonePopup";
 import { originLabelFor } from "../../utils/originLabel";
 import { lookupVocabEntry } from "../../api/dictionary";
-import { senseLabelForIndex, stripParentheses } from "../../utils/definitionUtils";
-import { saveSelectedSense } from "../../utils/vocabApi";
+import { stripParentheses } from "../../utils/definitionUtils";
 import type { Language, DiscoverCard, SortPack } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
 import AudioModeChip from "../../components/AudioModeChip";
-import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { LEARN_NOW_HUE, LEARN_NOW_COLORS, MASTERY_BAR_HUES, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
@@ -115,53 +111,13 @@ const ContentArea = styled(Box)({
     flexDirection: "column",
     alignSelf: "stretch",
     overflow: "visible",
-    // Containing block for the eip sheet host below (EipHost is absolutely
-    // positioned against this box), mirroring the flp's ContentArea.
+    // Containing block for this page's absolutely-positioned layers, mirroring the
+    // flp's ContentArea. (The eip sheet no longer needs it — SheetPanel portals to the
+    // frame.)
     position: "relative",
     userSelect: "none",
     WebkitUserSelect: "none",
     touchAction: "none",
-});
-
-// Positioning host for the eip bottom sheet (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
-//
-// ⚠️ SINCE 2026-08-30 THIS HOST NO LONGER SIZES OR POSITIONS THE SHEET. SheetPanel
-// portals both its scrim and its sheet to the FRAME (so the sheet can grow to full
-// height and merge into the page header — see docs/EIP_SHEET_GESTURES.md), which means
-// it resolves `inset: 0` / `bottom: 0` / `parentElement.clientHeight` against the frame,
-// not against this box. Everything below is kept because it documents why this element
-// exists and what used to depend on it; the two notes marked VESTIGIAL are no longer
-// load-bearing for the sheet.
-//
-// VESTIGIAL (was load-bearing before the sheet was portaled): ContentArea stops at MobileTabScreen's
-// ScrollArea *content* box, which sits FOOTER_CLEARANCE (90px) above the
-// screen bottom so page content clears the floating footer pill. A sheet pinned to
-// ContentArea's bottom would therefore hover with a 90px band of page background
-// beneath it. Stretching the host down through that reserved band pins the sheet flush
-// to the real bottom edge; the ScrollArea's own `overflow: hidden` clips anything past
-// it. This is the same trick OnDeckSection uses to paint the platform under the pill.
-// The pill itself cannot be layered under the sheet (it is rendered at frame level by
-// FooterPresenter, outside this page's DOM, so no z-index here reaches it) — instead the
-// SheetPanel itself now slides it away for the sheet's lifetime (useHideFooter). The
-// reserved band stays reserved either way, which is why this offset is unconditional.
-//
-// VESTIGIAL (same reason): the z-index. Every on-deck card carries `zIndex: 1000` (see
-// DraggableCard's inline style — it lifts a card being dragged above its neighbours and the
-// buckets), which beat SheetPanel's in-place scrim/sheet z-indexes of 10/11 outright:
-// without this the cards painted straight through the open sheet. The portaled sheet
-// carries SHEET_BASE_Z_INDEX (1201) at frame level and clears the cards on its own, so
-// this stacking context now only orders this page's own info affordances.
-const EIP_HOST_Z_INDEX = 1100; // > DraggableCard's 1000
-const EipHost = styled(Box)({
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    // Negated clearance, INCLUDING the home-indicator inset the reservation now
-    // carries (FOOTER_TOTAL_CLEARANCE) — a bare -90px would stop short of the real
-    // bottom edge by the inset. `env()` cannot be negated in JS, so it is a calc.
-    bottom: `calc(-${FOOTER_CLEARANCE}px - ${SAFE_BOTTOM})`,
-    zIndex: EIP_HOST_Z_INDEX,
 });
 
 // The two destination buckets, laid out evenly across the top. A definite height lets
@@ -948,7 +904,6 @@ const SortCardsPage: React.FC = () => {
     // The eip renders pinyin per the SAME saved preference the flp uses, so a learner who
     // turned pinyin off there doesn't get it back here. scp deliberately exposes no toggle
     // of its own — the panel is a read-only detour, not a second settings surface.
-    const { settings: learnSettings } = useFlashcardLearnSettings();
     // `useTTS` returns a NEW object identity every time its internal `speakingKey` state
     // flips — which happens on every autoplay narration start/stop. Depending on `tts`
     // directly in the callbacks below would therefore re-create them on each narration
@@ -2058,86 +2013,16 @@ const SortCardsPage: React.FC = () => {
                     SheetPanel covers the buckets and the on-deck cards, so no card can
                     be dragged while the panel is up — reading about a word and sorting
                     it are deliberately separate modes. */}
-                {eipOpen && (() => {
-                    // The active tab owns the panel's entry/breakdown/sub-tab. The root
-                    // tab is always seeded before eipOpen flips true, so `active` is
-                    // present; the nulls below are a paint-safety net only.
-                    const active = eip.activeTab;
-                    const compareTab = active?.kind === "compare" ? active : null;
-                    return (
-                        <EipHost className="sort-cards__eip-host">
-                            <InfoCardSection
-                                currentEntry={active?.kind === "entry" ? active.entry : null}
-                                selectedTab={active?.kind === "entry" ? active.selectedSubTab : 0}
-                                onTabChange={eip.setActiveSubTab}
-                                breakdownItems={active?.kind === "entry" ? active.breakdownItems : []}
-                                showPinyin={learnSettings.showPinyin}
-                                showPinyinColor={learnSettings.showPinyinColor}
-                                // scp has no card faces, so there is no "flipped" state to
-                                // mirror — the panel always renders its front-facing layout.
-                                isFlipped={false}
-                                onClose={handleCloseEip}
-                                onBreakdownItemClick={(item) => eip.openForEntryKey(item.character)}
-                                onUsedInItemClick={(item) => eip.openForEntryKey(item.entryKey)}
-                                onExampleSegmentClick={(segment) => eip.openForEntryKey(segment)}
-                                depth={0}
-                                onSpeak={handleEipSpeak}
-                                onSpeakSentence={handleEipSpeakSentence}
-                                speakingKey={tts.speakingKey}
-                                // NOTE: no `onAddToLibrary` — the "+" header button stays
-                                // hidden here on purpose. On scp, adding to Learn Now IS the
-                                // drag gesture the whole page is built around, and a second,
-                                // differently-shaped way to do it inside the panel would
-                                // compete with it. (Drilled-in words can still be added from
-                                // the flp, which is where that affordance lives.)
-                                selectedSenseIndex={active?.kind === "entry" ? active.selectedSenseIndex : 0}
-                                // A pick in the eip header mirrors the flp/cdp pickers: the tab
-                                // records it (so the panel re-renders at once) and the chosen
-                                // cluster's LABEL is persisted for saved cards. scp has no card
-                                // face holding an optimistic override, so the PATCH is
-                                // fire-and-forget — the tab's own index is what the panel renders
-                                // from. Un-sorted/dictionary words carry no vet row (id 0), so
-                                // their pick simply stays local to the tab.
-                                onSelectSense={(index) => {
-                                    eip.setActiveSenseIndex(index);
-                                    const entry = active?.kind === "entry" ? active.entry : null;
-                                    if (entry?.id) {
-                                        saveSelectedSense(entry.id, senseLabelForIndex(entry, index))
-                                            .catch((err) => console.error("Failed to save selected sense:", err));
-                                    }
-                                }}
-                                compareTab={compareTab}
-                                onSetCompareSlot={eip.setCompareSlot}
-                                onCompareResult={eip.setCompareResult}
-                                entryTabId={eip.activeTab?.id}
-                                entryTabIndex={eip.activeIndex}
-                                tabStrip={
-                                    <EipTabStrip
-                                        tabs={eip.tabs}
-                                        activeIndex={eip.activeIndex}
-                                        onSelect={eip.setActive}
-                                        isTabbedMode={eip.isTabbedMode}
-                                    />
-                                }
-                                // ✕ = close the showing word; false means "that was the
-                                // last one" and SheetPanel dismisses (see the flp's copy).
-                                onCloseX={() => {
-                                    // The LAST word does not close its tab — it returns false and
-                                    // lets SheetPanel play the dismiss, and the host's onClose
-                                    // clears the trail once the sheet is gone. Closing the tab here
-                                    // instead would empty the panel's body for the whole 220ms
-                                    // slide-out, so the sheet would leave showing nothing.
-                                    if (eip.tabs.length <= 1) return false;
-                                    eip.closeActiveTab();
-                                    return true;
-                                }}
-                                showMinutePoints
-                            />
-                        </EipHost>
-                    );
-                })()}
+                <EipSheet
+                    eip={eip}
+                    open={eipOpen}
+                    onClose={handleCloseEip}
+                    // Wrapped: a speaker tap in the panel stops the pack's narration first.
+                    onSpeak={handleEipSpeak}
+                    onSpeakSentence={handleEipSpeakSentence}
+                    speakingKey={tts.speakingKey}
+                />
             </ContentArea>
-            <TooManyTabsSnackbar signal={eip.overflowSignal} />
         </NodePage>
     );
 };

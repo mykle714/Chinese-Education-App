@@ -30,8 +30,38 @@
  * through a doubled or a zero inset mid-swap.
  */
 import { useBeginnerKeyboardInset } from './insetContext';
-import { useKeyboardViewport } from './useKeyboardViewport';
+import { useKeyboardViewport, type KeyboardViewport } from './useKeyboardViewport';
 import { transitionForInset } from './transition';
+
+/**
+ * The CSS custom properties carrying {@link useKeyboardInset}'s union (and its
+ * travel timing) on :root, for consumers that are plain CSS rather than React.
+ * Published by `BeginnerKeyboardProvider`, which is mounted app-wide for every
+ * learner (the handwriting keyboard's own gates do not apply to this number —
+ * a Spanish learner's OS keyboard is reported here too).
+ *
+ * Consumers (keep current):
+ *   • src/contexts/ThemeContext.tsx — `MuiDialog.styleOverrides.root`: every
+ *     MUI Dialog re-centres in the space above the keyboard. Spelled as a literal
+ *     there (the shared theme does not import from a feature).
+ *
+ * Unlike `--beginner-keyboard-inset` (insetContext.ts), this one is the UNION —
+ * prefer it for anything that must not be covered.
+ *
+ * Spec: docs/BEGINNER_KEYBOARD.md § 7a-3; docs/UX_AND_NAVIGATION.md § Keyboard
+ * and popups.
+ */
+export const KEYBOARD_INSET_CSS_VARIABLE = '--keyboard-inset';
+export const KEYBOARD_INSET_TIMING_CSS_VARIABLE = '--keyboard-inset-timing';
+
+/**
+ * The union itself, pure, so the provider (which cannot read its own context
+ * through {@link useKeyboardInset}) computes the published CSS variable from the
+ * exact same rule the hook uses.
+ */
+export function unionKeyboardInset(ours: number, viewport: KeyboardViewport): number {
+  return Math.max(ours, viewport.osKeyboardVisible ? viewport.height : 0);
+}
 
 /**
  * Occupied height at the bottom of the screen in CSS px — ours or the OS's,
@@ -45,7 +75,7 @@ import { transitionForInset } from './transition';
 export function useKeyboardInset(): number {
   const ours = useBeginnerKeyboardInset();
   const viewport = useKeyboardViewport();
-  return Math.max(ours, viewport.osKeyboardVisible ? viewport.height : 0);
+  return unionKeyboardInset(ours, viewport);
 }
 
 /**

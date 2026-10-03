@@ -30,6 +30,18 @@ import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY } from "./constants";
  * card drags the card, and the page/sheet beneath is scrolled from anywhere else. A
  * gesture that never clears the slop is still a tap and is left alone.
  *
+ * ── The horizontal lock (`axis: "horizontal"`) ────────────────────────────────
+ * The Reading Center's compact hand sits mid-page in a scrolling column, where a card
+ * that eats every vertical drag is a dead zone for scrolling. With the lock, the hand
+ * behaves like the Reading Center's swipe-grid tiles: left/right only. The host sets
+ * the front card to `touchAction: "pan-y"` (see `frontTouchAction`), so the BROWSER keeps
+ * vertical pans; the gesture claims a touch only when its slop-clearing move is mostly
+ * horizontal, and a claimed drag is pinned to y = 0 (so the radial commit reduces to
+ * |x| > threshold). A mostly-vertical start is abandoned — the page is already scrolling.
+ *
+ * Mouse follows the same rule (pinned to y = 0, a vertical-first drag is ignored) so a
+ * desktop drag feels the same as a touch one.
+ *
  * Referenced by docs/DECKS_FEATURE.md and docs/SHELF_REDESIGN.md (entry 2).
  */
 
@@ -48,6 +60,13 @@ const DRAG_TILT = 0.05;
 
 /** Phase of the current pointer interaction. See "Claiming the gesture" above. */
 type GesturePhase = "idle" | "pending" | "dragging";
+
+/**
+ * Which axes the throw may use. `free` (fdp): any direction. `horizontal` (Reading
+ * Center compact hand): left/right only, vertical drags scroll the page — see
+ * "The horizontal lock" above.
+ */
+export type HandSwipeAxis = "free" | "horizontal";
 
 /** Live drag offset in px, already amplified by `CARD_DRAG_SENSITIVITY`. */
 export interface DragOffset {
@@ -76,6 +95,12 @@ export interface UseHandSwipeReturn {
     isDragging: boolean;
     /** Ready-made transform for the front card: drag translate + tilt from the x component. */
     dragTransform: string;
+    /**
+     * The CSS `touch-action` the host must put on the FRONT card: `none` for a free throw,
+     * `pan-y` under the horizontal lock so the browser keeps vertical scrolling. Owned
+     * here because it has to agree with the claim rule in `handleTouchMove`.
+     */
+    frontTouchAction: "none" | "pan-y";
     handlers: {
         onTouchStart: (e: React.TouchEvent) => void;
         onTouchEnd: (e: React.TouchEvent) => void;
@@ -89,7 +114,8 @@ export interface UseHandSwipeReturn {
     };
 }
 
-export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
+export function useHandSwipe(onSwipe: () => void, axis: HandSwipeAxis = "free"): UseHandSwipeReturn {
+    const horizontalOnly = axis === "horizontal";
     // Two handles on the same element: `cardElRef` for the synchronous reads inside event
     // handlers, `cardEl` state to re-run the listener-binding effect. See `cardRef` below.
     const cardElRef = useRef<HTMLDivElement | null>(null);
@@ -139,9 +165,17 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
     /** Has a PENDING gesture travelled far enough to stop being a tap? */
     const clearedSlop = (dx: number, dy: number) => Math.hypot(dx, dy) >= DRAG_SLOP;
 
+    /**
+     * Under the horizontal lock, a gesture whose slop-clearing move is mostly vertical is
+     * a SCROLL, not a throw — the card lets it go. Always false for a free throw.
+     */
+    const isVerticalIntent = (dx: number, dy: number) => horizontalOnly && Math.abs(dy) > Math.abs(dx);
+
     /** Amplify the raw pointer delta and publish it to both the state and the ref mirror. */
     const applyDelta = (rawX: number, rawY: number) => {
-        const next = { x: rawX * CARD_DRAG_SENSITIVITY, y: rawY * CARD_DRAG_SENSITIVITY };
+        // Locked: the card never leaves its row, so y stays 0 and the radial commit in
+        // `endGesture` is effectively |x| > threshold.
+        const next = { x: rawX * CARD_DRAG_SENSITIVITY, y: horizontalOnly ? 0 : rawY * CARD_DRAG_SENSITIVITY };
         dragRef.current = next;
         setDrag(next);
     };
@@ -164,13 +198,19 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
 
         if (phaseRef.current === "pending") {
             if (!clearedSlop(rawX, rawY)) return;
+            if (isVerticalIntent(rawX, rawY)) {
+                // Hand the touch to the page. With `touch-action: pan-y` the browser has
+                // already begun the scroll; going idle just stops us shadowing it.
+                phaseRef.current = "idle";
+                return;
+            }
             phaseRef.current = "dragging";
             setIsDragging(true);
         }
 
         if (e.cancelable) e.preventDefault();
         applyDelta(rawX, rawY);
-    }, []);
+    }, [horizontalOnly]);
 
     // Re-binds whenever the played card changes, which is exactly what the callback ref
     // exists to make possible.
@@ -210,12 +250,19 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
 
         if (phaseRef.current === "pending") {
             if (!clearedSlop(rawX, rawY)) return;
+            if (isVerticalIntent(rawX, rawY)) {
+                // Mirror the touch rule: a vertical-first drag never moves the card.
+                // Dropping `isDragging` detaches the document listeners.
+                phaseRef.current = "idle";
+                setIsDragging(false);
+                return;
+            }
             phaseRef.current = "dragging";
         }
 
         suppressClickRef.current = true;
         applyDelta(rawX, rawY);
-    }, []);
+    }, [horizontalOnly]);
 
     const handleDocumentMouseUp = useCallback(() => {
         if (phaseRef.current === "dragging") {
@@ -255,6 +302,7 @@ export function useHandSwipe(onSwipe: () => void): UseHandSwipeReturn {
         // y-coupled rotation would make a vertical throw spin for no reason the hand can
         // explain.
         dragTransform: `translate(${drag.x}px, ${drag.y}px) rotate(${drag.x * DRAG_TILT}deg)`,
+        frontTouchAction: horizontalOnly ? "pan-y" : "none",
         handlers: {
             onTouchStart: handleTouchStart,
             onTouchEnd: handleTouchEnd,

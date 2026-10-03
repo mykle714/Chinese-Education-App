@@ -11,14 +11,9 @@ import { usePageTitle } from '../../../hooks/usePageTitle';
 import { useTTS } from '../../../hooks/useTTS';
 import LeafPage from '../../../components/LeafPage';
 import AudioModeChip from '../../../components/AudioModeChip';
-import InfoCardSection from '../../flashcards/FlashcardsLearnPage/InfoCardSection';
-import EipTabStrip from '../../flashcards/FlashcardsLearnPage/EipTabStrip';
-import TooManyTabsSnackbar from '../../flashcards/FlashcardsLearnPage/TooManyTabsSnackbar';
+import EipSheet from '../../flashcards/FlashcardsLearnPage/EipSheet';
 import { useEipTabs } from '../../flashcards/FlashcardsLearnPage/useEipTabs';
-import { useFlashcardLearnSettings } from '../../../hooks/useFlashcardLearnSettings';
 import { lookupVocabEntry } from '../../../api/dictionary';
-import { saveSelectedSense } from '../../../utils/vocabApi';
-import { senseLabelForIndex } from '../../../utils/definitionUtils';
 import IWComposer from './IWComposer';
 import { useKeyboardInset, useKeyboardTransition } from '../../beginnerKeyboard';
 import IWSceneIntroCard from './IWSceneIntroCard';
@@ -75,7 +70,6 @@ export default function IWPlayPage() {
   const [introOpen, setIntroOpen] = useState(false);
 
   const runtime = useIWSceneRuntime(scene, npcs, authoredSegments);
-  const { settings: learnSettings } = useFlashcardLearnSettings();
 
   /**
    * § 5.3c — the eip over a scene. The FOURTH host of the same panel (flp, scp, cdp, here),
@@ -346,73 +340,17 @@ export default function IWPlayPage() {
         <IWSceneIntroCard sceneName={scene.name} text={scene.introText} onDismiss={handleDismissIntro} />
       )}
 
-      {/* § 5.3c's eip. Mounted only while open so the sheet's open animation replays on every
-          reopen (the flp's rule, and scp's). SheetPanel portals its own scrim and sheet to the
-          frame, so this needs no positioning host of its own — the scrim is also what stops a
-          tap reaching the stage, so reading about a word and playing the scene stay separate
-          modes in the same way sorting and reading do on scp. */}
-      {eipOpen && (() => {
-        // The root tab is seeded before `eipOpen` flips true, so `active` is present; the
-        // nulls below are a paint-safety net only.
-        const active = eip.activeTab;
-        const compareTab = active?.kind === 'compare' ? active : null;
-        return (
-          <InfoCardSection
-            currentEntry={active?.kind === 'entry' ? active.entry : null}
-            selectedTab={active?.kind === 'entry' ? active.selectedSubTab : 0}
-            onTabChange={eip.setActiveSubTab}
-            breakdownItems={active?.kind === 'entry' ? active.breakdownItems : []}
-            showPinyin={learnSettings.showPinyin}
-            showPinyinColor={learnSettings.showPinyinColor}
-            // A scene has no card faces, so there is no flipped state to mirror.
-            isFlipped={false}
-            onClose={handleCloseEip}
-            onBreakdownItemClick={item => { void eip.openForEntryKey(item.character); }}
-            onUsedInItemClick={item => { void eip.openForEntryKey(item.entryKey); }}
-            onExampleSegmentClick={segment => { void eip.openForEntryKey(segment); }}
-            depth={0}
-            onSpeak={tts.speak}
-            onSpeakSentence={tts.speakSentence}
-            speakingKey={tts.speakingKey}
-            selectedSenseIndex={active?.kind === 'entry' ? active.selectedSenseIndex : 0}
-            // Mirrors scp: the tab records the pick so the panel re-renders at once, and the
-            // chosen cluster's label is persisted for a word the learner actually has a card
-            // for. A word met in a scene usually carries no vet row (id 0), and then the pick
-            // simply stays local to the tab.
-            onSelectSense={index => {
-              eip.setActiveSenseIndex(index);
-              const entry = active?.kind === 'entry' ? active.entry : null;
-              if (entry?.id) {
-                saveSelectedSense(entry.id, senseLabelForIndex(entry, index))
-                  .catch(err => console.error('Failed to save selected sense:', err));
-              }
-            }}
-            compareTab={compareTab}
-            onSetCompareSlot={eip.setCompareSlot}
-            onCompareResult={eip.setCompareResult}
-            entryTabId={eip.activeTab?.id}
-            entryTabIndex={eip.activeIndex}
-            tabStrip={
-              <EipTabStrip
-                tabs={eip.tabs}
-                activeIndex={eip.activeIndex}
-                onSelect={eip.setActive}
-                isTabbedMode={eip.isTabbedMode}
-              />
-            }
-            // ✕ = close the showing word; false means "that was the last one" and SheetPanel
-            // plays the dismiss (whose onClose lifts the hold). Closing the last tab here
-            // instead would empty the body for the whole slide-out.
-            onCloseX={() => {
-              if (eip.tabs.length <= 1) return false;
-              eip.closeActiveTab();
-              return true;
-            }}
-            showMinutePoints
-          />
-        );
-      })()}
-      <TooManyTabsSnackbar signal={eip.overflowSignal} />
+      {/* § 5.3c's eip. SheetPanel portals its own scrim and sheet to the frame — the scrim is
+          also what stops a tap reaching the stage, so reading about a word and playing the
+          scene stay separate modes (as sorting and reading do on scp). Closing lifts the hold. */}
+      <EipSheet
+        eip={eip}
+        open={eipOpen}
+        onClose={handleCloseEip}
+        onSpeak={tts.speak}
+        onSpeakSentence={tts.speakSentence}
+        speakingKey={tts.speakingKey}
+      />
 
       {/* Out-of-world messages: a refusal, an event that fired, or Q7's frozen ladder. */}
       <Snackbar

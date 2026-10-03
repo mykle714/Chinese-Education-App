@@ -9,6 +9,7 @@ import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SAFE_TOP } from "../../theme/safeArea";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { nearestOverlayHost } from "../overlayHost";
+import { useKeyboardInset } from "../../features/beginnerKeyboard/useKeyboardInset";
 
 // Imperative handle exposing the gesture-root wrapper and the inner scrollable
 // container of whatever body a SheetPanel renders. SheetPanel attaches its
@@ -305,7 +306,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // The sheet is portaled to the SAME host as the scrim, and that is what lets it
     // reach full height. Rendered in place it is `absolute; bottom: 0` against the host
     // PAGE's content box — which starts BELOW the page header (flp's ContentArea, scp's
-    // EipHost) and is clipped by MobileTabScreen's ScrollArea — so `parentElement.
+    // ContentArea) and is clipped by MobileTabScreen's ScrollArea — so `parentElement.
     // clientHeight` could never include the header and growing past it would just be
     // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (scp no
     // longer needs its negative-bottom FOOTER_CLEARANCE trick for this) and
@@ -851,6 +852,41 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // bail, and never run again, leaving the panel with no touch handlers at all.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bodyKey, scrimHost]);
+
+    // ---- Keyboard clearance (2026-10-03) -----------------------------------
+    // A keyboard (ours or the OS's — useKeyboardInset unions them) covers the bottom
+    // `keyboardInset` px of the frame, and the sheet is pinned to that same bottom edge,
+    // so the last rows of the body would sit under the keyboard with no way to scroll
+    // them out. Rather than lifting the whole sheet (decided against: the height/drag
+    // machinery above is all relative to `bottom: 0`), the body's SCROLL element gets
+    // extra bottom padding equal to the inset — the scroll range grows by exactly the
+    // covered band, so every row can be brought above the keyboard. The sheet itself
+    // never moves. Motivating cases: the decks-sheet search (DecksPanelBody) and the
+    // compare slot-B search (CompareWorkspace), whose results run under the keyboard.
+    //
+    // Imperative, on the element behind bodyRef, so it applies to every body without
+    // each one opting in. The body's own padding is read back from computed style
+    // (after clearing ours) and the inset ADDED to it, so a body's designed bottom
+    // breathing room survives. ⚠️ That only works because no sheet body sets its
+    // scroll padding through an inline `style` — this would overwrite it. Bodies use
+    // `sx`/styled (class-based), which an inline value layers over and then hands back.
+    //
+    // No transition: the padding is invisible spacing below the content, so there is
+    // nothing on screen for it to animate.
+    // Docs: docs/UX_AND_NAVIGATION.md § Keyboard and popups.
+    const keyboardInset = useKeyboardInset();
+    useLayoutEffect(() => {
+        const scrollEl = bodyRef.current?.scroll ?? null;
+        if (!scrollEl || keyboardInset <= 0) return;
+        const designedPadding = parseFloat(getComputedStyle(scrollEl).paddingBottom) || 0;
+        scrollEl.style.paddingBottom = `${designedPadding + keyboardInset}px`;
+        return () => {
+            scrollEl.style.removeProperty("padding-bottom");
+        };
+        // Same bodyKey/scrimHost re-bind reasoning as the scroll-coupling effect above:
+        // the body is portaled and can swap, so the scroll element behind bodyRef changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [keyboardInset, bodyKey, scrimHost]);
 
     // Both layers are portaled to the frame-level host, so their z-indexes are always
     // stated here (the stylesheet's 10/11 only ever applied while they were rendered

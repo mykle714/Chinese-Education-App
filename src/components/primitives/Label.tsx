@@ -109,8 +109,7 @@ export interface SectionHeaderProps {
     /**
      * A mono FACT at the right end — "last 7 days", "25 players", "×12 wins".
      *
-     * The same slot `BentoStrip` has, and it means the same thing: a statement about the
-     * set that follows, never a control. Rendered before `action`, though a header
+     * A statement about the set that follows, never a control. Rendered before `action`, though a header
      * carrying both is unusual — a section with a status AND an affordance is usually two
      * ideas that want separating.
      */
@@ -127,10 +126,9 @@ export interface SectionHeaderProps {
 /**
  * `.shelfhd` — section header with a right-hand affordance.
  *
- * Note the asymmetry with `BentoStrip`'s own header (`.strip .sh`): that one ends in a
- * mono FACT ("×12 wins") and is never tappable, this one ends in an ICON and usually
- * is. They look similar and mean different things, so they are deliberately not the
- * same component — see docs/BENTO_SYSTEM.md § "`BentoStrip` vs `ShelfHeader`".
+ * Its `meta` slot is a mono FACT ("×12 wins") and is never tappable; `action` ends the
+ * row in an ICON and usually is. They mean different things, so keep a status out of
+ * the action slot and vice versa.
  */
 export const SectionHeader: React.FC<SectionHeaderProps> = ({
     label,

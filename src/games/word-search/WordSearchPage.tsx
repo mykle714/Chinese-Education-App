@@ -36,6 +36,7 @@ import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
+import { useGameExit } from "../runtime/gameExit";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { countPinyinRevealSteps } from "./pinyinUnits";
 import { countComponentUnits } from "./componentUnits";
@@ -92,6 +93,8 @@ const WordSearchPage: React.FC = () => {
     const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Word Search");
     const navigate = useNavigate();
+    // Where Back / "Back to …" land: the hub, or the surface that launched us.
+    const gameExit = useGameExit();
     const location = useLocation();
     const [searchParams] = useSearchParams();
     const theme = useTheme();
@@ -131,11 +134,11 @@ const WordSearchPage: React.FC = () => {
     const markTypes = useMemo(() => (modeConfig ? modeMarkTypes(modeConfig) : []), [modeConfig]);
     const showPinyinColor = true;
 
-    // Whether this mount was launched from the hub's RESUME card (restore the
-    // saved board) vs a mode button (always start a fresh board). Captured once
-    // on mount — both modes share a single saved slot now, so a mode button must
-    // never silently resume; only the resume card does. See GamesPage /
-    // WordSearchHubItem and docs/WORD_SEARCH_GAME.md §5b.
+    // Whether this mount was launched as a RESUME (restore this mode's saved board)
+    // vs a fresh launch (always a new board). Captured once on mount — a fresh
+    // launch must never silently resume; only the launching surface's resume
+    // affordance does (WordSearchHubItem for Pinyin, ReadingGamesCarousel for No
+    // Pinyin — one save slot each). See docs/WORD_SEARCH_GAME.md §5b.
     const [resumeIntent] = useState(() => (location.state as { resume?: boolean } | null)?.resume === true);
 
     // An edge swipe would navigate away mid-drag; block it while mounted.
@@ -490,12 +493,13 @@ const WordSearchPage: React.FC = () => {
         if (challengeRound.active && !challengeRound.ready) return;
         let cancelled = false;
         (async () => {
-            // Resume card → restore the single saved board (in its saved mode).
-            // Mode button → always a fresh board; any existing save is discarded
-            // by the hub's confirm flow before we get here, and starting fresh
-            // (then re-saving on exit) overwrites the slot anyway.
-            if (resumeIntent && !challengeRoundActiveRef.current) {
-                const saved = loadGameState(userId);
+            // Resume → restore this mode's saved board (one slot per mode — see
+            // gameStateStorage). A fresh launch → always a new board; any existing
+            // save is discarded by the launching surface's confirm flow before we
+            // get here, and starting fresh (then re-saving on exit) overwrites the
+            // slot anyway.
+            if (resumeIntent && mode && !challengeRoundActiveRef.current) {
+                const saved = loadGameState(userId, mode);
                 if (saved) {
                     if (!cancelled) restoreBoard(saved);
                     return;
@@ -787,26 +791,26 @@ const WordSearchPage: React.FC = () => {
             // Every completion logs under level 1 — Word Search's two modes
             // deliberately share one wins bucket (see GAME_KEY in ./constants).
             recordWin(WIN_LEVEL);
-            if (userId) clearGameState(userId);
+            if (userId && mode) clearGameState(userId, mode);
             setPhase("won");
             // Word Search's board is always completable, so `won` is always true —
             // it exists for the all-or-nothing survival bonus other games have.
             challengeRound.finish(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId]);
+    }, [found, phase, data, elapsedMs, stopTimer, recordWin, userId, mode]);
 
     // Discard the current board and load a fresh one. Only reachable from the
     // win screen's "Play Again" now — the header restart button was removed, so
     // a board in progress can no longer be thrown away mid-game.
     const resetBoard = useCallback(async () => {
-        if (userId) clearGameState(userId);
+        if (userId && mode) clearGameState(userId, mode);
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
-    }, [tts, fetchGrid, startBoard, userId]);
+    }, [tts, fetchGrid, startBoard, userId, mode]);
 
     // The centred column shown INSTEAD of the board (spinner, or the blocked
     // message). The shape is shared — `GameCentered` also owns the rule that text on
@@ -828,8 +832,8 @@ const WordSearchPage: React.FC = () => {
                 <Typography className="word-search__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
-                <Button className="word-search__block-back" variant="contained" onClick={() => navigate("/games")}>
-                    Back to Games
+                <Button className="word-search__block-back" variant="contained" onClick={() => navigate(gameExit.path, { state: gameExit.state })}>
+                    Back to {gameExit.label}
                 </Button>
             </>
         );
@@ -968,8 +972,8 @@ const WordSearchPage: React.FC = () => {
                             <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
                                 Play Again
                             </Button>
-                            <Button className="word-search__back-to-games" variant="outlined" onClick={() => navigate("/games")} sx={{ borderRadius: "12px", textTransform: "none" }}>
-                                Back to Games
+                            <Button className="word-search__back-to-games" variant="outlined" onClick={() => navigate(gameExit.path, { state: gameExit.state })} sx={{ borderRadius: "12px", textTransform: "none" }}>
+                                Back to {gameExit.label}
                             </Button>
                         </Box>
                     </GameEndPopup>

@@ -979,9 +979,13 @@ names its track in its SUBTITLE (`tileSubtitle()`), and the last card that could
 Bubble Match, whose sub-tile subtitles are level labels — names both of its tracks on
 its strip header instead, on the control that picks between them
 (`BubbleMatchTrackToggle`; see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § `BentoStrip`).
+*(Superseded 2026-10-03: the toggle was deleted and the hub pins Recognition; the same
+day every Games hub tile went name-only, so no hub tile names a track any more.)*
 Typecheck and `npm run build` clean. Shipped `src/components/bento/` —
 `Bento`/`BentoTile`/`BentoStrip`/`BentoSubTile` (`Bento.tsx`), `CollectionChip`
-(`CollectionChip.tsx`), and a barrel `index.ts`. Work items 1 and 2 are done; item 3
+(`CollectionChip.tsx`), and a barrel `index.ts`. *(2026-10-03: `BentoStrip` /
+`BentoSubTile` deleted once the Games hub moved to `GameCard`; `BentoTile` now renders
+through `CardShell` — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "CardShell".)* Work items 1 and 2 are done; item 3
 (deleting `HubMenu` + rewriting its 10 importers) was always budgeted into entry 4,
 and item 4 (picking the ghost glyphs) is a per-hub choice made when entries 1/4/5
 place the tiles.
@@ -1015,7 +1019,8 @@ place the tiles.
   a title and subtitle — gets a soft `0 1px 2px` drop shadow instead. At tile size the
   content and shadow do the separating work and an inset hairline on a 19px radius
   reads as a stray border. **The rule is therefore: a pastel needs an outline UNLESS it
-  is large and occupied.** Recorded in the component's header comment.
+  is large and occupied.** Recorded in the component's header comment. Bento tiles are
+  likewise exempt from the app-wide button/card outline (CLAUDE.md § "Buttons & cards").
 - **Variant geometry is a table, not branches.** `TILE_VARIANTS` keys `base`/`hero`/
   `low` to min-height, span, title size, letter-spacing, subtitle size, and the ghost
   glyph's size + top offset. The ghost's size is PAIRED with the tile's — `hero` is
@@ -1763,7 +1768,9 @@ isn't drawn around data that doesn't exist.
 ## 4 · Games — `/games` — **Size: L**
 
 **Status: DONE (2026-08-21).** Bubble Match and Word Search are `BentoStrip`s, the
-other four are tiles, and `GamesCollectionSelector` renders a `CollectionChip`.
+other four are tiles (since superseded: Word Search is a `hero` banner, and on
+2026-10-03 Bubble Match became the Reading Center carousel's shared `GameCard`
+spanning the full row — see [GAMES_FEATURE.md](./GAMES_FEATURE.md)), and `GamesCollectionSelector` renders a `CollectionChip`.
 `WordSearchHubItem` was rewritten on the bento primitive (390 → ~300 lines) with its
 confirm-before-clobber, resume tile, in-place erase confirmation and leave animation
 all preserved.
@@ -1781,7 +1788,8 @@ all preserved.
 - **Registry subtitles were rewritten short.** "Pop word & meaning pairs before the
   screen fills up" → "Pop matching pairs". A tile subtitle renders at 11.5px in a
   half-width 112px tile; the old sentences were written for a full-width row and wrap
-  to three lines in a tile. `GameDef.subtitle` now documents the length budget.
+  to three lines in a tile. *(Superseded 2026-10-03: `GameDef.subtitle` was deleted —
+  hub tiles are name-only.)*
 - **`GameDef.bgColor` → `GameDef.hue`,** a `RampHue` key rather than a hex, so a
   tile's pastel body and its ghost glyph's ink cannot drift apart.
 - **`GameDef.iconAsset` deleted, `GameDef.glyph` added.** `iconAsset` was an optional

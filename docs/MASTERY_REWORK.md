@@ -143,8 +143,11 @@ see
 * the track is **latched when the board is dealt** and held for the run (including
   Play-Again refills), because a game's whole pool is bucketed and cooled up front;
 * so the toggle moved OUT of the game and onto the **Games hub**
-  (`BubbleMatchTrackToggle`), which is also now the only place the hub names Bubble
-  Match's track. A reading run is silent — no autoplay, no narration — since hearing
+  (`BubbleMatchTrackToggle`). Since 2026-10-03 there is no toggle at all: each
+  launcher **pins** the track (`state.showPinyin`). The Games hub pins Recognition and
+  the Reading Center's games carousel pins Reading
+  ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Bubble Match: pinyin picks the track").
+  A reading run is silent — no autoplay, no narration — since hearing
   the word would supply the reading being tested.
 
 > **Hydra Bubbles is next, and the setting is going per-game** (decided 2026-08-23,
@@ -916,34 +919,22 @@ read from there by all three places that need it: the `?markType=` pool query, t
 `src/games/registry.ts`). Two exceptions, both because one constant cannot answer for
 them: **Word Search**'s type is per MODE, so it lives on
 `WordSearchModeConfig.markType` (`src/games/word-search/constants.ts`), read by
-`WordSearchPage`'s mark call and by `WordSearchHubItem`'s sub-tile subtitles; and
+`WordSearchPage`'s mark call; and
 **Bubble Match**'s is per RUN (§ 1a), latched from `foreignPromptTrack` when the board
 is dealt and read from there by its pool query and its mark call alike, while its
 `MARK_TYPE` constant stays the game's declared/default track for the registry.
 Nothing repeats the string literal, so the label a player sees cannot drift from the
 mark that is actually written.
 
-**The hub names the track — in the SUBTITLE.** A player can see which of the four
-tracks a game feeds *before* opening it. This used to be a `MarkTypeChip
-variant="edge"` run up the card's right edge; the bento tile that replaced the hub
-card has no edge slot, so the track moved into the tile's subtitle instead:
-`tileSubtitle()` (`src/games/GamesPage.tsx`) composes
-`"<track> · <the game's blurb>"` — e.g. *Recognition · 30-second clock*, *Reading ·
-20 rounds* — from `GameDef.markType` and the shared `MARK_TYPE_LABELS`
-(`src/utils/masteryCompute.ts`). Word Search's mode sub-tiles use the track name as
-their whole subtitle (`WordSearchHubItem`), since their blurb IS the mode name on the
-title line. **Bubble Match names its tracks on its strip HEADER** instead — its
-sub-tile subtitles are the level labels, and its track is a per-run choice rather than
-a fact, so the header's `control` slot carries `BubbleMatchTrackToggle`, which draws
-both `RECOGNITION` and `READING` with the live one inked (§ 1a). The `MarkTypeChip`
-component was deleted once that closed the last gap.
-
-Because the label is read from the same constant the game marks with, a hub card
-cannot advertise a track its game does not write — never hand-write a track name into
-`GameDef.subtitle`. Note the hub shows the track as **plain secondary text**, so
-**the hub is the one surface where a track is not shown in its `MARK_TYPE_COLORS`
-hue**; everywhere else (cdp stacked progress bar, the pill variants of the chip) one
-track is one hue. See [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).
+**The hub no longer names the track (2026-10-03).** Games hub tiles are name-only —
+`GameDef.subtitle` and `tileSubtitle()` were deleted, so no tile or sub-tile carries a
+subtitle. History: the track was first a `MarkTypeChip variant="edge"` on the hub card
+(deleted 2026-08-22, when the bento tile left no edge slot), then rode the tile
+subtitle as `"<track> · <blurb>"` from `GameDef.markType` + `MARK_TYPE_LABELS`. A
+player now has to open a game to learn which track it trains. `GameDef.markType`
+itself stays: it is the registry's copy of the game's `MARK_TYPE` and is what
+challenge eligibility derives from (`src/games/__tests__/challengePool.test.ts`).
+See [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).
 
 > **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
 > to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading
@@ -1426,8 +1417,8 @@ Settled since:
   `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`, the pinyin-off
   track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
   `FLP_MARK_SURFACE` (§ 6).
-- `src/games/bubble-match/BubbleMatchTrackToggle.tsx` (the hub control),
-  `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
+- `src/games/GamesPage.tsx` / `ReadingGamesCarousel.tsx` (the launchers that pin the
+  track), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
   `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
   now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
 - `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`) and

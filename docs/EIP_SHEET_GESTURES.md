@@ -39,7 +39,7 @@ clipped by `MobileTabScreen`'s `ScrollArea`, so it could never have covered the 
 matter what ratio it was given.
 
 Two host obligations disappeared with it: stretching the host down through
-`FOOTER_CLEARANCE` (scp's `EipHost` negative bottom — now vestigial for the sheet), and
+`FOOTER_CLEARANCE` (scp's old `EipHost` negative bottom — the wrapper was deleted 2026-10-03), and
 giving the host a z-index above anything the page lifts. What replaces the latter is
 `SCRIM_BASE_Z_INDEX` / `SHEET_BASE_Z_INDEX` (**1200 / 1201**, `+ depth·2` per stack
 level): the two layers now sort against the page's *top-level* layers, and those go high
@@ -625,5 +625,8 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
   scopes those lookups
 - `src/api/dictionary.ts` — `lookupVocabEntry(entryKey, language?)`, the single
   det-lookup-and-adapt every eip host goes through
-- `src/features/discover/SortCardsPage.tsx` — the non-flp mount (`EipHost`,
-  `handleOpenCardInfo`)
+- `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` — the shared non-flp mount
+  (`InfoCardSection` + `EipTabStrip` + `TooManyTabsSnackbar`), used by
+  `src/features/discover/SortCardsPage.tsx` (`handleOpenCardInfo`),
+  `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`) and
+  `src/features/flashcards/centers/ReadingSwipeGrid.tsx`

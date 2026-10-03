@@ -250,8 +250,9 @@ in. The **info button** in each card's action row (§4.5) opens the **same eip b
 sheet the flp uses** — not a reduced copy of it.
 
 *Code: `src/features/discover/SortCardsPage.tsx` (`handleOpenCardInfo`, `handleCloseEip`,
-`EipHost`, the `eipOpen &&` block); `src/api/dictionary.ts` (`lookupVocabEntry`);
-`src/features/flashcards/FlashcardsLearnPage/{InfoCardSection,EipTabStrip,useEipTabs}`.
+the `<EipSheet>` mount); `src/api/dictionary.ts` (`lookupVocabEntry`);
+`src/features/flashcards/FlashcardsLearnPage/{EipSheet,InfoCardSection,EipTabStrip,useEipTabs}`
+— `EipSheet` is the shared host block scp, iw and the Reading Center all mount.
 Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md).*
 
 - **Same components, no fork.** scp mounts `InfoCardSection` + `EipTabStrip` and drives
@@ -294,8 +295,8 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   (see [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Mount sites"). That is what
   lets the sheet reach full height and merge into the page header — hosted inside
   `ContentArea` it was clipped below that header and could never have covered it.
-  `EipHost` survives as the mount point for `InfoCardSection` itself, but its two
-  load-bearing tricks are now vestigial **for the sheet**:
+  `EipHost` was **deleted on 2026-10-03** when scp moved onto the shared `EipSheet`;
+  both of its load-bearing tricks had already become vestigial **for the sheet**:
   - the `bottom: -FOOTER_CLEARANCE` stretch, which stopped the sheet floating 90px above
     the screen edge (`MobileTabScreen`'s ScrollArea reserves that band for the footer
     bar; `OnDeckSection` uses the same trick to paint its platform under the pill);
@@ -303,9 +304,8 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
     (`CardShell`'s drag lift) from painting straight through the open sheet. The sheet
     now carries `SHEET_BASE_Z_INDEX` (1201) at frame level and clears the cards itself.
 
-  Neither is worth deleting blind — `EipHost` is still a stacking context wrapping this
-  page's info affordances — but a future change to `CardShell`'s lift no longer has to
-  be mirrored here.
+  The portaled scrim covers the whole frame, so nothing on the page needed the wrapper's
+  stacking context either.
 - **The footer pill slides away while the sheet is open.** `SheetPanel` takes the
   `useHideFooter` hold itself for every modal sheet (2026-08-30); this page's own
   `useHideFooter(eipOpen)` call was deleted as a duplicate.

@@ -3,15 +3,12 @@ import { Box, Menu, MenuItem, ListSubheader } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { CollectionChip } from "../components/bento";
 import { useAuth } from "../AuthContext";
-import type { MasteryGoals } from "../utils/masteryCompute";
 import { fetchDecks, type DeckSummary } from "../api/decks";
 import { collectionTitle, deckTileColors, type CollectionRef } from "../features/flashcards/collectionRef";
 import {
-    builtinCollectionEntries, type CollectionGroup,
-} from "../features/flashcards/builtinCollections";
-import {
-    clearSelectedDeckIfMissing, setSelectedCollection, useSelectedCollection,
+    ALL_CARDS, clearSelectedDeckIfMissing, setSelectedCollection, useSelectedCollection,
 } from "../features/flashcards/selectedCollection";
+import { BAND_COLORS } from "../utils/categoryColors";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
@@ -20,9 +17,9 @@ import { SIZE, WEIGHT } from "../theme/scale";
  * The Games hub's "Playing with …" collection selector.
  *
  * ── What it is ────────────────────────────────────────────────────────────────
- * One full-width `CollectionChip` (`.chipsel`) at the top of the hub, naming the
- * collection every game on this page will be launched against, and a menu of every
- * set the decks page offers. It replaces the per-collection "Study these cards → pick a
+ * One half-width `CollectionChip` (`.chipsel`) at the top of the hub (it spans the
+ * right Bento column), naming the collection every game on this page will be
+ * launched against, and a menu of All Cards plus the learner's decks. It replaces the per-collection "Study these cards → pick a
  * game" sheet that used to live on CollectionViewPage: choosing the CARDS and
  * choosing the GAME were two steps in the wrong order — a learner picks the
  * activity from the Games hub, so the card set belongs there too.
@@ -36,13 +33,19 @@ import { SIZE, WEIGHT } from "../theme/scale";
  *
  * ── Layer ─────────────────────────────────────────────────────────────────────
  * Feature component (src/games), rendered above the hub's Bento grid. It owns the
- * deck fetch for its own menu; the built-in options come from
- * `features/flashcards/builtinCollections.ts` and the decks from `fetchDecks` — the
- * SAME two sources the fdp renders, which is what makes the fdp the source of truth
- * for what a collection is. This file decides only how they look as menu rows.
+ * deck fetch for its own menu (`fetchDecks`, the same list the fdp renders — custom
+ * decks AND generated Study Challenge decks).
+ *
+ * ── Deliberately narrower than the fdp ────────────────────────────────────────
+ * The only built-in offered is All Cards. Learn Now and the Mastered collections
+ * (core / reading / writing) were removed from this menu on 2026-10-03: the hub's
+ * choice is "everything, or one deck I made / was given", and the mastery-derived
+ * sets are browsed from the fdp and the Mastery Centers instead. Their routes and
+ * `?collection=` ids still work — a game launched from a collection page still
+ * honors them; the hub just no longer offers them.
  *
  * See docs/GAMES_FEATURE.md § "Collection selector", docs/DECKS_FEATURE.md,
- * docs/HUB_MENU_SYSTEM.md.
+ * docs/BENTO_SYSTEM.md.
  */
 
 /** One row of the menu: a collection plus the dot color that identifies it
@@ -53,10 +56,9 @@ interface CollectionOption {
     ref: CollectionRef;
     label: string;
     color: string;
-    /** Section this option is listed under, matching the decks page's sections.
-        "Mastered" appears only when the fdp shows it as a section too — with core
-        alone, the shared list files that collection under "Collections". */
-    group: CollectionGroup | "Decks";
+    /** Section this option is listed under. All Cards sits alone and uncaptioned at
+        the top; the decks follow under a "Decks" caption. */
+    group: "All" | "Decks";
 }
 
 /** Small filled circle carrying a collection's identifying color. */
@@ -84,7 +86,7 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
             clearSelectedDeckIfMissing(list.map((d) => d.id));
         } catch (err: unknown) {
             // A failed deck list is not worth an error state on the hub: the
-            // built-in collections below still work, and the user's decks are one
+            // All Cards row still works, and the user's decks are one
             // tap away on /decks. Log and carry on with an empty Decks section.
             console.error("Error loading decks for the games collection selector:", err);
             setDecks([]);
@@ -98,22 +100,18 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
         if (isAuthenticated) loadDecks();
     }, [isAuthenticated, user?.selectedLanguage, loadDecks]);
 
-    // The full option list, in the decks page's own order and grouping: the built-in
-    // collections exactly as that page lists them, then the user's decks. Nothing
-    // about WHICH collections exist is decided here.
+    // The full option list: All Cards, then the user's decks (custom + challenge) in
+    // the order `fetchDecks` returns them. See the header for why no other built-in
+    // collection is offered here.
     const options: CollectionOption[] = useMemo(() => {
-        const goals: MasteryGoals = {
-            reading: user?.readingGoal === true,
-            writing: user?.writingGoal === true,
+        const allCards: CollectionOption = {
+            key: "all",
+            ref: ALL_CARDS,
+            label: collectionTitle(ALL_CARDS),
+            // The All Cards tile's saturated tone; the dot has no room for the two-tone pair.
+            color: BAND_COLORS.All.main,
+            group: "All",
         };
-        const builtins: CollectionOption[] = builtinCollectionEntries(goals).map((entry) => ({
-            key: entry.key,
-            ref: entry.ref,
-            label: entry.label,
-            // The tile's saturated tone; the dot has no room for the two-tone pair.
-            color: entry.colors.main,
-            group: entry.group,
-        }));
         const deckOptions: CollectionOption[] = decks.map((deck) => ({
             key: `deck-${deck.id}`,
             ref: { kind: "deck", deckId: deck.id, name: deck.name },
@@ -123,8 +121,8 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
             color: deckTileColors(deck.id).main,
             group: "Decks",
         }));
-        return [...builtins, ...deckOptions];
-    }, [decks, user?.readingGoal, user?.writingGoal]);
+        return [allCards, ...deckOptions];
+    }, [decks]);
 
     // The pill's own label/color. Looked up in `options` rather than read off the
     // stored ref so a renamed deck relabels itself on the next load; falls back to
@@ -138,6 +136,13 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
         setAnchor(null);
     };
 
+    // Nothing to choose: with no decks the menu would hold All Cards alone, so the
+    // chip is not rendered at all (the hub then plays with All Cards, the store's
+    // default). Also covers the deck fetch in flight or failed, and accounts with no
+    // decks yet — the chip appears once a deck exists. Placed after every hook so the
+    // hook order stays fixed across renders.
+    if (decks.length === 0) return null;
+
     return (
         <>
             {/* The chip's own anchor. CollectionChip is a presentational primitive, so
@@ -148,6 +153,15 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
                 role="button"
                 aria-haspopup="listbox"
                 aria-label={`Playing with ${currentLabel}. Change collection`}
+                className="games-collection-selector__anchor"
+                // HALF-WIDTH, RIGHT-JUSTIFIED: the chip spans the right Bento column
+                // only. `marginLeft: auto` pushes the wrapper to the row's right edge;
+                // its width is sized so the chip's left edge sits 2px inside the right
+                // tile's left edge — the same 2px border inset its 18px side margin
+                // already applies on the right (Bento: 16px gutter, 10px gap ⇒ right
+                // column starts at 50% + 5px; wrapper starts at 50% − 11px, chip at
+                // 50% − 11px + 18px = 50% + 7px).
+                sx={{ width: "calc(50% + 11px)", marginLeft: "auto" }}
             >
                 <CollectionChip
                     className={className ?? "games-collection-selector"}
@@ -169,11 +183,15 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
                 // The list can run long (bands + bars + up to 100 decks), so cap it
                 // and let it scroll inside the phone frame rather than overflow it.
                 slotProps={{ paper: { sx: { maxHeight: 360, minWidth: 220 } } }}
+                // Right-aligned to the chip: it sits in the right column, so a
+                // left-anchored 220px menu would run past the screen edge.
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
             >
                 {options.map((option, index) => [
-                    // Section caption whenever the group changes — the same three
-                    // bands the decks page stacks (Collections / Mastered / Decks).
-                    option.group !== options[index - 1]?.group ? (
+                    // "Decks" caption above the first deck. All Cards is a single row
+                    // and needs no caption of its own.
+                    option.group === "Decks" && options[index - 1]?.group !== "Decks" ? (
                         <ListSubheader
                             key={`${option.key}-header`}
                             className={`games-collection-selector__group games-collection-selector__group--${option.group.toLowerCase()}`}

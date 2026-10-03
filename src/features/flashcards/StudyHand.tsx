@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import Icon from "../../components/Icon";
+import RoundPlayButton from "../../components/RoundPlayButton";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
@@ -110,7 +111,8 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * ── The compact variant ───────────────────────────────────────────────────────
  * `variant="compact"` (the Reading Center, docs/READING_WRITING_CENTERS.md) keeps
  * EVERYTHING above about behaviour — three modes, the stored fan, tap / throw to promote,
- * the ineligible commit — and changes only the drawing, to the design's `.rstk` stack: a
+ * the ineligible commit — except that its throw is LOCKED to left/right (vertical drags
+ * scroll the page; `useHandSwipe` "The horizontal lock"), and changes the drawing to the design's `.rstk` stack: a
  * tight ±3° fan, and a front card carrying the mode's glyph, its name and a round play
  * button. NO figures and NO tags: the compact hand is a launcher, not a dashboard, so
  * `figure`, `figureCaption` and `zeroMessage` are ignored in it.
@@ -257,7 +259,10 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
         setOrder(afterSwipe);
     }, []);
 
-    const swipe = useHandSwipe(handleSwipe);
+    // The compact hand (Reading Center) sits mid-page in a scrolling column, so its throw
+    // is locked to left/right and vertical drags scroll the page — like the Center's
+    // swipe-grid tiles. The fdp's full hand keeps the free, any-direction throw.
+    const swipe = useHandSwipe(handleSwipe, compact ? "horizontal" : "free");
 
     return (
         <Box
@@ -341,10 +346,12 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             // middle.
                             transformOrigin: "50% 0",
                             transition: isBeingDragged ? "none" : SLOT_TRANSITION,
-                            // The throw is omnidirectional, so the played card claims the
-                            // touch on BOTH axes once it clears the gesture's slop — the
-                            // page/sheet beneath is scrolled from anywhere but this card.
-                            ...(isFront ? { touchAction: "none" } : {}),
+                            // Full hand: the throw is omnidirectional, so the played card
+                            // claims the touch on BOTH axes (`none`) — the page/sheet beneath
+                            // is scrolled from anywhere but this card. Compact hand: `pan-y`,
+                            // the throw is horizontal-only and vertical drags scroll. The
+                            // hook owns the value so it cannot disagree with its claim rule.
+                            ...(isFront ? { touchAction: swipe.frontTouchAction } : {}),
                             backgroundColor: RAMP[card.hue].surface,  // v2 "Surface: … the fanned cards"
                             borderRadius: compact ? "20px" : "22px",
                             border: `1px solid ${COLORS.border}`,
@@ -376,27 +383,20 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                         >
                                             {card.label}
                                         </Typography>
-                                        <Box
-                                            component="button"
-                                            type="button"
+                                        <RoundPlayButton
+                                            size="hand"
                                             className="study-hand__go study-hand__go--round"
-                                            aria-label={isFront ? `Start ${card.label}` : undefined}
+                                            ariaLabel={isFront ? `Start ${card.label}` : undefined}
                                             // Inert on the queued card, exactly as the full
                                             // hand's button is (see its comment below).
                                             onClick={isFront ? () => onStudy(card.id) : undefined}
                                             disabled={!isFront}
                                             tabIndex={isFront ? undefined : -1}
-                                            aria-hidden={isFront ? undefined : true}
-                                            sx={{
-                                                ...(isFront ? {} : { pointerEvents: "none" }),
-                                                width: 52, height: 52, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0,
-                                                // Ineligible dims the COMMIT only, never the card.
-                                                backgroundColor: greyed ? COLORS.greyA : COLORS.onSurface,
-                                                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                                            }}
-                                        >
-                                            <Icon name="play_arrow" size={28} color={COLORS.white} />
-                                        </Box>
+                                            ariaHidden={isFront ? undefined : true}
+                                            // Ineligible dims the COMMIT only, never the card.
+                                            greyed={greyed}
+                                            sx={isFront ? undefined : { pointerEvents: "none" }}
+                                        />
                                     </Box>
                                 </Box>
                             )

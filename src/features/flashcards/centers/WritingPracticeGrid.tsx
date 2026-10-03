@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import PracticeWritingPopup from "../../../components/handwriting/PracticeWritingPopup";
 import { usePracticeWriting } from "../../../components/handwriting/usePracticeWriting";
-import CenterSectionHeading from "./CenterSectionHeading";
-import { buildPool, initialLayout, poolSize, type PlacedTile } from "./wordGridModel";
-import { useWordGridGeometry, WORD_GRID_SIDE_GUTTER } from "./useWordGridGeometry";
+import { buildPool, initialLayout, type PlacedTile } from "./wordGridModel";
+import { useWordGridGeometry, WORD_GRID_SIDE_GUTTER, WORD_GRID_TOP_GAP } from "./useWordGridGeometry";
 import type { VocabEntry } from "../../../types";
 import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
@@ -14,7 +13,7 @@ import { WEIGHT } from "../../../theme/scale";
  * The Writing Center's practice grid (docs/READING_WRITING_CENTERS.md § Phase 5) — the
  * same 6×6 word grid as the Reading Center's (`wordGridModel`, `useWordGridGeometry`),
  * read through the WRITING bar: the learner's own cards, a word spanning one cell per
- * character, sampled by writing band in the Study Mix proportions, fresh on every visit.
+ * character up to two and compressed beyond (`cellSpan`), sampled by writing band in the Study Mix proportions, fresh on every visit.
  * Tapping a tile opens `PracticeWritingPopup` on that word.
  *
  * Words are capped at FOUR characters — the popup's 2×2 grid holds no more — and cards
@@ -48,7 +47,6 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
     const keySeq = useRef(0);
     const nextKey = useCallback(() => `w${keySeq.current++}`, []);
     const [tiles, setTiles] = useState<PlacedTile[]>([]);
-    const [available, setAvailable] = useState(0);
 
     useEffect(() => {
         if (built.current || cards.length === 0 || language !== "zh") return;
@@ -56,7 +54,6 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
         const pool = buildPool(cards, Date.now(), Math.random, { bar: "writing", maxLength: MAX_PRACTICE_LENGTH });
         const layout = initialLayout(pool, Math.random, nextKey);
         setTiles(layout);
-        setAvailable(poolSize(pool) + layout.length);
     }, [cards, language, nextKey]);
 
     const { gridRef, cell, gridHeight, cellRect } = useWordGridGeometry(tiles.length > 0);
@@ -72,23 +69,19 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
 
     return (
         <>
-            <CenterSectionHeading
-                className="writing-practice-grid__heading"
-                title="Your words"
-                meta={`tap to write · ${available} ready`}
-            />
             {tiles.length === 0 ? (
                 <Box
                     className="writing-practice-grid__empty"
-                    sx={{ margin: `0 ${WORD_GRID_SIDE_GUTTER}px`, padding: "18px", borderRadius: "14px", border: `1px dashed ${COLORS.border}`, textAlign: "center", fontFamily: FONTS.sans, fontSize: 13, color: COLORS.textSecondary }}
+                    sx={{ margin: `${WORD_GRID_TOP_GAP}px ${WORD_GRID_SIDE_GUTTER}px 0`, padding: "18px", borderRadius: "14px", border: `1px dashed ${COLORS.border}`, textAlign: "center", fontFamily: FONTS.sans, fontSize: 13, color: COLORS.textSecondary }}
                 >
-                    Every card is resting for writing. Come back later!
+                    Add more cards to your library!
                 </Box>
             ) : (
-                <Box sx={{ padding: `0 ${WORD_GRID_SIDE_GUTTER}px` }}>
+                <Box sx={{ padding: `${WORD_GRID_TOP_GAP}px ${WORD_GRID_SIDE_GUTTER}px 0` }}>
                     <Box ref={gridRef} className="writing-practice-grid" sx={{ position: "relative", width: "100%", height: gridHeight }}>
                         {cell > 0 && tiles.map((tile) => {
                             const isSelected = selected?.key === tile.key;
+                            const rect = cellRect(tile);
                             return (
                                 <Box
                                     key={tile.key}
@@ -99,7 +92,7 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
                                     aria-label={`Practice writing ${tile.word}`}
                                     sx={{
                                         position: "absolute",
-                                        ...cellRect(tile),
+                                        ...rect,
                                         borderRadius: "10px",
                                         backgroundColor: COLORS.white,
                                         // The design's `.ct.tap`: the open tile swaps its hairline
@@ -113,7 +106,11 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
                                         padding: 0,
                                         cursor: "pointer",
                                         fontFamily: FONTS.cjk,
-                                        fontSize: 28,
+                                        // 28px as designed, shrunk only if a compressed
+                                        // span (3 chars in 2 cells, 4 in 3) on a narrow
+                                        // screen cannot hold the word — same rule as
+                                        // ReadingSwipeGrid's front face.
+                                        fontSize: Math.min(28, (rect.width - 12) / tile.length),
                                         fontWeight: WEIGHT.bold,
                                         lineHeight: 1,
                                         letterSpacing: "0.02em",

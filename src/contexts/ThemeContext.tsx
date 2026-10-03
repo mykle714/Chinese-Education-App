@@ -107,6 +107,41 @@ const createAppTheme = (mode: ThemeMode): Theme => {
         // knowingly deferred: decision D4 runs the app on one light palette during the
         // redesign and the other three are not re-derived yet.
         components: {
+            // Every Dialog re-centres in the space ABOVE a keyboard rather than being
+            // covered by it. `--keyboard-inset` is the union of the handwriting
+            // keyboard and the OS keyboard, published on :root by
+            // BeginnerKeyboardProvider (src/features/beginnerKeyboard/useKeyboardInset.ts
+            // → KEYBOARD_INSET_CSS_VARIABLE; spelled literally here so the shared theme
+            // does not import from a feature). Padding the ROOT, not moving the paper,
+            // is what makes this one rule fit every dialog shape:
+            //   • the root is the fixed full-screen Modal; its padding shrinks the
+            //     content box the `height: 100%` container resolves against, and the
+            //     container is the flex box that centres the paper — so the paper
+            //     re-centres in the visible area;
+            //   • the paper's own `max-height: calc(100% - 64px)` resolves against that
+            //     smaller box, so a tall dialog (Icon picker, Edit document) shrinks and
+            //     scrolls its content instead of running under the keyboard;
+            //   • the backdrop is `position: fixed; inset: 0` of its own, so the scrim
+            //     still covers the whole screen.
+            // ⚠️ NOT the `container` slot, though it is the obvious target: the Fade
+            // transition writes an inline `transition: opacity …` onto the container,
+            // which would silently replace the padding transition below.
+            // Our handwriting keyboard needs this most: it suppresses the OS keyboard
+            // (`inputMode="none"`), so iOS never pans the page to reveal the field.
+            // The variable is 0px whenever no field is focused, so full-screen dialogs
+            // (Practice Writing, design zoom) are untouched.
+            // Docs: docs/UX_AND_NAVIGATION.md § Keyboard and popups.
+            MuiDialog: {
+                styleOverrides: {
+                    root: {
+                        boxSizing: 'border-box' as const,
+                        paddingBottom: 'var(--keyboard-inset, 0px)',
+                        // Travels with the keyboard's own slide curve (transition.ts →
+                        // timingForInset), so the dialog and keyboard read as one motion.
+                        transition: 'padding-bottom var(--keyboard-inset-timing, 0ms)',
+                    },
+                },
+            },
             MuiButton: {
                 defaultProps: {
                     // The design draws no elevation on either button; MUI's default

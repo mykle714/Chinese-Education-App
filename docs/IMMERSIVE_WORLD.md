@@ -1374,9 +1374,10 @@ bubble for the lookup makes the characters and the pinyin arrive in one render.
 
 **iw is the fourth host of the panel, and it mounts the WHOLE panel.** § 5.3b's rule ("iw does
 not own a lookup UI") does not stop at the caption card: a cut-down, iw-only word view would be
-a second lookup UI by another name. So `IWPlayPage` copies scp's host block verbatim in shape —
-`useEipTabs` for the trail, `InfoCardSection` for the sheet, `EipTabStrip` in its `tabStrip`
-slot, `TooManyTabsSnackbar` for the 50-tab cap.
+a second lookup UI by another name. So `IWPlayPage` mounts the same host block scp does —
+`useEipTabs` for the trail, and the shared `EipSheet` (`FlashcardsLearnPage/EipSheet.tsx`:
+`InfoCardSection` for the sheet, `EipTabStrip` in its `tabStrip` slot, `TooManyTabsSnackbar`
+for the tab cap). It used to inline a copy of that block; it moved onto `EipSheet` 2026-10-03.
 
 | Concern | Where it lives | Note |
 |---|---|---|
@@ -2902,7 +2903,7 @@ Per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md) / [FRONTEND_LAYERING.md](./FRON
 | Scene state: bodies, bubbles, addressee routing, the turn | feature hook | `play/useIWSceneRuntime.ts` (BUILT) — the ONE stateful thing in the play surface |
 | Scene rendering | feature view | `play/IWSceneStage.tsx` (BUILT). Reuses `EditorTerrainLayer`, the app's one mask-driven terrain renderer — NOT `TemplateEditorViewer`, which is an authoring surface |
 | Nametags + bubbles | feature view | `play/IWSpeechBubbles.tsx` (BUILT). One element per named body — nametag when idle, speech bubble while speaking (§ 5.3a). **DOM, not Pixi**, because both states are `ForeignText` — an app-wide rule, not an iw preference. Since 2026-09-07 a line with segmentation renders through the est's `SegmentedSentenceDisplay` instead (§ 5.3b), which is the same rule one step further: iw owns no lookup UI either |
-| Reading about a tapped word | feature view (borrowed whole) | `InfoCardSection` + `useEipTabs` + `EipTabStrip`, mounted by `play/IWPlayPage.tsx` (BUILT 2026-09-09, § 5.3c). iw adds no word UI of its own — it adds a `setPaused` hold so the scene does not move while the sheet is up |
+| Reading about a tapped word | feature view (borrowed whole) | `useEipTabs` + the shared `EipSheet` (`InfoCardSection` + `EipTabStrip`), mounted by `play/IWPlayPage.tsx` (BUILT 2026-09-09, § 5.3c). iw adds no word UI of its own — it adds a `setPaused` hold so the scene does not move while the sheet is up |
 | Spoken-line segmentation | **DAL** | `DictionaryDAL.segmentTexts` (BUILT) — the est's own pipeline, renamed out of its long-definition-only name now that a second surface calls it |
 | Parts → a bubble line | **service helper (pure)** | `server/services/iw/lineSegments.ts` (BUILT). `collectAuthoredLines` lived here and was deleted 2026-09-07 — there are no authored lines left to collect (§ 14 Q42) |
 | An authored direction → a line this NPC would say | **service (pure + injected ladder)** | `server/services/iw/lineRender.ts` (BUILT 2026-09-07) → `renderLineDirection`, `createLineSink`, `renderNpcLine`. Layer 3 for a render; layer 1's one-line contract is `worldRules.renderLineContract` |

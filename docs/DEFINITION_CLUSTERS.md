@@ -630,28 +630,36 @@ The sense picker and the dd/longDefinition resolvers do **not** address every cl
 address the **displayable** ones, and only offer a choice when at least two survive.
 
 A cluster is *not* displayable when its lead gloss is entirely parenthetical, so `ddt` strips
-it to the empty string. These are the grammatical-particle senses the CC-CEDICT-derived
-`definitions` carry as bare annotations:
+it to the empty string. CC-CEDICT writes grammatical-particle senses exactly this way — 了
+`(completed action marker)`, 在 `(used before a verb to indicate an action in progress)`.
 
-| word1 | non-displayable lead gloss |
-|---|---|
-| 上来 | `(verb complement indicating success)` |
-| 了 | `(completed action marker)` |
-| 在 | `(used before a verb to indicate an action in progress)` |
-| 给 | `(grammatical equivalent of 把)`, `(sentence intensifier)` |
-| 好 | `(verb complement indicating completion)` |
-| 过去 | `(verb suffix)` |
-| 哪 | `(emphatic sentence-final particle …)` |
-| 直 | `(indicates continuing motion or action)` |
-| 来 | `(used after 得[de2] to indicate possibility …)` |
-| 斯 | `(phonetic)` |
+**The discoverable corpus carries none of these (2026-10-03).** All 34 such clusters (28 zh
+entries; es had none) were rewritten with hand-authored, parenthesis-free glosses by
+`server/scripts/backfill/chinese/rewrite-parenthetical-glosses.js` (`REWRITES`, `REMOVALS`),
+replacing the old strings in **both** `definitions` and the cluster's `glosses` so the exact
+partition holds. Sense labels were left untouched. Two clusters were removed as non-senses:
+零 "linking 'and' between numbers" (that 零 is the digit zero; its sentence was retagged to
+"zero") and 比 "Taiwan reading note" (a pronunciation note). Before the rewrite the filter
+below was hiding the dominant meaning of 了, 的, 过, 在, 来 and 去 — 了 defaulted to "to
+understand" (liǎo) — and 分之, a single-cluster entry, rendered no English at all.
+
+**Authoring rule for these glosses:** plain English, at most about five words, **no
+parentheses** (they are stripped) and no Chinese characters. Use a natural English equivalent
+where one exists ("done, finished", "the former, the latter"), otherwise a short function
+phrase ("marks a completed action"). The lead gloss is what the card shows; later glosses
+widen coverage ("the one that is…" ¦ "one, the one").
+
+The filter remains as a **safety net** for entries made discoverable later, which still arrive
+with raw CC-CEDICT glosses. Re-run the analysis (any lead gloss with `ddt(...) === ''` on a
+discoverable row) after a `/mark-discoverable` batch, and add the new cases to the script's
+`REWRITES` table.
 
 They are filtered out **before** the `< 2` gate, not after, which has two consequences:
 
 1. they never render as a **blank row** in the dropdown (`renderSenseItem` passes `ddt(cluster)`
    straight into `ListItemText` with no fallback), and
-2. an entry left with a single displayable cluster (上来, 了, 在) shows **no picker at all** and
-   falls back to the flat `definitions[0]` dd — rather than a one-item dropdown.
+2. an entry left with a single displayable cluster shows **no picker at all** and falls back
+   to the flat `definitions[0]` dd — rather than a one-item dropdown.
 
 **The pinyin resolver is deliberately outside this gate** (2026-08-19). `readingCluster`
 follows the picker's list whenever one exists — so a displayed gloss and its tones always
@@ -659,10 +667,9 @@ describe one sense — but when the gate suppresses the picker it still returns 
 primary reading rather than falling back to the `pronunciation` column, because that column
 is the unreviewed seed rather than a curated alternative. See "Why pinyin does NOT share the
 dd's `< 2` gate" above. Within that fallback it prefers a **displayable** cluster, so a
-gloss-less particle sense cannot donate its reading to a card showing a real gloss: 了's two
-`le` particle clusters are non-displayable, and the entry resolves to `liǎo` — matching its
-`definitions[0]` dd "to understand", which is what the card was already showing over a
-mismatched `le`.
+gloss-less particle sense cannot donate its reading to a card showing a real gloss. (This is
+why 了 used to read `liǎo` with "to understand"; since the 2026-10-03 rewrite its `le`
+particle senses are displayable and it defaults to `le` "marks a completed action".)
 
 The filter is scoped to this "which sense is the card on?" layer only. **Label-addressed** reads
 — a segment's tagged `senseDict` label, a breakdown char's `breakdown[char].sense` — still see

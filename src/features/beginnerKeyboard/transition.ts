@@ -77,12 +77,24 @@ function prefersReducedMotion(): boolean {
  */
 export function transitionForInset(inset: number, property = 'padding-bottom'): string {
   if (prefersReducedMotion()) return 'none';
+  return `${property} ${timingForInset(inset)}`;
+}
+
+/**
+ * Just the `<duration> <easing>` half of {@link transitionForInset}, with no
+ * property. This is the form `BeginnerKeyboardProvider` publishes as
+ * `--keyboard-inset-timing`, so plain CSS (the MUI Dialog theme override) can
+ * write `padding-bottom var(--keyboard-inset-timing)` and travel with the same
+ * curve as every React consumer. `0ms` for a reduced-motion account.
+ */
+export function timingForInset(inset: number): string {
+  if (prefersReducedMotion()) return '0ms';
   // A non-zero inset can only mean a keyboard is on its way in; the provider
   // zeroes it the moment the exit STARTS, precisely so this stays true.
   const arriving = inset > 0;
   const ms = arriving ? BEGINNER_KEYBOARD_SLIDE_MS.enter : BEGINNER_KEYBOARD_SLIDE_MS.exit;
   const easing = arriving ? BEGINNER_KEYBOARD_EASING.enter : BEGINNER_KEYBOARD_EASING.exit;
-  return `${property} ${ms}ms ${easing}`;
+  return `${ms}ms ${easing}`;
 }
 
 /**

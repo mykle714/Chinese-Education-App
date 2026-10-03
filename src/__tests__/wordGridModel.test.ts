@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-    GRID_COLUMNS, GRID_ROWS, buildPool, drawWord, initialLayout, poolSize, replaceTile,
+    GRID_COLUMNS, GRID_ROWS, allPoolWords, buildPool, cellSpan, drawWord, initialLayout, poolSize, readyCount, replaceTile,
     type PlacedTile,
 } from "../features/flashcards/centers/wordGridModel";
 import type { VocabEntry } from "../types";
@@ -28,7 +28,7 @@ const keys = () => {
 };
 
 /** Every cell index (row*cols+col) a tile covers. */
-const cellsOf = (t: PlacedTile) => Array.from({ length: t.length }, (_, i) => t.row * GRID_COLUMNS + t.col + i);
+const cellsOf = (t: PlacedTile) => Array.from({ length: t.span }, (_, i) => t.row * GRID_COLUMNS + t.col + i);
 
 describe("buildPool", () => {
     it("keeps only all-Han words that fit a row", () => {
@@ -42,12 +42,15 @@ describe("buildPool", () => {
         expect(words).toEqual(["学", "学习"]);
     });
 
-    it("drops cards resting on the reading bar (their marks would be dropped server-side)", () => {
+    it("flags cards resting on the reading bar as cooled (their marks would be dropped server-side)", () => {
         const justMarked = card("读", {
             typedMarkHistory: { reading: [{ timestamp: new Date(NOW - 60_000).toISOString(), isCorrect: true }] },
         });
         const pool = buildPool([justMarked, card("写")], NOW, seeded(2), { bar: "reading" });
-        expect([...pool.values()].flat().map((w) => w.word)).toEqual(["写"]);
+        const words = allPoolWords(pool);
+        expect(words.filter((w) => !w.cooled).map((w) => w.word)).toEqual(["写"]);
+        expect(words.filter((w) => w.cooled).map((w) => w.word)).toEqual(["读"]);
+        expect(readyCount(words)).toBe(1);
     });
 });
 
@@ -62,15 +65,39 @@ describe("buildPool — writing bar", () => {
         const readJustNow = card("读", { typedMarkHistory: { reading: recent } });
         const wroteJustNow = card("写", { typedMarkHistory: { writing: recent } });
         const pool = buildPool([readJustNow, wroteJustNow], NOW, seeded(13), { bar: "writing" });
-        expect([...pool.values()].flat().map((w) => w.word)).toEqual(["读"]);
+        expect(allPoolWords(pool).filter((w) => !w.cooled).map((w) => w.word)).toEqual(["读"]);
+    });
+});
+
+describe("cellSpan", () => {
+    it("is one cell per character up to two, then compressed", () => {
+        expect([1, 2, 3, 4, 5, 6].map(cellSpan)).toEqual([1, 2, 2, 3, 4, 4]);
     });
 });
 
 describe("drawWord", () => {
-    it("never returns a word longer than the room", () => {
-        const pool = buildPool([card("学习"), card("图书馆"), card("人")], NOW, seeded(3), { bar: "reading" });
+    it("never returns a word whose tile is wider than the room", () => {
+        const pool = buildPool([card("学习"), card("一路平安"), card("人")], NOW, seeded(3), { bar: "reading" });
         expect(drawWord(pool, 1, seeded(4))?.word).toBe("人");
         expect(drawWord(pool, 1, seeded(4))).toBeNull();
+    });
+
+    it("fits a 3-character word into 2 cells", () => {
+        const pool = buildPool([card("图书馆")], NOW, seeded(14), { bar: "reading" });
+        const word = drawWord(pool, 2, seeded(15));
+        expect(word?.word).toBe("图书馆");
+        expect(word?.span).toBe(2);
+    });
+
+    it("prefers markable words, falling back to cooled ones before returning null", () => {
+        const recent = [{ timestamp: new Date(NOW - 60_000).toISOString(), isCorrect: true }];
+        const resting = card("读", { typedMarkHistory: { reading: recent } });
+        const pool = buildPool([resting, card("写")], NOW, seeded(16), { bar: "reading" });
+        expect(drawWord(pool, 1, seeded(17))?.word).toBe("写");
+        const fallback = drawWord(pool, 1, seeded(17));
+        expect(fallback?.word).toBe("读");
+        expect(fallback?.cooled).toBe(true);
+        expect(drawWord(pool, 1, seeded(17))).toBeNull();
     });
 });
 
@@ -86,7 +113,7 @@ describe("initialLayout", () => {
         const cells = tiles.flatMap(cellsOf);
         expect(new Set(cells).size).toBe(cells.length);
         for (const t of tiles) {
-            expect(t.col + t.length).toBeLessThanOrEqual(GRID_COLUMNS);
+            expect(t.col + t.span).toBeLessThanOrEqual(GRID_COLUMNS);
             expect(t.row).toBeLessThan(GRID_ROWS);
         }
     });

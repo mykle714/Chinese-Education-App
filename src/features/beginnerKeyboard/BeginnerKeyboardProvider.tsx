@@ -79,6 +79,13 @@ import {
   type EditableField,
 } from './eligibility';
 import { BeginnerKeyboardInsetContext, INSET_CSS_VARIABLE } from './insetContext';
+import { useKeyboardViewport } from './useKeyboardViewport';
+import {
+  KEYBOARD_INSET_CSS_VARIABLE,
+  KEYBOARD_INSET_TIMING_CSS_VARIABLE,
+  unionKeyboardInset,
+} from './useKeyboardInset';
+import { timingForInset } from './transition';
 
 /** Marks our own DOM so a tap inside it is never read as leaving the field. */
 export const HOST_CLASS = 'beginner-keyboard-host';
@@ -279,6 +286,23 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
       document.documentElement.style.removeProperty(INSET_CSS_VARIABLE);
     };
   }, [inset]);
+
+  // Publish the UNION (ours or the OS keyboard, whichever is up) as well, for the
+  // consumers that must clear ANY keyboard from plain CSS — every MUI Dialog does,
+  // through the theme (useKeyboardInset.ts lists the consumers). Measured here,
+  // unconditionally, rather than only while `enabled`: a Spanish learner's OS
+  // keyboard covers a dialog just the same.
+  const viewport = useKeyboardViewport();
+  const anyInset = unionKeyboardInset(inset, viewport);
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty(KEYBOARD_INSET_CSS_VARIABLE, `${anyInset}px`);
+    root.setProperty(KEYBOARD_INSET_TIMING_CSS_VARIABLE, timingForInset(anyInset));
+    return () => {
+      root.removeProperty(KEYBOARD_INSET_CSS_VARIABLE);
+      root.removeProperty(KEYBOARD_INSET_TIMING_CSS_VARIABLE);
+    };
+  }, [anyInset]);
 
   // Space is released the moment the exit STARTS, not when it finishes, so the
   // page reflows while the keyboard slides down rather than snapping afterwards.

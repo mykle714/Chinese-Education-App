@@ -153,7 +153,7 @@ them lowercase) ·
 `features/flashcards/cardOpsCell.ts` · `features/studyChallenge/ChallengeDetailPage.tsx` ·
 `components/SteppedHelpPopup.tsx` · `features/studyChallenge/ChallengePanel.tsx` ·
 `features/studyChallenge/ChallengeSheet.tsx` · `features/studyChallenge/ChallengeTestCard.tsx` (2) ·
-`games/bubble-match/BubbleMatchTrackToggle.tsx` · `games/runtime/ChallengeRoundScoreboard.tsx`
+`games/bubble-match/BubbleMatchTrackToggle.tsx` (deleted 2026-10-03) · `games/runtime/ChallengeRoundScoreboard.tsx`
 
 **Two deliberate exceptions**, both in `PageHeader.tsx` (`HeaderCycleChip` and its
 sibling): they size themselves with `calc(${widthCh}ch + …)`, and `ch` is only an exact

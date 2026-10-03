@@ -65,7 +65,7 @@ export interface WordSearchModeConfig {
      *   3. it leads the hub sub-tile's subtitle.
      *
      * Single source of truth for the /api/flashcards/mark call (WordSearchPage)
-     * and the mode sub-tile's track label (WordSearchHubItem).
+     * and the hub banner's track label (WordSearchHubItem).
      */
     markType: MarkType;
     /**
@@ -239,7 +239,8 @@ export function medalForTime(seconds: number): { medal: Medal; emoji: string } {
 // Match Speed became a third caller — import it from there.
 
 /** Human-readable subtitle for a mode slug (e.g. "Pinyin"), or the raw slug if
- *  unknown. Used by the resume card to name the saved board's mode. */
+ *  unknown. Used by the "Start a new game?" confirm (NewGameConfirmDialog) to name
+ *  the parked board being overwritten. */
 export function modeLabel(mode: WordSearchMode): string {
     return MODE_CONFIGS.find((m) => m.mode === mode)?.label ?? mode;
 }

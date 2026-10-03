@@ -346,31 +346,32 @@ against it (§4), so an untraceable entry is simply never matched, not a bug.
 
 ## 3. Layout & rendering (frontend)
 
-### Two hub entries (pinyin mode), no in-game toggle
+### Hub card (Pinyin mode), no in-game toggle
 
-Word Search ships as **two Games-hub sub-cards** in a horizontal strip. Unlike
-Bubble Match (a plain `HubMenuArrayItem`), the whole strip is a **dedicated
-component**, `src/games/word-search/WordSearchHubItem.tsx`, because its buttons
-need custom click handling and it prepends a resume card. `GamesPage.tsx`
-renders it in the `game.gameId === "word-search"` branch. It reuses the shared
-hub card look via the exported `cardBaseSx`
-(`src/components/hubMenuCardBase.ts`) + `HubMenuCardTitle` / `HubMenuRowIconTile`
-(`src/components/HubMenu.tsx`). See [BENTO_SYSTEM.md](./BENTO_SYSTEM.md).
+Word Search's Games-hub entry is **the same card the Reading Center's games carousel
+shows**: the shared `GameCard` (`src/games/shared/GameCard.tsx`) fed by
+`buildWordSearchCard` (`src/games/word-search/wordSearchCard.tsx`) — an all-pur card
+with the title + lifetime win pill on top, the compact resume tile (one Bubble Match
+level slot wide) at the bottom-left when a board is parked, and the round ink play
+button at the bottom-right. On the hub it spans the grid's full row
+(`gridColumn: "1 / -1"`), exactly like Bubble Match's card above it; in the carousel
+it is a fixed 300px snap card. The two surfaces differ only in save slot and launch
+state. Both get the card — and the save-slot read, resume, erase and confirm dialog —
+from ONE hook, `useWordSearchLauncher` (`src/games/word-search/useWordSearchLauncher.tsx`),
+parameterised by `mode`, `classPrefix`, `newGamePath` and `launchState`. On the hub it is
+rendered by `src/games/word-search/WordSearchHubItem.tsx` (Pinyin slot + the selected
+collection's params), in `GamesPage.tsx`'s `game.gameId === "word-search"` branch.
 
-| Sub-card | `mode` | Pinyin | Mark type (sub-tile subtitle) |
-|---|---|---|---|
-| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") | PRODUCTION |
-| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING **+ PRODUCTION** |
+| Mode | `mode` | Pinyin | Mark type | Launched from |
+|---|---|---|---|---|
+| **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") | PRODUCTION | Games hub card |
+| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING **+ PRODUCTION** | Reading Center carousel |
 
-- Each mode sub-tile's **subtitle** is the track(s) it feeds, built from
-  `modeMarkTypes(cfg)` through the shared `MARK_TYPE_LABELS` — so No Pinyin reads
-  "Reading & Production". (This used to be a `MarkTypeChip` on a hub card; the bento
-  sub-tile that replaced it has no chip slot, and that component has since been
-  deleted for want of any caller. See
-  [MASTERY_REWORK.md § "The hub names the track"](./MASTERY_REWORK.md).) Word Search is
-  still the only game whose label differs *between* its sub-tiles, which is why it is
-  per-sub-tile rather than on the group header. The resume square carries no track
-  label — at 1:1 it already holds four lines, and it names its saved mode anyway.
+- The card shows **only the game's name** — no subtitle, like every Games hub tile
+  since 2026-10-03 (it used to read *Pinyin · Production*; see
+  [MASTERY_REWORK.md § "The hub no longer names the track"](./MASTERY_REWORK.md)). The
+  resume card carries no track or mode label either — the mode is implied by which
+  surface the card sits on (each surface owns exactly one save slot).
 
 ### What a find marks
 
@@ -398,13 +399,22 @@ Three consequences worth knowing:
 
 A hinted word marks **nothing at all**, on either track (§ hints).
 
-- **Both mode buttons ALWAYS start a fresh game.** Tapping one navigates with
-  nav `state = { mode, resume: false }`. Because both modes now share ONE saved
-  slot (see §5b), starting fresh would clobber any parked board, so if a save
-  exists the button first opens a **confirm dialog** ("Starting a new game will
-  erase your saved Word Search game …"); only on confirm is the save cleared and
-  the new game started.
-- The chosen mode is passed via React-Router nav `state.mode` (both sub-cards
+- **Each mode has ONE launch surface (since 2026-10-03).** The Games hub offers
+  only **Pinyin** (`WordSearchHubItem` → `HUB_MODE`); **No Pinyin** is a reading
+  drill and is launched only from the Reading Center's games carousel
+  (`ReadingGamesCarousel`, [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)).
+- **The hub card's play button ALWAYS starts a fresh game** — and so does a tap
+  anywhere else on the card outside the resume tile (`GameCard`: a card with a play
+  button is tappable as a whole, see
+  [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)). It navigates with nav
+  `state = { mode: "pinyin", resume: false }`. That would clobber the parked Pinyin
+  board (§5b), so if one exists the button first opens a **confirm dialog** ("Starting a
+  new game will erase your saved Word Search game …"); only on confirm is the save
+  cleared and the new game started. The Reading Center carousel's play button follows
+  the same rule for the No Pinyin slot — always a fresh game, behind the same confirm
+  (`NewGameConfirmDialog`, shared by both surfaces) when a board is parked; only its
+  Resume box resumes.
+- The chosen mode is passed via React-Router nav `state.mode` (both launch surfaces
   share the single `/games/word-search` route) and is **fixed for the whole
   run** — there is no in-game pinyin toggle. `WordSearchPage` reads it once on
   mount (`modeConfigFor`, `MODE_CONFIGS` in `constants.ts`).
@@ -418,58 +428,65 @@ A hinted word marks **nothing at all**, on either track (§ hints).
   app-wide rule** — pinyin is a per-game setting, and Word Search is its precedent; see
   [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).
 
-#### Group header + win count
+#### Win count
 
-The strip is topped by a `HubMenuGroupHeader` (wrapped with it in a
-`HubMenuGroup`, both from `HubMenu.tsx`) carrying the game title and a
-`HubMenuStatBadge variant="header"` with the **aggregate lifetime win count** —
-`totalWins` from `useGameWins(GAME_KEY)`. The mode sub-cards carry no badge of
-their own: a count on one of them would read as that mode's score.
+The card header's **win pill** (`GameCard`'s `WinCountPill`) is a trophy glyph + the
+**aggregate lifetime win count** — `totalWins` from `useGameWins(GAME_KEY)`, on both
+surfaces.
 
 Win logging goes through the same hook. `WordSearchPage` calls
 `recordWin(WIN_LEVEL)` on completion (it previously hand-rolled its own
 `POST /api/users/me/wins`); `GAME_KEY` (`"wordSearch"`) and `WIN_LEVEL` (`1`) now
 live in `constants.ts` so the page and the hub item share them. Word Search has no
 levels — **every completion in either mode lands in the one `level: 1` bucket**,
-so its hub count is inherently whole-game. See
-[BENTO_SYSTEM.md § BentoStrip vs ShelfHeader](./BENTO_SYSTEM.md).
+so its hub count is inherently whole-game.
 
-#### Resume card (leading 1:1 square)
+#### Resume card
 
-When a saved board exists, `WordSearchHubItem` **prepends a 1:1 square card**
-before the two mode buttons. Its **normal face** is styled like a real hub card:
-a **"Resume"** title (matches `HubMenuCardTitle` — bodyLg / medium / onSurface),
-then the parked board's **timer** (frozen `elapsedMs`; omitted when `showTimer` is off —
+One component, **`WordSearchResumeTile`** (`src/games/word-search/WordSearchResumeTile.tsx`),
+renders the resume card on BOTH launch surfaces — the Games hub (`WordSearchHubItem`,
+Pinyin slot) and the Reading Center games carousel (`ReadingGamesCarousel`, No Pinyin
+slot) — and both place it identically, through `buildWordSearchCard` → a
+`kind: "resume"` `GameCardOption`. It is drawn on `GameOptionTile`
+(`src/games/shared/GameCard.tsx`), the SAME shell as a Bubble Match level tile, so its
+radius, padding, 62px floor, outline and title type (`OPTION_TITLE_SX`) are shared rather
+than copied. The tile owns its two faces and the `confirmingErase` state;
+`useWordSearchLauncher` owns the save slot (`onResume`, `onErase` → `clearGameState`), and
+`GameCard`'s option slot owns its footprint. On both surfaces it is one Bubble Match level slot wide
+(`SLOT_FLEX` — ~86px in the carousel's 300px card, ~100px on the hub's full-row card)
+and 62px tall, so the delete face reads **"Delete?"** with Cancel / Delete **stacked**
+and a 6px inset. (The roomier "Delete save?" / side-by-side variant, `compact={false}`,
+was deleted 2026-10-03 when the hub moved onto the shared card and left it no caller.)
+
+When a saved board exists, the tile sits at the left of the card's options row. Its **normal
+face**: a **"Resume"** title (`OPTION_TITLE_SX` — 12.5 / 600 / onSurface, same as a level tile), then the parked board's **timer** (frozen `elapsedMs`; omitted when `showTimer` is off —
 see "The play panel, top to bottom") and **X/N found** inlined (N is the
 SAVED board's own word count — `savedWordCount` reads `saved.data.words.length`, not
 `TOTAL_WORDS`, so a board parked before a size change still counts to its own total)
-on one row, then the **mode** (Pinyin / No Pinyin), with an **✕** inset in the
-top-right corner.
+on one row, with an **✕** inset in the top-right corner. **No mode label**
+(removed 2026-10-03): the hub only ever parks a Pinyin board and the Reading Center
+only a No Pinyin one, so the launching surface already says which board it is.
+
+**Outlines:** the resume tile wears the app's button outline (`1px solid COLORS.border`,
+CLAUDE.md § "Buttons & cards"); the Word Search card *around* it deliberately does not —
+`buildWordSearchCard` sets `GameCardData.outlined: false` (the frame stays a transparent
+1px so its footprint matches Bubble Match's outlined card).
 
 - **Tapping the card resumes** — navigates with `state = { mode: saved.mode,
   resume: true }`; `WordSearchPage` restores the saved board instead of fetching
   a fresh one. No warning (nothing is lost).
 - **✕ arms an in-place delete confirmation** (`confirmingErase` state): the
-  tile flips to a **"Delete save?" face** with **Cancel** / **Delete**
+  tile flips to a **"Delete?" face** with **Cancel** / **Delete**
   buttons — it does NOT erase on the first tap. Cancel returns to the normal
-  face; only **Delete** clears the save (`clearGameState`) and animates the
-  tile's `flexGrow` to zero (react-spring `useTransition` `leave`), so the mode
-  sub-tiles slide left to fill the gap. While the confirm face is showing, a tap on
-  the tile body does not resume.
-- To let the width collapse fully to 0 the tile uses `minWidth: 0` (the flex
-  default `auto` would floor it at min-content) and `leave.marginRight: -9` to
-  cancel the strip row's 9px flex gap, which otherwise survives its item
-  shrinking to zero and leaves a stump until unmount.
-- **The delete face is absolutely inset (`inset: 11px`) and must stay that way**,
-  and so must its one-line copy. A flex row takes its height from its tallest
-  item, so anything that face measures becomes the height of the two mode tiles
-  next to it: in flow, "Delete saved game?" wrapped to two lines at a third of the
-  strip's width (~93px against the 80px sub-tile floor), so arming the ✕ grew the
-  strip, and confirming it re-wrapped the title tighter as the tile collapsed —
-  the mode tiles changed height throughout the slide-back. Out of flow the face
-  contributes nothing and only width animates. The normal resume face may stay in
-  flow because every one of its lines is `whiteSpace: nowrap` and its three lines
-  total ~72px, under the 80px floor.
+  face; only **Delete** clears the save (`clearGameState`) and the tile unmounts
+  (no exit animation — the card's `minHeight: 62` options row keeps the card's height
+  steady). While the confirm face is showing, a tap on the tile body does not resume.
+- **The delete face is absolutely inset (6px) and must stay that way**,
+  and so must its one-line copy. In the carousel's flex row, anything that face
+  measures becomes the height of the tiles beside it (historically, "Delete saved
+  game?" wrapped to two lines and arming the ✕ grew the whole hub strip). Out of flow
+  the face contributes nothing, so arming the ✕ never resizes its host. The normal resume face may stay in
+  flow because every one of its lines is `whiteSpace: nowrap`.
 - Word Search has **no difficulty** concept, so the card intentionally shows the
   **mode** as its only categorical line (no separate difficulty row).
 
@@ -593,15 +610,16 @@ in full ink (`COLORS.onSurface`) like every other HUD fact:
   so the finish time / medal stays accurate. Persisted via `useWordSearchSettings`
   (`wordSearch.settings` in **localStorage** — device-local, survives closing the app;
   not sessionStorage and not synced to the account).
-- **Hidden means hidden everywhere**: the hub's resume card (`WordSearchHubItem.tsx`,
-  `word-search-hub__resume-stats`) reads the same setting and drops the parked time,
-  showing only `X/N`.
+- **Hidden means hidden everywhere**: the resume card on both launch surfaces
+  (`WordSearchResumeTile`, `*__resume-stats` — the hub and the Reading Center carousel
+  each pass `showTimer` in) reads the same setting and drops the parked time, showing
+  only `X/N`.
 
 **The mode is not stated at all** (2026-09-25). The HUD used to lead with the mode label
 (`Pinyin · production`, `No Pinyin · reading & production`); it was removed. The mode is
 fixed by which hub entry launched the run and is visible on the board itself (pinyin is on
-the grid or it is not), so no chip, toggle or label repeats it. `modeConfig.label` is still
-used by the hub, not by the play page.
+the grid or it is not), so no chip, toggle or label repeats it. `modeConfig.label`
+(via `modeLabel`) survives only in the "Start a new game?" confirm (`NewGameConfirmDialog`).
 
 ### Header controls
 
@@ -1199,17 +1217,23 @@ non-stroke radicals) — the rules and rationale live in
 
 Client-only, no server/DB involvement (same design posture as §5a's hint
 meter) — the full board payload is already on the client, so a single
-localStorage blob (`gameStateStorage.ts`, key `wordSearch.savedGame.<userId>`)
-is enough to survive an exit or the app being backgrounded.
+localStorage blob per mode (`gameStateStorage.ts`, key
+`wordSearch.savedGame.<mode>.<userId>`) is enough to survive an exit or the app
+being backgrounded.
 
-**One shared slot for both modes.** The key is scoped by `userId` only; the
-`mode` ("pinyin"/"no-pinyin") lives *inside* the payload
-(`SavedWordSearchState.mode`), not the key. So there is exactly one parked board
-per user, and it's resumed **only** from the hub's resume card (§3), which
-restores it in whichever mode it was saved under. `saveGameState` /
-`loadGameState` / `clearGameState` take just `userId` (no `mode` parameter).
-This replaced the old per-mode keying — the two mode buttons now always start
-fresh rather than silently resuming their own board.
+**One slot per mode = one slot per launch surface** (since 2026-10-03). Each mode
+has exactly one launcher (§3) — Pinyin the Games hub, No Pinyin the Reading
+Center carousel — so keying by mode keeps the two surfaces' boards apart: neither
+can resume or clobber the other's. `loadGameState` / `clearGameState` take
+`(userId, mode)`; `saveGameState` reads the mode from the payload
+(`SavedWordSearchState.mode`, still stored — it routes legacy saves and guards a
+wrong-mode restore). A fresh launch never silently resumes; only the surface's
+resume affordance does (`resume: true` in nav state).
+
+**Legacy shared slot.** From the previous design until 2026-10-03 both modes
+shared one key, `wordSearch.savedGame.<userId>`. `loadGameState` still reads it and
+moves a board into its mode's slot the first time that mode looks, so no parked
+board was lost in the split. ⚠️ Delete that read once no device can hold such a save.
 
 - **What's saved** (`SavedWordSearchState`): the `mode`, the grid payload
   (`data`), `found` entryKeys, elapsed timer ms, whether the timer had ever
@@ -1299,16 +1323,22 @@ Frontend (`src/games/word-search/`):
 - `useWordSearchSettings.ts` — localStorage-backed hook for Word-Search-only
   prefs (currently just `showTimer`, flipped by the HUD eye toggle in
   `WordSearchPage.tsx`), mirrors `useFlashcardLearnSettings`.
-- `WordSearchHubItem.tsx` — the Games-hub strip (rendered by `GamesPage.tsx`):
-  the two mode buttons (start-fresh, with a confirm dialog when a save exists)
-  plus the prepended 1:1 resume card (timer / X·12 / mode + ✕ erase, with the
-  react-spring collapse animation), under a `HubMenuGroupHeader` carrying the
-  game title + the aggregate lifetime win count (`useGameWins(GAME_KEY).totalWins`).
-  Owns the saved-board read + confirm state. See §3.
-- `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`
-  (each takes just `(userId, …)`), the **single-slot** (mode-agnostic key,
-  `mode` stored in the payload) localStorage save/resume layer for the one
-  in-progress board. See §5b.
+- `WordSearchHubItem.tsx` — the Games-hub entry (rendered by `GamesPage.tsx`):
+  `useWordSearchLauncher` for the Pinyin slot + the shared `GameCard` (full grid row).
+- `useWordSearchLauncher.tsx` — the launcher both surfaces share: owns the save-slot
+  read, resume, erase, the confirm-before-clobber state and `NewGameConfirmDialog`;
+  returns `{ card, confirmDialog }`. See §3.
+- `wordSearchCard.tsx` — `buildWordSearchCard`: the ONE definition of Word Search's
+  `GameCard` data (pur ground, `outlined: false`, the resume tile as a `kind: "resume"`
+  option, play button).
+- `WordSearchResumeTile.tsx` — the resume card shared by the hub and the Reading
+  Center carousel (timer / X/N + ✕ → in-place delete confirm), drawn on
+  `GameOptionTile`. See § "Resume card".
+- `NewGameConfirmDialog.tsx` — the "Start a new game?" clobber confirm, rendered by
+  `useWordSearchLauncher`.
+- `gameStateStorage.ts` — `saveGameState`/`loadGameState`/`clearGameState`, `savedWordCount`:
+  the localStorage save/resume layer, **one slot per (user, mode)** since 2026-10-03
+  (`loadGameState` migrates a legacy mode-agnostic save on first read). See §5b.
 - `constants.ts` — grid query, `CELL_SIZE`, medal thresholds, hint tunables
   (`HINT_BAR_UNITS`, `HINT_COST`, `HINT_LETTER_BLANK`, `HINT_REMAINDER_MARK`,
   `HINT_ACCENT_COLOR`),

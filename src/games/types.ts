@@ -12,15 +12,6 @@ export interface GameDef {
     /** Hub menu row label. */
     title: string;
     /**
-     * Short blurb shown under the title on the hub's bento tile.
-     *
-     * KEEP IT SHORT — three or four words. It renders at 11.5px inside a 112px-tall
-     * tile that is half the phone's width, so anything longer than about six words
-     * wraps to a third line and overflows the tile. These used to be full sentences
-     * because the old hub row was full-width; the bento is not.
-     */
-    subtitle?: string;
-    /**
      * Material Symbols ligature name for the hub tile's ghost glyph (see
      * components/Icon). Drawn oversized, clipped, and at 15% of the tile's own ink —
      * decoration that gives the hub a family of shapes, NOT a way to tell two games
@@ -50,13 +41,13 @@ export interface GameDef {
     /** When true, hide the game from public/demo accounts. Defaults to false. */
     requiresAuth?: boolean;
     /**
-     * The single mastery track this game feeds (docs/MASTERY_REWORK.md). The hub
-     * renders it as a MarkTypeChip on the game's card(s) so a player can see which
-     * track a game trains before opening it.
+     * The single mastery track this game feeds (docs/MASTERY_REWORK.md). It is NOT
+     * shown on the hub (name-only tiles since 2026-10-03); it drives the game's mark
+     * calls and challenge eligibility.
      *
      * Always set it from the game's own `MARK_TYPE` constant rather than repeating
      * the literal here — that constant is what the game's pool query and mark call
-     * use, so sourcing the chip from it makes the label unfalsifiable.
+     * use, so sourcing it from there keeps the two from drifting.
      *
      * OMIT for a game whose mark type varies by mode; that game's hub strip labels
      * each sub-card from its own mode config instead. Word Search is the only such
@@ -64,6 +55,14 @@ export interface GameDef {
      * WordSearchModeConfig.markType).
      */
     markType?: MarkType;
+    /**
+     * Keep the game OUT of the Games hub. Its route, page and registry metadata are
+     * unchanged — it is just launched from somewhere else. Speed Reading is the one
+     * such game: a reading drill, launched only from the Reading Center's games
+     * carousel (ReadingGamesCarousel), which reads the registry directly and ignores
+     * this flag. Read by GamesPage's `visibleGames`.
+     */
+    hiddenFromHub?: boolean;
     /**
      * Languages this game can be played in. Omit for language-agnostic games
      * (the default — the first three games all work in any language).

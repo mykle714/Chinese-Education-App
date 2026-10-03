@@ -464,6 +464,41 @@ Today that is only the flp merge sheet's header.
 
 ---
 
+## Keyboard and popups
+
+**Rule: a popup is never covered by a keyboard** — neither the handwriting keyboard
+(docs/BEGINNER_KEYBOARD.md) nor the OS keyboard. Both popup families get this centrally;
+a new popup inherits it by being one of them, and nothing per call site opts in.
+
+| Popup family | Behaviour while a keyboard is up | Where |
+|---|---|---|
+| Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
+| Every `SheetPanel` (eip, decks sheet, compare sheet, scp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
+
+The number behind both is `useKeyboardInset()` — the `Math.max` of our keyboard's
+measured surface and the OS keyboard's `visualViewport` occlusion — which
+`BeginnerKeyboardProvider` also publishes to `:root` as `--keyboard-inset` and
+`--keyboard-inset-timing` (`src/features/beginnerKeyboard/useKeyboardInset.ts` →
+`KEYBOARD_INSET_CSS_VARIABLE`, `unionKeyboardInset`; `transition.ts` → `timingForInset`).
+The provider measures it for **every** learner, not just the ones the handwriting keyboard
+serves, because a Spanish learner's OS keyboard covers a dialog just the same.
+
+Why it matters most for the handwriting keyboard: it suppresses the OS keyboard with
+`inputMode="none"`, so iOS never pans the page to reveal the focused field — without the
+padding a centred dialog's text field and buttons sit directly under it.
+
+**Gotchas:**
+- The Dialog padding is on `root`, **not** `container`: MUI's `Fade` writes an inline
+  `transition: opacity …` onto the container, which would replace the padding transition.
+- The SheetPanel padding is written as an inline style on the scroll element, layered over
+  the body's own (class-based) padding, which it reads back first. A sheet body must not
+  set its scroll element's `padding-bottom` through an inline `style` prop.
+- Menus/Popovers are not covered (none hosts a text field today).
+- The OS-keyboard figure on the web is inferred from `visualViewport` (see
+  docs/BEGINNER_KEYBOARD.md § 7a) — **iPhone-verified: not yet** (2026-10-03).
+
+---
+
 ## Referenced code
 
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
@@ -471,6 +506,7 @@ Today that is only the flp merge sheet's header.
 - `src/hooks/useThemeColor.ts` — `theme-color` claims for Safari tabs / Android Chrome only
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
+- `src/contexts/ThemeContext.tsx` → `MuiDialog`, `src/components/sheet/SheetPanel.tsx`, `src/features/beginnerKeyboard/useKeyboardInset.ts` — keyboard clearance for popups (see above)
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above

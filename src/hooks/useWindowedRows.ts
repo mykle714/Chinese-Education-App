@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, type RefObject } from "react";
+import { scrollParentOf } from "../utils/scrollParent";
 
 /**
  * useWindowedRows — render only the rows of a fixed lattice grid that are near the
@@ -67,17 +68,6 @@ export interface RowWindow {
     /** Height of the spacer standing in for the rows below `end`. 0 = no spacer. */
     trailingPx: number;
 }
-
-/** The first ancestor that actually scrolls, or null when the page itself does. */
-const scrollParentOf = (el: HTMLElement | null): HTMLElement | null => {
-    let node = el?.parentElement ?? null;
-    while (node) {
-        const overflowY = window.getComputedStyle(node).overflowY;
-        if (overflowY === "auto" || overflowY === "scroll") return node;
-        node = node.parentElement;
-    }
-    return null;
-};
 
 const FULL_WINDOW: RowWindow = { start: 0, end: 0, leadingPx: 0, trailingPx: 0 };
 

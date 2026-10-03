@@ -1877,7 +1877,7 @@ that walk is a passing test.
 | `src/features/beginnerKeyboard/eligibility.ts` | which fields qualify (pure `isEligible` + DOM read) |
 | `src/features/beginnerKeyboard/insertAtCaret.ts` | writes through React's value tracker |
 | `src/features/beginnerKeyboard/insetContext.ts` | `useBeginnerKeyboardInset`, `--beginner-keyboard-inset` |
-| `src/features/beginnerKeyboard/useKeyboardInset.ts` | `useKeyboardInset` / `useKeyboardTransition` — ours ∪ the OS keyboard's occlusion |
+| `src/features/beginnerKeyboard/useKeyboardInset.ts` | `useKeyboardInset` / `useKeyboardTransition` — ours ∪ the OS keyboard's occlusion; `unionKeyboardInset` + the `--keyboard-inset` / `--keyboard-inset-timing` variables the provider publishes for popups |
 | `src/features/beginnerKeyboard/BeginnerKeyboard.tsx` | the three-region layout; sizes the square canvas |
 | `src/features/beginnerKeyboard/CandidateRow.tsx` | the modal row (§ 6p/§ 6r) |
 | `src/features/beginnerKeyboard/ComponentBuffer.tsx` | the component buffer, one chip per part, tap to remove one |
@@ -3090,6 +3090,15 @@ rather than a sum — the two are mutually exclusive by construction, and max is
 what keeps the handover between them from flickering through a doubled or zero
 inset. Reserve off `useKeyboardInset()` unless a page genuinely wants to ignore
 the OS keyboard.
+
+##### Popups get the union automatically
+
+Dialogs and sheets do not opt in: `BeginnerKeyboardProvider` publishes the union as
+`--keyboard-inset` (+ `--keyboard-inset-timing`) on `:root` for every learner, the MUI
+theme pads every Dialog root by it, and `SheetPanel` pads its body's scroll element by
+`useKeyboardInset()`. See docs/UX_AND_NAVIGATION.md § Keyboard and popups. Code:
+`useKeyboardInset.ts` → `unionKeyboardInset`, `KEYBOARD_INSET_CSS_VARIABLE`;
+`transition.ts` → `timingForInset`.
 
 #### ⚠️ Driving a controlled React input from outside React
 

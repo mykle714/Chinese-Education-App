@@ -21,7 +21,12 @@ export {
 } from './transition';
 export { default as KeyboardSwitchBar, KEYBOARD_SWITCH_BAR_HEIGHT } from './KeyboardSwitchBar';
 export type { KeyboardSource } from './KeyboardSwitchBar';
-export { useKeyboardInset, useKeyboardTransition } from './useKeyboardInset';
+export {
+  useKeyboardInset,
+  useKeyboardTransition,
+  KEYBOARD_INSET_CSS_VARIABLE,
+  KEYBOARD_INSET_TIMING_CSS_VARIABLE,
+} from './useKeyboardInset';
 export { useGlyphAssets } from './useGlyphAssets';
 export { useComposition, CANDIDATE_DISPLAY_LIMIT } from './useComposition';
 export type { Candidate, CandidateMode, Composition } from './useComposition';

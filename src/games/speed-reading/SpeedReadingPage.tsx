@@ -48,6 +48,7 @@ import {
 import type { OptionFeedback, Phase, Round } from "./types";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useGameExit } from "../runtime/gameExit";
 
 /**
  * Speed Reading — read the pinyin and definition, then tap the word that matches.
@@ -128,6 +129,8 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 const SpeedReadingPage: React.FC = () => {
     usePageTitle("Speed Reading");
     const navigate = useNavigate();
+    // Where Back / "Back to …" land: the hub, or the surface that launched us.
+    const gameExit = useGameExit();
     const { user } = useAuth();
     const tts = useTTS();
     const { recordWin } = useGameWins(GAME_KEY);
@@ -684,7 +687,7 @@ const SpeedReadingPage: React.FC = () => {
         <GameLeafPage
             hue={GAME_HUE}
             title="Speed Reading"
-            onBack={() => navigate("/games")}
+            onBack={() => navigate(gameExit.path, { state: gameExit.state })}
             hideHeader
         >
             {({ onBack: leaveGame }) => (
@@ -723,8 +726,8 @@ const SpeedReadingPage: React.FC = () => {
                                 || (!user ? "Sign in to play Speed Reading."
                                     : "No cards are playable right now. Study more cards and try again.")}
                         </Typography>
-                        <Button className="speed-reading__block-back" variant="contained" onClick={() => navigate("/games")}>
-                            Back to Games
+                        <Button className="speed-reading__block-back" variant="contained" onClick={() => navigate(gameExit.path, { state: gameExit.state })}>
+                            Back to {gameExit.label}
                         </Button>
                     </>
                 )}
@@ -931,10 +934,10 @@ const SpeedReadingPage: React.FC = () => {
                             <Button
                                 className="speed-reading__popup-back"
                                 variant="outlined"
-                                onClick={() => navigate("/games")}
+                                onClick={() => navigate(gameExit.path, { state: gameExit.state })}
                                 sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
                             >
-                                Back to Games
+                                Back to {gameExit.label}
                             </Button>
                         </Box>
                     </GameEndPopup>

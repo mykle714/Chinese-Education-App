@@ -819,8 +819,9 @@ information only. It does not gate a medal.
 **mode's** (Study Mix 1, Review 2, Challenge 3 — see
 [§ Difficulty modes](#difficulty-modes-study-mix--review--challenge)); Study Mix keeps
 key `1`, the game's original single-difficulty key, and is the only key reachable
-now that the hub launches Study Mix only. The hub row shows the **game-wide `×N`**
-as its corner badge (there is no per-mode ⭐ left — that lived on the removed mode
+now that the hub launches Study Mix only. The hub tile shows the **game-wide win count**
+as its corner badge — the shared trophy `WinCountPill` (`src/games/shared/GameCard.tsx`),
+passed as a `pinBare` BentoTile pin in the tile's top-left (`pinSide="left"`) so it matches the Reading Center's cards (there is no per-mode ⭐ left — that lived on the removed mode
 sub-cards). Gold-only keeps the badge an achievement rather than a play counter.
 
 Medal thresholds are deliberately **not** re-tuned per mode: a 9-pair gold on
@@ -1089,7 +1090,7 @@ Edits outside that folder:
 | File | Edit |
 |---|---|
 | `src/games/registry.ts` | one `GameDef` (title, subtitle, `bgColor`, lazy `Component`) — this alone wires the hub, router, and phone frame |
-| `src/games/GamesPage.tsx` | the hub entry: a plain single `HubMenuRow` (registry-driven), special-cased only to hang the game-wide `×N` win badge on its `cornerBadge`. The former difficulty-mode strip and its `MATCH_SPEED_MODE_COLORS` palette are gone. |
+| `src/games/GamesPage.tsx` | the hub entry: a plain single `BentoTile` (registry-driven), special-cased only to hang the game-wide win count (`WinCountPill`, `pinBare`) on its `pin`. The former difficulty-mode strip and its `MATCH_SPEED_MODE_COLORS` palette are gone. |
 | `src/constants.ts` | add `/games/match-speed` to `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | `server/services/OnDeckVocabService.ts` | stamp `gameCategory` on pool cards |
 | `server/contracts/wire.ts` | `gameCategory?: FlashcardCategory` on `VocabEntryBase` — one declaration serves both sides |
@@ -1173,6 +1174,6 @@ Docs updated when this shipped:
   which-type-each-surface table, plus a note that the bucket is now on the wire as
   `gameCategory`.
 - [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — ✅ Match Speed's mode strip was
-  later **removed**: it is a single `HubMenuRow` again, carrying the game-wide
-  `×N` as its own corner badge. That doc's § Array items records why it is not a
+  later **removed**: it is a single bento tile again, carrying the game-wide
+  win count (`WinCountPill`) as its own corner badge. That doc's § Array items records why it is not a
   fan-out game.

@@ -27,16 +27,16 @@ opposite of `Spine`, whose height *is* its count. See
 
 ## Structure
 
-**Code:** `src/components/bento/Bento.tsx` → `Bento`, `BentoTile`, `BentoStrip`,
-`BentoSubTile`; `src/components/bento/CollectionChip.tsx` → `CollectionChip`;
+**Code:** `src/components/bento/Bento.tsx` → `Bento`, `BentoTile`, `TILE_VARIANTS`;
+`src/components/bento/CardShell.tsx` → `CardShell`, `CARD_SHELL`, `CARD_TITLE_SX`;
+`src/components/bento/CollectionChip.tsx` → `CollectionChip`;
 `src/components/bento/index.ts` (the barrel — import from here).
 
 | Export | Design class | What it is |
 |---|---|---|
 | `Bento` | `.bento` | 2-column grid, `gap: 10`, `padding: 14px 16px 0` |
 | `BentoTile` | `.bt` | one destination |
-| `BentoStrip` | `.strip` | full-width cell: a captioned row of sub-tiles |
-| `BentoSubTile` | `.st` | one sub-tile inside a strip |
+| `CardShell` | `.bt` body | the family's shared body — see § "CardShell" |
 | `CollectionChip` | `.chipsel` | white outlined "which collection" bar above a grid |
 
 ### Tile variants
@@ -64,11 +64,12 @@ uses, and it is what makes a tile wide enough to carry a title *and* a subtitle.
 exists for the one shape the artboards also draw (Friends, artboard 8) — a row of SIBLING
 ACTIONS named in one word each. At three columns there is no room for a subtitle, so pair
 it with `variant="compact"` and let the ghost glyph carry what the one-word label
-compresses. Do not reach for it to fit more destinations on a hub; that is `BentoStrip`.
+compresses. Do not reach for it to fit more destinations on a hub; group a SET of launch
+options inside one full-width card instead (the Games hub's `GameCard`).
 
 A tile spans the full grid via `gridColumn: "1 / -1"`, **not** `span 2` — a hero is "the
 full width of whatever grid it is in", and spelling it as a span silently means *two
-thirds* in a 3-column bento. `BentoStrip` uses the same.
+thirds* in a 3-column bento. A full-row `GameCard` uses the same.
 
 `hero` already implies full width. `fullWidth` is the other combination: a SHORT tile that
 still owns its row (Friends' Challenges bar). Width and height are separate decisions, and
@@ -90,9 +91,19 @@ challenges, since the app sends no notifications of any kind — would be indist
 from a deck count. An alert pin also needs the explicit `minWidth`: a one-digit count in a
 pill sized only by its padding renders as an oval, not the circle a badge is read as.
 
+**`pinBare`** — the pin node brings its own chrome and the slot only positions it (no
+mono font, padding or background; `pinTone` is ignored). It exists for the games' win
+badge: the Games hub's Match Speed tile passes `WinCountPill`
+(`src/games/shared/GameCard.tsx` → `WinCountPill`) with `pinBare`, so its win count is
+the same trophy pill the `GameCard`s (Bubble Match, Word Search, the Reading Center
+carousel) wear rather than a `×N` mono pin. It also passes **`pinSide="left"`** (default
+`"right"`), putting the pill in the tile's top-LEFT corner, clear of the ghost glyph that
+bleeds off the top-right. Code: `src/components/bento/Bento.tsx` →
+`BentoTile`; `src/games/GamesPage.tsx`.
+
 ### Colour: tiles take a hue KEY, not a colour
 
-`BentoTile`/`BentoSubTile` take `hue: RampHue` (`RAMP`, `src/theme/colors.ts`), not
+`BentoTile` takes `hue: RampHue` (`RAMP`, `src/theme/colors.ts`), not
 a hex. A tile needs **two tiers of one hue at once** — the pastel `fill` for its body
 and the matching `ink` for its ghost glyph. Passing them separately is the palette
 mistake that typechecks, looks deliberate, and is invisible in review. `GameDef.hue`
@@ -103,8 +114,8 @@ Title is `COLORS.onSurface`, subtitle is `COLORS.textSecondary`, on every hue.
 
 ### The ghost glyph
 
-`.bg` — an oversized Material Symbol bleeding off the top-right, drawn in the tile's
-**own ink** at 15% (not neutral ink; neutral makes a tile read as two colours). It is
+`.bg` — an oversized Material Symbol bleeding off the top-right, drawn in ink
+(`COLORS.onSurface`, v2 has no per-hue ink tier) at 15% (`CARD_SHELL.ghostOpacity`). It is
 **decoration, not information**: clipped, behind the text, barely a tone. Do not rely
 on it to distinguish two tiles — the title does that.
 
@@ -114,36 +125,47 @@ Every other pastel fill in the app carries the 12% inset ring, because a pastel 
 ~1.15:1 against paper. A Bento tile is the exception, and the design draws the
 distinction itself: `.msb .cells i` (15px, no content) gets the ring; `.bt` (112px,
 carrying a title and subtitle) gets a soft `0 1px 2px` drop shadow. **The rule is: a
-pastel needs an outline unless it is large and occupied.** `TipBox` (`.tip`) is the
-other large-and-occupied case.
+pastel needs an outline unless it is large and occupied.**
+
+Bento tiles are also an exception to the app-wide button/card outline
+(`1px solid COLORS.border`, CLAUDE.md § "Buttons & cards"): `CardShellProps.outlined`
+defaults to `false` and `BentoTile` never sets it. `GameCard`'s `card` variant DOES set it
+(game cards are outlined), except Word Search's (`GameCardData.outlined: false`). `TipBox`
+used to share the tile exception but now wears the outline
+(`src/components/TipBox.tsx` → `TipCard`).
+
+Code: `src/components/bento/CardShell.tsx` → `CardShell` (`outlined`);
+`src/games/shared/GameCard.tsx` → `GameCard`.
 
 ### Tiles are real anchors
 
 `to` / `state` render the tile as a `RouterLink` — middle-click, new-tab, and
 keyboard focus come free. `onClick` receives the **event**, so a tile can intercept
 its own activation (`preventDefault()` + navigate imperatively) while leaving
-modified clicks to the anchor. Word Search's mode tiles need exactly this, to confirm
-before clobbering a saved board.
+modified clicks to the anchor.
 
-### `BentoStrip` vs `ShelfHeader`
+### CardShell — one body for the whole family
 
-Both are captioned headers; they end differently, and that is the distinction:
+`CardShell` is the body every Bento-family card renders through: the 19px radius, the
+optional outline (above), the `SHADOW.rest` drop shadow, the 14px padding, the ghost glyph
+(ink, 15%, bleeding off the top-right) and the corner pin slot (`pin` / `pinTone` /
+`pinBare` / `pinSide`, all described above). It owns NO inner layout.
 
-* `BentoStrip`'s `meta` slot ends with a **fact about the set** — `×14 wins`,
-  `2 modes` — as a mono `.lab`.
-* `ShelfHeader`'s `action` ends with a **chevron**: "there is more of this".
+Two entities render through it, so a change to any shell number moves both:
 
-`BentoStrip` also accepts `action` for the rare header that wants the chevron.
+| Entity | Inner layout |
+|---|---|
+| `BentoTile` | foot-aligned title + subtitle, geometry from `TILE_VARIANTS` |
+| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's |
 
-**And a third slot, `control`** — an interactive element rendered immediately after
-the caption, on the same line. It is neither a fact (`meta`, right end) nor a
-destination (`action`): it is a **setting that changes what the sub-tiles launch**.
-The one caller today is Games' Bubble Match strip, whose `BubbleMatchTrackToggle`
-picks between the Recognition and Reading mastery tracks by turning pinyin on or off
-(the game latches it when the board is dealt — [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)).
-A control belongs beside the label because it is part of what the group *is*; keep the
-right end for status. Code: `BentoStripProps.control` (`src/components/bento/Bento.tsx`),
-`src/games/bubble-match/BubbleMatchTrackToggle.tsx`, `src/games/GamesPage.tsx`.
+`GameCard`'s other variant, `tile`, IS a `BentoTile` (see
+[GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Games hub").
+
+*(Removed 2026-10-03: `BentoStrip` / `BentoSubTile`, a captioned row of sub-tiles, and
+`BentoStripProps.control`. Their last callers were the Games hub's Bubble Match / Word
+Search strips, which became `GameCard`s. `SectionHeader`'s `meta` slot,
+`src/components/primitives/Label.tsx`, still carries the "fact about the set, never a
+control" meaning the strip header had.)*
 
 ## Callers
 
@@ -151,13 +173,13 @@ right end for status. Code: `BentoStripProps.control` (`src/components/bento/Ben
 |---|---|
 | **Home** (`src/pages/HomePage.tsx`) | Night Market `hero`; Games / Arena / **Immersive World** (`blu`) / Reader / Dictionary `base`; Community / Friends `low`. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.home-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isValidator` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`blu`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
 | **Discover** (`src/features/discover/DiscoverPage.tsx`) | Sort Cards `hero`; Quick Mark and Skipped Cards `base`. |
-| **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; Bubble Match and Word Search as strips; Match Speed / Speed Reading / Hydra Bubbles / Memory Map as tiles. |
+| **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; EVERY game is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (the Reading Center carousel's card, drawn on `CardShell`), Match Speed / Hydra Bubbles / Memory Map as half-width `variant="tile"` (a `BentoTile`). Speed Reading is hub-hidden. |
 | **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 
-Games' two strips are **special-cased in the page**, not driven by a generic
-`GameDef.levels` field, because they are the only two fan-out games. Word Search's
-strip is owned by `src/games/word-search/WordSearchHubItem.tsx` rather than the page,
-because it holds word-search-specific state (the saved board, the confirm dialog).
+Bubble Match's and Word Search's cards are **special-cased in the page**, not
+driven by generic `GameDef` fields. Word Search's card is owned by
+`src/games/word-search/WordSearchHubItem.tsx` rather than the page, because it holds
+word-search-specific state (the saved board, the confirm dialog).
 
 ## Registry fields the hub reads
 
@@ -166,25 +188,22 @@ because it holds word-search-specific state (the saved board, the confirm dialog
 * `hue: RampHue` — the tile's ramp hue. *(Was `bgColor: string`.)*
 * `glyph: string` — the ghost glyph's Material Symbols name. *(Was `iconAsset`, an
   optional image URL that no game ever set.)*
-* `subtitle?: string` — **keep it to three or four words.** It renders at 11.5px in a
-  half-width 112px tile; anything past ~six words wraps to a third line and overflows.
+* *(no `subtitle`)* — Games hub tiles are **name-only** since 2026-10-03: `GameDef.subtitle`
+  was deleted, and no `GameCard` carries a subtitle (Bubble Match's level options read
+  just "Level N"). `BentoTile`'s own
+  `subtitle` prop still exists for other hubs.
 
-Bubble Match's `hue` is only a fallback: its three levels take their own hues from
-`BUBBLE_MATCH_LEVEL_HUES` in `GamesPage.tsx` (a difficulty ramp, green → red).
+Bubble Match's `hue` is only a fallback: its card is white and its level options take
+their own hues from `LEVEL_HUES` (`src/games/bubble-match/constants.ts`, a difficulty
+ramp), via `buildBubbleMatchCard`.
 
 ## Known gaps
 
-* **The mark-type CHIP is gone from the Games hub — the mark-type LABEL is not.**
-  A bento tile has no edge slot, so the track moved into the SUBTITLE instead:
-  `tileSubtitle()` in `GamesPage.tsx` composes `"Recognition · 30-second clock"` from
-  `GameDef.markType` (through the shared `MARK_TYPE_LABELS`) plus the game's blurb, so
-  the label is derived from the same field the game marks with and cannot drift.
-  Word Search's mode sub-tiles already did this (their subtitle IS the track name).
-  `src/components/MarkTypeChip.tsx` was **deleted** (2026-08-22) once the last gap
-  closed — the open "does the chip come back?" question is answered *no*.
-  The last gap was **Bubble Match**, whose per-level sub-tile subtitles are the level
-  labels: it now names both of its tracks on the **strip header**, via the `control`
-  slot below.
+* **The Games hub names no mastery track.** The track used to ride the tile subtitle
+  (`tileSubtitle()` → `"Recognition · 30-second clock"`, after `MarkTypeChip` was
+  deleted 2026-08-22); since 2026-10-03 the hub tiles are name-only, so a player cannot
+  see which track a game trains without opening it. `GameDef.markType` still drives
+  the mark call and challenge eligibility.
 * **Discover's tile pins and its "Waiting to be sorted" shelf are not built.**
   Artboard 3 draws `184 waiting` / `31` pins and a four-spine shelf beneath the grid.
   There is no client-side count of unsorted or skipped cards — `useCategoryCounts`

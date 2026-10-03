@@ -110,7 +110,10 @@ export function senseGrammarTag(
  * before a verb to indicate an action in progress)" — has an empty `ddt` and carries no
  * displayable English, so it is not a sense the learner can meaningfully pick. Such clusters
  * are dropped BEFORE the `< 2` gate, so they neither render as a blank picker row nor leave a
- * word like 上来 showing a one-item dropdown.
+ * word like 上来 showing a one-item dropdown. (Those three examples are the raw CC-CEDICT
+ * shapes; the discoverable corpus was rewritten to plain glosses on 2026-10-03 by
+ * server/scripts/backfill/chinese/rewrite-parenthetical-glosses.js, so this is now a safety
+ * net for newly discoverable words — see docs/DEFINITION_CLUSTERS.md "Displayable clusters".)
  *
  * The drop is scoped to the PICKER/dd path deliberately: label-addressed reads (a segment's
  * tagged sense, a breakdown char's gloss) still see every cluster and apply their own

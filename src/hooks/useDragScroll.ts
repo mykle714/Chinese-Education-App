@@ -11,8 +11,18 @@ export interface DragScrollOptions {
    *      for the duration of the drag and restored once it has settled;
    *   2. with snap off, nothing settles the release, so the drag commits itself:
    *      past `PAGE_COMMIT_RATIO` of a page it advances, otherwise it springs back.
+   *
+   * A paged drag never moves more than ONE page: the pan is clamped to ±1 page while
+   * the button is down, and the release commits at most one step — no momentum, however
+   * far the cursor travels (the touch counterpart is `scroll-snap-stop: always`).
    */
   paged?: boolean;
+  /**
+   * The width of one page for a `paged` drag. Defaults to the container's `clientWidth`
+   * (a full-width pager); pass the snap step for a card carousel whose snap points sit
+   * one card apart (`ReadingGamesCarousel`: card width + gap).
+   */
+  pageWidth?: number;
 }
 
 /** Fraction of a page a paged drag must cover to turn the page instead of springing back. */
@@ -34,7 +44,7 @@ const SNAP_RESTORE_MS = 400;
  * Pass `{ paged: true }` for a scroll-snap pager (see `DragScrollOptions`).
  */
 export function useDragScroll(ref: RefObject<HTMLElement | null>, options: DragScrollOptions = {}): void {
-  const { paged = false } = options;
+  const { paged = false, pageWidth } = options;
 
   useEffect(() => {
     const el = ref.current;
@@ -75,7 +85,10 @@ export function useDragScroll(ref: RefObject<HTMLElement | null>, options: DragS
         el.style.cursor = "grabbing";
       }
       if (dragged) {
-        el.scrollLeft = startScrollLeft - delta;
+        // A paged drag is held to one page either side of where it started.
+        const width = pageWidth ?? el.clientWidth;
+        const pan = paged && width > 0 ? Math.max(-width, Math.min(width, delta)) : delta;
+        el.scrollLeft = startScrollLeft - pan;
         e.preventDefault();
       }
     };
@@ -89,13 +102,14 @@ export function useDragScroll(ref: RefObject<HTMLElement | null>, options: DragS
         restoreSnap();
         return;
       }
-      const width = el.clientWidth;
+      const width = pageWidth ?? el.clientWidth;
       if (width > 0) {
         const lastPage = Math.max(0, Math.round(el.scrollWidth / width) - 1);
         const fromPage = Math.round(startScrollLeft / width);
         const travel = el.scrollLeft - startScrollLeft;
         // Commit on travel, not on which half the page ended in: a short deliberate
-        // flick should turn the page, and a long drag that stalls should not.
+        // flick should turn the page, and a long drag that stalls should not. Never more
+        // than one page — the move handler already clamps the pan to ±1 page.
         const step = Math.abs(travel) > width * PAGE_COMMIT_RATIO ? Math.sign(travel) : 0;
         const target = Math.min(lastPage, Math.max(0, fromPage + step));
         el.scrollTo({ left: target * width, behavior: "smooth" });
@@ -132,5 +146,5 @@ export function useDragScroll(ref: RefObject<HTMLElement | null>, options: DragS
       el.removeEventListener("click", onClickCapture, true);
       el.removeEventListener("dragstart", onDragStart);
     };
-  }, [ref, paged]);
+  }, [ref, paged, pageWidth]);
 }

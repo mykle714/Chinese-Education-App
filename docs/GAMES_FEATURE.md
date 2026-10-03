@@ -179,26 +179,29 @@ Every game is played with **the collection selected in the Games hub header**.
 
 ### Collection selector (hub header)
 
-`src/games/GamesCollectionSelector.tsx`, rendered into `HubMenu`'s `header` slot
-above the TipBox: a full-width pill reading **"Playing with: &lt;collection&gt;"** that
-opens a menu of every set the fdp offers — *Collections* (All Cards, Learn Now and
-Mastered), *Mastered* (the per-skill bars), and the learner's *Decks*
-(`fetchDecks`).
+`src/games/GamesCollectionSelector.tsx`, rendered by `src/games/GamesPage.tsx` at the
+top of the `NodePage` content, directly below the TipBox and above the game `Bento`: a
+half-width, right-justified pill (it spans the Bento's right column — the width and
+`marginLeft: auto` are set on the anchor wrapper in `GamesCollectionSelector`, not on the
+shared `CollectionChip`; its menu opens right-aligned to match) reading **"Playing with: &lt;collection&gt;"** that
+opens a menu of exactly two kinds of row: **All Cards** (uncaptioned, at the top) and
+the learner's **Decks** (`fetchDecks` — custom decks and generated Study Challenge decks
+alike, under a *Decks* caption).
 
-⚠️ **All Cards has a row here but no tile on the fdp**, which now renders those cards
-inline instead. The entry stays in the shared list precisely so this selector keeps
-offering it; only the fdp filters it out. See
-[DECKS_FEATURE.md § "Which collections exist"](./DECKS_FEATURE.md).
+**Hidden when there is nothing to pick.** If the learner has no decks (or the deck
+fetch is still in flight / failed), the menu would hold All Cards alone, so
+`GamesCollectionSelector` returns `null` and the hub renders no chip; games launch
+with All Cards, the store's default. The chip appears once a deck exists.
 
-**The fdp is the source of truth for that list.** The built-in rows come from
-`builtinCollectionEntries` (`src/features/flashcards/builtinCollections.ts`), the same
-function the fdp renders as tiles, so the two surfaces cannot drift on which
-collections exist, their order, their grouping or their colors — including the rule
-that core *Mastered* is always a *Collections* row while the *Mastered* group
-holds the per-skill bars alone and appears only when a reading or writing goal is set.
-This component decides only how a
-row LOOKS. Each row carries the same identifying color its fdp tile does; a deck's dot
-uses `deckTileColors(id).main`.
+**Deliberately narrower than the fdp (2026-10-03).** Learn Now and the Mastered
+collections (core / reading / writing) are NOT offered here — the hub's choice is
+"everything, or one deck". They are browsed from the fdp and the Mastery Centers. Their
+`?collection=` ids still work end to end, so a game launched from a collection page
+still honors them; only the hub stopped listing them. The All Cards row is built
+in `GamesCollectionSelector` itself (`ALL_CARDS` + `BAND_COLORS.All.main`), since the
+fdp has no All Cards tile to share (see
+[DECKS_FEATURE.md § "Which collections exist"](./DECKS_FEATURE.md)). A deck's dot uses
+`deckTileColors(id).main`, the same identifying color as its fdp spine.
 
 The choice lives in **`src/features/flashcards/selectedCollection.ts`** — a module
 singleton + `useSyncExternalStore`, the same shape as `minutePointsPause`:
@@ -210,8 +213,8 @@ singleton + `useSyncExternalStore`, the same shape as `minutePointsPause`:
 * **No game page knows it exists.** `GamesPage` wraps every card's `to` in
   `withCollectionParams(route, selected)`, so a game arrives with the same
   `?deck=` / `?collection=` a collection-page launch always sent.
-  `WordSearchHubItem` applies the params itself because it builds its own links
-  (it navigates imperatively to confirm before clobbering a saved board); its
+  `WordSearchHubItem` passes them to `useWordSearchLauncher` as `newGamePath`, because
+  that launcher navigates imperatively (to confirm before clobbering a saved board); its
   **resume** card deliberately carries **no** params — that board was built from
   whatever set was selected when it started.
 * **Stale decks self-heal.** After loading the deck list the selector calls
@@ -244,21 +247,68 @@ its header shows a **left** back arrow returning to `/`, it keeps the floating
 footer, and it slides in from the right (out to the right only when the arrow is
 tapped — footer-tab nav does not animate).
 
+### Second entry point: the Reading Center, and the exit destination
+
+> Code: `src/games/runtime/gameExit.ts` → `useGameExit` / `GAMES_HUB_EXIT`,
+> `src/games/runtime/useGameBack.ts`, `GameDef.hiddenFromHub` (`src/games/types.ts`),
+> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` → `READING_CENTER_EXIT`.
+
+The Reading Center's games carousel ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md))
+launches the reading-track variants of three games: Bubble Match pinned to pinyin-off,
+Word Search **No Pinyin**, and **Speed Reading**. Since 2026-10-03 those variants are
+launched **only** from there. The hub hides Speed Reading (`hiddenFromHub: true`),
+offers Word Search's Pinyin mode only, and pins Bubble Match to Recognition.
+
+**Exits return to the launching surface.** A launch may carry
+`state.exitTo = { path, label }`. `useGameExit` reads it and falls back to the hub
+(`/games`, "Games") when it is absent. Back (`useGameBack`, after a challenge round's
+own destination) and every "Back to …" button in Bubble Match, Word Search and Speed
+Reading use it, so a carousel launch exits to "Back to Reading Center". The carousel
+supplies the destination itself, so `src/games` never imports the Center. An exit may
+also carry opaque `state` for its destination (`GameExit.state`), which every exit
+passes through unchanged. The Reading Center uses it to reopen scrolled to its carousel,
+parked on the game just played
+([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § "Returning from a game"). The
+"no level / no mode" bounces (a stray URL) still go to `/games`, because only the hub
+can pick a level or mode. Hydra Bubbles, Match Speed and Memory Map have no second
+entry point and still hard-code `/games`.
+
 ## Design decisions
 
 ### 1. Hub is a vertical, width-spanning menu
-Each game appears as a full-width row rendered by the shared `HubMenu` /
-`HubMenuRow` components (also used by the Home and Discover hubs — see
-[BENTO_SYSTEM.md](./BENTO_SYSTEM.md)). This makes the hub feel like a clean
-directory rather than a tiled launcher and keeps parity with the long-form scroll
-surfaces elsewhere in the mobile demo (decks, discover).
+Every game is ONE entity, **`GameCard`** (`src/games/shared/GameCard.tsx`), in the shared
+`Bento` grid, in one of two Bento-family variants so styling carries across both:
 
-Two games fan out into horizontally-scrolling sub-card strips instead of a single
-row, both special-cased in `GamesPage.tsx` rather than generalized onto `GameDef`:
-Bubble Match uses a generic `HubMenuArrayItem` (one sub-card per difficulty level,
-since the in-game level picker was removed), and Word Search owns its whole strip
-via `WordSearchHubItem` (Pinyin / No Pinyin + a resume card, which needs
-confirm-before-clobber click handling).
+| Variant | Shape | Body | Games (hub) |
+|---|---|---|---|
+| `tile` | half-width; name, ghost glyph, optional `WinCountPill` top-left; the whole tile is a router link | **is** a `BentoTile` (no outline) | Match Speed (with win pill), Hydra Bubbles, Memory Map |
+| `card` | full row; header (name + win pill) over a row of option slots + optional `RoundPlayButton` | `CardShell` (`src/components/bento/CardShell.tsx`, the body `BentoTile` renders through), outlined | Bubble Match, Word Search |
+
+A card's options are `GameCardOption`s of two kinds, both drawn on the shared
+`GameOptionTile` shell (radius, padding, 62px floor, outline, `OPTION_TITLE_SX`):
+`kind: "level"` (hued, ⭐ when cleared this week) and `kind: "resume"` (a caller node —
+Word Search's `WordSearchResumeTile`). Every option takes one slot, `SLOT_FLEX`, one
+Bubble Match level's width. Card data comes from `src/games/shared/gameCards.ts`
+(`gameCardBase`, `buildPlayCard`, `buildTileCard`) and the per-game builders that extend
+them. Visibility gating shared with the Reading Center carousel is
+`isGameAvailable` (`src/games/registry.ts`); the hub layers `hiddenFromHub` and Memory
+Map's collection gate on top (`GamesPage` → `visibleGames`). See
+[BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "CardShell".
+
+Two games get a `card`, both special-cased in `GamesPage.tsx` rather
+than generalized onto `GameDef`: Bubble Match renders as the **same level card the
+Reading Center's games carousel uses** — `GameCard` (`src/games/shared/GameCard.tsx`)
+fed by `buildBubbleMatchCard` (`src/games/bubble-match/bubbleMatchCard.ts`), spanning
+the grid's full row (`gridColumn: "1 / -1"`), one level tile per difficulty since the
+in-game level picker was removed. The two surfaces share the card verbatim (level
+hues, "Level N" titles with no subtitle — the Chill/Hustle/Torture names are in-game only since 2026-10-03 — weekly ⭐, lifetime win pill) and differ only in
+the launch: the hub passes `showPinyin: true` + the selected collection's params, the
+carousel `showPinyin: false` + its `exitTo`. Word
+Search is the same shared card, fed by `buildWordSearchCard`
+(`src/games/word-search/wordSearchCard.tsx`) through `useWordSearchLauncher`
+(`src/games/word-search/useWordSearchLauncher.tsx` — save slot, resume, erase,
+confirm-before-clobber; shared verbatim with the carousel) and rendered by
+`WordSearchHubItem` (Pinyin only since 2026-10-03).
 
 ### 2. Empty state instead of placeholder cards
 When the registry yields no visible rows — every game gated out by `requiresAuth`
@@ -368,8 +418,8 @@ export const GAME_REGISTRY: GameDef[] = [
 ];
 ```
 
-Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`, `subtitle`,
-`iconAsset`, `route`, a lazy-loaded `Component`, and optional gating
+Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`,
+`glyph`, `hue`, `markType`, `route`, a lazy-loaded `Component`, and optional gating
 (`requiresAuth`, `unlock.minVocabEntries`).
 
 The registry is consumed by:
@@ -987,13 +1037,12 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
    the mark type the game emits. Declare that mark type ONCE as `MARK_TYPE` in your
    game's `constants.ts` and read it from there for the `?markType=` query, the
-   `markFlashcard({ type })` call, and your `GameDef.markType` — which is what puts the
-   track in your hub tile's SUBTITLE (`tileSubtitle()` in `GamesPage.tsx` renders
-   "Recognition · <your blurb>"), so keep `GameDef.subtitle` a blurb and never write a
-   track name into it. If your game's mark type varies by mode, omit `GameDef.markType`
-   and put the type on each mode config instead, the way Word Search does — then render
-   `MARK_TYPE_LABELS[cfg.markType]` as each sub-tile's subtitle (see
-   `WordSearchHubItem`). See the backend notes under
+   `markFlashcard({ type })` call, and your `GameDef.markType` (which challenge
+   eligibility is derived from — `src/games/__tests__/challengePool.test.ts`). Hub tiles
+   are **name-only** (2026-10-03): `GameDef` has no `subtitle`, and the hub does not
+   label a tile with its track. If your game's mark type varies by mode, omit
+   `GameDef.markType` and put the type on each mode config instead, the way Word Search
+   does. See the backend notes under
    [§ Game: Bubble Match](#backend) and
    [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md). Also pass `surface=<your-game>` so the server
    tops the player up to your baseline (`CARD_BASELINES` in `server/contracts/wire.ts`).
@@ -1138,7 +1187,7 @@ deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style hea
 > Bubbles and Match Speed all read *and write* the ONE shared `showPinyin` boolean in
 > `useFlashcardLearnSettings` (`src/hooks/useFlashcardLearnSettings.ts`, stored as
 > `flashcard.learn-settings`), which is the **flp's** setting. Code to change:
-> `BubbleMatchPage` / `BubbleMatchTrackToggle` / `BubbleMatchHeader`,
+> `BubbleMatchPage` / `BubbleMatchHeader`,
 > `HydraBubblesPage`, `MatchSpeedPage` / `MatchSpeedSettingsDialog`.
 
 **Every game owns its own pinyin preference.** "Show pinyin" is not one app-wide
@@ -1192,10 +1241,10 @@ they are dropped by the § "next markable at" guard
 
 ### Bubble Match: pinyin picks the track
 
-> Code: `src/games/bubble-match/BubbleMatchTrackToggle.tsx` (the hub control),
-> `BubbleMatchPage`'s `runTrack` / `lockRunTrack` / `boardShowPinyin`,
-> `foreignPromptTrack` (`server/contracts/wire.ts`),
-> `BentoStripProps.control` (`src/components/bento/Bento.tsx`).
+> Code: `src/games/GamesPage.tsx` (the hub's pinned `showPinyin: true`),
+> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` (the Reading Center's
+> pinned `showPinyin: false`), `BubbleMatchPage`'s `runTrack` / `lockRunTrack` / `boardShowPinyin`,
+> `foreignPromptTrack` (`server/contracts/wire.ts`).
 > Full rationale: [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
 
 Bubble Match is a foreign → meaning drill: **pinyin shown ⇒ it marks `recognition`;
@@ -1206,16 +1255,15 @@ player then reaches the meaning from the characters alone. Spanish is unaffected
 
 Three consequences worth knowing before touching this game:
 
-1. **The choice is made on the HUB, not in the game.** The pinyin chip is gone from
-   the game header; the Games hub's Bubble Match strip carries
-   `BubbleMatchTrackToggle` in its `control` slot, which names both tracks
-   (`RECOGNITION ⇄ READING`) and writes the `showPinyin` setting — today the
-   **shared** one, and per the section above it should be **Bubble Match's own**.
-   A launch may also **pin** the track for one run with `location.state.showPinyin`
-   (`BubbleMatchPage` → `pinnedShowPinyin`), which overrides the setting without
-   writing it. The Reading Center's games carousel launches with `showPinyin: false`
-   so a reading page always deals a reading board
-   ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)).
+1. **The choice is made by the LAUNCHING SURFACE, not in the game.** There is no
+   pinyin control in the game header, and since 2026-10-03 none on the hub either
+   (the `BubbleMatchTrackToggle` strip control was deleted). Each launch **pins**
+   the track for its run with `location.state.showPinyin` (`BubbleMatchPage` →
+   `pinnedShowPinyin`): the Games hub pins `true` (Recognition), the Reading
+   Center's games carousel pins `false` (Reading —
+   [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)). Only an unpinned
+   launch (a Study Challenge round) still falls back to the shared `showPinyin`
+   setting.
 2. **The run latches the track at deal time** (`lockRunTrack`, called from the first
    pool fetch and reused by every Play-Again refill). The pool is bucketed AND cooled
    on that track when it is requested, so a board dealt on one track and marked on
@@ -1227,9 +1275,11 @@ Three consequences worth knowing before touching this game:
    stage, and no TTS prefetch — narrating the word would hand the player the
    pronunciation the run is asking them to read.
 
-Known wrinkle (being fixed): `showPinyin` is one shared setting, so turning it off
-here also hides pinyin in **Hydra Bubbles** and **Match Speed**, neither of which
-changes track to match. Both halves are addressed above — the setting becomes
+Known wrinkle (being fixed): `showPinyin` is one shared setting. Bubble Match no
+longer writes it (both of its launchers pin the track, see 1.), but it is still the
+fallback for an unpinned challenge launch, and turning it off elsewhere also hides
+pinyin in **Hydra Bubbles** and **Match Speed**, neither of which changes track to
+match. Both halves are addressed above — the setting becomes
 per-game (§ "Pinyin is a per-game setting"), and Hydra converts to the reading track
 with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
 
@@ -1342,7 +1392,9 @@ with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
   new random pool (the page remounts and refetches); staying in the popup is what
   preserves the unmatched words.
 - **Levels do not chain** — the level is picked **on the Games hub** (one
-  `HubMenuArrayItem` sub-card per `LEVEL_CONFIGS` entry) and arrives via
+  `GameCard` level tile per `LEVEL_CONFIGS` entry, built by
+  `src/games/bubble-match/bubbleMatchCard.ts` → `buildBubbleMatchCard`; the Reading
+  Center carousel shows the same card) and arrives via
   `location.state.level`; there is no in-game picker any more, and a direct visit
   with no valid level redirects back to the hub rather than defaulting. The level
   sets difficulty only (launch cadence + ceiling-shrink speed); all levels use the

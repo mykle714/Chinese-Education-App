@@ -36,8 +36,9 @@ const TipCard = styled(Box)(() => ({
     padding: "13px 15px",
     borderRadius: "16px",
     // `.tip{background:var(--org)}` — the org SURFACE, with an ink icon on it (v2 dropped
-    // the per-hue ink). Large and occupied, so no `markOutline` (see BentoTile).
+    // the per-hue ink). Tappable, so it wears the app's button/card outline (--line2).
     backgroundColor: RAMP.org.surface,
+    border: `1px solid ${COLORS.border}`,
     cursor: "pointer",
     userSelect: "none",
     transition: "filter 120ms ease",

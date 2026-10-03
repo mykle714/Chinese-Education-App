@@ -12,7 +12,8 @@ import type { LevelConfig } from "./types";
  * What is left here is Bubble Match's own: which cards it asks for, its level
  * table, its descending ceiling, and its kind-keyed bubble palette.
  *
- * Referenced by: BubbleMatchPage, BubbleStage, GamesPage (level sub-cards),
+ * Referenced by: BubbleMatchPage, BubbleStage, bubbleMatchCard (the shared level card
+ * on GamesPage + ReadingGamesCarousel), shared/GameCard (LEVEL_SLOTS),
  * games/registry.ts (mark type), games/word-search/constants.ts (distribution).
  * Docs: docs/GAMES_FEATURE.md.
  */
@@ -76,7 +77,7 @@ export const MAX_AVOID_IDS = 200;
 // 40 bubbles faster AND drop the ceiling faster once they're all out, so the
 // field jams quicker. There is no clock — the only loss is the field over-packing
 // under the descending ceiling. Levels do NOT chain — the player picks one on the
-// GAMES HUB (one HubMenuArrayItem sub-card per entry below; there is no in-game
+// GAMES HUB (one `GameCard` level tile per entry below — bubbleMatchCard.ts; there is no in-game
 // picker) and plays it on its own; clearing a harder level also banks every easier
 // level's weekly badge. The old second tier (interval ≈ 1425 ms)
 // was dropped, leaving Chill / Hustle / Torture.

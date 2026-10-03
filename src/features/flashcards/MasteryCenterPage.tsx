@@ -12,7 +12,8 @@ import {
     MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, MASTERY_CENTER_GROUNDS, MASTERY_CENTER_HUES, type MasteryCenterBar,
 } from "./masteryCenters";
 import WritingPracticeGrid from "./centers/WritingPracticeGrid";
-import ReadingGamesCarousel from "./centers/ReadingGamesCarousel";
+import ReadingGamesCarousel, { readReturnedGame } from "./centers/ReadingGamesCarousel";
+import { usePinScrollBottom } from "../../hooks/usePinScrollBottom";
 import ReadingSwipeGrid from "./centers/ReadingSwipeGrid";
 import WordOfTheDayCard from "./centers/WordOfTheDayCard";
 import FlpStudyHand from "./FlpStudyHand";
@@ -64,7 +65,7 @@ const MasteryCenterPage: React.FC = () => {
     const navigate = useNavigate();
     // Decks/cards/games opened from here are drill-ins that slide over this page.
     const slideNavigate = useSlideNavigate();
-    const { pathname, key: locationKey } = useLocation();
+    const { pathname, key: locationKey, state: locationState } = useLocation();
 
     // Which Center is this? Derived from the path rather than a route param, so the
     // two routes are literal strings in one table (masteryCenters.ts) and a typo
@@ -81,6 +82,15 @@ const MasteryCenterPage: React.FC = () => {
     const [restored] = useState(() => readBackSnapshot("mastery-center", locationKey));
     const panel = useDecksPanel(bar, restored?.panel);
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
+
+    // Returning from a game the Reading Center's carousel launched (the game's exit
+    // carries `returnedFromGame` — games/runtime/gameExit): reopen scrolled all the way
+    // down to the carousel, which parks on that game's card. Pinned rather than set
+    // once, because the sections above the carousel load after mount and grow
+    // (usePinScrollBottom). Read once: later re-renders must not re-pin.
+    const [returnedFromGame] = useState(() => (bar === "reading" ? readReturnedGame(locationState) : null));
+    const bodyRef = useRef<HTMLDivElement | null>(null);
+    usePinScrollBottom(bodyRef, returnedFromGame !== null);
 
     // Ref-held so the open handlers stay stable for the memoized cards (see the fdp).
     const rememberPlace = () => {
@@ -141,6 +151,7 @@ const MasteryCenterPage: React.FC = () => {
             }
         >
             <Box
+                ref={bodyRef}
                 className={`mastery-center-page__body mastery-center-page__body--${bar}`}
                 sx={{
                     width: "100%",
@@ -177,12 +188,13 @@ const MasteryCenterPage: React.FC = () => {
                             </Box>
                         )}
                         <ReadingSwipeGrid cards={panel.allCards} loading={panel.cardsLoading} />
-                        <ReadingGamesCarousel className="mastery-center-page__games" />
-                        {/* A little give past the carousel, so the page doesn't stop dead
-                            on the pills (the hubs' overscroll comfort, MobileFooter). */}
-                        <ScrollPastSpacer />
+                        <ReadingGamesCarousel className="mastery-center-page__games" focusGameId={returnedFromGame} />
                     </>
                 )}
+                {/* A little give past the last section (the Reading games carousel / the
+                    Writing practice grid), so neither Center stops dead on the pills —
+                    the hubs' overscroll comfort, MobileFooter. */}
+                <ScrollPastSpacer />
             </Box>
         </NodePage>
     );

@@ -12,28 +12,37 @@
  * account's saved board, showing target words that have nothing to do with
  * the current user's library cards.
  *
- * There is exactly ONE saved slot per user, SHARED across both modes
- * ("pinyin" / "no-pinyin"): the two hub entries now always start a fresh game
- * (warning first if a save exists — see GamesPage / WordSearchHubItem), and the
- * single saved board is resumed only from the dedicated resume card, which
- * restores it in whichever `mode` it was saved under. The mode therefore lives
- * IN the payload (`SavedWordSearchState.mode`), not in the key. See
+ * There is ONE saved slot per (user, mode). Each mode has exactly one launch
+ * surface — "pinyin" is the Games hub's (WordSearchHubItem), "no-pinyin" the
+ * Reading Center carousel's (ReadingGamesCarousel) — so a slot per mode is a slot
+ * per surface: neither can resume, or clobber, the other's parked board. See
  * docs/WORD_SEARCH_GAME.md §3 / §5b.
+ *
+ * Until 2026-10-03 both modes shared ONE mode-agnostic slot (`wordSearch.savedGame.
+ * <userId>`, mode carried in the payload). `loadGameState` still reads that legacy
+ * key and moves a board into its mode's slot the first time that mode looks, so a
+ * board parked before the split is not lost. ⚠️ The legacy read can be deleted once
+ * no device can still hold such a save.
  */
 import type { WordSearchResponse } from "./types";
-import type { WordSearchMode } from "./constants";
+import { TOTAL_WORDS, type WordSearchMode } from "./constants";
 
 const STORAGE_KEY_PREFIX = "wordSearch.savedGame.";
 
-/** localStorage key for a given user's single saved board (mode-agnostic). */
-function storageKey(userId: string): string {
+/** localStorage key for a given user's saved board in one mode. */
+function storageKey(userId: string, mode: WordSearchMode): string {
+    return `${STORAGE_KEY_PREFIX}${mode}.${userId}`;
+}
+
+/** The pre-split, mode-agnostic key (read-only — see the header). */
+function legacyStorageKey(userId: string): string {
     return `${STORAGE_KEY_PREFIX}${userId}`;
 }
 
 export interface SavedWordSearchState {
-    /** Which board this snapshot is for — restored into this mode, and shown on
-     *  the resume card. Both modes share one slot, so this is the only record of
-     *  which one is parked. */
+    /** Which mode this snapshot was played in. Redundant with the slot's key since
+     *  the per-mode split, but kept: it is how a legacy (shared-slot) save is routed
+     *  to its mode's slot, and it guards a restore into the wrong mode. */
     mode: WordSearchMode;
     data: WordSearchResponse;
     found: string[];
@@ -56,17 +65,16 @@ export interface SavedWordSearchState {
 /** Persist the in-progress board so it survives a page exit / app backgrounding. */
 export function saveGameState(userId: string, state: SavedWordSearchState): void {
     try {
-        window.localStorage.setItem(storageKey(userId), JSON.stringify(state));
+        window.localStorage.setItem(storageKey(userId, state.mode), JSON.stringify(state));
     } catch {
         // Storage full or disabled — the session just won't resume; non-fatal.
     }
 }
 
-/** Load a previously saved board, or null if none/unparseable/already complete. */
-export function loadGameState(userId: string): SavedWordSearchState | null {
+/** Parse a stored snapshot, or null if absent/unparseable/already complete. */
+function parseSaved(raw: string | null): SavedWordSearchState | null {
+    if (!raw) return null;
     try {
-        const raw = window.localStorage.getItem(storageKey(userId));
-        if (!raw) return null;
         const parsed = JSON.parse(raw) as SavedWordSearchState;
         if (!parsed?.data?.grid || !Array.isArray(parsed.found)) return null;
         if (parsed.found.length >= parsed.data.words.length) return null; // stale, already won
@@ -76,11 +84,38 @@ export function loadGameState(userId: string): SavedWordSearchState | null {
     }
 }
 
-/** Clear the saved board (on win, restart, or once it's no longer resumable). */
-export function clearGameState(userId: string): void {
+/** Load the saved board for `mode`, or null if none/unparseable/already complete. */
+export function loadGameState(userId: string, mode: WordSearchMode): SavedWordSearchState | null {
     try {
-        window.localStorage.removeItem(storageKey(userId));
+        const own = parseSaved(window.localStorage.getItem(storageKey(userId, mode)));
+        if (own) return own.mode === mode ? own : null;
+        // Pre-split save: adopt it into this mode's slot if it was played in this mode.
+        const legacy = parseSaved(window.localStorage.getItem(legacyStorageKey(userId)));
+        if (legacy?.mode !== mode) return null;
+        window.localStorage.setItem(storageKey(userId, mode), JSON.stringify(legacy));
+        window.localStorage.removeItem(legacyStorageKey(userId));
+        return legacy;
+    } catch {
+        return null;
+    }
+}
+
+/** Clear `mode`'s saved board (on win, restart, or once it's no longer resumable). */
+export function clearGameState(userId: string, mode: WordSearchMode): void {
+    try {
+        window.localStorage.removeItem(storageKey(userId, mode));
     } catch {
         // ignore
     }
+}
+
+/**
+ * How many targets the PARKED board has — read off the saved payload, never from
+ * `TOTAL_WORDS`. A save written before a board-size change (12 words until
+ * 2026-08-28) still resumes and still plays to its own word count, so "3/12" must
+ * keep saying 12 even once new boards are 9. `TOTAL_WORDS` remains the right number
+ * for a board that has not been dealt yet.
+ */
+export function savedWordCount(saved: SavedWordSearchState): number {
+    return saved.data.words.length || TOTAL_WORDS;
 }

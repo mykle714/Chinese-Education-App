@@ -254,6 +254,5 @@ windows for one bar.
   window? Merging is a real design question, not a rename — the two tracks have
   independent windows and independent cooldowns, so a merged window has to pick what a
   cell means.
-- **(b): what happens to the Bubble Match track toggle** (`BubbleMatchTrackToggle`)?
-  It names Recognition and Reading, which survives the rename — but its sibling copy on
-  the Games hub does not.
+- ~~**(b): what happens to the Bubble Match track toggle**~~ — moot: it was deleted
+  2026-10-03 (the hub pins Recognition; Reading launches from the Reading Center).

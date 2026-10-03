@@ -3,8 +3,8 @@ import { useAuth } from "../../AuthContext";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { useMasteredCounts } from "../../hooks/useMasteredCounts";
 import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
-import { fetchCollectionCards } from "../../api/collections";
-import { ALL_COLLECTION_ID, type MasteryBarId } from "../../../server/contracts/wire";
+import { libraryKey, loadCardLibrary, peekCardLibrary } from "./centerPrefetch";
+import type { MasteryBarId } from "../../../server/contracts/wire";
 import { isFeatureEnabled } from "../../../server/contracts/featureFlags";
 import type { VocabEntry } from "../../types";
 import type { MasteryGoals } from "../../utils/masteryCompute";
@@ -189,8 +189,15 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
     //
     // Bar-agnostic on purpose: the LIBRARY is the same set through every lens (see
     // lensCollectionEntries), and only how its cards are read and ordered changes.
-    const [cards, setCards] = useState<VocabEntry[]>(() => restore?.cards ?? []);
-    const [cardsLoading, setCardsLoading] = useState(() => restore === undefined);
+    //
+    // Loaded through centerPrefetch, so a Center opened from the fdp joins (or seeds
+    // from) the library the fdp's own panel just loaded instead of asking again. A
+    // seeded panel then refreshes silently, exactly like a restored one.
+    const libKey = user ? libraryKey(user.id, user.selectedLanguage) : null;
+    const [seed] = useState(() => (restore === undefined && libKey ? peekCardLibrary(libKey) : null));
+    const quietRefresh = restored || seed !== null;
+    const [cards, setCards] = useState<VocabEntry[]>(() => restore?.cards ?? seed ?? []);
+    const [cardsLoading, setCardsLoading] = useState(() => !quietRefresh);
     const [cardsError, setCardsError] = useState<string | null>(null);
     const [cardsSearch, setCardsSearch] = useState(() => restore?.cardsSearch ?? "");
     // Ordering of that grid. Held per-visit rather than persisted, the same rule the
@@ -229,16 +236,16 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
     // The card library. Same auth keying as the deck list, and `cancelled` guards the
     // setState so a fast navigation away can't write into an unmounted page.
     useEffect(() => {
-        if (!isAuthenticated) return;
+        if (!isAuthenticated || !libKey) return;
         let cancelled = false;
 
         (async () => {
             try {
-                // A restored panel refreshes silently (see `restore` above): swapping the
-                // grid for a spinner would throw away the scroll position just restored.
-                if (!restored) setCardsLoading(true);
+                // A restored or seeded panel refreshes silently (see `restore` above):
+                // swapping the grid for a spinner would throw away what is on screen.
+                if (!quietRefresh) setCardsLoading(true);
                 setCardsError(null);
-                const loaded = await fetchCollectionCards(ALL_COLLECTION_ID);
+                const loaded = await loadCardLibrary(libKey);
                 if (!cancelled) setCards(loaded);
             } catch (err: unknown) {
                 console.error("Error loading cards:", err);
@@ -249,7 +256,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         })();
 
         return () => { cancelled = true; };
-    }, [isAuthenticated, restored]);
+    }, [isAuthenticated, libKey, quietRefresh]);
 
     const addDeck = useCallback(async (name: string) => {
         // The server owns the rules (blank name, duplicate name, the 100-deck

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { Box } from "@mui/material";
@@ -6,6 +6,8 @@ import MobileTabScreen from "../../components/MobileTabScreen";
 import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
 import DecksSheets, { DECKS_SHEET_PILL_BAND, type DecksSheetsHandle } from "./DecksSheets";
 import { useDecksPanel } from "./useDecksPanel";
+import { prefetchWordOfTheDay } from "./centerPrefetch";
+import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import {
     activeMasteryCenters, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
@@ -129,6 +131,16 @@ const FlashcardsDecksPage: React.FC = () => {
     // Which Center buttons this account gets: one per goal it has set. Read off the
     // panel's memoized goals rather than `user` again, so the two cannot disagree.
     const centers = activeMasteryCenters(panel.goals);
+    // Warm the Centers' Word of the Day while the learner is still here, so it is ready
+    // when they tap in (centerPrefetch.ts). Only for an account that HAS a Center button,
+    // and zh only — the card renders nothing for any other language. The Centers' card
+    // library needs no warm-up: this page's panel already loads it through the same cache.
+    const { user } = useAuth();
+    const hasCenter = centers.length > 0;
+    const isZh = user?.selectedLanguage === "zh";
+    useEffect(() => {
+        if (hasCenter && isZh) prefetchWordOfTheDay();
+    }, [hasCenter, isZh]);
     // The pills + sheets layer — read only for its state at the moment of leaving.
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
 

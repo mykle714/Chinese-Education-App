@@ -53,9 +53,20 @@ interface MiniVocabCardProps {
     // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere
     // (card detail page, flashcard back) to render with no entrance animation.
     animationDelayMs?: number;
+    /**
+     * Replaces the THEME card face (`palette.flashcard.flashCard`) as the fallback fill
+     * for this one surface. Only the default changes: a card with its own `cardColor`
+     * (advanced layout) still draws in that colour, because its per-card Contrast text
+     * colours were chosen against it and could be unreadable on anything else.
+     *
+     * Used by the Reading Center's swipe grid (`ReadingSwipeGrid`), whose flipped tile
+     * shows the mini card on white to match the grid's white tiles
+     * (docs/READING_WRITING_CENTERS.md § Phase 2).
+     */
+    defaultBackground?: string;
 }
 
-const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core" }) => {
+const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core", defaultBackground }) => {
     const fc = useTheme().palette.flashcard;
     // The lens bar, or null when the strip is suppressed. Computed here from
     // `typedMarkHistory` rather than read off `entry.category`, because that column is the
@@ -73,9 +84,10 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // face (which this mini mirrors). Applied ONLY when the card is using an advanced layout —
     // same gate the flashcard face uses, INCLUDING a custom text placement (so pass textLayout
     // too), which is why this is a separate check from the icon-only `hasAdvancedLayout` above.
-    // Falls back to the THEME's card face (matches `CardFace`'s `faceBg`).
+    // Falls back to the caller's `defaultBackground`, else the THEME's card face (matches
+    // `CardFace`'s `faceBg`).
     const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
-    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? fc.flashCard;
+    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? defaultBackground ?? fc.flashCard;
     return (
         <MiniCard
             className="mini-vocab-card"

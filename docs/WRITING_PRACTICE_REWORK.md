@@ -1,11 +1,12 @@
 # Writing Practice Rework (8 levels, Writing Grid game, writing flp, personal bests)
 
-**STATUS: BUILT ON DEV (2026-10-04) — not deployed to PPE.** Migrations **170**
+**STATUS: DEPLOYED TO PPE (2026-10-04).** Migrations **170**
 (per-character writing mastery + a one-off reset of every writing mark), **171**
 (`game_personal_bests`) and **172** (stars keyed by level number + a wipe of every star)
-are applied on dev. All ship with a standard `/deploy`, applied **before** the container
-rebuild: every vet read now calls `compute_writing_mastery`, so new code on the old schema
-500s every card read. Not yet verified in a browser.
+are applied on dev and PPE, in one `migrate.sh` pass **before** the container rebuild:
+every vet read calls `compute_writing_mastery`, so new code on the old schema would 500
+every card read. The pre-wipe data (writing tracks + stars) is kept on PPE in
+`~/backups/pre170-*`. Not yet verified in a browser.
 
 Parent doc: [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) (the drill's UX). Related:
 [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md) (top-1 grading, Hanzi Writer

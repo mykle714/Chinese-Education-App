@@ -914,6 +914,19 @@ the alternative; charging seconds keeps every run exactly 20 rounds long, which 
 what makes two runs comparable. A coin-flip run takes ~10 misses, i.e. **+30s**,
 which lands outside every medal.
 
+### Personal best
+
+The fastest **finished** run (`totalMs` — wall clock plus penalties, lower wins) is kept
+under the single mode key `"default"` (the game has one difficulty). An effect in
+`SpeedReadingPage` records it only when `phase === "ended"` **and** `finished`
+(`answered >= TARGET_ROUNDS`) — the same guard `medalFor` relies on, because a run cut
+short by a drained queue has a small time that would otherwise become an unbeatable best.
+`playAgain` calls `resetPersonalBest`. The line renders in the end `GameEndPopup` under
+the "N/20 correct" row, and only on a finished run (the "Ran out of cards" branch shows
+no time and no best).
+
+The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
+
 ### There is no Skip
 
 **Removed with the race format.** Under the one-minute clock, Skip was a real

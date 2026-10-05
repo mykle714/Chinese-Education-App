@@ -38,7 +38,8 @@ export interface InfoCardPanelBodyProps {
     selectedTab: number;
     onTabChange: (tab: number) => void;
     breakdownItems: BreakdownItem[];
-    showPinyin: boolean;
+    // No `showPinyin` prop: the eip is reference info and ALWAYS shows pinyin (2026-10-04).
+    // A study surface's pinyin toggle (the flp chip) must never reach it.
     showPinyinColor?: boolean;
     isFlipped: boolean;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
@@ -115,7 +116,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     selectedTab,
     onTabChange,
     breakdownItems,
-    showPinyin,
     showPinyinColor = true,
     onBreakdownItemClick,
     onUsedInItemClick,
@@ -499,7 +499,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                         // persisted `selectedSense` round-tripping back (useEipTabs.syncEntry).
                         pronunciation={resolveDisplayPronunciation(currentEntry, selectedSenseIndex)}
                         useToneColor={showPinyinColor}
-                        showPinyin={showPinyin}
+                        showPinyin
                         // Tap the headword to copy it: first tap the characters, next
                         // tap the pinyin (CPCDRow.tapToCopy). The header is the one place
                         // the headword is shown purely as a reference, so a tap has
@@ -738,7 +738,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 currentEntry={currentEntry}
                                 breakdownItems={breakdownItems}
                                 avail={avail}
-                                showPinyin={showPinyin}
                                 showPinyinColor={showPinyinColor}
                                 onBreakdownItemClick={onBreakdownItemClick}
                                 onUsedInItemClick={onUsedInItemClick}

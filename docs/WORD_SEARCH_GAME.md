@@ -586,13 +586,14 @@ Line heights are `LEADING.tight`. The grid takes whatever height these rows leav
 restated it.
 
 **Timer visibility is toggled in the strip itself** (2026-09-30), not in a settings sheet.
-The control is `word-search__hud-timer-toggle` in `WordSearchPage.tsx`, a 32px tap target
-(`HUD_EYE_TAP_PX`) holding a Material Symbols glyph through the app's `Icon` primitive,
-in full ink (`COLORS.onSurface`) like every other HUD fact:
+The control is the shared `TimerEyeToggle` (`src/games/shared/TimerEyeToggle.tsx`,
+class `word-search__hud-timer-toggle` here; Writing Grid's `GameTimer` uses the same one),
+a 32px tap target (`EYE_TAP_PX`) holding a Material Symbols glyph through the app's `Icon`
+primitive, in full ink (`COLORS.onSurface`) like every other HUD fact:
 
 | `showTimer` | Glyph | Eye position | Clock |
 |---|---|---|---|
-| `true` | `visibility_off` (slashed eye — "hide") | right edge of the strip (`HUD_EYE_EDGE_INSET_PX`), clock stays dead-centre | visible |
+| `true` | `visibility_off` (slashed eye — "hide") | right edge of the strip (`EYE_EDGE_INSET_PX`), clock stays dead-centre | visible |
 | `false` | `visibility` (open eye — "show") | centre of the strip, where the clock was | `visibility: hidden` |
 
 - The glyph states what a tap will **do**, not the current state: the slashed eye hides
@@ -608,6 +609,7 @@ in full ink (`COLORS.onSurface`) like every other HUD fact:
   ([GAMES_FEATURE.md § Popups pause the clock](./GAMES_FEATURE.md)).
 - `showTimer` flips only the clock TEXT's visibility; the clock keeps ticking regardless,
   so the finish time / medal stays accurate. Persisted via `useWordSearchSettings`
+  (a thin wrapper over the shared `src/games/shared/useLocalGameSettings.ts`)
   (`wordSearch.settings` in **localStorage** — device-local, survives closing the app;
   not sessionStorage and not synced to the account).
 - **Hidden means hidden everywhere**: the resume card on both launch surfaces
@@ -952,6 +954,18 @@ helps the player *learn* the word by seeing each character's contextual sense
   `constants.ts`. Because play is unbounded, a slow finish still completes the
   board (just at the lowest medal tier). This mirrors the completion-stars idea
   in [PRACTICE_WRITING.md](./PRACTICE_WRITING.md).
+
+### Personal best
+
+The fastest completion time (ms, lower wins) is kept **per board mode** — the mode key is
+the slug `pinyin` / `no-pinyin` (`modeConfig.mode`). `WordSearchPage` →
+the win effect calls `recordPersonalBest(ms)` with the same final time the popup shows
+(a resumed board's time includes its saved elapsed time); `resetBoard` (Play Again) calls
+`resetPersonalBest`. The line renders in the win `GameEndPopup` under the
+"Time … medal" row. **A challenge round is not recorded** — its board is the round's
+shared word set and it ends on the scoreboard, not the popup.
+
+The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
 
 ### 5a. Hints
 

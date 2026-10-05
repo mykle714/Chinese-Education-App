@@ -2,9 +2,9 @@
  * Preserved-draft store for the writing-practice popup.
  *
  * Lifecycle (docs/HANDWRITING_RECOGNITION.md "Canvas / state lifecycle"):
- *  - Closing the popup (✕ or backdrop) PRESERVES the active tab + canvas ink here,
+ *  - Closing the popup (✕ or backdrop) PRESERVES the active level + canvas ink here,
  *    so an accidental click-off can be resumed by reopening.
- *  - Switching tabs clears the canvas (handled in the popup, not here).
+ *  - Switching levels clears the canvas (handled in the popup, not here).
  *  - Hard-clear triggers — leaving the flp, marking a card, leaving the cdp —
  *    call `clearWritingDraft()` to discard the draft.
  *
@@ -25,7 +25,8 @@ import type { Ink } from "./types";
 
 export interface WritingDraft {
   character: string;
-  activeTabIndex: number;
+  /** 0-based index into WRITING_LEVELS (server/contracts/writingLevels.ts). */
+  levelIndex: number;
   /** One stroke set per character of the target word. */
   inks: Ink[];
   /** Enlarged grid slot at close time (null = grid view / single character). */

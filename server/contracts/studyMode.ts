@@ -13,6 +13,9 @@ import type { MasteryBarId } from './wire.js';
  *     core    — the know flp (recognition / production faces). The default.
  *     reading — the READING flp (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only
  *               question face, every mark a reading mark. zh only.
+ *     writing — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the card is drawn
+ *               by hand at a level set by its averaged writing mastery; every mark a
+ *               per-character writing mark. zh only, 1–4-character words.
  *
  * They are orthogonal on purpose: the Reading Center's study hand offers the same three
  * modes as the fdp's (Challenge / Review / Mix), each on the reading bar. Until
@@ -31,10 +34,14 @@ export function parseStudyMode(raw: unknown): StudyMode | undefined {
   return raw === 'review' || raw === 'challenge' ? raw : undefined;
 }
 
-/** The bars an flp session can run on. Writing has no flp — it is practised by hand. */
-export type FlpBar = Extract<MasteryBarId, 'core' | 'reading'>;
+/**
+ * The bars an flp session can run on. Writing joined in the 8-level rework
+ * (docs/WRITING_PRACTICE_REWORK.md § 3): a writing card is drawn by hand at a level set
+ * by its (averaged) writing mastery, and the flp writes per-character marks.
+ */
+export type FlpBar = Extract<MasteryBarId, 'core' | 'reading' | 'writing'>;
 
 /** Parse a `?bar=` / body `bar` value. Anything unrecognized is the know flp (`core`). */
 export function parseFlpBar(raw: unknown): FlpBar {
-  return raw === 'reading' ? 'reading' : 'core';
+  return raw === 'reading' ? 'reading' : raw === 'writing' ? 'writing' : 'core';
 }

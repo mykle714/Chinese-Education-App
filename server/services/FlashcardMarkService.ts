@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import type { TransactionRunner } from '../types/dal.js';
 import { DALError, ValidationError } from '../types/dal.js';
-import { IVocabEntryDAL, MasteredAtWrite } from '../dal/interfaces/IVocabEntryDAL.js';
+import { IVocabEntryDAL, MasteredAtWrite, VetMarkState } from '../dal/interfaces/IVocabEntryDAL.js';
 import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
 import {
   ReviewMark,
@@ -17,7 +17,11 @@ import {
   bandsClimbed,
   barCategory,
   barForMarkType,
+  categoryForPbh,
+  positiveCount,
+  writingMasteryFromChars,
 } from '../utils/masteryCompute.js';
+import { WRITING_LEVEL_COUNT, WRITING_MAX_CHARS, writingMarkCounts } from '../contracts/writingLevels.js';
 import { isMarkOnCooldown } from './cardQueueRanking.js';
 import { isFlpOnlyMark } from '../contracts/mastery.js';
 import { FLP_MARK_SURFACE } from '../contracts/wire.js';
@@ -77,6 +81,29 @@ export interface ApplyMarkInput {
    * 'flp' buys is a mark on the learner's OWN card, which the flp could write anyway.
    */
   surface?: string;
+  /**
+   * REQUIRED when `markType === 'writing'` (docs/WRITING_PRACTICE_REWORK.md § 3a): the
+   * level the word was written at and each character's result, in word order. The
+   * writing path ignores `isCorrect` in favour of `perChar`.
+   */
+  writing?: WritingResultInput;
+}
+
+/** A graded writing attempt (`src/components/handwriting/types.ts` → WritingAttempt). */
+export interface WritingResultInput {
+  /** 1..8 — server/contracts/writingLevels.ts. */
+  level: number;
+  /** One result per character of the card's word. */
+  perChar: boolean[];
+}
+
+/** What the writing fan-out did with each distinct character. */
+export interface WritingCharacterOutcome {
+  char: string;
+  isCorrect: boolean;
+  /** False when the mark was not written: `farming` (level ≤ mastery) or `no-row`. */
+  counted: boolean;
+  reason?: 'farming' | 'no-row';
 }
 
 export interface ApplyMarkResult {
@@ -109,6 +136,8 @@ export interface ApplyMarkResult {
   markType: MarkType;
   /** The mark pushed out of a full 8-slot window, so undo can restore it. */
   displacedMark: ReviewMark | null;
+  /** Writing marks only: per-character outcome of the fan-out. */
+  writing?: { characters: WritingCharacterOutcome[] };
 }
 
 export interface UndoMarkInput {
@@ -167,6 +196,12 @@ export class FlashcardMarkService {
 
       const existingHistory: TypedMarkHistory = state.typedMarkHistory;
       const language = state.language;
+
+      // Writing has its own model (per-character mastery, a clock-only word track and
+      // the anti-farming gate) — see applyWritingResult.
+      if (markType === 'writing') {
+        return this.applyWritingResult(client, userId, cardId, state, input.writing, input.surface);
+      }
 
       // ── TWO GATES, ONE OUTCOME: THE MARK IS NOT RECORDED ─────────────────────
       // Enforced here, at the single chokepoint every surface writes through, so no
@@ -322,6 +357,191 @@ export class FlashcardMarkService {
   }
 
   /**
+   * The WRITING mark path (docs/WRITING_PRACTICE_REWORK.md § 3a). Runs inside
+   * `applyMark`'s transaction with the card's row already locked.
+   *
+   * SINGLE CHARACTER — the card IS the character: the usual cooldown gate, then the
+   * anti-farming gate (`writingMarkCounts`: level > its mastery), then one ordinary mark.
+   *
+   * MULTI-CHARACTER WORD —
+   *   1. lock (creating hidden provisional rows as needed) every character's own
+   *      single-character row, in a fixed order;
+   *   2. the word's mastery is the AVERAGE of those rows' writing counts; the cooldown
+   *      gate reads the WORD's clock (its own track) with that averaged band's window —
+   *      a word on cooldown writes nothing at all;
+   *   3. a clock-only dummy mark goes on the word (correct iff every character was);
+   *   4. each distinct character gets a `viaWord` mark — which counts as mastery but
+   *      never restarts the character's own clock — only if the level is above THAT
+   *      character's mastery. A repeated character (谢谢) is one mark, correct only if
+   *      every occurrence was.
+   * The word's `masteredAt.writing` and velocity row follow its averaged band. A
+   * character row's own crossing stamp is written; its velocity is not logged (the
+   * learner's progress is reported on the word they practised).
+   */
+  private async applyWritingResult(
+    client: PoolClient,
+    userId: string,
+    cardId: number,
+    state: VetMarkState,
+    writing: WritingResultInput | undefined,
+    rawSurface: string | undefined
+  ): Promise<{ result: ApplyMarkResult; promotion: Parameters<ICategoryPromotionDAL['recordPromotion']>[0] | null }> {
+    const chars = [...(state.entryKey ?? '')];
+    // No writing surface holds more than WRITING_MAX_CHARS characters (the 2×2 grid), so
+    // a longer word can only arrive here from a bypassed client gate — refuse it rather
+    // than spread viaWord marks across its characters.
+    if (chars.length < 1 || chars.length > WRITING_MAX_CHARS) {
+      throw new ValidationError(`Writing marks are only accepted for words of 1–${WRITING_MAX_CHARS} characters`);
+    }
+    if (
+      !writing ||
+      !Number.isInteger(writing.level) ||
+      writing.level < 1 ||
+      writing.level > WRITING_LEVEL_COUNT ||
+      !Array.isArray(writing.perChar) ||
+      writing.perChar.length !== chars.length ||
+      !writing.perChar.every((v) => typeof v === 'boolean')
+    ) {
+      throw new ValidationError('A writing mark needs { level: 1..8, perChar: boolean[] } with one result per character');
+    }
+    const { level, perChar } = writing;
+    const surface = typeof rawSurface === 'string' ? rawSurface.slice(0, 40) : 'unknown';
+    const language = state.language;
+    const history = state.typedMarkHistory;
+    const now = Date.now();
+    const timestamp = new Date(now).toISOString();
+    const coreCategory = computeCoreCategory(history);
+    const allCorrect = perChar.every(Boolean);
+
+    const suppressed = (
+      reason: string,
+      bandBefore: FlashcardCategory,
+      characters: WritingCharacterOutcome[]
+    ) => {
+      console.log(
+        `[MarkSuppressed] user=${String(userId).substring(0, 8)}… card=${cardId} ` +
+          `language=${language} type=writing reason=${reason} surface=${surface} level=${level}`
+      );
+      return {
+        promotion: null,
+        result: {
+          suppressed: true,
+          language,
+          category: coreCategory,
+          categoryBeforeMark: coreCategory,
+          markedBarCategoryBefore: bandBefore,
+          markTimestamp: null,
+          markType: 'writing' as MarkType,
+          displacedMark: null,
+          writing: { characters },
+        } satisfies ApplyMarkResult,
+      };
+    };
+
+    // ── Single character: the card is the character ────────────────────────────
+    if (chars.length === 1) {
+      const mastery = positiveCount(history.writing);
+      const bandBefore = categoryForPbh(mastery);
+      const outcome: WritingCharacterOutcome = { char: chars[0], isCorrect: perChar[0], counted: false };
+      if (isMarkOnCooldown(history, 'writing', now)) return suppressed('cooldown', bandBefore, [outcome]);
+      if (!writingMarkCounts(level, mastery)) {
+        return suppressed('farming', bandBefore, [{ ...outcome, reason: 'farming' }]);
+      }
+      const track = Array.isArray(history.writing) ? history.writing : [];
+      const displacedMark = track.length >= MARK_WINDOW_SIZE ? track[0] : null;
+      const updated = appendTypedMark(history, 'writing', { timestamp, isCorrect: perChar[0] });
+      const bandAfter = categoryForPbh(positiveCount(updated.writing));
+      await this.vocabEntryDAL.updateMarkHistory(
+        userId, cardId, language, updated,
+        bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+        client
+      );
+      const climbed = bandsClimbed(bandBefore, bandAfter);
+      return {
+        promotion: climbed > 0
+          ? { userId, language, vocabEntryId: cardId, bar: 'writing', fromCategory: bandBefore,
+              toCategory: bandAfter, bandsClimbed: climbed, markType: 'writing', markTimestamp: timestamp }
+          : null,
+        result: {
+          suppressed: false, language, category: coreCategory, categoryBeforeMark: coreCategory,
+          markedBarCategoryBefore: bandBefore, markTimestamp: timestamp, markType: 'writing',
+          displacedMark, writing: { characters: [{ ...outcome, counted: true }] },
+        },
+      };
+    }
+
+    // ── Multi-character word: fan out onto the characters ──────────────────────
+    const charStates = await this.vocabEntryDAL.ensureCharacterMarkStates(userId, chars, client);
+    const byChar = new Map(charStates.map((c) => [c.entryKey, c]));
+    const historiesFor = () => chars.map((c) => byChar.get(c)?.typedMarkHistory);
+
+    const masteryBefore = writingMasteryFromChars(historiesFor());
+    const bandBefore = categoryForPbh(masteryBefore);
+
+    // Distinct characters with their combined result (every occurrence must be right).
+    const distinct: { char: string; isCorrect: boolean }[] = [];
+    chars.forEach((c, i) => {
+      const seen = distinct.find((d) => d.char === c);
+      if (seen) seen.isCorrect = seen.isCorrect && perChar[i];
+      else distinct.push({ char: c, isCorrect: perChar[i] });
+    });
+
+    if (isMarkOnCooldown(history, 'writing', now, masteryBefore)) {
+      return suppressed('cooldown', bandBefore, distinct.map((d) => ({ ...d, counted: false })));
+    }
+
+    const outcomes: WritingCharacterOutcome[] = [];
+    for (const d of distinct) {
+      const row = byChar.get(d.char);
+      if (!row) {
+        outcomes.push({ ...d, counted: false, reason: 'no-row' });
+        continue;
+      }
+      const charMastery = positiveCount(row.typedMarkHistory.writing);
+      if (!writingMarkCounts(level, charMastery)) {
+        outcomes.push({ ...d, counted: false, reason: 'farming' });
+        continue;
+      }
+      const updated = appendTypedMark(row.typedMarkHistory, 'writing', {
+        timestamp, isCorrect: d.isCorrect, viaWord: true,
+      });
+      const charBefore = categoryForPbh(charMastery);
+      const charAfter = categoryForPbh(positiveCount(updated.writing));
+      await this.vocabEntryDAL.updateMarkHistory(
+        userId, row.id, 'zh', updated,
+        charBefore !== 'Mastered' && charAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+        client
+      );
+      byChar.set(d.char, { ...row, typedMarkHistory: updated });
+      outcomes.push({ ...d, counted: true });
+    }
+
+    // The word's clock: a dummy mark, never mastery (positiveCount skips clockOnly).
+    const wordTrack = Array.isArray(history.writing) ? history.writing : [];
+    const displacedMark = wordTrack.length >= MARK_WINDOW_SIZE ? wordTrack[0] : null;
+    const wordHistory = appendTypedMark(history, 'writing', { timestamp, isCorrect: allCorrect, clockOnly: true });
+    const bandAfter = categoryForPbh(writingMasteryFromChars(historiesFor()));
+    await this.vocabEntryDAL.updateMarkHistory(
+      userId, cardId, language, wordHistory,
+      bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+      client
+    );
+
+    const climbed = bandsClimbed(bandBefore, bandAfter);
+    return {
+      promotion: climbed > 0
+        ? { userId, language, vocabEntryId: cardId, bar: 'writing', fromCategory: bandBefore,
+            toCategory: bandAfter, bandsClimbed: climbed, markType: 'writing', markTimestamp: timestamp }
+        : null,
+      result: {
+        suppressed: false, language, category: coreCategory, categoryBeforeMark: coreCategory,
+        markedBarCategoryBefore: bandBefore, markTimestamp: timestamp, markType: 'writing',
+        displacedMark, writing: { characters: outcomes },
+      },
+    };
+  }
+
+  /**
    * Revert the newest mark on one typed track, restoring the mark it displaced.
    *
    * Fully transactional and stricter than `applyMark`: an undo that targets anything
@@ -336,6 +556,11 @@ export class FlashcardMarkService {
     if (!userId) throw new ValidationError('userId is required');
     if (typeof cardId !== 'number') throw new ValidationError('cardId must be a number');
     if (!markTimestamp) throw new ValidationError('markTimestamp is required');
+    // A writing result is one word mark plus a fan-out onto several character rows;
+    // there is no single "newest mark" to revert, and no surface offers it.
+    if (markType === 'writing') {
+      throw new DALError('Writing marks cannot be undone', 'ERR_UNDO_NOT_AVAILABLE', 409);
+    }
 
     return this.txRunner.executeInTransaction(async (tx) => {
       const client: PoolClient = tx.getClient();

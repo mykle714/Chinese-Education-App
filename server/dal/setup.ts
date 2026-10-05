@@ -45,6 +45,12 @@ import { Icons8DAL } from './implementations/Icons8DAL.js';
 import { Icons8Controller } from '../controllers/Icons8Controller.js';
 import { WinsDAL } from './implementations/WinsDAL.js';
 import { WinsController } from '../controllers/WinsController.js';
+import { PersonalBestDAL } from './implementations/PersonalBestDAL.js';
+import { PersonalBestService } from '../services/PersonalBestService.js';
+import { PersonalBestController } from '../controllers/PersonalBestController.js';
+import { WritingGridDAL } from './implementations/WritingGridDAL.js';
+import { WritingGridService } from '../services/WritingGridService.js';
+import { WritingGridController } from '../controllers/WritingGridController.js';
 import { CommunityLayoutDAL } from './implementations/CommunityLayoutDAL.js';
 import { CommunityLayoutService } from '../services/CommunityLayoutService.js';
 import { CommunityLayoutController } from '../controllers/CommunityLayoutController.js';
@@ -257,6 +263,15 @@ const memoryMapController = new MemoryMapController(memoryMapService);
 const icons8Controller = new Icons8Controller(icons8DAL);
 // wins is a thin per-user event log → no service layer; controller takes the DAL directly.
 const winsController = new WinsController(winsDAL);
+// Personal bests (migration 171, docs/WRITING_PRACTICE_REWORK.md § 2a): the service owns
+// the per-game direction rule, so unlike wins this one has a service layer.
+const personalBestDAL = new PersonalBestDAL();
+const personalBestService = new PersonalBestService(personalBestDAL);
+const personalBestController = new PersonalBestController(personalBestService);
+// Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2): deals 8 characters, lending when short.
+const writingGridDAL = new WritingGridDAL();
+const writingGridService = new WritingGridService(writingGridDAL, provisionalCardService);
+const writingGridController = new WritingGridController(writingGridService);
 // velocity is likewise a thin read over an event log; userDAL only supplies the
 // account's selected language for the headline number.
 const velocityController = new VelocityController(categoryPromotionDAL, userDAL);
@@ -349,6 +364,8 @@ export {
   icons8Controller,
   winsDAL,
   winsController,
+  personalBestController,
+  writingGridController,
   categoryPromotionDAL,
   flashcardMarkService,
   velocityController,

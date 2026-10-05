@@ -4,7 +4,7 @@ import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { getToneColor } from "../../utils/toneColors";
+import TonedPronunciation from "../../components/TonedPronunciation";
 import { MAX_TRIES } from "./constants";
 import type { PromptPhase } from "./types";
 
@@ -46,44 +46,6 @@ interface MemoryMapPromptProps {
     onSkip: () => void;
     canSkip: boolean;
 }
-
-/**
- * Pronunciation split into syllables, each in its own tone colour.
- *
- * `getToneColor` reads the tone off ONE syllable's diacritic, so the string has to be
- * split before it can be coloured — colouring the whole string would paint every
- * syllable with the first one's tone. Syllables are space-separated throughout the app
- * (the same convention cpcd zips against characters positionally).
- *
- * Plain `Typography`, NOT `ForeignText`: a romanization is Latin text describing the
- * word, not the word itself, and routing it through the foreign-script container (by
- * claiming a Latin-script language to reach its plain-text branch) would be lying to it
- * about what it is rendering. The tone colours are shared with cpcd via `toneColors`,
- * so the two agree without either owning the other.
- */
-const TonedPronunciation: React.FC<{ pronunciation: string }> = ({ pronunciation }) => (
-    <Box
-        className="memory-map-prompt__pronunciation"
-        sx={{ display: "flex", gap: "8px", flexShrink: 0 }}
-    >
-        {pronunciation.split(/\s+/).filter(Boolean).map((syllable, i) => (
-            <Typography
-                key={`${syllable}-${i}`}
-                component="span"
-                className="memory-map-prompt__syllable"
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize: SIZE.caption,
-                    fontWeight: WEIGHT.semibold,
-                    color: getToneColor(syllable),
-                    whiteSpace: "nowrap",
-                }}
-            >
-                {syllable}
-            </Typography>
-        ))}
-    </Box>
-);
 
 const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
     definition,
@@ -156,7 +118,14 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 MEANING and SOUND and the player's job is to find the characters that
                 carry them. That is a character-recognition task rather than a
                 cold-reading one — a deliberate softening, not an oversight. */}
-            {pronunciation && <TonedPronunciation pronunciation={pronunciation} />}
+            {pronunciation && (
+                <TonedPronunciation
+                    pronunciation={pronunciation}
+                    className="memory-map-prompt__pronunciation"
+                    fontSize={SIZE.caption}
+                    sx={{ flexWrap: "nowrap", flexShrink: 0 }}
+                />
+            )}
 
             {/* ── SKIP ────────────────────────────────────────────────────────────
                 Sends the word to the back of the queue, to come back later with a fresh

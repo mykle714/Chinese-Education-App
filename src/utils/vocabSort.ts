@@ -407,7 +407,7 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * sunk to the bottom with the dateless cards.
  */
 const cooldownKey = (entry: VocabEntry, bar: MasteryBarId, now: number): number =>
-  barCooldownRemainingMs(entry.typedMarkHistory, bar, now);
+  barCooldownRemainingMs(entry.typedMarkHistory, bar, now, entry.writingMastery);
 
 /** Alphabetical key for the dd — the definition the card face actually renders. */
 const definitionKey = (entry: VocabEntry): string =>
@@ -449,7 +449,7 @@ export function sortVocabEntries(
     index,
     text: !isAlpha ? "" : isPronunciation ? pronunciationKey(entry) : definitionKey(entry),
     num:
-      heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar)
+      heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar, entry.writingMastery)
         : cooldownBar ? cooldownKey(entry, cooldownBar, now)
           : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
             : timeOrZero(entry.createdAt),

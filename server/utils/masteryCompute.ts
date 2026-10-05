@@ -24,6 +24,7 @@ export {
   bandsClimbed,
   positiveCount,
   positivesByType,
+  writingMasteryFromChars,
   BAR_MARK_TYPES,
   barForMarkType,
   activeBars,

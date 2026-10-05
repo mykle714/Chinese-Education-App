@@ -51,7 +51,6 @@ const EipSheet: React.FC<EipSheetProps> = ({ eip, open, onClose, onSpeak, onSpea
                     selectedTab={entryTab ? entryTab.selectedSubTab : 0}
                     onTabChange={eip.setActiveSubTab}
                     breakdownItems={entryTab ? entryTab.breakdownItems : []}
-                    showPinyin={learnSettings.showPinyin}
                     showPinyinColor={learnSettings.showPinyinColor}
                     isFlipped={false}
                     onClose={onClose}

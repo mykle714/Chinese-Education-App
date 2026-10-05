@@ -55,7 +55,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   const {
     cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds,
     mode: rawMode, deckId: rawDeckId, collection: rawCollection,
-    surface: rawSurface,
+    surface: rawSurface, writing: rawWriting,
   } = req.body || {};
 
   if (!userId) {
@@ -78,6 +78,10 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
       isCorrect,
       markType,
       surface: typeof rawSurface === 'string' ? rawSurface : undefined,
+      // Writing marks carry { level, perChar }; the service validates the shape.
+      writing: rawWriting && typeof rawWriting === 'object'
+        ? { level: Number(rawWriting.level), perChar: rawWriting.perChar }
+        : undefined,
     });
   } catch (error: any) {
     return sendServiceError(res, error, 'ERR_MARK_FAILED');
@@ -91,6 +95,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     markTimestamp: markResult.markTimestamp,
     markType: markResult.markType,
     displacedMark: markResult.displacedMark,
+    writing: markResult.writing ?? null,
     newCard: null as any,
   };
 

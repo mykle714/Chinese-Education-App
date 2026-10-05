@@ -17,8 +17,7 @@ import { GameLeafPage } from "../shared/GameSurface";
 import { GAME_HUE } from "./constants";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import { FONTS } from "../../theme/fonts";
-import { COLORS } from "../../theme/colors";
-import Icon from "../../components/Icon";
+import TimerEyeToggle from "../shared/TimerEyeToggle";
 import WordSearchHeaderControls from "./WordSearchHeader";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
@@ -26,6 +25,8 @@ import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
 import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
 import GameEndPopup from "../runtime/GameEndPopup";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import PersonalBestLine from "../shared/PersonalBestLine";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GAME_KEY, WIN_LEVEL, GRID_QUERY, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, modeMarkTypes } from "./constants";
@@ -56,15 +57,6 @@ type Phase = "loading" | "blocked" | "playing" | "won";
  *
  * Local to Word Search (2026-09-25); every other game keeps `GameHudLabel`'s default.
  */
-/** The HUD eye's square tap target. Larger than its 19px glyph on purpose. */
-const HUD_EYE_TAP_PX = 32;
-/**
- * Gap from the strip's right edge to the eye's tap target. `GameHud` pads 15px; the
- * glyph sits ~6.5px inside its 32px target, so 8px here lands the visible glyph on
- * that same 15px line.
- */
-const HUD_EYE_EDGE_INSET_PX = 8;
-
 const HUD_TEXT_SX = {
     fontFamily: FONTS.mono,
     fontSize: SIZE.bodyLg,
@@ -132,6 +124,8 @@ const WordSearchPage: React.FC = () => {
     // No-Pinyin marks TWO (reading + production); Pinyin marks one. `markTypes[0]` is
     // the mode's primary track — the one the board itself was pooled on.
     const markTypes = useMemo(() => (modeConfig ? modeMarkTypes(modeConfig) : []), [modeConfig]);
+    // Fastest completion per board mode (docs/WORD_SEARCH_GAME.md § Personal best).
+    const { best: personalBestMs, isNewBest, record: recordPersonalBest, reset: resetPersonalBest } = usePersonalBest("word-search", mode);
     const showPinyinColor = true;
 
     // Whether this mount was launched as a RESUME (restore this mode's saved board)
@@ -792,6 +786,9 @@ const WordSearchPage: React.FC = () => {
             // deliberately share one wins bucket (see GAME_KEY in ./constants).
             recordWin(WIN_LEVEL);
             if (userId && mode) clearGameState(userId, mode);
+            // A challenge board is drawn from the round's shared word set, not the
+            // player's own pool, so it does not compete with their personal best.
+            if (!challengeRound.active) void recordPersonalBest(ms);
             setPhase("won");
             // Word Search's board is always completable, so `won` is always true —
             // it exists for the all-or-nothing survival bonus other games have.
@@ -805,12 +802,13 @@ const WordSearchPage: React.FC = () => {
     // a board in progress can no longer be thrown away mid-game.
     const resetBoard = useCallback(async () => {
         if (userId && mode) clearGameState(userId, mode);
+        resetPersonalBest();
         tts.unlockAudio();
         setPhase("loading");
         const payload = await fetchGrid();
         if (!payload) return; // fetchGrid already switched to blocked
         startBoard(payload);
-    }, [tts, fetchGrid, startBoard, userId, mode]);
+    }, [tts, fetchGrid, startBoard, userId, mode, resetPersonalBest]);
 
     // The centred column shown INSTEAD of the board (spinner, or the blocked
     // message). The shape is shared — `GameCentered` also owns the rule that text on
@@ -879,38 +877,11 @@ const WordSearchPage: React.FC = () => {
                     >
                         {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
                     </GameHudLabel>
-                    <Box
-                        className={`word-search__hud-timer-toggle word-search__hud-timer-toggle--${showTimer ? "shown" : "hidden"}`}
-                        role="button"
-                        aria-pressed={showTimer}
-                        aria-label={showTimer ? "Hide timer" : "Show timer"}
-                        onClick={() => updateWsSettings({ showTimer: !showTimer })}
-                        sx={{
-                            position: "absolute",
-                            top: "50%",
-                            // Timer shown → pinned to the strip's right edge, leaving the
-                            // clock dead-centre. Timer hidden → the eye takes the centre
-                            // the clock vacated. The move is an instant jump — deliberately
-                            // not animated.
-                            left: showTimer
-                                ? `calc(100% - ${HUD_EYE_EDGE_INSET_PX + HUD_EYE_TAP_PX}px)`
-                                : `calc(50% - ${HUD_EYE_TAP_PX / 2}px)`,
-                            transform: "translateY(-50%)",
-                            width: HUD_EYE_TAP_PX,
-                            height: HUD_EYE_TAP_PX,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                        }}
-                    >
-                        {/* The glyph states what a tap will DO, not the current state:
-                            slashed eye while the clock shows (tap to hide), open eye
-                            while it is hidden (tap to show). Full ink like every other
-                            HUD fact — the strip sits on the hue's tint, where --ink2
-                            reads washed out. */}
-                        <Icon name={showTimer ? "visibility_off" : "visibility"} size={19} color={COLORS.onSurface} />
-                    </Box>
+                    <TimerEyeToggle
+                        className="word-search__hud-timer-toggle"
+                        shown={showTimer}
+                        onToggle={() => updateWsSettings({ showTimer: !showTimer })}
+                    />
                 </GameHud>
 
                 <WordSearchWordList words={data.words} found={found} hintEntryKey={hintEntryKey} />
@@ -968,6 +939,12 @@ const WordSearchPage: React.FC = () => {
                         <Typography className="word-search__win-time" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
                             Time {formatTimeMs(finalMs)} — {medal.medal} medal
                         </Typography>
+                        <PersonalBestLine
+                            game="word-search"
+                            best={personalBestMs}
+                            isNewBest={isNewBest}
+                            className="word-search__personal-best"
+                        />
                         <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
                             <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
                                 Play Again

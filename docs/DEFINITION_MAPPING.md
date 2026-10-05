@@ -97,6 +97,7 @@ Child docs:
   `VocabEntryDAL.findRelatedBySharedCharacters` (related words),
   `VocabEntryDAL.findUsedInForCharacter` (used-in, **both** passes — pass 2 rows carry no
   `selectedSense`, but the resolver's default-sense branch still applies),
+  `VocabEntryDAL.findWritingUsedInForCharacter` (writing-flp used-in bubbles, both passes),
   `StarterPacksService._rowsToDiscoverCards` (discover / sort cards),
   `StudyChallengeDAL` (challenge word cards),
   `CommunityLayoutDAL.normalize` (community feed — the design OWNER's pick).

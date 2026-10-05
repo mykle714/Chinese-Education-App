@@ -12,6 +12,7 @@ import {
     MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, MASTERY_CENTER_GROUNDS, MASTERY_CENTER_HUES, type MasteryCenterBar,
 } from "./masteryCenters";
 import WritingPracticeGrid from "./centers/WritingPracticeGrid";
+import WritingGridLauncher from "./centers/WritingGridLauncher";
 import ReadingGamesCarousel, { readReturnedGame } from "./centers/ReadingGamesCarousel";
 import { usePinScrollBottom } from "../../hooks/usePinScrollBottom";
 import ReadingSwipeGrid from "./centers/ReadingSwipeGrid";
@@ -32,7 +33,9 @@ import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
  *
  *   Reading — word of the day (phase 3), Reading Flashcards stack (phase 4),
  *             word swipe grid (phase 2), reading games carousel.
- *   Writing — word of the day (phase 3), 6×6 word practice grid (phase 5).
+ *   Writing — word of the day (phase 3), Writing Flashcards stack (the writing flp,
+ *             docs/WRITING_PRACTICE_REWORK.md § 3), 6×6 word practice grid (phase 5),
+ *             the Writing Grid game card (§ 2).
  *
  * It used to BE the decks panel rendered as a page (`DecksPanelBody` variant "page").
  * The panel's data still comes from `useDecksPanel(lens)` — now also feeding the
@@ -58,7 +61,7 @@ import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
  * Docs: docs/READING_WRITING_CENTERS.md, docs/DECKS_FEATURE.md § "Mastery Centers",
  * docs/MASTERY_REWORK.md § "Three bars".
  */
-/** The Reading Center's compact card hand height — the design's `.rstk` (178px). */
+/** Both Centers' compact card hand height — the design's `.rstk` (178px). */
 const READING_HAND_HEIGHT = 178;
 
 const MasteryCenterPage: React.FC = () => {
@@ -83,12 +86,13 @@ const MasteryCenterPage: React.FC = () => {
     const panel = useDecksPanel(bar, restored?.panel);
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
 
-    // Returning from a game the Reading Center's carousel launched (the game's exit
-    // carries `returnedFromGame` — games/runtime/gameExit): reopen scrolled all the way
-    // down to the carousel, which parks on that game's card. Pinned rather than set
-    // once, because the sections above the carousel load after mount and grow
+    // Returning from a game this Center launched — the Reading Center's carousel or the
+    // Writing Center's Writing Grid card (the game's exit carries `returnedFromGame` —
+    // games/runtime/gameExit): reopen scrolled all the way down to the games, which sit
+    // last on both Centers; the reading carousel also parks on that game's card. Pinned
+    // rather than set once, because the sections above load after mount and grow
     // (usePinScrollBottom). Read once: later re-renders must not re-pin.
-    const [returnedFromGame] = useState(() => (bar === "reading" ? readReturnedGame(locationState) : null));
+    const [returnedFromGame] = useState(() => readReturnedGame(locationState));
     const bodyRef = useRef<HTMLDivElement | null>(null);
     usePinScrollBottom(bodyRef, returnedFromGame !== null);
 
@@ -167,11 +171,25 @@ const MasteryCenterPage: React.FC = () => {
                 {/* Both Centers open on the global Word of the Day, in the Center's hue. */}
                 <WordOfTheDayCard hue={MASTERY_CENTER_HUES[bar]} />
                 {bar === "writing" ? (
-                    <WritingPracticeGrid
-                        cards={panel.allCards}
-                        language={panel.language}
-                        loading={panel.cardsLoading}
-                    />
+                    <>
+                        {/* The WRITING flp's hand — Writing Challenge / Review / Mix, the same
+                            compact stack as the Reading Center's (docs/WRITING_PRACTICE_REWORK.md
+                            § 3). zh only: the recognizer is zh_CN. */}
+                        {panel.language === "zh" && (
+                            <Box
+                                className="mastery-center-page__study-hand"
+                                sx={{ height: READING_HAND_HEIGHT, margin: "14px 22px 0", display: "flex", flexDirection: "column", flexShrink: 0 }}
+                            >
+                                <FlpStudyHand bar="writing" variant="compact" />
+                            </Box>
+                        )}
+                        <WritingPracticeGrid
+                            cards={panel.allCards}
+                            language={panel.language}
+                            loading={panel.cardsLoading}
+                        />
+                        {panel.language === "zh" && <WritingGridLauncher className="mastery-center-page__games" />}
+                    </>
                 ) : (
                     <>
                         {/* The fdp's card hand on the READING bar — Challenge / Review / Study

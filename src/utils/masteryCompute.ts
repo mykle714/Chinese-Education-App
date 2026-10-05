@@ -35,6 +35,7 @@ export {
   PBH_THRESHOLDS,
   positiveCount,
   positivesByType,
+  writingMasteryFromChars,
   BAR_MARK_TYPES,
   barForMarkType,
   activeBars,

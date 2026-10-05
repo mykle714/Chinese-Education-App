@@ -29,6 +29,16 @@ page applies to all of them, and to the compare sheet, which is a plain `SheetPa
 host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
 to use `depth` for real, stacking over the cdp's eip.
 
+**The eip always shows pinyin (2026-10-04).** It is reference info, so `InfoCardSection`,
+`InfoCardPanelBody` and `InfoCardTabContent` take **no `showPinyin` prop** — a study
+surface's toggle (the flp pinyin chip, `useFlashcardLearnSettings`) can never reach it.
+Before this, `EipSheet` forwarded that chip, so the Reading Center, scp and iw eips went
+pinyin-less whenever it was off on the flp. The only way left to show no pinyin is a data
+gap, which `InfoCardSection` → `useMissingPinyinWarning` reports with a deduped
+`console.warn` (a zh entry whose `resolveDisplayPronunciation` is empty). A host whose
+entries genuinely have no pinyin must pass `missingPinyinReason="<why>"`; **no host passes
+it today**. Spanish entries and the Compare tab never warn.
+
 **A host no longer supplies a positioned parent (2026-08-30).** Both the scrim *and* the
 sheet are portaled to the frame-level host (see "The scrim covers the screen"), so
 `absolute; inset: 0` and `absolute; bottom: 0` resolve against the whole screen and

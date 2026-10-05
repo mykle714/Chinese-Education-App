@@ -35,7 +35,7 @@ import type { FlpBar } from "../../server/contracts/studyMode";
  * `reading`.
  */
 export const markTypeForSideOne = (sideOne: SideOneLanguage, bar: FlpBar = "core"): MarkType =>
-    bar === "reading" ? "reading" : sideOne === "en" ? "production" : "recognition";
+    bar === "reading" ? "reading" : bar === "writing" ? "writing" : sideOne === "en" ? "production" : "recognition";
 
 /**
  * Choose which language shows on a card's Side 1: the face for whichever know track
@@ -57,7 +57,8 @@ export const markTypeForSideOne = (sideOne: SideOneLanguage, bar: FlpBar = "core
  */
 export const sideOneForCard = (card: VocabEntry | null | undefined, bar: FlpBar = "core"): SideOneLanguage => {
     // The reading flp always opens on the characters: reading them IS the question.
-    if (bar === "reading") return "zh";
+    // The writing flp draws its own face content (useWritingFlashcard); "zh" is nominal.
+    if (bar === "reading" || bar === "writing") return "zh";
     const history = card?.typedMarkHistory;
     const recognition = positiveCount(history?.recognition);
     const production = positiveCount(history?.production);

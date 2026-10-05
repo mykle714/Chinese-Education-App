@@ -295,7 +295,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         if (cardsFilter === "all") return cards;
         const wantMastered = cardsFilter === "mastered";
         return cards.filter(
-            (card) => (barCategory(card.typedMarkHistory, lens) === "Mastered") === wantMastered
+            (card) => (barCategory(card.typedMarkHistory, lens, card.writingMastery) === "Mastered") === wantMastered
         );
     }, [cards, cardsFilter, lens]);
 

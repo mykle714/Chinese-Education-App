@@ -35,3 +35,14 @@ export interface WritingCanvasHandle {
   /** True when no strokes have been drawn. */
   isEmpty: () => boolean;
 }
+
+/**
+ * One graded writing attempt, as a surface reports it to its host: the 1-based level
+ * it was written at (server/contracts/writingLevels.ts) and each character's top-1
+ * result, in word order. The host turns it into per-character Writing marks
+ * (docs/WRITING_PRACTICE_REWORK.md § 3a).
+ */
+export interface WritingAttempt {
+  level: number;
+  perChar: boolean[];
+}

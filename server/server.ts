@@ -16,6 +16,7 @@ import validationRoutes from './routes/validationRoutes.js';
 import nightMarketTemplateRoutes from './routes/nightMarketTemplateRoutes.js';
 import nightMarketSandboxRoutes from './routes/nightMarketSandboxRoutes.js';
 import onDeckRoutes from './routes/onDeckRoutes.js';
+import writingGridRoutes from './routes/writingGridRoutes.js';
 import starterPacksRoutes from './routes/starterPacksRoutes.js';
 import dictionaryRoutes from './routes/dictionaryRoutes.js';
 import gamesRoutes from './routes/gamesRoutes.js';
@@ -34,7 +35,7 @@ import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
 import immersiveWorldRoutes from './routes/immersiveWorldRoutes.js';
-import { isFeatureEnabled } from './contracts/featureFlags.js';
+import { isFeatureEnabled, isGameEnabled } from './contracts/featureFlags.js';
 import { immersiveWorldDAL } from './dal/setup.js';
 import { validateStoredNpcIds } from './services/iw/validateStoredNpcIds.js';
 import { writeLimiter } from './middleware/rateLimits.js';
@@ -131,6 +132,8 @@ app.use(dictionaryRoutes);
 // can never shadow it.
 app.use(speedReadingRoutes);
 app.use(memoryMapRoutes);
+// Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2) — gated by its game flag.
+if (isGameEnabled('writing-grid')) app.use(writingGridRoutes);
 app.use(gamesRoutes);
 if (isFeatureEnabled('nightMarket')) app.use(nightMarketRoutes);
 // Community is flagged (server/contracts/featureFlags.ts). Not mounting the router IS

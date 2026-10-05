@@ -68,8 +68,8 @@ import { useHorizontalScrollArrows } from '../../hooks/useHorizontalScrollArrows
 import { COLORS, FONTS, SIZE } from '../../theme';
 import type { HintCharacter } from '../../components/handwriting/glyphLookup';
 import HintBubble from './HintBubble';
-import { HINT_MOTION } from './hintMotion';
-import { useHintBubblePresence, type PresenceItem } from './useHintBubblePresence';
+import { HINT_MOTION } from '../../components/hintBubble/hintMotion';
+import { useHintBubblePresence, type PresenceItem } from '../../components/hintBubble/useHintBubblePresence';
 import type { Candidate, CandidateMode } from './useComposition';
 
 interface CandidateRowProps {

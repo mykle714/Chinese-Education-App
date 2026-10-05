@@ -10,7 +10,7 @@ import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause, WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { flpReadyCountsByBand, nextFlpReadyMs } from '../contracts/flpReadiness.js';
 import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
@@ -222,7 +222,7 @@ export class OnDeckVocabService {
   // BUCKETING stays per mark type (fetchGameCandidates) — only freshness is per bar.
   private isCardGameEligible(card: VocabEntry, markType: MarkType, now: number): boolean {
     return (
-      !isMarkOnCooldown(card.typedMarkHistory, markType, now) &&
+      !isMarkOnCooldown(card.typedMarkHistory, markType, now, card.writingMastery) &&
       !isFlpOnlyMark(card.typedMarkHistory, markType)
     );
   }
@@ -284,7 +284,7 @@ export class OnDeckVocabService {
       : '';
     for (const category of categories) {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $4
@@ -379,7 +379,7 @@ export class OnDeckVocabService {
     if (ids.length === 0) return [];
 
     const result = await client.query<VocabEntry>(`
-      SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+      SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $2
@@ -546,30 +546,33 @@ export class OnDeckVocabService {
   }
 
   /**
-   * For a single-character zh entry, attach up to 5 multi-char words containing this character
-   * (user's vet first, then det fallback). No-op for multi-char or non-zh entries — those
-   * continue to use the precomputed `breakdown` map for the bt tab.
+   * For a single-character zh entry, attach up to 4 multi-char words containing this
+   * character (user's vet first, then det fallback) as `usedIn`. On the WRITING bar it
+   * also attaches `writingUsedIn` — up to 2: saved words (ungated) then frequency-4–5
+   * dictionary words — for the writing card's hint bubbles (docs/WRITING_PRACTICE_REWORK.md § 3). No-op for
+   * multi-char or non-zh entries — those continue to use the precomputed `breakdown`
+   * map for the bt tab.
    */
-  private async enrichWithUsedIn(userId: string, entry: VocabEntry): Promise<VocabEntry> {
+  private async enrichWithUsedIn(userId: string, entry: VocabEntry, bar: MasteryBarId = 'core'): Promise<VocabEntry> {
     if (entry.language !== 'zh') return entry;
     if ([...entry.entryKey].length !== 1) return entry;
 
     try {
-      const usedIn = await this.vocabEntryDAL.findUsedInForCharacter(
-        userId,
-        entry.entryKey,
-        entry.language,
-        4
-      );
-      return { ...entry, usedIn };
+      const [usedIn, writingUsedIn] = await Promise.all([
+        this.vocabEntryDAL.findUsedInForCharacter(userId, entry.entryKey, entry.language, 4),
+        bar === 'writing'
+          ? this.vocabEntryDAL.findWritingUsedInForCharacter(userId, entry.entryKey, entry.language, 2)
+          : Promise.resolve(undefined),
+      ]);
+      return writingUsedIn ? { ...entry, usedIn, writingUsedIn } : { ...entry, usedIn };
     } catch (error) {
       console.error(`Failed to find usedIn for "${entry.entryKey}":`, error);
       return entry;
     }
   }
 
-  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[]): Promise<VocabEntry[]> {
-    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry)));
+  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[], bar: MasteryBarId = 'core'): Promise<VocabEntry[]> {
+    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry, bar)));
   }
 
   /**
@@ -595,7 +598,7 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
@@ -645,7 +648,7 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT},
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT},
                dc."addedAt" AS "deckAddedAt"
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         -- Joined rather than spliced as vetDeckClause's EXISTS: this read needs
@@ -784,18 +787,22 @@ export class OnDeckVocabService {
     }
     const client = await db.getClient();
     try {
-      const result = await client.query<{ id: number; typedMarkHistory: TypedMarkHistory | null }>(`
-        SELECT ve.id, ve."typedMarkHistory"
+      const result = await client.query<{ id: number; typedMarkHistory: TypedMarkHistory | null; writingMastery: number | null }>(`
+        SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)}
         WHERE ve."userId" = $1
         AND ve."language" = $2
+        ${bar === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
         -- SORTED: deck read, same rule as getMasteredCountsByBar — a lent provisional
         -- card must not inflate a figure the learner reads as "my deck".
         AND ${vetSortedClause()}
       `, [userId, language]);
 
       const now = Date.now();
-      const rows = result.rows.map((row) => ({ typedMarkHistory: row.typedMarkHistory ?? undefined }));
+      const rows = result.rows.map((row) => ({
+        typedMarkHistory: row.typedMarkHistory ?? undefined,
+        writingMastery: row.writingMastery,
+      }));
       return {
         counts: flpReadyCountsByBand(rows, now, bar),
         reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now, bar),
@@ -847,7 +854,7 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
         AND ve."language" = $2
@@ -891,7 +898,7 @@ export class OnDeckVocabService {
     // Optional collection restriction; $6 is the next free placeholder after the five below.
     const deck = this.deckPlayFilter(collection, 6);
     const result = await client.query<VocabEntry>(`
-      SELECT ve.*, ${DICT_COLS}, ${CORE_CATEGORY_SELECT}
+      SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $4
@@ -900,6 +907,7 @@ export class OnDeckVocabService {
       AND (${vetSortedClause()} OR ve.id = ANY($5::int[]))
       AND ${barCategoryExpr(bar)} = $2
       AND ve.id != ALL($3::int[])
+      ${bar === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       ${deck.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code — but
       -- the tie is REAL for never-marked cards, which all score equally and keep this
@@ -1042,7 +1050,7 @@ export class OnDeckVocabService {
       // Enrich only the chosen card (candidates were fetched un-enriched).
       const enriched = await this.enrichEntriesPipeline([winner], language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, bar);
       return withUsedIn[0];
     } finally {
       client.release();
@@ -1220,6 +1228,10 @@ export class OnDeckVocabService {
     if (bar === 'reading' && language !== 'zh') {
       throw new ValidationError('Reading flashcards are only available for Chinese');
     }
+    // So is the writing flp: the recognizer is zh_CN and the card draws hanzi.
+    if (bar === 'writing' && language !== 'zh') {
+      throw new ValidationError('Writing flashcards are only available for Chinese');
+    }
 
     const now = Date.now();
     const client = await db.getClient();
@@ -1321,7 +1333,7 @@ export class OnDeckVocabService {
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(workingLoop, language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, bar);
 
       // Pre-warm the TTS disk cache for every card before responding. The client
       // still fetches MP3s via /api/tts/synthesize after this returns, but those

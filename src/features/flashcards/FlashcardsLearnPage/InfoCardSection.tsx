@@ -6,13 +6,15 @@ import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { CompareEipTab } from "./useEipTabs";
 import type { LongDefinitionPart } from "../../../types";
+import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 
 interface InfoCardSectionProps {
     currentEntry: VocabEntry | null;
     selectedTab: number;
     onTabChange: (tab: number) => void;
     breakdownItems: BreakdownItem[];
-    showPinyin: boolean;
+    // No `showPinyin` prop: the eip is reference info and ALWAYS shows pinyin (2026-10-04).
+    // A study surface's pinyin toggle (the flp chip) must never reach it.
     showPinyinColor?: boolean;
     isFlipped: boolean;
     onClose: () => void;
@@ -65,6 +67,46 @@ interface InfoCardSectionProps {
     // which uses this panel as its whole extra-info body and would otherwise lose the
     // two lists its old stacked-SectionCard body showed (see InfoCardTabContent).
     showSynonymsRelated?: boolean;
+    // SUPPRESSES the missing-pinyin warning (see `useMissingPinyinWarning` below). The eip
+    // always shows pinyin, so a Chinese entry with none to show is presumed to be a bug in
+    // the data or in what the host handed in. A host whose entries GENUINELY have no
+    // pinyin must pass a reason string here — the reason documents the exception at the
+    // call site. As of 2026-10-04 no host has one, so nothing passes it.
+    missingPinyinReason?: string;
+}
+
+/** Han-script test, for entries whose `language` was not stamped by the read that produced them. */
+const HAN_RE = /\p{Script=Han}/u;
+
+/** entryKeys already warned about, so a re-render or reopen does not spam the console. */
+const warnedMissingPinyin = new Set<string>();
+
+/**
+ * Warns (console) when the panel is about to show a Chinese entry WITHOUT pinyin. The
+ * panel no longer takes a `showPinyin` flag, so the only way left is the entry resolving
+ * to no pronunciation at all — a data/read-path gap (a host handing in a thin entry, a
+ * det row missing `pronunciation`, a cluster reading the resolver rejected).
+ * Silenced by the host's `missingPinyinReason`. Spanish (and the Compare tab) never warn.
+ */
+function useMissingPinyinWarning(
+    entry: VocabEntry | null,
+    selectedSenseIndex: number | undefined,
+    suppressed: boolean,
+): void {
+    const entryKey = entry?.entryKey ?? null;
+    const isChinese = !!entry && (entry.language ? entry.language === "zh" : HAN_RE.test(entry.entryKey ?? ""));
+    const pronunciation = entry && isChinese ? resolveDisplayPronunciation(entry, selectedSenseIndex) : null;
+    useEffect(() => {
+        if (suppressed || !entryKey || !isChinese) return;
+        if (pronunciation) return;
+        if (warnedMissingPinyin.has(entryKey)) return;
+        warnedMissingPinyin.add(entryKey);
+        console.warn(
+            `[eip] "${entryKey}" is showing no pinyin (the entry resolved to no pronunciation). The eip is reference info and ` +
+            `should always show pinyin for Chinese — if this host genuinely wants it hidden, ` +
+            `pass \`missingPinyinReason\` to InfoCardSection.`
+        );
+    }, [suppressed, entryKey, isChinese, pronunciation]);
 }
 
 // Entry-tab pager slide (see the effect in the component). Duration/easing match
@@ -82,7 +124,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     selectedTab,
     onTabChange,
     breakdownItems,
-    showPinyin,
     showPinyinColor = true,
     isFlipped,
     onClose,
@@ -106,7 +147,9 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     entryTabId,
     entryTabIndex,
     showSynonymsRelated,
+    missingPinyinReason,
 }, ref) => {
+    useMissingPinyinWarning(compareTab ? null : currentEntry, selectedSenseIndex, !!missingPinyinReason);
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
     const slideRef = useRef<HTMLDivElement | null>(null);
     // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
@@ -194,7 +237,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         state={compareTab}
                         onSetSlot={onSetCompareSlot ?? (() => {})}
                         onResult={onCompareResult ?? (() => {})}
-                        showPinyin={showPinyin}
+                        showPinyin
                         showPinyinColor={showPinyinColor}
                         onSegmentOpen={onExampleSegmentClick}
                     />
@@ -205,7 +248,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         selectedTab={selectedTab}
                         onTabChange={onTabChange}
                         breakdownItems={breakdownItems}
-                        showPinyin={showPinyin}
                         showPinyinColor={showPinyinColor}
                         isFlipped={isFlipped}
                         onBreakdownItemClick={onBreakdownItemClick}

@@ -396,7 +396,6 @@ const VocabCardDetailPage: React.FC = () => {
                             selectedTab={infoTab}
                             onTabChange={setInfoTab}
                             breakdownItems={infoBreakdownItems}
-                            showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
                             // The cdp's hero card does not flip, so there is no flipped
                             // state to mirror. (The panel body does not read this prop

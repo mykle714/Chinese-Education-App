@@ -15,7 +15,18 @@ import type { MasteredAtByBar, MasteryBarId } from '../../contracts/wire.js';
 export interface VetMarkState {
   /** The row's language, i.e. which physical vet table holds it. */
   language: string;
+  /** The card's word (vet identity key) — the writing fan-out splits it into characters. */
+  entryKey: string;
   /** Never null — a row with no history yet reads as `{}`. */
+  typedMarkHistory: TypedMarkHistory;
+  masteredAt: MasteredAtByBar | null;
+}
+
+/** A single-character zh vet row as the writing fan-out reads it (locked). */
+export interface CharacterMarkState {
+  id: number;
+  /** The character. */
+  entryKey: string;
   typedMarkHistory: TypedMarkHistory;
   masteredAt: MasteredAtByBar | null;
 }
@@ -62,6 +73,21 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     cardId: number,
     opts?: { client?: PoolClient; forUpdate?: boolean }
   ): Promise<VetMarkState | null>;
+
+  /**
+   * The writing fan-out's read (docs/WRITING_PRACTICE_REWORK.md § 3a): ensure every
+   * character in `chars` has a single-character zh vet row for this user — creating a
+   * HIDDEN one (`starterPackBucket = 'provisional'`, the lent-card path) where the
+   * learner has none and the character has a det row — then return them all LOCKED
+   * (`FOR UPDATE`), in `entryKey` order so two concurrent fan-outs sharing characters
+   * always lock in the same order and cannot deadlock. A character with no det row
+   * gets no row and is simply absent from the result. Requires the transaction client.
+   */
+  ensureCharacterMarkStates(
+    userId: string,
+    chars: string[],
+    client: PoolClient
+  ): Promise<CharacterMarkState[]>;
 
   /**
    * Overwrite one vet row's `typedMarkHistory`, optionally stamping or clearing a
@@ -159,6 +185,13 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     limit?: number,
     offset?: number
+  ): Promise<UsedInItem[]>;
+  /** Writing-flp used-in bubbles: pass 1 ungated + pass 2 at frequencyScore 4–5. */
+  findWritingUsedInForCharacter(
+    userId: string,
+    character: string,
+    language: string,
+    limit?: number
   ): Promise<UsedInItem[]>;
 
   // Batch operations with progress tracking

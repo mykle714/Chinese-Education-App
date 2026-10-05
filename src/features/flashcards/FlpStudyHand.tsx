@@ -14,10 +14,12 @@ import type { RampHue } from "../../theme/colors";
 // tapping it opens the flp in that mode. `StudyHand` is the pixels; this is everything
 // around it (the figures, the Review gate, the "resting" toast, the launch URL).
 //
-// Two hosts, one component, so they cannot drift:
+// Three hosts, one component, so they cannot drift:
 //   fdp (/flashcards/decks)        — bar `core`: the know flp.
 //   Reading Center (/flashcards/reading) — bar `reading`: the READING flp in the same
 //       three modes (`?bar=reading`, docs/READING_WRITING_CENTERS.md § Phase 4).
+//   Writing Center (/flashcards/writing) — bar `writing`: the WRITING flp
+//       (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3), compact like Reading's.
 // Extracted from FlashcardsDecksPage on 2026-10-03 when the Reading Center adopted it.
 //
 // SIZING is the host's: StudyHand fills its container (`flex: 1 1 0`, container-query
@@ -51,6 +53,7 @@ const HAND_HUES: Record<StudyModeId, RampHue> = {
 const HAND_LABELS: Record<FlpBar, Record<StudyModeId, string>> = {
     core: { challenge: "Challenge Mix", review: "Review Mix", mix: "Study Mix" },
     reading: { challenge: "Reading Challenge", review: "Reading Review", mix: "Reading Mix" },
+    writing: { challenge: "Writing Challenge", review: "Writing Review", mix: "Writing Mix" },
 };
 /** Glyphs for the compact face (the full face draws none). */
 const HAND_GLYPHS: Record<StudyModeId, string> = {
@@ -108,7 +111,7 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
     // number or as a colour.
     const reviewEligible = reviewPool === undefined ? undefined : reviewPool > 0;
 
-    const skill = bar === "reading" ? "reading " : "";
+    const skill = bar === "core" ? "" : `${bar} `;
     const labels = HAND_LABELS[bar];
     const handCards: StudyHandCard[] = useMemo(() => [
         // ⚠️ `label` is DISPLAY TEXT ONLY. The ids stay `challenge` / `review` — they are

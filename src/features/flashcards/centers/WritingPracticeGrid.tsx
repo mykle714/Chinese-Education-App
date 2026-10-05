@@ -5,6 +5,7 @@ import { usePracticeWriting } from "../../../components/handwriting/usePracticeW
 import { buildPool, initialLayout, type PlacedTile } from "./wordGridModel";
 import { useWordGridGeometry, WORD_GRID_SIDE_GUTTER, WORD_GRID_TOP_GAP } from "./useWordGridGeometry";
 import type { VocabEntry } from "../../../types";
+import { WRITING_MAX_CHARS } from "../../../../server/contracts/writingLevels";
 import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
@@ -14,7 +15,7 @@ import { WEIGHT } from "../../../theme/scale";
  * same 6×6 word grid as the Reading Center's (`wordGridModel`, `useWordGridGeometry`),
  * read through the WRITING bar: the learner's own cards, a word spanning one cell per
  * character up to two and compressed beyond (`cellSpan`), sampled by writing band in the Study Mix proportions, fresh on every visit.
- * Tapping a tile opens `PracticeWritingPopup` on that word.
+ * Tapping a tile opens `PracticeWritingPopup` on that word, projected out of the tile.
  *
  * Words are capped at FOUR characters — the popup's 2×2 grid holds no more — and cards
  * still resting on the writing clock are left out, since their Verify marks would be
@@ -28,9 +29,6 @@ import { WEIGHT } from "../../../theme/scale";
  * zh only (the recognizer is zh_CN). Layer: feature component
  * (src/features/flashcards/centers).
  */
-
-/** PracticeWritingPopup's limit: its 2×2 grid has four slots. */
-const MAX_PRACTICE_LENGTH = 4;
 
 interface WritingPracticeGridProps {
     cards: readonly VocabEntry[];
@@ -51,7 +49,7 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
     useEffect(() => {
         if (built.current || cards.length === 0 || language !== "zh") return;
         built.current = true;
-        const pool = buildPool(cards, Date.now(), Math.random, { bar: "writing", maxLength: MAX_PRACTICE_LENGTH });
+        const pool = buildPool(cards, Date.now(), Math.random, { bar: "writing", maxLength: WRITING_MAX_CHARS });
         const layout = initialLayout(pool, Math.random, nextKey);
         setTiles(layout);
     }, [cards, language, nextKey]);
@@ -60,6 +58,10 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
 
     // The tile whose popup is open.
     const [selected, setSelected] = useState<PlacedTile | null>(null);
+    // The tapped tile's element — the popup projects out of it: a one-character word
+    // straight into the canvas panel, a 2–4-character word into the character selector
+    // (whose slots then project into the canvas). See useProjectionMorph.
+    const [selectedEl, setSelectedEl] = useState<HTMLElement | null>(null);
     const practice = usePracticeWriting(selected?.word ?? null, {
         language,
         vocabEntryId: selected?.cardId,
@@ -88,7 +90,10 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
                                     component="button"
                                     type="button"
                                     className={`writing-practice-grid__tile${isSelected ? " writing-practice-grid__tile--selected" : ""}`}
-                                    onClick={() => setSelected(tile)}
+                                    onClick={(e: React.MouseEvent<HTMLElement>) => {
+                                        setSelectedEl(e.currentTarget);
+                                        setSelected(tile);
+                                    }}
                                     aria-label={`Practice writing ${tile.word}`}
                                     sx={{
                                         position: "absolute",
@@ -135,7 +140,8 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
                     character={selected.word}
                     completedLevels={practice.completedLevels}
                     onLevelsChange={practice.onLevelsChange}
-                    onWritingMark={practice.onWritingMark}
+                    onWritingResult={practice.onWritingResult}
+                    origin={selectedEl}
                     onClose={() => setSelected(null)}
                 />
             )}

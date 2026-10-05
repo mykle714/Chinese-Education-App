@@ -1,13 +1,40 @@
 import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
-import { IVocabEntryDAL, VetMarkState, MasteredAtWrite } from '../interfaces/IVocabEntryDAL.js';
+import { IVocabEntryDAL, VetMarkState, MasteredAtWrite, CharacterMarkState } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
-import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause } from '../shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause, WRITING_MASTERY_SELECT } from '../shared/vetTable.js';
+
+/** One raw used-in row (findUsedInForCharacter and findWritingUsedInForCharacter). */
+type UsedInRow = {
+  vocabEntryId: number | null;
+  entryKey: string;
+  pronunciation: string | null;
+  definition: string | null;
+  definitionClusters: DefinitionCluster[] | null;
+  selectedSense: string | null;
+  frequencyScore: number | null;
+};
+
+/**
+ * Map a used-in row to the wire shape. Saved (vet) rows read out their CHOSEN sense's
+ * pinyin; dictionary rows have no pick, so the resolvers fall to the entry's default
+ * (highest-frequency) sense. Same pick on both fields, so a row's English and its tones
+ * always describe one sense.
+ */
+function toUsedInItem(row: UsedInRow): UsedInItem {
+  return {
+    vocabEntryId: row.vocabEntryId ?? null,
+    entryKey: row.entryKey,
+    pronunciation: resolveDisplayPronunciation(row),
+    definition: resolveDisplayDefinition(row) || null,
+    frequencyScore: row.frequencyScore ?? null,
+  };
+}
 
 /**
  * VocabEntry Data Access Layer implementation
@@ -273,7 +300,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     }
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve.id = $1
       `, [id]);
@@ -310,7 +337,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const runProbe = async (client: PoolClient): Promise<VetMarkState | null> => {
       for (const table of VET_PHYSICAL_TABLES) {
         const result = await client.query(
-          `SELECT "language", "typedMarkHistory", "masteredAt"
+          `SELECT "language", "entryKey", "typedMarkHistory", "masteredAt"
              FROM ${table}
             WHERE id = $1 AND "userId" = $2${lock}`,
           [cardId, userId]
@@ -322,6 +349,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
             // practice, but the write below picks a table from this value and must
             // never be handed undefined.
             language: row.language || (table === 'vocabentries_es' ? 'es' : 'zh'),
+            entryKey: row.entryKey,
             typedMarkHistory: row.typedMarkHistory || {},
             masteredAt: row.masteredAt ?? null,
           };
@@ -337,6 +365,42 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       return { rows: state ? [state] : [], rowCount: state ? 1 : 0 } as any;
     });
     return result.recordset[0] || null;
+  }
+
+  async ensureCharacterMarkStates(
+    userId: string,
+    chars: string[],
+    client: PoolClient
+  ): Promise<CharacterMarkState[]> {
+    if (!userId) throw new ValidationError('User ID is required');
+    const unique = [...new Set(chars)].filter((c) => [...c].length === 1);
+    if (unique.length === 0) return [];
+
+    // Hidden component rows: the same INSERT shape as ProvisionalCardDAL.insertProvisional
+    // (a lent card), restricted to characters that have a det row so a row never points
+    // at nothing. ON CONFLICT keeps an existing row — library or provisional — as is.
+    await client.query(
+      `INSERT INTO vocabentries_zh ("userId", "entryKey", language, "starterPackBucket")
+       SELECT $1, ch, 'zh', 'provisional'
+         FROM unnest($2::text[]) AS ch
+        WHERE EXISTS (SELECT 1 FROM dictionaryentries_zh d WHERE d.word1 = ch)
+       ON CONFLICT ("userId", "entryKey", language) DO NOTHING`,
+      [userId, unique]
+    );
+    const result = await client.query(
+      `SELECT id, "entryKey", "typedMarkHistory", "masteredAt"
+         FROM vocabentries_zh
+        WHERE "userId" = $1 AND language = 'zh' AND "entryKey" = ANY($2::text[])
+        ORDER BY "entryKey"
+        FOR UPDATE`,
+      [userId, unique]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      entryKey: row.entryKey,
+      typedMarkHistory: row.typedMarkHistory || {},
+      masteredAt: row.masteredAt ?? null,
+    }));
   }
 
   async updateMarkHistory(
@@ -399,7 +463,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = $2
         AND ${vetSortedClause()}
@@ -432,7 +496,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // card shows is a per-card `selectedSense` pick rather than part of its identity.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."entryKey" = $2 AND ve."language" = $3
       `, [userId, entryKey, language]);
@@ -484,7 +548,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // Scoped to the user's active language so results don't mix languages.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = $4
         AND ${vetSortedClause()}
@@ -514,7 +578,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     // HSK levels are a Chinese-only concept, so this query is hard-pinned to zh.
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom('zh')} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = 'zh' AND de."difficulty" = $2
         AND ${vetSortedClause()}
@@ -545,7 +609,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = $2 AND ve."entryKey" IN (${placeholders})
         AND ${vetSortedClause()}
@@ -619,7 +683,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     // Prepare SQL query with detailed logging
     const sqlQuery = `
-      SELECT ve.*, ${DICT_COLS}
+      SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $3
@@ -816,7 +880,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
     const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
       return await client.query(`
-        SELECT ve.*, ${DICT_COLS}
+        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1 AND ve."language" = $3 AND ve."createdAt" > $2
         AND ${vetSortedClause()}
@@ -1027,28 +1091,117 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       LIMIT $4 OFFSET $5
     `;
 
-    const result = await this.dbManager.executeQuery<{
-      vocabEntryId: number | null;
-      entryKey: string;
-      pronunciation: string | null;
-      definition: string | null;
-      definitionClusters: DefinitionCluster[] | null;
-      selectedSense: string | null;
-      frequencyScore: number | null;
-    }>(async (client) => {
+    const result = await this.dbManager.executeQuery<UsedInRow>(async (client) => {
       return await client.query(query, [userId, language, ch, limit, offset]);
     });
 
-    return result.recordset.map((row) => ({
-      vocabEntryId: row.vocabEntryId ?? null,
-      entryKey: row.entryKey,
-      // Pass-1 (saved) rows read out their CHOSEN sense's pinyin; pass-2 rows have no pick,
-      // so the resolver falls to the entry's default (highest-frequency) sense.
-      pronunciation: resolveDisplayPronunciation(row),
-      // Same pick on both sides, so a row's English and its tones always describe one sense.
-      definition: resolveDisplayDefinition(row) || null,
-      frequencyScore: row.frequencyScore ?? null,
-    }));
+    return result.recordset.map(toUsedInItem);
+  }
+
+  /**
+   * The writing flp's variant of findUsedInForCharacter — same two passes, different
+   * frequency gates:
+   *   - Pass 1 (`is_user = 1`): the user's own sorted vet words (≤4 chars) containing
+   *     the character, with NO frequencyScore gate — words the learner chose are not
+   *     vetted for commonality.
+   *   - Pass 2 (`is_user = 0`): dictionary words (2–4 chars) containing the character
+   *     that are not already in the user's sorted vet, gated to frequencyScore 4–5 —
+   *     stricter than the eip list's 3–5, so a dictionary word only fills a slot when
+   *     it is genuinely everyday.
+   * Ordered saved-first, then commonality (unscored last), then shortest, then
+   * entryKey, so the leading window is stable. Only the leading window is ever read
+   * (no offset — the bubbles are not paginated).
+   *
+   * Powers the writing flp's used-in hint bubbles (`VocabEntry.writingUsedIn`).
+   * Chinese-only; [] for non-single-char input.
+   *
+   * Referenced by: OnDeckVocabService.enrichWithUsedIn (writing bar only).
+   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hint bubbles".
+   */
+  async findWritingUsedInForCharacter(
+    userId: string,
+    character: string,
+    language: string,
+    limit: number = 2
+  ): Promise<UsedInItem[]> {
+    if (language !== 'zh') return [];
+    if (!character) return [];
+    const chars: string[] = [...character];
+    if (chars.length !== 1) return [];
+
+    // Same two-pass shape as findUsedInForCharacter; only the frequency gates differ
+    // (pass 1 ungated, pass 2 4–5 instead of the shared outer 3–5).
+    const query: string = `
+      SELECT
+        m."vocabEntryId",
+        m."entryKey",
+        m.pronunciation,
+        m.definition,
+        m."definitionClusters",
+        m."selectedSense",
+        m."frequencyScore"
+      FROM (
+        -- Pass 1: the user's saved words (vet) containing the char. No frequency gate.
+        SELECT
+          ve.id AS "vocabEntryId",
+          ve."entryKey",
+          de.pronunciation,
+          de.definition,
+          de."definitionClusters",
+          ve."selectedSense",
+          de."frequencyScore",
+          1 AS is_user
+        FROM vocabentries_zh ve
+        LEFT JOIN LATERAL (
+          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
+          FROM dictionaryentries_zh
+          WHERE word1 = ve."entryKey" AND language = ve.language
+          LIMIT 1
+        ) de ON true
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ve."entryKey" <> $3
+          AND position($3 IN ve."entryKey") > 0
+          AND char_length(ve."entryKey") <= 4
+          AND ${vetSortedClause()}
+
+        UNION ALL
+
+        -- Pass 2: everyday dictionary words (frequencyScore 4–5) containing the char,
+        -- excluding the user's sorted vet words (already offered by pass 1). The clusters
+        -- travel so the resolvers' default-sense branch picks the reading (see the same
+        -- note in findUsedInForCharacter).
+        SELECT
+          NULL::int AS "vocabEntryId",
+          d.word1 AS "entryKey",
+          d.pronunciation,
+          d.definitions->>0 AS definition,
+          d."definitionClusters",
+          NULL::text AS "selectedSense",
+          d."frequencyScore",
+          0 AS is_user
+        FROM dictionaryentries_zh d
+        WHERE d.language = $2
+          AND char_length(d.word1) > 1
+          AND char_length(d.word1) <= 4
+          AND d.word1 <> $3
+          AND position($3 IN d.word1) > 0
+          AND d."frequencyScore" BETWEEN 4 AND 5
+          AND NOT EXISTS (
+            SELECT 1 FROM vocabentries_zh ve
+            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
+              AND ${vetSortedClause()}
+          )
+      ) m
+      ORDER BY m.is_user DESC, m."frequencyScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
+      LIMIT $4
+    `;
+
+    const result = await this.dbManager.executeQuery<UsedInRow>(async (client) => {
+      return await client.query(query, [userId, language, chars[0], limit]);
+    });
+
+    return result.recordset.map(toUsedInItem);
   }
 
   /**

@@ -56,6 +56,9 @@ export function lastCorrectMarkTimestamp(
   let latest: number | null = null;
   for (const mark of track) {
     if (!mark?.isCorrect || !mark.timestamp) continue;
+    // A character mark fanned out from a word's writing result never restarts the
+    // character's own clock (migration 170, docs/WRITING_PRACTICE_REWORK.md § 3a).
+    if (mark.viaWord) continue;
     const ts = new Date(mark.timestamp).getTime();
     if (Number.isNaN(ts)) continue;
     if (latest === null || ts > latest) latest = ts;
@@ -89,11 +92,17 @@ export function lastCorrectOnBar(
  */
 export function barReadyAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  bar: MasteryBarId,
+  /**
+   * The card's computed writing mastery (`VocabEntryBase.writingMastery`). A
+   * multi-character word's writing CLOCK is its own (clock-only) track, but its window
+   * is the band of its AVERAGED mastery — so pass it for any writing question.
+   */
+  writingMastery?: number | null
 ): number | null {
   const lastCorrect = lastCorrectOnBar(typedMarkHistory, bar);
   if (lastCorrect === null) return null;
-  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(typedMarkHistory, bar)] ?? 0;
+  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(typedMarkHistory, bar, writingMastery)] ?? 0;
   return lastCorrect + window;
 }
 
@@ -101,9 +110,10 @@ export function barReadyAt(
 export function barCooldownRemainingMs(
   typedMarkHistory: TypedMarkHistory | undefined,
   bar: MasteryBarId,
-  now: number
+  now: number,
+  writingMastery?: number | null
 ): number {
-  const readyAt = barReadyAt(typedMarkHistory, bar);
+  const readyAt = barReadyAt(typedMarkHistory, bar, writingMastery);
   return readyAt === null ? 0 : Math.max(0, readyAt - now);
 }
 
@@ -111,9 +121,10 @@ export function barCooldownRemainingMs(
 export function isBarOnCooldown(
   typedMarkHistory: TypedMarkHistory | undefined,
   bar: MasteryBarId,
-  now: number
+  now: number,
+  writingMastery?: number | null
 ): boolean {
-  return barCooldownRemainingMs(typedMarkHistory, bar, now) > 0;
+  return barCooldownRemainingMs(typedMarkHistory, bar, now, writingMastery) > 0;
 }
 
 /**
@@ -123,7 +134,8 @@ export function isBarOnCooldown(
 export function isMarkOnCooldown(
   typedMarkHistory: TypedMarkHistory | undefined,
   type: MarkType,
-  now: number
+  now: number,
+  writingMastery?: number | null
 ): boolean {
-  return isBarOnCooldown(typedMarkHistory, barForMarkType(type), now);
+  return isBarOnCooldown(typedMarkHistory, barForMarkType(type), now, writingMastery);
 }

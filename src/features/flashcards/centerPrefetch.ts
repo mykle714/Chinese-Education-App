@@ -18,8 +18,12 @@ import type { VocabEntry } from "../../types";
  * and both entries are keyed so a stale one is never served to the wrong reader —
  * Word of the Day by local date, the library by (user, language) plus a max age.
  *
+ * Both survive a trip OUT of a Center into a page it launched (flp, carousel game,
+ * Writing Grid) and back, so a returning Center paints from them too — see
+ * `LIBRARY_SEED_MAX_AGE_MS` and `warmMasteryCenter`.
+ *
  * Layer: feature data helper (src/features/flashcards). Calls go through src/api/*.
- * Docs: docs/READING_WRITING_CENTERS.md § "Prefetch from the fdp".
+ * Docs: docs/READING_WRITING_CENTERS.md § "Prefetch from the fdp", § "Returning to a Center".
  */
 
 // ── Word of the Day ────────────────────────────────────────────────────────────
@@ -67,8 +71,16 @@ export function prefetchWordOfTheDay(): void {
  * refreshes it in the background regardless; this only bounds how stale the FIRST
  * frame can be (the Centers' word grids are built once from the first library they
  * see, so this is also how stale their sampling can be).
+ *
+ * An hour, not minutes, because a seed must survive a round trip OUT of a Center into
+ * a page the Center launched — the reading/writing flp, a carousel game, Writing Grid —
+ * and back (§ "Returning to a Center"). Those sessions routinely run past a few
+ * minutes, and an expired seed meant the grid came back as a spinner and a cold fetch.
+ * The cost is accepted staleness: cards marked during that session are not reflected
+ * in the returning grid's sampling until the next visit (decided 2026-10-04). The cap
+ * only exists so a tab left open overnight does not paint yesterday's library.
  */
-const LIBRARY_SEED_MAX_AGE_MS = 2 * 60 * 1000;
+const LIBRARY_SEED_MAX_AGE_MS = 60 * 60 * 1000;
 
 /** The request currently on the wire, if any. */
 let inFlight: { key: string; promise: Promise<VocabEntry[]> } | null = null;
@@ -99,4 +111,27 @@ export function loadCardLibrary(key: string): Promise<VocabEntry[]> {
 export function peekCardLibrary(key: string): VocabEntry[] | null {
     if (!landed || landed.key !== key || Date.now() - landed.at > LIBRARY_SEED_MAX_AGE_MS) return null;
     return landed.cards;
+}
+
+// ── Warming a Center from a page that returns to it ────────────────────────────
+
+/**
+ * Make sure both Center loads are cached before the learner goes back to a Center —
+ * called by a page that a Center launched and whose exit returns there (the reading /
+ * writing flp). Normally a no-op: the launching Center's own panel already landed the
+ * library and the day's word. It matters when that cache is gone — a reload or deep
+ * link straight into the page — so the Center still paints its grid on arrival.
+ *
+ * Fire-and-forget; errors are logged and the Center retries on mount. The library is
+ * only requested when nothing usable is cached or already on the wire, so this never
+ * duplicates a load. Word of the Day is zh-only, matching the fdp's warm-up.
+ *
+ * Docs: docs/READING_WRITING_CENTERS.md § "Returning to a Center".
+ */
+export function warmMasteryCenter(userId: string | number, language: string | null | undefined): void {
+    const key = libraryKey(userId, language);
+    if (inFlight?.key !== key && peekCardLibrary(key) === null) {
+        loadCardLibrary(key).catch((err) => console.error("[centerPrefetch] card library warm-up failed:", err));
+    }
+    if (language === "zh") prefetchWordOfTheDay();
 }

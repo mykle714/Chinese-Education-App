@@ -9,7 +9,7 @@ import {
   reconcilePresence,
   type PresenceItem,
   type RenderedItem,
-} from '../features/beginnerKeyboard/useHintBubblePresence';
+} from '../components/hintBubble/useHintBubblePresence';
 
 const TIMING = { enterDelayMs: 750, staggerMs: 70 };
 

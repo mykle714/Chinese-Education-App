@@ -51,6 +51,8 @@ export const KNOWN_GAME_IDS = [
   'speed-reading',
   'hydra-bubbles',
   'memory-map',
+  // Writing Center only (docs/WRITING_PRACTICE_REWORK.md § 2).
+  'writing-grid',
 ] as const;
 
 export function isKnownGameId(value: unknown): value is (typeof KNOWN_GAME_IDS)[number] {

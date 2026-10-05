@@ -59,11 +59,13 @@ export default function PracticeWritingButton({
   appearance = "labeled",
 }: PracticeWritingButtonProps) {
   const [open, setOpen] = useState(false);
+  // The trigger that opened the popup — its single-char panel grows out of it.
+  const [origin, setOrigin] = useState<HTMLElement | null>(null);
   // Stars (completed assistance levels) + the Writing mark, shared with every other
   // host of the popup (usePracticeWriting). Gate: Chinese only (zh_CN recognizer),
   // 1–4 characters — single characters use one large panel, 2–4 the 2×2 grid
   // (docs/HANDWRITING_RECOGNITION.md "Multi-character grid").
-  const { eligible, completedLevels, onLevelsChange, onWritingMark } =
+  const { eligible, completedLevels, onLevelsChange, onWritingResult } =
     usePracticeWriting(character, { language, vocabEntryId });
 
   if (!eligible) return null;
@@ -73,12 +75,13 @@ export default function PracticeWritingButton({
   // In the eip the button sits inside flip/drag-sensitive surfaces, so taps must
   // not bubble (mirrors the SpeakerButton / add-to-library stop-propagation).
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const openPopup = (e: React.MouseEvent) => {
+  const openPopup = (e: React.MouseEvent<HTMLElement>) => {
     e.stopPropagation();
+    setOrigin(e.currentTarget);
     setOpen(true);
   };
 
-  // Gold star superscript showing how many of the 4 levels are completed. Hidden at
+  // Gold star superscript showing how many of the 8 levels are completed. Hidden at
   // zero. Wraps either button variant.
   const withStarBadge = (child: React.ReactNode) => (
     <Badge
@@ -140,7 +143,8 @@ export default function PracticeWritingButton({
         character={character}
         completedLevels={completedLevels}
         onLevelsChange={onLevelsChange}
-        onWritingMark={onWritingMark}
+        onWritingResult={onWritingResult}
+        origin={origin}
         onClose={() => setOpen(false)}
       />
     </>

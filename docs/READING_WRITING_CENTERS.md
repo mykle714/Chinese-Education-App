@@ -37,9 +37,16 @@ Parent doc: [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Mastery Centers".
 ### Writing Center
 1. Header — back arrow + "Writing Center".
 2. **Word of the day** card (phase 3).
-3. **Word practice grid** (phase 5) — the same 6×6 word grid as the Reading Center's,
+3. **Card hand** — `FlpStudyHand bar="writing" variant="compact"`: Writing Challenge /
+   Review / Mix, each opening the writing flp (`?bar=writing`,
+   [WRITING_PRACTICE_REWORK.md § 3](./WRITING_PRACTICE_REWORK.md)). zh only.
+4. **Word practice grid** (phase 5) — the same 6×6 word grid as the Reading Center's,
    read through the writing bar; tapping a word opens `PracticeWritingPopup` on it.
-4. Cards / Decks pills → modal sheets (phase 1).
+5. **Writing Grid game card** (`centers/WritingGridLauncher.tsx`) — the game launches from
+   here only ([WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md)). zh only.
+   Exiting the game reopens the Center scrolled all the way down to this card
+   (§ "Returning from a game").
+6. Cards / Decks pills → modal sheets (phase 1).
 
 Both Centers end on the shared `ScrollPastSpacer` (`src/components/MobileFooter.tsx`),
 mounted once after the bar-specific sections in `MasteryCenterPage`, so the last section
@@ -97,8 +104,10 @@ can scroll up past the floating pills rather than stopping dead on them.
       back face IS the card's `MiniVocabCard` (word, pinyin, dd, icon — the Cards sheet's
       thumbnail) with `showMasteryStrip={false}` and `defaultBackground={COLORS.white}` (white
       rather than the cream card face, matching the white tiles; a card's own custom
-      `cardColor` still wins), mounted only while open. Solid orange
-      (`orgMk`) rounded-corner, ink-outlined triangles appear either side as the swipe hint.
+      `cardColor` still wins), mounted only while open. Rounded-corner, ink-outlined
+      triangles appear either side as the swipe hint, coloured by the mark each direction
+      writes — left red (`INCORRECT_WASH` = `redMk`), right green (`CORRECT_WASH` = `grnMk`),
+      the same constants as the drag wash (`ReadingSwipeGrid.tsx` → `SwipeTriangle`).
 - [x] Swipe right = correct reading mark, left = incorrect (`markFlashcard`,
       `type: "reading"`, surface `"reading-center"`); commits past 18% of the GRID's width
       (min 48px) or on a flick (≥24px at ≥0.5px/ms) — not the flp's viewport-relative
@@ -154,6 +163,9 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
       `markTypeForSideOne(_, bar)` always `reading`; `FlashCardSection.readingMode` drops
       pinyin + speaker from the question face and forces pinyin on the answer face; flp
       autoplay narration is suppressed for the session.
+- [x] The flp's back arrow returns to the Center that launched the bar:
+      `?bar=reading` → `/flashcards/reading`, `?bar=writing` → `/flashcards/writing`, core →
+      `/flashcards/decks` (`FlashcardsLearnPage` → `leaveSession`).
 - [x] **`FlpStudyHand`** — the fdp's hand (figures, Review gate, "resting" toast, launch
       URL) extracted from `FlashcardsDecksPage` and shared: fdp `bar="core"`, Reading
       Center `bar="reading"` (zh only). Replaced the one-button `ReadingFlashcardsStack`
@@ -179,7 +191,11 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
       shared (`wordGridModel.ts`, `useWordGridGeometry.ts`).
 - [x] Words capped at 4 characters (the practice popup's 2×2 limit); cards resting on the
       writing clock are cooled fallbacks, same rule and empty message as Phase 2.
-- [x] Tap → `PracticeWritingPopup` on that word; every Verify marks that card for writing.
+- [x] Tap → `PracticeWritingPopup` on that word, projected out of the tile
+      (`useProjectionMorph`): one character straight into the canvas `WritingPanel`; 2–4
+      into the `WritingSelectorPanel`, whose slots project again into the canvas
+      (docs/PRACTICE_WRITING.md § "The writing panel"). Every Verify posts a writing result for
+      that card (fanned out per character since migration 170).
       No swipe, no refill — the board is static for the visit.
 - [x] `WritingPracticeGrid` replaces `CharacterPracticeGrid` (deleted).
 
@@ -187,13 +203,13 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
 
 ## Prefetch from the fdp
 
-A Center is always reached from the fdp, so its two loads are started there and shared
+A Center is first reached from the fdp, so its two loads are started there and shared
 through one in-memory module, `src/features/flashcards/centerPrefetch.ts`:
 
 | Load | Started by | Read by | Kept |
 |---|---|---|---|
 | Word of the Day (`loadWordOfTheDay`) | `FlashcardsDecksPage` → `prefetchWordOfTheDay`, on landing, only when the account has a Center button and is zh | `WordOfTheDayCard` (`peekWordOfTheDay` seeds the first frame, `loadWordOfTheDay` joins an in-flight request) | per local date; a failure or a `content: null` answer is NOT kept, so the next reader retries |
-| Card library — the `all` collection (`loadCardLibrary`) | `useDecksPanel` on every surface (the fdp's core panel already loaded it) | `useDecksPanel` in the Center: joins the request if still in flight, else seeds from `peekCardLibrary` | keyed `userId:language`; a seed must be under `LIBRARY_SEED_MAX_AGE_MS` (2 min) old |
+| Card library — the `all` collection (`loadCardLibrary`) | `useDecksPanel` on every surface (the fdp's core panel already loaded it) | `useDecksPanel` in the Center: joins the request if still in flight, else seeds from `peekCardLibrary` | keyed `userId:language`; a seed must be under `LIBRARY_SEED_MAX_AGE_MS` (60 min) old |
 
 A seeded panel still refreshes, silently, the same way a Back-restored one does — the
 cache removes the duplicate request and the loading gap, it does not make the library
@@ -203,6 +219,33 @@ be up to the seed's age stale.
 Code: `centerPrefetch.ts` (`loadWordOfTheDay`, `peekWordOfTheDay`, `prefetchWordOfTheDay`,
 `loadCardLibrary`, `peekCardLibrary`, `libraryKey`); `useDecksPanel.ts` (the card
 library effect); `FlashcardsDecksPage.tsx` (the warm-up effect); `WordOfTheDayCard.tsx`.
+
+### Returning to a Center
+
+Every page one tap BACK into a Center paints the Center's grid (and Word of the Day) from
+cache on arrival rather than a spinner:
+
+| Page | Exit into | How the Center's data is ready |
+|---|---|---|
+| fdp Centers rail | rc / wc | the fdp's panel landed the library (above) |
+| Card / deck / collection page opened from a Center's sheet → Back | rc / wc | the Back snapshot carries the cards (`backRestore.ts`) |
+| rflp / wflp (`?bar=reading` / `?bar=writing`) → back arrow | rc / wc | the launching Center's panel landed the library; `FlashcardsLearnPage` also calls `warmMasteryCenter` on mount for a reload / deep link |
+| Bubble Match, Word Search, Speed Reading (rc carousel) / Writing Grid (wc) → Back, "Back to …" | rc / wc | the launching Center's panel landed the library |
+
+What makes the round trip work is the seed age: `LIBRARY_SEED_MAX_AGE_MS` is **60 minutes**
+(was 2), so the library the Center landed before launching the session is still a valid seed
+when the learner comes back. **Accepted staleness (decided 2026-10-04):** every one of these
+pages marks cards, and the returning grid samples from the library as it was BEFORE the
+session — a word marked in the session can be drawn as markable and its swipe/verify then
+dropped at the cooldown chokepoint. The seeded panel still refreshes silently, so the next
+visit is current.
+
+Not covered: a reload / deep link straight into a GAME launched from a Center. The games
+cannot call `warmMasteryCenter` (src/games has no back-edge into src/features,
+`games/runtime/gameExit.ts`), so that one path still returns to a cold Center.
+
+Code: `centerPrefetch.ts` (`LIBRARY_SEED_MAX_AGE_MS`, `warmMasteryCenter`);
+`FlashcardsLearnPage/FlashcardsLearnPage.tsx` (the warm-up effect beside `leaveSession`).
 
 ---
 
@@ -229,7 +272,12 @@ library effect); `FlashcardsDecksPage.tsx` (the warm-up effect); `WordOfTheDayCa
     It lets go on the learner's first wheel, touch, pointer or key, or after 5 s.
   - The carousel opens parked on that game's card (`focusGameId`, read once on mount,
     applied in the same layout effect that parks the loop on its middle copy).
-  An ordinary visit, and the Writing Center, carry no such state and open at the top.
+  An ordinary visit carries no such state and opens at the top.
+- **The Writing Center returns the same way.** The Writing Grid's launch
+  (`centers/WritingGridLauncher.tsx` → `WRITING_CENTER_EXIT`) carries
+  `state.returnedFromGame = "writing-grid"`, so exiting the game reopens the Writing
+  Center pinned to the bottom (its game card is the last section). There is no carousel
+  to park, so `focusGameId` does not apply.
 - **Word Search No Pinyin has its own save slot**, separate from the hub's Pinyin board
   (`gameStateStorage` keys by mode — [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §5b).
   The carousel can neither resume nor clobber the hub's board — but it CAN clobber its
@@ -269,7 +317,9 @@ library effect); `FlashcardsDecksPage.tsx` (the warm-up effect); `WordOfTheDayCa
 - **Sheet titles** read "Reading Cards / Reading Decks" and "Writing Cards / Writing
   Decks". The design names the writing sheets bare "Cards / Decks"; treated as an
   oversight for consistency.
-- **Writing grid words are cards** (since phase 5), so every Verify marks the tapped card.
+- **Writing grid words are cards** (since phase 5), so every Verify posts a writing result
+  on the tapped card, which the server fans out onto its characters' own cards behind the
+  anti-farming gate ([WRITING_PRACTICE_REWORK.md § 3a](./WRITING_PRACTICE_REWORK.md)).
 - **Speed Reading card hue** reads the game's registry hue (`yel` mid), not the design's
   `--bluM`, so the game is one colour on every surface.
 - **Center page scroll is not Back-restored** — only the open sheet is. (Returning

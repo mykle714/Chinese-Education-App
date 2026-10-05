@@ -1066,9 +1066,24 @@ pointer and a half-finished drag, not about time.
 
 ### 7.2 Score
 
-Score = **bubbles cleared**, +2 per match. **Session-only** — nothing is persisted,
-no new table, no `wins` row. A personal best can be added later once the tuning has
-settled.
+Score = **bubbles cleared**, +2 per match (`SCORE_PER_MATCH`). The run score itself is
+session-only — no `wins` row — but the best run is persisted as a personal best (§ 7.2a).
+
+### 7.2a Personal best
+
+The most **matches** cleared in one free-play run (count, higher wins) is kept under the
+single mode key `"default"` (Hydra has one mode). `HydraBubblesPage` → `onGameOver`
+records `Math.round(finalScore / SCORE_PER_MATCH)` — the stage's score counts bubbles,
+the stored best counts matches, so a future change to `SCORE_PER_MATCH` cannot re-scale
+stored bests. `playAgain` (also the header's mid-run restart) calls `resetPersonalBest`;
+an abandoned run is never recorded. The line renders in the end popup under the outcome
+message. **A challenge round is not recorded** — it is scored on time-to-clear (§ 7.5).
+
+The popup title counts **bubbles** while the best is **matches** (half that number), so
+the line names its unit — `PersonalBestLine`'s `unitLabel="matches"` — rather than show
+a bare "20" under "You cleared 40 bubbles".
+
+The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
 
 ### 7.2b The HUD
 
@@ -1564,6 +1579,7 @@ nothing.
 | tier offsets (§ 6.2) | `src/games/hydra-bubbles/constants.ts` → `TIER_OFFSET_BY_COLOR` |
 | the field + palette (§ 2.2) | `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`, `BLUE_DARK`, `BLUE_LIGHT`; text ink is derived in `src/games/bubbles/Bubble.tsx` → `inkOnFill` |
 | page shell | `src/games/hydra-bubbles/HydraBubblesPage.tsx` |
+| personal best (§ 7.2a) | `HydraBubblesPage.tsx` → `onGameOver`, `playAgain`; `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
 | post-run review board (§ 7.3b) | `HydraStage.tsx` → the `cleanupMode` prop, `cleanupModeRef`, `revealPartner`, `clearRevealedPartner`, `dangerDismissed`; `HydraBubblesPage.tsx` → `popupMinimized`. Reference implementation: `src/games/bubble-match/BubbleStage.tsx` → `cleanupMode` |
 | per-bubble lent mark (§ 6.4) | `src/games/bubbles/Bubble.tsx` → the `lent` prop; `src/games/hydra-bubbles/HydraStage.tsx` passes it |
 | the mark itself | `src/components/LentCardBadge.tsx` (`LentCardBadge` / `LentCardIcon`) |

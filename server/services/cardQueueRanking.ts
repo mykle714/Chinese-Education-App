@@ -26,6 +26,8 @@ import { barCooldownRemainingMs, barReadyAt } from '../contracts/cooldown.js';
 /** The minimum a card must carry to be ranked. Callers pass their own richer rows. */
 export interface RankableCard {
   typedMarkHistory?: TypedMarkHistory;
+  /** Computed writing mastery (migration 170); sets the WRITING bar's window. */
+  writingMastery?: number | null;
 }
 
 /**
@@ -55,9 +57,10 @@ export {
  */
 export function queueArrivalAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  bar: MasteryBarId,
+  writingMastery?: number | null
 ): number {
-  return barReadyAt(typedMarkHistory, bar) ?? -Infinity;
+  return barReadyAt(typedMarkHistory, bar, writingMastery) ?? -Infinity;
 }
 
 /** One ranked card, with the moment it became ready. */
@@ -96,8 +99,8 @@ export function rankCardQueue<T extends RankableCard>(
   const scored: RankedCard<T>[] = [];
 
   for (const card of cards) {
-    if (barCooldownRemainingMs(card.typedMarkHistory, options.bar, now) > 0) continue;
-    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.bar) });
+    if (barCooldownRemainingMs(card.typedMarkHistory, options.bar, now, card.writingMastery) > 0) continue;
+    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.bar, card.writingMastery) });
   }
 
   scored.sort((a, b) => {
@@ -142,7 +145,7 @@ export function rankCardQueueCooled<T extends RankableCard>(
   const scored: Array<{ card: T; remainingMs: number }> = [];
 
   for (const card of cards) {
-    const remainingMs = barCooldownRemainingMs(card.typedMarkHistory, options.bar, now);
+    const remainingMs = barCooldownRemainingMs(card.typedMarkHistory, options.bar, now, card.writingMastery);
     if (remainingMs === 0) continue; // rested — rankCardQueue's business, not ours
     scored.push({ card, remainingMs });
   }

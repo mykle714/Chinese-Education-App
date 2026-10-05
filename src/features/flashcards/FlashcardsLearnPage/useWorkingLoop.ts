@@ -18,6 +18,7 @@ import type {
 // Pure util so the weaker-track rule can be tested without the hook.
 import { markTypeForSideOne, sideOneForCard } from "../../../utils/flpFaceSteering";
 import { FLP_MARK_SURFACE } from "../../../../server/contracts/wire";
+import type { WritingAttempt } from "../../../components/handwriting/types";
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
 // ref so this hook can read the latest flip value (for undo snapshots) and drive
@@ -70,7 +71,11 @@ export interface UseWorkingLoopReturn {
     flyOut: { slot: 0 | 1; direction: "left" | "right" } | null;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
-    handleCardDismiss: (direction: "left" | "right") => Promise<void>;
+    /**
+     * `writing` is the writing flp's graded attempt (docs/WRITING_PRACTICE_REWORK.md § 3):
+     * required on `bar: "writing"`, where the server fans it out per character.
+     */
+    handleCardDismiss: (direction: "left" | "right", writing?: WritingAttempt) => Promise<void>;
     handleUndoLastMark: () => Promise<void>;
     /**
      * Temporary (provisional) words this session has SHOWN, accumulated across the
@@ -240,6 +245,7 @@ export function useWorkingLoop({
         isCorrect: boolean,
         markType: MarkType,
         excludeIds: number[],
+        writing?: WritingAttempt,
         retryCount = 0
     ): Promise<MarkCardResult | null> => {
         try {
@@ -260,6 +266,7 @@ export function useWorkingLoop({
                 // NOT merely diagnostic: once a card's core pbh reaches 6 the server
                 // records know marks ONLY from this surface (docs/MASTERY_REWORK.md § 6).
                 surface: FLP_MARK_SURFACE,
+                writing,
                 ...collectionMarkFields(launchCollection),
             });
 
@@ -283,7 +290,7 @@ export function useWorkingLoop({
             if (retryCount < 3) {
                 // Exponential backoff: wait 500ms, 1s, 2s
                 await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, retryCount)));
-                return markCard(cardId, isCorrect, markType, excludeIds, retryCount + 1);
+                return markCard(cardId, isCorrect, markType, excludeIds, writing, retryCount + 1);
             }
             console.error("Failed to mark card after retries:", err);
             setError("Failed to save progress. Please check your connection.");
@@ -298,7 +305,7 @@ export function useWorkingLoop({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, bar]);
 
-    const handleCardDismiss = useCallback(async (direction: "left" | "right") => {
+    const handleCardDismiss = useCallback(async (direction: "left" | "right", writing?: WritingAttempt) => {
         if (workingLoop.length === 0 || isAnimating) return;
 
         const currentCard = workingLoop[currentIndex];
@@ -338,7 +345,7 @@ export function useWorkingLoop({
         // cooldown still counts as "the learner reviewed this borrowed word", and the
         // offer does not race the fire-and-forget response (docs/PROVISIONAL_CARDS.md § 5).
         noteMarkedLent(currentCard);
-        markCard(currentCard.id, isCorrect, markType, excludeIds)
+        markCard(currentCard.id, isCorrect, markType, excludeIds, writing)
             .then(markResult => {
                 if (!markResult) return;
                 // Nothing was written server-side, so leave the loop exactly as it is:
@@ -391,6 +398,9 @@ export function useWorkingLoop({
                         return newLoop;
                     });
                 }
+                // A writing result fans out onto several character cards and cannot be
+                // undone (FlashcardMarkService.undoMark refuses it), so offer no undo.
+                if (markType === "writing") return;
                 setLastMarkUndoSnapshot({
                     cardId: currentCard.id,
                     markTimestamp,

@@ -12,6 +12,7 @@ import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
+import { warmMasteryCenter } from "../centerPrefetch";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
@@ -26,6 +27,8 @@ import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
+import { useWritingFlashcard } from "./useWritingFlashcard";
+import WritingUsedInBubbles, { WritingUsedInBand } from "./WritingUsedInBubbles";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultTextCenters } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
@@ -46,6 +49,9 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useTTS } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { VocabEntry, SideOneLanguage } from "../types";
+
+/** The writing card's drag handlers: none. It is flipped and dismissed programmatically. */
+const INERT_DRAG_HANDLERS = { onTouchStart: () => {}, onTouchEnd: () => {}, onMouseDown: () => {} };
 
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
@@ -68,6 +74,10 @@ const FlashcardsLearnPage: React.FC = () => {
     // no narration before the flip, every mark a reading mark (flpFaceSteering).
     const flpBar = parseFlpBar(searchParams.get('bar'));
     const readingMode = flpBar === 'reading';
+    // `writing` — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the same card,
+    // with its faces drawn by useWritingFlashcard (FlashCardSection's `writingFace`), and
+    // marks are per character.
+    const writingMode = flpBar === 'writing';
     // The collection this session was launched from, for the empty-state copy below.
     // useWorkingLoop reads the same hook for its fetches; it is a pure derivation of
     // this page's own URL, so calling it twice cannot disagree.
@@ -81,9 +91,10 @@ const FlashcardsLearnPage: React.FC = () => {
     // and comes back empty on purpose. "Resting" is the honest word for that — the
     // learner has these cards, they just aren't due. See docs/PROVISIONAL_CARDS.md.
     const emptyMessage: string | undefined =
-        selectedMode === 'review' ? `No more ${readingMode ? 'reading ' : ''}review cards remaining.`
-        : selectedMode === 'challenge' ? `No more ${readingMode ? 'reading ' : ''}challenge cards remaining.`
+        selectedMode === 'review' ? `No more ${flpBar === 'core' ? '' : `${flpBar} `}review cards remaining.`
+        : selectedMode === 'challenge' ? `No more ${flpBar === 'core' ? '' : `${flpBar} `}challenge cards remaining.`
         : readingMode ? 'Every card is resting for reading. Check back later!'
+        : writingMode ? 'Every card is resting for writing. Check back later!'
         : launchCollection?.kind === 'deck' ? 'Every card in this deck is resting. Check back later!'
         : launchCollection?.kind === 'mastered' ? 'Your mastered cards are all resting. Check back later!'
         : undefined;
@@ -146,6 +157,19 @@ const FlashcardsLearnPage: React.FC = () => {
 
     // Keep the bridge ref pointing at the live drag controls every render.
     cardDragRef.current = { setIsFlipped, restoreFlipped, resetDragPosition };
+
+    // Writing flp (`?bar=writing`): the same card, drawn with the writing face. The
+    // learner never swipes — a tap on the front submits (or wiggles the card while a cell
+    // is still empty), and a tap on its back sends it off.
+    // See useWritingFlashcard and docs/WRITING_PRACTICE_REWORK.md § 3.
+    const writing = useWritingFlashcard({
+        enabled: writingMode,
+        entry: currentEntry,
+        isFlipped,
+        isAnimating,
+        flip: () => setIsFlipped(true),
+        dismiss: (direction, attempt) => void handleCardDismiss(direction, attempt),
+    });
 
     // ── Custom card icon layout (edit mode) ───────────────────────────────────
     // All fie editor state + actions live in useCardIconEditor. See docs/CARD_ICON_LAYOUT.md.
@@ -220,12 +244,25 @@ const FlashcardsLearnPage: React.FC = () => {
     const [exitOfferOpen, setExitOfferOpen] = useState(false);
     const [exitOfferShown, setExitOfferShown] = useState(false);
 
+    // The reading / writing flp exits back to its Center (leaveSession), so keep that
+    // Center's library + Word of the Day cached and its grid paints on arrival. A no-op
+    // when the Center that launched this session already cached them; it covers a reload
+    // or deep link. Keyed on the stable user id, never `token` (CLAUDE.md token rule).
+    // docs/READING_WRITING_CENTERS.md § "Returning to a Center".
+    const userId = user?.id;
+    const userLanguage = user?.selectedLanguage;
+    useEffect(() => {
+        if (flpBar !== 'core' && userId !== undefined) warmMasteryCenter(userId, userLanguage);
+    }, [flpBar, userId, userLanguage]);
+
     /** Perform the real exit, closing the offer first if it is up. */
     const leaveSession = useCallback(() => {
         setExitOfferOpen(false);
         if (editMode) exitEdit();
-        navigate('/flashcards/decks');
-    }, [editMode, exitEdit, navigate]);
+        // The reading and writing flps are launched from their Center's study hand, so
+        // back returns there; the core flp returns to the fdp.
+        navigate(flpBar === 'reading' ? '/flashcards/reading' : flpBar === 'writing' ? '/flashcards/writing' : '/flashcards/decks');
+    }, [editMode, exitEdit, navigate, flpBar]);
 
     /**
      * Back arrow. In edit mode it first cancels the edit (discarding the draft,
@@ -662,8 +699,11 @@ const FlashcardsLearnPage: React.FC = () => {
                     raised from there.
 
                     Hidden while the icon editor is open — the fie toolbar overlays exactly
-                    this band, and the card is locked anyway. */}
-                {displayCurrentEntry && !editMode && (
+                    this band, and the card is locked anyway.
+
+                    Hidden on the writing flp too: `Write it` is what the card already is,
+                    and `Compare` would show the characters before they are written. */}
+                {displayCurrentEntry && !editMode && !writingMode && (
                     <WordToolsRail
                         className="mobile-demo-word-tools"
                         entry={displayCurrentEntry}
@@ -671,6 +711,11 @@ const FlashcardsLearnPage: React.FC = () => {
                         sx={{ marginTop: "18px", paddingLeft: "18px", paddingRight: "18px" }}
                     />
                 )}
+                {/* USED-IN HINT BUBBLES, part 1 — the spacer that keeps room above the
+                    writing card for the bubbles (overlay mounted after the card, below).
+                    Reserved on every writing card so the card never resizes.
+                    docs/WRITING_PRACTICE_REWORK.md § 3b. */}
+                {writingMode && !editMode && <WritingUsedInBand />}
                 {/* Flashcard fills the rest of the ContentArea. The EIC sheet overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
@@ -694,8 +739,14 @@ const FlashcardsLearnPage: React.FC = () => {
                     nextSideOneLanguage={nextSideOneLanguage}
                     showSwipeHint={showSwipeHint}
                     showTapToFlipHint={showTapToFlipHint}
-                    shakeNonce={shakeNonce}
-                    handlers={handlers}
+                    // The writing card wiggles on the writing hook's nonce (a submit tap
+                    // with an empty cell) rather than the swipe tutorial's.
+                    shakeNonce={writingMode ? writing.shakeNonce : shakeNonce}
+                    // The writing card is never dragged; it is flipped and sent off by the
+                    // writing hook (a tap on its front / its back via onCardClick).
+                    handlers={writingMode ? INERT_DRAG_HANDLERS : handlers}
+                    writingFace={writingMode ? writing.renderFace : undefined}
+                    onCardClick={writingMode ? writing.handleCardClick : undefined}
                     onSpeak={tts.speak}
                     speakingKey={tts.speakingKey}
                     // Persist the learner's definition-cluster sense pick per account (migration 99).
@@ -761,7 +812,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     // card's answer face by FlashCardSection. Suppressed while the fie is
                     // open (its toolbar already owns the card) and mid-animation (none of
                     // the three actions is safe against a card that is flying out).
-                    topRail={displayCurrentEntry ? (
+                    // Not on the writing card: its face is not the word layout the
+                    // customize / note operations edit.
+                    topRail={displayCurrentEntry && !writingMode ? (
                         <CardOpsRail
                             entry={displayCurrentEntry}
                             onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null)}
@@ -770,6 +823,14 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     ) : undefined}
                 />
+                {writing.overlays}
+                {/* USED-IN HINT BUBBLES, part 2 — the overlay over ContentArea that floats
+                    the bubbles on the front card's top edge. After FlashCardSection in the
+                    DOM so it paints above the card stack; before the eip so the sheet
+                    still covers it. */}
+                {writingMode && !editMode && (
+                    <WritingUsedInBubbles entry={displayCurrentEntry ?? null} cardRef={cardRef} />
+                )}
                 {/* Centered pill button — ghosted before flip, full opacity after. While
                     the icon editor is open it stays DRAWN but greyed + inert (isDisabled);
                     it stays visible below the card in advanced mode too — the slot's bottom
@@ -777,10 +838,14 @@ const FlashcardsLearnPage: React.FC = () => {
 
                     Still TAPPABLE before the flip (only `isDisabled` swallows taps), because
                     a tap in that state is how the learner gets the "flip it first" tooltip
-                    below — the pill has to be able to explain itself. */}
+                    below — the pill has to be able to explain itself.
+
+                    The writing flp has it too, gated the same way: its card only flips on
+                    a submit tap, so the extra info (which shows the characters) is never
+                    available while the learner is still writing them. */}
                 <Tooltip
                     open={showFlipHint}
-                    title="Flip the card first to see extra info."
+                    title={writingMode ? "Submit your writing first to see extra info." : "Flip the card first to see extra info."}
                     placement="top"
                     arrow
                 >
@@ -826,7 +891,6 @@ const FlashcardsLearnPage: React.FC = () => {
                             selectedTab={panelSubTab}
                             onTabChange={eip.setActiveSubTab}
                             breakdownItems={panelBreakdown}
-                            showPinyin={showPinyin}
                             showPinyinColor={showPinyinColor}
                             isFlipped={isFlipped}
                             onClose={closeEip}

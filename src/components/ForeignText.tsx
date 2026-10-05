@@ -77,6 +77,12 @@ interface ForeignTextBaseProps {
     // display of a character in ISOLATION where no sandhi context exists.
     // Ignored for Latin-script languages. See src/utils/toneSandhi.ts.
     sandhi?: boolean;
+    // Draw every occurrence of this character as a MASK (an outlined circle with a "?")
+    // in place of the glyph, keeping its pinyin and its cell width (CPCDRowItem.masked).
+    // Row layout only: block and inline layouts ignore it, as does Latin-script plain
+    // text. High-level API only (`text`); `items` callers set `masked` per item.
+    // First user: the writing flp's used-in bubbles (docs/WRITING_PRACTICE_REWORK.md § 3b).
+    maskChar?: string;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -127,6 +133,7 @@ function buildCharItems(
     showPinyin: boolean,
     useToneColor: boolean,
     sandhi: boolean,
+    maskChar?: string,
 ): CPCDRowItem[] {
     const raw = pronunciation ? pronunciation.trim().split(/\s+/) : [];
     // Correct the stored CITATION reading to the spoken one before it reaches CPCDRow.
@@ -140,6 +147,7 @@ function buildCharItems(
         pinyin: syllables[i] ?? "",
         showPinyin,
         useToneColor,
+        ...(maskChar && character === maskChar ? { masked: true } : {}),
     }));
 }
 
@@ -177,6 +185,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     plainFontSize,
     bigPinyin = false,
     sandhi = true,
+    maskChar,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -226,7 +235,9 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     // (SegmentedSentenceDisplay) already applies the sandhi at SENTENCE level, which it
     // must do because a trigger and its target can straddle a segment boundary
     // (我 / 不 / 去) that this per-segment call site cannot see.
-    const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor, sandhi);
+    // The sandhi runs on the REAL text, before masking, so a masked 一/不 still gets its
+    // spoken tone in the pinyin above the mask.
+    const resolvedItems = items ?? buildCharItems(text ?? "", pronunciation, showPinyin, useToneColor, sandhi, maskChar);
 
     // The caption layout. Checked before the block branch because it has no
     // character-count limit and no fallback: a caller that asked for one line of

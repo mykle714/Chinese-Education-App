@@ -465,6 +465,18 @@ export interface ReviewMark {
   /** ISO-8601 date string. */
   timestamp: string;
   isCorrect: boolean;
+  /**
+   * Writing only — a multi-character word's own "dummy" mark (migration 170): it drives
+   * the word's cooldown clock and is NEVER counted as mastery (`positiveCount` and SQL
+   * `mastery_positive_count` skip it). docs/WRITING_PRACTICE_REWORK.md § 3a.
+   */
+  clockOnly?: boolean;
+  /**
+   * Writing only — a character mark fanned out from a multi-character word's result. It
+   * counts as the character's mastery but does NOT restart the character's own cooldown
+   * clock (`lastCorrectMarkTimestamp` skips it).
+   */
+  viaWord?: boolean;
 }
 
 /**
@@ -1355,6 +1367,17 @@ export interface VocabEntryBase {
   /** Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md. */
   typedMarkHistory?: TypedMarkHistory;
   /**
+   * The WRITING bar's height, computed on read (migration 170, `compute_writing_mastery`;
+   * every vet read selects it via `writingMasterySelect` in server/dal/shared/vetTable.ts).
+   * A single character's own writing positive count; for a 2+ character word the
+   * AVERAGE of its characters' single-character counts, so it can be fractional.
+   * Pass it as the `writingMastery` argument of the bar helpers (barProgressBarHeight,
+   * barCategory, the cooldown helpers) — a multi-char word's own writing track holds
+   * only clock-only dummy marks and is not its mastery.
+   * See docs/WRITING_PRACTICE_REWORK.md § 3a.
+   */
+  writingMastery?: number | null;
+  /**
    * The CORE bar's utcm level (recognition + production), computed from
    * typedMarkHistory. Goal-independent since migration 143 — the reading/writing
    * goals now raise their own bars instead of re-weighting this one.
@@ -1426,6 +1449,13 @@ export interface VocabEntryBase {
   relatedWords?: RelatedWord[];
   /** Single-char zh only: multi-char words containing this character. Computed at runtime. */
   usedIn?: UsedInItem[] | null;
+  /**
+   * Writing-flp cards only (`?bar=writing`), single-char zh: up to 2 words containing this
+   * character — the learner's own saved words first (no frequency gate), then everyday
+   * dictionary words (frequencyScore 4–5). Feeds the hint bubbles above the writing card —
+   * docs/WRITING_PRACTICE_REWORK.md § 3b. Absent on every other bar. Computed at runtime.
+   */
+  writingUsedIn?: UsedInItem[] | null;
   /**
    * Pre-warm result from TTSService.synthesize — false means synthesis failed and the
    * client should fall back to Web Speech. Absent means no prewarm ran (treat as true).

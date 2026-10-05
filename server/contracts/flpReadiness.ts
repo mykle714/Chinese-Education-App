@@ -15,11 +15,13 @@ import type { FlpBar } from './studyMode.js';
  * (`server/services/OnDeckVocabService.ts`) applies, so the figure on the fdp's study
  * hand cannot claim cards the flp would not deal.
  *
- * ── Or the reading clock ──────────────────────────────────────────────────────
+ * ── Or the reading / writing clock ────────────────────────────────────────────
  * Every function takes the session's BAR (studyMode.ts), defaulting to core. The
  * READING flp (docs/READING_WRITING_CENTERS.md § Phase 4) bands and rests its cards on
  * the reading bar, so the Reading Center's study hand asks with `bar = 'reading'` and
- * gets figures for exactly the cards a reading session would deal.
+ * gets figures for exactly the cards a reading session would deal. The WRITING flp does
+ * the same on the writing bar — whose band and window come from the card's computed
+ * `writingMastery` (the average over its characters, migration 170), so pass it.
  *
  * Isomorphic contract module (same rules as wire.ts): no relative VALUE imports besides
  * sibling contract modules, no enums, no Node or DOM globals; callers pass `now` rather
@@ -41,6 +43,8 @@ export interface FlpReadinessCard {
   // optional property. Every function below already reads a missing history as
   // never-studied (ready), so accepting an absent key changes no behaviour.
   typedMarkHistory?: TypedMarkHistory;
+  /** Computed writing mastery (migration 170) — required for the WRITING bar's band/window. */
+  writingMastery?: number | null;
 }
 
 /**
@@ -51,18 +55,20 @@ export interface FlpReadinessCard {
 export function flpCooldownRemainingMs(
   typedMarkHistory: TypedMarkHistory | undefined,
   now: number,
-  bar: FlpBar = 'core'
+  bar: FlpBar = 'core',
+  writingMastery?: number | null
 ): number {
-  return barCooldownRemainingMs(typedMarkHistory, bar, now);
+  return barCooldownRemainingMs(typedMarkHistory, bar, now, writingMastery);
 }
 
 /** Whether an flp session could deal this card right now. */
 export function isFlpReady(
   typedMarkHistory: TypedMarkHistory | undefined,
   now: number,
-  bar: FlpBar = 'core'
+  bar: FlpBar = 'core',
+  writingMastery?: number | null
 ): boolean {
-  return flpCooldownRemainingMs(typedMarkHistory, now, bar) === 0;
+  return flpCooldownRemainingMs(typedMarkHistory, now, bar, writingMastery) === 0;
 }
 
 /**
@@ -84,8 +90,8 @@ export function flpReadyCountsByBand(
     Mastered: 0,
   };
   for (const entry of entries) {
-    if (!isFlpReady(entry.typedMarkHistory, now, bar)) continue;
-    const band = barCategory(entry.typedMarkHistory, bar);
+    if (!isFlpReady(entry.typedMarkHistory, now, bar, entry.writingMastery)) continue;
+    const band = barCategory(entry.typedMarkHistory, bar, entry.writingMastery);
     counts[band] = (counts[band] ?? 0) + 1;
   }
   return counts;
@@ -108,8 +114,8 @@ export function nextFlpReadyMs(
 ): number | null {
   let soonest = Infinity;
   for (const entry of entries) {
-    if (!bands.includes(barCategory(entry.typedMarkHistory, bar))) continue;
-    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, bar);
+    if (!bands.includes(barCategory(entry.typedMarkHistory, bar, entry.writingMastery))) continue;
+    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, bar, entry.writingMastery);
     // 0 means this card is ready, so there is nothing to count down to.
     if (remaining > 0 && remaining < soonest) soonest = remaining;
   }

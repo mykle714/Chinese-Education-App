@@ -21,9 +21,14 @@ import { Box } from "@mui/material";
  * See docs/SPEED_READING_GAME.md § Rendering a glyph.
  */
 
-/** The subset of a corpus glyph file this component needs. */
-interface GlyphData {
+/**
+ * The subset of a corpus glyph file this module reads. `medians` (each stroke's
+ * centreline, font units) is only read by Snap's stroke matcher (strokeSnap.ts);
+ * the renderer here needs `strokes` alone.
+ */
+export interface GlyphData {
     strokes: string[];
+    medians?: number[][][];
 }
 
 interface GlyphSvgProps {

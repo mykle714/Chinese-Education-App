@@ -21,6 +21,7 @@ import { GAME_HUE as WORD_SEARCH_HUE } from "./word-search/constants";
 // test that pins the two together.
 import { CHALLENGE_GAMES } from "../types";
 import type { ChallengeScoringSpec, Language } from "../types";
+import { GAME_ID as WRITING_GRID_GAME_ID, GAME_HUE as WRITING_GRID_HUE } from "./writing-grid/constants";
 import { isGameEnabled } from "../../server/contracts/featureFlags";
 
 /**
@@ -143,6 +144,20 @@ const ALL_GAMES: GameDef[] = [
         // selected collection is anything but All Cards. The map IS your library and
         // cannot be scoped to a deck, and a visible row that ignored the selector would
         // read as a bug (Q21).
+    },
+    {
+        gameId: WRITING_GRID_GAME_ID,
+        glyph: "draw",
+        title: "Writing Grid",
+        route: "/games/writing-grid",
+        Component: lazy(() => import("./writing-grid/WritingGridPage")),
+        hue: WRITING_GRID_HUE,
+        markType: "writing",
+        // A writing drill: launched only from the Writing Center
+        // (docs/WRITING_PRACTICE_REWORK.md § 2), like Speed Reading from the Reading Center.
+        hiddenFromHub: true,
+        // zh-only: the recognizer is zh_CN and the board is hanzi.
+        languages: ["zh"],
     },
 ];
 

@@ -72,7 +72,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // `typedMarkHistory` rather than read off `entry.category`, because that column is the
     // CORE band by definition and would be the wrong answer inside a Reading/Writing Center.
     // MiniCard draws the strip (docs/MASTERY_REWORK.md § "Mini cards").
-    const bar = showMasteryStrip ? masteryBar(entry.typedMarkHistory, lens) : null;
+    const bar = showMasteryStrip ? masteryBar(entry.typedMarkHistory, lens, entry.writingMastery) : null;
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
     // multiple icons, OR a single icon that has been moved/resized/rotated off its
     // default placement. Plain default-icon cards keep the single slot icon. Uses the

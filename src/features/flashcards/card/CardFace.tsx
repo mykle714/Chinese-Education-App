@@ -359,7 +359,13 @@ export const CardFaceSide: React.FC<{
     // shape. Applied to the face's direct children (icon layer, text, rail, note) rather than
     // to this box, so the fill survives.
     contentHidden?: boolean;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden }) => {
+    // A FULL-CARD content layer (inset: 0, no padding) that replaces both `children` and
+    // `textBlocks`. For faces whose content is a whole layout of its own rather than a
+    // word block — the writing flp's prompt + character grid + Submit
+    // (WritingCardFace, docs/WRITING_PRACTICE_REWORK.md § 3). The face's surface, edge,
+    // flip culling and `contentHidden` behave exactly as for any other face.
+    fill?: React.ReactNode;
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
@@ -461,7 +467,11 @@ export const CardFaceSide: React.FC<{
                 {showIcon && !hasCustom && !editing && iconId && (
                     <CardIconLayer layout={defaultLayoutForIcon(iconId)} />
                 )}
-                {textBlocks ? (
+                {fill !== undefined ? (
+                    <Box className="card-face__fill" sx={{ position: "absolute", inset: 0, zIndex: 1 }}>
+                        {fill}
+                    </Box>
+                ) : textBlocks ? (
                     // Back face — MOVABLE TEXT. Rendered in a FULL-CARD layer (inset:0, no
                     // padding) so the two blocks share the EXACT coordinate system the fie canvas
                     // uses (CardIconCanvas's text layer is also full-card inset:0), making the

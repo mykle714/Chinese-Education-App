@@ -110,7 +110,22 @@ interface FlashCardSectionProps {
     noteEditing?: boolean;
     onSaveNote?: (note: string | null) => void;
     onCancelNote?: () => void;
+    // ── Writing flp (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3) ──────────
+    // Same card, same stack, same flip and fly-out — only the CONTENT differs. When set,
+    // both faces of every card are drawn by this callback (no word blocks, icons, note
+    // or card-ops rail). `role` tells the host which card it is drawing: the active
+    // FRONT card, the PEEKing card behind it, or the card FLYING out.
+    //
+    // A writing card is never swiped: the host passes inert drag handlers, flips the
+    // card itself on a submit tap, and dismisses it by calling the loop. `onCardClick` is
+    // the tap on the front card's body — on the front face it submits (or wiggles the
+    // card via the host's `shakeNonce` while a cell is empty); on the back it is the
+    // "tap anywhere to continue".
+    writingFace?: WritingFaceRenderer;
+    onCardClick?: () => void;
 }
+
+export type WritingFaceRenderer = (entry: VocabEntry, side: "front" | "back", role: "front" | "peek" | "flying") => React.ReactNode;
 
 
 // Fallback slot padding for callers that don't measure (no More Info pill on the surface).
@@ -167,7 +182,10 @@ const CardFace: React.FC<{
     // Blank this card's content (both faces) while keeping its surface. Set on the peeking
     // BACK card while the front card is mid-flip — see `flipInProgress` in FlashCardSection.
     contentHidden?: boolean;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden }) => {
+    // The writing flp's face content for this card (FlashCardSectionProps.writingFace),
+    // already bound to the card's role. Absent on every other bar.
+    writingFace?: (side: "front" | "back") => React.ReactNode;
+}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -219,6 +237,33 @@ const CardFace: React.FC<{
     // gated by `sideOneLanguage === 'en'` (this is the flp's "stop the Chinese front" gate,
     // matching the icon layer, which is likewise gated to English-bearing faces via showIcon).
     const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
+
+    // Writing flp: the same card object (wrapper, flip, faces, drag wash), with the
+    // writing layout as each face's full-card content. No icons — the writing face has
+    // no room for them and its front is a prompt, not a word.
+    if (writingFace) {
+        return (
+            <Card
+                className="mobile-demo-flashcard mobile-demo-flashcard--writing"
+                sx={{
+                    backgroundColor: 'transparent',
+                    background: 'none',
+                    borderRadius: CARD_SURFACE.borderRadius,
+                    boxShadow: isProminent ? fc.cardShadow : CARD_SURFACE.boxShadow,
+                    cursor: "pointer",
+                    position: "absolute",
+                    inset: 0,
+                    transformStyle: "preserve-3d",
+                    transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
+                    transition: isAnimating ? 'none' : CARD_FLIP_TRANSITION,
+                    overflow: 'visible',
+                }}
+            >
+                <CardFaceSide rotated={false} contentGap={1} showIcon={false} inert={isFlipped} contentHidden={contentHidden} fill={writingFace("front")} />
+                <CardFaceSide rotated contentGap={1} showIcon={false} inert={!isFlipped} contentHidden={contentHidden} fill={writingFace("back")} />
+            </Card>
+        );
+    }
 
     return (
         <Card
@@ -381,6 +426,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     noteEditing,
     onSaveNote,
     onCancelNote,
+    writingFace,
+    onCardClick,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -413,6 +460,16 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
         activeFrontSlot === 0
             ? [currentEntry, nextEntry]
             : [nextEntry, currentEntry];
+
+    // Writing flp only: the card flying out keeps showing the card that was DISMISSED,
+    // on its graded back face. The loop advances `currentIndex` in the same batch that
+    // starts the fly-out, so by the time the flying slot renders, `slotEntries` already
+    // hands it the NEW back card. The outgoing entry is captured while no fly-out is
+    // running and held until it ends. (State, not a ref: it is read during render.)
+    // Compared by id — the page's entry is an override-merged object whose identity can
+    // change every render, which would make this render-time update loop.
+    const [outgoingEntry, setOutgoingEntry] = React.useState<VocabEntry | null>(currentEntry);
+    if (writingFace && !flyOut && outgoingEntry?.id !== currentEntry?.id) setOutgoingEntry(currentEntry);
 
     // Side 1 language pairs with its slot's entry — not its slot index — so the
     // peeking card behind shows the correct language before promotion.
@@ -488,9 +545,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                         // content flash occurs when the front card flies off.
                         <>
                             {([0, 1] as const).map((slot) => {
-                                const entry = slotEntries[slot];
                                 const isFront = slot === activeFrontSlot;
                                 const isThisSlotFlyingOut = flyOut?.slot === slot;
+                                const entry = writingFace && isThisSlotFlyingOut ? outgoingEntry : slotEntries[slot];
+                                const writingRole = isThisSlotFlyingOut ? "flying" : isFront ? "front" : "peek";
 
                                 // Compute transform and transition for this slot:
                                 // - Flying out: animate to off-screen position
@@ -547,6 +605,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             onTouchEnd: handlers.onTouchEnd,
                                             onMouseDown: handlers.onMouseDown,
                                         } : {})}
+                                        onClick={isFront && !isAnimating ? onCardClick : undefined}
                                         sx={{
                                             position: "absolute",
                                             inset: 0,
@@ -571,7 +630,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         {entry && (
                                             <CardFace
                                                 entry={entry}
-                                                isFlipped={isFront ? isFlipped : false}
+                                                // A flying writing card stays on its graded back face.
+                                                isFlipped={isFront ? isFlipped : !!writingFace && isThisSlotFlyingOut}
                                                 isAnimating={isAnimating}
                                                 showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
@@ -605,6 +665,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 noteEditing={isFront ? noteEditing : false}
                                                 onSaveNote={isFront ? onSaveNote : undefined}
                                                 onCancelNote={isFront ? onCancelNote : undefined}
+                                                writingFace={writingFace ? (side) => writingFace(entry, side, writingRole) : undefined}
                                             />
                                         )}
                                     </Box>

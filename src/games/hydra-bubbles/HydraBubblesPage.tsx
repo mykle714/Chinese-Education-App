@@ -19,7 +19,9 @@ import BubbleMatchHeaderControls from "../bubble-match/BubbleMatchHeader";
 import BubbleMatchEndPopup from "../bubble-match/BubbleMatchEndPopup";
 import HydraStage from "./HydraStage";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
-import { MARK_TYPE, SURFACE } from "./constants";
+import { MARK_TYPE, SCORE_PER_MATCH, SURFACE } from "./constants";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import PersonalBestLine from "../shared/PersonalBestLine";
 import type { HydraOutcome, HydraPhase } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
@@ -291,13 +293,24 @@ const HydraBubblesPage: React.FC = () => {
         }
     }, [challengeRound.error]);
 
+    // Most matches cleared in one free-play run (docs/HYDRA_BUBBLES.md § Personal best).
+    // Hydra has one mode, so every run competes under the "default" key.
+    const {
+        best: personalBestMatches,
+        isNewBest,
+        record: recordPersonalBest,
+        reset: resetPersonalBest,
+    } = usePersonalBest("hydra-bubbles", "default");
+
     const playAgain = useCallback(() => {
         // Prime the audio element inside the real click gesture: in-game autoplay
         // fires from a bubble's pointerdown, and on mobile a first play outside a
         // gesture is silently dropped.
         tts.unlockAudio();
+        // Also reached from the header restart mid-run; either way a new run starts.
+        resetPersonalBest();
         beginRun();
-    }, [tts.unlockAudio, beginRun]);
+    }, [tts.unlockAudio, beginRun, resetPersonalBest]);
 
     const onGameOver = useCallback((why: HydraOutcome, finalScore: number) => {
         setOutcome(why);
@@ -307,7 +320,13 @@ const HydraBubblesPage: React.FC = () => {
         // `won` is "cleared the set" — Hydra's spec carries no all-or-nothing bonus,
         // so this only ever records what happened rather than changing the score.
         challengeRound.finish(why === "challengeComplete");
-    }, [challengeRound]);
+        // The stage's score counts BUBBLES (SCORE_PER_MATCH = 2 per pair); the best is
+        // stored in MATCHES (server/contracts/personalBests.ts), so a future change to
+        // the per-match score cannot silently re-scale every stored best. A challenge
+        // round is scored on time-to-clear over the round's own set, not on matches,
+        // so it never competes with the free-play best.
+        if (!challengeRound.active) void recordPersonalBest(Math.round(finalScore / SCORE_PER_MATCH));
+    }, [challengeRound, recordPersonalBest]);
 
     /**
      * Record a recognition mark. Fire-and-forget — the run never blocks on it.
@@ -417,6 +436,15 @@ const HydraBubblesPage: React.FC = () => {
                             ? "You cleared the whole challenge set."
                             : "Wrong match — the run ends there."}
                 </Typography>
+                <PersonalBestLine
+                    game="hydra-bubbles"
+                    best={personalBestMatches}
+                    isNewBest={isNewBest}
+                    // The popup counts BUBBLES (2 per match); the best is stored in
+                    // matches, so name the unit rather than let "20" sit under "40".
+                    unitLabel="matches"
+                    className="hydra__personal-best"
+                />
                 <Box
                     className="hydra__replay-actions"
                     sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}

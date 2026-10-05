@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FlashcardMarkService } from '../services/FlashcardMarkService.js';
 import { DALError } from '../types/dal.js';
-import type { IVocabEntryDAL, VetMarkState, MasteredAtWrite } from '../dal/interfaces/IVocabEntryDAL.js';
+import type { IVocabEntryDAL, VetMarkState, MasteredAtWrite, CharacterMarkState } from '../dal/interfaces/IVocabEntryDAL.js';
 import type { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.js';
 import type { ReviewMark, TypedMarkHistory } from '../types/index.js';
 
@@ -53,11 +53,15 @@ function makeTxRunner() {
 interface VetStub {
     dal: IVocabEntryDAL;
     findCalls: Array<{ opts: any }>;
-    writes: Array<{ history: TypedMarkHistory; masteredAt: MasteredAtWrite | null | undefined; client: any }>;
+    writes: Array<{ cardId?: number; history: TypedMarkHistory; masteredAt: MasteredAtWrite | null | undefined; client: any }>;
 }
 
-/** A vet DAL exposing exactly the two methods the service uses. */
-function makeVetDAL(state: VetMarkState | null): VetStub {
+/** A vet DAL exposing exactly the methods the service uses. */
+/** Test rows may omit `entryKey` (the writing path is the only reader); default '好'. */
+type StateInput = Omit<VetMarkState, 'entryKey'> & { entryKey?: string };
+
+function makeVetDAL(input: StateInput | null, characterRows: CharacterMarkState[] = []): VetStub {
+    const state: VetMarkState | null = input ? { entryKey: '好', ...input } : null;
     const findCalls: VetStub['findCalls'] = [];
     const writes: VetStub['writes'] = [];
     const dal = {
@@ -69,8 +73,11 @@ function makeVetDAL(state: VetMarkState | null): VetStub {
             _userId: string, _cardId: number, _language: string,
             history: TypedMarkHistory, masteredAt?: MasteredAtWrite | null, client?: any
         ) {
-            writes.push({ history, masteredAt, client });
+            writes.push({ cardId: _cardId, history, masteredAt, client });
             return true;
+        },
+        async ensureCharacterMarkStates() {
+            return characterRows;
         },
     } as unknown as IVocabEntryDAL;
     return { dal, findCalls, writes };
@@ -100,8 +107,12 @@ function oldCorrectMarks(n: number): ReviewMark[] {
     return Array.from({ length: n }, (_, i) => mark(`2020-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`));
 }
 
-function makeService(state: VetMarkState | null, promotionOverrides: Partial<ICategoryPromotionDAL> = {}) {
-    const vet = makeVetDAL(state);
+function makeService(
+    state: StateInput | null,
+    promotionOverrides: Partial<ICategoryPromotionDAL> = {},
+    characterRows: CharacterMarkState[] = []
+) {
+    const vet = makeVetDAL(state, characterRows);
     const promotions = makePromotionDAL(promotionOverrides);
     const tx = makeTxRunner();
     const service = new FlashcardMarkService(vet.dal, promotions.dal, tx.runner);
@@ -378,5 +389,109 @@ describe('FlashcardMarkService.undoMark', () => {
 
         expect(vet.findCalls[0].opts.forUpdate).toBe(true);
         expect(vet.findCalls[0].opts.client).toBe(FAKE_CLIENT);
+    });
+});
+
+// ── Writing: per-character mastery (docs/WRITING_PRACTICE_REWORK.md § 3a) ────────
+describe('FlashcardMarkService.applyMark — writing', () => {
+    const WORD = 77;
+    const charRow = (id: number, ch: string, writing: ReviewMark[] = []): CharacterMarkState => ({
+        id, entryKey: ch, typedMarkHistory: { writing }, masteredAt: null,
+    });
+
+    it('rejects a writing mark without a level / per-character result', async () => {
+        const { service } = makeService({ language: 'zh', typedMarkHistory: {}, masteredAt: null });
+        await expect(
+            service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'writing' })
+        ).rejects.toThrow(/writing mark needs/);
+    });
+
+    it('rejects a writing mark on a word longer than WRITING_MAX_CHARS, writing nothing', async () => {
+        const { service, vet } = makeService({ language: 'zh', entryKey: '一举两得了', typedMarkHistory: {}, masteredAt: null });
+        await expect(
+            service.applyMark({
+                userId: USER, cardId: WORD, isCorrect: true, markType: 'writing',
+                writing: { level: 1, perChar: [true, true, true, true, true] },
+            })
+        ).rejects.toThrow(/only accepted for words of 1–4 characters/);
+        expect(vet.writes).toHaveLength(0);
+    });
+
+    it('single character: marks the card itself when level > mastery', async () => {
+        const { service, vet } = makeService({ language: 'zh', entryKey: '好', typedMarkHistory: {}, masteredAt: null });
+        const result = await service.applyMark({
+            userId: USER, cardId: CARD, isCorrect: true, markType: 'writing', writing: { level: 1, perChar: [true] },
+        });
+        expect(result.suppressed).toBe(false);
+        expect(vet.writes).toHaveLength(1);
+        expect(vet.writes[0].history.writing).toHaveLength(1);
+        expect(vet.writes[0].history.writing![0].viaWord).toBeUndefined();
+    });
+
+    it('single character: the farming gate drops a mark at a level ≤ mastery', async () => {
+        const { service, vet } = makeService({
+            language: 'zh', entryKey: '好', typedMarkHistory: { writing: oldCorrectMarks(3) }, masteredAt: null,
+        });
+        const result = await service.applyMark({
+            userId: USER, cardId: CARD, isCorrect: true, markType: 'writing', writing: { level: 3, perChar: [true] },
+        });
+        expect(result.suppressed).toBe(true);
+        expect(result.writing?.characters[0].reason).toBe('farming');
+        expect(vet.writes).toHaveLength(0);
+    });
+
+    it('word: fans out viaWord marks per character and a clock-only mark on the word', async () => {
+        const { service, vet } = makeService(
+            { language: 'zh', entryKey: '你好', typedMarkHistory: {}, masteredAt: null },
+            {},
+            [charRow(1, '你'), charRow(2, '好', oldCorrectMarks(4))]
+        );
+        const result = await service.applyMark({
+            userId: USER, cardId: WORD, isCorrect: true, markType: 'writing', writing: { level: 3, perChar: [true, true] },
+        });
+        expect(result.suppressed).toBe(false);
+        // 你 (mastery 0 < 3) counts; 好 (mastery 4 ≥ 3) is farming-gated.
+        expect(result.writing?.characters).toEqual([
+            { char: '你', isCorrect: true, counted: true },
+            { char: '好', isCorrect: true, counted: false, reason: 'farming' },
+        ]);
+        const charWrite = vet.writes.find((w) => w.cardId === 1)!;
+        expect(charWrite.history.writing).toEqual([expect.objectContaining({ isCorrect: true, viaWord: true })]);
+        const wordWrite = vet.writes.find((w) => w.cardId === WORD)!;
+        expect(wordWrite.history.writing).toEqual([expect.objectContaining({ isCorrect: true, clockOnly: true })]);
+        expect(vet.writes.some((w) => w.cardId === 2)).toBe(false);
+    });
+
+    it('word: the clock-only mark is correct only when every character was', async () => {
+        const { service, vet } = makeService(
+            { language: 'zh', entryKey: '你好', typedMarkHistory: {}, masteredAt: null }, {},
+            [charRow(1, '你'), charRow(2, '好')]
+        );
+        await service.applyMark({
+            userId: USER, cardId: WORD, isCorrect: false, markType: 'writing', writing: { level: 8, perChar: [true, false] },
+        });
+        const wordWrite = vet.writes.find((w) => w.cardId === WORD)!;
+        expect(wordWrite.history.writing![0]).toMatchObject({ isCorrect: false, clockOnly: true });
+        expect(vet.writes.find((w) => w.cardId === 2)!.history.writing![0]).toMatchObject({ isCorrect: false, viaWord: true });
+    });
+
+    it('word: a word on its own writing cooldown writes nothing', async () => {
+        const fresh = new Date().toISOString();
+        const { service, vet } = makeService(
+            { language: 'zh', entryKey: '你好', typedMarkHistory: { writing: [{ timestamp: fresh, isCorrect: true, clockOnly: true }] }, masteredAt: null },
+            {}, [charRow(1, '你'), charRow(2, '好')]
+        );
+        const result = await service.applyMark({
+            userId: USER, cardId: WORD, isCorrect: true, markType: 'writing', writing: { level: 8, perChar: [true, true] },
+        });
+        expect(result.suppressed).toBe(true);
+        expect(vet.writes).toHaveLength(0);
+    });
+
+    it('refuses to undo a writing mark', async () => {
+        const { service } = makeService({ language: 'zh', typedMarkHistory: {}, masteredAt: null });
+        await expect(
+            service.undoMark({ userId: USER, cardId: CARD, markTimestamp: 'x', markType: 'writing' })
+        ).rejects.toThrow(/cannot be undone/);
     });
 });

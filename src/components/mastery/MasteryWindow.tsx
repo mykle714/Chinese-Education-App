@@ -195,7 +195,7 @@ const CooldownTimer: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number 
     entry,
     now,
 }) => {
-    const remainingMs = barCooldownRemainingMs(entry.typedMarkHistory, bar.id, now);
+    const remainingMs = barCooldownRemainingMs(entry.typedMarkHistory, bar.id, now, entry.writingMastery);
     const label = BAR_LABELS[bar.id];
     return (
         <Tooltip
@@ -277,7 +277,7 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
         return () => window.clearInterval(id);
     }, []);
 
-    const bar = useMemo(() => masteryBar(entry.typedMarkHistory, track), [entry.typedMarkHistory, track]);
+    const bar = useMemo(() => masteryBar(entry.typedMarkHistory, track, entry.writingMastery), [entry.typedMarkHistory, track, entry.writingMastery]);
 
     return (
         <Box className={className ? `mastery-window ${className}` : "mastery-window"}>

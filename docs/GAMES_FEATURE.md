@@ -259,6 +259,13 @@ Word Search **No Pinyin**, and **Speed Reading**. Since 2026-10-03 those variant
 launched **only** from there. The hub hides Speed Reading (`hiddenFromHub: true`),
 offers Word Search's Pinyin mode only, and pins Bubble Match to Recognition.
 
+**The Writing Center is a third entry point.** The **Writing Grid** (`writing-grid`,
+`hiddenFromHub`, zh only) launches only from the Writing Center's game card
+(`src/features/flashcards/centers/WritingGridLauncher.tsx`), whose launch carries
+`exitTo` the Writing Center. The game itself: [WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md).
+Every game but Bubble Match and Memory Map also keeps a per-mode **personal best**
+(§ 2a there).
+
 **Exits return to the launching surface.** A launch may carry
 `state.exitTo = { path, label }`. `useGameExit` reads it and falls back to the hub
 (`/games`, "Games") when it is absent. Back (`useGameBack`, after a challenge round's
@@ -267,7 +274,8 @@ Reading use it, so a carousel launch exits to "Back to Reading Center". The caro
 supplies the destination itself, so `src/games` never imports the Center. An exit may
 also carry opaque `state` for its destination (`GameExit.state`), which every exit
 passes through unchanged. The Reading Center uses it to reopen scrolled to its carousel,
-parked on the game just played
+parked on the game just played, and the Writing Center to reopen scrolled down to its
+Writing Grid card
 ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § "Returning from a game"). The
 "no level / no mode" bounces (a stray URL) still go to `/games`, because only the hub
 can pick a level or mode. Hydra Bubbles, Match Speed and Memory Map have no second

@@ -13,7 +13,7 @@ One registry file switches whole features, and individual games, on and off:
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
 | `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | ON |
-| `GAME_FLAGS['<gameId>']` | One switch per game, six of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | all ON |
+| `GAME_FLAGS['<gameId>']` | One switch per game, seven of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
 **`studyChallenge` and `nightMarket` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.

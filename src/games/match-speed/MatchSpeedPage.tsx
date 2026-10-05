@@ -21,6 +21,8 @@ import type { Language, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
 import MatchSpeedHeaderControls from "./MatchSpeedHeader";
 import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import PersonalBestLine from "../shared/PersonalBestLine";
 import MatchSpeedTimerBar from "./MatchSpeedTimerBar";
 import { GameCentered, GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
 import {
@@ -138,6 +140,14 @@ const MatchSpeedPage: React.FC = () => {
     // The mode's WEIGHTS are untouched: once the learner has real on-mode cards the
     // widened fallback stops being reached and the mode plays exactly as designed.
     const [relaxed, setRelaxed] = useState(false);
+    // Most pairs matched per difficulty mode, keyed on the mode slug
+    // (docs/MATCH_SPEED_GAME.md § Personal best).
+    const {
+        best: personalBestPairs,
+        isNewBest,
+        record: recordPersonalBest,
+        reset: resetPersonalBest,
+    } = usePersonalBest("match-speed", baseModeConfig.mode);
     const modeConfig = useMemo(
         () => (relaxed ? { ...baseModeConfig, fallbackOrder: CATEGORY_FALLBACK_ORDER } : baseModeConfig),
         [relaxed, baseModeConfig]
@@ -502,6 +512,11 @@ const MatchSpeedPage: React.FC = () => {
         // only ever decides an all-or-nothing bonus this game does not have.
         challengeRound.finish(true);
         if (medalForScore(score)?.medal === "gold") recordWin(modeConfig.winLevel);
+        // A challenge round's deal is the round's shared word set, not the player's
+        // own pool, so it does not compete with their personal best. Nor does a
+        // RELAXED run: a Review/Challenge run that widened to every bucket was a
+        // different (easier) board than its mode's, and must not set that mode's best.
+        if (!challengeRound.active && !relaxed) void recordPersonalBest(score);
         // Runs once per run end; recordWin's identity is not stable across renders.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase]);
@@ -570,8 +585,9 @@ const MatchSpeedPage: React.FC = () => {
      *  policy would drop the first spoken word. */
     const playAgain = useCallback(() => {
         tts.unlockAudio();
+        resetPersonalBest();
         void beginRun();
-    }, [tts.unlockAudio, beginRun]);
+    }, [tts.unlockAudio, beginRun, resetPersonalBest]);
 
     // Cleanup: the run is scored and the popup has been tucked into its corner
     // puck, so the leftover board becomes a no-stakes study surface — no clock, no
@@ -776,6 +792,12 @@ const MatchSpeedPage: React.FC = () => {
                         >
                             Accuracy {score}/{attempts} ({accuracy}%)
                         </Typography>
+                        <PersonalBestLine
+                            game="match-speed"
+                            best={personalBestPairs}
+                            isNewBest={isNewBest}
+                            className="match-speed__personal-best"
+                        />
                         <Box
                             className="match-speed__replay-actions"
                             sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}

@@ -78,7 +78,8 @@ The proxy endpoint speaks the canonical `Ink` in and a ranked
 
 ## Reading in user writing inputs (capture)
 
-> **Status: not yet implemented** — this section is the intended design.
+> **Status: IMPLEMENTED** — `src/components/handwriting/WritingCanvas.tsx`
+> (`WritingCanvas`), used by the practice popup and the Beginner Keyboard.
 
 The capture surface is a single drawing canvas that turns pointer events into the
 canonical `Ink` above. Design rules:
@@ -103,6 +104,21 @@ canonical `Ink` above. Design rules:
   (See [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).)
 - **Undo / clear.** "Undo last stroke" = pop the last `Stroke`; "clear" = empty
   `Ink`. Both are cheap because strokes are discrete.
+- **Velocity-based width (render only).** The line swells with pointer speed —
+  fast = thick, slow = thin — around the `strokeWidth` prop (`velocityWidth`, default
+  on). Width is recomputed from each stroke's `(xs, ys, ts)` at draw time and **never
+  stored**, so the `Ink` contract and recognition are unaffected. Speed is EMA-smoothed,
+  then mapped linearly between `slowSpeed`→`slowScale` (thinnest) and `fastSpeed`→`fastScale` (thickest); the
+  result is **slew-rate limited per CSS px travelled** (`maxGrowthPerPx` /
+  `maxShrinkPerPx`, fractions of base width) so the line can't balloon or pinch on one
+  noisy sample. Two tunings: **desktop** (`pointerType === "mouse"`) and **mobile**
+  (touch / pen), chosen per stroke on `pointerdown`; strokes not drawn live (restored
+  drafts, Snap substitutes) fall back to `(pointer: coarse)`. Each stroke is filled as a
+  union of discs + joining quads in one nonzero `fill()`, so translucent draws (the
+  rejected-stroke fade) don't darken at overlaps. Committed strokes' outlines are cached
+  per stroke.
+  Code: `src/components/handwriting/velocityWidth.ts` → `VELOCITY_WIDTH_PROFILES`,
+  `computeStrokeWidths`, `buildVariableStrokePath`; `WritingCanvas.tsx` → `redrawAll`.
 
 The capture component's only output is an `Ink` value; it knows nothing about
 recognizers.
@@ -129,21 +145,21 @@ Writing mark on that card.
 Every host shares one hook, `usePracticeWriting` (`src/components/handwriting/`): the
 completed-level (star) fetch, its sync as levels clear, and the Writing mark on Verify.
 
-### Popup chrome (floating bars)
+### Popup chrome
 
-The popup chrome is split into **three free-standing, footer-style floating
-bars** (rounded pills with a drop shadow over the dialog surface) plus a
-stand-alone close button — there is no single bordered header:
+The single-character popup is **one bordered rectangle** (`WritingPanel`): level stepper
+header, canvas, Clear / Undo + assist + Verify footer. The multi-character grid view
+keeps free-standing pieces (Verify above the grid, the stepper pill below):
 
 | Control | Position | Action |
 |---|---|---|
-| **✕ (close)** | **Its own floating button** pinned to the **top-right corner** of the popup (overflows the paper edge). | Closes the popup (preserving state — see lifecycle). |
-| **Clear** + **Undo** | Grouped in the **left floating pill** of the **toolbar above the writing panel**. | Clear empties the **current tab's** canvas; Undo removes the most recent stroke (LIFO). Both disabled when empty. |
-| **Verify** | **Stand-alone button to the right** of the toolbar (same row as the Clear/Undo pill, above the writing panel). | Sends the current tab's on-screen strokes to `POST /api/handwriting/recognize`; **correct iff target == top-1 candidate** (see decisions). Result feedback is a simple **green check (✓)** on pass or **red X (✗)** on fail — no auto-advance, no retry gating; the user stays on the tab and can clear/redraw/re-verify freely. |
-| **Level bar** | **Bottom floating pill**, footer-style, spanning the popup width. | The four level tabs (see below). |
+| **Close** | No button: tapping the greyed background (or Escape) steps back — a focused slot shrinks into the grid, otherwise the popup closes (the single-character panel shrinks back into its launcher first). | Closes the popup (preserving state — see lifecycle). |
+| **Clear** + **Undo** | Left of the **footer band** of the one `WritingPanel` rectangle (header = level stepper, then canvas, then footer — [PRACTICE_WRITING.md § The writing panel](./PRACTICE_WRITING.md#the-writing-panel-writingpanel)). | Clear empties the **current character's** canvas; Undo removes the most recent stroke (LIFO). Both disabled when empty. |
+| **Verify** | Right end of the same footer (after the level's assist button) in the single-character panel; a stand-alone button above the 2×2 grid for multi-character words. | Sends the current tab's on-screen strokes to `POST /api/handwriting/recognize`; **correct iff target == top-1 candidate** (see decisions). Result feedback is a simple **green check (✓)** on pass or **red X (✗)** on fail — no auto-advance, no retry gating; the user stays on the tab and can clear/redraw/re-verify freely. |
+| **Level stepper** | Header of the single-character `WritingPanel`; a floating pill under the 2×2 grid for multi-character words. | ‹ Level N › over the eight levels (`LevelStepper`; [PRACTICE_WRITING.md](./PRACTICE_WRITING.md)). |
 
-Dismissal: the **✕** closes the popup; on desktop, **tapping the backdrop outside
-the phone card** (the Dialog's own scrim, via `onClose`) does the same. Both
+Dismissal: tapping the greyed background closes the popup; on desktop, **tapping the
+backdrop outside the phone card** (the Dialog's own scrim, via `onClose`) does the same. Both
 **preserve** state per the lifecycle rules below.
 
 **Generalized lockout + greyed-background step-back.** While the popup is open the
@@ -159,42 +175,13 @@ step-back. This is deliberately ONE blocker (lock + step-back in the same place)
 rather than per-island `stopPropagation`, which previously let edge-of-tab taps
 both close the writer and reach the card.
 
-### Tabs — progressive assistance
+### Levels — progressive assistance
 
-Four levels, decreasing assistance left→right, presented as the **bottom floating
-level bar**. Each tab shows a user-facing **label** (`Trace` / `Step Through` /
-`Memorize` / `Test`); the internal **`mode`** (`trace` / `walkthrough` / `memorize`
-/ `test`) carries the assistance semantics and is the value stored per completion.
-Only the assistance behavior differs; the chrome, canvas, and grading are identical
-across levels.
-
-| # | Label (`mode`) | Background guide (greyed target char + stroke order) | On tab entry | Bottom button | Draw during guide? |
-|---|---|---|---|---|---|
-| 1 | **Trace** (`trace`) | **Always shown** (persistent grey background w/ stroke order) | guide visible | — (always on) | Yes |
-| 2 | **Step Through** (`walkthrough`) | Default **off** | guide shown **1.5s**, then fades | **"Show"** — re-flashes guide for **1.5s**; **6s cooldown** | **No** — drawing is locked while the guide is visible |
-| 3 | **Memorize** (`memorize`) | Shown persistently on entry; **no timer** (study as long as you want) | guide visible, **drawing blocked** | — (no button) | **No** until the first stroke, which unlocks + starts drawing |
-| 4 | **Test** (`test`) | Never shown; no button | blank | — | n/a |
-
-Notes:
-- **Step Through** = the only *timed* guide: it flashes on entry and on each "Show"
-  press for **1.5s**, with **drawing disabled** while the guide is on screen.
-- **Memorize** = study-then-write. The guide is shown indefinitely with drawing
-  **blocked**; there is no unlock button — the first stroke itself hides the guide
-  and unlocks drawing, and that same pointerdown starts the stroke (see
-  `WritingCanvas.onDown`'s `onBlockedAttempt` return-to-continue contract). No
-  timer, no cooldown — re-entering the level (or, multi-char, re-focusing a slot)
-  re-arms the study gate. No lock spinner is shown (the lock is open-ended, unlike
-  Step Through's timed flash).
-- **"Show" button cooldown (Step Through only): 6s from press.** When pressed, it is
-  disabled for 6 seconds **measured from the press** — the cooldown overlaps the
-  1.5s guide-visible window, so the button re-enables 6s after press. The automatic
-  on-entry guide does **not** start a cooldown (the button is usable immediately on
-  tab entry).
-- **Cooldown affordance:** while locked, the "Show" button is **greyed out
-  (disabled)** and shows a **live countdown** of remaining seconds (6 → 0),
-  returning to "Show" when the cooldown ends.
-- "Stroke order" background = the greyed target glyph with its stroke-order guide
-  (see open question on rendering source below).
+**Eight levels** since 2026-10-04 (was four tabs: Trace / Step Through / Memorize /
+Test). The level table, the stored `mode`s and each level's guide / lock / button
+behaviour live in [WRITING_PRACTICE_REWORK.md § 1](./WRITING_PRACTICE_REWORK.md); the
+popup's stepper and per-level UX in [PRACTICE_WRITING.md](./PRACTICE_WRITING.md). Only the
+assistance differs between levels; the canvas and top-1 grading are identical.
 
 ### Canvas / state lifecycle
 
@@ -228,12 +215,13 @@ each character's ink; recognition runs per character.
 - **Grid view** shows each character as a small **read-only preview** (the drawn
   ink, scaled down) plus the **Verify** button and the **level bar**. There is no
   Clear/Undo here — those are per-character and live in the focused view.
-- **Focus (enlarge).** Tapping a slot enlarges that one character into a full
-  drawing panel with the level's guide, a **Back** button, and **Clear/Undo**.
+- **Focus (enlarge).** Tapping a slot grows that one character out of the slot into
+  a full `WritingPanel` (level label, the level's guide, **Clear/Undo**) over a scrim.
   Clear/Undo act **only on that character** (never the others in the word). There
-  is **no Verify or level bar** in the focused view. **Back** captures the strokes
-  back into the grid; the user must Back out and tap another slot to write the
-  next character (no in-focus character navigation).
+  is **no Verify or level bar** in the focused view, and no Back button: tapping the
+  scrim captures the strokes back into the grid and shrinks the panel into its slot;
+  the user taps another slot to write the next character (no in-focus character
+  navigation).
 - **Coordinate space.** Every panel — focused or preview — captures/seeds ink in
   the same `FOCUS_SIZE` (300px) space; the grid previews are the full-size stage
   rendered then **CSS-scaled** down, so a preview and its enlarged panel share one
@@ -249,14 +237,16 @@ each character's ink; recognition runs per character.
 
 ### Completion tracking — stars
 
-Each **word** earns up to **4 stars**, one per assistance level completed. A level
+Each **word** earns up to **8 stars**, one per assistance level completed. A level
 is "completed" on the **first successful Verify** of that level — for a single
 character that means target === top-1; for a multi-character word it means **every**
 character is top-1-correct in one Verify (a partial pass awards nothing).
 
 - **Persistence:** table `writing_practice_completions` (migration 81), Shape A —
   one row per first completion of `(userId, language, entryKey, level)`, bounded at
-  ≤4 rows/character/user. Stars = `COUNT(*)` grouped by `entryKey`. State, not
+  ≤8 rows/character/user. `level` is the level **number** 1..8 (`SMALLINT`, migration
+  172 — it was the mode name until then; 172 erased every star). Stars = `COUNT(*)`
+  grouped by `entryKey`. State, not
   history. Helper: `server/utils/writingPracticeStore.ts`; routes
   `GET/POST /api/handwriting/completions` (`server/routes/handwritingRoutes.ts`).
 - **Tab star:** a gold ★ sits **above** a level's label once that level is
@@ -296,20 +286,24 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
 > - **A third consumer once existed** — the Mandela game's offline pipeline, which
 >   corrupted this corpus to author deliberately-wrong glyphs and shipped a
 >   median-based stroke classifier (`strokeTaxonomy.ts`) to do it. It was removed
->   in full. Nothing in the repo interprets what a stroke *is* any more, only how
->   to draw it; if the writing drill ever wants per-stroke feedback ("your 竖
->   should have a hook") rather than whole-character grading, that classifier is
->   in the git history.
+>   in full. The **Snap** level (`strokeSnap.ts`) now reads the corpus `medians` to
+>   judge whether a drawn stroke matches the next expected one (position, length,
+>   direction — not stroke *type*); if the writing drill ever wants per-stroke
+>   feedback ("your 竖 should have a hook"), the old classifier is in the git history.
 
 **Decision: use Hanzi Writer for the grey guide only; never for capture or
-grading.** Hanzi Writer renders the greyed character outline + stroke-order
+grading.** (One deliberate exception, Level 1 **Snap**: each stroke is judged against
+the corpus median of the next expected stroke and snapped into place. It still does
+not use Hanzi Writer's quiz — our canvas stays the only capture path, `strokeSnap.ts`
+reads the corpus itself — and the final Verify is still independent top-1. See
+[PRACTICE_WRITING.md § Snap](./PRACTICE_WRITING.md).) Hanzi Writer renders the greyed character outline + stroke-order
 animation off the same `makemeahanzi` data we already use, so it owns the
 **background guide** on every tab. Capture stays on our own DIY canvas overlaid
 on top (see below).
 
 | Concern | Owner |
 |---|---|
-| Grey outline + stroke-order guide | **Hanzi Writer** (`showOutline`/`hideOutline`, `loopCharacterAnimation`, `outlineColor`) |
+| Grey outline + stroke-order guide | **Hanzi Writer** (`showOutline`, `loopCharacterAnimation`, `outlineColor`); show/hide is `HanziGuide`'s container opacity |
 | User writing capture | **Our DIY canvas** (transparent overlay, Pointer Events → `Ink`) |
 | Grading | **Our proxy → backend**, top-1 (Hanzi Writer's quiz grading is **not** used) |
 
@@ -321,10 +315,13 @@ display-only.
 
 **Layering:** Hanzi Writer SVG underneath (the guide); our transparent capture
 canvas on top, same coordinate box. Tab assistance maps to Hanzi Writer calls:
+**Snap** = persistent `showOutline` + `animateStroke(next)` on repeat;
 **Trace** = persistent `showOutline` (+ optional looped stroke-order animation);
-**Step Through** = `showOutline`/`hideOutline` driven by the entry timer and the
-"Show" button; **Memorize** = persistent `showOutline` cleared by the first stroke;
-**Test** = no Hanzi Writer instance.
+**Step Through** = outline shown by the entry timer (drawn at once, faded out) and the
+"Show" button (faded in and out); **Memorize** = persistent outline faded out by the
+first stroke; **Blank** = no guide (no instance is created on a stage that never showed
+one). The outline itself is drawn once (`showOutline`) and left on; on/off is the
+container's opacity — see [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) § "Guide fade".
 
 **Data source:** feed Hanzi Writer our **local** `makemeahanzi` data via
 `charDataLoader` rather than its default CDN, so the guide has no external runtime

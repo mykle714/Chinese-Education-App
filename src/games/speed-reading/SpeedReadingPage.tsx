@@ -14,6 +14,8 @@ import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFr
 import SpeedReadingRoundTicks, { type RoundTick } from "./SpeedReadingRoundTicks";
 import { ON_ACCENT_INK } from "../shared/gameSurface";
 import GameEndPopup from "../runtime/GameEndPopup";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import PersonalBestLine from "../shared/PersonalBestLine";
 import { useAuth } from "../../AuthContext";
 import { markFlashcard } from "../../api/flashcards";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -550,6 +552,22 @@ const SpeedReadingPage: React.FC = () => {
         }
     }, [phase, medal, recordWin]);
 
+    // Fastest finished run (docs/SPEED_READING_GAME.md § Personal best). The game has
+    // a single difficulty, so every run competes under one "default" mode key. Only a
+    // run that completed all TARGET_ROUNDS is recorded — a drained-queue run's small
+    // time would otherwise become an unbeatable "best" (same guard as `medal`).
+    // `record` guards a second submit itself, so this effect re-running is harmless.
+    const {
+        best: personalBestMs,
+        isNewBest,
+        record: recordPersonalBest,
+        reset: resetPersonalBest,
+    } = usePersonalBest("speed-reading", "default");
+    useEffect(() => {
+        if (phase !== "ended" || !finished) return;
+        void recordPersonalBest(totalMs);
+    }, [phase, finished, totalMs, recordPersonalBest]);
+
     /**
      * Play Again — reset every piece of run state and reload the queue.
      *
@@ -563,6 +581,7 @@ const SpeedReadingPage: React.FC = () => {
         // Built from the previous run's queue; the reload replaces that queue.
         pendingRoundRef.current = null;
         winRecordedRef.current = false;
+        resetPersonalBest();
         // Round numbering is derived from this, so zeroing it restarts the
         // ordinals — and with them the new run's sentence finale.
         answeredRef.current = 0;
@@ -576,7 +595,7 @@ const SpeedReadingPage: React.FC = () => {
         setElapsedMs(0);
         setPhase("loading");
         setRunId((n) => n + 1);
-    }, []);
+    }, [resetPersonalBest]);
 
     // ── Render ───────────────────────────────────────────────────────────────
     const clock = formatClock(totalMs);
@@ -913,6 +932,12 @@ const SpeedReadingPage: React.FC = () => {
                                     {score}/{TARGET_ROUNDS} correct
                                     {penaltyMs > 0 && ` · +${Math.round(penaltyMs / 1000)}s penalty`}
                                 </Typography>
+                                <PersonalBestLine
+                                    game="speed-reading"
+                                    best={personalBestMs}
+                                    isNewBest={isNewBest}
+                                    className="speed-reading__personal-best"
+                                />
                             </>
                         ) : (
                             <Typography className="speed-reading__popup-score" sx={{ fontSize: SIZE.body, color: COLORS.textSecondary }}>

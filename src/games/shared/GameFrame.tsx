@@ -4,6 +4,7 @@ import { Label } from "../../components/primitives";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
+import TimerEyeToggle from "./TimerEyeToggle";
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -247,8 +248,12 @@ export const GameHint: React.FC<GameHintProps> = ({ children, className }) => (
 export interface GameTimerProps {
     /** The clock, already formatted — "0:24", "18s", "3 / 20". The frame does no math. */
     value: React.ReactNode;
-    /** Track fill, 0…1. Clamped here, because a deadline clock can overshoot a tick past zero. */
-    fraction: number;
+    /**
+     * Track fill, 0…1. Clamped here, because a deadline clock can overshoot a tick past zero.
+     * Omit it for a clock with nothing to fill toward (a bare stopwatch): the track is then
+     * not drawn at all, rather than shown as an empty or misleading bar.
+     */
+    fraction?: number;
     /** Fill colour of the track. Defaults to ink, which is also what v2 draws for urgency. */
     fillColor?: string;
     /** Colour of the numerals. Defaults to the primary ink. */
@@ -264,6 +269,14 @@ export interface GameTimerProps {
      * is read mid-game, so the app keeps the motion. Opt-in per game.
      */
     pulse?: boolean;
+    /**
+     * Opt-in show/hide for the numerals, driven by the eye (`TimerEyeToggle`, shared
+     * with Word Search's HUD). Pass `onToggleValueShown` to draw the eye; the owner keeps
+     * the preference. Hidden numerals keep their height (`visibility`), so a toggle never
+     * reflows the board. Omit both for a clock with no eye.
+     */
+    valueShown?: boolean;
+    onToggleValueShown?: () => void;
     className?: string;
 }
 
@@ -285,6 +298,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     valueColor = COLORS.onSurface,
     dimmed = false,
     pulse = false,
+    valueShown = true,
+    onToggleValueShown,
     className,
 }) => {
     const hue = useGameSurfaceHue();
@@ -293,6 +308,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         className={className ? `game-timer ${className}` : "game-timer"}
         sx={{
             flexShrink: 0,
+            // Anchors the (absolutely positioned) eye, when there is one.
+            position: "relative",
             textAlign: "center",
             padding: "13px 15px 11px",
             // Same tinted ground and same accent hairline as the HUD strip — the two
@@ -314,6 +331,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
                 color: valueColor,
                 transition: "color 300ms linear",
                 animation: pulse ? "game-timer-pulse 1s ease-in-out infinite" : "none",
+                visibility: valueShown ? "visible" : "hidden",
                 "@keyframes game-timer-pulse": {
                     "0%, 100%": { opacity: 1 },
                     "50%": { opacity: 0.45 },
@@ -322,6 +340,10 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         >
             {value}
         </Box>
+        {onToggleValueShown && (
+            <TimerEyeToggle className="game-timer__toggle" shown={valueShown} onToggle={onToggleValueShown} />
+        )}
+        {fraction !== undefined && (
         <Box
             className="game-timer__track"
             sx={{
@@ -346,6 +368,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
                 }}
             />
         </Box>
+        )}
     </Box>
     );
 };

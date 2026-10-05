@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { userController, userMinutePointsController, winsController, velocityController, userProfileController } from '../dal/setup.js';
+import { userController, userMinutePointsController, winsController, velocityController, userProfileController, personalBestController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 import { isFeatureEnabled } from '../contracts/featureFlags.js';
 
@@ -55,6 +55,10 @@ router.get('/api/users/me/wins', authenticateToken, handle(winsController.listWi
 
 // Record one win: body { game, level }.
 router.post('/api/users/me/wins', authenticateToken, handle(winsController.recordWin, winsController));
+
+// Personal bests — one per (language, game, mode); docs/WRITING_PRACTICE_REWORK.md § 2a.
+router.get('/api/users/me/personal-bests', authenticateToken, handle(personalBestController.list, personalBestController));
+router.post('/api/users/me/personal-bests', authenticateToken, handle(personalBestController.submit, personalBestController));
 
 // Velocity — utcm band-steps climbed in the last 7 days, per language
 // (derived from the category_promotions log; see docs/VELOCITY.md).

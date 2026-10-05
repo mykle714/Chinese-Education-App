@@ -828,6 +828,20 @@ Medal thresholds are deliberately **not** re-tuned per mode: a 9-pair gold on
 Challenge is a real achievement and on Review it is an easier one, which is the point of
 having modes at all.
 
+### Personal best
+
+The most pairs matched in one 30s run (count, higher wins) is kept **per difficulty
+mode** — the mode key is the slug `mixed` / `review` / `challenge`
+(`baseModeConfig.mode` in `MatchSpeedPage`, i.e. the mode the hub launched). The
+`phase === "ended"` effect in `MatchSpeedPage` calls `recordPersonalBest(score)`;
+`playAgain` calls `resetPersonalBest`. The line renders in `MatchSpeedEndPopup` under the
+accuracy row. **Not recorded:** a challenge round (dealt from the round's set, ends on
+the scoreboard) and a `relaxed` run — a Review/Challenge run that widened to every bucket
+for lack of in-mode cards was an easier board than its mode's, so it must not set that
+mode's best.
+
+The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
+
 ---
 
 ## End popup and cleanup phase
@@ -1150,6 +1164,7 @@ it reads from.
 | Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedPage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedPage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool` (856-976), `fetchGameCandidates` (252-293), `GAME_FALLBACK_ORDER` (803) |
+| Personal best | `src/games/match-speed/MatchSpeedPage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
 | Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |

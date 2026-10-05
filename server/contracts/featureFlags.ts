@@ -190,6 +190,7 @@ export const GAME_FLAGS: Record<GameFlagId, boolean> = {
   'speed-reading': true,
   'hydra-bubbles': true,
   'memory-map': true,
+  'writing-grid': true,
 };
 
 /**

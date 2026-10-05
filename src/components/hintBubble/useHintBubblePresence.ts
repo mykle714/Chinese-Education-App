@@ -2,7 +2,7 @@
  * Mount/unmount choreography for the § 6z-4 hint bubbles: a delayed, staggered
  * grow-in, and a pop that keeps a bubble mounted until its animation finishes.
  *
- * LAYER: client feature hook. Pure presence bookkeeping — it knows nothing about
+ * LAYER: shared client hook (bk § 6z-4 + writing flp used-in bubbles, docs/WRITING_PRACTICE_REWORK.md § 3b). Pure presence bookkeeping — it knows nothing about
  * hints or chips beyond a stable key and a payload, and it does not animate; it
  * only tells each bubble which phase it is in and how long to wait before growing.
  *

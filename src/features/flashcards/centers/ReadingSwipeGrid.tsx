@@ -67,8 +67,8 @@ const FLICK_MIN_VELOCITY = 0.5;
 /** A press that travels less than this (px) on the open tile is a TAP, not a drag. */
 const TAP_SLOP_PX = 6;
 /** The swipe-hint triangle, px. */
-const ARROW_W = 16;
-const ARROW_H = 22;
+const ARROW_W = 19;
+const ARROW_H = 26;
 /** How long a tile takes to grow / shrink. */
 const GROW_MS = 200;
 
@@ -339,9 +339,10 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
                             );
                         })}
 
-                        {/* The swipe hint: a rounded orange triangle at each side of the open
-                            tile, pointing the way it can go, with an ink outline so it reads
-                            on any page ground and over neighbouring tiles. */}
+                        {/* The swipe hint: a rounded triangle at each side of the open tile,
+                            pointing the way it can go — red on the left (incorrect mark), green
+                            on the right (correct mark) — with an ink outline so it reads on any
+                            page ground and over neighbouring tiles. */}
                         {open && !open.leaving && (() => {
                             const tile = tiles.find((t) => t.key === open.key);
                             if (!tile) return null;
@@ -393,16 +394,19 @@ const roundedTrianglePath = (pts: [number, number][], r: number): string => {
     }).join(" ") + " Z";
 };
 
-/** Inset so the 1.5px outline sits fully inside the SVG box. */
-const ARROW_INSET = 1.5;
+/** Ink outline width of the swipe-hint triangle, px. */
+const ARROW_STROKE = 1;
+/** Inset so the outline sits fully inside the SVG box (half the stroke + a hair of slack). */
+const ARROW_INSET = ARROW_STROKE / 2 + 0.25;
 const ARROW_PATHS = {
     left: roundedTrianglePath([[ARROW_W - ARROW_INSET, ARROW_INSET], [ARROW_W - ARROW_INSET, ARROW_H - ARROW_INSET], [ARROW_INSET, ARROW_H / 2]], ARROW_CORNER_R),
     right: roundedTrianglePath([[ARROW_INSET, ARROW_INSET], [ARROW_INSET, ARROW_H - ARROW_INSET], [ARROW_W - ARROW_INSET, ARROW_H / 2]], ARROW_CORNER_R),
 } as const;
 
 /**
- * One swipe-hint triangle: a rounded-corner orange triangle with an ink outline, so it
- * reads on any page ground and over neighbouring tiles.
+ * One swipe-hint triangle: a rounded-corner triangle with an ink outline, so it reads on
+ * any page ground and over neighbouring tiles. Coloured by the mark its direction writes:
+ * left = incorrect (red), right = correct (green).
  */
 const SwipeTriangle: React.FC<{ direction: "left" | "right"; left: number; top: number }> = ({ direction, left, top }) => (
     <Box
@@ -416,11 +420,11 @@ const SwipeTriangle: React.FC<{ direction: "left" | "right"; left: number; top: 
     >
         <path
             d={ARROW_PATHS[direction]}
-            // Orange from the palette's MARK tier (the saturated one that still reads at
-            // this size), outlined in ink.
-            fill={COLORS.orgMk}
+            // The same MARK-tier green/red as the drag wash (`CORRECT_WASH` / `INCORRECT_WASH`),
+            // so the arrow, the wash and the mark it commits all agree. Outlined in ink.
+            fill={direction === "right" ? CORRECT_WASH : INCORRECT_WASH}
             stroke={COLORS.onSurface}
-            strokeWidth={1.5}
+            strokeWidth={ARROW_STROKE}
             strokeLinejoin="round"
         />
     </Box>

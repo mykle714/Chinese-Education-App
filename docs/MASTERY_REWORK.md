@@ -175,8 +175,10 @@ to hide, so the toggle changes nothing on the card and must not swap its track.
 
 **These four are the _only_ emitters.** No other game or feature emits Reading or
 Writing marks — Reading comes from pinyin-off Bubble Match, Word Search No-Pinyin,
-Speed Reading and Memory Map; Writing solely
-from the Practice Writing drill.
+Speed Reading and Memory Map; Writing from the Practice Writing drill, the Writing Grid
+game and the writing flp (`?bar=writing`). Since migration 170 writing marks land on each
+CHARACTER's own card and a word's writing bar is the average of its characters' — see
+[WRITING_PRACTICE_REWORK.md § 3a](./WRITING_PRACTICE_REWORK.md).
 
 **Scope: the mark/goal logic is language-agnostic** (nothing in the type/pbh math
 is zh-specific). But the only Reading/Writing emitters (Word Search, Practice

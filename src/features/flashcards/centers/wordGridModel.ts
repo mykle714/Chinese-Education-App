@@ -115,8 +115,8 @@ export function buildPool(
         const word = card.entryKey ?? "";
         const length = [...word].length;
         if (length < 1 || length > longest || !HAN_ONLY_RE.test(word)) continue;
-        const cooled = isBarOnCooldown(card.typedMarkHistory, bar, now);
-        const band = barCategory(card.typedMarkHistory, bar);
+        const cooled = isBarOnCooldown(card.typedMarkHistory, bar, now, card.writingMastery);
+        const band = barCategory(card.typedMarkHistory, bar, card.writingMastery);
         const list = pool.get(band) ?? [];
         list.push({ cardId: card.id, word, length, span: cellSpan(length), band, dd: resolveDisplayDefinition(card), entry: card, cooled });
         pool.set(band, list);

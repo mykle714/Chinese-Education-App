@@ -4,19 +4,20 @@
  * Reads/writes `writing_practice_completions` (migration 81). A completion is the
  * first successful Verify of a (userId, language, entryKey, level); repeats are
  * idempotent via the unique index. Stars for a character = number of completed
- * levels. See docs/HANDWRITING_RECOGNITION.md.
+ * levels. `level` is the level NUMBER 1..8 (migration 172), not the mode name.
+ * See docs/HANDWRITING_RECOGNITION.md, docs/WRITING_PRACTICE_REWORK.md § 1.
  *
  * Referenced by: server/server.ts (the /api/handwriting/completions routes).
  */
 import db from '../db.js';
+import { isWritingLevelNumber } from '../contracts/writingLevels.js';
 
-/** The four assistance levels; also the allow-list for incoming `level` values. */
-export const WRITING_PRACTICE_LEVELS = ['trace', 'walkthrough', 'memorize', 'test'] as const;
-export type WritingPracticeLevel = (typeof WRITING_PRACTICE_LEVELS)[number];
-
-export function isWritingPracticeLevel(value: unknown): value is WritingPracticeLevel {
-  return typeof value === 'string' && (WRITING_PRACTICE_LEVELS as readonly string[]).includes(value);
-}
+/**
+ * The eight assistance level NUMBERS (server/contracts/writingLevels.ts →
+ * WRITING_LEVELS) are the allow-list for incoming `level` values. Re-exported under
+ * the store's name.
+ */
+export const isWritingPracticeLevel = isWritingLevelNumber;
 
 /**
  * Records a first-time completion (idempotent). Returns the character's full set of
@@ -26,8 +27,8 @@ export async function recordCompletion(
   userId: string,
   language: string,
   entryKey: string,
-  level: WritingPracticeLevel,
-): Promise<string[]> {
+  level: number,
+): Promise<number[]> {
   const client = await db.getClient();
   try {
     await client.query(
@@ -41,7 +42,7 @@ export async function recordCompletion(
        WHERE "userId" = $1 AND language = $2 AND "entryKey" = $3`,
       [userId, language, entryKey],
     );
-    return rows.map((r) => r.level as string);
+    return rows.map((r) => Number(r.level));
   } finally {
     client.release();
   }
@@ -52,7 +53,7 @@ export async function getCompletedLevels(
   userId: string,
   language: string,
   entryKey: string,
-): Promise<string[]> {
+): Promise<number[]> {
   const client = await db.getClient();
   try {
     const { rows } = await client.query(
@@ -60,7 +61,7 @@ export async function getCompletedLevels(
        WHERE "userId" = $1 AND language = $2 AND "entryKey" = $3`,
       [userId, language, entryKey],
     );
-    return rows.map((r) => r.level as string);
+    return rows.map((r) => Number(r.level));
   } finally {
     client.release();
   }

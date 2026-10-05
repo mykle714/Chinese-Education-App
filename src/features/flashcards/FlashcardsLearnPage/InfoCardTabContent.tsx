@@ -71,7 +71,8 @@ export interface InfoCardTabContentProps {
     breakdownItems: BreakdownItem[];
     /** Precomputed by the panel so the strip and the body agree. */
     avail: TabAvailability;
-    showPinyin: boolean;
+    // No `showPinyin` prop: the eip is reference info and ALWAYS shows pinyin (2026-10-04).
+    // A study surface's pinyin toggle (the flp chip) must never reach it.
     showPinyinColor?: boolean;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
@@ -105,7 +106,6 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     currentEntry,
     breakdownItems,
     avail,
-    showPinyin,
     showPinyinColor = true,
     onBreakdownItemClick,
     onUsedInItemClick,
@@ -154,7 +154,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         className="mobile-demo-long-definition-text"
                         longDefinition={longDefinition}
                         longDefinitionParts={longDefinitionParts}
-                        showPinyin={showPinyin}
+                        showPinyin
                         showPinyinColor={showPinyinColor}
                         onSegmentOpen={onExampleSegmentClick}
                         aiGenerated={!grouped && !currentEntry?.definitionsApproved}
@@ -254,7 +254,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         sentences={currentEntry!.exampleSentences!}
                         vocabWord={currentEntry?.entryKey}
                         language={currentEntry?.language}
-                        showPinyin={showPinyin}
+                        showPinyin
                         showPinyinColor={showPinyinColor}
                         onSegmentOpen={onExampleSegmentClick}
                         onSpeakSentence={onSpeakSentence}
@@ -282,7 +282,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         character={currentEntry!.entryKey}
                         language={currentEntry!.language ?? 'zh'}
                         initialItems={usedInItems}
-                        showPinyin={showPinyin}
+                        showPinyin
                         showPinyinColor={showPinyinColor}
                         onItemClick={onUsedInItemClick}
                         rowClassName="mobile-demo-used-in-row-button"
@@ -300,7 +300,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                                 pinyin={item.pinyin}
                                 definition={item.definition}
                                 language={currentEntry?.language}
-                                showPinyin={showPinyin}
+                                showPinyin
                                 showPinyinColor={showPinyinColor}
                                 onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
                             />

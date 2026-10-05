@@ -6,6 +6,7 @@ import {
   masteredCollectionBar,
   type MasteryBarId,
 } from '../../contracts/wire.js';
+import { WRITING_MAX_CHARS } from '../../contracts/writingLevels.js';
 
 // Resolve the per-language `vocabentries` table (vet) name from a language code.
 // User vocab is split per language family (mirroring the det split, see CLAUDE.md):
@@ -158,10 +159,9 @@ export function vetDeckOrProvisionalClause(deckIdParam: string, alias = 've'): s
 //
 // This is the CORE bar — recognition + production. It is what every whole-card
 // question means: deck counts, the Review gate, level estimation, the mini-card
-// chip, the community Learning feed. Reading and writing have their own bars, which
-// no query bands in SQL because nothing selects or counts by them (the per-bar
-// Mastered collections filter on `compute_type_category`, below, since a
-// single-track bar IS that track's band).
+// chip, the community Learning feed. Reading and writing have their own bars
+// (`barCategoryExpr`, below): reading bands its own track; writing bands the averaged
+// per-character mastery (migration 170).
 //
 // Until migration 143 this was `compute_utcm_category(history, readingGoal,
 // writingGoal)` and every such query had to JOIN users for the flags — the
@@ -208,11 +208,37 @@ export function barCategoryExpr(bar: MasteryBarId, alias = 've'): string {
     case 'reading':
       return typeCategoryExpr(`'reading'`, alias);
     case 'writing':
-      return typeCategoryExpr(`'writing'`, alias);
+      // Banded off the AVERAGED writing mastery, not the row's own track — a
+      // multi-character word's own writing track is clock-only (migration 170).
+      return `compute_writing_category(${alias}."userId", ${alias}."entryKey", ${alias}."typedMarkHistory")`;
     default:
       return coreCategoryExpr(alias);
   }
 }
+
+/**
+ * In-query WRITING mastery (migration 170, docs/WRITING_PRACTICE_REWORK.md § 3a): a
+ * single character's own writing positive count, or for a 2+ character word the
+ * average of its characters' single-character rows. It is computed on read and never
+ * stored, so EVERY vet read that hands a card to a caller must select it — splice
+ * `WRITING_MASTERY_SELECT` next to `ve.*`. A read that forgets it is not wrong for a
+ * single character, but shows a multi-character word's writing bar as 0 (its own track
+ * is clock-only and `positiveCount` skips those marks).
+ *
+ * Spanish rows get 0 for any multi-letter word (the average is taken over
+ * `vocabentries_zh`); nothing writes Spanish writing marks, so that is moot.
+ */
+export function writingMasteryExpr(alias = 've'): string {
+  return `compute_writing_mastery(${alias}."userId", ${alias}."entryKey", ${alias}."typedMarkHistory")`;
+}
+export const WRITING_MASTERY_SELECT = `${writingMasteryExpr()} AS "writingMastery"`;
+
+/**
+ * The words a WRITING flp can deal (docs/WRITING_PRACTICE_REWORK.md § 3): 1–4 Han
+ * characters (`WRITING_MAX_CHARS`), the practice surface's 2×2 limit. Alias `ve`.
+ */
+export const WRITING_FLP_WORD_CLAUSE =
+  `AND char_length(ve."entryKey") BETWEEN 1 AND ${WRITING_MAX_CHARS} AND ve."entryKey" ~ '^[\u3400-\u9fff]+$'`;
 
 /**
  * WHERE fragment for "this card is Mastered in the given bar" — the membership test

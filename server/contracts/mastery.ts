@@ -76,13 +76,28 @@ export const PBH_MAX_TERM_CAP = 6;
 
 /**
  * positive(track): count of isCorrect marks among a type's (<=8) marks. Empty window
- * slots count as negative (they simply don't add).
+ * slots count as negative (they simply don't add). A word's clock-only writing marks
+ * (`ReviewMark.clockOnly`, migration 170) are never mastery and are skipped — the same
+ * rule as SQL `mastery_positive_count`.
  */
 export function positiveCount(track: ReviewMark[] | undefined): number {
   if (!Array.isArray(track)) return 0;
   let n = 0;
-  for (const m of track) if (m?.isCorrect) n++;
+  for (const m of track) if (m?.isCorrect && !m.clockOnly) n++;
   return n;
+}
+
+/**
+ * Writing mastery of a word from its characters' single-character writing histories
+ * (docs/WRITING_PRACTICE_REWORK.md § 3a): the AVERAGE of each character's writing
+ * positive count, a character with no row counting 0. Mirrors SQL
+ * `compute_writing_mastery` (migration 170) for 2+ characters; a single character is
+ * just its own count.
+ */
+export function writingMasteryFromChars(charHistories: (TypedMarkHistory | undefined | null)[]): number {
+  if (charHistories.length === 0) return 0;
+  const sum = charHistories.reduce((acc, h) => acc + positiveCount(h?.writing), 0);
+  return sum / charHistories.length;
 }
 
 /** Positive counts for ALL four types (regardless of goals) — used by the stacked bar. */
@@ -205,18 +220,26 @@ export function isFlpOnlyMark(history: TypedMarkHistory | undefined, type: MarkT
  */
 export function barProgressBarHeight(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  bar: MasteryBarId,
+  /**
+   * The card's computed writing mastery (`VocabEntryBase.writingMastery`, migration
+   * 170). When given, it IS the writing bar's height — required for a multi-character
+   * word, whose own writing track is clock-only. Ignored for the other bars.
+   */
+  writingMastery?: number | null
 ): number {
   if (bar === 'core') return coreProgressBarHeight(history);
+  if (bar === 'writing' && typeof writingMastery === 'number') return writingMastery;
   return positiveCount((history ?? {})[bar]);
 }
 
-/** Any bar's utcm band. */
+/** Any bar's utcm band. `writingMastery` as in `barProgressBarHeight`. */
 export function barCategory(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  bar: MasteryBarId,
+  writingMastery?: number | null
 ): FlashcardCategory {
-  return categoryForPbh(barProgressBarHeight(history, bar));
+  return categoryForPbh(barProgressBarHeight(history, bar, writingMastery));
 }
 
 /** Band a pbh value into a utcm category. */
@@ -357,10 +380,13 @@ const BAR_TYPE_ORDER: readonly MarkType[] = [
 /** Model for ONE bar, whether or not its goal is set. */
 export function masteryBar(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  bar: MasteryBarId,
+  writingMastery?: number | null
 ): MasteryBar {
-  const pbh = barProgressBarHeight(history, bar);
+  const pbh = barProgressBarHeight(history, bar, writingMastery);
   const positives = positivesByType(history);
+  // The writing bar's one segment carries the (possibly averaged) height itself.
+  if (typeof writingMastery === 'number') positives.writing = writingMastery;
   // Composition is over this bar's OWN tracks: the core bar splits its fill between
   // recognition and production in the ratio of their positives, and a single-track
   // bar is one solid segment. (Before migration 143 one bar showed all four types,
@@ -384,9 +410,10 @@ export function masteryBar(
 /** Models for every bar this account sees, in display order (core first). */
 export function masteryBars(
   history: TypedMarkHistory | undefined,
-  goals: MasteryGoals
+  goals: MasteryGoals,
+  writingMastery?: number | null
 ): MasteryBar[] {
-  return activeBars(goals).map((bar) => masteryBar(history, bar));
+  return activeBars(goals).map((bar) => masteryBar(history, bar, writingMastery));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

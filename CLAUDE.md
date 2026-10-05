@@ -40,6 +40,12 @@ nme = night market editor
 nms = night market sandbox
 bk = beginner keyboard
 shp = SteppedHelpPopup
+rc = reading center
+wc = writing center
+rflp = reading flp
+wflp = writing flp
+rg = reading games
+wg = writing games
 
 
 ## Terminology: "Learn Now" cards

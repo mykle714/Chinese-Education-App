@@ -44,7 +44,9 @@ export type MarkSurface =
     | "word-search"
     | "practice-writing"
     // The Reading Center's word swipe grid (docs/READING_WRITING_CENTERS.md).
-    | "reading-center";
+    | "reading-center"
+    // The Writing Center's Writing Grid game (docs/WRITING_PRACTICE_REWORK.md § 2).
+    | "writing-grid";
 
 /** A single review mark. `mode` is flp-only — it caps the replacement card's category. */
 export interface MarkFlashcardRequest {
@@ -95,6 +97,13 @@ export interface MarkFlashcardRequest {
      * under-counts the surface it was meant to measure. Nothing would ever fail.
      */
     surface?: MarkSurface;
+    /**
+     * REQUIRED for `type: "writing"` (docs/WRITING_PRACTICE_REWORK.md § 3a): the level
+     * the word was written at and each character's result. The server fans the result
+     * out onto the characters' own cards behind the anti-farming gate; `isCorrect`
+     * should be every(perChar).
+     */
+    writing?: { level: number; perChar: boolean[] };
 }
 
 export interface MarkFlashcardResponse {
@@ -145,6 +154,7 @@ export async function markFlashcard(
         deckId: request.deckId,
         collection: request.collection,
         surface: request.surface,
+        writing: request.writing,
     });
 
     // A SUPPRESSED mark is a legitimate success with no timestamp (see the field's

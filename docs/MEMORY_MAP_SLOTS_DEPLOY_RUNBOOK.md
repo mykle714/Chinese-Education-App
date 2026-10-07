@@ -3,7 +3,9 @@
 > **TEMPORARY.** Delete this file once PPE is verified (step 5 passes and someone has
 > opened Memory Map on PPE and seen a full, tilted map).
 >
-> **Status: NOT YET DEPLOYED.** Applied on DEV only (2026-10-06). Do not trust this line
+> **Status: DEPLOYED to PPE 2026-10-06** (with 174, one `migrate.sh` pass, rebuild immediately
+> after). Every step-5 schema check passed and both slot tables were empty. Still open: someone
+> must open Memory Map on PPE and see a full, tilted 50-tile map. Do not trust this line
 > on its own — derive pending work from `schema_migrations` and `migrate.sh --dry-run`.
 
 Feature doc: [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1–§ 2.4, § 3.6, § 8.

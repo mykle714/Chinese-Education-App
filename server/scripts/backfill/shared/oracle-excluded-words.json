@@ -150,6 +150,16 @@
       "word1": "口射",
       "reason": "explicit-sexual — only cedict sense is 'to ejaculate inside somebody's mouth'",
       "droppedAt": "2026-10-01T09:50:00Z"
+    },
+    {
+      "word1": "打飞机",
+      "reason": "explicit-sexual: only sense in det is '(slang) (of a male) to masturbate'",
+      "droppedAt": "2026-10-05"
+    },
+    {
+      "word1": "土共",
+      "reason": "slur: primary sense is '(coll.) commie (derog., used by the KMT)'; other senses are partisan self-label / obscure abbreviations",
+      "droppedAt": "2026-10-06T17:17:55Z"
     }
   ],
   "es": []

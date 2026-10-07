@@ -1,10 +1,12 @@
 import { alpha } from "@mui/material/styles";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Box, IconButton, useTheme } from "@mui/material";
 import CloseFullscreenRoundedIcon from "@mui/icons-material/CloseFullscreenRounded";
 import OpenInFullRoundedIcon from "@mui/icons-material/OpenInFullRounded";
 import { SHADOW } from "../theme/shadows";
 import { COLORS } from "../theme/colors";
+import { useScreenOverlayHost } from "../hooks/useScreenOverlayHost";
 
 // Resting visual constants for the minimized "tiny square" puck. Measured in
 // px so the collapse transform can land the card exactly on top of the square.
@@ -41,17 +43,44 @@ export interface MinimizablePopupProps {
     /** Icon/text color inside the puck and on the minimize button. */
     accentContrast?: string;
     /**
-     * `absolute` (default) pins the scrim to the nearest positioned ancestor — what a
-     * game stage wants, so the popup stays inside the play field. `fixed` covers the
-     * viewport, for pages with no positioned stage of their own (flp).
+     * Stacking order of the scrim, among the frame-level overlays. Default 200 — above
+     * the footer bar (100), below the challenge scoreboard (1200) and modal sheets.
+     * Raise it to stack over another popup.
      */
-    positioning?: "absolute" | "fixed";
-    /** Stacking order of the scrim. Default 200; raise it to stack over another popup. */
     zIndex?: number;
     /** Scrim fill while open. Lighten it when stacking over an already-dimmed popup. */
     scrimColor?: string;
+    /**
+     * CSS selector for the element whose corner the puck docks into — the closest
+     * ancestor of the popup that matches, else the first match inside the popup's
+     * parent (the phone frame, since the scrim is portaled there). The scrim still
+     * covers the whole screen; only the puck (and the card's collapse target) moves.
+     * Omitted, or no match, docks to the scrim's own corner — the SCREEN's corner.
+     * GameEndPopup and ProvisionalSortOffer pass `.game-frame` so the puck sits in the
+     * game panel's corner rather than over the header's back arrow.
+     */
+    puckAnchorSelector?: string;
+    /**
+     * Render the scrim IN PLACE instead of portaling it to the phone frame. Only for a
+     * caller whose positioned container already covers the entire screen AND must carry
+     * the popup with it — Speed Reading's sideways stage, which rotates its whole
+     * contents (header included); a frame-hosted popup would draw upright over a
+     * sideways game. Every other caller leaves this off.
+     */
+    inPlace?: boolean;
     /** Card body (title / message / actions) supplied by the caller. */
     children: React.ReactNode;
+}
+
+/** Puck centre, px from the scrim's top-left corner. */
+interface PuckDock {
+    x: number;
+    y: number;
+}
+
+/** The anchor element for `selector`: an enclosing match first, else one inside the parent. */
+function findPuckAnchor(scrim: HTMLElement, selector: string): HTMLElement | null {
+    return scrim.closest<HTMLElement>(selector) ?? scrim.parentElement?.querySelector<HTMLElement>(selector) ?? null;
 }
 
 /**
@@ -66,6 +95,18 @@ export interface MinimizablePopupProps {
  * card's center onto the corner puck. As the card scales away and fades out, the
  * real square puck fades in — so it reads as the popup shrinking into a tiny square
  * that can be clicked to bring the menu back.
+ *
+ * The puck docks into the scrim's corner by default, or into the corner of
+ * `puckAnchorSelector`'s element (GameEndPopup: the game frame) when one is given.
+ *
+ * ⚠️ THE SCRIM COVERS THE ENTIRE SCREEN. It is written in place but PORTALED to the
+ * phone frame (`useScreenOverlayHost`, src/hooks/useScreenOverlayHost.ts) and pinned
+ * `absolute; inset: 0` there, so it dims the status band, the page header and the footer
+ * bar along with the page. It used to take a `positioning` prop whose `absolute` default
+ * dimmed only the nearest positioned ancestor — in five games that was the content box
+ * under the header, which left the back arrow and title lit above the dim; `fixed` was
+ * sealed inside the transformed page Surface, under the footer (scp's done popup).
+ * Rule: src/components/overlayHost.ts § "THE RULE FOR A DIM".
  *
  * Two of these can be on screen at once (a game's end popup in the top-right, the
  * provisional sort offer in the top-left); `corner`, `puckColor` and `zIndex` are
@@ -82,9 +123,10 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     corner = "top-right",
     puckColor,
     accentContrast,
-    positioning = "absolute",
     zIndex = 200,
     scrimColor = COLORS.scrim,
+    puckAnchorSelector,
+    inPlace = false,
     children,
 }) => {
     const theme = useTheme();
@@ -93,6 +135,8 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     const puckBg = puckColor ?? fc.flashCard;
     const puckFg = accentContrast ?? fc.onSurface;
 
+    // Where the scrim is portaled: the phone frame, so the dim covers the whole screen.
+    const { anchorRef, host } = useScreenOverlayHost(!inPlace);
     const scrimRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     // Transform that collapses the centered card onto the corner puck. Computed
@@ -106,6 +150,12 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     // Measure the scrim + natural card size and derive the collapse transform.
     // offsetWidth/Height are layout sizes (unaffected by the transform), so this
     // stays correct even while the card is mid-collapse.
+    // Where the puck docks (its centre in scrim coordinates). Null until measured; the
+    // puck then falls back to the scrim's own corner.
+    const [dock, setDock] = useState<PuckDock | null>(null);
+    // The anchor being observed, so a resize of the game frame re-measures too.
+    const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+
     const measure = useCallback(() => {
         const scrim = scrimRef.current;
         const card = cardRef.current;
@@ -116,34 +166,50 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
         const cardH = card.offsetHeight;
         // Scale the card down so its larger side matches the puck size.
         const scale = SQUARE_SIZE / Math.max(cardW, cardH);
+        // The box the puck docks into, in scrim coordinates: the anchor's rect when there
+        // is one, else the scrim itself. Rects are divided by the scrim's rendered/layout
+        // ratio so an ancestor transform (mdp's scaled phone frame) cancels out.
+        const anchor = puckAnchorSelector ? findPuckAnchor(scrim, puckAnchorSelector) : null;
+        setAnchorEl(anchor);
+        let box = { left: 0, top: 0, width: scrimW, height: scrimH };
+        if (anchor) {
+            const s = scrim.getBoundingClientRect();
+            const a = anchor.getBoundingClientRect();
+            const ratio = s.width > 0 ? scrimW / s.width : 1;
+            box = { left: (a.left - s.left) * ratio, top: (a.top - s.top) * ratio, width: a.width * ratio, height: a.height * ratio };
+        }
         // Puck center, measured from the scrim's top-left corner.
         const targetX =
             corner === "top-left"
-                ? SQUARE_MARGIN + SQUARE_SIZE / 2
-                : scrimW - SQUARE_MARGIN - SQUARE_SIZE / 2;
-        const targetY = SQUARE_MARGIN + SQUARE_SIZE / 2;
+                ? box.left + SQUARE_MARGIN + SQUARE_SIZE / 2
+                : box.left + box.width - SQUARE_MARGIN - SQUARE_SIZE / 2;
+        const targetY = box.top + SQUARE_MARGIN + SQUARE_SIZE / 2;
+        setDock({ x: targetX, y: targetY });
         // Card center currently sits at the scrim center (flex-centered). The
         // scale uses transform-origin: center, so the center is the fixed point
         // we translate from.
         const dx = targetX - scrimW / 2;
         const dy = targetY - scrimH / 2;
         setCollapseTransform(`translate(${dx}px, ${dy}px) scale(${scale})`);
-    }, [corner]);
+    }, [corner, puckAnchorSelector]);
 
+    // `host` is a dep: the scrim mounts one commit after this component (once the host
+    // resolves), so the first run finds no scrim to measure or observe.
     useLayoutEffect(() => {
         measure();
         const ro = new ResizeObserver(measure);
         if (scrimRef.current) ro.observe(scrimRef.current);
         if (cardRef.current) ro.observe(cardRef.current);
+        if (anchorEl) ro.observe(anchorEl);
         return () => ro.disconnect();
-    }, [measure]);
+    }, [measure, anchorEl, host]);
 
-    return (
+    const scrim = (
         <Box
             ref={scrimRef}
             className={`${classPrefix}__popup-scrim`}
             sx={{
-                position: positioning,
+                position: "absolute",
                 inset: 0,
                 display: "flex",
                 alignItems: "center",
@@ -228,12 +294,17 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                     onPointerDown={(e) => e.stopPropagation()}
                     sx={{
                         position: "absolute",
-                        // Center the pad on the intended square location so the card's
-                        // collapse transform still lands exactly on the visual square.
-                        top: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2,
-                        ...(corner === "top-left"
-                            ? { left: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2 }
-                            : { right: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2 }),
+                        // Center the pad on the measured dock (the same point the card's
+                        // collapse transform flies to), so it lands exactly on the square.
+                        // Before the first measure, fall back to the scrim's own corner.
+                        ...(dock
+                            ? { top: dock.y - PUCK_HIT / 2, left: dock.x - PUCK_HIT / 2 }
+                            : {
+                                  top: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2,
+                                  ...(corner === "top-left"
+                                      ? { left: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2 }
+                                      : { right: SQUARE_MARGIN - (PUCK_HIT - SQUARE_SIZE) / 2 }),
+                              }),
                         width: PUCK_HIT,
                         height: PUCK_HIT,
                         display: "flex",
@@ -267,6 +338,16 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                 </Box>
             )}
         </Box>
+    );
+
+    if (inPlace) return scrim;
+
+    return (
+        <>
+            {/* Never painted — the in-place point the frame host is found from. */}
+            <span ref={anchorRef} className={`${classPrefix}__popup-anchor`} hidden />
+            {host && createPortal(scrim, host)}
+        </>
     );
 };
 

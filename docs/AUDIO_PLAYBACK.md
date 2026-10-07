@@ -21,7 +21,7 @@ Two ways in, one setting:
   subtitles have room to say "pauses music" and "follows the silent switch").
 - **`AudioModeChip`** — one header chip that CHANGES them mid-study: each tap
   advances off → passthrough → media → off. Rendered on the flp, scp, Bubble Match,
-  Hydra Bubbles, Match Speed and Word Search headers.
+  Hydra Bubbles, Match Speed, Word Search, Bucket Drop and Memory Map headers.
 
 Both go through `useTTSSettings`, so they cannot disagree, and both take their order
 from `AUDIO_MODE_ORDER` — the picker lists it, the chip cycles it. Three states:
@@ -54,7 +54,7 @@ off → on round trip returns to the route the user picked.
 `src/components/AudioModeChip.tsx` is self-contained — it reads the setting itself
 rather than taking value/onChange props, so no surface can drift in label, icon or
 cycle order, and adding it to a new header is one tag. A surface that must hide it
-(Bubble Match on a reading run, where hearing the word hands over the pronunciation
+(Bubble Match and Bucket Drop on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
 It reads **`useTTSSettings`, not `useTTS`**. The chip never plays anything, and a
@@ -76,6 +76,17 @@ persisted contracts and do not move:
 - **`default`, not `passthrough`.** It *is* the default route
   (`DEFAULT_SETTINGS.route`), and "passthrough" names the iOS audio-session
   mechanism — accurate, but nothing a learner can act on. The subtitle explains.
+
+**Skin: mid blue.** The two audible states (`default`, `media`) render as a
+`COLORS.bluM` fill (`RAMP.blu.mid`) with ink text and glyph, and **no outline**. That is a
+deliberate exception to the buttons-and-cards `--line2` outline rule (design call,
+2026-10-06). `mute`
+stays the grey header-chip pill. The chip passes `tone="blu"` to `HeaderCycleChip`, and
+every other header toggle keeps the shared ink inversion. On a game ground,
+`gameSurfaceSx` re-inks active header chips but deliberately skips the blu tone
+(`.page-header__toggle--blu`), so the chip looks the same on every surface.
+*Code:* `src/components/AudioModeChip.tsx`, `src/components/PageHeader.tsx` →
+`HeaderCycleChip` (`tone`), `src/games/shared/gameSurface.ts` → `gameSurfaceSx`.
 
 ⚠️ **Verify every glyph name against Material Symbols.** `multitrack_audio` was the
 first choice for `media`; it is a Material *Icons* name absent from the Symbols face,
@@ -311,7 +322,8 @@ whole contract:
 
 The gate lives inside the hook, so a call site never re-checks the setting.
 Automatic sites today: the flp card-flip narration, the scp on-deck pack
-sequence, Word Search's find/replay plays, Memory Map's answer feedback, Speed
+sequence, Word Search's find/replay plays, Memory Map's answer feedback and per-prompt word
+(`MemoryMapPage` — the prompt waits for the answer narration to end rather than cancelling it), Speed
 Reading's per-round clue (`SpeedReadingPage` → `autoSpeak`, distinct from the
 manual `speak` its speaker button uses), and the bubble games' reveal. **A
 game-tile tap counts as automatic**, not manual — only a dedicated speaker button
@@ -680,7 +692,9 @@ and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Wo
 Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
 blue matches and review rungs, so it needed a mid-play mute like the rest) and
 Immersive World (`IWPlayPage`'s `rightContent`, added 2026-09-09 — a scene speaks its
-NPC lines aloud, so it needs the same mid-play mute). The two
+NPC lines aloud, so it needs the same mid-play mute) and Bucket Drop
+(`BucketDropPage`'s `rightContent`, added 2026-10-06 — it narrates the picked-up word,
+and like Bubble Match hides the chip on a reading run). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
 on 2026-08-28, so the chip means the same thing and sits in the same place
 everywhere. The *setting* was unified; the affordances were made consistent.

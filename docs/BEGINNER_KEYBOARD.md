@@ -555,7 +555,7 @@ this:
 
 | Layer | Piece | Reuse or new |
 |---|---|---|
-| client component | drawing surface | **reuse** `WritingCanvas.tsx` — already emits canonical `Ink`, respects the app's `touchAction` rules; draws with the shared velocity-based width (fast = thick, desktop/mobile profiles — [HANDWRITING_RECOGNITION.md § capture](./HANDWRITING_RECOGNITION.md#reading-in-user-writing-inputs-capture), `velocityWidth.ts`), render-only so matching is unaffected |
+| client component | drawing surface | **reuse** `WritingCanvas.tsx` — already emits canonical `Ink`, respects the app's `touchAction` rules; draws a uniform 9 px line (`strokeWidth={9}` — [HANDWRITING_RECOGNITION.md § capture](./HANDWRITING_RECOGNITION.md#reading-in-user-writing-inputs-capture)), render-only so matching is unaffected |
 | client util | component matcher (ink → ranked components) | **new** — pure geometry over `hanzi-writer-data` medians |
 | client util | template loader | **reuse** `loadCharData.ts` (⚠️ its pinned CDN fallback is the *normal* path in production builds) |
 | client feature | composition buffer, submit/clear, candidate list | **new**, under `src/features/` |
@@ -3047,7 +3047,7 @@ page's layout flow and cannot shrink one by existing. Most pages scroll, and a
 scrolling page handles an occluded bottom correctly on its own.
 
 ⚠️ **Frame level, never the nearest page surface — or the footer covers it.**
-`nearestOverlayHost` (what sheets use) stops at a transformed page Surface
+`nearestOverlayHost` (what sheets used until 2026-10-06; they now host at the frame too) stops at a transformed page Surface
 (`NodePage`'s page-slide), which is its own stacking context: the keyboard's
 `zIndex: 1300` was sealed inside it and the frame-level footer bar
 (`FooterPresenter`, `zIndex: 100`) painted over the keyboard on most pages

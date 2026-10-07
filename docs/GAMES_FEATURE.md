@@ -6,7 +6,7 @@ games; each game lives as its own page linked from the hub.
 
 ## Status
 
-- 🚩 **Every game sits behind its own feature flag (2026-09-19), and all six are ON.**
+- 🚩 **Every game sits behind its own feature flag (2026-09-19), and all eight are ON.**
   `GAME_FLAGS` in `server/contracts/featureFlags.ts`, keyed by the game's own `gameId` —
   see [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 3. The client chokepoint is a single filter
   at `GAME_REGISTRY` in `src/games/registry.ts`, so switching a game off removes it from
@@ -15,16 +15,17 @@ games; each game lives as its own page linked from the hub.
   hidden hub tile does not stop a bookmarked page from POSTing save state. The record is
   typed against `KNOWN_GAME_IDS`, so **adding a game is a compile error until it is given a
   flag**.
-- **Study Challenge rounds — live since 2026-08-22.** Four of the six games
-  (Bubble Match, Match Speed, Hydra Bubbles, Word Search-Pinyin) can be drawn as a
-  scored round of a weekly head-to-head. The contract they must honour is
+- **Study Challenge rounds — live since 2026-08-22.** Five games
+  (Bubble Match, Match Speed, Hydra Bubbles, Word Search-Pinyin, Bucket Drop-Pinyin) can be
+  drawn as a scored round of a weekly head-to-head. The contract they must honour is
   [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract);
   the feature is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md).
 - Hub page (`/games`) — shipped. Renders `GAME_REGISTRY` through the shared
   `Bento`/`BentoTile` primitive ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
   deleted 2026-08-21); the empty state is now only a fallback for when every game is gated
   out (public/demo accounts, a language gate, or every `GAME_FLAGS` entry off).
-- Games — **six shipped**, all registered in `src/games/registry.ts`:
+- Games — **eight shipped**, all registered in `src/games/registry.ts` (Memory Map is the
+  bullet below this list; Writing Grid is [WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2):
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
@@ -47,10 +48,19 @@ games; each game lives as its own page linked from the hub.
     pair spawns 1 or 3 new bubbles depending on the cleared word's payout **tier**,
     so the board grows on its own and the only way to hold it back is to take on the
     words you know least well. One wrong match ends the run.
+  - **Bucket Drop** (`/games/bucket-drop`) — see [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md).
+    **BUILT 2026-10-06, no migration.** A drag-and-drop **stopwatch**: the perimeter of the
+    play panel is lined with grey square keycap-hole buckets each holding an English dd, the
+    run's 20 foreign words are dealt as a pile in the middle, and the player drags any word
+    into its meaning's bucket (or leaves it anywhere) — medals by finishing time. **Moded** like Word Search:
+    the hub tile is Pinyin (recognition, challenge-eligible), the Reading Center card is
+    No Pinyin (reading, zh only).
 
   Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
   Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
-  per-frame animation, just CSS transitions and intervals). **There is no Pixi game
+  per-frame animation, just CSS transitions and intervals). Bucket Drop is **DOM +
+  pointer events**: the drag writes `style.transform` directly and the drop animations are
+  Web Animations API one-shots, with no loop at all. **There is no Pixi game
   runtime any more** — the never-used `GameStage` / `GamePage` / `useGameActors`
   scaffolding was deleted (commit `70dc441`); see
   [§ Layer 2](#layer-2--runtime-srcgamesruntime).
@@ -70,24 +80,25 @@ Memory Map is the first game that is not disposable — its map outlives every r
 almost everything below follows from that one difference:
 
 - **Durable per-game server state.** The first game with tables of its own:
-  `memory_map_placements_zh` / `memory_map_placements_es` (migration 151). Split per
-  language to mirror the vet split, which is what buys a real
-  `REFERENCES vocabentries_*(id) ON DELETE CASCADE` — so an orphaned placement cannot
-  exist and the feature needs no sweep. Word Search's board, by contrast, is
-  localStorage only, because a board is disposable and a map is not.
-- **Selection on `vetSortedClause()` instead of `vetPlayableClause()`.** Every other
-  game pool is PLAYABLE — a lent provisional card is fine for one round. Memory Map's
-  selection creates a durable artifact, so a borrowed word must not homestead a
-  permanent spot. This is the only game that draws from the sorted deck alone.
+  `memory_map_slots_zh` / `memory_map_slots_es` (migration 151 as
+  `memory_map_placements_*`, reshaped into a slot tree and renamed by migration 173).
+  Split per language to mirror the vet split, which is what buys a real
+  `REFERENCES vocabentries_*(id)` (now `ON DELETE SET NULL` — a deleted card empties its
+  slot). Word Search's board, by contrast, is localStorage only, because a board is
+  disposable and a map is not.
+- **A client that derives positions from a shared server module.** No coordinates are
+  stored: the client lays the slot tree out with the same pure `layoutMap`
+  (`server/services/memoryMapLayout.ts`) the server spawned it with.
 - **A shared, track-parameterized queue ranking.** `rankFlpEligible`'s logic moved out
   of `OnDeckVocabService` into `server/services/cardQueueRanking.ts`, a pure module
   parameterized on which mark types count as ready and which utcm category supplies the
   cooldown window. The flp's behaviour is unchanged; Memory Map ranks the same way on
   the **reading** track. Any future game wanting "longest-waiting first, never-marked
   last" on its own track should use this rather than copy it.
-- **A game that declares NO card baseline.** No entry in `CARD_BASELINES`, no
-  provisional top-up. Nothing blocks on card count because nothing can — a small library
-  is simply a small map, and an empty one gets an empty state pointing at Discover.
+- **A game that lends without a `CARD_BASELINES` entry.** Since 2026-10-06 the map is
+  always filled to 50 — rested cards, then cooling ones, then lent ones by name
+  (MEMORY_MAP_GAME.md § 2.1). Originally it declared no baseline at all ("a small library
+  is a small map"); that was overruled.
 - **A game that opts out of the collection selector.** The hub HIDES the Memory Map row
   whenever the selected collection is anything but All Cards, rather than showing a row
   that would silently ignore it. Same hide-don't-block principle as the language gate.
@@ -96,7 +107,7 @@ almost everything below follows from that one difference:
   this game has no clock, so the overlay would protect nothing. Recorded so it is not
   later "fixed" by an audit against the framework checklist.
 - **A second pan/zoom surface** after the night market — and the first built as plain
-  DOM + a CSS transform rather than Pixi. The 100-word cap
+  DOM + a CSS transform rather than Pixi. The 49-word cap
   (`MEMORY_MAP_CAPACITY`) is what makes that safe: at that size there is nothing to cull.
 
 ### What Speed Reading introduced
@@ -113,7 +124,7 @@ which is now shared:
   `recognition` back when Bubble Match was its only caller. A game's pool must be
   bucketed by, and cooled on, the track it actually MARKS; Speed Reading marks
   **reading**. Bubble Match's call site passes the track it locked for the run
-  (`buildPoolQuery(lockRunTrack())` — recognition, or reading with pinyin off; see
+  (`fetchGamePool({ markType: lockRunTrack(), … })` — recognition, or reading with pinyin off; see
   § "Bubble Match: pinyin picks the track"), so no caller relies on the default.
 - **`GlyphSvg`** (`src/components/handwriting/`) — a static glyph renderer, the
   second consumer of the `hanzi-writer-data` stroke corpus after the Practice
@@ -251,18 +262,20 @@ tapped — footer-tab nav does not animate).
 
 > Code: `src/games/runtime/gameExit.ts` → `useGameExit` / `GAMES_HUB_EXIT`,
 > `src/games/runtime/useGameBack.ts`, `GameDef.hiddenFromHub` (`src/games/types.ts`),
-> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` → `READING_CENTER_EXIT`.
+> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` → `readingCenterExit`.
 
 The Reading Center's games carousel ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md))
 launches the reading-track variants of three games: Bubble Match pinned to pinyin-off,
 Word Search **No Pinyin**, and **Speed Reading**. Since 2026-10-03 those variants are
-launched **only** from there. The hub hides Speed Reading (`hiddenFromHub: true`),
+launched **only** from there. **Memory Map** (reading by construction) joined the belt on
+2026-10-06 and, the same day, left the hub — it now launches only from the carousel. The hub hides Speed Reading and Memory Map (`hiddenFromHub: true`),
 offers Word Search's Pinyin mode only, and pins Bubble Match to Recognition.
 
 **The Writing Center is a third entry point.** The **Writing Grid** (`writing-grid`,
-`hiddenFromHub`, zh only) launches only from the Writing Center's game card
-(`src/features/flashcards/centers/WritingGridLauncher.tsx`), whose launch carries
-`exitTo` the Writing Center. The game itself: [WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md).
+`hiddenFromHub`, zh only) launches only from the Writing Center's games belt
+(`src/features/flashcards/centers/WritingGamesCarousel.tsx`), whose launch carries
+`exitTo` the Writing Center. The belt's other card, the Writing Notebook, is not a game
+([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)). The game itself: [WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md).
 Every game but Bubble Match and Memory Map also keeps a per-mode **personal best**
 (§ 2a there).
 
@@ -295,8 +308,11 @@ Every game is ONE entity, **`GameCard`** (`src/games/shared/GameCard.tsx`), in t
 A card's options are `GameCardOption`s of two kinds, both drawn on the shared
 `GameOptionTile` shell (radius, padding, 62px floor, outline, `OPTION_TITLE_SX`):
 `kind: "level"` (hued, ⭐ when cleared this week) and `kind: "resume"` (a caller node —
-Word Search's `WordSearchResumeTile`). Every option takes one slot, `SLOT_FLEX`, one
-Bubble Match level's width. Card data comes from `src/games/shared/gameCards.ts`
+Word Search's `WordSearchResumeTile`). The shell takes an optional small ghost `glyph` —
+the card ghost's ink/opacity/bleed scaled to the tile, `OPTION_GHOST` — worn by level
+tiles and the resume tile alike. Options are measured in slots of one Bubble Match level's
+width (`slotFlex(span)`, which also swallows the gaps a multi-slot option covers): a level
+takes one, a resume option `slots` (Word Search's takes 2). Card data comes from `src/games/shared/gameCards.ts`
 (`gameCardBase`, `buildPlayCard`, `buildTileCard`) and the per-game builders that extend
 them. Visibility gating shared with the Reading Center carousel is
 `isGameAvailable` (`src/games/registry.ts`); the hub layers `hiddenFromHub` and Memory
@@ -309,7 +325,7 @@ Reading Center's games carousel uses** — `GameCard` (`src/games/shared/GameCar
 fed by `buildBubbleMatchCard` (`src/games/bubble-match/bubbleMatchCard.ts`), spanning
 the grid's full row (`gridColumn: "1 / -1"`), one level tile per difficulty since the
 in-game level picker was removed. The two surfaces share the card verbatim (level
-hues, "Level N" titles with no subtitle — the Chill/Hustle/Torture names are in-game only since 2026-10-03 — weekly ⭐, lifetime win pill) and differ only in
+hues, "Level N" titles with no subtitle — the Chill/Hustle/Torture names are in-game only since 2026-10-03 — weekly ⭐, the game's `bubble_chart` glyph as a small ghost on each level tile for texture, lifetime win pill) and differ only in
 the launch: the hub passes `showPinyin: true` + the selected collection's params, the
 carousel `showPinyin: false` + its `exitTo`. Word
 Search is the same shared card, fed by `buildWordSearchCard`
@@ -407,6 +423,25 @@ Rules of thumb:
   and flp headers each used to carry a byte-identical private `toggleSx` helper, and
   that is exactly what those exports exist to prevent.
 
+### What Bucket Drop introduced
+
+- **`GameDef.modes`** — a moded game's per-mode primary tracks, declared on the registry
+  entry (read off the game's own `MODE_CONFIGS`). Bucket Drop is the second moded game
+  after Word Search, and `src/games/__tests__/challengePool.test.ts` used to special-case
+  `gameId === "word-search"`; it now loops `game.modes`, plus a new test that every game
+  declares either `markType` or `modes`.
+- **`WRONG_SHAKE_KEYFRAMES`** (`src/games/bubbles/constants.ts`) — Bubble Match's
+  wrong-match shake, extracted so a wrong Bucket Drop bucket shakes identically
+  (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it).
+- **The first game whose pool fetch goes through `src/api/http.ts`** (`apiGet`), as
+  [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) requires. ⚠️ Bubble Match, Match Speed,
+  Hydra Bubbles and Speed Reading still call `fetch(API_BASE_URL + "/api/onDeck/gamePool?…")`
+  with `authHeader()` directly — the older pattern, not yet migrated.
+- **Free-roaming drag targets.** Every word of the run is on the field from load (a pile in
+  the centre), any of them can be picked up, and a word let go anywhere but a bucket rests
+  where it landed — each word owns its own position imperatively (`StackWord` → `restRef`).
+  See [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md) § 5.
+
 ## Games framework
 
 The hub no longer hardcodes its menu — it reads from a registry that also
@@ -459,7 +494,19 @@ inherits a shell from it.
   corner puck appear; omit them (as **Speed Reading** does) and neither is rendered,
   so the popup is modal and its own buttons are the only exits. The rule is
   "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
-  and Word Search all have a post-run cleanup mode, Speed Reading has none.
+  and Word Search all have a post-run cleanup mode, and **Writing Grid** uncovers its
+  finished board (every cell's ink over its shadow) to look over; Speed Reading has none.
+  **The puck docks into the game frame's corner**, not the screen's: `GameEndPopup`
+  passes `puckAnchorSelector=".game-frame"` to `MinimizablePopup`, which measures that
+  element (the enclosing match, else one inside the popup's parent — the phone frame,
+  since the scrim is portaled there) and lands both the puck and the card's collapse
+  animation `SQUARE_MARGIN` in from its top-right corner.
+  **The scrim covers the ENTIRE screen**, the leaf header included: `MinimizablePopup`
+  portals it to the phone frame (`useScreenOverlayHost`, z 200) instead of pinning it to
+  the game's `position: relative` content box, which left the back arrow and title lit
+  above the dim until 2026-10-06. Speed Reading is the one exception — it passes
+  `inPlace`, because its sideways stage rotates the popup along with the board
+  (docs/UX_AND_NAVIGATION.md § Dimming the background).
 - **Answer-feedback sound** — there is none. Every game marks silently; narration
   (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
 - **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
@@ -525,7 +572,15 @@ Presentational only; nothing here holds state.
   meaning"). Deliberately a `.lab`: mono, uppercase, faint. A rule you need on your first
   run and never read again should be legible on request and invisible the rest of the
   time — as body text the panel would look like it was explaining itself every round.
-- **`GameTimer`** (`.timer` + `.trk`) — 28px tabular numerals over a 4px drain track.
+- **`GameTimer`** (`.timer` + `.trk`) — tabular numerals over an optional 4px drain track
+  (omit `fraction` for a bare stopwatch). **Every game's clock is this component** — Word
+  Search, Writing Grid, Bucket Drop, Match Speed — styled after Word Search's HUD clock
+  (standardized 2026-10-06): `FONTS.mono`, `SIZE.bodyLg`, normal case/tracking, regular
+  weight, on a strip padded like `GameHud` (`12px 15px`). Only **colour** varies per game:
+  the strip's hue tint (`useGameSurfaceHue`) and `valueColor` (Match Speed's urgency ink).
+  Opt-in show/hide eye via `valueShown` / `onToggleValueShown` (`TimerEyeToggle`).
+  Optional `leading` slot pinned to the strip's top-left corner (absolutely positioned, so
+  it never shifts the centred clock or grows the strip) — Writing Grid's phase label.
   Takes an **already-formatted** `value`; the frame does no clock math. Its `pulse` prop is
   a deliberate departure from the design, which draws no pulse — a colour change plus a
   nearly-drained track is easy to miss in peripheral vision, which is exactly where a clock
@@ -572,10 +627,26 @@ status bar.
 game's `GAME_HUE` (its own `constants.ts`) drives both the hub row and the ground, so the
 two cannot drift. The hues are the artboards' own (SHELF_REDESIGN.md artboards 12–16):
 Bubble Match `red`, Word Search `pur`, Match Speed `blu`, Speed Reading `yel`, Hydra
-Bubbles `grn`; Memory Map, which has no artboard, keeps `org`. Until 2026-09-24 three of
+Bubbles `grn`; Memory Map, which has no artboard, is `blu` (since 2026-10-06; `org` before — so it
+shares Match Speed's hue). Until 2026-09-24 three of
 them differed from the artboards (Match Speed green, Speed Reading blue, Hydra teal) and
 this paragraph explained why the hub won; teal then left the palette and the three moved.
 Source: `src/games/shared/gameSurface.ts` header ("WHICH HUE A GAME GETS").
+
+**Bubble Match is the one exception: white ground, level-hued bands.** It passes
+`ground={COLORS.white}` to `GameLeafPage` (an optional override of `gameSurfaceSx`'s MID-tier
+fill; the provider's `theme-color` follows it), and its surface `hue` is the run's LEVEL hue
+(`levelHue` → `LEVEL_HUES`: 1 `grn`, 2 `org`, 3 `red`) rather than `GAME_HUE`, so the board
+matches the level tile that launched the run. The level colour lives only on the board's two
+bands: the HUD strip and the cancel strip's resting fill both wear the hue's `surface` tier
+(`BubbleStage` → `bandBg`, read via `useGameSurfaceHue`, overriding `GameHud`'s default tint
+ground); armed, the cancel strip still takes `CANCEL_ZONE_COLORS.armed`. Word bubbles are white
+and meanings grey, both with the same neutral `--line2` ring — no level colour on the bubbles.
+`GAME_HUE` (`red`) still colours the hub row and is the fallback for a level with no
+`LEVEL_HUES` entry. Hydra Bubbles keeps the shared cancel-strip fill.
+Source: `src/games/bubble-match/constants.ts` → `levelHue`, `WORD_BUBBLE_BG`;
+`src/games/bubble-match/BubbleStage.tsx`; `src/games/bubble-match/BubbleMatchPage.tsx`;
+`src/games/shared/GameSurface.tsx` → `GameLeafPage`.
 
 **The header flips are CSS descendant selectors, the panel's are not.** The header route
 avoids threading an `onAccent` flag through `LeafPage` → `PageHeader` →
@@ -595,7 +666,7 @@ this game" invisible to whoever reads the page.
 `GamePausedOverlay`. Each covers the whole content area and must not be
 clipped by the panel's radius.
 
-All six games are framed, and four of them (Bubble Match, Word Search, Match Speed, Hydra
+All the games are framed, and four of them (Bubble Match, Word Search, Match Speed, Hydra
 Bubbles) now use `GameHud` for their strip as well — see entries 12–16 of
 [SHELF_REDESIGN.md](./SHELF_REDESIGN.md). Bubble Match's and Hydra's HUDs used to be
 absolutely-positioned overlays INSIDE their stages, at `top: 8`, so bubbles drifted under
@@ -635,6 +706,45 @@ Games talk to the server through `src/api/http.ts` (the typed cookie-auth `fetch
 wrapper — `apiGet` / `apiPost`), which inherits transparent token-refresh from the
 global fetch interceptor (`src/utils/fetchInterceptor.ts`). **Game vocab comes from
 the OnDeck endpoints**, never from a generic vocab hook; see the rule below.
+
+#### Game pool request (`src/api/gamePool.ts`)
+
+Every `GET /api/onDeck/gamePool` call goes through **one** function,
+`fetchGamePool(req: GamePoolRequest)`, built on `apiGet`, with one exported
+`GamePoolResponse` type. The querystring is built by the pure, tested `gamePoolParams`
+(`src/api/__tests__/gamePool.test.ts`).
+
+| Field | Wire param | Meaning |
+|---|---|---|
+| `markType` | `markType` | Track the game marks — buckets and cooldown follow it |
+| `surface` | `surface` | Names the `CARD_BASELINES` entry a full board lends up to |
+| `distribution` | `Unfamiliar`/`Target`/`Comfortable`/`Mastered` | Band quotas |
+| `need` | `need` | Present = partial refill (no baseline top-up) |
+| `exclude` / `avoid` | `exclude` / `avoid` | Hard exclude / soft demote, comma-joined; omitted when empty |
+| `strictBuckets` | `strictBuckets=1` | "These bands or nothing" (Hydra) |
+| `lendLevelOffset` | `lendLevelOffset` | Lend tier offset (Hydra) |
+| `collection` | `deck` / `collection` | Via `collectionLaunchParams` — must ride refills too |
+| `challengeParams` | `challengeId`/`gameId`/`mode`/`anytime` | `useChallengeRound().poolParams`, passed verbatim |
+| `excludeContested` | `contested=exclude` | Sent only when `challengeParams` is set |
+
+**There is no client "lend" flag.** Lending is decided server-side
+(`OnDeckVocabController.getGamePool`): a full board (no `need`) runs `ensureBaseline`
+against `CARD_BASELINES[surface]` (or the distribution's sum when `surface` is absent);
+a refill never lends unless its `surface` is in `ROLLING_SUPPLY_SURFACES` (Hydra). So a
+caller always sends its real `surface`.
+
+Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
+(`MatchSpeedPage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`),
+Bucket Drop (`BucketDropPage` → `fetchPool`), Hydra (`HydraBubblesPage` →
+`fetchChallengeCards`; `useColorBuffers` → `fetchColor`), and Immersive World
+(`iwPlayApi.fetchKnownWords`). **Not** through it: Word Search
+(`GET /api/onDeck/wordSearchGrid`), Memory Map (`src/api/memoryMap.ts`), Writing Grid
+(`src/api/writingGrid.ts`) — each has its own endpoint.
+
+⚠️ Two callers send no `need` where a reader might expect one, so the server runs the
+baseline check on each call: **Match Speed's mid-run buffer top-ups** (every refill
+tick) and **Immersive World** (no `surface` either, so it lends up to its distribution's
+sum, 44). Both predate the shared module and were preserved as-is.
 
 ### Layer 4 — Backend (`server/`)
 
@@ -729,7 +839,7 @@ chosen rather than in each game's rendering code:
 | --- | --- | --- |
 | Game pool | Bubble Match, Match Speed, Speed Reading, Hydra Bubbles | `OnDeckVocabService.getGameVocabPool` → `takenDds` inside `drain` |
 | Word Search grid | Word Search | `OnDeckVocabService.getWordSearchGrid` → `takenDds` inside `drain` |
-| Memory Map spawn | Memory Map | `MemoryMapService.spawnInto` → `takenDds` |
+| Memory Map fill | Memory Map | `MemoryMapService.selectOccupants` → `takenDds` |
 
 The comparison key is `ddCollisionKey` (`server/utils/definitions.ts`), which
 resolves the dd exactly as the card will show it (through `resolveDisplayDefinition`,
@@ -758,11 +868,11 @@ Three consequences worth knowing:
   back out of the selection, and a dropped word's dd has to become available again or
   the replacement pass would be reserving a gloss nothing is showing.
 
-**Memory Map is the strict case.** A placement is durable, so a collision admitted
-once sits on the map for as long as the word does. Its guard seeds from the words
-already placed and runs on the graduation refill path too (where `existing` is the
-whole map and `slots` is 1). The filter is applied **before** the `slots` cut, so a
-collision costs the map nothing — the next non-colliding candidate takes the spot.
+**Memory Map is the strict case.** A slot is durable, so a collision admitted once
+sits on the map for as long as the word does. Its guard seeds from the words already on
+the map and runs on the graduation refill path too (where the whole map is seeded and
+one occupant is wanted). A collision costs the map nothing — the next non-colliding
+candidate takes the slot, lending again if the colliding word was lent.
 
 **Near-identical glosses** — "a little" vs "a bit" — are NOT covered by this rule; the
 key is exact equality. The unbuilt phase-2 design that would extend it (offline NLI
@@ -789,6 +899,7 @@ it to whatever moves on its own:
 | Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
+| Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropPage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropStage` (`paused`) |
 
 Three consequences worth keeping in mind when adding a popup or a game:
 
@@ -843,6 +954,7 @@ in full to that part.
 | Bubble Match | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` → `BubbleStage`'s `paused` prop |
 | Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + 30 s run clock) |
 | Speed Reading | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
+| Bucket Drop | `useBackgroundPause(phase === "playing")` → `clockPaused`, plus `GamePausedOverlay` |
 | Hydra Bubbles | **challenge rounds only** (2026-08-22): `useBackgroundPause(playing && isChallengeLaunch)` → `framePaused` → the stage, plus `GamePausedOverlay`. Free play stays exempt — see the clockless-exemption paragraph above, and note that this is exactly the case it named |
 
 The three that needed it got a **signal wired to a gate they already had**, not a new
@@ -861,8 +973,9 @@ same game is exempt free-play and covered in its timed variant.
 * **`<GamePausedOverlay>`** — the tap-to-resume affordance. It **covers** the board
   rather than dimming it, so the pause cannot be used as a free look at the arrangement;
   that is what lets the rule stay absolute with no per-mode exception. Rendered as a
-  SIBLING of the board (like `GameEndPopup`) at **z-index 150 — below** MinimizablePopup's
-  200, so a notice that also pauses the clock stacks above it.
+  SIBLING of the board at **z-index 150** inside the page; MinimizablePopup's scrim is
+  portaled to the phone frame at 200, outside the page surface entirely, so a notice that
+  also pauses the clock always stacks above it.
 
 ⚠️ **The pause is only real if elapsed time is ACCUMULATED ACTIVE TIME.** A game that
 computes elapsed as `now − startedAt` will honour the hook visually and still bill the
@@ -1043,10 +1156,12 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    per-page `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
 2. Fetch vocab from the OnDeck stack, not from a generic vocab endpoint:
    `GET /api/onDeck/gamePool?<Category>=<n>...` returns library cards bucketed by
-   the mark type the game emits. Declare that mark type ONCE as `MARK_TYPE` in your
+   the mark type the game emits. Call it through `fetchGamePool` (`src/api/gamePool.ts`,
+   § "Game pool request") — never a hand-built querystring. Declare that mark type ONCE as `MARK_TYPE` in your
    game's `constants.ts` and read it from there for the `?markType=` query, the
    `markFlashcard({ type })` call, and your `GameDef.markType` (which challenge
-   eligibility is derived from — `src/games/__tests__/challengePool.test.ts`). Hub tiles
+   eligibility is derived from — `src/games/__tests__/challengePool.test.ts`; a MODED game
+   declares `GameDef.modes` instead, as Word Search and Bucket Drop do). Hub tiles
    are **name-only** (2026-10-03): `GameDef` has no `subtitle`, and the hub does not
    label a tile with its track. If your game's mark type varies by mode, omit
    `GameDef.markType` and put the type on each mode config instead, the way Word Search
@@ -1183,7 +1298,8 @@ The first shipped game. A DOM + `requestAnimationFrame` game (absolutely-positio
 bubbles moved via `transform`) — chosen over Pixi for direct reuse of the
 colored-pinyin `CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. (The
 physics body stayed a circle; the RENDERED bubble is the design's `.bub` squircle —
-`border-radius: 40%` on `.bubble__inner` and on both held-cue overlays. See
+`border-radius: 28%` (eased from the artboard's 40% on 2026-10-06) on `.bubble__inner` and on
+the held-cue overlay, with a 1px ring (was 2px). See
 docs/SHELF_REDESIGN.md § 12 for why the ~8% corner overshoot is harmless.) That
 choice is why the speculative Pixi runtime was never adopted and has since been
 deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style header,
@@ -1219,7 +1335,7 @@ The rule, and how much of it already holds:
 |---|---|
 | flp (+ cdp, scp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
 | **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
-| **Memory Map** | ✅ already per-game — hardcoded `showPinyin={false}`; it is a reading map |
+| **Memory Map** | ✅ already per-game — never draws pinyin at all (since 2026-10-06 it renders bare measured characters, not `ForeignText`); it is a reading map |
 | **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |
 | **Bubble Match** | ✳ its own persisted setting (the per-run latch is unchanged) |
 | **Hydra Bubbles** | ✳ its own persisted setting — **and its own track conversion**, see [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) |
@@ -1705,9 +1821,10 @@ pool of 20 pairs; Hydra's is a board that **grows on its own**.
   color's buffer. No table, no server state.
 - **The first rolling-supply surface.** Every spawn is a partial refill, which is the
   one call shape that historically never lent. See the fill-tier table above.
-- **The first game with no card baseline of any kind** — alongside Memory Map, which
-  also declares none. A run may lend from the very first bubble, and there is no
-  library size at which the hub row is gated.
+- **The first game with no card baseline of any kind** (Memory Map also has no
+  `CARD_BASELINES` entry, though since 2026-10-06 it lends to stay full). A run may lend
+  from the very first bubble, and there is no library size at which the hub row is
+  gated.
 - **Grey is reserved for English**, so Hydra could not reuse Bubble Match's grey
   held/hovered wash. Its pickup cue is an **outline ring** instead — which is why the
   shared `Bubble` takes a `heldCue` prop.
@@ -1743,3 +1860,10 @@ run, banking what was matched and scoring zero for the rest. The
 makes sense because its run has a fixed length; Hydra's does not.
 ⚠️ How a partial run's time compares to a complete one is still open
 ([HYDRA_BUBBLES.md § 11 O2](./HYDRA_BUBBLES.md)).
+
+## Game: Bucket Drop (`/games/bucket-drop`)
+
+Drag each word from the pile into the perimeter bucket holding its meaning, against a
+count-up clock; 20 words, medals by time. The whole design — perimeter geometry, the
+the free-roaming pile, marks, modes, challenge scoring — is
+[BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md). Code: `src/games/bucket-drop/`.

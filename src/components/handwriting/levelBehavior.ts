@@ -16,7 +16,8 @@
  *                stroke; a match is replaced by the printed stroke shape, a miss
  *                turns red and fades out (WritingStage → strokeSnap.ts).
  *   regions    — the outline is clipped to one of N regions at a time (4 = 田
- *                squares, 8 = 米 triangles), cycling clockwise from the top-left.
+ *                squares, 6 = equal-area centre wedges), cycling clockwise from the
+ *                top-left.
  *   lockWhileGuide — drawing is blocked while the outline is up.
  *   button     — the assist button under the panel and its cooldown (from press).
  *   timed      — Level 8: a per-character clock of TIMED_MS_PER_STROKE × strokes.
@@ -33,10 +34,13 @@ import type { WritingMode } from "../../../server/contracts/writingLevels";
  */
 export const WRITING_FOCUS_SIZE = 300;
 
+/** How many regions a region level splits the outline into (Quarters / Sixths). */
+export type RegionCount = 4 | 6;
+
 export interface LevelBehavior {
   guide: "persistent" | "flash" | "study" | "none";
   animation: "loop" | "nextStroke" | null;
-  regions: 4 | 8 | null;
+  regions: RegionCount | null;
   /** How long a `flash` guide stays up (ms). */
   flashMs: number;
   lockWhileGuide: boolean;
@@ -70,11 +74,12 @@ export const LEVEL_BEHAVIOR: Record<WritingMode, LevelBehavior> = {
     guide: "study", animation: null, regions: null, flashMs: 0,
     lockWhileGuide: true, button: null, timed: false, snap: false,
   },
-  // Quarters' behaviour at a finer split: one eighth visible at a time, staying up
-  // until the next press; drawing free. (Until 2026-10-04 each eighth flashed for 2s
-  // with drawing locked and a 6s cooldown.) No cooldown on Next, like Quarters.
-  eighths: {
-    guide: "persistent", animation: null, regions: 8, flashMs: 0,
+  // Quarters' behaviour at a finer split: one sixth visible at a time, staying up
+  // until the next press; drawing free. No cooldown on Next, like Quarters.
+  // (Was `eighths` — eight 米 triangles — until 2026-10-06; before 2026-10-04 each
+  // region flashed for 2s with drawing locked and a 6s cooldown.)
+  sixths: {
+    guide: "persistent", animation: null, regions: 6, flashMs: 0,
     lockWhileGuide: false, button: { label: "Next", cooldownMs: 0 }, timed: false, snap: false,
   },
   test: {
@@ -92,7 +97,7 @@ export const LEVEL_BEHAVIOR: Record<WritingMode, LevelBehavior> = {
  * surface. Only the levels whose guide comes and goes WHILE the learner works fade:
  *   Step Through (`flash`) — fades out when the flash ends, in on a Show press;
  *   Memorize (`study`)     — fades out on the first stroke (it never re-appears mid-use).
- * Everything else (the Verify reveal, level changes, Quarters / Eighths region cycle,
+ * Everything else (the Verify reveal, level changes, Quarters / Sixths region cycle,
  * read-only previews) is instant. Hosts spread this onto `WritingStage`.
  * Docs: docs/PRACTICE_WRITING.md § "Guide fade".
  */
@@ -112,7 +117,7 @@ export function guideFades(mode: WritingMode): { guideFadeIn: boolean; guideFade
  *   Trace                    full outline, stroke order looping
  *   Snap / Step Through      full outline (static) — Snap's next-stroke animation is
  *                            an editor-only cue
- *   Quarters / Eighths       the FIRST region (top-left) of the outline
+ *   Quarters / Sixths        the FIRST region (top-left) of the outline
  *   Memorize / Blank / Timed no outline
  *
  * The one exception to "first see": MEMORIZE (decided 2026-10-04). Its editor does open
@@ -162,10 +167,13 @@ export function previewShowsWholeCharacter(mode: WritingMode): boolean {
  * CSS `clip-path` polygon for region `index` of `count` over the square guide.
  *
  *   4 → the 田 split: four squares, clockwise from the top-left.
- *   8 → the 米 split: eight triangles meeting at the centre, clockwise starting with
- *       the upper half of the top-left square (corner → top-middle).
+ *   6 → six wedges meeting at the centre, clockwise starting from the top-left corner.
+ *       The rim is cut every 2/3 of a side (perimeter 4 ÷ 6). Every side sits the same
+ *       distance (50%) from the centre, so equal rim lengths give equal areas — each
+ *       wedge is exactly 1/6 of the square. Wedges whose rim stretch wraps a corner
+ *       include that corner as an extra vertex.
  */
-export function regionClipPath(count: 4 | 8, index: number): string {
+export function regionClipPath(count: RegionCount, index: number): string {
   const i = ((index % count) + count) % count;
   if (count === 4) {
     const squares = [
@@ -176,8 +184,15 @@ export function regionClipPath(count: 4 | 8, index: number): string {
     ];
     return `polygon(${squares[i]})`;
   }
-  // Perimeter points clockwise from the top-left corner; triangle k is the centre +
-  // points k and k+1.
-  const rim = ["0% 0%", "50% 0%", "100% 0%", "100% 50%", "100% 100%", "50% 100%", "0% 100%", "0% 50%"];
-  return `polygon(50% 50%, ${rim[i]}, ${rim[(i + 1) % 8]})`;
+  // Rim stretch of each wedge, clockwise from the top-left corner (cut points at
+  // perimeter distance 0, 2/3, 4/3, 2, 8/3, 10/3 of a side).
+  const wedges = [
+    "0% 0%, 66.667% 0%", // top edge, left two-thirds
+    "66.667% 0%, 100% 0%, 100% 33.333%", // wraps the top-right corner
+    "100% 33.333%, 100% 100%", // right edge, lower two-thirds
+    "100% 100%, 33.333% 100%", // bottom edge, right two-thirds
+    "33.333% 100%, 0% 100%, 0% 66.667%", // wraps the bottom-left corner
+    "0% 66.667%, 0% 0%", // left edge, upper two-thirds
+  ];
+  return `polygon(50% 50%, ${wedges[i]})`;
 }

@@ -1,12 +1,11 @@
 import { alpha } from "@mui/material/styles";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Box, Typography } from "@mui/material";
 import SheetCloseX from "../../components/sheet/SheetCloseX";
 import { sheetEdgeFadeSx } from "../../components/sheet/sheetStyled";
 import { trackScrollEdgeFade } from "../../components/scrollEdgeFade";
-import { nearestOverlayHost } from "../../components/overlayHost";
-import { useHideFooter } from "../../hooks/useHideFooter";
+import { useScreenOverlayHost } from "../../hooks/useScreenOverlayHost";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -85,9 +84,11 @@ interface ChallengeSheetProps {
  * inside a NodePage's scroll area — the sheet is clipped by that area's edge-fade MASK,
  * whose bottom band is transparent for the footer's height: `position: fixed` escapes
  * the scrolling but not the mask, so the pinned action bar simply does not paint and the
- * sheet appears to have no buttons. `nearestOverlayHost` (src/components/overlayHost.ts)
- * finds the first ancestor that covers the screen and can host it, and `useHideFooter`
- * clears the footer bar, which paints above that host and would cover the same strip.
+ * sheet appears to have no buttons. It portals to the phone frame instead
+ * (`useScreenOverlayHost`), pinned `absolute` there, above the footer bar's z-index —
+ * so its scrim dims the ENTIRE screen, footer included, and the risen panel covers the
+ * bar rather than the bar covering the action row (src/components/overlayHost.ts
+ * § "THE RULE FOR A DIM"). The footer stays put; no `useHideFooter` hold.
  *
  * Local to this feature for now. It is a plain scrim + panel rather than a MUI Drawer
  * because the app shell never scrolls and a Drawer's portal + body-lock fights that
@@ -109,21 +110,9 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
      * where the sheet is PAINTED are two different places — see the portal note above.
      * The anchor renders nothing.
      */
-    const anchorRef = useRef<HTMLSpanElement | null>(null);
-    const [host, setHost] = useState<HTMLElement | null>(null);
-
-    // A LAYOUT effect, so the host is known and the portal committed before the browser
-    // paints — a plain effect would show one frame of an unportaled (masked) sheet.
-    useLayoutEffect(() => {
-        if (!open) { setHost(null); return; }
-        const el = anchorRef.current;
-        if (el) setHost(nearestOverlayHost(el));
-    }, [open]);
-
-    // The sheet owns the screen while it is up, and the footer bar is rendered above
-    // every page surface (FooterPresenter, z-index 100) — it would sit squarely on the
-    // action bar. Released automatically when the sheet unmounts.
-    useHideFooter(open);
+    // Resolved in a layout effect inside the hook, so the portal is committed before the
+    // browser paints — never one frame of an unportaled (masked) sheet.
+    const { anchorRef, host } = useScreenOverlayHost(open);
 
     // ---- Leaving ----------------------------------------------------------
     // The sheet SLIDES OUT the way it came in; it does not blink out of existence.
@@ -175,7 +164,10 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
                         className="challenge-sheet__scrim"
                         onClick={requestClose}
                         sx={{
-                            position: "fixed",
+                            // `absolute` on the frame host, not `fixed`: the frame is not a
+                            // containing block for fixed children, so on desktop a fixed
+                            // scrim would dim the whole browser window, not the phone.
+                            position: "absolute",
                             inset: 0,
                             zIndex: 1200,
                             backgroundColor: COLORS.scrim,
@@ -191,7 +183,7 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
                     <Box
                         className="challenge-sheet"
                         sx={{
-                            position: "fixed",
+                            position: "absolute",
                             left: 0,
                             right: 0,
                             bottom: 0,
@@ -313,9 +305,9 @@ const ChallengeSheet = forwardRef<ChallengeSheetHandle, ChallengeSheetProps>(({
                                 gap: 1.2,
                                 px: 2.25,
                                 pt: 1.5,
-                                // Clears the home indicator. The footer bar itself is
-                                // gone for the sheet's lifetime (useHideFooter above),
-                                // so there is nothing else down here to clear.
+                                // Clears the home indicator. The footer bar is UNDER the
+                                // sheet (frame-hosted at 1201 vs the bar's 100), so there is
+                                // nothing else down here to clear.
                                 pb: "calc(20px + env(safe-area-inset-bottom))",
                                 borderTop: `1px solid ${COLORS.rowBorder}`,
                                 boxShadow: `0 -8px 14px ${alpha(COLORS.onSurface, 0.05)}`,

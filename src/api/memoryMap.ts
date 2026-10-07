@@ -11,13 +11,16 @@ import { apiGet, apiPost } from './http';
 import type {
     MemoryMapGraduateResponse,
     MemoryMapResponse,
+    MemoryMapSlot,
     MemoryMapWord,
 } from '../../server/contracts/wire';
 
-export type { MemoryMapGraduateResponse, MemoryMapResponse, MemoryMapWord };
+export type { MemoryMapGraduateResponse, MemoryMapResponse, MemoryMapSlot, MemoryMapWord };
 
 /**
- * Load the map, topping it up to capacity server-side.
+ * Load the map, filled to capacity server-side (lending cards if the learner's own
+ * cannot fill it). Returns the slot tree plus its occupants; positions are derived on
+ * the client by `layoutMap` (server/services/memoryMapLayout.ts).
  *
  * ONE call per game entry — spawning happens as part of the load, so there is no
  * separate "spawn" step a caller could forget. `newlyPlaced` names the words this call
@@ -33,7 +36,7 @@ export async function fetchMemoryMap(): Promise<MemoryMapResponse> {
 
 /**
  * Tell the server a word was answered, so it can retire it if that mark completed its
- * reading track and refill the freed slot.
+ * reading track and move a new word into its slot.
  *
  * Called after EVERY correct answer, not only the ones that graduate: the client cannot
  * know which mark is the eighth. `graduated: false` is the normal response and is not

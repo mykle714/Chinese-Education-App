@@ -9,6 +9,7 @@ import { DD_TONES } from '../utils/cardTextColor';
 // several palettes that share values by coincidence.
 import { COLORS } from '../theme/colors';
 import { SHADOW } from '../theme/shadows';
+import { dialogContainer } from '../components/overlayHost';
 
 // Per-surface color tokens for the flashcard learn page.
 // All 19 fields must be defined for every theme — no optional fields.
@@ -131,7 +132,32 @@ const createAppTheme = (mode: ThemeMode): Theme => {
             // The variable is 0px whenever no field is focused, so full-screen dialogs
             // (Practice Writing, design zoom) are untouched.
             // Docs: docs/UX_AND_NAVIGATION.md § Keyboard and popups.
+            //
+            // ── Every Dialog dims EXACTLY the screen (2026-10-06) ──────────────────
+            // A dialog's backdrop is a dim, and every dim in the app covers the whole
+            // screen and nothing more (src/components/overlayHost.ts § "THE RULE FOR A
+            // DIM"). MUI's default — portal to `body`, `position: fixed` — dimmed the
+            // whole browser window around the desktop phone card, in MUI's own black
+            // rather than the framework's scrim. So:
+            //   • `container` mounts every dialog INSIDE the phone frame (`body` on the
+            //     plain shell, where there is no frame);
+            //   • the root is re-pinned `absolute` when it is the frame's child — the
+            //     frame is `position: relative` but not a containing block for FIXED
+            //     children, so a fixed root would still resolve to the browser window;
+            //   • the backdrop is `absolute` always: the root is positioned in either
+            //     case and fills the screen, so `inset: 0` on it is the screen — padding
+            //     box included, so the keyboard-inset padding above stays dimmed too;
+            //   • the backdrop takes `COLORS.modalScrim`, the framework's blocking-modal
+            //     scrim, instead of MUI's `rgba(0,0,0,0.5)`;
+            //   • `disableScrollLock`: the shell never scrolls, and the lock's
+            //     scrollbar-compensation padding would otherwise be written onto the frame.
+            // A dialog that renders its own backdrop (`hideBackdrop`) or restyles it keeps
+            // that override; `BackdropComponent` replacements bypass the `backdrop` slot.
             MuiDialog: {
+                defaultProps: {
+                    container: dialogContainer,
+                    disableScrollLock: true,
+                },
                 styleOverrides: {
                     root: {
                         boxSizing: 'border-box' as const,
@@ -139,6 +165,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         // Travels with the keyboard's own slide curve (transition.ts →
                         // timingForInset), so the dialog and keyboard read as one motion.
                         transition: 'padding-bottom var(--keyboard-inset-timing, 0ms)',
+                        '.mobile-demo-frame > &': { position: 'absolute' as const },
+                    },
+                    backdrop: {
+                        position: 'absolute' as const,
+                        backgroundColor: COLORS.modalScrim,
                     },
                 },
             },

@@ -34,7 +34,7 @@
  *
  *   1. `server/server.ts`      — the feature's `app.use(...)` mount
  *   2. any endpoint OUTSIDE that router that serves the same feature — the part
- *      most easily missed; two of the five feature flags here have one
+ *      most easily missed; two of the six feature flags here have one
  *   3. `src/routes/routeMeta.ts` — the route rows, which `ROUTE_META` filters out
  *   4. every client entry point (tiles, shelves, buttons, badge fetches, tips)
  *
@@ -143,6 +143,14 @@ export const FEATURE_FLAGS = {
    * every other caller already omits, so there is nothing to switch off.
    */
   immersiveWorld: true,
+
+  /**
+   * Writing Notebook — endless per-word handwriting practice sheets
+   * (docs/WRITING_NOTEBOOK.md). Gates `/api/writingNotebook/*`, the
+   * `/flashcards/writing/notebook` route, and its card on the Writing Center's games
+   * belt (`WritingGamesCarousel`). There is no second entry point.
+   */
+  writingNotebook: true,
 } as const;
 
 /** The name of any feature flag above. */
@@ -191,6 +199,7 @@ export const GAME_FLAGS: Record<GameFlagId, boolean> = {
   'hydra-bubbles': true,
   'memory-map': true,
   'writing-grid': true,
+  'bucket-drop': true,
 };
 
 /**

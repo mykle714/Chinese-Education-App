@@ -13,9 +13,9 @@ describe('levelPreview', () => {
         expect(levelPreview('memorize').guide).toBe(false);
     });
 
-    it('previews only a region at Quarters / Eighths', () => {
+    it('previews only a region at Quarters / Sixths', () => {
         expect(levelPreview('quarters').regionClip).toBeDefined();
-        expect(levelPreview('eighths').regionClip).toBeDefined();
+        expect(levelPreview('sixths').regionClip).toBeDefined();
     });
 
     it('shows the whole character at exactly levels 1–3', () => {

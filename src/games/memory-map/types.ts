@@ -24,8 +24,9 @@ export type WordOutcome = "green" | "orange" | "red";
  * The lifecycle of a single prompt.
  *
  * `hunting` covers both the confident first try and the desperate third; `failed` is
- * the distinct state after the third miss, where the target pulses and the English
- * prompt turns red — the player has stopped being tested and started being shown.
+ * the distinct state after the third miss, where the target pulses red on the map — the
+ * player has stopped being tested and started being shown. (The prompt bar used to turn
+ * red too; removed 2026-10-06.)
  */
 export type PromptPhase = "hunting" | "failed";
 

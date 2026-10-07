@@ -7,7 +7,7 @@ import {
     rollCategory,
     takePair,
     takePairs,
-    topUpQuery,
+    topUpDistribution,
     topUpRequest,
     type CardBuffer,
     type Rng,
@@ -208,7 +208,7 @@ describe("fillBuffer", () => {
     });
 });
 
-describe("topUpRequest / topUpQuery", () => {
+describe("topUpRequest / topUpDistribution", () => {
     it("asks for exactly what each bucket is missing", () => {
         const buffer = bufferWith({ Target: BUFFER_DEPTH, Comfortable: 2 });
         const request = topUpRequest(buffer)!;
@@ -229,7 +229,7 @@ describe("topUpRequest / topUpQuery", () => {
 
     it("omits zero-need buckets from the query", () => {
         const buffer = bufferWith({ Target: BUFFER_DEPTH, Comfortable: BUFFER_DEPTH, Mastered: BUFFER_DEPTH });
-        expect(topUpQuery(topUpRequest(buffer)!)).toBe(`Unfamiliar=${BUFFER_DEPTH}`);
+        expect(topUpDistribution(topUpRequest(buffer)!)).toEqual({ Unfamiliar: BUFFER_DEPTH });
     });
 });
 
@@ -292,8 +292,8 @@ describe("MODE_CONFIGS", () => {
     });
 
     it("asks the pool endpoint only for its own buckets", () => {
-        expect(REVIEW.poolQuery).toBe(`Comfortable=${REVIEW.bufferDepth}&Mastered=${REVIEW.bufferDepth}`);
-        expect(CHALLENGE.poolQuery).toBe(`Unfamiliar=${CHALLENGE.bufferDepth}&Target=${CHALLENGE.bufferDepth}`);
+        expect(REVIEW.poolDistribution).toEqual({ Comfortable: REVIEW.bufferDepth, Mastered: REVIEW.bufferDepth });
+        expect(CHALLENGE.poolDistribution).toEqual({ Unfamiliar: CHALLENGE.bufferDepth, Target: CHALLENGE.bufferDepth });
     });
 
     it("falls back to Study Mix for a missing or unrecognized nav-state value", () => {
@@ -363,8 +363,8 @@ describe("topUpRequest (restricted modes)", () => {
         expect(request.Mastered).toBe(REVIEW.bufferDepth);
         expect(request.Unfamiliar).toBeUndefined();
         expect(request.Target).toBeUndefined();
-        expect(topUpQuery(request)).toBe(
-            `Comfortable=${REVIEW.bufferDepth}&Mastered=${REVIEW.bufferDepth}`
+        expect(topUpDistribution(request)).toEqual(
+            { Comfortable: REVIEW.bufferDepth, Mastered: REVIEW.bufferDepth }
         );
     });
 

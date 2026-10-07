@@ -2,7 +2,7 @@ import { RAMP } from "../../theme/colors";
 import type { GameCardData } from "../shared/GameCard";
 import { gameCardBase } from "../shared/gameCards";
 import type { GameDef } from "../types";
-import { LEVEL_CONFIGS, LEVEL_HUES } from "./constants";
+import { LEVEL_CONFIGS, levelHue } from "./constants";
 
 /**
  * Bubble Match's `GameCard` data — one level tile per LEVEL_CONFIGS entry, filled with
@@ -32,8 +32,11 @@ export function buildBubbleMatchCard(
             // The level number only — the Chill / Hustle / Torture name (`cfg.label`)
             // is shown in-game (HUD + win screen), not on the launch tile.
             title: `Level ${cfg.level}`,
-            ground: RAMP[LEVEL_HUES[cfg.level] ?? game.hue].mid,
+            ground: RAMP[levelHue(cfg.level)].mid,
             star: clearedLevels.has(cfg.level),
+            // The game's own glyph (bubble_chart) as a small ghost — texture on an
+            // otherwise flat hued tile, echoing the card's large ghost above it.
+            glyph: game.glyph,
             onSelect: () => onSelectLevel(cfg.level),
         })),
     };

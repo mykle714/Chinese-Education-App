@@ -89,6 +89,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   // mastery bar the page reads its own path for (features/flashcards/masteryCenters.ts).
   "/flashcards/reading": lazy(() => import("../features/flashcards/MasteryCenterPage")),
   "/flashcards/writing": lazy(() => import("../features/flashcards/MasteryCenterPage")),
+  "/flashcards/writing/notebook": lazy(() => import("../features/flashcards/writingNotebook/WritingNotebookPage")),
   "/reader/:id": lazy(() => import("../features/reader/ReaderDocumentPage")),
   "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),
   "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),

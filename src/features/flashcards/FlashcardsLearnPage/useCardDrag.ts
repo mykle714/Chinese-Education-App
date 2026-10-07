@@ -7,6 +7,13 @@ interface UseCardDragReturn {
     isDragging: boolean;
     isFlipped: boolean;
     setIsFlipped: (value: boolean) => void;
+    // Full per-card reset (Side 1, not-yet-flipped, hints/shake/flip-lock cleared) for
+    // when the card under resetKey is REPLACED without resetKey changing — the
+    // working loop's fresh fetch, which always lands at index 0. Clearing only
+    // isFlipped there would leave hasFlippedCurrentCard stuck true from a tap on the
+    // card that was replaced: the new card then can't be flipped (so More Info stays
+    // greyed) yet can be swiped unseen.
+    resetCard: () => void;
     // Puts the (restored) card back on Side 2 — used by mark-undo, which brings a
     // card the user has already flipped back into view. Survives the per-card
     // reset effect that would otherwise force Side 1 (see restoreFlippedRef).
@@ -141,19 +148,41 @@ export function useCardDrag(
     // randomization lives in the parent page now. The one exception is an undo
     // restore (restoreFlipped), where the incoming card is one the user already
     // flipped, so it comes back on Side 2.
-    useEffect(() => {
-        const isUndoRestore = restoreFlippedForKeyRef.current === resetKey;
+    //
+    // `resetCard` is the same reset for the non-undo case, also exposed so the working
+    // loop can run it when it swaps the card WITHOUT changing resetKey (see the
+    // UseCardDragReturn docblock). Refs + state setters only, so its identity is stable.
+    const resetCard = useCallback(() => {
         restoreFlippedForKeyRef.current = null;
-        setHasFlippedCurrentCard(isUndoRestore);
-        flippedForKeyRef.current = isUndoRestore ? resetKey : null;
-        setIsFlippedRaw(isUndoRestore);
+        setHasFlippedCurrentCard(false);
+        flippedForKeyRef.current = null;
+        setIsFlippedRaw(false);
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
         setShakeNonce(0);
+        // A pending press/drag belonged to the replaced card; drop it so its release
+        // can't flip or dismiss the new one.
+        setIsDragging(false);
+        setIsFlipOnlyMouseDown(false);
         // A fresh card starts unflipped, so any in-flight flip lock is moot.
         flipLockRef.current = false;
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
-    }, [resetKey]);
+    }, []);
+
+    useEffect(() => {
+        if (restoreFlippedForKeyRef.current === resetKey) {
+            // Undo restore: restoreFlipped already put this card on Side 2; only the
+            // transient hints and any flip lock need clearing.
+            restoreFlippedForKeyRef.current = null;
+            setShowSwipeHint(false);
+            setShowTapToFlipHint(false);
+            setShakeNonce(0);
+            flipLockRef.current = false;
+            if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
+            return;
+        }
+        resetCard();
+    }, [resetKey, resetCard]);
 
     // Read the card's rendered pixel width at evaluation time.
     // On desktop the frame is capped at 402px inside a wider viewport, so using
@@ -380,6 +409,7 @@ export function useCardDrag(
         isDragging,
         isFlipped,
         setIsFlipped,
+        resetCard,
         restoreFlipped,
         hasFlippedCurrentCard,
         showSwipeHint,

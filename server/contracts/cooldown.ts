@@ -36,7 +36,7 @@ import { BAR_MARK_TYPES, barCategory, barForMarkType } from './mastery.js';
  */
 export const COOLDOWN_MS_BY_CATEGORY: Record<string, number> = {
   Unfamiliar: 5 * 60 * 1000,             // 5 minutes
-  Target: 24 * 60 * 60 * 1000,           // 24 hours
+  Target: 12 * 60 * 60 * 1000,           // 12 hours
   Comfortable: 14 * 24 * 60 * 60 * 1000, // 14 days
   Mastered: 180 * 24 * 60 * 60 * 1000,   // 6 months (180 days)
 };

@@ -48,7 +48,10 @@ export function useFooterSuppressed(): boolean {
  * mounted. Releasing on unmount is automatic, so a page that navigates away with its
  * modal still open can't strand the footer off-screen.
  *
- * Callers: SortCardsPage and VocabCardDetailPage (both while the eip sheet is open).
+ * Callers: NONE since 2026-10-06. Every dim now hosts at the phone frame above the bar
+ * and dims it in place instead of sliding it away (src/components/overlayHost.ts § "THE
+ * RULE FOR A DIM"). Kept for now; a candidate for removal with FooterVisibilityContext and
+ * FooterPresenter's suppression branch.
  */
 export function useHideFooter(hidden: boolean): void {
     const { acquire } = useContext(FooterVisibilityContext);

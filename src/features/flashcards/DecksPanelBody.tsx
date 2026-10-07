@@ -13,7 +13,7 @@ import { FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
 import { SAFE_BOTTOM } from "../../theme/safeArea";
 import { EDGE_FADE_MASK_NO_TOP } from "../../components/MobileTabScreen";
 import { SHEET_EDGE_FADE_MASK } from "../../components/sheet/sheetStyled";
-import { useScrollEdgeFade } from "../../components/scrollEdgeFade";
+import { edgeFadeMaskSx, useScrollEdgeFade } from "../../components/scrollEdgeFade";
 import type { SheetPanelBodyHandle } from "../../components/sheet/SheetPanel";
 import { deckTileColors } from "./collectionRef";
 import { collectionGlyph } from "./collectionGlyph";
@@ -200,8 +200,9 @@ export interface DecksPanelBodyProps {
 }
 
 // ── Sheet bottom edge ─────────────────────────────────────────────────────────
-// A modal sheet hides the floating footer for its lifetime (SheetPanel's
-// `useHideFooter`), so the sheet's scroller has nothing to clear at the bottom —
+// A modal sheet is hosted at the phone frame ABOVE the footer bar (SheetPanel, z 1201
+// vs the bar's 100), so the bar is under the sheet and its scroller has nothing to
+// clear at the bottom —
 // only its own breathing room, so the last row is not flush against the sheet's
 // edge. The matching fade runs out AT that edge (no reserved footer band), keeping
 // the "content dissolves rather than being sliced" look without spending 164px of
@@ -340,8 +341,8 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     //           area does (FOOTER_TOTAL_CLEARANCE), and dissolve across the
                     //           band just above it. That is MobileTabScreen's own mask,
                     //           imported rather than re-derived, minus its top band.
-                    //   SHEET — the footer is GONE. A modal sheet holds `useHideFooter`
-                    //           for its whole lifetime (SheetPanel), so reserving the
+                    //   SHEET — the footer is COVERED. A modal sheet is frame-hosted
+                    //           above the bar (SheetPanel), so reserving the
                     //           footer's band here left ~90px of blank paper under the
                     //           last row plus a further 74px of fully-masked-out box —
                     //           dead space in the one surface whose whole job is showing
@@ -357,8 +358,7 @@ const DecksPanelBody = forwardRef<SheetPanelBodyHandle, DecksPanelBodyProps>(fun
                     paddingBottom: isSheet
                         ? `calc(${SHEET_BOTTOM_PAD}px + ${SAFE_BOTTOM})`
                         : FOOTER_TOTAL_CLEARANCE,
-                    maskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
-                    WebkitMaskImage: isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP,
+                    ...edgeFadeMaskSx(isSheet ? SHEET_EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP),
                 }}
             >
                 {showCards && (<>

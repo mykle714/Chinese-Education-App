@@ -104,21 +104,13 @@ canonical `Ink` above. Design rules:
   (See [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).)
 - **Undo / clear.** "Undo last stroke" = pop the last `Stroke`; "clear" = empty
   `Ink`. Both are cheap because strokes are discrete.
-- **Velocity-based width (render only).** The line swells with pointer speed —
-  fast = thick, slow = thin — around the `strokeWidth` prop (`velocityWidth`, default
-  on). Width is recomputed from each stroke's `(xs, ys, ts)` at draw time and **never
-  stored**, so the `Ink` contract and recognition are unaffected. Speed is EMA-smoothed,
-  then mapped linearly between `slowSpeed`→`slowScale` (thinnest) and `fastSpeed`→`fastScale` (thickest); the
-  result is **slew-rate limited per CSS px travelled** (`maxGrowthPerPx` /
-  `maxShrinkPerPx`, fractions of base width) so the line can't balloon or pinch on one
-  noisy sample. Two tunings: **desktop** (`pointerType === "mouse"`) and **mobile**
-  (touch / pen), chosen per stroke on `pointerdown`; strokes not drawn live (restored
-  drafts, Snap substitutes) fall back to `(pointer: coarse)`. Each stroke is filled as a
-  union of discs + joining quads in one nonzero `fill()`, so translucent draws (the
-  rejected-stroke fade) don't darken at overlaps. Committed strokes' outlines are cached
-  per stroke.
-  Code: `src/components/handwriting/velocityWidth.ts` → `VELOCITY_WIDTH_PROFILES`,
-  `computeStrokeWidths`, `buildVariableStrokePath`; `WritingCanvas.tsx` → `redrawAll`.
+- **Uniform line width (render only).** Every stroke is drawn at the constant
+  `strokeWidth` prop (default 7 CSS px; the Beginner Keyboard passes 9, the Writing
+  Notebook pen 7) with round caps/joins — there is no speed- or pressure-varying ink
+  anywhere in the app. Width is never stored, so the `Ink` contract and recognition don't depend
+  on it. Each stroke is one `stroke()` call, so a translucent draw (the rejected-stroke
+  fade) paints self-overlaps once.
+  Code: `src/components/handwriting/WritingCanvas.tsx` → `redrawAll`.
 
 The capture component's only output is an `Ink` value; it knows nothing about
 recognizers.

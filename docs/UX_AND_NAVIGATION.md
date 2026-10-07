@@ -73,7 +73,7 @@ are built differently on purpose:
 * **Night market** (`src/features/nightmarket/`) — Pixi, isometric, hundreds of sprites
   with per-frame animation. It needs a scene graph.
 * **Memory Map** (`src/games/memory-map/MemoryMapWorld.tsx`) — plain DOM, one CSS
-  `transform` on a world div, no rAF loop. It is capped at 100 absolutely-positioned
+  `transform` on a world div, no rAF loop. It is capped at 50 absolutely-positioned
   word nodes (`MEMORY_MAP_CAPACITY`), which is what makes that safe: nothing to cull,
   no scene graph to justify. Its camera is stored as **the world coordinate at the
   centre of the viewport, plus a zoom** rather than as a pixel offset, so a run saved on
@@ -122,8 +122,16 @@ over it:
 
 | Surface | Top band | Bottom band | Constant |
 |---|---|---|---|
-| A **page** (footer bar floats over the scroll area) | 28px | 34px ending on the bar's top edge, plus a fully-transparent run for the bar's own height | `EDGE_FADE_MASK` / `EDGE_FADE_MASK_NO_TOP` — `src/components/MobileTabScreen.tsx` |
+| A **page** (footer bar floats over the scroll area) | 28px | 34px by default (per-page `bottomFadeBand`) ending on the bar's top edge, plus a fully-transparent run for the bar's own height | `edgeFadeMask` / `edgeFadeMaskNoTop` (default-band export `EDGE_FADE_MASK_NO_TOP`) — `src/components/MobileTabScreen.tsx` |
 | A **sheet or panel** (no footer: a modal sheet holds `useHideFooter` for its lifetime) | 20px | 24px ending at the surface's own bottom edge | `SHEET_EDGE_FADE_MASK` / `sheetEdgeFadeSx` — `src/components/sheet/sheetStyled.ts` |
+
+**A taller bottom band per page.** `MobileTabScreen` / `NodePage` take `bottomFadeBand`
+(px, default 34). A page with furniture floating just above the bar raises it so the
+content scrolling behind that furniture is already dissolved rather than busy under a
+button: the Reading/Writing Centers (`MasteryCenterPage` → `CENTER_BOTTOM_FADE_BAND`,
+110px) run it from the bar's top edge to ~60px above their Cards/Decks pills, so the
+linear ramp is still mostly transparent where it passes behind them. A band must stay
+≤ `EDGE_FADE_VAR_CAP` (128px, `scrollEdgeFade.ts`) or the tracked var caps it short.
 
 **The bands are scroll-aware: a fade only appears where content is actually cut off.**
 The fade exists solely to ease the line between *scrolled* content and the scroller's
@@ -146,6 +154,16 @@ old behaviour. Tracked today: `MobileTabScreen` → `ScrollArea` (ref callback),
 `DecksPanelBody` (`useScrollEdgeFade`), `InfoCardPanelBody`'s panes, and
 `ChallengeSheet`'s scroller.
 
+**The scrollbar is drawn over the fade, not inside it.** A mask on a scroller also clips
+that scroller's own scrollbar, so a classic desktop scrollbar used to dissolve at both
+ends. The tracker also writes `--edge-fade-scrollbar`, the gutter width
+(`offsetWidth − clientWidth − side borders`). Every mask is worn through
+`edgeFadeMaskSx(gradient)` (`src/components/scrollEdgeFade.ts`), which applies the
+gradient only to the content column and puts a solid layer over the gutter. Overlay
+scrollbars (mobile, macOS) take no gutter, so they still fade with the content. **Wear a
+fade through `edgeFadeMaskSx` (or `sheetEdgeFadeSx`), never as a bare `maskImage`.**
+Doing that brings back the faded scrollbar.
+
 Only the **bottom** differs in kind. A page reserving the footer's height makes sense; a
 *panel* doing it spends ~164px of the surface on emptiness, which is why the two families
 exist (see docs/DECKS_FEATURE.md for the case that forced the split). The panel's bands are
@@ -164,7 +182,7 @@ the pinned action bar below rather than stopping dead against it).
 ⚠️ **A mask clips its whole rendered subtree, `position: fixed` descendants included.**
 Never put one of these on a box that hosts an overlay — that is the bug documented in
 `src/components/overlayHost.ts` (the challenge sheet's vanished Send button). Portal the
-overlay out with `nearestOverlayHost` first.
+overlay out to the frame first (`useScreenOverlayHost` — § Dimming the background).
 
 ---
 
@@ -400,7 +418,9 @@ identical CSS, and `window.innerHeight` is just as unstable. Only `screen.height
 and `documentElement.clientHeight` (793) hold still. `src/hooks/useAppHeight.ts`
 measures the gap from those two and publishes the web view's height as a plain **px**
 value, `--app-height`, set only in the iOS home-screen app (`navigator.standalone`, gap
-in `0 < gap ≤ 100px`) and unset everywhere else, where every consumer falls back to the
+in `0 < gap ≤ 100px`, and the gap equal to `env(safe-area-inset-top)` within 2px — a
+letterboxed web view shows the same gap with a 0 inset, and stretching it clips the bottom;
+see docs/IOS_STATUS_BAR_BUG.md round 7) and unset everywhere else, where every consumer falls back to the
 `100dvh` / `100%` it used before the hook existed.
 
 ⚠️ **`html, body` is the load-bearing consumer, and the one three earlier rounds
@@ -475,6 +495,16 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
 | Every `SheetPanel` (eip, decks sheet, compare sheet, scp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
+**Sheets with a dictionary search maximize on focus.** Focusing a field inside an element
+marked `data-sheet-maximize-on-focus` animates its `SheetPanel` to full height (the same
+snap as a drag to the top), on the tap itself — so the sheet grows as the keyboard rises
+rather than leaving a part-height sheet showing only the field. The marker sits on
+`DictionaryWordSearch`'s field, so every paneled dictionary gets it: CompareSheet, the
+eip's Compare tab (`CompareWorkspace`) and the Writing Notebook's word picker
+(`NotebookWordPickerSheet`). Other sheet inputs — the decks sheet's "Search your cards" —
+are deliberately not marked. Code: `src/components/sheet/SheetPanel.tsx` → the "Maximize
+when a dictionary search takes focus" effect; `src/components/DictionaryWordSearch.tsx`.
+
 The number behind both is `useKeyboardInset()` — the `Math.max` of our keyboard's
 measured surface and the OS keyboard's `visualViewport` occlusion — which
 `BeginnerKeyboardProvider` also publishes to `:root` as `--keyboard-inset` and
@@ -499,6 +529,52 @@ padding a centred dialog's text field and buttons sit directly under it.
 
 ---
 
+## Dimming the background
+
+**Rule: a dim covers the ENTIRE screen** — the status band, the page header, the page and
+the footer bar — and nothing beyond it (on desktop: the 402px phone card, not the browser
+window). Every scrim in the app obeys it; a new one inherits it by using the shared host.
+
+**How:** a dim is written in place but **portaled to the phone frame**
+(`src/hooks/useScreenOverlayHost.ts` → `useScreenOverlayHost`, which resolves
+`src/components/overlayHost.ts` → `frameOverlayHost`), pinned `position: absolute; inset: 0`
+there (never `fixed` — the frame is not a containing block for fixed children, so a fixed
+scrim dims the whole desktop window), at a z-index above the footer bar's 100. The footer
+**stays where it is** and is dimmed with everything else; no dim takes a `useHideFooter`
+hold.
+
+| Dim | Host / z-index | Where |
+|---|---|---|
+| Every MUI `Dialog` | mounted in the frame by `MuiDialog.defaultProps.container` (`dialogContainer`); root re-pinned `absolute` inside the frame; backdrop `absolute`, `COLORS.modalScrim`; z 1300 | `src/contexts/ThemeContext.tsx` → `MuiDialog` |
+| `SheetPanel` (modal: eip, decks sheets, scp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
+| `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
+| `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
+| Immersive World intro card + interaction popup | frame; 200 | `src/features/immersiveworld/play/IWSceneIntroCard.tsx`, `IWPlayPage.tsx` |
+| `ChallengeRoundScoreboard` | `nearestOverlayHost` — the leaf Surface, which already fills the screen on a footerless game page; 1200 | `src/games/runtime/ChallengeRoundScoreboard.tsx` |
+| `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (flp, games), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
+
+**Deliberate exceptions:**
+- **Speed Reading** passes `inPlace` to its end popup and sort offer: its sideways stage
+  rotates its whole contents, header included, and already covers the screen — a
+  frame-hosted popup would draw upright over a sideways game.
+- **Countdown veils** (Match Speed, Writing Grid — the 3·2·1 over the board) dim only the
+  game panel (`GameFrame`, `position: relative`). They are pointer-transparent and the
+  header's back arrow stays usable during the count (decided 2026-10-06).
+- Tile-level washes (a drop bucket's hover, a bubble's dim, scp's held-card-over-target
+  cue) are not background dims.
+
+**Cost:** a frame-hosted overlay is outside the page surface, so the page-slide exit
+clone does not carry it — navigating away with one open removes it at once instead of
+sliding it off with the page.
+
+**History:** until 2026-10-06 overlays hosted at `nearestOverlayHost` (inside a
+transformed page Surface) and slid the footer away with `useHideFooter`. That left the
+leaf header lit above five games' end popups (their scrim was pinned to a `relative`
+content box below the header), the footer lit — and tappable — above scp's set-complete
+popup, and MUI dialogs dimming the whole desktop browser window in MUI's own black.
+
+---
+
 ## Referenced code
 
 - `src/index.css` — shell `overflow: hidden`, global `user-select: none`, cpcd desktop-selectable exception
@@ -507,6 +583,7 @@ padding a centred dialog's text field and buttons sit directly under it.
 - `src/App.css` — `#root` shell scroller
 - `src/hooks/useBlockEdgeSwipe.ts` — edge-swipe-back blocker
 - `src/contexts/ThemeContext.tsx` → `MuiDialog`, `src/components/sheet/SheetPanel.tsx`, `src/features/beginnerKeyboard/useKeyboardInset.ts` — keyboard clearance for popups (see above)
+- `src/components/overlayHost.ts` → `frameOverlayHost`, `nearestOverlayHost`, `dialogContainer`; `src/hooks/useScreenOverlayHost.ts` → `useScreenOverlayHost` — where a dim is hosted (§ Dimming the background)
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above

@@ -3,16 +3,15 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
-import { authHeader } from "../../utils/authHeader";
+import { fetchGamePool, type GamePoolDistribution, type GamePoolResponse } from "../../api/gamePool";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
-import { collectionQuerySuffix, collectionTitle } from "../../features/flashcards/collectionRef";
+import { collectionTitle } from "../../features/flashcards/collectionRef";
 import { GameLeafPage } from "../shared/GameSurface";
 import { COLORS } from "../../theme/colors";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
@@ -30,7 +29,7 @@ import {
     emptyBuffer,
     fillBuffer,
     takePairs,
-    topUpQuery,
+    topUpDistribution,
     topUpRequest,
     type CardBuffer,
 } from "./cardBuffer";
@@ -57,16 +56,6 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
-
-/** Shape returned by GET /api/onDeck/gamePool. */
-interface GamePoolResponse {
-    cards: VocabEntry[];
-    requested: Record<string, number>;
-    available: Record<string, number>;
-    total: number;
-    needed: number;
-    sufficient: boolean;
-}
 
 /** How often the run clock re-renders. Fine enough for a smooth `m:ss`. */
 const CLOCK_INTERVAL_MS = 200;
@@ -103,7 +92,6 @@ const MatchSpeedPage: React.FC = () => {
     // for an ordinary launch from the Games hub. Appended to every pool request so
     // the round stays inside the set the learner picked.
     const launchCollection = useLaunchCollection();
-    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Match Speed");
     const navigate = useNavigate();
     const location = useLocation();
@@ -255,31 +243,31 @@ const MatchSpeedPage: React.FC = () => {
      * We deliberately do not use the `avoid` soft-demote param.
      */
     const fetchPool = useCallback(
-        async (query: string, topUp = false): Promise<GamePoolResponse | null> => {
-            const excludeIds = [
-                ...onBoardIdsRef.current,
-                ...bufferedEntryIds(bufferRef.current),
-            ];
-            const res = await fetch(
-                `${API_BASE_URL}/api/onDeck/gamePool?${query}&markType=${MARK_TYPE}&surface=match-speed&exclude=${excludeIds.join(",")}${collectionSuffix}`
-                + challengeParamsRef.current
+        async (distribution: GamePoolDistribution, topUp = false): Promise<GamePoolResponse | null> => {
+            // NOTE: no `need`, even on a top-up — so the server treats every top-up as
+            // a full board and re-runs the baseline check (`ensureBaseline`) each tick.
+            // Preserved as-is from the hand-built query; see docs/MATCH_SPEED_GAME.md.
+            const data = await fetchGamePool({
+                markType: MARK_TYPE,
+                surface: "match-speed",
+                distribution,
+                exclude: [...onBoardIdsRef.current, ...bufferedEntryIds(bufferRef.current)],
+                collection: launchCollection,
+                challengeParams: challengeParamsRef.current,
                 // MID-RUN TOP-UPS ARE FILLER ONLY (§ 5.3). The contested words
                 // are dealt once, from the opening fetch, and are never recycled back
                 // into the buffer — so a refill that re-served them would hand the
                 // player a second bite at a word the round has already scored.
-                + (challengeParamsRef.current && topUp ? "&contested=exclude" : ""),
-                { credentials: "include", headers: authHeader() }
-            );
-            if (!res.ok) throw new Error("Failed to load game pool");
-            const data: GamePoolResponse = await res.json();
+                excludeContested: topUp,
+            });
             // Warm the TTS cache so in-game autoplay is instant (mirrors flp).
             data.cards.forEach((c) => tts.prefetch(c));
             return data;
         },
-        // authHeader() reads the token at call time, so this callback's identity
-        // stays stable across a silent token refresh. See CLAUDE.md "Never reload
-        // on token refresh". `collectionSuffix` is likewise omitted: it comes from
-        // this page's own URL, which cannot change without a remount.
+        // apiGet reads the token at call time, so this callback's identity stays
+        // stable across a silent token refresh. See CLAUDE.md "Never reload on token
+        // refresh". `launchCollection` is likewise omitted: it comes from this page's
+        // own URL, which cannot change without a remount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -296,7 +284,7 @@ const MatchSpeedPage: React.FC = () => {
         const request = topUpRequest(bufferRef.current, modeConfig);
         if (!request) return;
         topUpInFlightRef.current = true;
-        fetchPool(topUpQuery(request), true)
+        fetchPool(topUpDistribution(request), true)
             .then((data) => {
                 if (data) {
                     // NOTHING IS ANNOUNCED HERE, deliberately. A top-up may well lend —
@@ -348,7 +336,7 @@ const MatchSpeedPage: React.FC = () => {
         // A replay is judged on its own borrowed words, not the previous run's.
         resetMarkedLent();
         try {
-            const data = await fetchPool(modeConfig.poolQuery);
+            const data = await fetchPool(modeConfig.poolDistribution);
             if (!data) return;
             // NO CARD-COUNT GATE. The server topped the player up to the Match Speed
             // baseline before building this pool, so `sufficient` can only be false

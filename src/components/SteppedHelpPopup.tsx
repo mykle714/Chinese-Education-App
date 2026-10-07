@@ -1,11 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, ButtonBase } from "@mui/material";
 import Icon from "./Icon";
-import { nearestOverlayHost } from "./overlayHost";
 import SteppedHelpStep from "./SteppedHelpStep";
 import { useSwipePager } from "../hooks/useSwipePager";
-import { useHideFooter } from "../hooks/useHideFooter";
+import { useScreenOverlayHost } from "../hooks/useScreenOverlayHost";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
@@ -51,21 +50,16 @@ interface SteppedHelpPopupProps {
  *
  * ⚠️ IT PORTALS OUT OF ITS HOST PAGE, for the same reason ChallengeSheet does: the
  * page's scroll area carries the edge-fade mask, which clips fixed descendants, and the
- * footer bar paints above every page surface. Both would eat the Next button.
+ * footer bar paints above every page surface. Both would eat the Next button. It hosts
+ * at the phone frame (`useScreenOverlayHost`), `absolute` and above the footer's z-index,
+ * so the scrim dims the ENTIRE screen, footer bar included; the bar stays put
+ * (src/components/overlayHost.ts § "THE RULE FOR A DIM").
  */
 function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: SteppedHelpPopupProps) {
     const [index, setIndex] = useState(0);
-    // Written here, painted at frame level — see the portal note above.
-    const anchorRef = useRef<HTMLSpanElement | null>(null);
-    const [host, setHost] = useState<HTMLElement | null>(null);
-
     const showing = open && steps.length > 0;
-    useLayoutEffect(() => {
-        if (!showing) { setHost(null); return; }
-        const el = anchorRef.current;
-        if (el) setHost(nearestOverlayHost(el));
-    }, [showing]);
-    useHideFooter(showing);
+    // Written here, painted at frame level — see the portal note above.
+    const { anchorRef, host } = useScreenOverlayHost(showing);
 
     // Guard the index rather than resetting it in an effect: `steps` can change
     // identity between the two explainers on the same page, and an effect would race
@@ -86,12 +80,13 @@ function SteppedHelpPopup({ open, steps, resolveShot, tokens, onClose }: Stepped
                     <Box
                         className="stepped-help__scrim"
                         onClick={onClose}
-                        sx={{ position: "fixed", inset: 0, zIndex: 1300, backgroundColor: COLORS.modalScrim }}
+                        // `absolute` on the frame host — `fixed` would escape the desktop phone card.
+                        sx={{ position: "absolute", inset: 0, zIndex: 1300, backgroundColor: COLORS.modalScrim }}
                     />
                     <Box
                         className="stepped-help"
                         sx={{
-                            position: "fixed",
+                            position: "absolute",
                             left: 32,
                             right: 32,
                             top: 88,

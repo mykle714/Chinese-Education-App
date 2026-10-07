@@ -374,7 +374,7 @@ export default function PracticeWritingPopup({
   );
 
   // Footer assist button, from the level's behaviour (levelBehavior.ts):
-  //   Step Through → Show · Quarters / Eighths → Next (cycles the region). Snap,
+  //   Step Through → Show · Quarters / Sixths → Next (cycles the region). Snap,
   //   Trace and Memorize have none (Memorize's first stroke unlocks). Timed shows Retry once
   //   the active character's clock has run out. It sits in the panel footer's
   //   footer (WritingPanel), so appearing / vanishing never moves the canvas.

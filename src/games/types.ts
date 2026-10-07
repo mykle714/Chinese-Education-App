@@ -49,12 +49,25 @@ export interface GameDef {
      * the literal here — that constant is what the game's pool query and mark call
      * use, so sourcing it from there keeps the two from drifting.
      *
-     * OMIT for a game whose mark type varies by mode; that game's hub strip labels
-     * each sub-card from its own mode config instead. Word Search is the only such
-     * game today (Pinyin → production, No Pinyin → reading; see
-     * WordSearchModeConfig.markType).
+     * OMIT for a game whose mark type varies by mode, and declare `modes` instead.
+     * Two such games today: Word Search (Pinyin → production, No Pinyin → reading;
+     * WordSearchModeConfig.markType) and Bucket Drop (Pinyin → recognition, No Pinyin →
+     * reading; BucketDropModeConfig.markType).
      */
     markType?: MarkType;
+    /**
+     * A MODED game's per-mode PRIMARY tracks, set exactly when `markType` is omitted.
+     * Word Search (Pinyin → production, No Pinyin → reading) and Bucket Drop (Pinyin →
+     * recognition, No Pinyin → reading) are the two today. Read off each game's own
+     * mode-config table, never restated.
+     *
+     * Exists so the challenge-pool sync test (src/games/__tests__/challengePool.test.ts)
+     * can check every moded game's eligible modes generically — it used to special-case
+     * `gameId === "word-search"`, which a second moded game would have silently slipped
+     * past. PRIMARY track only: a mode's secondary marks (Word Search No Pinyin also
+     * writes production) never make it challenge-eligible.
+     */
+    modes?: { mode: string; markType: MarkType }[];
     /**
      * Keep the game OUT of the Games hub. Its route, page and registry metadata are
      * unchanged — it is just launched from somewhere else. Speed Reading is the one
@@ -89,11 +102,13 @@ export interface GameDef {
      * it ships and must arrive knowing how to be scored.
      *
      * A game is challenge-eligible iff its mark type is recognition/production AND
-     * this field is present — see `challengeEligibleGames()` in registry.ts.
+     * it has a `CHALLENGE_GAMES` entry (server/contracts/wire.ts) — this field is that
+     * entry, looked up by `challengeScoringFor` in registry.ts, and
+     * src/games/__tests__/challengePool.test.ts fails if one is missing.
      *
-     * For a MODED game, eligibility is per mode and so is the spec: omit this field
-     * and put a spec on each eligible mode's config instead. Word Search is the only
-     * such game today — eligible as Pinyin (production), not as No Pinyin (reading) —
+     * For a MODED game (`modes`), eligibility is per mode and so is the spec: omit this
+     * field; each eligible mode has its own `CHALLENGE_GAMES` entry keyed by
+     * (gameId, mode). Word Search and Bucket Drop are both eligible as Pinyin only —
      * which is why a challenge's stored game sequence is a `(gameId, mode)` pair.
      */
     challengeScoring?: ChallengeScoringSpec;

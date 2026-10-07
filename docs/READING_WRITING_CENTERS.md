@@ -42,10 +42,13 @@ Parent doc: [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Mastery Centers".
    [WRITING_PRACTICE_REWORK.md § 3](./WRITING_PRACTICE_REWORK.md)). zh only.
 4. **Word practice grid** (phase 5) — the same 6×6 word grid as the Reading Center's,
    read through the writing bar; tapping a word opens `PracticeWritingPopup` on it.
-5. **Writing Grid game card** (`centers/WritingGridLauncher.tsx`) — the game launches from
-   here only ([WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md)). zh only.
-   Exiting the game reopens the Center scrolled all the way down to this card
-   (§ "Returning from a game").
+5. **Writing games belt** (`centers/WritingGamesCarousel.tsx`, on the shared `GamesBelt`) —
+   two cards, zh only: the **Writing Grid** game, which launches from here only
+   ([WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md)), and the **Writing
+   Notebook** — not a game, an endless per-word practice sheet
+   ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)), whose card carries the notebook total.
+   Exiting either reopens the Center scrolled all the way down to the belt, parked on that
+   card (§ "Returning from a game").
 6. Cards / Decks pills → modal sheets (phase 1).
 
 Both Centers end on the shared `ScrollPastSpacer` (`src/components/MobileFooter.tsx`),
@@ -69,12 +72,15 @@ can scroll up past the floating pills rather than stopping dead on them.
       mount the same thing.
 - [x] `MasteryCenterPage` rebuilt as the study page (tinted ground via
       `NodePage.surfaceColor`, sheets via `NodePage.overlay`; Back restores the open sheet).
+      The page's bottom edge fade is raised to `CENTER_BOTTOM_FADE_BAND` (110px,
+      `NodePage.bottomFadeBand`) so content under the Cards/Decks pills is already faded.
 - [x] Writing Center practice grid + practice popup (popup state extracted to
       `usePracticeWriting`, shared with `PracticeWritingButton`). First built as a grid of
       single characters (`CharacterPracticeGrid`); replaced in phase 5.
 - [x] Reading Center **games carousel** (`ReadingGamesCarousel`): Bubble Match (pinned
       pinyin-off via `location.state.showPinyin`), Word Search (No Pinyin + resume of a
-      parked No Pinyin board), Speed Reading. Word Search and Speed Reading launch from
+      parked No Pinyin board), Speed Reading, Bucket Drop (No Pinyin, zh only), Memory Map.
+      Word Search, Speed Reading, Bucket Drop and Memory Map launch from
       the card's round corner play button (`GameCardData.play`); Bubble Match launches from
       its per-level option tiles. The card itself is the shared `GameCard`
       (`src/games/shared/GameCard.tsx`), and Bubble Match's card data comes from
@@ -230,7 +236,7 @@ cache on arrival rather than a spinner:
 | fdp Centers rail | rc / wc | the fdp's panel landed the library (above) |
 | Card / deck / collection page opened from a Center's sheet → Back | rc / wc | the Back snapshot carries the cards (`backRestore.ts`) |
 | rflp / wflp (`?bar=reading` / `?bar=writing`) → back arrow | rc / wc | the launching Center's panel landed the library; `FlashcardsLearnPage` also calls `warmMasteryCenter` on mount for a reload / deep link |
-| Bubble Match, Word Search, Speed Reading (rc carousel) / Writing Grid (wc) → Back, "Back to …" | rc / wc | the launching Center's panel landed the library |
+| Bubble Match, Word Search, Speed Reading, Bucket Drop, Memory Map (rc carousel) / Writing Grid (wc) → Back, "Back to …" | rc / wc | the launching Center's panel landed the library |
 
 What makes the round trip work is the seed age: `LIBRARY_SEED_MAX_AGE_MS` is **60 minutes**
 (was 2), so the library the Center landed before launching the session is still a valid seed
@@ -255,7 +261,23 @@ Code: `centerPrefetch.ts` (`LIBRARY_SEED_MAX_AGE_MS`, `warmMasteryCenter`);
   `LEVEL_CONFIGS` says Chill / Hustle / Torture. Moot on the card since 2026-10-03: the
   level tiles show only "Level N" (`buildBubbleMatchCard`); the names survive in-game
   only (HUD + win screen). ⚠️ Open: rename in `LEVEL_CONFIGS` if the design's words win.
-- **Memory Map** also marks reading but is not in the design's carousel; left out.
+- **Memory Map** is on the belt (added 2026-10-06, after the design) as a play-only card
+  (`buildPlayCard`, no win pill — the game logs no wins), launched with `exitTo` so
+  `MemoryMapPage`'s Back and end-popup Exit return here (`useGameExit`). Unlike the hub it
+  is not hidden by a collection selection — the belt has no selector.
+- **Bucket Drop** is on the belt (added 2026-10-06) as a play-only card launching its
+  **No Pinyin** mode (`state.mode: "no-pinyin"`, reading track); the Games hub tile is its
+  Pinyin mode. The card is gated to `selectedLanguage === "zh"` HERE rather than by the
+  registry's `languages`, because the hub's Pinyin mode is playable in Spanish — and an es
+  "no pinyin" run would mark recognition (`foreignPromptTrack`). Code:
+  `ReadingGamesCarousel` → the `bucketDrop` card; [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md).
+- **Card titles grow when the card has room.** `GameCard` (`src/games/shared/GameCard.tsx`
+  → `GameCard`) draws a `card` whose options row is EMPTY (Speed Reading, Writing Grid,
+  Word Search with no parked board) with its title at the hero tile's size
+  (`TILE_VARIANTS.hero.title`, 23px); a card carrying option tiles (Bubble Match's levels,
+  Word Search's Resume box) keeps `CARD_TITLE_SX`'s 15.5px. So Word Search drops back to
+  the small title the moment a board is parked. The rule is the card's own, so the Games
+  hub's cards follow it too; half-width `tile`s keep their Bento tier's title.
 - **These games launch from here only** (since 2026-10-03). The Games hub dropped
   Speed Reading (`GameDef.hiddenFromHub`), Word Search's No Pinyin mode and Bubble
   Match's Recognition ⇄ Reading toggle (the hub now pins Recognition). Every carousel
@@ -274,10 +296,12 @@ Code: `centerPrefetch.ts` (`LIBRARY_SEED_MAX_AGE_MS`, `warmMasteryCenter`);
     applied in the same layout effect that parks the loop on its middle copy).
   An ordinary visit carries no such state and opens at the top.
 - **The Writing Center returns the same way.** The Writing Grid's launch
-  (`centers/WritingGridLauncher.tsx` → `WRITING_CENTER_EXIT`) carries
-  `state.returnedFromGame = "writing-grid"`, so exiting the game reopens the Writing
-  Center pinned to the bottom (its game card is the last section). There is no carousel
-  to park, so `focusGameId` does not apply.
+  (`centers/WritingGamesCarousel.tsx` → `WRITING_CENTER_EXIT`) carries
+  `state.returnedFromGame = "writing-grid"`, and the Writing Notebook's Back carries
+  `"writing-notebook"` (`WritingNotebookPage` → `leave`), so either exit reopens the
+  Writing Center pinned to the bottom (the belt is the last section) with the belt parked
+  on that card (`focusGameId`). Since 2026-10-06 both Centers' belts are the same
+  `GamesBelt` (`centers/GamesBelt.tsx`, extracted from `ReadingGamesCarousel`).
 - **Word Search No Pinyin has its own save slot**, separate from the hub's Pinyin board
   (`gameStateStorage` keys by mode — [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §5b).
   The carousel can neither resume nor clobber the hub's board — but it CAN clobber its
@@ -353,7 +377,8 @@ Server: `database/migrations/169-create-daily-words.sql`; `server/contracts/word
 
 Client:
 - `src/features/flashcards/centers/` — `WritingPracticeGrid`,
-  `ReadingGamesCarousel`, `ReadingSwipeGrid`, `wordGridModel` + `useWordGridGeometry`,
+  `GamesBelt` (both Centers' belt), `ReadingGamesCarousel`, `WritingGamesCarousel`
+  (+ the notebook card from `writingNotebook/notebookBelt.ts`), `ReadingSwipeGrid`, `wordGridModel` + `useWordGridGeometry`,
   `WordOfTheDayCard`; `src/games/shared/GameCard.tsx` + `src/games/bubble-match/bubbleMatchCard.ts`
   (the carousel's card, shared with the Games hub); `src/features/flashcards/FlpStudyHand.tsx` (shared with the fdp);
   `src/features/flashcards/centerPrefetch.ts` (fdp → Center prefetch).

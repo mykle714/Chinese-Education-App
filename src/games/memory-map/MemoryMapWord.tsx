@@ -1,100 +1,68 @@
-import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback } from "react";
 import { Box } from "@mui/material";
-import ForeignText from "../../components/ForeignText";
-import { wordBoxSize, type TouchedSides } from "../../../server/services/memoryMapSpawn";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 import type { WordOutcome } from "./types";
-import { OUTCOME_FILL } from "./constants";
+import {
+    OUTCOME_OUTLINE,
+    OUTLINE_PX,
+    OUTLINE_SELECTED,
+    PIXELS_PER_WORLD_UNIT,
+} from "./constants";
 import { COLORS } from "../../theme/colors";
-import { PIXELS_PER_WORLD_UNIT } from "./constants";
+import { FONTS } from "../../theme/fonts";
 import { useTapGesture } from "./useTapGesture";
+import { MAP_FONT_WEIGHT, bowedChars, type MeasuredWord } from "./glyphShapes";
 
 /**
  * One word on the map (docs/MEMORY_MAP_GAME.md § 2.3, § 3.3).
  *
- * ── THE BOX IS AUTHORITATIVE, THE TEXT CONFORMS ──────────────────────────────
- * Its size comes from `wordBoxSize` — the SAME function the server placed it with —
- * not from the rendered text's natural width. That is what keeps tangent neighbours
- * actually tangent: if this drew at its natural width, every word whose real font
- * metrics disagreed with the estimate would visibly overlap or float away from the
- * island it is supposed to belong to.
+ * ── BARE CHARACTERS, NO CONTAINER ────────────────────────────────────────────
+ * Since 2026-10-06 a word is just its characters, in ink, sitting on the blue water —
+ * no tile behind it, and no outline until it is armed or marked. Words touch character to
+ * character: the layout collides each character's MEASURED ink box (glyphShapes.ts),
+ * outline included.
  *
- * The text is therefore centred inside a fixed box and MEASURED-AND-SCALED to fit,
- * rather than the box being sized around the text.
+ * ── DRAWN EXACTLY WHERE IT WAS MEASURED ──────────────────────────────────────
+ * The word's node is its 1em line box (`measured.width` × 1em at the slot's font size),
+ * centred on the layout's anchor and rotated about that centre by the tilt — the same
+ * frame `shapeFromMeasure` built the collision boxes in. Each character is its own span
+ * at its measured advance `x`, with `line-height: 1`, so the browser draws the ink
+ * precisely where the canvas measured it. This is why the map does not render through
+ * ForeignText (see glyphShapes.ts).
  *
- * ── PARCELS AND FENCES ───────────────────────────────────────────────────────
- * The box is drawn: a white parcel on the blue water, with a border only on the edges
- * it SHARES with a neighbour (`borders`, from `touchedSidesForAll`). Tangent boxes abut
- * exactly, so an island's words sit shoulder to shoulder with their boundaries visible
- * and its coastline open to the water — which is what the tangent placement was always
- * for. All four corners are rounded (CORNER_RADIUS_PX), which softens the tiles at the
- * cost of small blue lenses at the interior junctions; see that constant.
+ * ── THE BOW ──────────────────────────────────────────────────────────────────
+ * A multi-character word sits on a gentle arc (§ 2.3a). Each span is moved by its arc
+ * `dy` and turned by its arc `rotate` about its pivot (its advance-box centre, at the
+ * line-box mid-height) — `translateY` then `rotate` with that transform origin, which
+ * is the same pivot-turn `bowShape` applies to the collision box.
  *
- * This replaced four corner brackets marking each box's extent. Corners stated the same
- * geometry but drew it twice wherever two words met, and drew it on the coast where
- * there is nothing to divide.
+ * The outline is `-webkit-text-stroke` at TWICE `OUTLINE_PX` with `paint-order: stroke
+ * fill`: the fill paints over the inner half, leaving exactly `OUTLINE_PX` outside the
+ * glyph — the amount the collision shape was grown by (always, outline shown or not).
+ *
+ * ── OUTLINE COLOUR IS THE STATE ──────────────────────────────────────────────
+ * none = unanswered · blue = armed by the first tap (§ 3.3a) · green / orange / red =
+ * the outcome · red flash = a wrong tap. See `OUTCOME_OUTLINE`. "None" is a TRANSPARENT
+ * stroke rather than no stroke, so the colour fades in instead of popping.
  *
  * ── NO PINYIN ON THE MAP, EVER ───────────────────────────────────────────────
- * `showPinyin={false}` is not a style choice — it is the game, and it matters MORE now
- * that the prompt bar shows the target's pronunciation than it did when nothing did.
- * With pinyin on both sides the player could match the prompt's romanization against
- * the map's, letter for letter, and never look at a character at all. The prompt gives
- * the sound; the map must make you find the characters that carry it.
+ * The prompt bar gives the target's pronunciation; the map must make you find the
+ * characters that carry it. Only the characters are drawn.
  */
-
-/**
- * Border weight between two abutting words, in world-layer px (the camera scales it).
- *
- * Off the 8px grid on purpose, and the game's ONLY exemption from it — a stroke is not
- * spacing, and an 8px fence between two words would be a wall (see the grid docblock in
- * ./constants).
- */
-const BORDER_PX = 1.5;
-
-/**
- * Corner radius, in world-layer px. Applied to ALL FOUR corners of every parcel.
- *
- * This was briefly coastline-only — rounded where a side faced open water, square where
- * it abutted a neighbour — to keep an island's interior seams flush. Owner-settled the
- * other way: round them all.
- *
- * The known consequence, so it is not later "fixed" as a rendering bug: at an interior
- * junction the two rounded parcels no longer meet edge to edge, so a small lens of blue
- * water shows through where their corners pull away from each other. An island therefore
- * reads as a cluster of tiles rather than as one fused landmass. That is a look, not a
- * fault — the geometry underneath is unchanged and the boxes are still exactly tangent.
- */
-const CORNER_RADIUS_PX = 8;
-
-/**
- * Weight of the ring drawn around the SELECTED word, in world-layer px.
- *
- * Heavier than a fence (BORDER_PX) because it has to be findable at MIN_ZOOM — the ring
- * is the only thing standing between a stray touch and a wrong answer, so it must not
- * be something the player has to squint for. Drawn as a box-shadow rather than a border
- * so it costs the parcel no layout: a border would have to eat into the box (hiding a
- * shared fence) or grow it (pushing tangent neighbours apart).
- */
-const SELECT_RING_PX = 3;
-
-/**
- * How much of the box the glyphs fill, on whichever axis binds first.
- *
- * The remainder is the word's margin inside its own parcel — without it, characters
- * would run right up to the fences they share with their neighbours.
- *
- * This IS the fill fraction, so it is the direct lever for "the text looks small". It
- * was not the only cause of that, though: see the ForeignText call below, where a
- * reserved pinyin row was inflating the measured height and costing far more than this
- * constant ever did.
- */
-const TEXT_FIT = 0.92;
 
 interface MemoryMapWordProps {
     word: MemoryMapWordData;
-    /** Which edges this word shares with a neighbour — the only edges that get a line. */
-    borders: TouchedSides;
-    /** The colour it has earned this run, or undefined while still uncoloured. */
+    /** The layout's anchor (line-box centre) and tilt, in world units / degrees. */
+    x: number;
+    y: number;
+    tilt: number;
+    /** The slot's frozen bow — outer-character lean in degrees, + = smile (§ 2.3a). */
+    bow: number;
+    /** The slot's frozen scale — the word's font size in world units. */
+    scale: number;
+    /** The word measured in the current face (glyphShapes.ts). */
+    measured: MeasuredWord;
+    /** The colour it has earned this run, or undefined while still unanswered. */
     outcome?: WordOutcome;
     /** True for the failed target: it pulses until tapped (§ 3.3). */
     pulsing: boolean;
@@ -109,7 +77,12 @@ interface MemoryMapWordProps {
 
 const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
     word,
-    borders,
+    x,
+    y,
+    tilt,
+    bow,
+    scale,
+    measured,
     outcome,
     pulsing,
     selected,
@@ -117,53 +90,20 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
     fading,
     onTap,
 }) => {
-    const box = wordBoxSize(word.entryKey, word.scale, word.language);
-    const widthPx = box.width * PIXELS_PER_WORLD_UNIT;
-    const heightPx = box.height * PIXELS_PER_WORLD_UNIT;
-    /**
-     * Shrink the glyphs to fit inside the box.
-     *
-     * NECESSARY, not cosmetic: the box is sized by `wordBoxSize` (~40px per Chinese
-     * glyph at scale 1) while ForeignText renders its `md` preset at a 50px column —
-     * roughly 25% wider. With a transparent background that overflow was invisible;
-     * now that each word sits on a white parcel with fences on its shared edges, text
-     * would visibly spill across its neighbours.
-     *
-     * MEASURED rather than derived from CPCDRow's constants, because those are private
-     * to that component and differ again for Latin script. `offsetWidth`/`offsetHeight`
-     * are LAYOUT values and ignore CSS transforms, so neither the camera's zoom nor the
-     * scale applied here feeds back into the measurement.
-     *
-     * This is the same principle as the whole feature: geometry is authoritative and
-     * typography conforms to it.
-     */
-    const glyphRef = useRef<HTMLDivElement | null>(null);
-    const [textScale, setTextScale] = useState(1);
+    const fontPx = scale * PIXELS_PER_WORLD_UNIT;
+    const widthPx = measured.width * fontPx;
+    const heightPx = fontPx;
+    const arc = bowedChars(measured, bow);
 
-    useLayoutEffect(() => {
-        const el = glyphRef.current;
-        if (!el) return;
-        const naturalWidth = el.offsetWidth;
-        const naturalHeight = el.offsetHeight;
-        if (naturalWidth === 0 || naturalHeight === 0) return;
-        setTextScale(
-            Math.min(
-                (widthPx * TEXT_FIT) / naturalWidth,
-                (heightPx * TEXT_FIT) / naturalHeight
-            )
-        );
-    }, [word.entryKey, widthPx, heightPx]);
-
-    // A flash overrides the resting colour so a wrong tap is legible even on a word
-    // that already wears one — though in practice only uncoloured words can be hit.
-    // (v2: a fill, not a text colour — see OUTCOME_FILL. The flash takes the red MARK
-    // tier, one step louder than a settled red outcome.)
-    const fill = flashing ? COLORS.redMk : outcome ? OUTCOME_FILL[outcome] : COLORS.background;
-
-    // Fences are drawn in a neutral line colour rather than the word's hue: a boundary
-    // belongs to BOTH parcels, so colouring it by one of them would make an answered
-    // word appear to claim its neighbour's edge.
-    const fence = `${BORDER_PX}px solid ${COLORS.rowBorder}`;
+    // Precedence: a wrong-tap flash, then the armed state, then the earned outcome,
+    // then none (transparent, so the stroke-colour transition fades it in).
+    const outline = flashing
+        ? COLORS.redMk
+        : selected
+          ? OUTLINE_SELECTED
+          : outcome
+            ? OUTCOME_OUTLINE[outcome]
+            : "transparent";
 
     const tap = useTapGesture(
         useCallback(
@@ -189,124 +129,70 @@ const MemoryMapWord: React.FC<MemoryMapWordProps> = ({
                 .filter(Boolean)
                 .join(" ")}
             // ── A PAN THAT CROSSES A WORD IS NOT A TAP ON IT ────────────────
-            // On a dense map most drags START on a word, and a bare onPointerUp
-            // handler fires for every one of them — so panning across the board
-            // answered the prompt (wrongly) with whatever word happened to be under
-            // the finger. `useTapGesture` records the press position and only calls
-            // back when the pointer barely moved; the world's deselect-on-water tap
-            // uses the same hook, so the two ends cannot drift apart.
+            // `useTapGesture` only calls back when the pointer barely moved, so a drag
+            // that starts on a word still pans. The whole line box is the tap target —
+            // more forgiving than the ink alone, and still inside the word's footprint.
             {...tap}
             sx={{
                 position: "absolute",
-                // World coordinates are the box CENTRE, so the node is offset by half
-                // its own size rather than positioned from a corner.
-                left: word.x * PIXELS_PER_WORLD_UNIT - widthPx / 2,
-                top: word.y * PIXELS_PER_WORLD_UNIT - heightPx / 2,
+                left: x * PIXELS_PER_WORLD_UNIT - widthPx / 2,
+                top: y * PIXELS_PER_WORLD_UNIT - heightPx / 2,
                 width: widthPx,
                 height: heightPx,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                // About the centre (the CSS default origin) — the anchor the layout
+                // rotated the collision boxes about. Positive = clockwise.
+                transform: `rotate(${tilt}deg)`,
                 cursor: "pointer",
-                // ── LAND ─────────────────────────────────────────────────────
-                // A white parcel on the blue water. Tangent boxes share edges exactly,
-                // so a whole island fuses into one continuous landmass rather than a
-                // scatter of cards — which is the entire reason the boxes are placed
-                // tangent in the first place.
-                //
-                // v2: an answered (or flashing) word's parcel takes its outcome fill.
-                backgroundColor: fill,
-                // ── FENCES ───────────────────────────────────────────────────
-                // A line ONLY where this word actually abuts a neighbour. The coastline
-                // stays open to the water, and because both boxes in a pair draw their
-                // shared edge the seam sits exactly on the boundary.
-                borderTop: borders.top ? fence : undefined,
-                borderRight: borders.right ? fence : undefined,
-                borderBottom: borders.bottom ? fence : undefined,
-                borderLeft: borders.left ? fence : undefined,
-                // All four corners, interior junctions included (see CORNER_RADIUS_PX).
-                borderRadius: `${CORNER_RADIUS_PX}px`,
-                // Borders must not grow the parcel, or fenced words would push their
-                // neighbours apart and open gaps along every shared edge.
-                boxSizing: "border-box",
                 // The map owns its gestures; the browser must not pan or zoom for us.
                 touchAction: "none",
-                // Colour transitions are what make an answer feel like it landed.
                 transition: "opacity 0.6s ease, filter 0.3s ease",
                 opacity: fading ? 0 : 1,
                 // Fading words are on their way out and must not accept another tap.
                 pointerEvents: fading ? "none" : "auto",
-                // ── THE ARMED RING ───────────────────────────────────────────
-                // The first tap does not answer; it ARMS the word, and this ring is the
-                // whole affordance for that (§ 3.3a). Deliberately INK (`infoInk`,
-                // which v2 made ink; it was blue in v1) rather than any of the three
-                // outcome hues: green/orange/red are results, and a word that is merely
-                // selected has no result yet — borrowing one of those colours would say
-                // the answer had already been graded.
-                //
-                // Outside the box (`0 0 0 Npx`, no inset) so it never covers a shared
-                // fence, and lifted above the neighbours it abuts so half the ring is
-                // not painted over by whichever parcel renders after it.
-                boxShadow: selected ? `0 0 0 ${SELECT_RING_PX}px ${COLORS.infoInk}` : "none",
+                // Lift the armed word so its blue outline is never painted over by a
+                // neighbour that renders later.
                 zIndex: selected ? 2 : undefined,
                 "&.memory-map-word--pulsing": {
                     animation: "memory-map-pulse 1.1s ease-in-out infinite",
                 },
                 "@keyframes memory-map-pulse": {
-                    // Glow rather than scale: scaling would make a word overlap the
-                    // neighbours it was carefully placed tangent to.
-                    // The red MARK tier: a glow is a fill, and `dangerInk` is plain
-                    // ink in v2, which would glow grey-black.
+                    // Glow rather than scale: scaling would push the word's ink into
+                    // the neighbours it was laid against.
                     "0%, 100%": { filter: `drop-shadow(0 0 2px ${COLORS.redMk})` },
                     "50%": { filter: `drop-shadow(0 0 12px ${COLORS.redMk})` },
                 },
             }}
         >
-            <Box
-                className="memory-map-word__glyphs"
-                ref={glyphRef}
-                sx={{
-                    transform: `scale(${textScale})`,
-                    transformOrigin: "center",
-                    pointerEvents: "none",
-                    // Measured at its natural size, so it must not be laid out inside the
-                    // box's constraints — otherwise the box would clamp the measurement
-                    // and the fit would converge on the wrong number.
-                    whiteSpace: "nowrap",
-                    // ── WHY THE GLYPH CELLS ARE UNPADDED HERE ────────────────
-                    // CPCDRow gives every character cell an ASYMMETRIC vertical padding:
-                    // 8px on top (VERTICAL_PADDING at `md`) and, once the pinyin row is
-                    // gone, 0 on the bottom. Flex-centring centres the padded BOX, so the
-                    // glyph inside it sits 8px low — and the fit measurement counts that
-                    // padding as text, shrinking the characters to pay for empty space.
-                    //
-                    // Dropping both paddings makes the measured box the line box, which
-                    // IS symmetric about the glyph (line-height distributes its leading
-                    // evenly), so centring the box centres the character. The padding is
-                    // CPCDRow's own inter-row breathing room and has no job inside a
-                    // single-word parcel that supplies its own margin via TEXT_FIT.
-                    "& .cpcd-row__char-cell": { paddingTop: 0, paddingBottom: 0 },
-                }}
-            >
-                {/* NO `pronunciation` PROP, and that is load-bearing rather than tidy.
-                    CPCDRow reserves vertical space for the pinyin row whenever an item
-                    HAS a pinyin — even with showPinyin={false} — so that toggling pinyin
-                    visibility doesn't shift surrounding layout. Passing it here bought us
-                    22px of invisible padding under every glyph at `md`, which the fit
-                    measurement below dutifully counted: the text came out filling barely
-                    half its parcel's height, and sat high in it because the padding hung
-                    off the bottom. The map never shows pinyin, so it simply must not be
-                    handed any. `showPinyin={false}` stays as a belt-and-braces guard. */}
-                <ForeignText
-                    text={word.entryKey}
-                    language={word.language as never}
-                    size="md"
-                    // The whole point of a reading drill (see the docblock).
-                    showPinyin={false}
-                    bold
-                    characterColor={COLORS.onSurface}
-                />
-            </Box>
+            {measured.chars.map((c, i) => (
+                <Box
+                    component="span"
+                    // Index, not char: a word can repeat a character (谢谢).
+                    key={i}
+                    className="memory-map-word__char"
+                    sx={{
+                        position: "absolute",
+                        left: c.x * fontPx,
+                        top: 0,
+                        // Onto the arc (see THE BOW above). The origin's 50% is the
+                        // line-box mid-height because line-height is 1.
+                        transformOrigin: `${arc[i].pivotOffsetEm * fontPx}px 50%`,
+                        transform: `translateY(${arc[i].dy * fontPx}px) rotate(${arc[i].rotate}deg)`,
+                        fontFamily: word.language === "es" ? FONTS.sans : FONTS.cjk,
+                        fontSize: fontPx,
+                        fontWeight: MAP_FONT_WEIGHT,
+                        // MUST be 1: the measured baseline assumes a 1em line box.
+                        lineHeight: 1,
+                        whiteSpace: "pre",
+                        color: COLORS.onSurface,
+                        WebkitTextStroke: `${OUTLINE_PX * 2}px ${outline}`,
+                        paintOrder: "stroke fill",
+                        transition: "-webkit-text-stroke-color 0.3s ease",
+                        pointerEvents: "none",
+                    }}
+                >
+                    {c.char}
+                </Box>
+            ))}
         </Box>
     );
 };

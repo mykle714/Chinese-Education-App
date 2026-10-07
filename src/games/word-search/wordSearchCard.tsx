@@ -10,8 +10,6 @@ interface BuildWordSearchCardArgs {
     wins: number;
     /** The launching surface's parked board (its own save slot), or null. */
     saved: SavedWordSearchState | null;
-    /** The device-local "show timer" preference — hides the parked time when off. */
-    showTimer: boolean;
     /** BEM block for the resume tile's classes — the same prefix the host passes to
      *  `GameCard`, so the whole card shares one block. */
     classPrefix: string;
@@ -26,7 +24,7 @@ interface BuildWordSearchCardArgs {
 
 /**
  * Word Search's `GameCard` data — an all-purple card whose only option is the shared
- * RESUME tile (kind "resume", one level slot wide) when a board is parked, plus the
+ * RESUME tile (kind "resume", two level slots wide) when a board is parked, plus the
  * corner play button. The ONE definition of the card; both surfaces reach it through
  * `useWordSearchLauncher`, so they can only differ in which mode/save slot they launch
  * and where the launch exits to.
@@ -38,7 +36,7 @@ interface BuildWordSearchCardArgs {
  * Docs: docs/WORD_SEARCH_GAME.md § 3, docs/READING_WRITING_CENTERS.md.
  */
 export function buildWordSearchCard({
-    game, wins, saved, showTimer, classPrefix, onResume, onErase, onPlay,
+    game, wins, saved, classPrefix, onResume, onErase, onPlay,
 }: BuildWordSearchCardArgs): GameCardData {
     return {
         ...gameCardBase(game, wins),
@@ -46,11 +44,11 @@ export function buildWordSearchCard({
         options: saved ? [{
             kind: "resume",
             key: "resume",
+            slots: 2,
             node: (
                 <WordSearchResumeTile
                     classPrefix={classPrefix}
-                    saved={saved}
-                    showTimer={showTimer}
+                    glyph={game.glyph}
                     onResume={onResume}
                     onErase={onErase}
                 />

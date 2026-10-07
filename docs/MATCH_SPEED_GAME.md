@@ -534,13 +534,22 @@ bucket arrives as borrowed cards (stamped with the bucket they really came from)
 arrives as lent `Unfamiliar` cards only when the whole library, minus what is on the
 board and in the buffer, cannot cover it.
 
-⚠️ **This holds even for a one-bucket top-up** (since 2026-09-13). `topUpQuery` omits
+⚠️ **This holds even for a one-bucket top-up** (since 2026-09-13). `topUpDistribution` omits
 buckets that are already full, so a learner with almost no Unfamiliar cards routinely
 sends `?Unfamiliar=5` alone. The server used to treat any one-bucket request as
 strict (a Hydra-era fallback check), skip the cross-bucket tiers, and lend. PPE account
 `11bee9ad…`, with 699 sorted zh cards and one Unfamiliar card, was dealt lent cards
 mid-run because of it. Only an explicit `strictBuckets=1` (Hydra) is strict now; see
 `OnDeckVocabService.getGameVocabPool` → `substituting`.
+
+⚠️ **A top-up sends no `need`.** `MatchSpeedPage` → `fetchPool` (via `fetchGamePool`,
+`src/api/gamePool.ts`) sends only the band quotas from `topUpDistribution` plus `exclude`,
+so the server treats every refill tick as a *full board* and runs `ensureBaseline` against
+`CARD_BASELINES['match-speed']` each time (`OnDeckVocabController.getGamePool`). Usually a
+no-op, since the opening fetch already lent up to the baseline, but it is one extra count
+query per tick and it can lend mid-run if the learner's sorted count drops below the
+baseline during a run. Every other game's refill sends `need`. Not yet decided whether this
+is intentional.
 If the rolled category's buffer is still empty, walk the
 mode's fallback order — in Study Mix, the existing bubble-match one —
 **Target → Comfortable → Unfamiliar → Mastered**

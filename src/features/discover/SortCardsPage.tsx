@@ -1018,8 +1018,8 @@ const SortCardsPage: React.FC = () => {
     // entryKey whose lookup is in flight, so only the tapped card's info button
     // shows a spinner. Also gates re-taps on that same card.
     const [eipLoadingKey, setEipLoadingKey] = useState<string | null>(null);
-    // NOTE: the footer pill is no longer suppressed here. SheetPanel takes the hold
-    // itself for the lifetime of every modal sheet (see useHideFooter there), because a
+    // NOTE: the footer pill is not suppressed here. SheetPanel hosts every modal sheet at
+    // the phone frame above the bar (its scrim dims it, the sheet covers it), because a
     // sheet can now grow to cover the whole screen and the pill would float over it on
     // every host, not just this one.
 

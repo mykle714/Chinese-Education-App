@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Box } from "@mui/material";
 import NodePage from "../../components/NodePage";
-import { ScrollPastSpacer } from "../../components/MobileFooter";
+import { ScrollPastSpacer, FOOTER_CLEARANCE, FOOTER_HEIGHT } from "../../components/MobileFooter";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import DecksSheets, { DECKS_SHEET_PILL_BAND, type DecksSheetsHandle } from "./DecksSheets";
@@ -12,7 +12,7 @@ import {
     MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, MASTERY_CENTER_GROUNDS, MASTERY_CENTER_HUES, type MasteryCenterBar,
 } from "./masteryCenters";
 import WritingPracticeGrid from "./centers/WritingPracticeGrid";
-import WritingGridLauncher from "./centers/WritingGridLauncher";
+import WritingGamesCarousel from "./centers/WritingGamesCarousel";
 import ReadingGamesCarousel, { readReturnedGame } from "./centers/ReadingGamesCarousel";
 import { usePinScrollBottom } from "../../hooks/usePinScrollBottom";
 import ReadingSwipeGrid from "./centers/ReadingSwipeGrid";
@@ -35,7 +35,8 @@ import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
  *             word swipe grid (phase 2), reading games carousel.
  *   Writing — word of the day (phase 3), Writing Flashcards stack (the writing flp,
  *             docs/WRITING_PRACTICE_REWORK.md § 3), 6×6 word practice grid (phase 5),
- *             the Writing Grid game card (§ 2).
+ *             the writing games belt — Writing Grid (§ 2) + Writing Notebook
+ *             (docs/WRITING_NOTEBOOK.md).
  *
  * It used to BE the decks panel rendered as a page (`DecksPanelBody` variant "page").
  * The panel's data still comes from `useDecksPanel(lens)` — now also feeding the
@@ -64,6 +65,24 @@ import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
 /** Both Centers' compact card hand height — the design's `.rstk` (178px). */
 const READING_HAND_HEIGHT = 178;
 
+/**
+ * How far the Centers' bottom fade reaches ABOVE the pill band, in px. The fade is a
+ * linear ramp, so content just above the pills is still mostly transparent only if the
+ * ramp keeps going well past them — this is that overshoot.
+ */
+const CENTER_FADE_REACH_ABOVE_PILLS = 48;
+
+/**
+ * The Centers' bottom edge-fade band, in px: from the footer bar's top edge up past the
+ * Cards/Decks pills (which float FOOTER_CLEARANCE above the frame bottom, i.e. the
+ * clearance's gap above the bar), their breathing room, and a further reach above. So
+ * content scrolling under the pills has already dissolved into the ground instead of
+ * showing through as noise. Derived, so a taller pill or a moved footer keeps the band
+ * reaching past it. Must stay ≤ `EDGE_FADE_VAR_CAP` (scrollEdgeFade.ts).
+ */
+const CENTER_BOTTOM_FADE_BAND =
+    FOOTER_CLEARANCE - FOOTER_HEIGHT + DECKS_SHEET_PILL_BAND + CENTER_FADE_REACH_ABOVE_PILLS;
+
 const MasteryCenterPage: React.FC = () => {
     const navigate = useNavigate();
     // Decks/cards/games opened from here are drill-ins that slide over this page.
@@ -86,10 +105,10 @@ const MasteryCenterPage: React.FC = () => {
     const panel = useDecksPanel(bar, restored?.panel);
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
 
-    // Returning from a game this Center launched — the Reading Center's carousel or the
-    // Writing Center's Writing Grid card (the game's exit carries `returnedFromGame` —
-    // games/runtime/gameExit): reopen scrolled all the way down to the games, which sit
-    // last on both Centers; the reading carousel also parks on that game's card. Pinned
+    // Returning from a game this Center launched — either Center's games belt (the
+    // game's exit carries `returnedFromGame` — games/runtime/gameExit; the Writing
+    // Notebook's Back carries it too): reopen scrolled all the way down to the belt,
+    // which sits last on both Centers, parked on the card just left. Pinned
     // rather than set once, because the sections above load after mount and grow
     // (usePinScrollBottom). Read once: later re-renders must not re-pin.
     const [returnedFromGame] = useState(() => readReturnedGame(locationState));
@@ -136,6 +155,7 @@ const MasteryCenterPage: React.FC = () => {
             onBack={() => navigate("/flashcards/decks")}
             contentClassName={`mastery-center-page__content mastery-center-page__content--${bar}`}
             surfaceColor={MASTERY_CENTER_GROUNDS[bar]}
+            bottomFadeBand={CENTER_BOTTOM_FADE_BAND}
             // The Reading Center's games carousel is a sideways scroller; the scroll
             // area's own touch-action would otherwise cap it (NodePage.horizontalPan).
             horizontalPan={bar === "reading"}
@@ -188,7 +208,9 @@ const MasteryCenterPage: React.FC = () => {
                             language={panel.language}
                             loading={panel.cardsLoading}
                         />
-                        {panel.language === "zh" && <WritingGridLauncher className="mastery-center-page__games" />}
+                        {panel.language === "zh" && (
+                            <WritingGamesCarousel className="mastery-center-page__games" focusGameId={returnedFromGame} />
+                        )}
                     </>
                 ) : (
                     <>

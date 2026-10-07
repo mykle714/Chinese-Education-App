@@ -184,9 +184,7 @@ function defineMode(
         },
         fallbackOrder,
         bufferDepth,
-        poolQuery: categories
-            .map((cat) => `${encodeURIComponent(cat)}=${bufferDepth}`)
-            .join("&"),
+        poolDistribution: Object.fromEntries(categories.map((cat) => [cat, bufferDepth])),
     };
 }
 

@@ -62,7 +62,9 @@ part of the whole `/dictionary` prefix, search page included) — became **study
 host eligibility IS how Compare accrues: the learner reading a comparison is on an earning
 page for as long as they keep interacting (the 15-second activity window still applies).
 ⚠️ A future surface that raises the compare sheet from a non-earning page would silently
-stop Compare earning there — see
+stop Compare earning there. The sheet itself draws **no** flame (2026-10-06 — pull-up
+dictionary flows never show the counter); earning is unaffected because it rides the host
+page's header, which stays mounted under the sheet. See
 [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § "Both cdps earn, and so does Compare".
 
 ### The header: permanent, not merge chrome
@@ -185,7 +187,9 @@ and panel body.
     `PLAIN_COMPACT_CHAR_FONT` (ForeignText). **Shipped**: `"xl"` is in `CPCDSize` today.
 - **Slot B tap → mini search bar**: tapping the empty (or filled) slot B opens a compact search
   input in the below-slots area, with the **special-character keypad above it** (keypad is
-  visible **only while the search bar is open** — decided). The area below lists **dictionary
+  visible **only while the search bar is open** — decided). Focusing the search field grows the
+  hosting sheet to full height as the keyboard rises (`data-sheet-maximize-on-focus` on
+  `DictionaryWordSearch`; docs/UX_AND_NAVIGATION.md § "Keyboard and popups"). The area below lists **dictionary
   result rows** (`DictionaryEntryRow`, the shelf system's `.dr` since 2026-08-24 — flat and
   hairline-separated, not cards; pass `inset` to match the panel's own padding) driven by the
   existing `useDictionarySearch` hook —
@@ -333,7 +337,8 @@ CREATE TABLE word_comparison_cache (
 | Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on the flp and **both** cdps — `VocabCardDetailPage` and `DictionaryCardDetailPage` (2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
-| Reused | `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx` | slot-B search + result rows (`.dr`) |
+| Shared | `src/components/WordSlot.tsx` | the two slots (giant "+" / the word, armed-delete ring). Extracted 2026-10-06 (the Writing Notebook used it briefly; its word selector is now a header button) |
+| Reused | `src/components/DictionaryWordSearch.tsx` (on `useDictionarySearch` + `DictionaryEntryRow`) | slot-B search + result rows (`.dr`). Extracted out of `CompareWorkspace` on 2026-10-06 so the Writing Notebook's word picker is the same selector ([WRITING_NOTEBOOK.md § Word picker](./WRITING_NOTEBOOK.md)); mounted only while open, so each open starts from an empty query |
 
 ---
 
@@ -406,7 +411,7 @@ English-query space. Cache hits are always free and don't consume a slot.
   word-tools rail (the Compare entry point): `src/components/WordToolsRail.tsx`.
 - Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).
-- Search reuse: `src/hooks/useDictionarySearch.ts`, `src/components/DictionaryEntryRow.tsx`
+- Search reuse: `src/components/DictionaryWordSearch.tsx` (shared with the Writing Notebook), over `src/hooks/useDictionarySearch.ts` + `src/components/DictionaryEntryRow.tsx`
   (the `.dr` row — see docs/SHELF_REDESIGN.md § Part B entry 7).
 - cpcd sizing (new `"xl"`): `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx`.
 - Token-refresh client rule (load effects must not key on `token`):

@@ -189,7 +189,9 @@ is global except the two rollups listed above.
     a gauge on a page that cannot move it only invites the learner to watch a frozen
     level.
   - **Study** (`MINUTE_POINTS_ELIGIBLE_PAGES`): the ghost + fill treatment. Orange while
-    earning, grey when idle, struck-through count when paused. Progress toward the next
+    earning, grey when idle, struck-through count when paused. On a game's accent
+    surface (every `GameLeafPage`, Bubble Match's white ground included) `gameSurfaceSx`
+    overrides all of this: glyph AND count are ink. Progress toward the next
     point (`progressToNextPoint`) is drawn as a rising fill inside the flame glyph rather
     than as a seconds number — see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § the
     `.hd .fire` decisions. `liveSeconds` is
@@ -204,7 +206,7 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles}`, **`/immersive-world`** |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | `/flashcards/learn`, **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,speed-reading,memory-map,hydra-bubbles,bucket-drop}`, **`/immersive-world`**, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
 | `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
 | `MINUTE_POINTS_EXCLUDED_EXACT_PAGES` | exact path only; **wins over both lists above** | `/immersive-world`, `/immersive-world/scene-editor` |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |

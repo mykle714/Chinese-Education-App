@@ -181,7 +181,7 @@ through `WritingStage` (`guideFadeIn` / `guideFadeOut`) by the editing hosts:
 
 Everything else is **instant**: a canvas that starts with the guide (mount, a level
 change, a new character — even on Step Through, whose entry flash is drawn, not faded
-in), the Quarters / Eighths region cycle (a plain `regionClip` swap), the post-Verify
+in), the Quarters / Sixths region cycle (a plain `regionClip` swap), the post-Verify
 reveal (the popup turns `guideFadeIn` off while `verifyRevealed`), and every read-only
 preview (grid slots, writing flp cells, Writing Grid cells pass no fade flags).
 
@@ -206,6 +206,11 @@ Code: `src/components/handwriting/HanziGuide.tsx` → `GUIDE_FADE_MS`, `GuideCon
   response, e.g. Memorize) the same pointerdown falls through and starts a stroke,
   otherwise it's swallowed (no stroke started).
 - Imperative handle (`WritingCanvasHandle`): `clear` / `undo` / `redo` / `canRedo` / `getInk` / `isEmpty`. `redo` / `canRedo` are used only by the Beginner Keyboard (docs/BEGINNER_KEYBOARD.md § 6r); Practice Writing has no redo key.
+- `tool` (`"pen"` default | `"eraser"`) + `eraserRadius`: the **partial eraser** — a drag
+  cuts the ink it passes through and splits strokes around the cut, so the result is still
+  real strokes (`inkErase.ts` → `eraseSweep`). An erase empties the redo stack like a new
+  stroke does, and reports `onInkChange` on release. Practice Writing never passes it; only
+  the Writing Notebook does ([WRITING_NOTEBOOK.md § Canvas](./WRITING_NOTEBOOK.md)).
 - **Touch/selection safety:** `touchAction: none` (no scroll / edge-swipe) plus
   `userSelect/WebkitUserSelect/WebkitTouchCallout: none` so a draw gesture can never
   start a text selection that bleeds into the page underneath. (See also the global
@@ -253,7 +258,7 @@ with or without writing in the slot (the ink draws on top):
 - **Snap / Step Through** → the full outline (static). Snap's next-stroke
   animation is an editor-only cue; its snapped ink paints as printed shapes
   (`LevelPreview.snap`).
-- **Quarters / Eighths** → only the **first region** (top-left), clipped as in the editor.
+- **Quarters / Sixths** → only the **first region** (top-left), clipped as in the editor.
 - **Memorize / Blank / Timed** → no outline. **Memorize is the one exception to "first see"**
   (2026-10-04): its editor opens on the outline, but that's the **study phase**. The learner
   enters it deliberately by opening the slot, and their first stroke ends it. Previewing it
@@ -269,8 +274,8 @@ with or without writing in the slot (the ink draws on top):
 ## The writing panel (`WritingPanel`)
 
 Every focused writing surface — the popup's single-character panel and focused 2×2
-slot, and `WritingFocusEditor` (Writing Grid game, writing flp card) — draws in ONE
-bordered rectangle, `src/components/handwriting/WritingPanel.tsx`. The popup's
+slot, `WritingFocusEditor` (Writing Grid game, writing flp card) and the Writing
+Notebook's `NotebookCellEditor` — draws in ONE bordered rectangle, `src/components/handwriting/WritingPanel.tsx`. The popup's
 multi-character selector (`WritingSelectorPanel`) reuses its shell and bands
 (`writingPanelStyles.ts`) with the slot grid in place of the canvas:
 
@@ -279,6 +284,11 @@ multi-character selector (`WritingSelectorPanel`) reuses its shell and bands
 | Header (`--header` band) | The level **picker** (`LevelStepper embedded`, popup single-char) or the level **label** (`WritingPanelLevelLabel`: "Level N · Name [· pinyin]") | Picker only where changing level is allowed |
 | Canvas | The host's `WritingStage`, exactly `size` × `size` (`WRITING_FOCUS_SIZE`) | The panel adds only its 1px border around it |
 | Footer (fixed 52px) | **With `verify`** (popup single-character): Clear · Undo on the left, `assist` + Verify on the right. **Without** (tap-out surfaces — focused slot, `WritingFocusEditor`): Clear · Undo [· `assist`] centred and evenly spaced | With Verify the actions are right-anchored, so an assist button appearing / vanishing never moves Clear/Undo; fixed height either way, so the panel never resizes |
+
+Two optional variations, used only by the Writing Notebook
+([WRITING_NOTEBOOK.md § Canvas](./WRITING_NOTEBOOK.md)): omitting `header` drops the
+header band entirely, and passing `tools` replaces the whole default footer (Clear / Undo /
+assist / Verify) with the caller's row — the notebook's Pen / Eraser toggle.
 
 Action buttons share `WRITING_PANEL_ACTION_SX` (outlined per the buttons rule; disabled
 = solid light grey with a live cooldown).
@@ -290,7 +300,9 @@ A host passes the element the learner tapped as `origin`. On mount (layout effec
 before first paint) the rectangle measures it and animates from a frame where its
 **anchor** sits centred on the origin at a uniform fitted scale, everything around it
 clipped away (`clip-path: inset(…)`, corner radius read from the origin's computed
-`border-radius`) — then to rest. Because
+`border-radius`) — then to rest. The resting radius (`restRadius`) is one value or four
+per-corner `CornerRadii`; a headerless `WritingPanel` (the Writing Notebook) only lightly
+rounds its top two corners (`PANEL_SQUARE_TOP_RADIUS`). Because
 every preview cell renders the same full-size `WritingStage` scaled down (shared
 coordinate space, below), the cell appears to open into the canvas. `collapse()` (via
 the forwarded `WritingPanelHandle`) runs the reverse — re-measuring the origin if it is

@@ -347,10 +347,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
                 // previous field. Read on the canvas's mount only.
                 initialInk={composition.ink}
                 onInkChange={handleInkChange}
-                strokeWidth={8}
-                // Same speed-swelling ink as the practice popup (fast = thick); visual
-                // only — the matcher reads the same Ink either way.
-                velocityWidth
+                strokeWidth={9}
               />
             )}
           </Box>

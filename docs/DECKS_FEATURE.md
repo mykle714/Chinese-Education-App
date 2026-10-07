@@ -591,7 +591,10 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
 
    **(b) The Centers rail** (`.ctr2`) — one tile per goal the account pursues, omitted
    entirely when it pursues neither (and always for Spanish, which cannot accrue those
-   marks) so the hand keeps that space. They sit ABOVE the hand, not in it, because they
+   marks) so the hand keeps that space. The rail is a fixed two-column grid: each tile is
+   always half width and pinned to its own slot — reading left, writing right, the order of
+   `MASTERY_CENTER_BARS` — so a lone tile keeps its size and side instead of stretching
+   (`FlashcardsDecksPage.tsx` → the `flashcards-decks__center-rail` grid). They sit ABOVE the hand, not in it, because they
    are a different KIND of destination: a place to look at your library by skill, not a
    session to start. Filled with the ramp's **pastels** in the skill's own hue (reading
    `grn`, writing `pur` — `MASTERY_CENTER_HUES`, the same hue the Center page grounds on;

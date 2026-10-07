@@ -1,11 +1,11 @@
 import React from "react";
-import { Box, IconButton, Typography } from "@mui/material";
-import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
-import { COLORS } from "../../theme/colors";
+import { Box, ButtonBase, Typography } from "@mui/material";
+import SpeakerButton from "../../components/SpeakerButton";
+import { COLORS, RAMP } from "../../theme/colors";
+import { useGameSurfaceHue } from "../shared/gameSurface";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import TonedPronunciation from "../../components/TonedPronunciation";
-import { MAX_TRIES } from "./constants";
 import type { PromptPhase } from "./types";
 
 /**
@@ -15,34 +15,37 @@ import type { PromptPhase } from "./types";
  * It used to be four stacked rows — gloss, a standing hint line, the spoiler and the try
  * pips — which cost roughly a fifth of a phone screen before the map got any. On a game
  * whose whole subject is a board you have to search, that vertical budget belongs to the
- * board. The hint line ("Find this word on your map") is gone entirely: the red-prompt
- * state (below) already carried the only message that ever changed.
+ * board. The hint line ("Find this word on your map") is gone entirely.
  *
  * It stays an IN-GAME bar rather than being folded into the page header. An earlier
  * revision did fold it in, which bought a little more space at the cost of the page
  * title and of putting the question in amongst the chrome — the question deserves its
  * own line, it just does not deserve four.
  *
- * The row is: gloss · pronunciation · skip · try pips. The gloss is the only element allowed to
- * shrink, so a long definition ellipsizes rather than pushing the pinyin or the pips off
- * the end.
+ * The row is: gloss · pronunciation · speaker · Skip. The gloss is the only element
+ * allowed to shrink, so a long definition ellipsizes rather than pushing the pinyin,
+ * the speaker or the Skip button off the end.
  *
- * ── THE RED GLOSS IS THE ENTIRE FIND-THE-FAILED-WORD AFFORDANCE ──────────────
- * On the third miss the prompt bar turns red (Q17; the gloss text did, before v2). That is deliberately all the help
- * there is: no camera ease toward the target, no edge arrow, no directional hint.
- * Searching IS the game — what the red does is tell the player to stop recalling and
- * start looking for the pulsing word, so they are not still trying to answer a question
- * that is already over.
+ * ── NO TRY PIPS, NO RED BAR (owner, 2026-10-06) ──────────────────────────────
+ * The bar used to end in three try pips, and on the third miss its fill turned red (Q17)
+ * to send the player looking for the failed word. Both are gone: the bar never changes
+ * colour and shows no try count. The failed target's red PULSE on the map
+ * (MemoryMapWord.tsx) is now the whole find-the-failed-word affordance — still no camera
+ * ease, no edge arrow, no directional hint, because searching IS the game. The phase
+ * still reaches the bar, but only to relabel the skip button.
  */
 
 interface MemoryMapPromptProps {
     /** The dd, already sense-resolved server-side. */
     definition: string | null;
+    /** Only relabels the skip button (skip vs. give up); the bar itself never changes. */
     phase: PromptPhase;
-    /** Tries burned on this prompt so far, for the remaining-tries pips. */
-    triesUsed: number;
     /** The target's pronunciation, shown beside the gloss. */
     pronunciation: string | null;
+    /** Replays the target's word — MANUAL narration, so it speaks even when muted. */
+    onSpeak: () => void;
+    /** True while that replay is loading or playing (the speaker's spinner). */
+    speaking: boolean;
     onSkip: () => void;
     canSkip: boolean;
 }
@@ -50,12 +53,15 @@ interface MemoryMapPromptProps {
 const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
     definition,
     phase,
-    triesUsed,
     pronunciation,
+    onSpeak,
+    speaking,
     onSkip,
     canSkip,
 }) => {
     const failed = phase === "failed";
+    // The game's hue, from the GameSurfaceProvider the page mounts (null off-surface).
+    const hue = useGameSurfaceHue();
 
     return (
         <Box
@@ -70,26 +76,26 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 // phone screen before the map got any. The padding is deliberately tight
                 // for the same reason: every row of chrome is a row the board loses.
                 padding: "8px 16px",
-                // The failed state's red (see docblock) is the BAR's fill since v2: it
-                // used to be `dangerInk` text, which v2 made plain ink — erasing the
-                // one affordance that sends the player looking for the pulsing word.
-                // The red MID tier (the row tier) with ink text carries it instead.
-                backgroundColor: failed ? COLORS.redM : COLORS.header,
-                transition: "background-color 0.25s ease",
-                borderBottom: `1px solid ${COLORS.rowBorder}`,
+                // The in-game strip's house treatment, matching `GameHud`
+                // (src/games/shared/GameFrame.tsx): the game hue's near-white TINT with a
+                // full-ink hairline under it, so it reads as the same band of chrome as
+                // every other game's HUD. Follows `GAME_HUE` (blue) automatically. One
+                // fill in every phase — the failed-state red is gone (see docblock).
+                backgroundColor: hue ? RAMP[hue].tint : COLORS.header,
+                borderBottom: `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}`,
             }}
         >
             <Typography
                 className="memory-map-prompt__gloss"
                 sx={{
                     // flex:1 + minWidth:0 is what lets the gloss ellipsize instead of
-                    // shoving the spoiler and the pips off the end of the row.
+                    // shoving the pinyin and the skip button off the end of the row.
                     flex: 1,
                     minWidth: 0,
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.bodyLg,
                     fontWeight: WEIGHT.bold,
-                    // Ink in every state; the failed red is the bar's fill (above).
+                    // Ink in every state.
                     color: COLORS.onSurface,
                     // Long glosses truncate rather than wrapping the bar to two lines and
                     // undoing the space this layout exists to reclaim.
@@ -103,7 +109,7 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                     sees a character in the question slot and starts hunting for it. Any
                     dash, hyphen or bullet has the same problem against CJK script, so the
                     empty state is genuinely empty; the row keeps its height from the skip
-                    button and the pips. It should also be unreachable now: a null target
+                    button. It should also be unreachable now: a null target
                     while playing was the symptom of the stranded-cursor bug that
                     `nextPromptIndex` fixes. */}
                 {definition ?? ""}
@@ -122,10 +128,17 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                 <TonedPronunciation
                     pronunciation={pronunciation}
                     className="memory-map-prompt__pronunciation"
-                    fontSize={SIZE.caption}
+                    fontSize={SIZE.body}
                     sx={{ flexWrap: "nowrap", flexShrink: 0 }}
                 />
             )}
+
+            {/* ── SPEAKER ─────────────────────────────────────────────────────────
+                Replays the target's word (§ 3.1a). The prompt also autoplays it when it
+                appears, but autoplay is muted by the header chip; this is the manual
+                path, which speaks in every mode (docs/AUDIO_PLAYBACK.md § 4) — the
+                learner's one way to hear the word on demand. Shown only with a word. */}
+            {definition !== null && <SpeakerButton onClick={onSpeak} isLoading={speaking} />}
 
             {/* ── SKIP ────────────────────────────────────────────────────────────
                 Sends the word to the back of the queue, to come back later with a fresh
@@ -133,39 +146,38 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
 
                 In the FAILED state it means something different — it accepts the red and
                 moves on — because the outcome is already decided by then and requeuing
-                would let a player dodge every negative mark. The icon stays put either
-                way; only the label changes, since "move past this word" describes both. */}
-            <IconButton
+                would let a player dodge every negative mark. The word "Skip" stays put
+                either way; only the aria-label changes, since "move past this word"
+                describes both.
+
+                A WORDED button since 2026-10-06 (owner; it was a skip-next icon, which
+                read as "next track" rather than as an action on the question). An
+                outlined pill per the house rule for tappable buttons (CLAUDE.md §
+                Buttons & cards: 1px `COLORS.border`). */}
+            <ButtonBase
                 className="memory-map-prompt__skip"
-                size="small"
                 onClick={onSkip}
                 disabled={!canSkip}
                 aria-label={failed ? "Give up on this word" : "Skip this word for now"}
-                sx={{ padding: "8px", color: COLORS.textSecondary, flexShrink: 0 }}
+                sx={{
+                    flexShrink: 0,
+                    // Compact (owner, 2026-10-06: "a little smaller"; was 8px 16px at
+                    // body size). Kept on the chrome's 8px grid (§ 14.5b), so the step
+                    // down is the side padding and the type, not an off-grid 4/12.
+                    padding: "8px",
+                    borderRadius: "999px",
+                    backgroundColor: COLORS.white,
+                    border: `1px solid ${COLORS.border}`,
+                    fontFamily: FONTS.sans,
+                    fontSize: SIZE.caption,
+                    fontWeight: WEIGHT.bold,
+                    lineHeight: 1,
+                    color: COLORS.onSurface,
+                    "&.Mui-disabled": { opacity: 0.4 },
+                }}
             >
-                <SkipNextRoundedIcon sx={{ fontSize: 24 }} />
-            </IconButton>
-
-            {/* Tries remaining. Kept beside the gloss rather than in the right-hand
-                control cluster: it belongs to the QUESTION, not to the page. */}
-            <Box
-                className="memory-map-prompt__tries"
-                sx={{ display: "flex", gap: "8px", flexShrink: 0 }}
-            >
-                {Array.from({ length: MAX_TRIES }, (_, i) => (
-                    <Box
-                        key={i}
-                        className={`memory-map-prompt__try memory-map-prompt__try--${i < triesUsed ? "spent" : "left"}`}
-                        sx={{
-                            width: "8px",
-                            height: "8px",
-                            borderRadius: "50%",
-                            backgroundColor: i < triesUsed ? COLORS.dangerInk : COLORS.card,
-                            transition: "background-color 0.2s ease",
-                        }}
-                    />
-                ))}
-            </Box>
+                Skip
+            </ButtonBase>
         </Box>
     );
 };

@@ -75,7 +75,8 @@
  * (z-index 100, `FooterPresenter`) painted over the keyboard's bottom rows on
  * most pages. At the frame the 1300 competes with the footer directly.
  * The footer deliberately does NOT move: the keyboard covers it, rather than
- * taking a `useHideFooter` hold the way sheets do (decided 2026-09-24; that
+ * taking a `useHideFooter` hold (decided 2026-09-24 — and since 2026-10-06 sheets
+ * and every other dim also leave the footer in place, covering it the same way; that
  * hook is also out of reach — this provider sits ABOVE
  * `FooterVisibilityProvider`, inside `MobileDemoFrame`).
  */

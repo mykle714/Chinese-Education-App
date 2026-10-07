@@ -42,7 +42,10 @@ import { CANVAS_SIZE, COUNTDOWN_STEPS, COUNTDOWN_STEP_MS, DEFAULT_SETTINGS, GAME
  *               out → top-1 Verify → ✓ / ✗ and a writing mark on the character's own
  *               card (the server applies the anti-farming gate). A ✗ cell can be
  *               reopened and rewritten (a fresh attempt: new ink, new Level 8 clock).
- *   ended     — every cell ✓; the stopwatch stops. Time, medal, personal best.
+ *   ended     — every cell ✓; the stopwatch stops. Time, medal, personal best. The
+ *               popup minimizes to the corner puck so the finished board (every cell's
+ *               ink over its full shadow) can be viewed. Tapping a cell reopens its
+ *               canvas as drawn; a redraw is verified (✓ / ✗) but never marked.
  *
  * The stopwatch is ACCUMULATED active time, so a backgrounded app (useBackgroundPause)
  * is not billed — the app-wide games rule.
@@ -149,10 +152,17 @@ const WritingGridPage: React.FC = () => {
     }, []);
 
     // ── Phase 2: check a cell on tap-out ─────────────────────────────────────────
+    // Also the End board's practice redraw: once the board is finished, a tapped cell
+    // reopens with its ink as drawn; a CHANGED drawing is re-verified (✓ / ✗ on the
+    // cell) but emits no mark — the run's marks were already sent while it was timed.
     const handleCellDone = async (index: number, ink: Ink) => {
         const cell = cells[index];
         setOpenIndex(null);
         if (!cell) return;
+        const practice = phase === "ended";
+        // Practice: closing with the canvas untouched — or cleared and left empty — keeps
+        // the board's drawing and verdict rather than blanking a finished cell.
+        if (practice && (ink.length === 0 || sameInk(ink, inks[cell.char] ?? []))) return;
         setInks((prev) => ({ ...prev, [cell.char]: ink }));
         if (ink.length === 0) return; // nothing written: no check, no mark
         setResults((prev) => ({ ...prev, [cell.char]: "checking" }));
@@ -164,6 +174,7 @@ const WritingGridPage: React.FC = () => {
             console.warn("[WritingGrid] verify failed", err);
         }
         setResults((prev) => ({ ...prev, [cell.char]: correct ? "correct" : "wrong" }));
+        if (practice) return; // End-board redraws are evaluated, never marked
         const level = index + 1;
         // Every check marks the character's own card; the server drops it when
         // level ≤ that character's mastery (farming) or the card is resting.
@@ -176,11 +187,12 @@ const WritingGridPage: React.FC = () => {
         }).catch((err) => console.error(`[WritingGrid] writing mark failed → card ${cell.cardId}:`, err));
     };
 
-    // A ✗ cell reopened is a fresh attempt: drop its old ink (and with it the old
-    // Level 8 clock, which lives in the editor).
+    // Phase 2: a ✗ cell reopened is a fresh attempt — drop its old ink (and with it the
+    // old Level 8 clock, which lives in the editor). On the End board a cell reopens
+    // with its canvas exactly as drawn (✓ or ✗); the editor's Clear starts it over.
     const handleOpenCell = (index: number, el: HTMLElement) => {
         const cell = cells[index];
-        if (cell && results[cell.char] === "wrong") {
+        if (phase === "write" && cell && results[cell.char] === "wrong") {
             setInks((prev) => ({ ...prev, [cell.char]: [] }));
             setResults((prev) => ({ ...prev, [cell.char]: "idle" }));
         }
@@ -191,6 +203,9 @@ const WritingGridPage: React.FC = () => {
     // ── End: every cell correct ──────────────────────────────────────────────────
     const allCorrect = cells.length > 0 && cells.every((c) => results[c.char] === "correct");
     const [finalMs, setFinalMs] = useState(0);
+    // The end popup collapses to the top-right puck (its ×) so the finished board —
+    // every cell's ink over its shadow — can be looked over; the puck restores it.
+    const [popupMinimized, setPopupMinimized] = useState(false);
     useEffect(() => {
         if (phase !== "write" || !allCorrect) return;
         holdStopwatch();
@@ -207,6 +222,7 @@ const WritingGridPage: React.FC = () => {
 
     const playAgain = () => {
         personalBest.reset();
+        setPopupMinimized(false);
         setLoadNonce((n) => n + 1);
     };
     const leave = () => navigate(gameExit.path, { state: gameExit.state });
@@ -242,13 +258,14 @@ const WritingGridPage: React.FC = () => {
                         dimmed={phase === "ended"}
                         valueShown={showTimer}
                         onToggleValueShown={() => updateGridSettings({ showTimer: !showTimer })}
+                        // The phase rides in the clock strip's top-left corner rather than on
+                        // its own row, so the board gets that row's height back.
+                        leading={
+                            <Box className="writing-grid__phase" sx={{ fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
+                                {phase === "arrange" || phase === "countdown" ? "Phase 1" : "Phase 2"}
+                            </Box>
+                        }
                     />
-                    <Box
-                        className="writing-grid__phase"
-                        sx={{ textAlign: "center", pt: 1.25, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}
-                    >
-                        {phase === "arrange" || phase === "countdown" ? "Phase 1" : "Phase 2"}
-                    </Box>
 
                     {/* No side padding here: the board's frame runs edge to edge so the Easiest /
                         Hardest labels can centre between the screen edge and the grid. The
@@ -336,7 +353,12 @@ const WritingGridPage: React.FC = () => {
             )}
 
             {phase === "ended" && (
-                <GameEndPopup classPrefix="writing-grid">
+                <GameEndPopup
+                    classPrefix="writing-grid"
+                    minimized={popupMinimized}
+                    onMinimize={() => setPopupMinimized(true)}
+                    onRestore={() => setPopupMinimized(false)}
+                >
                     <Typography className="writing-grid__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
                         {medal ? `${MEDAL_LABEL[medal]}!` : "Finished!"}
                     </Typography>
@@ -369,5 +391,17 @@ const WritingGridPage: React.FC = () => {
         </GameLeafPage>
     );
 };
+
+/**
+ * Same drawing? Compared stroke by stroke on the timestamps, which are unique to a
+ * drawing — the editor hands back copies, so reference equality cannot be used.
+ */
+function sameInk(a: Ink, b: Ink): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((stroke, i) => {
+        const other = b[i];
+        return stroke.ts.length === other.ts.length && stroke.ts.every((t, j) => t === other.ts[j]);
+    });
+}
 
 export default WritingGridPage;

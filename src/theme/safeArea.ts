@@ -32,6 +32,9 @@
 //     bottom edge-fade band, both of which are measured off the footer bar.
 //   • src/components/FooterPresenter.tsx — the bar's hide travel, which must clear the
 //     grown bar or it peeks back above the bottom edge.
+//   • src/features/flashcards/FlashcardsLearnPage/styled.ts → `MoreInfoPill` — flp is
+//     footerless, so the pill lifts itself off the home indicator (the card slot follows
+//     via useCardSlotPadding's live measure).
 //
 // ⚠️ THE OTHER THING black-translucent COSTS — NOT THESE INSETS' JOB. It also leaves
 // the document's INITIAL CONTAINING BLOCK at the pre-cover height: the web view covers

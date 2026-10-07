@@ -119,7 +119,7 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                             sx={{
                                 fontFamily: FONTS.sans,
                                 // SIZE.bodyLg — the play panel's one text size, shared
-                                // with the HUD (`WordSearchPage` → HUD_TEXT_SX) and the
+                                // with the clock (`GameTimer`) and the
                                 // hint reveal (`WordSearchHintRow`).
                                 fontSize: SIZE.bodyLg,
                                 fontWeight: WEIGHT.medium,

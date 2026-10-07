@@ -41,8 +41,6 @@ const ProvisionalSortDonePopup: React.FC<ProvisionalSortDonePopupProps> = ({
 }) => (
     <MinimizablePopup
         classPrefix="provisional-sort-done"
-        // No stage to sit inside: scp is a normal page, so the scrim covers the viewport.
-        positioning="fixed"
         puckColor={COLORS.infoInk}
         accentContrast={COLORS.white}
         zIndex={210}

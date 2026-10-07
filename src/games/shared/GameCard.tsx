@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import Icon from "../../components/Icon";
 import RoundPlayButton from "../../components/RoundPlayButton";
-import { BentoTile, CardShell, CARD_TITLE_SX, TILE_VARIANTS } from "../../components/bento";
+import { BentoTile, CardShell, CARD_SHELL, CARD_TITLE_SX, TILE_VARIANTS } from "../../components/bento";
 import { LEVEL_CONFIGS } from "../bubble-match/constants";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -25,11 +25,13 @@ import { WEIGHT } from "../../theme/scale";
  *                    Bubble Match, Word Search, Speed Reading.
  *
  * An OPTION is one of two kinds, both drawn on the shared `GameOptionTile` shell:
- *   kind="level"  — a hued tile with a name and a weekly ⭐ (Bubble Match's levels);
+ *   kind="level"  — a hued tile with a name, a weekly ⭐ and an optional small ghost
+ *                   glyph (Bubble Match's levels, which wear the game's bubble glyph);
  *   kind="resume" — a caller-rendered node (Word Search's `WordSearchResumeTile`, which
  *                   owns its own resume / delete-confirm faces) on the same shell.
- * Every option occupies one SLOT (`SLOT_FLEX`, one Bubble Match level's width), so a
- * lone Resume box lines up with the level boxes on the card above it.
+ * Every option occupies whole SLOTs (`slotFlex`, one Bubble Match level's width per
+ * slot) — a level is one slot, Word Search's Resume box two — so an option's edges
+ * line up with the level boxes on the card above it.
  *
  * Card data comes from the builders in games/shared/gameCards.ts
  * (`gameCardBase`, `buildPlayCard`) and the per-game ones that extend them
@@ -45,12 +47,19 @@ import { WEIGHT } from "../../theme/scale";
 const OPTION_GAP = 7;
 /** A card's options row is divided into this many slots — Bubble Match's level count. */
 const LEVEL_SLOTS = LEVEL_CONFIGS.length;
-/** Flex basis of one option slot (one Bubble Match level tile's width). With all
- *  LEVEL_SLOTS slots filled this is exactly an even split of the row. */
-const SLOT_FLEX = `0 0 calc((100% - ${OPTION_GAP * (LEVEL_SLOTS - 1)}px) / ${LEVEL_SLOTS})`;
+/** Flex basis of an option spanning `span` slots (one slot = one Bubble Match level
+ *  tile's width). A multi-slot option also swallows the gaps between the slots it
+ *  covers, so its edges land exactly where the level tiles' edges would. With all
+ *  LEVEL_SLOTS single slots filled this is exactly an even split of the row. */
+const slotFlex = (span = 1) =>
+    `0 0 calc((100% - ${OPTION_GAP * (LEVEL_SLOTS - 1)}px) / ${LEVEL_SLOTS} * ${span} + ${OPTION_GAP * (span - 1)}px)`;
 /** An option tile's floor — also the options row's, so a play-button-only card is as
  *  tall as one carrying option tiles. */
 const OPTION_MIN_HEIGHT = 62;
+/** A level tile's ghost glyph — the card ghost's treatment (ink, CARD_SHELL opacity and
+ *  right bleed) scaled down to the option tile: roughly the base tile's ghost-to-height
+ *  ratio (92 / 112) applied to OPTION_MIN_HEIGHT, bleeding off the top-right corner. */
+const OPTION_GHOST = { size: 50, top: -9 } as const;
 
 /** One launch target inside a `card` — the design's `.gopts > div`. */
 export type GameCardOption =
@@ -62,11 +71,17 @@ export type GameCardOption =
         ground?: string;
         /** Cleared this week. */
         star?: boolean;
+        /** Material Symbols name for a small ghost glyph bleeding off the tile's
+         *  top-right (texture, like the card's own ghost). Absent → no ghost. */
+        glyph?: string;
         onSelect: () => void;
     }
     | {
         kind: "resume";
         key: string;
+        /** How many level slots the tile spans (default 1). Word Search's resume tile
+         *  takes 2 — it is the card's only option, so it has the room. */
+        slots?: number;
         /** The caller's tile, drawn on `GameOptionTile` (it owns its faces + taps). */
         node: ReactNode;
     };
@@ -88,6 +103,12 @@ export interface GameCardData {
     /** `card`: the corner play button (and the whole-card tap). `tile`: used as the
      *  tile's click when there is no `to`. */
     play?: { ariaLabel: string; onSelect: () => void };
+    /**
+     * A non-win tally drawn in the win pill's place, with its own glyph — the Writing
+     * Notebook's card (not a game: it has no wins, but it has a counter). Wins take
+     * precedence if both are set.
+     */
+    tally?: CardTally;
     /** `card` only: draw the outer outline (default true — game cards are outlined,
      *  CLAUDE.md § "Buttons & cards"). Word Search's card sets false; its resume tile
      *  stays outlined. A `tile` is never outlined (Bento tiles are the exception). */
@@ -96,17 +117,26 @@ export interface GameCardData {
     to?: string;
 }
 
+/** A counted badge for a launcher card: the number, its glyph and its spoken unit. */
+export interface CardTally {
+    count: number;
+    /** Material Symbols name. */
+    glyph: string;
+    /** Spoken unit, singular / plural ("win" / "wins"). */
+    noun: [string, string];
+}
+
 /**
- * A lifetime win count as a pill badge: a trophy glyph + the number in a capsule. Frost
- * ground + a hairline so it reads on both the white Bubble Match card and the hued
- * cards/tiles without picking up either's colour. THE one win badge across game
- * launchers — card headers and tile pins both wear it.
+ * A count as a pill badge: a glyph + the number in a capsule. Frost ground + a hairline
+ * so it reads on both the white Bubble Match card and the hued cards/tiles without
+ * picking up either's colour. THE one count badge across launchers — game card headers
+ * and tile pins (as `WinCountPill`), the Writing Notebook's belt card.
  */
-export const WinCountPill: React.FC<{ wins: number; classPrefix: string }> = ({ wins, classPrefix }) => (
+export const CountPill: React.FC<{ tally: CardTally; className: string }> = ({ tally, className }) => (
     <Box
         component="span"
-        className={`${classPrefix}__win-pill`}
-        aria-label={`${wins} ${wins === 1 ? "win" : "wins"}`}
+        className={className}
+        aria-label={`${tally.count} ${tally.count === 1 ? tally.noun[0] : tally.noun[1]}`}
         sx={{
             display: "inline-flex",
             alignItems: "center",
@@ -126,10 +156,23 @@ export const WinCountPill: React.FC<{ wins: number; classPrefix: string }> = ({ 
             whiteSpace: "nowrap",
         }}
     >
-        <Icon name="emoji_events" size={12} sx={{ color: COLORS.iconColor }} />
-        {wins}
+        <Icon name={tally.glyph} size={12} sx={{ color: COLORS.iconColor }} />
+        {tally.count}
     </Box>
 );
+
+/** A lifetime win count — the trophy `CountPill`. */
+export const WinCountPill: React.FC<{ wins: number; classPrefix: string }> = ({ wins, classPrefix }) => (
+    <CountPill tally={{ count: wins, glyph: "emoji_events", noun: ["win", "wins"] }} className={`${classPrefix}__win-pill`} />
+);
+
+/** The card's header badge: its wins when it logs any, else its tally, else nothing. */
+const cardBadge = (card: GameCardData, classPrefix: string) =>
+    card.wins !== undefined
+        ? <WinCountPill wins={card.wins} classPrefix={classPrefix} />
+        : card.tally
+            ? <CountPill tally={card.tally} className={`${classPrefix}__tally-pill`} />
+            : undefined;
 
 /** An option tile's name — shared by level tiles and the resume tile's "Resume". */
 export const OPTION_TITLE_SX = {
@@ -148,6 +191,16 @@ interface GameOptionTileProps {
     component?: "button" | "div";
     onClick?: (e: React.MouseEvent) => void;
     ariaLabel?: string;
+    /** Material Symbols name for a small ghost glyph bleeding off the tile's top-right
+     *  (texture, the card ghost's treatment scaled down). Absent → no ghost. Drawn
+     *  before `children`, so a corner control (⭐, ✕) paints over it. */
+    glyph?: string;
+    /** Class for the ghost glyph. */
+    glyphClassName?: string;
+    /** The ghost's right offset. Default: the card ghost's bleed off the right edge
+     *  (`CARD_SHELL.ghostRight`). A tile with its own top-right control (the resume
+     *  tile's ✕) pulls the ghost inward so the two never overlap. */
+    glyphRight?: number;
     children: ReactNode;
 }
 
@@ -158,7 +211,7 @@ interface GameOptionTileProps {
  * box with different contents, not a hand-copied look-alike.
  */
 export const GameOptionTile: React.FC<GameOptionTileProps> = ({
-    className, ground = COLORS.frost, component = "div", onClick, ariaLabel, children,
+    className, ground = COLORS.frost, component = "div", onClick, ariaLabel, glyph, glyphClassName, glyphRight = CARD_SHELL.ghostRight, children,
 }) => (
     <Box
         component={component}
@@ -187,6 +240,15 @@ export const GameOptionTile: React.FC<GameOptionTileProps> = ({
             backgroundColor: ground,
         }}
     >
+        {glyph && (
+            <Icon
+                name={glyph}
+                size={OPTION_GHOST.size}
+                color={COLORS.onSurface}
+                className={glyphClassName}
+                sx={{ position: "absolute", top: OPTION_GHOST.top, right: glyphRight, opacity: CARD_SHELL.ghostOpacity, pointerEvents: "none" }}
+            />
+        )}
         {children}
     </Box>
 );
@@ -227,7 +289,7 @@ const GameCard: React.FC<GameCardProps> = ({ card, variant = "card", classPrefix
                 hue={card.hue ?? "pur"}
                 icon={card.glyph}
                 // `pinBare`: the pill brings its own chrome. Top-LEFT, clear of the ghost.
-                pin={card.wins !== undefined ? <WinCountPill wins={card.wins} classPrefix={classPrefix} /> : undefined}
+                pin={cardBadge(card, classPrefix)}
                 pinBare
                 pinSide="left"
             />
@@ -235,6 +297,16 @@ const GameCard: React.FC<GameCardProps> = ({ card, variant = "card", classPrefix
     }
 
     const base = TILE_VARIANTS.base;
+    // A card whose options row is EMPTY (just the corner play button) has room for a
+    // bigger name, so its title grows to the hero tile's type (BentoTile `hero`) — not a
+    // new size. A card carrying option tiles (Bubble Match's levels, Word Search's Resume
+    // box) keeps the tile-size title, so Word Search drops back to it the moment a parked
+    // board gives it a Resume tile. Every `card` surface follows this (Games hub, both
+    // Centers); `tile`s keep their Bento tier's title.
+    const largeTitle = card.options.length === 0;
+    const titleSx = largeTitle
+        ? { ...CARD_TITLE_SX, fontSize: TILE_VARIANTS.hero.title, letterSpacing: TILE_VARIANTS.hero.letterSpacing }
+        : CARD_TITLE_SX;
     return (
         <CardShell
             className={`${classPrefix}__card ${classPrefix}__card--${card.gameId}`}
@@ -258,10 +330,14 @@ const GameCard: React.FC<GameCardProps> = ({ card, variant = "card", classPrefix
             {/* Title + win pill sit INLINE — the pill follows the title rather than being
                 pushed to the far edge, where it would collide with the ghost glyph. */}
             <Box className={`${classPrefix}__card-header`} sx={{ position: "relative", display: "flex", alignItems: "center", gap: "8px", padding: "0 2px" }}>
-                <Box component="b" className={`${classPrefix}__card-title`} sx={CARD_TITLE_SX}>
+                <Box
+                    component="b"
+                    className={`${classPrefix}__card-title${largeTitle ? ` ${classPrefix}__card-title--large` : ""}`}
+                    sx={titleSx}
+                >
                     {card.title}
                 </Box>
-                {card.wins !== undefined && <WinCountPill wins={card.wins} classPrefix={classPrefix} />}
+                {cardBadge(card, classPrefix)}
             </Box>
             <Box
                 className={`${classPrefix}__options`}
@@ -274,7 +350,7 @@ const GameCard: React.FC<GameCardProps> = ({ card, variant = "card", classPrefix
                         key={opt.key}
                         className={`${classPrefix}__slot`}
                         onClick={stopCardTap}
-                        sx={{ flex: SLOT_FLEX, minWidth: 0, alignSelf: "stretch", display: "flex" }}
+                        sx={{ flex: slotFlex(opt.kind === "resume" ? opt.slots : 1), minWidth: 0, alignSelf: "stretch", display: "flex" }}
                     >
                         {opt.kind === "level" ? (
                             <GameOptionTile
@@ -282,6 +358,9 @@ const GameCard: React.FC<GameCardProps> = ({ card, variant = "card", classPrefix
                                 className={`${classPrefix}__option ${classPrefix}__option--${opt.key}`}
                                 ground={opt.ground}
                                 onClick={opt.onSelect}
+                                // The shell draws the ghost first, so the ⭐ (same corner) paints over it.
+                                glyph={opt.glyph}
+                                glyphClassName={`${classPrefix}__option-ghost`}
                             >
                                 {opt.star && (
                                     <Box component="span" className={`${classPrefix}__option-star`} sx={{ position: "absolute", top: 7, right: 8, fontSize: 11 }}>

@@ -405,9 +405,12 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
 2. **The ink tier is removed fully.** `dangerInk` / `successInk` / `infoInk` / `warnInk`
    are all `--ink` (`#17161A`), as `--danger:var(--ink)` & co. in v2. The names are kept
    so a call site still says what the colour is for. Consequences: the Delete Account
-   button, the arena promotion banner, error text and the swipe hints are ink; Match
+   button, the arena promotion banner and error text are ink; Match
    Speed's urgent clock is carried by its pulse alone (its caption still says "red and
-   pulsing" — the tokens win).
+   pulsing" — the tokens win). **Exception (2026-10-06, user call):** the flp swipe
+   hints ("← Incorrect" / "Correct →", `SwipeHintLabel`) are NOT ink — `CORRECT_LABEL` /
+   `INCORRECT_LABEL` in `src/features/flashcards/constants.ts` take the Mark tier
+   (`grnMk` / `redMk`), the same colors as the drag wash.
 3. **Target is yellow** (`BAND_HUES.Target = "yel"`), per artboard 18 ("Target yellow").
    ⚠️ **Open collision:** Learn Now / Study Mix are also yellow (`LEARN_NOW_HUE`). The
    design avoids it by drawing Learn Now purple; the user kept Learn Now yellow. One
@@ -1276,7 +1279,7 @@ undesigned Memory Map.
 
 Every game artboard is the same frame: the `.lhd` leaf header (A2b, already shipped) over
 `.play` — an inset rounded panel containing `.hud` (a bordered strip of mono `.lab`s) and
-optionally `.timer` (28px tabular numerals over a `.trk` track).
+optionally `.timer` (tabular numerals over a `.trk` track — originally 28px sans bold; since 2026-10-06 every clock uses Word Search's mono `SIZE.bodyLg` style, see GAMES_FEATURE.md § Layer 2b).
 
 ### The scope line, and where it falls
 
@@ -1373,7 +1376,7 @@ the panel from a card on a page into a board.
 | Match Speed | blu | blue | **blu** |
 | Speed Reading | yel | yellow | **yel** |
 | Hydra Bubbles | grn | green | **grn** |
-| Memory Map | org | — | **org** |
+| Memory Map | blu (org until 2026-10-06) | — | **blu** |
 
 The ground is still DERIVED from the hub hue, so a hub row and the screen it opens cannot
 drift apart. Until 2026-09-24 three of the five artboard hues disagreed with the hub
@@ -1969,7 +1972,11 @@ change on a page whose shell doesn't scroll. Check the touch rules before wiring
 **The keypad landed as `.kp` KEYCAPS.** The vowel grouping was already right — the
 restyle was the key itself. It was a MUI contained `Button`, so it rendered as an
 elevated pill with a ripple: three separate "this submits something" signals on a
-control that only types a letter. It is now a flat 30×30 square at radius 8 with a
+control that only types a letter. It is now a flat square keycap — 30×30 at radius 8 in
+the Compare tab, enlarged to 32×32 at radius 8 with an 18px glyph on a 4px grid (4px in-group / 16px
+between-group / 8px row gaps)
+on the Dictionary page
+(`PinyinKeypad` → `KEY_METRICS`, `size="large"`) — with a
 ramp pastel ground and an ink glyph, `:active` darkening in place of the ripple —
 `.kp b` exactly. Groups are the spacing unit (5px within a group, 14px between), which
 is the only thing telling a learner that ā á ǎ à are one vowel and not four letters.
@@ -2385,17 +2392,20 @@ missing) — nothing else. `routeMeta` is also what tells `pageTransition` and
 **Status: DONE (2026-08-21).**
 
 **What landed.**
-- **Two colours, one bit.** `WORD_BUBBLE_BG` is the ramp's `red`, `DEFINITION_BUBBLE_BG`
-  is inert `grey`. Colour now encodes *which side of a pair a bubble is* and nothing
+- **Two fills, one bit.** `WORD_BUBBLE_BG` is white with the same neutral `--line2` ring as the meaning bubble (it was the ramp's
+  `red` until 2026-10-06, when the screen ground went white and the level hue moved onto the
+  HUD + cancel strips), `DEFINITION_BUBBLE_BG` is inert `grey`. Fill now encodes *which side of a pair a bubble is* and nothing
   else — which is what makes the status fills (correct / wrong / nomatch, in
   `src/games/bubbles/constants.ts`) unambiguous: they are the only other colours a
   bubble can ever take.
 - **The HUD left the playfield.** It used to float at `top: 8` *inside* the stage, so
   bubbles drifted under the level name and the field's measured bounds were bigger than
   the area a bubble could be read in. `BubbleStage` now returns a fragment: a real
-  `GameHud` row, then the measured field. The strip reads
-  `Level 2 · Brisk` — `7 left` — a `GameHudBar`.
-- **`7 left`, not `4/11`.** Work REMAINING is the number a player acts on mid-run.
+  `GameHud` row, then the measured field. The strip reads just `Level 2`, centered
+  (`src/games/bubble-match/BubbleStage.tsx` → the `bubble-stage__hud` block). It
+  originally read `Level 2 · Brisk` — `7 left` — a `GameHudBar`; the level name, the
+  remaining-pairs count and the bar were dropped on 2026-10-06 as clutter (the field
+  itself shows how much is left).
 - **`.bub` gloss.** The shared `Bubble` swapped its flat drop shadow for the design's
   three: a white inset along the top and a dark inset along the bottom make the disc
   read as convex, and a tight offset drop shadow lifts it without the soft halo that
@@ -2403,8 +2413,9 @@ missing) — nothing else. `routeMeta` is also what tells `pageTransition` and
   Bubble Match drop the ring entirely.
 - The stage's paper ground went transparent; `.play` is the field's ground now.
 
-- **The bubble is a KEYCAP, not a disc (2026-08-22).** `.bub` is `border-radius: 40%`,
-  and `Bubble`'s inner now matches it, along with the held-cue overlay (`.bubble__dim`)
+- **The bubble is a KEYCAP, not a disc (2026-08-22).** `.bub` is `border-radius: 40%`
+  (the app has since eased it to **28%**, and the ring from 2px to **1px**, 2026-10-06 —
+  both read too heavy on the light fills), and `Bubble`'s inner matches it, along with the held-cue overlay (`.bubble__dim`)
   — a circular veil inside a soft square leaves four unlit corners.
   This reverses an earlier deviation which argued that a 40% corner reaches past the
   circular collision body, so neighbours would overlap at rest. They do, by ~8% of a
@@ -2423,7 +2434,7 @@ missing) — nothing else. `routeMeta` is also what tells `pageTransition` and
 there is no in-game picker to fall back to.
 
 - **This entry is the reference for BOTH bubble games (2026-08-22).** Hydra Bubbles was
-  unified onto it: same squircle, same 2px ring, same gloss, same grey held wash, and
+  unified onto it: same squircle, same ring (1px since 2026-10-06), same gloss, same grey held wash, and
   colour is the only thing either game varies (`BubbleFill` is now just `bg` + `border`).
   See entry 16 for the two Hydra treatments that were retired and what they cost.
 
@@ -3016,8 +3027,9 @@ single mark hue to borrow.
 > **PARTLY SUPERSEDED 2026-09-23 by § A1b.** Tone colours still stand (`--t1..t4` are
 > v2 tokens). `MARK_TYPE_COLORS`, `MASTERY_READY_COLOR` and `CORRECT_COLOR` /
 > `INCORRECT_COLOR` moved: marks onto the Mark tier (and mastery cells onto the band),
-> the ready check onto ink, the swipe colours split into a Mark-tier wash and an ink
-> label (`CORRECT_WASH` / `CORRECT_LABEL` …).
+> the ready check onto ink, the swipe colours split into a Mark-tier wash and a label
+> (`CORRECT_WASH` / `CORRECT_LABEL` …) — the label was ink until 2026-10-06 and is now
+> Mark tier too (§ A1b item 2).
 **Added 2026-08-20, correcting a pass that moved them.** The redesign changed
 *surfaces*. It did not change the two saturated sets the design draws directly on the
 paper ground, and both are now marked LITERAL ON PURPOSE in code:

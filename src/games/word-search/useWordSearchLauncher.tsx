@@ -6,7 +6,6 @@ import type { GameCardData } from "../shared/GameCard";
 import type { GameDef } from "../types";
 import { loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GAME_KEY, type WordSearchMode } from "./constants";
-import { useWordSearchSettings } from "./useWordSearchSettings";
 import NewGameConfirmDialog from "./NewGameConfirmDialog";
 import { buildWordSearchCard } from "./wordSearchCard";
 
@@ -59,9 +58,6 @@ export function useWordSearchLauncher({
     // Game-wide lifetime win count for the pill. Word Search logs every completion
     // under one level bucket, so this is already mode-agnostic.
     const { totalWins } = useGameWins(GAME_KEY);
-    // The device-local "show timer" preference the in-game HUD eye toggles — the
-    // resume tile honours it so a hidden clock stays hidden on the launch surface too.
-    const { showTimer } = useWordSearchSettings().settings;
 
     // This surface's parked board, read once on mount; null when nothing to resume.
     const [saved, setSaved] = useState<SavedWordSearchState | null>(() =>
@@ -94,7 +90,6 @@ export function useWordSearchLauncher({
             game,
             wins: totalWins,
             saved,
-            showTimer,
             classPrefix,
             onResume: () => {
                 if (saved) slideNavigate(game.route, { state: { ...launchState, mode: saved.mode, resume: true } });
@@ -105,7 +100,7 @@ export function useWordSearchLauncher({
                 else startNewGame();
             },
         });
-    }, [game, totalWins, saved, showTimer, classPrefix, launchState, clearSlot, startNewGame, slideNavigate]);
+    }, [game, totalWins, saved, classPrefix, launchState, clearSlot, startNewGame, slideNavigate]);
 
     const confirmDialog = (
         <NewGameConfirmDialog

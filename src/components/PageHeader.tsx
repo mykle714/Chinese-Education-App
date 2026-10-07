@@ -426,6 +426,13 @@ const CYCLE_CHIP_ICON_ALLOWANCE_PX = CYCLE_CHIP_ICON_PX + CYCLE_CHIP_ICON_GAP_PX
  * label changes length is not one. It also means the label's own box is a constant
  * size in every state, which is what lets a shrunken word stay optically centred.
  *
+ * `tone` picks the ACTIVE skin. `"ink"` (default) is the shared `.lhd .tg.on`
+ * inversion — solid ink, white text. `"blu"` is a mid-blue (`COLORS.bluM`) fill
+ * with ink text and NO outline (a deliberate exception to the buttons-and-cards
+ * outline rule, by design call 2026-10-06). The inactive state is grey in both
+ * tones. The blu tone also tags the chip `page-header__toggle--blu`, which is what
+ * gameSurfaceSx reads to leave it blue rather than re-inking it on a game ground.
+ *
  * Built for the audio-mode chip (mute / passthrough / media) — see
  * src/components/AudioModeChip.tsx and docs/AUDIO_PLAYBACK.md.
  */
@@ -453,19 +460,27 @@ export const HeaderCycleChip: React.FC<{
      * string, or when a caller genuinely needs a size the rule would not choose.
      */
     fontPx?: number;
+    /** Active-state skin: solid ink (default) or mid blue. See the block comment. */
+    tone?: "ink" | "blu";
     onClick?: () => void;
     className?: string;
-}> = ({ children, active, widthCh, icon, ariaLabel, fontPx, onClick, className }) => {
+}> = ({ children, active, widthCh, icon, ariaLabel, fontPx, tone = "ink", onClick, className }) => {
     // A string label sizes itself; anything else falls back to the full size, since the
     // shrink rule is measured in characters and cannot read an arbitrary node.
     const labelPx = fontPx
         ?? (typeof children === "string" ? cycleChipFontPx(children) : CYCLE_CHIP_FONT_PX);
+    // Resolved per tone so the fill, the text and the icon prop cannot disagree.
+    const isBlu = tone === "blu";
+    const activeFill = isBlu ? COLORS.bluM : COLORS.onSurface;
+    const activeInk = isBlu ? COLORS.onSurface : COLORS.white;
+    const fg = active ? activeInk : COLORS.iconColor;
     return (
         <Box
         className={[
             "page-header__toggle",
             "page-header__cycle",
             active ? "page-header__toggle--active" : "",
+            isBlu ? "page-header__toggle--blu" : "",
             className ?? "",
         ].filter(Boolean).join(" ")}
         onClick={onClick}
@@ -495,8 +510,8 @@ export const HeaderCycleChip: React.FC<{
             width: icon
                 ? `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch + ${CYCLE_CHIP_ICON_ALLOWANCE_PX}px)`
                 : `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch)`,
-            backgroundColor: active ? COLORS.onSurface : COLORS.grey,
-            color: active ? COLORS.white : COLORS.iconColor,
+            backgroundColor: active ? activeFill : COLORS.grey,
+            color: fg,
             cursor: "pointer",
         }}
     >
@@ -504,7 +519,7 @@ export const HeaderCycleChip: React.FC<{
             <Icon
                 name={icon}
                 size={CYCLE_CHIP_ICON_PX}
-                color={active ? COLORS.white : COLORS.iconColor}
+                color={fg}
             />
         )}
         <Box

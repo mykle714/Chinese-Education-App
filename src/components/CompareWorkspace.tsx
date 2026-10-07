@@ -1,17 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Box, IconButton, Typography, CircularProgress, useTheme } from "@mui/material";
-import { Add, Close } from "@mui/icons-material";
-import SearchField from "./SearchField";
+import { Box, Typography, CircularProgress, useTheme } from "@mui/material";
 import ForeignText from "./ForeignText";
-import PinyinKeypad from "./PinyinKeypad";
-import DictionaryEntryRow from "./DictionaryEntryRow";
+import WordSlot from "./WordSlot";
+import DictionaryWordSearch from "./DictionaryWordSearch";
 import LongDefinitionDisplay from "./LongDefinitionDisplay";
-import { useDictionarySearch } from "../hooks/useDictionarySearch";
 import { useWordComparison } from "../hooks/useWordComparison";
 import { dictionaryEntryToVocabEntry } from "../utils/dictEntryAdapter";
 import { resolveDisplayPronunciation } from "../utils/definitionUtils";
 import type { VocabEntry, DictionaryEntry, Language, LongDefinitionPart } from "../types";
-import { SIZE, WEIGHT, TRACKING } from "../theme/scale";
+import { SIZE } from "../theme/scale";
 import { FONTS } from "../theme/fonts";
 
 // Latin UI text (labels, hint copy) — matches the eip's FC_FONT so the workspace
@@ -91,6 +88,14 @@ export interface CompareWorkspaceProps {
  * result box be squeezed (a 681px paragraph compressed into a 414px box, overflowing and clipping
  * its own tail) instead of extending the scroll range.
  */
+/**
+ * Compare slots render as a CPCDBlock (up to 4 chars); longer words aren't selectable
+ * here rather than silently falling back to a row layout mid-search. Search results are
+ * det records (DictionaryEntry), whose headword field is `word1` — `entryKey` only
+ * exists after dictionaryEntryToVocabEntry. Module-level so its identity is stable.
+ */
+const isComparableEntry = (entry: DictionaryEntry) => [...(entry.word1 ?? "")].length <= 4;
+
 const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProps>(function CompareWorkspace({
     state, onSetSlot, onResult, showPinyin, showPinyinColor = true, onSegmentOpen,
 }, ref) {
@@ -101,14 +106,12 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
     const [searchTarget, setSearchTarget] = useState<"A" | "B">("B");
     // Which filled slot is armed for deletion (first tap) — a second tap on the SAME slot confirms.
     const [armedSlot, setArmedSlot] = useState<"A" | "B" | null>(null);
-    const searchInputRef = useRef<HTMLInputElement>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     useImperativeHandle(ref, () => ({
         get root() { return rootRef.current; },
         get scroll() { return scrollRef.current; },
     }), []);
-    const search = useDictionarySearch(20);
     const wordComparison = useWordComparison();
 
     const language = (state.slotA?.language ?? state.slotB?.language ?? 'zh') as Language;
@@ -140,12 +143,10 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
         setArmedSlot(null);
         setSearchTarget(slot);
         setSearchOpen(true);
-        search.clearSearch();
     };
 
     const handleCloseSearch = () => {
         setSearchOpen(false);
-        search.clearSearch();
     };
 
     // Tapping a slot: empty ⇒ open search targeting it. Filled ⇒ arm on first tap, confirm-delete
@@ -167,7 +168,6 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
     const handleSelect = (entry: DictionaryEntry) => {
         const adapted = dictionaryEntryToVocabEntry(entry);
         setSearchOpen(false);
-        search.clearSearch();
         onSetSlot(searchTarget, adapted);
     };
 
@@ -176,36 +176,15 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
         wordComparison.compare(state.slotA.entryKey, state.slotB.entryKey, language);
     };
 
-    // Compare slots render as a CPCDBlock (up to 4 chars); longer words aren't
-    // selectable here rather than silently falling back to a row layout mid-search.
-    // Note the search results are det records (DictionaryEntry), whose headword
-    // field is `word1` — `entryKey` only exists after dictionaryEntryToVocabEntry.
-    const resultEntries: DictionaryEntry[] = (
-        search.isSegmentMode
-            ? search.segmentGroups.flatMap(g => [...g.exactEntries, ...g.prefixEntries])
-            : search.entries
-    ).filter(entry => [...(entry.word1 ?? "")].length <= 4);
-
     const bothFilled = !!state.slotA && !!state.slotB;
 
     const renderSlot = (slot: "A" | "B", entry: VocabEntry | null) => (
-        <Box
+        <WordSlot
             className={`compare-workspace__slot compare-workspace__slot--${slot.toLowerCase()}`}
+            armed={armedSlot === slot}
             onClick={(e) => { e.stopPropagation(); handleSlotClick(slot); }}
-            sx={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: '96px',
-                borderRadius: '12px',
-                border: armedSlot === slot ? `2px solid ${theme.palette.error.main}` : `1px solid ${fc.border}`,
-                padding: '8px',
-                cursor: 'pointer',
-                transition: 'border-color 0.15s ease',
-            }}
         >
-            {entry ? (
+            {entry && (
                 <ForeignText
                     size="xl"
                     layout="block"
@@ -216,10 +195,8 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                 />
-            ) : (
-                <Add sx={{ fontSize: 32, color: fc.textSecondary }} />
             )}
-        </Box>
+        </WordSlot>
     );
 
     return (
@@ -258,48 +235,15 @@ const CompareWorkspace = forwardRef<CompareWorkspaceHandle, CompareWorkspaceProp
             {/* Below-slots area: search mode (keypad + bar + result cards) or the comparison display.
                 No flex:1/minHeight:0 here — see the layout note above the component. */}
             {searchOpen ? (
-                <Box className="compare-workspace__search" onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', flexDirection: 'column', gap: '10px', flexShrink: 0 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography sx={{ fontSize: SIZE.caption, fontWeight: WEIGHT.bold, color: fc.textSecondary, letterSpacing: TRACKING.caps, textTransform: 'uppercase', fontFamily: UI_FONT }}>
-                            Pick a word
-                        </Typography>
-                        <IconButton className="compare-workspace__search-close" size="small" aria-label="Cancel search" onClick={handleCloseSearch}>
-                            <Close fontSize="small" />
-                        </IconButton>
-                    </Box>
-                    <PinyinKeypad
-                        language={language}
-                        inputRef={searchInputRef}
-                        value={search.searchInput}
-                        onChange={search.setSearchInput}
-                    />
-                    <SearchField
-                        className="compare-workspace__search-input"
-                        placeholder="Search dictionary..."
-                        value={search.searchInput}
-                        onChange={search.setSearchInput}
-                        onClear={() => search.clearSearch()}
-                        inputRef={searchInputRef}
-                    />
-                    {/* No gap between rows: `.dr` separates with its own bottom hairline
-                        (docs/SHELF_REDESIGN.md § entry 7), and a gap would leave the
-                        hairlines floating between detached rows. */}
-                    <Box className="compare-workspace__results" sx={{ display: 'flex', flexDirection: 'column' }}>
-                        {search.loading && (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-                                <CircularProgress size={22} />
-                            </Box>
-                        )}
-                        {!search.loading && resultEntries.map((entry) => (
-                            <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleSelect} inset={4} />
-                        ))}
-                        {!search.loading && search.debouncedSearchTerm && resultEntries.length === 0 && (
-                            <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: 'center', py: 2, fontFamily: UI_FONT }}>
-                                No results for "{search.debouncedSearchTerm}"
-                            </Typography>
-                        )}
-                    </Box>
-                </Box>
+                // The shared mini dictionary search (also the Writing Notebook's word
+                // picker). Mounted only while open, so each open starts from an empty query.
+                <DictionaryWordSearch
+                    classPrefix="compare-workspace__search"
+                    language={language}
+                    onSelect={handleSelect}
+                    onCancel={handleCloseSearch}
+                    filter={isComparableEntry}
+                />
             ) : (
                 <Box
                     className="compare-workspace__result"

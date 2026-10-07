@@ -18,6 +18,7 @@ import {
   barCategory,
   barForMarkType,
   categoryForPbh,
+  marksToWrite,
   positiveCount,
   writingMasteryFromChars,
 } from '../utils/masteryCompute.js';
@@ -60,6 +61,11 @@ import { FLP_MARK_SURFACE } from '../contracts/wire.js';
  * banded and (for the flp) refilled on its own track, which is the behaviour that
  * surface wants; widening the input to N types would push a multi-bar result shape
  * onto every other caller to serve one.
+ *
+ * SILENT ACCELERATION (`marksToWrite`, docs/MASTERY_REWORK.md § 6): one CALL is still
+ * one review, but a correct recognition/production/reading review whose track already
+ * ends in 3 correct marks is written as TWO identical marks (same timestamp). Undo
+ * treats every trailing mark carrying the undo timestamp as one review.
  *
  * Referenced by: docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md,
  * docs/MASTERY_REWORK.md, docs/HYDRA_BUBBLES.md § 8, docs/VELOCITY.md.
@@ -134,7 +140,17 @@ export interface ApplyMarkResult {
   /** The undo key. Null exactly when suppressed: there is no mark to undo. */
   markTimestamp: string | null;
   markType: MarkType;
-  /** The mark pushed out of a full 8-slot window, so undo can restore it. */
+  /**
+   * Every mark pushed out of the 8-slot window by this review, oldest first, so undo
+   * can restore them. 0–2 long: an accelerated review writes two marks and so can
+   * displace two.
+   */
+  displacedMarks: ReviewMark[];
+  /**
+   * LEGACY single-mark form (`displacedMarks[0] ?? null`), still sent so an installed
+   * client running pre-acceleration JS keeps a working undo for the ordinary case.
+   * Retire once no such client is in use (docs/DEFERRED_WORK.md).
+   */
   displacedMark: ReviewMark | null;
   /** Writing marks only: per-character outcome of the fan-out. */
   writing?: { characters: WritingCharacterOutcome[] };
@@ -146,8 +162,8 @@ export interface UndoMarkInput {
   /** Must match the newest mark on `markType`'s track, or the undo is refused. */
   markTimestamp: string;
   markType: MarkType;
-  /** The mark this one displaced, as handed back by `applyMark`. */
-  displacedMark?: ReviewMark | null;
+  /** The marks this review displaced, oldest first, as handed back by `applyMark`. */
+  displacedMarks?: ReviewMark[] | null;
 }
 
 export interface UndoMarkResult {
@@ -251,6 +267,7 @@ export class FlashcardMarkService {
             markedBarCategoryBefore: barCategory(existingHistory, barForMarkType(markType)),
             markTimestamp: null,
             markType,
+            displacedMarks: [],
             displacedMark: null,
           } satisfies ApplyMarkResult,
         };
@@ -262,16 +279,25 @@ export class FlashcardMarkService {
       const categoryBeforeMark: FlashcardCategory = computeCoreCategory(existingHistory);
       const barCategoryBefore = barCategory(existingHistory, bar);
 
-      // Preserve the mark displaced from THIS TYPE's window when it is already full,
-      // so undo can restore it precisely (per-type window of MARK_WINDOW_SIZE).
       const existingTrack: ReviewMark[] = Array.isArray(existingHistory[markType])
         ? existingHistory[markType]!
         : [];
-      const displacedMark: ReviewMark | null =
-        existingTrack.length >= MARK_WINDOW_SIZE ? existingTrack[0] : null;
+
+      // SILENT ACCELERATION: 1 mark normally, 2 when this correct review extends a
+      // streak of 3 correct marks on this track (`marksToWrite`). Both copies share
+      // one timestamp, which is what lets undo take the pair back as one review.
+      const markCount = marksToWrite(existingTrack, isCorrect);
+
+      // Preserve every mark this review pushes out of THIS TYPE's window, oldest
+      // first, so undo can restore them precisely (per-type window of MARK_WINDOW_SIZE).
+      const overflow = Math.max(0, existingTrack.length + markCount - MARK_WINDOW_SIZE);
+      const displacedMarks: ReviewMark[] = existingTrack.slice(0, overflow);
 
       const newMark: ReviewMark = { timestamp: new Date().toISOString(), isCorrect };
-      const updatedHistory: TypedMarkHistory = appendTypedMark(existingHistory, markType, newMark);
+      let updatedHistory: TypedMarkHistory = existingHistory;
+      for (let i = 0; i < markCount; i++) {
+        updatedHistory = appendTypedMark(updatedHistory, markType, { ...newMark });
+      }
 
       const category: FlashcardCategory = computeCoreCategory(updatedHistory);
       const barCategoryAfter = barCategory(updatedHistory, bar);
@@ -333,7 +359,8 @@ export class FlashcardMarkService {
           markedBarCategoryBefore: barCategoryBefore,
           markTimestamp: newMark.timestamp,
           markType,
-          displacedMark,
+          displacedMarks,
+          displacedMark: displacedMarks[0] ?? null,
         } satisfies ApplyMarkResult,
       };
     });
@@ -432,6 +459,7 @@ export class FlashcardMarkService {
           markedBarCategoryBefore: bandBefore,
           markTimestamp: null,
           markType: 'writing' as MarkType,
+          displacedMarks: [],
           displacedMark: null,
           writing: { characters },
         } satisfies ApplyMarkResult,
@@ -465,7 +493,8 @@ export class FlashcardMarkService {
         result: {
           suppressed: false, language, category: coreCategory, categoryBeforeMark: coreCategory,
           markedBarCategoryBefore: bandBefore, markTimestamp: timestamp, markType: 'writing',
-          displacedMark, writing: { characters: [{ ...outcome, counted: true }] },
+          displacedMarks: displacedMark ? [displacedMark] : [], displacedMark,
+          writing: { characters: [{ ...outcome, counted: true }] },
         },
       };
     }
@@ -536,13 +565,16 @@ export class FlashcardMarkService {
       result: {
         suppressed: false, language, category: coreCategory, categoryBeforeMark: coreCategory,
         markedBarCategoryBefore: bandBefore, markTimestamp: timestamp, markType: 'writing',
-        displacedMark, writing: { characters: outcomes },
+        displacedMarks: displacedMark ? [displacedMark] : [], displacedMark,
+        writing: { characters: outcomes },
       },
     };
   }
 
   /**
-   * Revert the newest mark on one typed track, restoring the mark it displaced.
+   * Revert the newest REVIEW on one typed track, restoring the marks it displaced.
+   * A review is every trailing mark carrying `markTimestamp` — one mark normally, two
+   * when the review was accelerated (`marksToWrite`).
    *
    * Fully transactional and stricter than `applyMark`: an undo that targets anything
    * other than the newest mark is refused rather than guessed at, because the client
@@ -552,7 +584,7 @@ export class FlashcardMarkService {
    * track) or `ERR_UNDO_TARGET_MISMATCH` (409, not the newest mark).
    */
   async undoMark(input: UndoMarkInput): Promise<UndoMarkResult> {
-    const { userId, cardId, markTimestamp, markType, displacedMark } = input;
+    const { userId, cardId, markTimestamp, markType, displacedMarks } = input;
     if (!userId) throw new ValidationError('userId is required');
     if (typeof cardId !== 'number') throw new ValidationError('cardId must be a number');
     if (!markTimestamp) throw new ValidationError('markTimestamp is required');
@@ -583,13 +615,21 @@ export class FlashcardMarkService {
         throw new DALError('Undo target does not match the latest mark', 'ERR_UNDO_TARGET_MISMATCH', 409);
       }
 
-      let revertedTrack: ReviewMark[] = existingTrack.slice(0, -1);
-      const shouldRestoreDisplacedMark =
-        !!displacedMark &&
-        typeof displacedMark.timestamp === 'string' &&
-        typeof displacedMark.isCorrect === 'boolean';
-      if (shouldRestoreDisplacedMark) {
-        revertedTrack = [displacedMark as ReviewMark, ...revertedTrack].slice(0, MARK_WINDOW_SIZE);
+      // Strip every trailing mark of this review (an accelerated review wrote two with
+      // the same timestamp), then put back what it displaced, oldest first.
+      let revertedTrack: ReviewMark[] = existingTrack.slice();
+      while (
+        revertedTrack.length > 0 &&
+        revertedTrack[revertedTrack.length - 1].timestamp === markTimestamp
+      ) {
+        revertedTrack.pop();
+      }
+      const restorable = (Array.isArray(displacedMarks) ? displacedMarks : []).filter(
+        (m): m is ReviewMark =>
+          !!m && typeof m.timestamp === 'string' && typeof m.isCorrect === 'boolean'
+      );
+      if (restorable.length > 0) {
+        revertedTrack = [...restorable, ...revertedTrack].slice(0, MARK_WINDOW_SIZE);
       }
 
       const revertedHistory: TypedMarkHistory = { ...existingHistory, [markType]: revertedTrack };

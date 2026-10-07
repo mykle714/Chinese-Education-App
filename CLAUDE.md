@@ -46,6 +46,7 @@ rflp = reading flp
 wflp = writing flp
 rg = reading games
 wg = writing games
+coaw = classification of all words
 
 
 ## Terminology: "Learn Now" cards

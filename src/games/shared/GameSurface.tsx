@@ -23,9 +23,16 @@ import { useThemeColor } from "../../hooks/useThemeColor";
  * In the iOS HOME-SCREEN app the status bar is not that surface: it is page pixels, so
  * the accent ground below paints it directly (`viewport-fit=cover` +
  * `apple-mobile-web-app-status-bar-style: black-translucent`, src/theme/safeArea.ts).
+ *
+ * `ground` is the screen fill when it is not the hue's MID tier (see `gameSurfaceSx`);
+ * the browser chrome follows it so the toolbar matches the page.
  */
-export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.ReactNode }> = ({ hue, children }) => {
-    useThemeColor(RAMP[hue].mid);
+export const GameSurfaceProvider: React.FC<{ hue: RampHue; ground?: string; children: React.ReactNode }> = ({
+    hue,
+    ground,
+    children,
+}) => {
+    useThemeColor(ground ?? RAMP[hue].mid);
     return <GameSurfaceContext.Provider value={hue}>{children}</GameSurfaceContext.Provider>;
 };
 
@@ -41,8 +48,8 @@ export const GameSurfaceProvider: React.FC<{ hue: RampHue; children: React.React
  * allows a RENDER-PROP `children` (the sideways-stage form Speed Reading needs) and
  * `React.FC` would silently narrow it back to `ReactNode`.
  */
-export const GameLeafPage = ({ hue, ...leafProps }: LeafPageProps & { hue: RampHue }) => (
-    <GameSurfaceProvider hue={hue}>
-        <LeafPage {...leafProps} surfaceSx={gameSurfaceSx(hue)} />
+export const GameLeafPage = ({ hue, ground, ...leafProps }: LeafPageProps & { hue: RampHue; ground?: string }) => (
+    <GameSurfaceProvider hue={hue} ground={ground}>
+        <LeafPage {...leafProps} surfaceSx={gameSurfaceSx(hue, ground)} />
     </GameSurfaceProvider>
 );

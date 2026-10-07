@@ -1,4 +1,5 @@
 import { apiGet } from '../../../api/http';
+import { fetchGamePool } from '../../../api/gamePool';
 import type { IWLineSegments, IWNpcOption, IWScene, IWSceneSummary } from '../../../../server/contracts/iw';
 
 /**
@@ -81,10 +82,13 @@ export const loadPlayableScene = (id: string): Promise<IWScenePlayPayload> =>
  */
 export async function fetchKnownWords(): Promise<string[]> {
   try {
-    const pool = await apiGet<{ cards?: Array<{ entryKey?: string }> }>('/api/onDeck/gamePool', {
-      params: { Unfamiliar: 4, Target: 20, Comfortable: 12, Mastered: 8 },
+    // No `surface`, so the server lends up to the distribution's sum (44) rather than
+    // a named baseline. `markType` is stated explicitly; it is the server's default.
+    const pool = await fetchGamePool({
+      markType: 'recognition',
+      distribution: { Unfamiliar: 4, Target: 20, Comfortable: 12, Mastered: 8 },
     });
-    return (pool.cards ?? [])
+    return pool.cards
       .map(card => card.entryKey)
       .filter((word): word is string => Boolean(word));
   } catch {

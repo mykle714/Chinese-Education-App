@@ -687,7 +687,7 @@ weak cards drill more):
 | Category | Window |
 |---|---|
 | Unfamiliar | 5 minutes |
-| Target | 24 hours |
+| Target | 12 hours (was 24 hours until 2026-10-06) |
 | Comfortable | 14 days |
 | Mastered | 6 months (180 days) |
 
@@ -718,6 +718,41 @@ passed. Consequences:
 > **History.** Until 2026-09-05 the flp used one whole-card core-band window for both
 > tracks; 2026-09-05 → 2026-09-25 each track cooled on its OWN clock under its own
 > per-type band ("either category"). The know merge replaced both: one clock, core band.
+
+### Silent acceleration — a streak of 3 doubles the next correct mark
+
+> STATUS: **IMPLEMENTED 2026-10-06**, no migration. Code: `server/contracts/mastery.ts`
+> → `marksToWrite`, `ACCELERATION_STREAK` (3), `ACCELERATED_MARK_COUNT` (2);
+> `server/services/FlashcardMarkService.ts` → `applyMark` (writes the pair) and
+> `undoMark` (takes it back); `server/routes/flashcardRoutes.ts` (`displacedMarks` on
+> the mark response and undo body); `src/api/flashcards.ts`,
+> `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` (undo snapshot).
+> Tests: `server/__tests__/flashcardMark.test.ts` ("silent acceleration" block).
+
+A learner who already knows a word should not need one cooldown window per mark to
+reach its real band. So when the **newest 3 marks on the track being marked are all
+correct**, the next **correct** mark on that track is written **twice**.
+
+- **Per track.** The streak is read from the marked track only — a recognition streak
+  never doubles a production mark, even though the two share a clock.
+- **Literal window.** A doubled pair counts as two marks, so after a miss, ✗ ✓ ✓✓ means
+  the next ✓ is already doubled. The pair is not tagged; the two marks are identical
+  (same `timestamp`, same `isCorrect`).
+- **Correct only.** A miss after a streak writes a single ✗.
+- **Not writing.** `applyWritingResult` never calls `marksToWrite` — writing already
+  has its own model (per-character mastery, the anti-farming level gate, clock-only
+  word marks).
+- **Silent.** Nothing in the mark response says a review was doubled; the bar just
+  climbs faster. Both gates (cooldown, flp-only) run first, so a suppressed review
+  writes nothing at all, doubled or not.
+- **Velocity.** Still one `category_promotions` row per review: `bandsClimbed` is
+  measured across the pair, so a doubled review that crosses a band logs it once.
+- **Undo.** A review is every trailing mark carrying the undo `markTimestamp`, so
+  `undoMark` strips the pair together. The review can push up to two marks out of a
+  full window, so the mark response carries `displacedMarks: ReviewMark[]` (oldest
+  first) and undo restores them all. The legacy single `displacedMark`
+  (`= displacedMarks[0]`) is still sent and still accepted by the undo route, for
+  installed clients running pre-acceleration JS.
 
 ### Know marks above the line: flp only (`FLP_ONLY_CORE_PBH` = 6)
 
@@ -1209,7 +1244,7 @@ to game difficulty and to review scheduling:
 
 | Consumer | What a reading-band change does to it |
 |---|---|
-| **Memory Map** membership | The map holds exactly the cards that are **not** reading-mastered (`vetSortedClause() AND NOT masteredBarClause('reading')`, [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1). A buffer changes what is on the map **retroactively** — and placements there are durable, the same reason Memory Map opted out of gloss-confusability phase 2 ([GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md)) |
+| **Memory Map** membership | The map holds exactly the cards that are **not** reading-mastered (`(vetSortedClause() OR lent-by-id) AND NOT masteredBarClause('reading')`, [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1). A buffer changes what is on the map **retroactively** — and slot occupants there are durable, the same reason Memory Map opted out of gloss-confusability phase 2 ([GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md)) |
 | **Cooldown duration** | Reaching Mastered on a track jumps its window from 14 days to **180 days** (`COOLDOWN_MS_BY_CATEGORY`). An easier Mastered parks cards for six months; a harder one drills them more |
 | Speed Reading / Word Search No-Pinyin / Hydra pools | Quotas are per-type bands, and the reading distribution is already nearly all Unfamiliar (§ 6; [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) O5) |
 | Mastered collections + counts | `masteredBarClause(bar)`, `GET /api/onDeck/masteredCounts` |

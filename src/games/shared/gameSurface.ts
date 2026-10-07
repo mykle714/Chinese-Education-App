@@ -30,7 +30,7 @@ import { COLORS, RAMP, type RampHue } from "../../theme/colors";
  *
  * Since v2 the hub hues are the artboards' own (artboards 12–16): Bubble Match red,
  * Word Search purple, Match Speed blue, Speed Reading yellow, Hydra Bubbles green.
- * (Memory Map, which has no artboard, keeps orange.) (Until 2026-09-24 three of them differed — Match Speed green,
+ * (Memory Map, which has no artboard, is blue since 2026-10-06 — orange before.) (Until 2026-09-24 three of them differed — Match Speed green,
  * Speed Reading blue, Hydra teal — and this paragraph explained why the hub won. Teal
  * has since left the palette, and the three were moved onto the artboards' hues.) The
  * rule is unchanged: to repaint a game, change its `GAME_HUE`, never this file.
@@ -90,10 +90,16 @@ const ON_ACCENT_CHIP_FILL = "rgba(255, 255, 255, 0.5)";
  * Pair it with a `GameSurfaceProvider` for the same hue — this function paints the
  * page, the provider is what lets the panel's own parts (HUD, timer, frame border)
  * match it.
+ *
+ * `ground` overrides the screen fill only (default: the hue's MID tier). Bubble Match
+ * passes white — its board is already colour-dense (level-hued word bubbles), so a
+ * flooded ground around it competed with the bubbles. The hue still drives the HUD
+ * tint and the rest of the frame through the provider. The header rules below are all
+ * ink-on-light, so they hold on any light ground.
  */
-export function gameSurfaceSx(hue: RampHue): SxProps<Theme> {
+export function gameSurfaceSx(hue: RampHue, ground: string = RAMP[hue].mid): SxProps<Theme> {
     return {
-        backgroundColor: RAMP[hue].mid,
+        backgroundColor: ground,
 
         // ── The leaf header, in full ink ──────────────────────────────────────
         // `#bm .lhd h1,#bm .lhd .ms.dn{color:var(--ink)}` — the app's header uses the
@@ -106,8 +112,11 @@ export function gameSurfaceSx(hue: RampHue): SxProps<Theme> {
         "& .page-header__meta": { color: ON_ACCENT_INK },
 
         // The streak flame keeps its own orange everywhere else in the app; on a
-        // coloured ground it clashes, and the design inks it (`#bm .lhd .fire`).
-        "& .minute-points-fire-badge, & .minute-points-fire-badge .ms, & .minute-points-fire-badge__count": {
+        // coloured ground it clashes, and the design inks it (`#bm .lhd .fire`) —
+        // glyph AND count. The count is `FireCount`'s `.fire-count__count`, which sets
+        // its own colour in `sx`, so it needs its own selector here (inheriting from
+        // the badge wrapper is not enough). Applies on Bubble Match's white ground too.
+        "& .minute-points-fire-badge, & .minute-points-fire-badge .ms, & .minute-points-fire-badge .fire-count__count": {
             color: ON_ACCENT_INK,
         },
 
@@ -130,5 +139,15 @@ export function gameSurfaceSx(hue: RampHue): SxProps<Theme> {
             color: COLORS.white,
         },
         "& .page-header__toggle--active .ms": { color: COLORS.white },
+        // A blu-tone cycle chip (the audio-mode chip) keeps its mid-blue ON skin on a
+        // game ground too, so it reads the same on every surface. The doubled class
+        // outranks the ink rule above. See HeaderCycleChip's `tone` in PageHeader.tsx.
+        "& .page-header__toggle--blu.page-header__toggle--active": {
+            backgroundColor: COLORS.bluM,
+            // No outline: clears the ink ring the rule above paints on active chips.
+            boxShadow: "none",
+            color: COLORS.onSurface,
+        },
+        "& .page-header__toggle--blu.page-header__toggle--active .ms": { color: COLORS.onSurface },
     };
 }

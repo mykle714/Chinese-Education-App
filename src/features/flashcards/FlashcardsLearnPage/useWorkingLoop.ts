@@ -25,7 +25,9 @@ import type { WritingAttempt } from "../../../components/handwriting/types";
 // the drag layer (reset flip / reset drag position) without taking a render-time
 // dependency on useCardDrag, which is initialized *after* this hook in the page.
 export interface CardDragControls {
-    setIsFlipped: (value: boolean) => void;
+    // Full flip-tracking reset for a card swapped in WITHOUT a currentIndex change
+    // (a fresh fetch lands at index 0, so useCardDrag's per-card effect won't fire).
+    resetCard: () => void;
     // Brings a card back on Side 2 (used by mark-undo — the user has already seen
     // that card's answer). Takes the resetKey (currentIndex) the restore targets
     // so the drag layer's per-card reset effect doesn't flip it back to Side 1.
@@ -170,6 +172,13 @@ export function useWorkingLoop({
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
     useEffect(() => {
+        // Only the LATEST fetch may apply. Without this, two overlapping fetches (React
+        // StrictMode's dev double-mount, or a dep change while one is in flight) BOTH
+        // land: the first renders a card the learner can already tap and flip, then the
+        // second swaps a different card in under it — at the same index 0, so the
+        // per-card flip reset never runs (the "flipped the wrong card, More Info stays
+        // greyed" bug, 2026-10-06).
+        let cancelled = false;
         const fetchInitialCards = async () => {
             try {
                 setLoading(true);
@@ -194,6 +203,7 @@ export function useWorkingLoop({
 
                 if (!response.ok) throw new Error("Failed to fetch distributed working loop");
                 const data = await response.json();
+                if (cancelled) return;
                 const cards = Array.isArray(data) ? data : [data];
 
                 console.log(
@@ -208,10 +218,11 @@ export function useWorkingLoop({
                 // hasAudio === false (synthesis errored server-side).
                 cards.forEach((card: VocabEntry) => prefetch(card));
 
-                // New deck: both visible cards start on Side 1. useCardDrag also
-                // resets isFlipped on card change, but currentIndex stays 0 on a
-                // fresh fetch so that reset may not fire — reset explicitly here.
-                cardDragRef.current?.setIsFlipped(false);
+                // New deck: both visible cards start on Side 1. useCardDrag resets
+                // flip-tracking on a currentIndex change, but currentIndex stays 0 on a
+                // fresh fetch so that reset may not fire — run the FULL reset here
+                // (not just isFlipped=false, which left hasFlippedCurrentCard stale).
+                cardDragRef.current?.resetCard();
                 // Each card opens on its weaker know track, recognition on a tie
                 // (docs/MASTERY_REWORK.md § 6). This includes the session's FIRST card,
                 // which used to be forced English-first to dodge an iOS autoplay edge
@@ -220,15 +231,18 @@ export function useWorkingLoop({
                 setCurrentSideOneLanguage(sideOneForCard(cards[0], bar));
                 setNextSideOneLanguage(sideOneForCard(cards[1], bar));
             } catch (err) {
+                if (cancelled) return;
                 setError(err instanceof Error ? err.message : "Unknown error");
             } finally {
-                setLoading(false);
+                // A superseded fetch leaves `loading` alone — the newer one owns it.
+                if (!cancelled) setLoading(false);
             }
         };
 
         if (token) {
             fetchInitialCards();
         }
+        return () => { cancelled = true; };
     // Keyed on Boolean(token) — the STABLE auth-presence flag — NOT the raw
     // `token` string. The access token silently refreshes every ~15 min; keying
     // on `token` would re-fetch the working loop and reset the card stack
@@ -276,7 +290,7 @@ export function useWorkingLoop({
             // review DID happen, it just did not change any history, and surfacing it
             // as a failure would show "Failed to save progress" for a working app.
             if (data.suppressed || data.markTimestamp === null) {
-                return { suppressed: true, newCard: null, markTimestamp: null, markType, displacedMark: null };
+                return { suppressed: true, newCard: null, markTimestamp: null, markType, displacedMarks: [] };
             }
 
             return {
@@ -284,7 +298,7 @@ export function useWorkingLoop({
                 newCard: data.newCard,
                 markTimestamp: data.markTimestamp,
                 markType,
-                displacedMark: data.displacedMark,
+                displacedMarks: data.displacedMarks,
             };
         } catch (err) {
             if (retryCount < 3) {
@@ -312,7 +326,7 @@ export function useWorkingLoop({
         const isCorrect = direction === "right";
         // The prompt language showing on Side 1 decides the mark type.
         const markType = markTypeForSideOne(currentSideOneLanguage, bar);
-        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMark"> = {
+        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMarks"> = {
             workingLoop: [...workingLoop],
             currentIndex,
             currentSideOneLanguage,
@@ -357,7 +371,7 @@ export function useWorkingLoop({
                     console.log(`Mark suppressed (still cooling): ${currentCard.entryKey}`);
                     return;
                 }
-                const { newCard, markTimestamp, displacedMark } = markResult;
+                const { newCard, markTimestamp, displacedMarks } = markResult;
                 console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? "correct" : "incorrect"})`);
                 if (isCorrect && newCard) {
                     // Patch the slot the dismissed card occupied — user won't see it for a full cycle
@@ -405,7 +419,7 @@ export function useWorkingLoop({
                     cardId: currentCard.id,
                     markTimestamp,
                     markType,
-                    displacedMark,
+                    displacedMarks,
                     ...preDismissSnapshot,
                 });
             })
@@ -440,7 +454,7 @@ export function useWorkingLoop({
                 cardId: lastMarkUndoSnapshot.cardId,
                 markTimestamp: lastMarkUndoSnapshot.markTimestamp,
                 markType: lastMarkUndoSnapshot.markType,
-                displacedMark: lastMarkUndoSnapshot.displacedMark,
+                displacedMarks: lastMarkUndoSnapshot.displacedMarks,
             });
 
             setWorkingLoop(lastMarkUndoSnapshot.workingLoop);

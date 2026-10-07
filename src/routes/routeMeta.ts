@@ -152,6 +152,13 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/flashcards/reading", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
   { path: "/flashcards/writing", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
   {
+    path: "/flashcards/writing/notebook",
+    access: "any",
+    shell: "frame",
+    chrome: "leaf",
+    note: "Writing Notebook (docs/WRITING_NOTEBOOK.md) — an endless handwriting sheet launched from the Writing Center's games belt. A leaf like the games it sits beside: footerless, slides up, Back returns to the Writing Center.",
+  },
+  {
     path: "/flashcards/mastered",
     access: "any",
     shell: "frame",
@@ -326,6 +333,7 @@ export const FLAGGED_OFF_PATHS: ReadonlySet<string> = new Set<string>([
   ...(isFeatureEnabled("immersiveWorld")
     ? []
     : ["/immersive-world", "/immersive-world/:sceneId", "/immersive-world/scene-editor"]),
+  ...(isFeatureEnabled("writingNotebook") ? [] : ["/flashcards/writing/notebook"]),
   ...(isFeatureEnabled("studyChallenge")
     ? []
     : ["/friends/challenges", "/friends/challenges/history", "/friends/challenges/:challengeId"]),

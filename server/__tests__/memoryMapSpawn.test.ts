@@ -1,569 +1,185 @@
 import { describe, it, expect } from 'vitest';
+import { drawBow, drawScale, drawTilt, planSlots, NEW_ISLAND_CHANCE, type PlannedSlot } from '../services/memoryMapSpawn.js';
+import { ISLAND_GAP, allParts, islandsOf, layoutMap, mapBounds, partsOverlap, type LayoutSlot } from '../services/memoryMapLayout.js';
 import {
-  boxesOverlap,
-  boxesTouch,
-  boxSeparation,
-  connectedIslands,
-  touchedSidesForAll,
-  mapBounds,
-  spawnBatch,
-  spawnPosition,
-  wordBoxSize,
-  drawScale,
-  NEW_ISLAND_CHANCE,
-  WORLD_GRID,
-  type MapBox,
-} from '../services/memoryMapSpawn.js';
-import { MEMORY_MAP_SCALE_RANGE } from '../contracts/wire.js';
+  MEMORY_MAP_BOW_RANGE,
+  MEMORY_MAP_BOW_SIGMA,
+  MEMORY_MAP_CAPACITY,
+  MEMORY_MAP_SCALE_RANGE,
+  MEMORY_MAP_TILT_RANGE,
+  MEMORY_MAP_TILT_SIGMA,
+} from '../contracts/wire.js';
 
 /**
- * Memory Map geometry (docs/MEMORY_MAP_GAME.md § 2.4).
+ * Memory Map spawn (docs/MEMORY_MAP_GAME.md § 2.4) — choosing where new slots hang.
  *
- * The whole reason the spawn rules live in a pure module is so they can be exercised
- * here instead of by staring at a rendered map, so these tests carry the invariants the
- * feature actually depends on: words never overlap, growth is tangent, and 10% start an
- * island. Tune the constants freely — these should keep passing.
+ * Tune the constants freely; these carry the invariants rather than the numbers: the
+ * plan is a valid tree, the map it produces never overlaps, it forms an archipelago
+ * (not one blob, not a scatter), and it comes out portrait for the phone.
  */
 
-/** A deterministic RNG: replays the given values, then cycles. Beats seeding a PRNG
- *  because a test can say exactly which branch it is forcing. */
-function scriptedRng(values: number[]): () => number {
-  let i = 0;
-  return () => values[i++ % values.length];
+function seeded(seed: number): () => number {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-/** An RNG that never rolls an island, so every placement must grow. */
-const alwaysGrow = () => 0.5;
+const WORDS = ['好', '你好', '中国人', '学习', '吃饭', '一', '图书馆', '喜欢', '我', '电脑'];
 
-function box(x: number, y: number, width = 2, height = 1.5): MapBox {
-  return { x, y, width, height };
-}
-
-describe('wordBoxSize', () => {
-  it('scales width with glyph count and height with scale alone', () => {
-    const one = wordBoxSize('好', 1, 'zh');
-    const three = wordBoxSize('好好好', 1, 'zh');
-    expect(three.width).toBeGreaterThan(one.width);
-    expect(three.height).toBe(one.height);
-  });
-
-  it('gives Latin script a narrower box per glyph than CJK', () => {
-    // Same glyph count, different script: five Spanish letters must not claim the
-    // width of five Chinese characters, or Spanish maps would be mostly whitespace.
-    expect(wordBoxSize('abcde', 1, 'es').width).toBeLessThan(
-      wordBoxSize('一二三四五', 1, 'zh').width
-    );
-  });
-
-  it('counts astral-plane characters as ONE glyph, not two', () => {
-    // A rare CJK ideograph above U+FFFF is two UTF-16 code units. Measuring with
-    // .length would give it a double-width box that its rendering does not fill.
-    const astral = '𠀋';
-    expect(astral.length).toBe(2);
-    expect(wordBoxSize(astral, 1, 'zh').width).toBe(wordBoxSize('好', 1, 'zh').width);
-  });
-
-  it('is a pure function of (word, scale, language) — the client/server contract', () => {
-    // The client draws boxes with this exact function. If it ever depended on
-    // anything else, tangent neighbours would drift apart on screen.
-    expect(wordBoxSize('学习', 1.3, 'zh')).toEqual(wordBoxSize('学习', 1.3, 'zh'));
-  });
-
-  it('never returns a zero-width box for an empty string', () => {
-    expect(wordBoxSize('', 1, 'zh').width).toBeGreaterThan(0);
-  });
-});
-
-describe('drawScale', () => {
-  it('stays inside the documented range at both extremes', () => {
-    expect(drawScale(() => 0)).toBeCloseTo(MEMORY_MAP_SCALE_RANGE.min);
-    expect(drawScale(() => 1)).toBeCloseTo(MEMORY_MAP_SCALE_RANGE.max);
-  });
-});
-
-describe('boxesOverlap', () => {
-  it('treats edge-to-edge tangency as NOT overlapping', () => {
-    // This is the single most load-bearing assertion in the module: if tangency
-    // counted as overlap, every "grow the island" placement would be rejected and
-    // the map would degenerate into 100 separate islands.
-    const a = box(0, 0, 2, 2);
-    const b = box(2, 0, 2, 2); // exactly touching on the right edge
-    expect(boxesOverlap(a, b)).toBe(false);
-  });
-
-  it('detects genuine interior overlap', () => {
-    expect(boxesOverlap(box(0, 0, 2, 2), box(1, 0, 2, 2))).toBe(true);
-  });
-
-  it('treats a corner touch as NOT overlapping', () => {
-    expect(boxesOverlap(box(0, 0, 2, 2), box(2, 2, 2, 2))).toBe(false);
-  });
-});
-
-describe('mapBounds', () => {
-  it('is null for an empty map', () => {
-    expect(mapBounds([])).toBeNull();
-  });
-
-  it('covers every box by its extents, not its centre', () => {
-    expect(mapBounds([box(0, 0, 2, 2), box(10, 0, 4, 2)])).toEqual({
-      minX: -1,
-      minY: -1,
-      maxX: 12,
-      maxY: 1,
-    });
-  });
-});
-
-describe('spawnPosition', () => {
-  it("anchors the first word of an empty map by its TOP-LEFT CORNER, not its centre", () => {
-    // Deliberate, and the grid depends on it: centring an odd-cell-wide first box on
-    // the origin would put its edges on a half-step and every box tangent to it would
-    // inherit that offset lattice. See `firstBox`.
-    const size = wordBoxSize('好', 1, 'zh');
-    const result = spawnPosition([], size, alwaysGrow);
-    expect(result).toEqual({ x: size.width / 2, y: size.height / 2, mode: 'island' });
-  });
-
-  it('places a grown word tangent to an existing one, never overlapping', () => {
-    const existing = [box(0, 0, 2, 2)];
-    const size = { width: 2, height: 2 };
-    const { x, y, mode } = spawnPosition(existing, size, alwaysGrow);
-    expect(mode).toBe('grow');
-    expect(boxesOverlap({ x, y, ...size }, existing[0])).toBe(false);
-    // Tangent means the gap on one axis is exactly the summed half-extents.
-    const touchingX = Math.abs(x - 0) === 2;
-    const touchingY = Math.abs(y - 0) === 2;
-    expect(touchingX || touchingY).toBe(true);
-  });
-
-  it('starts a new island when the roll comes in under the threshold', () => {
-    // First value is the island roll; the rest feed the angle.
-    const rng = scriptedRng([NEW_ISLAND_CHANCE / 2, 0.25]);
-    const { mode } = spawnPosition([box(0, 0)], wordBoxSize('好', 1, 'zh'), rng);
-    expect(mode).toBe('island');
-  });
-
-  it('grows when the roll comes in over the threshold', () => {
-    const rng = scriptedRng([NEW_ISLAND_CHANCE + 0.01, 0.5, 0.5, 0.5]);
-    const { mode } = spawnPosition([box(0, 0)], wordBoxSize('好', 1, 'zh'), rng);
-    expect(mode).toBe('grow');
-  });
-
-  it('places a new island clear of every existing box', () => {
-    const existing = [box(0, 0, 4, 4), box(6, 0, 4, 4)];
-    const size = { width: 2, height: 2 };
-    const rng = scriptedRng([0.01, 0.3]); // island, then the angle
-    const { x, y, mode } = spawnPosition(existing, size, rng);
-    expect(mode).toBe('island');
-    for (const other of existing) {
-      expect(boxesOverlap({ x, y, ...size }, other)).toBe(false);
-    }
-  });
-
-  it('falls back to an island rather than failing when no edge is free', () => {
-    // A word fully boxed in: neighbours on all four sides and in the diagonals, so
-    // every tangent candidate collides. A card must ALWAYS get a spot — a card that
-    // silently never appears on the map is the one outcome the feature cannot have.
-    const size = { width: 2, height: 2 };
-    const existing: MapBox[] = [];
-    for (let gx = -1; gx <= 1; gx++) {
-      for (let gy = -1; gy <= 1; gy++) existing.push(box(gx * 2, gy * 2, 2, 2));
-    }
-    const { x, y } = spawnPosition(existing, size, alwaysGrow);
-    for (const other of existing) {
-      expect(boxesOverlap({ x, y, ...size }, other)).toBe(false);
-    }
-  });
-});
-
-describe('spawnBatch', () => {
-  const words = (n: number) =>
-    Array.from({ length: n }, () => ({ entryKey: '学习', language: 'zh' }));
-
-  it('returns one placement per input, in input order', () => {
-    const result = spawnBatch([], words(5), alwaysGrow);
-    expect(result).toHaveLength(5);
-  });
-
-  it('never overlaps any two words in a full-capacity batch', () => {
-    // The invariant the whole map rests on, at the size the map actually reaches.
-    // Uses real randomness deliberately: a scripted RNG would only prove one path.
-    const placed = spawnBatch([], words(100), Math.random);
-    const boxes: MapBox[] = placed.map((p) => ({
-      x: p.x,
-      y: p.y,
-      ...wordBoxSize('学习', p.scale, 'zh'),
-    }));
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        expect(boxesOverlap(boxes[i], boxes[j])).toBe(false);
-      }
-    }
-  });
-
-  it('does not mutate the caller\'s array of existing boxes', () => {
-    // The service passes in its own live map state; a spawn call that appended to it
-    // would corrupt the very list it later persists against.
-    const existing = [box(0, 0)];
-    spawnBatch(existing, words(3), alwaysGrow);
-    expect(existing).toHaveLength(1);
-  });
-
-  it('places newcomers against EACH OTHER, not just the pre-existing map', () => {
-    // Sequential placement is load-bearing: if each word only saw `existing`, a batch
-    // into an empty map would stack every word on the origin.
-    const placed = spawnBatch([], words(4), alwaysGrow);
-    const distinct = new Set(placed.map((p) => `${p.x},${p.y}`));
-    expect(distinct.size).toBe(4);
-  });
-
-  it('freezes a scale in range for every word', () => {
-    for (const p of spawnBatch([], words(20), Math.random)) {
-      expect(p.scale).toBeGreaterThanOrEqual(MEMORY_MAP_SCALE_RANGE.min);
-      expect(p.scale).toBeLessThanOrEqual(MEMORY_MAP_SCALE_RANGE.max);
-    }
-  });
-
-  it('produces roughly NEW_ISLAND_CHANCE islands over a large sample', () => {
-    // Guards the ratio itself: an island is a placement that landed clear of every
-    // box already down, which is what the 10% roll is meant to produce.
-    let islands = 0;
-    const placed: MapBox[] = [];
-    for (let i = 0; i < 400; i++) {
-      const size = wordBoxSize('学习', 1, 'zh');
-      const { mode } = spawnPosition(placed, size, Math.random);
-      if (mode === 'island') islands++;
-      // Re-place deterministically so the map keeps growing regardless of mode.
-      const { x, y } = spawnPosition(placed, size, alwaysGrow);
-      placed.push({ x, y, ...size });
-    }
-    const rate = islands / 400;
-    expect(rate).toBeGreaterThan(NEW_ISLAND_CHANCE / 2);
-    expect(rate).toBeLessThan(NEW_ISLAND_CHANCE * 2.5);
-  });
-});
-
-describe('boxesTouch', () => {
-  it('joins two boxes sharing an edge segment', () => {
-    expect(boxesTouch(box(0, 0, 2, 2), box(2, 0, 2, 2))).toBe(true);
-  });
-
-  it('does NOT join two boxes meeting only at a corner', () => {
-    // A corner kiss looks like two nearby islands, not one. This is the same rule
-    // MIN_EDGE_OVERLAP enforces when placing.
-    expect(boxesTouch(box(0, 0, 2, 2), box(2, 2, 2, 2))).toBe(false);
-  });
-
-  it('does not join boxes with water between them', () => {
-    expect(boxesTouch(box(0, 0, 2, 2), box(5, 0, 2, 2))).toBe(false);
-  });
-});
-
-describe('connectedIslands', () => {
-  it('reports an empty map as no islands', () => {
-    expect(connectedIslands([])).toEqual([]);
-  });
-
-  it('groups a tangent chain into ONE island', () => {
-    const chain = [box(0, 0, 2, 2), box(2, 0, 2, 2), box(4, 0, 2, 2)];
-    expect(connectedIslands(chain)).toHaveLength(1);
-  });
-
-  it('separates boxes with water between them', () => {
-    const two = [box(0, 0, 2, 2), box(2, 0, 2, 2), box(20, 0, 2, 2)];
-    const islands = connectedIslands(two);
-    expect(islands).toHaveLength(2);
-    expect(islands.map((i) => i.length).sort()).toEqual([1, 2]);
-  });
-
-  it('covers every box exactly once', () => {
-    const boxes = spawnBatch([], Array.from({ length: 40 }, () => ({ entryKey: '学习', language: 'zh' })), Math.random)
-      .map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }));
-    const islands = connectedIslands(boxes);
-    const indices = islands.flat().sort((a, b) => a - b);
-    expect(indices).toEqual(boxes.map((_, i) => i));
-  });
-});
-
-describe('map compactness (regression: islands spread too far)', () => {
-  /** Bounding-rect width and height of a placed map, in world units. */
-  function rectOf(placed: { x: number; y: number; scale: number }[]): { w: number; h: number } {
-    const bounds = mapBounds(
-      placed.map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }))
-    );
-    if (!bounds) return { w: 0, h: 0 };
-    return { w: bounds.maxX - bounds.minX, h: bounds.maxY - bounds.minY };
-  }
-
-  const areaOf = (placed: { x: number; y: number; scale: number }[]) => {
-    const { w, h } = rectOf(placed);
-    return w * h;
-  };
-
-  const build = (n: number) =>
-    spawnBatch([], Array.from({ length: n }, () => ({ entryKey: '学习', language: 'zh' })), Math.random);
-
-  it('keeps a full 100-word map within a sane AREA', () => {
-    // Asserted on AREA rather than on the longest side, because the map is deliberately
-    // ELONGATED to match a phone (see the portrait test below) — a side-length bound
-    // would fail for a map that is exactly the right shape. Area is the quantity the
-    // runaway actually blew up: the original centre-anchored placement reached ~15,000
-    // units² at 100 words against ~2,200 today.
-    for (let trial = 0; trial < 5; trial++) {
-      expect(areaOf(build(100))).toBeLessThan(6000);
-    }
-  });
-
-  it('grows roughly LINEARLY in area as words are added', () => {
-    // Area should scale with the word COUNT, since each word occupies a fixed patch.
-    // Runaway island drift showed up as super-linear growth — 4× the words costing far
-    // more than 4× the area — which is the shape this guards, not any single number.
-    const small = areaOf(build(25));
-    const large = areaOf(build(100));
-    expect(large).toBeLessThan(small * 10); // 4× words; 10× area is generous slack
-  });
-
-  it('comes out PORTRAIT, to match the phone it is played on', () => {
-    // The growth rules are biased vertically (VERTICAL_GROWTH_BIAS, ISLAND_BEARING_ASPECT,
-    // VERTICAL_SIDE_OFFSET_DAMP) so fitting the map to a tall screen does not leave fat
-    // empty margins above and below with every word shrunk to suit. Averaged over trials
-    // because a single map is noisy — this pins the BIAS, not any one layout.
-    let ratio = 0;
-    const trials = 12;
-    for (let t = 0; t < trials; t++) {
-      const { w, h } = rectOf(build(80));
-      ratio += w / h;
-    }
-    expect(ratio / trials).toBeLessThan(0.85);
-  });
-
-  it('never strands an island far from every other one', () => {
-    // Every island must be within a short swim of another island's coast — that is the
-    // whole point of the drift cap. Measured centre-to-centre against the NEAREST other
-    // box, so a lone word joined to nothing still has to be near something.
-    const placed = spawnBatch([], Array.from({ length: 60 }, () => ({ entryKey: '学习', language: 'zh' })), Math.random);
-    const boxes = placed.map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }));
-    for (let i = 0; i < boxes.length; i++) {
-      let nearest = Infinity;
-      for (let j = 0; j < boxes.length; j++) {
-        if (i === j) continue;
-        nearest = Math.min(nearest, Math.hypot(boxes[i].x - boxes[j].x, boxes[i].y - boxes[j].y));
-      }
-      expect(nearest).toBeLessThan(20);
-    }
-  });
-});
-
-describe('island formation (regression: maps came out as a single island)', () => {
-  const KEYS = ["学", "学习", "图书馆"];
-  const words = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ entryKey: KEYS[i % KEYS.length], language: "zh" }));
-
-  function islandsOf(n: number): number {
-    const placed = spawnBatch([], words(n), Math.random);
-    const boxes = placed.map((p, i) => ({
-      x: p.x,
-      y: p.y,
-      ...wordBoxSize(KEYS[i % KEYS.length], p.scale, "zh"),
-    }));
-    return connectedIslands(boxes).length;
-  }
-
-  it('always produces several islands on a large map', () => {
-    // TWO bugs made large maps collapse into one landmass, and this is the guard for
-    // both. (1) The island probe walked a random bearing under a total-distance cap, so
-    // any bearing pointing INTO the anchor's own island gave up before reaching water.
-    // (2) A grown word could land tangent to two islands at once and silently merge
-    // them, eroding the archipelago one word at a time.
-    for (let trial = 0; trial < 10; trial++) {
-      expect(islandsOf(65)).toBeGreaterThan(1);
-    }
-  });
-
-  it('produces islands at roughly the declared rate', () => {
-    // ~10% of placements start an island, so a 100-word map should land in the high
-    // single digits. Bounded on BOTH sides: too few means the probe is failing again,
-    // too many means growth has stopped working and every word is landing in open water.
-    let total = 0;
-    const trials = 10;
-    for (let t = 0; t < trials; t++) total += islandsOf(100);
-    const mean = total / trials;
-    expect(mean).toBeGreaterThan(3);
-    expect(mean).toBeLessThan(20);
-  });
-
-  it('keeps real water between separate islands', () => {
-    // The channel a new island was launched into must not be silted up by later growth,
-    // or the compass ends up pointing at things the player cannot see as separate.
-    const placed = spawnBatch([], words(60), Math.random);
-    const boxes = placed.map((p, i) => ({
-      x: p.x,
-      y: p.y,
-      ...wordBoxSize(KEYS[i % KEYS.length], p.scale, "zh"),
-    }));
-    const islands = connectedIslands(boxes);
-    for (let a = 0; a < islands.length; a++) {
-      for (let b = a + 1; b < islands.length; b++) {
-        let nearest = Infinity;
-        for (const i of islands[a]) {
-          for (const j of islands[b]) {
-            nearest = Math.min(nearest, boxSeparation(boxes[i], boxes[j]));
-          }
-        }
-        expect(nearest).toBeGreaterThan(0);
-      }
-    }
-  });
-});
-
-describe('boxSeparation', () => {
-  it('is zero for touching boxes and positive for parted ones', () => {
-    expect(boxSeparation(box(0, 0, 2, 2), box(2, 0, 2, 2))).toBe(0);
-    expect(boxSeparation(box(0, 0, 2, 2), box(5, 0, 2, 2))).toBeCloseTo(3);
-  });
-
-  it('measures diagonal water diagonally', () => {
-    // Boxes offset on BOTH axes are further apart than either axis gap alone suggests.
-    expect(boxSeparation(box(0, 0, 2, 2), box(5, 5, 2, 2))).toBeCloseTo(Math.hypot(3, 3));
-  });
-});
-
-describe('touchedSidesForAll', () => {
-  it('marks the shared edge on BOTH boxes, and only that edge', () => {
-    // b sits to the right of a: a's right is fenced, a's other three sides are coast.
-    const [a, b] = touchedSidesForAll([box(0, 0, 2, 2), box(2, 0, 2, 2)]);
-    expect(a).toEqual({ top: false, right: true, bottom: false, left: false });
-    expect(b).toEqual({ top: false, right: false, bottom: false, left: true });
-  });
-
-  it('treats a larger y as BELOW, matching screen space', () => {
-    // The renderer reads these literally, so an inverted axis here would draw every
-    // vertical fence on the wrong side of its word.
-    const [a, b] = touchedSidesForAll([box(0, 0, 2, 2), box(0, 2, 2, 2)]);
-    expect(a.bottom).toBe(true);
-    expect(a.top).toBe(false);
-    expect(b.top).toBe(true);
-  });
-
-  it('draws nothing for a corner touch', () => {
-    // Two boxes meeting at a point share no edge; stubs there would look like a
-    // rendering fault rather than a boundary.
-    const [a, b] = touchedSidesForAll([box(0, 0, 2, 2), box(2, 2, 2, 2)]);
-    expect(a).toEqual({ top: false, right: false, bottom: false, left: false });
-    expect(b).toEqual({ top: false, right: false, bottom: false, left: false });
-  });
-
-  it('draws nothing between boxes with water between them', () => {
-    const [a] = touchedSidesForAll([box(0, 0, 2, 2), box(9, 0, 2, 2)]);
-    expect(a).toEqual({ top: false, right: false, bottom: false, left: false });
-  });
-
-  it('fences a word enclosed on several sides', () => {
-    const sides = touchedSidesForAll([
-      box(0, 0, 2, 2),
-      box(2, 0, 2, 2),
-      box(-2, 0, 2, 2),
-      box(0, 2, 2, 2),
-    ]);
-    expect(sides[0]).toEqual({ top: false, right: true, bottom: true, left: true });
-  });
-
-  it('agrees with boxesTouch about which pairs are connected', () => {
-    // The border rule and the island rule must not disagree — a fence between two words
-    // that the island code considers separate would be a visible contradiction.
-    const placed = spawnBatch([], Array.from({ length: 40 }, () => ({ entryKey: '学习', language: 'zh' })), Math.random);
-    const boxes = placed.map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }));
-    const sides = touchedSidesForAll(boxes);
-    for (let i = 0; i < boxes.length; i++) {
-      const hasFence = sides[i].top || sides[i].right || sides[i].bottom || sides[i].left;
-      const hasNeighbour = boxes.some((other, j) => j !== i && boxesTouch(boxes[i], other));
-      expect(hasFence).toBe(hasNeighbour);
-    }
-  });
-});
-
-/**
- * THE 8px GRID (docs/MEMORY_MAP_GAME.md § 2.3).
- *
- * The invariant is on EDGES: every box edge is a whole multiple of `WORLD_GRID`, which
- * the client draws as 8 screen pixels. Centres are NOT tested, and must not be — a box
- * an odd number of cells wide legitimately has its centre at a half-step.
- *
- * These are the tests that would catch a future edit reintroducing a continuous
- * position (a probe that forgets to snap, a new slide rule), which is otherwise
- * invisible: an off-lattice map looks completely normal and simply is not on the grid.
- */
-describe('the 8px grid', () => {
-  /** Distance from `value` to the nearest lattice line, in world units. */
-  const offGrid = (value: number): number => {
-    const cells = value / WORLD_GRID;
-    return Math.abs(cells - Math.round(cells)) * WORLD_GRID;
-  };
-
-  /** Generous next to WORLD_GRID (0.2) and far above the float dust `quantize` leaves. */
-  const TOL = 1e-6;
-
-  const edgesOf = (b: MapBox) => [
-    b.x - b.width / 2,
-    b.x + b.width / 2,
-    b.y - b.height / 2,
-    b.y + b.height / 2,
+/** Apply a plan the way the DAL does: temp ids stand in for the real (ascending) ones. */
+function apply(tree: LayoutSlot[], plan: PlannedSlot[], words: { entryKey: string }[]): LayoutSlot[] {
+  return [
+    ...tree,
+    ...plan.map((p, i) => ({
+      slotId: p.tempId,
+      parentSlotId: p.parentSlotId,
+      link: p.link,
+      angle: p.angle,
+      tilt: p.tilt,
+      bow: p.bow,
+      scale: p.scale,
+      entryKey: words[i].entryKey,
+      language: 'zh',
+    })),
   ];
+}
 
-  it('sizes every box in whole cells, across the whole scale range and both languages', () => {
-    const { min, max } = MEMORY_MAP_SCALE_RANGE;
-    for (let i = 0; i <= 50; i++) {
-      const scale = min + ((max - min) * i) / 50;
-      for (const [key, language] of [['学习', 'zh'], ['aprender', 'es'], ['好', 'zh']] as const) {
-        const size = wordBoxSize(key, scale, language);
-        expect(offGrid(size.width)).toBeLessThan(TOL);
-        expect(offGrid(size.height)).toBeLessThan(TOL);
+/** Grow a full map the way repeated loads would: in a few batches. */
+function growMap(seed: number, total = MEMORY_MAP_CAPACITY, batches = 5): LayoutSlot[] {
+  const rng = seeded(seed);
+  let tree: LayoutSlot[] = [];
+  const perBatch = Math.ceil(total / batches);
+  while (tree.length < total) {
+    const words = Array.from({ length: Math.min(perBatch, total - tree.length) }, () => ({
+      entryKey: WORDS[Math.floor(rng() * WORDS.length)],
+      language: 'zh',
+    }));
+    tree = apply(tree, planSlots(tree, words, rng), words);
+  }
+  return tree;
+}
+
+describe('random draws', () => {
+  it('draws tilt from a normal around 0°, not a uniform', () => {
+    const rng = seeded(5);
+    const tilts = Array.from({ length: 20000 }, () => drawTilt(rng));
+    const mean = tilts.reduce((a, b) => a + b, 0) / tilts.length;
+    const sd = Math.sqrt(tilts.reduce((a, b) => a + (b - mean) ** 2, 0) / tilts.length);
+    const withinOneSigma = tilts.filter((t) => Math.abs(t) <= MEMORY_MAP_TILT_SIGMA).length / tilts.length;
+    expect(Math.abs(mean)).toBeLessThan(0.5);
+    // Truncation at ±30° trims the spread at most slightly below σ.
+    expect(sd).toBeGreaterThan(MEMORY_MAP_TILT_SIGMA * 0.9);
+    expect(sd).toBeLessThan(MEMORY_MAP_TILT_SIGMA * 1.05);
+    // ~68% for a normal (a uniform over ±30° would give ~33%).
+    expect(withinOneSigma).toBeGreaterThan(0.64);
+    expect(withinOneSigma).toBeLessThan(0.72);
+  });
+
+  it('draws bow from a light normal around 0°, inside its range', () => {
+    const rng = seeded(6);
+    const bows = Array.from({ length: 20000 }, () => drawBow(rng));
+    const mean = bows.reduce((a, b) => a + b, 0) / bows.length;
+    const sd = Math.sqrt(bows.reduce((a, b) => a + (b - mean) ** 2, 0) / bows.length);
+    expect(Math.abs(mean)).toBeLessThan(0.3);
+    // Truncated at 3σ, which trims the spread a little below σ.
+    expect(sd).toBeGreaterThan(MEMORY_MAP_BOW_SIGMA * 0.9);
+    expect(sd).toBeLessThan(MEMORY_MAP_BOW_SIGMA * 1.02);
+    for (const bow of bows) {
+      expect(bow).toBeGreaterThanOrEqual(MEMORY_MAP_BOW_RANGE.min);
+      expect(bow).toBeLessThanOrEqual(MEMORY_MAP_BOW_RANGE.max);
+    }
+  });
+
+  it('draws scale and tilt inside their documented ranges', () => {
+    const rng = seeded(1);
+    for (let i = 0; i < 1000; i++) {
+      const scale = drawScale(rng);
+      const tilt = drawTilt(rng);
+      expect(scale).toBeGreaterThanOrEqual(MEMORY_MAP_SCALE_RANGE.min);
+      expect(scale).toBeLessThanOrEqual(MEMORY_MAP_SCALE_RANGE.max);
+      expect(tilt).toBeGreaterThanOrEqual(MEMORY_MAP_TILT_RANGE.min);
+      expect(tilt).toBeLessThanOrEqual(MEMORY_MAP_TILT_RANGE.max);
+    }
+  });
+});
+
+describe('planSlots', () => {
+  it('makes the first word on an empty map the root', () => {
+    const [root, child] = planSlots([], [{ entryKey: '好', language: 'zh' }, { entryKey: '你', language: 'zh' }], seeded(2));
+    expect(root).toMatchObject({ parentSlotId: null, angle: null });
+    expect(child.parentSlotId).toBe(root.tempId);
+    expect(child.angle).toBeGreaterThanOrEqual(0);
+    expect(child.angle).toBeLessThan(360);
+  });
+
+  it('allocates temp ids above every existing id, ascending, with parents always earlier', () => {
+    const tree = growMap(3, 20);
+    const maxId = Math.max(...tree.map((s) => s.slotId));
+    const plan = planSlots(tree, WORDS.map((entryKey) => ({ entryKey, language: 'zh' })), seeded(4));
+    plan.forEach((p, i) => {
+      expect(p.tempId).toBe(maxId + 1 + i);
+      expect(p.parentSlotId).not.toBeNull();
+      expect(p.parentSlotId as number).toBeLessThan(p.tempId);
+    });
+  });
+
+  it('never produces an overlapping map', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const laid = layoutMap(growMap(seed));
+      for (let i = 0; i < laid.length; i++) {
+        for (let j = i + 1; j < laid.length; j++) expect(partsOverlap(laid[i].parts, laid[j].parts)).toBe(false);
       }
     }
   });
 
-  it('never snaps a box smaller than the text it has to hold', () => {
-    // Sizes snap UP. Rounding toward zero would crop a glyph, so the snapped box must
-    // always be at least the natural one, and never more than a cell bigger.
-    const natural = (glyphs: number, scale: number) => ({
-      width: (glyphs * 1.0 + 0.45) * scale,
-      height: (1 + 0.45) * scale,
-    });
-    for (const scale of [0.95, 1.0, 1.37, 1.8]) {
-      const size = wordBoxSize('学习', scale, 'zh');
-      const want = natural(2, scale);
-      expect(size.width).toBeGreaterThanOrEqual(want.width - TOL);
-      expect(size.width).toBeLessThan(want.width + WORLD_GRID);
-      expect(size.height).toBeGreaterThanOrEqual(want.height - TOL);
-      expect(size.height).toBeLessThan(want.height + WORLD_GRID);
+  it('forms an archipelago — several islands, never one blob', () => {
+    let singleIsland = 0;
+    let totalIslands = 0;
+    const runs = 40;
+    for (let seed = 1; seed <= runs; seed++) {
+      const count = islandsOf(layoutMap(growMap(seed))).length;
+      totalIslands += count;
+      if (count === 1) singleIsland++;
     }
+    const mean = totalIslands / runs;
+    // ~NEW_ISLAND_CHANCE × 50 words, minus the rays that find no water.
+    expect(mean).toBeGreaterThan(MEMORY_MAP_CAPACITY * NEW_ISLAND_CHANCE * 0.6);
+    expect(mean).toBeLessThan(MEMORY_MAP_CAPACITY * NEW_ISLAND_CHANCE * 1.6);
+    expect(singleIsland).toBeLessThanOrEqual(1);
   });
 
-  it('puts every edge of a whole 100-word map on the lattice', () => {
-    // The real thing, at capacity, on a live RNG — every placement path (grow, island,
-    // the beyond-map fallback) gets exercised somewhere in a map this size.
-    const KEYS = ['好', '学习', '图书馆', '一', 'aprender', 'sí'];
-    const incoming = Array.from({ length: 100 }, (_, i) => ({
-      entryKey: KEYS[i % KEYS.length],
-      language: i % KEYS.length >= 4 ? 'es' : 'zh',
-    }));
-    const placed = spawnBatch([], incoming, Math.random);
-    placed.forEach((p, i) => {
-      const box = { x: p.x, y: p.y, ...wordBoxSize(incoming[i].entryKey, p.scale, incoming[i].language) };
-      for (const edge of edgesOf(box)) expect(offGrid(edge)).toBeLessThan(TOL);
-    });
+  it('keeps islands apart: tiles of different islands rarely come within the gap', () => {
+    let pairs = 0;
+    let tooClose = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const laid = layoutMap(growMap(seed));
+      for (let i = 0; i < laid.length; i++) {
+        for (let j = i + 1; j < laid.length; j++) {
+          if (laid[i].islandRootSlotId === laid[j].islandRootSlotId) continue;
+          pairs++;
+          if (partsOverlap(laid[i].parts, laid[j].parts, ISLAND_GAP * 0.5)) tooClose++;
+        }
+      }
+    }
+    // The bridge rule has a crowded-map fallback, so this is a rate, not an absolute.
+    expect(tooClose / pairs).toBeLessThan(0.01);
   });
 
-  it('still grows connected islands once positions are quantized', () => {
-    // The reason the world layer was exempt from the grid for so long was a fear that
-    // snapping would open gaps along shared edges and shatter the islands. Snapping
-    // BOTH sizes and positions is what makes that not happen, so this asserts the
-    // outcome that fear was about: a map still fuses into a handful of islands rather
-    // than 100 loose parcels.
-    const incoming = Array.from({ length: 60 }, () => ({ entryKey: '学习', language: 'zh' }));
-    const placed = spawnBatch([], incoming, Math.random);
-    const boxes = placed.map((p) => ({ x: p.x, y: p.y, ...wordBoxSize('学习', p.scale, 'zh') }));
-    expect(connectedIslands(boxes).length).toBeLessThan(20);
+  it('grows portrait, roughly the shape of an upright phone', () => {
+    let ratio = 0;
+    const runs = 30;
+    for (let seed = 1; seed <= runs; seed++) {
+      const b = mapBounds(allParts(layoutMap(growMap(seed))))!;
+      ratio += (b.maxX - b.minX) / (b.maxY - b.minY);
+    }
+    expect(ratio / runs).toBeGreaterThan(0.35);
+    expect(ratio / runs).toBeLessThan(0.75);
+  });
+
+  it('is deterministic for a given random source', () => {
+    expect(growMap(9)).toEqual(growMap(9));
   });
 });

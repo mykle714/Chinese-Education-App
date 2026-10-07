@@ -452,18 +452,26 @@ slot) — and both place it identically, through `buildWordSearchCard` → a
 radius, padding, 62px floor, outline and title type (`OPTION_TITLE_SX`) are shared rather
 than copied. The tile owns its two faces and the `confirmingErase` state;
 `useWordSearchLauncher` owns the save slot (`onResume`, `onErase` → `clearGameState`), and
-`GameCard`'s option slot owns its footprint. On both surfaces it is one Bubble Match level slot wide
-(`SLOT_FLEX` — ~86px in the carousel's 300px card, ~100px on the hub's full-row card)
-and 62px tall, so the delete face reads **"Delete?"** with Cancel / Delete **stacked**
-and a 6px inset. (The roomier "Delete save?" / side-by-side variant, `compact={false}`,
+`GameCard`'s option slot owns its footprint. On both surfaces it spans **two** Bubble Match
+level slots (`slots: 2` on the option → `slotFlex(2)`: two level widths plus the gap between
+them, ~180px in the carousel's 300px card, ~207px on the hub's full-row card) and is 62px
+tall; the delete face reads **"Delete?"** with Cancel / Delete **stacked** and a 6px inset.
+
+**Colour + ghost** (since 2026-10-06): the ground is the card hue's tint tier,
+`RAMP[GAME_HUE].tint` (purTint — the purple card's near-white second tone; it replaced the
+old `cardBeige`), and the normal face wears the game's registry glyph (`grid_on`, passed in
+as `glyph` by `buildWordSearchCard`) as a small corner ghost via `GameOptionTile`'s `glyph`
+prop — the parent card's ghost treatment scaled to the tile, the same one Bubble Match's
+level tiles use — but pulled inward (`glyphRight = ERASE_CLEAR_RIGHT`, 26px) so it sits
+just left of the ✕ rather than under it. The delete face hides it. (The roomier "Delete save?" / side-by-side variant, `compact={false}`,
 was deleted 2026-10-03 when the hub moved onto the shared card and left it no caller.)
 
 When a saved board exists, the tile sits at the left of the card's options row. Its **normal
-face**: a **"Resume"** title (`OPTION_TITLE_SX` — 12.5 / 600 / onSurface, same as a level tile), then the parked board's **timer** (frozen `elapsedMs`; omitted when `showTimer` is off —
-see "The play panel, top to bottom") and **X/N found** inlined (N is the
-SAVED board's own word count — `savedWordCount` reads `saved.data.words.length`, not
-`TOTAL_WORDS`, so a board parked before a size change still counts to its own total)
-on one row, with an **✕** inset in the top-right corner. **No mode label**
+face**: just a **"Resume"** title (`OPTION_TITLE_SX` — 12.5 / 600 / onSurface, same as a
+level tile) and an **✕** inset in the top-right corner. It shows **no parked time and no
+found count** (both removed 2026-10-06) — the tile is a plain way back in, not a progress
+readout, so it takes no `saved` prop at all. (The parked board's X/N found still appears in
+`NewGameConfirmDialog`'s "your saved game will be lost" copy, via `savedWordCount`.) **No mode label**
 (removed 2026-10-03): the hub only ever parks a Pinyin board and the Reading Center
 only a No Pinyin one, so the launching surface already says which board it is.
 
@@ -573,21 +581,21 @@ together. Faces follow `src/theme/fonts.ts`'s roles:
 
 | Element | Face | Weight | Where |
 |---|---|---|---|
-| clock | `FONTS.mono` (data: timers), normal case, no tracking | regular | `HUD_TEXT_SX` in `WordSearchPage.tsx`, overriding `GameHudLabel`'s overline voice (local to this game) |
+| clock | `FONTS.mono` (data: timers), normal case, no tracking | regular | the shared `GameTimer` (`src/games/shared/GameFrame.tsx`) — this game's clock style was adopted as every game's on 2026-10-06 |
 | gloss list | `FONTS.sans` | `WEIGHT.medium` | `WordSearchWordList.tsx` |
 | pinyin reveal | `FONTS.mono` (the blanks need a fixed pitch) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
 | component reveal | `FONTS.hanziComponents` (the only face with the rare component glyphs) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
 
 Line heights are `LEADING.tight`. The grid takes whatever height these rows leave.
 
-**The HUD is the clock, centred, plus the eye that shows/hides it**
-(`justifyContent: center` via `GameHud`'s `sx`). There is **no found count** (removed
+**The HUD is the clock, centred, plus the eye that shows/hides it** — rendered by the
+shared `GameTimer` (bare: no `fraction`, so no track; class `word-search__hud-timer`). There is **no found count** (removed
 2026-09-25): the gloss list already strikes through each found word, so `N/M found`
 restated it.
 
 **Timer visibility is toggled in the strip itself** (2026-09-30), not in a settings sheet.
 The control is the shared `TimerEyeToggle` (`src/games/shared/TimerEyeToggle.tsx`,
-class `word-search__hud-timer-toggle` here; Writing Grid's `GameTimer` uses the same one),
+drawn by `GameTimer` as `game-timer__toggle` — the same eye in every game that opts in),
 a 32px tap target (`EYE_TAP_PX`) holding a Material Symbols glyph through the app's `Icon`
 primitive, in full ink (`COLORS.onSurface`) like every other HUD fact:
 
@@ -667,6 +675,14 @@ every glyph upward for nothing.
 One knock-on effect: the reserved band is part of what sets the tile's size, since
 the square tile is sized from the cpcd cell's natural box (see below) and that box is
 taller with `bigPinyin` on. **Pinyin** tiles are 57px, **No Pinyin** tiles 53px.
+
+**No Pinyin glyph centering.** The tile flex-centers the whole glyph+band stack, so
+with the band empty the character would ride half a band above the tile's center.
+`WordSearchGrid.tsx` → `hiddenPinyinGlyphOffset` (half the band, computed as the
+difference of two `cpcdNaturalSize` heights, with and without `reservePinyin`)
+drops it back to center via a `translateY` on the `word-search__cell-glyph`
+wrapper. It is a transform rather than padding so the square track and
+`useFitScale`'s measured box are unchanged; it is 0 on the Pinyin board.
 
 More pinyin overflows its 32px column at this scale, so expect more
 shifting/separator apostrophes — see

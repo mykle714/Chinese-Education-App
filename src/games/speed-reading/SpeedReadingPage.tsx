@@ -906,9 +906,15 @@ const SpeedReadingPage: React.FC = () => {
                     expression, so as the first child of a `cond && ( … )` body it makes
                     two siblings with no fragment around them, which esbuild rejects
                     outright (tsc lets it through, so the repo typechecks and the build
-                    still fails). */}
+                    still fails).
+
+                    `inPlace` (here and on the sort offer below): every other game's popup
+                    portals to the phone frame so its dim covers the whole screen, but this
+                    stage ROTATES in sideways mode and already covers the whole screen,
+                    header included — a frame-hosted popup would draw upright over a
+                    sideways game. */}
                 {phase === "ended" && (
-                    <GameEndPopup classPrefix="speed-reading">
+                    <GameEndPopup classPrefix="speed-reading" inPlace>
                         <Typography
                             className="speed-reading__popup-title"
                             sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}
@@ -978,6 +984,7 @@ const SpeedReadingPage: React.FC = () => {
                     minimized={sortOffer.minimized}
                     onMinimize={sortOffer.onMinimize}
                     onRestore={sortOffer.onRestore}
+                    inPlace
                 />
 
                 {/* Backgrounding paused the round — the app-wide rule

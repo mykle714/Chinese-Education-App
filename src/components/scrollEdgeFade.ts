@@ -32,16 +32,28 @@ import { useLayoutEffect, type RefObject } from "react";
  *   • src/features/studyChallenge/ChallengeSheet.tsx → `.challenge-sheet__body`
  * Masks that read the variables: `EDGE_FADE_MASK` / `EDGE_FADE_MASK_NO_TOP`
  * (MobileTabScreen) and `SHEET_EDGE_FADE_MASK` / `SHEET_EDGE_FADE_MASK_NO_TOP`
- * (components/sheet/sheetStyled).
+ * (components/sheet/sheetStyled). Every one of them is worn through `edgeFadeMaskSx`.
+ *
+ * SCROLLBAR EXEMPTION: a mask on a scroller clips the scroller's own scrollbar too, so
+ * a classic (desktop) scrollbar used to dissolve at both ends along with the content.
+ * The tracker also writes `--edge-fade-scrollbar`, the px width of the scrollbar
+ * gutter. `edgeFadeMaskSx` uses it to apply the fade only to the content column, and
+ * puts a solid layer over the gutter. So the fade is drawn BEHIND the scrollbar and the
+ * scrollbar itself stays fully drawn. Overlay scrollbars (mobile, macOS) take no gutter
+ * (width 0), so they still fade with the content. They are transient and float over
+ * it anyway.
  * Documented in docs/UX_AND_NAVIGATION.md § Edge fade.
  */
 
 export const EDGE_FADE_ABOVE_VAR = "--edge-fade-above";
 export const EDGE_FADE_BELOW_VAR = "--edge-fade-below";
+export const EDGE_FADE_SCROLLBAR_VAR = "--edge-fade-scrollbar";
 
 // Written values are capped here. Every band is smaller than this, and capping keeps
-// the style write a no-op (same string) for the whole middle of a long scroll.
-const EDGE_FADE_VAR_CAP = 64;
+// the style write a no-op (same string) for the whole middle of a long scroll. The
+// tallest band today is the Mastery Centers' page bottom (`CENTER_BOTTOM_FADE_BAND`,
+// 110px, MasteryCenterPage) — raise this if a taller one arrives.
+const EDGE_FADE_VAR_CAP = 128;
 
 /** `min(var(--edge-fade-above, band), band)`. A band that ramps in with the content scrolled past the top wall. */
 export const edgeFadeAboveBand = (bandPx: number) =>
@@ -49,6 +61,32 @@ export const edgeFadeAboveBand = (bandPx: number) =>
 /** Same, for the content still waiting below the bottom wall. */
 export const edgeFadeBelowBand = (bandPx: number) =>
     `min(var(${EDGE_FADE_BELOW_VAR}, ${bandPx}px), ${bandPx}px)`;
+
+/**
+ * The `sx` that makes a scroller wear an edge-fade `gradient`, with the scrollbar gutter
+ * exempt (see "SCROLLBAR EXEMPTION" above). Two mask layers:
+ *   1. the fade gradient, sized to the content column (`100%` minus the gutter), left;
+ *   2. a solid layer the width of the gutter, right, so the scrollbar stays fully drawn.
+ * The gradient runs vertically, so narrowing its layer leaves every stop unchanged.
+ * An untracked scroller has no gutter var, so it gets 0 and the old full-width fade.
+ * Both spellings throughout, because iOS Safari still needs the prefixed properties.
+ */
+export function edgeFadeMaskSx(gradient: string) {
+    const gutter = `var(${EDGE_FADE_SCROLLBAR_VAR}, 0px)`;
+    const image = `${gradient}, linear-gradient(#000, #000)`;
+    const size = `calc(100% - ${gutter}) 100%, ${gutter} 100%`;
+    const position = "left top, right top";
+    return {
+        maskImage: image,
+        WebkitMaskImage: image,
+        maskSize: size,
+        WebkitMaskSize: size,
+        maskPosition: position,
+        WebkitMaskPosition: position,
+        maskRepeat: "no-repeat",
+        WebkitMaskRepeat: "no-repeat",
+    } as const;
+}
 
 /**
  * Start tracking `el`. Returns the cleanup. Shaped as a React 19 ref callback, so a
@@ -59,6 +97,7 @@ export function trackScrollEdgeFade(el: HTMLElement): () => void {
     let frame = 0;
     let lastAbove = "";
     let lastBelow = "";
+    let lastScrollbar = "";
 
     const write = () => {
         frame = 0;
@@ -72,6 +111,17 @@ export function trackScrollEdgeFade(el: HTMLElement): () => void {
         const belowStr = `${Math.round(below)}px`;
         if (aboveStr !== lastAbove) el.style.setProperty(EDGE_FADE_ABOVE_VAR, (lastAbove = aboveStr));
         if (belowStr !== lastBelow) el.style.setProperty(EDGE_FADE_BELOW_VAR, (lastBelow = belowStr));
+        // Scrollbar gutter width: the border box minus the client box minus the side
+        // borders. It changes when the scrollbar appears or disappears, and the
+        // ResizeObserver catches that (the content box resizes when it does).
+        const style = getComputedStyle(el);
+        const gutter = Math.max(
+            el.offsetWidth - el.clientWidth -
+                (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0),
+            0
+        );
+        const scrollbarStr = `${Math.round(gutter)}px`;
+        if (scrollbarStr !== lastScrollbar) el.style.setProperty(EDGE_FADE_SCROLLBAR_VAR, (lastScrollbar = scrollbarStr));
     };
     const schedule = () => {
         if (!frame) frame = requestAnimationFrame(write);

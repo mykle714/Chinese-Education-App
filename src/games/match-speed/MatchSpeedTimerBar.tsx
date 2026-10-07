@@ -19,7 +19,7 @@ interface MatchSpeedTimerBarProps {
  * The run clock — Match Speed's binding of the shared `GameTimer`
  * (docs/SHELF_REDESIGN.md § A6, class `.timer`).
  *
- * The GENERIC half (the 28px tabular numerals, the 4px track, where the block sits in the
+ * The GENERIC half (the tabular numerals, the 4px track, where the block sits in the
  * play panel, the fade-when-dimmed) moved to `src/games/shared/GameFrame.tsx` so all five
  * games read the same. What stays here is the part that is only true of Match Speed: the
  * run length it divides by, and the ten-second urgency threshold with its pulse.

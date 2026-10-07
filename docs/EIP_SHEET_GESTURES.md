@@ -221,8 +221,11 @@ not".
 
 **Why study surfaces get the flame.** A panel covers its page's header, flame included,
 and it does that precisely while the learner is reading a definition — which *is* study
-time. So flp, scp, the cdp and the compare sheet pass `showMinutePoints`, and the
-indicator survives at every panel height. Only the **root** panel draws it (`depth === 0`):
+time. So the eip panels on flp, scp and the cdp pass `showMinutePoints`, and the
+indicator survives at every panel height. **Pull-up dictionary flows never show it**
+(2026-10-06): `CompareSheet` and the Writing Notebook's `NotebookWordPickerSheet` omit the
+prop. That changes only the indicator, not earning — the host page's own `PageHeader`
+stays mounted under the sheet and its `useMinutePoints` tick keeps accruing. Only the **root** panel draws it (`depth === 0`):
 a stacked child covers its parent completely, so a second flame would be one indicator
 behind another, and a third `useMinutePoints` tick.
 

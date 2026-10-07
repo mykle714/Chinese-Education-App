@@ -45,6 +45,8 @@ interface NodePageProps {
     scrollable?: boolean;
     // Drop the soft fade at the TOP edge (keeps the bottom fade). See MobileTabScreen.
     topFade?: boolean;
+    // Height of the bottom fade band above the footer bar. See MobileTabScreen.
+    bottomFadeBand?: number;
     // This page owns a horizontal scroller (a pager, a sideways shelf) that must be
     // pannable by touch. Required, not cosmetic: the scroll area's own `touch-action`
     // is a ceiling on its descendants, so without this a sideways swipe inside the page
@@ -80,6 +82,7 @@ const NodePage: React.FC<NodePageProps> = ({
     contentClassName,
     scrollable,
     topFade,
+    bottomFadeBand,
     horizontalPan,
     wrapHeader,
     overlay,
@@ -106,6 +109,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 contentClassName={contentClassName}
                 scrollable={scrollable}
                 topFade={topFade}
+                bottomFadeBand={bottomFadeBand}
                 horizontalPan={horizontalPan}
                 wrapHeader={wrapHeader}
             >

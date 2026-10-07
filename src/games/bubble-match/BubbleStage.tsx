@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { Box, Typography } from "@mui/material";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
@@ -10,7 +10,8 @@ import { makePair, launchBody } from "../bubbles/bodyFactory";
 import { selectNextBubble } from "./spawnSelection";
 import type { BubbleBody, BubbleFill } from "../bubbles/types";
 import type { LevelConfig } from "./types";
-import { GameHud, GameHudBar, GameHudLabel } from "../shared/GameFrame";
+import { GameHud, GameHudLabel } from "../shared/GameFrame";
+import { useGameSurfaceHue } from "../shared/gameSurface";
 import {
     MAX_DT,
     SCALE_IDLE,
@@ -37,9 +38,10 @@ import {
 } from "./constants";
 
 /**
- * Bubble Match's base palette rule: a bubble is colored by its KIND. The two
- * objects are module constants (not built per render) so the memoized Bubble's
- * field-by-field fill comparison always sees the same strings.
+ * Bubble Match's base palette rule: a bubble is colored by its KIND (white word /
+ * grey meaning, one shared neutral ring — constants.ts). The two objects are module
+ * constants (not built per render) so the memoized Bubble's field-by-field fill
+ * comparison always sees the same strings.
  */
 const WORD_FILL: BubbleFill = { bg: WORD_BUBBLE_BG, border: WORD_BUBBLE_BORDER };
 const DEFINITION_FILL: BubbleFill = { bg: DEFINITION_BUBBLE_BG, border: DEFINITION_BUBBLE_BORDER };
@@ -51,7 +53,6 @@ interface BubbleStageProps {
     levelPairs: VocabEntry[];
     config: LevelConfig;
     levelNumber: number;
-    levelLabel: string;
     showPinyin: boolean;
     showPinyinColor: boolean;
     /** Called to narrate a word bubble's Chinese on pickup / match-onto.
@@ -101,7 +102,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     levelPairs,
     config,
     levelNumber,
-    levelLabel,
     showPinyin,
     showPinyinColor,
     onSpeak,
@@ -113,6 +113,15 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     paused,
 }) => {
     const stageRef = useRef<HTMLDivElement>(null);
+    // The board's two bands — the HUD strip above the field and the cancel strip's
+    // RESTING fill below it — both wear the surface hue's SURFACE tier (the ~93%
+    // pastel); the bubbles themselves stay uncoloured (constants.ts). This
+    // overrides GameHud's default tint ground for Bubble Match only. Armed (a bubble
+    // over the cancel strip) still flips to the shared danger colours. No provider
+    // (bare mount in a test) → GameHud's and the strip's shared defaults.
+    const surfaceHue = useGameSurfaceHue();
+    const bandBg = surfaceHue ? RAMP[surfaceHue].surface : undefined;
+    const cancelZoneIdleBg = bandBg ?? CANCEL_ZONE_COLORS.idle.bg;
     // Latest config/level in a ref so the (stable) rAF frame callback can read
     // the current shrink speed without being re-created per level.
     const configRef = useRef(config);
@@ -163,7 +172,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
 
     // Lifecycle/control refs.
     const phaseRef = useRef<"playing" | "done">("playing");
-    const matchedRef = useRef(0);
     const pendingTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
     // rAF loop control. The loop self-stops when the field goes static after the
     // run ends (see stepFrame); startLoop re-kicks it for post-loss cleanup drags.
@@ -185,12 +193,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // game-over popup to inspect the field). Once dismissed, the red danger glow
     // never returns for the rest of the run — re-expanding the popup won't flash it.
     const [dangerDismissed, setDangerDismissed] = useState(false);
-    const [matched, setMatched] = useState(0);
     // True while the currently-held bubble overlaps the bottom cancel strip — drives
     // the strip's hover tint. Pure feedback; does not affect match logic.
     const [overCancelZone, setOverCancelZone] = useState(false);
-
-    const totalPairs = levelPairs.length;
 
     // Stable callback for bubble nodes to register/unregister their DOM element.
     const registerNode = useCallback((id: string, el: HTMLDivElement | null) => {
@@ -294,8 +299,14 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             const residual = stepPhysics(bodies, dt, bounds);
 
             // Drop the visible lid to the ceiling line (its height === bounds.top).
+            // Hidden while the ceiling is still at the top: at height 0 the lid's
+            // 3px ink border + drop shadow would otherwise peek out under the HUD
+            // before the ceiling has started to descend.
             const ceiling = ceilingNodeRef.current;
-            if (ceiling) ceiling.style.height = `${bounds.top}px`;
+            if (ceiling) {
+                ceiling.style.height = `${bounds.top}px`;
+                ceiling.style.visibility = bounds.top > 0 ? "visible" : "hidden";
+            }
 
             // Smoothly approach each bubble's target scale and write transforms.
             // Track whether anything is still mid-animation for the shutdown check.
@@ -370,8 +381,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
     // ---- Main setup: build queue, start loops. Re-runs per level. -----------
     useEffect(() => {
         phaseRef.current = "playing";
-        matchedRef.current = 0;
-        setMatched(0);
         setDanger(false);
         setDangerDismissed(false);
         bodiesRef.current = [];
@@ -739,8 +748,6 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                         );
                         nodeMapRef.current.delete(held.id);
                         nodeMapRef.current.delete(target.id);
-                        matchedRef.current += 1;
-                        setMatched(matchedRef.current);
                         forceRender();
                         // Win when every pair is matched and nothing is left to launch.
                         if (bodiesRef.current.length === 0 && queueRef.current.length === 0) {
@@ -801,21 +808,16 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
             playfield, which meant bubbles drifted under the level name and the two
             layers fought for the same pixels; it also made the field's measured
             bounds larger than the space a bubble could actually be read in.
-            Left: which level this is. Right: pairs still on the table — a count of
-            work REMAINING reads better mid-run than a fraction of work done.
-            The bar restates the same number for peripheral vision. */}
-        <GameHud className="bubble-stage__hud">
+            Holds ONE fact — the level number — centered. The level's name, the
+            "N left" count and the progress bar were removed (2026-10-06): the
+            bubbles on the field already show how much work remains. */}
+        <GameHud
+            className="bubble-stage__hud"
+            sx={{ justifyContent: "center", ...(bandBg ? { backgroundColor: bandBg } : {}) }}
+        >
             <GameHudLabel className="bubble-stage__level">
-                Level {levelNumber} · {levelLabel}
+                Level {levelNumber}
             </GameHudLabel>
-            <GameHudLabel className="bubble-stage__progress">
-                {Math.max(0, totalPairs - matched)} left
-            </GameHudLabel>
-            <GameHudBar
-                className="bubble-stage__progress-bar"
-                fraction={totalPairs > 0 ? matched / totalPairs : 0}
-                color={COLORS.onSurface}
-            />
         </GameHud>
         <Box
             ref={stageRef}
@@ -886,6 +888,8 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     left: 0,
                     right: 0,
                     height: 0,
+                    // Starts hidden; the rAF loop reveals it once bounds.top > 0.
+                    visibility: "hidden",
                     pointerEvents: "none",
                     zIndex: 2,
                     // An ink slab (`--ink` → `--ink2`) with a hard ink bottom edge, so
@@ -932,7 +936,7 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     zIndex: 5,
                     borderTop: "2px dashed",
                     borderColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].border,
-                    backgroundColor: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].bg,
+                    backgroundColor: overCancelZone ? CANCEL_ZONE_COLORS.armed.bg : cancelZoneIdleBg,
                     transition: "background-color 0.15s ease, border-color 0.15s ease",
                 }}
             >
@@ -941,7 +945,9 @@ const BubbleStage: React.FC<BubbleStageProps> = ({
                     sx={{
                         fontSize: SIZE.body,
                         fontWeight: WEIGHT.bold,
-                        color: CANCEL_ZONE_COLORS[overCancelZone ? "armed" : "idle"].label,
+                        // Full ink at rest — the shared faint label washes out on the
+                        // hued band. Armed keeps the shared danger ink.
+                        color: overCancelZone ? CANCEL_ZONE_COLORS.armed.label : COLORS.onSurface,
                         letterSpacing: 0.3,
                     }}
                 >

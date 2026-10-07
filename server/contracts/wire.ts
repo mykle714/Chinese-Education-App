@@ -931,6 +931,7 @@ export type CardBaselineSurface =
   | 'match-speed'
   | 'speed-reading'
   | 'word-search'
+  | 'bucket-drop'
   | 'flp';
 
 /**
@@ -953,6 +954,9 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
   'match-speed': 20,
   'speed-reading': 20,
   'word-search': 9,
+  // A run is 20 words (docs/BUCKET_DROP_GAME.md § 1) — src/games/bucket-drop/constants.ts
+  // GAME_DISTRIBUTION sums to this.
+  'bucket-drop': 20,
   flp: 20,
 };
 
@@ -976,8 +980,10 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
  *
  * Deliberately NOT folded into `CardBaselineSurface`: these are orthogonal
  * questions ("how many cards do you need up front?" vs "may you lend mid-run?"),
- * and Hydra answers the first with "none". Memory Map sets the same precedent by
- * staying out of `CARD_BASELINES` entirely rather than declaring a baseline of 0.
+ * and Hydra answers the first with "none". Memory Map is the other surface that
+ * lends without a `CARD_BASELINES` entry: it fills its own slots to
+ * `MEMORY_MAP_CAPACITY` through `ProvisionalCardService.acquireLentCards` directly
+ * (see that constant for why it is not a baseline).
  */
 export type RollingSupplySurface = 'hydra-bubbles';
 
@@ -1018,6 +1024,8 @@ export const CARD_BASELINE_ITEMIZED: Record<CardBaselineSurface, boolean> = {
   'match-speed': false,
   'speed-reading': true,
   'word-search': true,
+  // A fixed 20-word stack, dealt up front — the notice can name every lent word.
+  'bucket-drop': true,
   flp: false,
 };
 
@@ -1026,75 +1034,149 @@ export const CARD_BASELINE_ITEMIZED: Record<CardBaselineSurface, boolean> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How many words a Memory Map may hold at once.
+ * How many slots a Memory Map holds — and, since 2026-10-06, how many it is FILLED to.
  *
- * Deliberately NOT in `CARD_BASELINES`: a baseline is a floor the server tops up to
- * with lent cards, and Memory Map declares no floor at all (§ 10 — a small library is
- * simply a small map). This is the opposite quantity, a CEILING, and it exists for two
- * unrelated reasons that happen to agree on the same number:
+ * Both a ceiling and a target:
  *
- *   1. Performance. 100 absolutely-positioned DOM nodes need no viewport culling, so
- *      the whole rendering layer stays "a CSS transform over a world div" (§ 7).
- *   2. A run has to end. "Colour the entire map" is only a playable goal if the map
- *      is bounded; a learner with 4,000 cards would otherwise face a run that never
- *      finishes (§ 2.2).
+ *   • CEILING, for two unrelated reasons that agree on the number: 50 absolutely-
+ *     positioned DOM nodes need no viewport culling (§ 7), and "colour the entire map"
+ *     is only a playable goal if the map is bounded (§ 2.2).
+ *   • TARGET: the map is always full. When the learner's own eligible cards cannot
+ *     fill it, MemoryMapService LENDS provisional cards for the rest
+ *     (docs/PROVISIONAL_CARDS.md) — reversing the original "no baseline, a small library
+ *     is a small map" rule (Q12, overruled 2026-10-06).
  *
- * Shared rather than duplicated because BOTH sides need it: the server enforces it
- * when topping the map up, and the client renders it as the `23 / 100` header count.
+ * Deliberately NOT a `CARD_BASELINES` entry even though it now behaves like one: a
+ * `CARD_BASELINES` value is compared against the learner's SORTED count
+ * (`ensureBaseline`), whereas the map's deficit is "eligible, not reading-mastered, not
+ * already on the map" after the cooled-card ladder — a different quantity that only
+ * the service can compute. Listing it there would also make `?surface=memory-map` a
+ * legal game-pool surface, which no caller wants.
+ *
+ * Shared because BOTH sides need it: the server fills to it, the client renders the
+ * `23 / 50` header count.
+ *
+ * 100 → 70 → 49 → 50 (all 2026-10-06; the last with the slot-tree rework).
  */
-export const MEMORY_MAP_CAPACITY = 100;
+export const MEMORY_MAP_CAPACITY = 50;
 
 /**
- * The random size multiplier drawn once per word at spawn and then FROZEN forever
- * (§ 2.3). Server-side only in practice — the client just renders what it is given —
- * but it lives on the wire so the range is documented next to the field it fills.
+ * The random size multiplier drawn once per SLOT at spawn and then FROZEN (§ 2.3). A
+ * word that later moves into the slot inherits it.
  *
- * Size carries NO meaning. It is not word length, not frequency, not mastery. It
- * exists so the archipelago looks hand-drawn rather than typeset, and it is frozen
- * because a size that tracked mastery would reflow every neighbouring word every time
- * the learner studied — the map's stability is what makes it memorable.
+ * Size carries NO meaning — not word length, not frequency, not mastery. It exists so
+ * the archipelago looks hand-drawn rather than typeset.
  *
- * ── WHAT THIS RANGE ACTUALLY CONTROLS ────────────────────────────────────────
- * Its RATIO, not its magnitude. The camera fits the whole map on load, so scaling every
- * word by the same factor grows the map's world extent and shrinks the fitted zoom by
- * exactly as much — a wash on screen. Only max/min changes what a player sees: it is the
- * SIZE CONTRAST between the biggest and smallest words on the map.
- *
- * Widened from 0.7–1.6 (ratio 2.3) to 0.95–1.8 (ratio 1.9), so the smallest words read
- * comfortably rather than as specks beside their neighbours.
- *
- * To make EVERYTHING bigger on screen instead, the lever is the camera, not this:
- * `FIT_PADDING` in the game's constants decides how tightly the fitted map fills the
- * viewport.
+ * What the range controls is its RATIO, not its magnitude: the camera fits the map on
+ * load, so scaling every word alike is a wash on screen. To make everything bigger, the
+ * lever is the camera (`FIT_PADDING` / `FIT_ZOOM_BOOST`), not this.
  */
 export const MEMORY_MAP_SCALE_RANGE = { min: 0.95, max: 1.8 } as const;
 
 /**
- * One word's permanent spot on the map, as stored and as sent to the client.
+ * The render tilt drawn once per SLOT, in degrees, and frozen (§ 2.3). Positive is
+ * clockwise on screen — the same sense as CSS `rotate()`, because world y grows downward.
  *
- * `x`/`y` are the CENTRE of the word's axis-aligned bounding box in world
- * coordinates, which are continuous and unitless — the client picks the pixels-per-
- * world-unit at render time. `width`/`height` are NOT stored: they are derived from
- * the rendered text and the frozen `scale`, and the server recomputes them the same
- * way when it needs to place a neighbour (see server/services/memoryMapSpawn.ts).
+ * Geometry, not paint: the layout collides the ROTATED tile (memoryMapLayout.ts), so a
+ * tilted word never overlaps its neighbours.
+ *
+ * The draw is NOT uniform: a normal centred on 0° with σ = `MEMORY_MAP_TILT_SIGMA`,
+ * truncated to this range (memoryMapSpawn.ts → `drawTilt`). Most tiles sit near level and
+ * a few lean hard, which reads as hand-placed rather than as a uniformly shaken jumble.
+ *
+ * History (all 2026-10-06): uniform ±30° → uniform ±20° → normal σ 10° → normal σ 6°,
+ * truncated at ±30°.
+ * An existing slot's tilt is frozen, so a map only picks up a change when it is wiped.
  */
-export interface MemoryMapPlacement {
-  /** vet id. Unique per user across the map, and the FK target of the placement row. */
-  vocabEntryId: number;
-  x: number;
-  y: number;
+export const MEMORY_MAP_TILT_RANGE = { min: -30, max: 30 } as const;
+
+/**
+ * Standard deviation of the tilt draw, in degrees. 6° keeps most tiles nearly level —
+ * ~68% within ±6°, ~95% within ±12°, a lean past 20° about once in a thousand tiles — so
+ * the ±30° range is effectively a safety cap (5σ) rather than something a map shows.
+ * Lowered from 10° (2026-10-06, "still too many tilted"). Out-of-range draws are redrawn,
+ * not clamped.
+ */
+export const MEMORY_MAP_TILT_SIGMA = 6;
+
+/**
+ * The BOW drawn once per SLOT and frozen, like the tilt (§ 2.3a): a multi-character
+ * word's characters sit on a gentle arc instead of a straight line. Stored as the LEAN
+ * of the outermost characters, in degrees: positive = a smile (both ends raised, each
+ * outer character rotated up and outward), negative = a frown, 0 = straight. The arc's
+ * depth follows from the lean and the word's length (memoryMapLayout.ts → `bowOffsets`),
+ * so a 2-character and a 6-character word with the same bow have the same curve, the
+ * longer one just spans more of it.
+ *
+ * Geometry, not paint: every character's box is shifted and rotated onto the arc before
+ * the layout collides it. A single-character word has no arc and ignores its bow — the
+ * slot still keeps it, for a multi-character word that refills it later.
+ *
+ * Normal around 0° with σ = `MEMORY_MAP_BOW_SIGMA`, truncated to this range by
+ * rejection (memoryMapSpawn.ts → `drawBow`). Frozen per slot: a change reaches a map
+ * only when it is wiped.
+ */
+export const MEMORY_MAP_BOW_RANGE = { min: -15, max: 15 } as const;
+
+/**
+ * Standard deviation of the bow draw, in degrees of outer-character lean. Kept light
+ * (owner, 2026-10-06): ~68% of words lean their ends under 5°, which on a 2-character
+ * word is an arc ~0.02 em deep — felt more than seen — and the ±15° cap (3σ) is the
+ * most a word ever curves.
+ */
+export const MEMORY_MAP_BOW_SIGMA = 5;
+
+/**
+ * How a slot hangs off its parent (§ 2.4):
+ *   • `grow`   — part of the parent's island: slides out along `angle` until its tile
+ *                just clears everything laid before it (usually: touching the parent).
+ *   • `island` — the root of a NEW island: slides out from a coast slot along `angle`
+ *                until it clears every tile by the island water gap.
+ */
+export type MemoryMapLink = 'grow' | 'island';
+
+/**
+ * One slot of the map's tree — the durable geometry, with no position stored.
+ *
+ * Positions are DERIVED by `layoutMap` (server/services/memoryMapLayout.ts). The client
+ * runs it with glyph shapes measured from the learner's font, the server (at spawn) with
+ * estimated ones, so the two differ slightly — harmless, since only the client's layout
+ * is ever drawn and nothing positional is stored. Slots arrive
+ * ordered by `slotId`, and a parent always has a smaller id than its children — the
+ * layout depends on that order.
+ */
+export interface MemoryMapSlot {
+  slotId: number;
+  /** null for exactly one slot per map: the first root, at the world origin. */
+  parentSlotId: number | null;
+  link: MemoryMapLink;
+  /** Degrees [0, 360), 0 = east, clockwise on screen. null for the first root. */
+  angle: number | null;
+  /** Degrees within `MEMORY_MAP_TILT_RANGE`. */
+  tilt: number;
+  /** Outer-character lean in degrees, within `MEMORY_MAP_BOW_RANGE`; + = smile. */
+  bow: number;
+  /** Within `MEMORY_MAP_SCALE_RANGE`. */
   scale: number;
+  /**
+   * The occupant's vet id, or null for an EMPTY slot (its card was deleted, or the
+   * refill found nothing to lend). An empty slot keeps its place in the tree so its
+   * children do not move; the client draws nothing there (there is no tile to show).
+   */
+  vocabEntryId: number | null;
 }
 
 /**
- * A placed word with everything the client needs to draw and prompt it.
+ * A word on the map with everything the client needs to draw and prompt it.
  *
  * `definition` is the dd, already resolved through the learner's `selectedSense` —
- * the games-wide sense-correctness rule. Resolving it server-side (rather than
- * shipping the raw cluster set and letting the game pick) is what stops a prompt
- * showing a gloss the learner's own flashcard does not read.
+ * the games-wide sense-correctness rule.
  */
-export interface MemoryMapWord extends MemoryMapPlacement {
+export interface MemoryMapWord {
+  /** vet id. Unique per user across the map. */
+  vocabEntryId: number;
+  /** The slot it occupies — see `MemoryMapResponse.slots` for the geometry. */
+  slotId: number;
   entryKey: string;
   pronunciation: string | null;
   definition: string;
@@ -1103,6 +1185,9 @@ export interface MemoryMapWord extends MemoryMapPlacement {
 
 /** GET /api/memoryMap — the whole map, plus what just changed about it. */
 export interface MemoryMapResponse {
+  /** Every slot, empty ones included, ordered by `slotId` (parents before children). */
+  slots: MemoryMapSlot[];
+  /** The occupants of the non-empty slots. */
   words: MemoryMapWord[];
   /**
    * vet ids of the words placed BY THIS REQUEST, so the client can announce growth
@@ -1115,16 +1200,20 @@ export interface MemoryMapResponse {
 }
 
 /**
- * POST /api/memoryMap/graduate — a word left the map, so refill it.
+ * POST /api/memoryMap/graduate — a word left the map, so refill its SLOT.
  *
- * Called after a mark leaves the word reading-mastered (§ 3.6). The server deletes the
- * placement and immediately spawns the next word in priority order into the freed
- * space, returning it so the client can drop it straight into the running queue.
+ * Called after a mark leaves the word reading-mastered (§ 3.6). The server moves the
+ * next word in priority order (lending one if the learner has none) into the same slot,
+ * so the tree — and therefore every other tile's position — is unchanged apart from the
+ * one occupant's size.
  */
 export interface MemoryMapGraduateResponse {
-  /** True when the word was in fact reading-mastered and its row was deleted. */
+  /** True when the word was in fact reading-mastered and left its slot. */
   graduated: boolean;
-  /** The word spawned to replace it, or null if the eligible pool is exhausted. */
+  /**
+   * The word now occupying the graduate's slot (same `slotId`), or null if nothing
+   * could be found or lent — the slot is then empty until a later load refills it.
+   */
   replacement: MemoryMapWord | null;
 }
 
@@ -2077,9 +2166,9 @@ export interface ChallengeGameSpec {
  * here. That test is what preserves "derived from the registry" — adding a game and
  * forgetting this table is a red test, not a silently ineligible game.
  *
- * Four entries today, so a draw of 3 finally has real choice in it — Hydra Bubbles
- * was the fourth. The draw is without repetition, and a fifth recognition/production
- * game joins the rotation with no code change beyond its own entry.
+ * Five entries today — Hydra Bubbles was the fourth, Bucket Drop (Pinyin) the fifth.
+ * The draw is without repetition, and the next recognition/production game joins the
+ * rotation with no code change beyond its own entry.
  */
 export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
   {
@@ -2242,6 +2331,41 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
           label: 'hints used',
           kind: 'perUse',
           points: -20,
+        },
+      ],
+    },
+  },
+  {
+    gameId: 'bucket-drop',
+    mode: 'pinyin',
+    title: 'Bucket Drop (Pinyin)',
+    // Eligible as Pinyin ONLY, like Word Search. The No-Pinyin mode (Reading Center)
+    // marks READING, so a bare gameId here would let a challenge draw it.
+    // Production: the English bucket is the prompt and the foreign word the answer
+    // (src/games/bucket-drop/constants.ts → MODE_CONFIGS).
+    markType: 'production',
+    // No `languages`: es plays the Pinyin mode as plain words and still marks
+    // production (constants.ts → runTrackFor), so the round is the same game in both.
+    scoring: {
+      // Unlike Word Search a drop CAN be wrong, so misses are charged — once per word,
+      // matching the free-play rule that only a word's first miss writes a mark.
+      contestedHit: 100,
+      contestedMiss: -100,
+      fillerHit: 20,
+      fillerMiss: -20,
+      missChargedOncePerWord: true,
+      bonuses: [
+        {
+          // A stopwatch game, scored like Word Search's: free until the gold time,
+          // then −10 per second of ACCUMULATED ACTIVE time. The grace is 45 s rather
+          // than Word Search's 60 because a gold Bucket Drop run is 45 s
+          // (src/games/bucket-drop/constants.ts → MEDAL_THRESHOLDS).
+          ruleId: 'timePenalty',
+          label: 'time penalty',
+          kind: 'elapsedPenalty',
+          points: -10,
+          decayIntervalMs: 1000,
+          graceMs: 45_000,
         },
       ],
     },

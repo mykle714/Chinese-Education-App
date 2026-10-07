@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchMemoryMap, graduateMemoryMapWord, type MemoryMapWord } from "../../api/memoryMap";
+import {
+    fetchMemoryMap,
+    graduateMemoryMapWord,
+    type MemoryMapSlot,
+    type MemoryMapWord,
+} from "../../api/memoryMap";
 import { markFlashcard } from "../../api/flashcards";
 import { MARK_TYPE, MAX_TRIES, FADE_OUT_MS } from "./constants";
 import { clearRun, loadRun, saveRun } from "./runStorage";
@@ -25,6 +30,8 @@ export type RunPhase = "loading" | "empty" | "playing" | "complete" | "error";
 
 export interface MemoryMapRun {
     phase: RunPhase;
+    /** The map's slot tree (§ 2.4) — the geometry the world layer lays out. */
+    slots: MemoryMapSlot[];
     /** Every word currently on the map, including any mid-fade graduate. */
     words: MemoryMapWord[];
     /** Colour per vet id, for words already answered this run. */
@@ -33,7 +40,7 @@ export interface MemoryMapRun {
     target: MemoryMapWord | null;
     /** Whether the player has burned all three tries on the current prompt. */
     promptPhase: PromptPhase;
-    /** Tries burned on the current prompt, for the prompt bar's pips. */
+    /** Tries burned on the current prompt (decides green vs. orange, and when it fails). */
     tries: number;
     /** Words that just took a wrong tap, for the red flash. */
     flashing: number[];
@@ -54,7 +61,7 @@ export interface MemoryMapRun {
     skipWord: () => void;
     /** False when there is no other unanswered word to skip TO. */
     canSkip: boolean;
-    /** Wipe colours and reshuffle. The MAP is untouched — placements are server-side. */
+    /** Wipe colours and reshuffle. The MAP is untouched — the slot tree is server-side. */
     restart: () => void;
 }
 
@@ -70,6 +77,7 @@ function shuffle<T>(items: T[]): T[] {
 
 export function useMemoryMapRun(userId: string | undefined, language: string): MemoryMapRun {
     const [phase, setPhase] = useState<RunPhase>("loading");
+    const [slots, setSlots] = useState<MemoryMapSlot[]>([]);
     const [words, setWords] = useState<MemoryMapWord[]>([]);
     const [outcomes, setOutcomes] = useState<Record<number, WordOutcome>>({});
     const [queue, setQueue] = useState<QueuedPrompt[]>([]);
@@ -98,6 +106,7 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
                 const map = await fetchMemoryMap();
                 if (cancelled) return;
 
+                setSlots(map.slots);
                 setWords(map.words);
                 setNewlyPlaced(map.newlyPlaced);
 
@@ -222,23 +231,37 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
                 if (!result.graduated) return;
 
                 // It graduated. Hold the colour for a beat, then dissolve it off (§ 3.6).
-                setFading((prev) => [...prev, word.vocabEntryId]);
-                window.setTimeout(() => {
-                    setWords((prev) => prev.filter((w) => w.vocabEntryId !== word.vocabEntryId));
-                    setFading((prev) => prev.filter((id) => id !== word.vocabEntryId));
-                }, FADE_OUT_MS);
-
-                // The map self-heals immediately, and the newcomer JOINS THIS RUN (Q32).
+                //
+                // The replacement moves into the SAME SLOT (§ 3.6), so it cannot appear
+                // until the graduate has faded — two words in one slot would draw on top
+                // of each other. The swap therefore happens at the end of the fade, and
+                // the newcomer joins the queue only then, so it can never be prompted
+                // while it is still invisible.
+                //
                 // Known consequence: a productive run gets longer as you play. It still
-                // terminates — the eligible pool is finite and each graduation consumes
-                // one — but "colour the whole map" is not a fixed 100 prompts on a good
-                // day. See § 3.6 for the fallback if this proves annoying in play.
-                if (result.replacement) {
-                    const replacement = result.replacement;
-                    setWords((prev) => [...prev, replacement]);
-                    setQueue((prev) => [...prev, { vocabEntryId: replacement.vocabEntryId }]);
-                    setNewlyPlaced((prev) => [...prev, replacement.vocabEntryId]);
-                }
+                // terminates — each graduation consumes one eligible word.
+                setFading((prev) => [...prev, word.vocabEntryId]);
+                const replacement = result.replacement;
+                window.setTimeout(() => {
+                    setWords((prev) => {
+                        const rest = prev.filter((w) => w.vocabEntryId !== word.vocabEntryId);
+                        return replacement ? [...rest, replacement] : rest;
+                    });
+                    setFading((prev) => prev.filter((id) => id !== word.vocabEntryId));
+                    // The slot outlives its word. With a replacement the tree is unchanged;
+                    // without one the slot is empty until the next load refills it.
+                    setSlots((prev) =>
+                        prev.map((slot) =>
+                            slot.vocabEntryId === word.vocabEntryId
+                                ? { ...slot, vocabEntryId: replacement?.vocabEntryId ?? null }
+                                : slot
+                        )
+                    );
+                    if (replacement) {
+                        setQueue((prev) => [...prev, { vocabEntryId: replacement.vocabEntryId }]);
+                        setNewlyPlaced((prev) => [...prev, replacement.vocabEntryId]);
+                    }
+                }, FADE_OUT_MS);
             } catch {
                 // Graduation is an optimisation, not a correctness requirement: the word
                 // keeps its colour and will simply leave the map on the next load.
@@ -357,7 +380,7 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
     /**
      * Wipe the colours and reshuffle. Serves both Restart (§ 6) and Play Again (§ 5).
      *
-     * The MAP is deliberately untouched: placements are server-side and no client
+     * The MAP is deliberately untouched: the slot tree is server-side and no client
      * action can move a word. That is what makes the map feel permanent.
      */
     const restart = useCallback(() => {
@@ -378,6 +401,7 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
 
     return {
         phase,
+        slots,
         words,
         outcomes,
         target,
@@ -386,7 +410,7 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
         flashing,
         fading,
         answered: Object.keys(outcomes).length,
-        // The denominator is the map's CURRENT size, so the `23 / 100` header stays
+        // The denominator is the map's CURRENT size, so the `23 / 50` header stays
         // truthful as words graduate off and replacements arrive.
         total: words.length,
         tally,

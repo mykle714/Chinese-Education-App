@@ -179,6 +179,25 @@ the page is failing to paint at all.
   59px hole was on screen, because its verdict compared `body` against `innerHeight` —
   the very value under suspicion. **A test must not measure a suspect against itself.**
 
+### Round 7 — guard: the gap must equal the top inset — **NOT YET DEPLOYED**
+- **Report (2026-10-06):** iPhone 18 Pro, home-screen icon. flp's More Info pill (`bottom:
+  24` in ContentArea) is sliced at the very bottom edge — its top sits ~50–60pt lower than
+  it should, so the whole frame is taller than the visible web view. Round 3's symptom,
+  on a build that is correct on the iPhone 15.
+- **Hypothesis (unverified):** the web view on that device is **letterboxed** (below an
+  opaque status bar), yet still shows the `screen − statusBar` ICB gap, so the hook
+  stretches the shell to `screen.height` past the real bottom. Candidate causes: the icon
+  was added before round 2 (tag snapshot still `default`), or the device's iOS ignores
+  `black-translucent`. Both make `env(safe-area-inset-top)` 0 (round 1's finding).
+- **Change:** `useAppHeight` additionally requires `|gap − env(safe-area-inset-top)| ≤ 2`
+  (measured with a throwaway element). On the iPhone 15 these were equal (59/59), so that
+  device is unaffected; a letterboxed view fails the check and falls back to `100%`.
+  Worst case if the hypothesis is wrong: the guard only ever *clears* the variable, so a
+  device reverts to symptom B (unpainted strip) rather than clipped content.
+- **Cheap discriminator before/after deploy:** delete and re-add the icon on the reporting
+  phone. If the slicing disappears, the tag snapshot was the cause.
+- **Observed:** _pending_.
+
 ## 4. What is actually established
 
 Only these, and only these, are safe to build on:

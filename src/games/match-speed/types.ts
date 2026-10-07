@@ -53,8 +53,9 @@ export interface ModeConfig {
     /** Target depth of EACH in-mode bucket, sized so total buffered pairs stay
      *  ~BUFFER_TOTAL_TARGET regardless of how many buckets the mode uses. */
     bufferDepth: number;
-    /** `?Comfortable=10&Mastered=10` — the initial pool request's bucket quotas. */
-    poolQuery: string;
+    /** `{ Comfortable: 10, Mastered: 10 }` — the initial pool request's bucket quotas
+     *  (sent by `fetchGamePool`, src/api/gamePool.ts). */
+    poolDistribution: Partial<Record<GameCategory, number>>;
     /** Human phrase naming the buckets, for the "you have none of these" block
      *  message (e.g. "Comfortable or Mastered"). */
     categoryLabel: string;

@@ -320,6 +320,25 @@ went in that way. **Fix:** offer `"(phonetic)"` as an always-available candidate
 line for it. Found 2026-09-24; see
 `docs/oracle-runs/oracle-run-20260924T040014Z.md` § "⚠ BREAKDOWN SENSE REVIEW flags".
 
+### 22. Drop the legacy single `displacedMark` from the mark/undo wire
+
+*Added 2026-10-06 with silent acceleration. Code: `server/services/FlashcardMarkService.ts`
+→ `ApplyMarkResult.displacedMark`; `server/routes/flashcardRoutes.ts` (mark response +
+undo body fallback). Docs: [MASTERY_REWORK.md § 6](./MASTERY_REWORK.md) "Silent acceleration".*
+
+**What.** An accelerated review can displace two marks, so the wire moved to
+`displacedMarks: ReviewMark[]`. The server still sends `displacedMark`
+(`= displacedMarks[0]`) and the undo route still accepts it alone.
+
+**Why deferred.** An installed Capacitor build runs its bundled JS until it is updated;
+dropping the field would break undo there.
+
+**Cost to leave.** One duplicated field. An old client undoing a doubled review that
+displaced two marks restores only one of them.
+
+**Trigger.** When no build older than 2026-10-06 is in use, remove the field and the
+fallback.
+
 ## Recently closed
 
 ### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)

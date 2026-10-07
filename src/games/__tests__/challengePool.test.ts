@@ -35,17 +35,17 @@ describe("challenge-eligible game pool", () => {
                 if (!challengeScoringFor(game.gameId)) missing.push(game.gameId);
                 continue;
             }
-            // A MODED game omits `markType` and declares one per mode, so eligibility is
-            // per mode. Word Search is the only such game today; this loop is written
-            // generally so the next one is covered without a change here.
+            // A MODED game omits `markType` and declares one per mode (`GameDef.modes`),
+            // so eligibility is per mode. Word Search and Bucket Drop are the two today;
+            // the loop reads `game.modes`, so the next one is covered with no change here.
             //
             // ⚠️ PRIMARY TRACK ONLY (`mode.markType`), never `modeMarkTypes()`. A mode
             // may also emit SECONDARY marks — No-Pinyin writes production alongside its
             // primary reading mark — and those must NOT make it challenge-eligible: the
             // board is pooled, banded and cooldown-gated on the primary track, so a
             // challenge drawing it would be scoring a reading drill as a core-bar round.
-            if (!game.markType && game.gameId === "word-search") {
-                for (const mode of MODE_CONFIGS) {
+            if (!game.markType) {
+                for (const mode of game.modes ?? []) {
                     if (!ELIGIBLE_TRACKS.includes(mode.markType)) continue;
                     if (!challengeScoringFor(game.gameId, mode.mode)) {
                         missing.push(`${game.gameId} (${mode.mode})`);
@@ -55,6 +55,15 @@ describe("challenge-eligible game pool", () => {
         }
 
         expect(missing).toEqual([]);
+    });
+
+    it("gives every game either a single markType or a per-mode table", () => {
+        // The loop above can only see a moded game's modes through `GameDef.modes`, so a
+        // game with NEITHER would be invisible to it — and silently never eligible.
+        const neither = GAME_REGISTRY
+            .filter((game) => !game.markType && !(game.modes && game.modes.length > 0))
+            .map((game) => game.gameId);
+        expect(neither).toEqual([]);
     });
 
     it("has no CHALLENGE_GAMES entry for a game that is not in the registry", () => {
@@ -84,6 +93,9 @@ describe("challenge-eligible game pool", () => {
         // Word Search's No-Pinyin mode is the other one — same game, ineligible mode.
         expect(challengeScoringFor("word-search", "no-pinyin")).toBeUndefined();
         expect(challengeScoringFor("word-search", "pinyin")).toBeDefined();
+        // Bucket Drop has the same split: Pinyin is recognition, No Pinyin is reading.
+        expect(challengeScoringFor("bucket-drop", "no-pinyin")).toBeUndefined();
+        expect(challengeScoringFor("bucket-drop", "pinyin")).toBeDefined();
 
         // ...and it stays ineligible even though it DOES emit a production mark. This is
         // the pin for the secondary-track rule above: No-Pinyin's find writes reading +

@@ -117,12 +117,11 @@ const VocabCardDetailPage: React.FC = () => {
     // panel and has no entry-tab strip to keep state for. Deliberately NOT reset on close
     // — reopening the panel on the same card returns to the tab you were reading.
     const [infoTab, setInfoTab] = useState(0);
-    // NOTE: the footer bar is no longer suppressed here — SheetPanel holds it down for
-    // the lifetime of every modal sheet (see useHideFooter there). The bar is rendered
-    // at FRAME level (FooterPresenter, z-index 100) and is outside this page's DOM, so
-    // no z-index here could ever have got the sheet above it; it hovered over the
-    // sheet's bottom ~90px, hiding the end of the definition tab and making the pane
-    // look like it refused to scroll.
+    // NOTE: the footer bar needs no handling here. It is rendered at FRAME level
+    // (FooterPresenter, z-index 100), outside this page's DOM, so no z-index inside the
+    // page could get the sheet above it — it once hovered over the sheet's bottom ~90px,
+    // hiding the end of the definition tab. SheetPanel now hosts every modal sheet at the
+    // frame itself, above the bar (z 1201 vs 100), so the scrim dims it with the page.
     // Which definitionClusters sense EnglishBlock currently shows on the hero card.
     // Mirrors CardFace: seeds from this saved card's PERSISTED choice (`selectedSense` label →
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.

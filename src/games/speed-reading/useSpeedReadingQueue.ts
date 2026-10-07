@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE_URL } from "../../constants";
-import { authHeader } from "../../utils/authHeader";
 import { apiGet } from "../../api/http";
+import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
 import type { DistractorChar, VocabEntry } from "../../types";
 import { provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
-import { collectionLaunchParams } from "../../features/flashcards/collectionRef";
 import {
     GAME_DISTRIBUTION,
     MARK_TYPE,
@@ -14,14 +12,6 @@ import {
     TOPUP_THRESHOLD,
 } from "./constants";
 import { hasSentenceRound } from "./buildRound";
-
-/** Shape returned by GET /api/onDeck/gamePool. */
-interface GamePoolResponse {
-    cards: VocabEntry[];
-    available: Record<string, number>;
-    total: number;
-    sufficient: boolean;
-}
 
 /**
  * Split a freshly-loaded pool into the cards reserved for the run's sentence
@@ -111,31 +101,20 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
     /** One pool request. Passing `opts` makes it a partial top-up. */
     const fetchPool = useCallback(
         async (opts?: { need: number; excludeIds: number[] }): Promise<GamePoolResponse> => {
-            const params = new URLSearchParams();
-            params.set("markType", MARK_TYPE);
-            // Names the baseline the server tops the player up to before building the
-            // pool, so a small deck is filled with temporary cards instead of blocking
-            // (docs/PROVISIONAL_CARDS.md). Omitted on a partial top-up below — a
-            // mid-run refill must not keep lending cards.
-            if (!opts) params.set("surface", "speed-reading");
-            for (const [cat, n] of Object.entries(GAME_DISTRIBUTION)) params.set(cat, String(n));
-            // On BOTH the initial pool and a mid-run top-up: a refill that dropped the
-            // restriction would start serving off-collection words.
-            if (launchCollection) {
-                for (const [key, value] of Object.entries(collectionLaunchParams(launchCollection))) {
-                    params.set(key, value);
-                }
-            }
-            if (opts) {
-                params.set("need", String(opts.need));
-                params.set("exclude", opts.excludeIds.join(","));
-            }
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${params.toString()}`, {
-                credentials: "include",
-                headers: authHeader(),
+            return fetchGamePool({
+                markType: MARK_TYPE,
+                // Names the baseline the server tops the player up to before building
+                // the pool, so a small deck is filled with temporary cards instead of
+                // blocking (docs/PROVISIONAL_CARDS.md). Sent on top-ups too: `need`
+                // alone already stops a refill from lending (src/api/gamePool.ts).
+                surface: "speed-reading",
+                distribution: GAME_DISTRIBUTION,
+                need: opts?.need,
+                exclude: opts?.excludeIds,
+                // On BOTH the initial pool and a mid-run top-up: a refill that dropped
+                // the restriction would start serving off-collection words.
+                collection: launchCollection,
             });
-            if (!res.ok) throw new Error("Failed to load game pool");
-            return (await res.json()) as GamePoolResponse;
         },
         // `launchCollection` comes from the page's own URL, which cannot change
         // without a remount, so the closure can never go stale.
@@ -199,7 +178,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
         // Keyed on `enabled` + `runId` — both stable identities that change only
         // on a deliberate action. NOT on `token`: a silent access-token refresh
         // (~every 15 min) must not re-run this loader and wipe a run in progress.
-        // authHeader()/apiGet read the token at call time. See CLAUDE.md
+        // apiGet reads the token at call time. See CLAUDE.md
         // "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled, runId]);

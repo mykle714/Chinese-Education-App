@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import { CheckCircle, Cancel } from "@mui/icons-material";
-import ForeignText from "../../components/ForeignText";
 import TonedPronunciation from "../../components/TonedPronunciation";
 import WritingStage from "../../components/handwriting/WritingStage";
+import ResultStamp from "../../components/handwriting/ResultStamp";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import type { Ink } from "../../components/handwriting/types";
 import { WRITING_GRID_COLUMNS, type WritingGridCharacter } from "../../../server/contracts/writingGrid";
@@ -49,7 +48,11 @@ export type BoardPhase = "countdown" | "arrange" | "write" | "ended";
  *                       ink once written. Every cell keeps its pinyin at the bottom
  *                       centre (`PinyinCell`). ✓ / ✗ on every cell.
  *                       Tapping a cell that is not yet correct opens it for writing.
- *   ended            — glyphs back, every cell ✓.
+ *   ended            — every cell ✓, each showing the learner's ink over the
+ *                       character's full still shadow (all slots, any level), pinyin at
+ *                       the bottom centre — the finished board to look back over.
+ *                       Every cell is tappable: it reopens its canvas as drawn for a
+ *                       practice redraw (the page verifies it but sends no mark).
  *
  * Presentation + the drag gesture only; the order, results and inks are the page's.
  */
@@ -245,7 +248,6 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     const preview = drag ? moveItem(order, drag.from, drag.over) : order;
     const slotOf = new Map(preview.map((cellIndex, slot) => [cellIndex, slot]));
 
-    const showGlyph = phase !== "write";
     // The Easiest / Hardest labels guide the ARRANGING; Phase 2 (write) drops them. Their
     // gutters / bands stay reserved, so the cells do not resize when the phase changes.
     const showDifficulty = cells.length > 0 && phase !== "write";
@@ -358,7 +360,10 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                 const level = (drag ? slot : i) + 1;
                 const result = results[c.char] ?? "idle";
                 const ink = inks[c.char];
-                const tappable = phase === "write" && result !== "correct" && result !== "checking";
+                // Phase 2: an unfinished cell opens for writing. End board: ANY cell reopens its
+                // canvas as drawn, for a practice redraw (verified, never marked — the page).
+                const tappable =
+                    result !== "checking" && ((phase === "write" && result !== "correct") || phase === "ended");
                 const x = isDragged ? slotX(drag.from) + drag.dx : slotX(slot);
                 const y = isDragged ? slotY(drag.from) + drag.dy : slotY(slot);
                 return (
@@ -385,7 +390,9 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                             font: "inherit",
                             borderRadius: "14px",
                             border: `1px solid ${COLORS.border}`,
-                            bgcolor: result === "correct" ? COLORS.grnTint : result === "wrong" ? COLORS.redTint : COLORS.white,
+                            // The verdict is carried by the corner ✓ / ✗ icon alone — the cell's
+                            // ground stays white so the learner's ink reads against it unchanged.
+                            bgcolor: COLORS.white,
                             boxShadow: isDragged ? "0 8px 18px rgba(23, 22, 26, 0.18)" : "none",
                             cursor: phase === "arrange" ? "grab" : tappable ? "pointer" : "default",
                             display: "flex",
@@ -403,17 +410,20 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                             <PinyinCell pinyin={c.pinyin} cell={cell}>
                                 <CellStage character={c.char} px={cell * SHADOW_SCALE} ink={[]} preview={{ guide: true, loop: false, snap: false }} />
                             </PinyinCell>
-                        ) : showGlyph ? (
-                            // Ended: the real glyphs come back.
-                            <ForeignText
-                                className="writing-grid-board__glyph"
-                                text={c.char}
-                                pronunciation={c.pinyin}
-                                language="zh"
-                                size="lg"
-                                showPinyin
-                                sandhi={false}
-                            />
+                        ) : phase === "ended" ? (
+                            // Ended: the learner's own canvas for every cell, drawn over the
+                            // character's FULL still shadow — every slot, whatever its level
+                            // (an L4–L8 slot never showed one while writing), so the finished
+                            // board reads as "what you wrote vs. the character". `snap` stays
+                            // per level: a Snap slot's ink was snapped strokes.
+                            <PinyinCell pinyin={c.pinyin} cell={cell}>
+                                <CellStage
+                                    character={c.char}
+                                    px={cell * SHADOW_SCALE}
+                                    ink={ink ?? []}
+                                    preview={{ guide: true, loop: false, snap: levelPreview(modeOfLevel(level)).snap }}
+                                />
+                            </PinyinCell>
                         ) : level <= SHADOW_PREVIEW_MAX_LEVEL ? (
                             // Most-help slots: the level's first-look shadow with the ink over
                             // it, and the pinyin kept at the bottom as in Phase 1.
@@ -447,11 +457,8 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                         {result === "checking" && (
                             <DelayedCircularProgress className="writing-grid-board__checking" size={16} sx={{ position: "absolute", top: 5, right: 5 }} />
                         )}
-                        {result === "correct" && (
-                            <CheckCircle className="writing-grid-board__result" sx={{ position: "absolute", top: 4, right: 4, fontSize: 18, color: COLORS.successInk }} />
-                        )}
-                        {result === "wrong" && (
-                            <Cancel className="writing-grid-board__result" sx={{ position: "absolute", top: 4, right: 4, fontSize: 18, color: COLORS.dangerInk }} />
+                        {(result === "correct" || result === "wrong") && (
+                            <ResultStamp className="writing-grid-board__result" result={result} size={22} inset={4} />
                         )}
                     </Box>
                 );
@@ -480,7 +487,10 @@ function CellStage({ character, px, ink, preview }: { character: string; px: num
         <Box className="writing-grid-board__stage" sx={{ position: "relative", width: px, height: px, flexShrink: 0 }}>
             <Box sx={{ position: "absolute", inset: 0, transform: `scale(${px / CANVAS_SIZE})`, transformOrigin: "top left", width: CANVAS_SIZE, height: CANVAS_SIZE, pointerEvents: "none" }}>
                 <WritingStage
-                    key={`${character}-${ink.length}`}
+                    // `initialInk` only seeds the stage on mount, so the key must change with
+                    // the drawing. Stroke count alone misses a same-count redraw (the End
+                    // board's practice); the last stroke's end time is unique per drawing.
+                    key={`${character}-${ink.length}-${ink[ink.length - 1]?.ts.at(-1) ?? 0}`}
                     character={character}
                     size={CANVAS_SIZE}
                     drawable={false}

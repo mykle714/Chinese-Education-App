@@ -10,8 +10,10 @@ import { WRITING_FOCUS_SIZE } from "../../components/handwriting/levelBehavior";
 export const GAME_KEY = "writingGrid";
 /** Registry id (also the personal-best game id). */
 export const GAME_ID = "writing-grid";
-/** The writing skill's hue — the Writing Center's purple. */
-export const GAME_HUE: RampHue = "pur";
+/** Game surface hue — orange (Memory Map's hue until it moved to blue, 2026-10-06).
+ *  Deliberately NOT the writing skill's purple (`pur`), the same way Speed
+ *  Reading wears its own `yel` rather than reading's green. */
+export const GAME_HUE: RampHue = "org";
 
 /** 3·2·1·Go, as in Match Speed (src/games/match-speed/constants.ts → COUNTDOWN_STEPS). */
 export const COUNTDOWN_STEPS = ["3", "2", "1", "Go!"];

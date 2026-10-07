@@ -51,6 +51,9 @@ import { PersonalBestController } from '../controllers/PersonalBestController.js
 import { WritingGridDAL } from './implementations/WritingGridDAL.js';
 import { WritingGridService } from '../services/WritingGridService.js';
 import { WritingGridController } from '../controllers/WritingGridController.js';
+import { WritingNotebookDAL } from './implementations/WritingNotebookDAL.js';
+import { WritingNotebookService } from '../services/WritingNotebookService.js';
+import { WritingNotebookController } from '../controllers/WritingNotebookController.js';
 import { CommunityLayoutDAL } from './implementations/CommunityLayoutDAL.js';
 import { CommunityLayoutService } from '../services/CommunityLayoutService.js';
 import { CommunityLayoutController } from '../controllers/CommunityLayoutController.js';
@@ -257,7 +260,8 @@ const speedReadingController = new SpeedReadingController(speedReadingService);
 // The service's `rng` argument is left at its Math.random default here; it exists so a
 // test can pin every spawn (docs/MEMORY_MAP_GAME.md § 9).
 const memoryMapDAL = new MemoryMapDAL();
-const memoryMapService = new MemoryMapService(memoryMapDAL);
+// Lends through provisionalCardService to keep the map full (docs/MEMORY_MAP_GAME.md § 2.1).
+const memoryMapService = new MemoryMapService(memoryMapDAL, provisionalCardService);
 const memoryMapController = new MemoryMapController(memoryMapService);
 // icons8 image serving is a thin DB read → no service layer; the controller takes the DAL directly.
 const icons8Controller = new Icons8Controller(icons8DAL);
@@ -272,6 +276,11 @@ const personalBestController = new PersonalBestController(personalBestService);
 const writingGridDAL = new WritingGridDAL();
 const writingGridService = new WritingGridService(writingGridDAL, provisionalCardService);
 const writingGridController = new WritingGridController(writingGridService);
+// Writing Notebook (migration 174, docs/WRITING_NOTEBOOK.md): endless per-word practice
+// sheets; the service runs the handwriting recogniser on each saved cell.
+const writingNotebookDAL = new WritingNotebookDAL();
+const writingNotebookService = new WritingNotebookService(writingNotebookDAL);
+const writingNotebookController = new WritingNotebookController(writingNotebookService);
 // velocity is likewise a thin read over an event log; userDAL only supplies the
 // account's selected language for the headline number.
 const velocityController = new VelocityController(categoryPromotionDAL, userDAL);
@@ -366,6 +375,7 @@ export {
   winsController,
   personalBestController,
   writingGridController,
+  writingNotebookController,
   categoryPromotionDAL,
   flashcardMarkService,
   velocityController,

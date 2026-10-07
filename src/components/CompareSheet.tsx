@@ -101,9 +101,9 @@ export const CompareSheet: React.FC<CompareSheetProps> = ({ slotA, onClose, dept
             // (This sheet used to opt into a permanent header with `headerMode="always"`,
             // because its body's first row is two word slots and nothing above them said
             // what the surface was. Every SheetPanel does that now, so the prop is gone.)
-            // The compare sheet is raised from study surfaces (flp/scp eip, dictionary cdp),
-            // all of which it covers header and all.
-            showMinutePoints
+            // No minute-points flame: pull-up dictionary flows (compare, the Writing
+            // Notebook word picker) never show the counter, even when raised from a
+            // study surface.
         >
             <CompareWorkspace
                 ref={bodyRef}

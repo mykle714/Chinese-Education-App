@@ -12,7 +12,12 @@ import { GAME_HUE as SPEED_READING_HUE, MARK_TYPE as SPEED_READING_MARK_TYPE } f
 import { GAME_HUE as MEMORY_MAP_HUE, MARK_TYPE as MEMORY_MAP_MARK_TYPE } from "./memory-map/constants";
 import { GAME_HUE as HYDRA_HUE, MARK_TYPE as HYDRA_MARK_TYPE } from "./hydra-bubbles/constants";
 // Word Search has no shared mark type (it is per-mode), but it does have a hue.
-import { GAME_HUE as WORD_SEARCH_HUE } from "./word-search/constants";
+import { GAME_HUE as WORD_SEARCH_HUE, MODE_CONFIGS as WORD_SEARCH_MODES } from "./word-search/constants";
+import {
+    GAME_HUE as BUCKET_DROP_HUE,
+    GAME_ID as BUCKET_DROP_GAME_ID,
+    MODE_CONFIGS as BUCKET_DROP_MODES,
+} from "./bucket-drop/constants";
 // The challenge-eligible pool and its scoring numbers (docs/STUDY_CHALLENGE.md § 5.4).
 // They live in the shared wire contract rather than here because THE SERVER draws each
 // challenge's game sequence and cannot load this module (it imports lazy React
@@ -73,6 +78,7 @@ const ALL_GAMES: GameDef[] = [
         route: "/games/word-search",
         Component: lazy(() => import("./word-search/WordSearchPage")),
         hue: WORD_SEARCH_HUE,
+        modes: WORD_SEARCH_MODES.map(({ mode, markType }) => ({ mode, markType })),
         // No `markType`: Pinyin marks production, No Pinyin marks reading, so the
         // type lives on each mode config (see WordSearchModeConfig.markType).
         //
@@ -144,6 +150,11 @@ const ALL_GAMES: GameDef[] = [
         // selected collection is anything but All Cards. The map IS your library and
         // cannot be scoped to a deck, and a visible row that ignored the selector would
         // read as a bug (Q21).
+        //
+        // HUB-HIDDEN (2026-10-06): launched only from the Reading Center's games
+        // carousel, like Speed Reading. The collection gate above stays as a guard in
+        // case it ever returns to the hub.
+        hiddenFromHub: true,
     },
     {
         gameId: WRITING_GRID_GAME_ID,
@@ -158,6 +169,21 @@ const ALL_GAMES: GameDef[] = [
         hiddenFromHub: true,
         // zh-only: the recognizer is zh_CN and the board is hanzi.
         languages: ["zh"],
+    },
+    {
+        gameId: BUCKET_DROP_GAME_ID,
+        glyph: "move_to_inbox",
+        title: "Bucket Drop",
+        route: "/games/bucket-drop",
+        Component: lazy(() => import("./bucket-drop/BucketDropPage")),
+        hue: BUCKET_DROP_HUE,
+        // MODED, like Word Search: the hub tile launches Pinyin (production — the
+        // challenge-eligible mode, `challengeScoringFor("bucket-drop", "pinyin")`), the
+        // Reading Center carousel launches No Pinyin (reading). So no `markType` and no
+        // `challengeScoring` on the game itself (docs/BUCKET_DROP_GAME.md § 1).
+        modes: BUCKET_DROP_MODES.map(({ mode, markType }) => ({ mode, markType })),
+        // No `languages` gate: es plays the hub's Pinyin mode as plain words. The
+        // Reading Center card is zh-only on its own (ReadingGamesCarousel).
     },
 ];
 

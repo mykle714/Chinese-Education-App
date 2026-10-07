@@ -46,7 +46,7 @@ removed, **Trace moved from 1 to 2**, and **Snap** became Level 1.
 | 3 | `walkthrough` | outline flashes 1.5s on entry | **Show** — 1.5s flash, 6s cooldown from press | locked while visible — except a stroke during the **entry** flash ends it early and draws |
 | 4 | `quarters` | one of **4** regions (田 squares), first shown on entry, stays up | **Next** — next region, no cooldown | always |
 | 5 | `memorize` | persistent outline, no timer | — | locked until the first stroke (which unlocks + hides) |
-| 6 | `eighths` | one of **8** regions (米 triangles), first shown on entry, stays up (Quarters at a finer split) | **Next** — next region, no cooldown | always |
+| 6 | `sixths` | one of **6** regions (equal-area wedges meeting at the centre, rim cut every ⅔ of a side), first shown on entry, stays up (Quarters at a finer split; was `eighths` / 8 米 triangles until 2026-10-06) | **Next** — next region, no cooldown | always |
 | 7 | `test` | none | — | always |
 | 8 | `timed` | none; **`TIMED_MS_PER_STROKE` (500) × strokes**, one clock per character, started by its first stroke; Clear / Undo do not reset it | **Retry** (popup, after time-out) | until time runs out → canvas locks, what was drawn is graded |
 
@@ -58,14 +58,14 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
   `modeOfLevel` / `levelOfMode`, `writingLevelForMastery`, `writingMarkCounts`,
   `TIMED_MS_PER_STROKE`.
 - `src/components/handwriting/levelBehavior.ts` → `LEVEL_BEHAVIOR` (what each mode does),
-  `regionClipPath` (田 / 米 polygons), `WRITING_FOCUS_SIZE` (the 300px capture space).
+  `regionClipPath` (田 squares / six centre-wedge polygons), `WRITING_FOCUS_SIZE` (the 300px capture space).
 - `src/components/handwriting/useLevelGuide.ts` → `useLevelGuide` — the guide / lock /
   assist-button state machine (`enter`, `leave`, `press`, `blockedAttempt`). One
   interpreter shared by the popup, the Writing Grid and the writing flp.
 - `src/components/handwriting/useStrokeClock.ts` → `useStrokeClock`, `getStrokeCount`
   (stroke counts from the bundled Hanzi Writer data). Clocks are wall-clock deadlines.
 - `HanziGuide` gained `loopStrokeIndex` (Snap's repeating next-stroke cue) and
-  `regionClip` (a CSS `clip-path`, Quarters / Eighths); `WritingCanvas` gained
+  `regionClip` (a CSS `clip-path`, Quarters / Sixths); `WritingCanvas` gained
   `onStrokeStart` (level 8's clock starts on pointerdown), `onStrokeEnd` (a per-stroke
   keep / replace / reject verdict) and `hideCommittedInk`; `WritingStage` gained `clock`
   (the draining bar + seconds overlay, `StageClock`) and `snap` (owns the whole Snap
@@ -102,7 +102,9 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    `GameTimer`'s `valueShown` / `onToggleValueShown`): hiding keeps the numerals' height
    (`visibility`) and never pauses the clock; the end popup always shows the final time.
    The preference is device-local, under this game's own key (`constants.ts` →
-   `SETTINGS_STORAGE_KEY` = `writingGrid.settings`, read by `useLocalGameSettings`). Drag a character to another slot: the 8 cells are one
+   `SETTINGS_STORAGE_KEY` = `writingGrid.settings`, read by `useLocalGameSettings`). The
+   current phase ("Phase 1" / "Phase 2") sits in the stopwatch strip's top-left corner
+   (`GameTimer`'s `leading` slot), not on a row of its own. Drag a character to another slot: the 8 cells are one
    list, so it **moves** (`gridOrder.ts` → `moveItem`), everything between shifts. Each
    cell (also on the countdown's board) shows its character as the full, still **shadow**
    outline — every slot, regardless of level, since arranging needs to see them all — with
@@ -145,10 +147,24 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    the cell's bottom centre.
 
    Tap a cell → `WritingFocusEditor` at its slot's level;
-   tap out → top-1 Verify → ✓ / ✗, and a writing mark on the character's own card
+   tap out → top-1 Verify → ✓ / ✗ (the verdict stamp below), and a writing mark on the character's own card
    (`surface: "writing-grid"`). A ✗ cell reopens as a fresh attempt (new ink, new clock).
 4. **End** — every cell ✓ stops the stopwatch. Time, medal (`medalForWritingGrid`), personal
-   best; a win (`writingGrid` key) is logged per medalled board.
+   best; a win (`writingGrid` key) is logged per medalled board. The board shows every
+   cell's **own canvas** — the learner's ink over the character's **full still shadow**
+   on every slot regardless of level (L4–L8 included, though they never showed one while
+   writing; Snap keeps its snapped strokes), pinyin at the bottom centre
+   (`WritingGridBoard`, the `phase === "ended"` branch). The end popup is **minimizable**
+   (`GameEndPopup`'s `onMinimize` / `onRestore`, `WritingGridPage` → `popupMinimized`):
+   its × collapses it to the top-right puck so the finished board can be looked over.
+   **Practice redraw** — on the End board every cell is tappable (any verdict): it reopens
+   `WritingFocusEditor` at the slot's level with the cell's ink **as drawn** (unlike a
+   Phase 2 ✗ reopen, which wipes it). Clear / Undo and redraw; on tap-out a **changed**
+   drawing is verified (top-1) and the cell's ✓ / ✗ updates, but **no mark is sent** —
+   the run's marks were already emitted while it was timed (`WritingGridPage` →
+   `handleCellDone`, its `practice` branch). Closing unchanged, or cleared and left empty,
+   keeps the cell's drawing and verdict (`sameInk`). The time, medal and personal best are
+   final and never change.
 
 ### Dealing (`GET /api/writingGrid/deal`)
 `WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`:
@@ -171,7 +187,7 @@ beyond — `WRITING_GRID_MEDAL_THRESHOLDS_MS`.
 Code: `src/games/writing-grid/` (`WritingGridPage`, `WritingGridBoard`, `gridOrder`,
 `constants`), `src/api/writingGrid.ts`, `server/contracts/writingGrid.ts`,
 `server/{dal/implementations/WritingGridDAL,services/WritingGridService,controllers/WritingGridController,routes/writingGridRoutes}.ts`,
-`src/features/flashcards/centers/WritingGridLauncher.tsx` (the Writing Center card).
+`src/features/flashcards/centers/WritingGamesCarousel.tsx` (the Writing Center belt card).
 Tests: `server/__tests__/writingGrid.test.ts`, `src/__tests__/writingGridOrder.test.ts`.
 
 ### 2a. Personal bests
@@ -185,6 +201,7 @@ Direction and unit per game: `server/contracts/personalBests.ts` → `PERSONAL_B
 | Speed Reading | total ms incl. penalties (lower) | `default`; finished runs only |
 | Hydra Bubbles | matches (higher) | `default` |
 | Writing Grid | completion ms (lower) | `default` |
+| Bucket Drop | completion ms (lower) | `pinyin` / `no-pinyin`; full 20-word runs only, never a challenge round |
 
 Bubble Match (performance floor + ceiling) and Memory Map have none. Study Challenge rounds
 are never recorded (they are dealt from the round's set).
@@ -210,8 +227,21 @@ The card is the **ordinary flp card** — `FlashCardSection`'s stack, flip, fly-
 More Info pill below it, laid out as on the core flp — with only its CONTENT changed:
 `FlashCardSection.writingFace` hands both faces of every card to
 `useWritingFlashcard.renderFace`, which draws `WritingCardFace` into the face's full-card
-`CardFaceSide.fill` slot (no icons, note or card-ops rail). The drag handlers are inert; the
-hook flips the card (`setIsFlipped(true)`) and dismisses it (`handleCardDismiss`). The card
+`CardFaceSide.fill` slot (no icons, note or card-ops rail). The card never follows a drag;
+the hook flips the card (`setIsFlipped(true)`) and dismisses it (`handleCardDismiss`). In
+place of useCardDrag's handlers it passes `useWritingFlashcard.swipeHandlers`: on the graded
+back, a press that travels ≥ `SWIPE_ATTEMPT_PX` (10 px) is read as the dismiss tap
+(`sendOff`) — the card still goes right/left by its **grade**, never by the swipe's
+direction — and the click that would follow is swallowed; on the front a swipe does
+nothing. The dismissal plays a **grab-and-throw** keyframe (`FlashCardSection` →
+`writingThrowKeyframes`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `WRITING_THROW_LIFT_SCALE` = 1.1 over the first 30%, rises `WRITING_THROW_LIFT_RISE_PX` = 40 px, tilts
+toward its exit), then accelerates off along an arc. It is a keyframe animation rather than
+the core flp's transition because the flying slot remounts on dismiss (its key changes) and
+a tapped card has no drag release point to fly from. The flying slot draws above the
+promoted one (`zIndex` 3), since it starts dead centre over it, and the promoted card grows
+from its peek pose with its own keyframe (`writingPromote`) for the same remount reason;
+`sendOff` resets `shakeNonce` in the dismiss batch so the promoted card's
+`front-${shakeNonce}` key does not change again mid-animation. The card
 flying out keeps its graded back face (`FlashCardSection` holds the outgoing entry; the hook
 holds its frozen attempt). The word-tools rail stays hidden (`Write it` is redundant and
 `Compare` would show the characters); More Info is gated on the flip like everywhere else,
@@ -228,7 +258,7 @@ so it opens only after the submit tap.
   centred as a block, so cell size never hints at word length.
 - **Front** — the header, then the character grid. Each cell PREVIEWS
   what the editor first shows at the level (`levelPreview`, `levelBehavior.ts`): the outline
-  (looping on Trace) for Snap / Trace / Step Through, the first region for Quarters / Eighths,
+  (looping on Trace) for Snap / Trace / Step Through, the first region for Quarters / Sixths,
   nothing for Memorize / Blank / Timed (Memorize's outline is the editor's study phase, never
   previewed: `levelPreview`, 2026-10-04) — with the learner's ink on top once written. Tap a cell →
   `WritingFocusEditor` in a phone-sized Dialog. On level 8, a character whose clock started
@@ -241,8 +271,8 @@ so it opens only after the submit tap.
   the core flp's `cardShake` wiggle (the hook's own `shakeNonce`, passed to
   `FlashCardSection.shakeNonce` in place of `useCardDrag`'s) and every still-empty cell
   pulses its **outline** (not its ground) `COLORS.orgMk` twice (`WritingCardFace.flashNonce` → `CellBox.flash`) to show the
-  learner which cells to fill. Orange, not red: red tint already means "graded wrong".
-- **Back** — the same, with ✓ / ✗ and the whole outline behind each character's ink. Tapping
+  learner which cells to fill. Orange, not red: red (the ✗ icon) already means "graded wrong".
+- **Back** — the same, with ✓ / ✗ (stamped in once the flip finishes — see below) and the whole outline behind each character's ink. Tapping
   a **cell** inspects it enlarged; tapping **anywhere else** on the card
   (`FlashCardSection.onCardClick`) sends it off — right iff every character was correct.
   The learner never drags.
@@ -356,3 +386,23 @@ needs only `word1`, so enrichment is not a prerequisite.
   shows up in the perf telemetry.
 - `formatClock` (`src/games/speed-reading/constants.ts`) duplicates `formatTimeMs`
   (`src/utils/timeUtils.ts`).
+
+## Verdict stamp (✓ / ✗ on a graded cell)
+
+Every graded writing surface shows its verdict the same way: a green ✓ / red ✗ icon
+(`COLORS.grnMk` / `COLORS.redMk` — the ramp's Mark tier, deliberately NOT `successInk` / `dangerInk`, which v2 sets to charcoal ink — on a small white disc so it reads over ink) in the
+cell's top-right corner. The icon is the **only** verdict cue — the cell's ground stays white,
+it is never tinted green/red. The icon animates on mount with a rubber-stamp motion (drops in
+at 2.4× and tilted, slams to 88 %, rebounds, settles; `RESULT_STAMP_MS`), and holds still
+under `prefers-reduced-motion`.
+
+| Surface | Rest size | Delay |
+|---|---|---|
+| Writing Grid board cell | 22 px | none |
+| Writing flp back-face cell | 24 px | `CARD_FLIP_MS`, so it lands after the card has turned |
+| Practice Writing popup stage (`WritingStage`) | `resultIconSize` (40 px default) | none |
+
+Code: `src/components/handwriting/ResultStamp.tsx` → `ResultStamp`, used by
+`src/games/writing-grid/WritingGridBoard.tsx`,
+`src/features/flashcards/FlashcardsLearnPage/WritingCardFace.tsx` and
+`src/components/handwriting/WritingStage.tsx`.

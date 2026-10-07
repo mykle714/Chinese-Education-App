@@ -391,7 +391,7 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    `styled.ts`; `useCardSlotPadding.ts` feeds it). Two constraints meet in this one number:
 
    - `pad.bottom` **reserves the band the More Info pill occupies** (its height plus its
-     `bottom: 24` offset, read live as `ContentArea.clientHeight − pill.offsetTop`, plus an
+     `calc(24px + SAFE_BOTTOM)` offset — the 24px sits above the home-indicator strip — read live as `ContentArea.clientHeight − pill.offsetTop`, plus an
      8px gap). The old fixed `48px` bottom pad was *smaller* than that band, so on any
      viewport short enough to make the card **height-bound** the card's bottom edge ran into
      the pill. The pill is measured via `offsetTop`/`offsetHeight` rather than

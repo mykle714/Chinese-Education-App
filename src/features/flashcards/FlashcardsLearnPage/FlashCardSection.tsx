@@ -7,6 +7,7 @@ import {
     INCORRECT_WASH,
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_TRANSITION,
+    CARD_FLY_OUT_MS,
     CARD_FLIP_TRANSITION,
     CARD_FLIP_MS,
     FC_FONT,
@@ -136,6 +137,47 @@ const DEFAULT_CARD_SLOT_PADDING = cardSlotPadding(0);
 const FLY_OUT_X = 900;
 // Rotation (deg) applied when the card flies off — more dramatic than the gentle drag tilt.
 const FLY_OUT_ROTATION = 30;
+
+/**
+ * Writing flp's throw — the card is sent off by the SYSTEM (a tap or a swipe attempt on
+ * its graded back), never dragged, so there is no release point to fly from. Instead it
+ * plays a keyframe "grab and throw": the card lifts (grows to WRITING_THROW_LIFT_SCALE, rises, tilts a touch
+ * toward its exit side), then accelerates off along a swiping arc — sideways with a
+ * rising-then-falling y and a growing tilt, like a hand flicking it.
+ *
+ * A keyframe animation (not a transition) on purpose: on dismiss the flying slot's key
+ * changes (`front-N` → `slot-X`), so the wrapper remounts — a transition would have no
+ * "from" state and the card would jump straight off-screen. An animation plays on mount.
+ * Total length is CARD_FLY_OUT_MS so the loop's fly-out timeout still lines up.
+ *
+ * Per-segment timing: the lift (0 → LIFT) eases out; the throw (LIFT → 100%) eases IN
+ * (cubic-bezier(0.5, 0, 0.9, 0.5)), which is what reads as acceleration.
+ * Docs: docs/WRITING_PRACTICE_REWORK.md § 3.
+ */
+const WRITING_THROW_LIFT_PCT = 30;
+// How much the card grows as it is "picked up" — held through the throw so it reads as
+// still in hand. 1.05 was too subtle to register in a ~110 ms lift.
+const WRITING_THROW_LIFT_SCALE = 1.1;
+// How far (px) the card rises during the lift. The throw's arc keeps climbing a little
+// past it (to 60%) before falling away, so the mid-throw y is derived from this.
+const WRITING_THROW_LIFT_RISE_PX = 40;
+const writingThrowKeyframes = (sign: 1 | -1) => ({
+    "0%": {
+        transform: "translate(0px, 0px) rotate(0deg) scale(1)",
+        animationTimingFunction: "cubic-bezier(0.2, 0.8, 0.3, 1)",
+    },
+    [`${WRITING_THROW_LIFT_PCT}%`]: {
+        transform: `translate(${sign * 14}px, ${-WRITING_THROW_LIFT_RISE_PX}px) rotate(${sign * 3}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
+        animationTimingFunction: "cubic-bezier(0.5, 0, 0.9, 0.5)",
+    },
+    "60%": {
+        transform: `translate(${sign * FLY_OUT_X * 0.3}px, ${-(WRITING_THROW_LIFT_RISE_PX + 16)}px) rotate(${sign * FLY_OUT_ROTATION * 0.45}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
+        animationTimingFunction: "cubic-bezier(0.4, 0, 1, 1)",
+    },
+    "100%": {
+        transform: `translate(${sign * FLY_OUT_X}px, 40px) rotate(${sign * FLY_OUT_ROTATION}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
+    },
+});
 
 /** Renders the card face (Side 1 + Side 2 + drag overlay) for a given entry.
  *  Side 1 shows only one language (determined by sideOneLanguage).
@@ -562,7 +604,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     const targetX = flyOut!.direction === 'right' ? FLY_OUT_X : -FLY_OUT_X;
                                     const targetRotation = flyOut!.direction === 'right' ? FLY_OUT_ROTATION : -FLY_OUT_ROTATION;
                                     transform = `translate(${targetX}px, 0px) rotate(${targetRotation}deg)`;
-                                    transition = CARD_FLY_OUT_TRANSITION;
+                                    // The writing card plays its keyframe throw instead (see
+                                    // writingThrowKeyframes); the transition would only fight it.
+                                    transition = writingFace ? 'none' : CARD_FLY_OUT_TRANSITION;
                                     opacity = 1 - Math.abs(dragPosition.x) / 400;
                                 } else if (isFront && isAnimating) {
                                     // Newly promoted back card during the fly-out window: hold at center.
@@ -609,12 +653,31 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         sx={{
                                             position: "absolute",
                                             inset: 0,
-                                            zIndex: isFront ? 2 : 1,
+                                            // The flying card stays on top of the promoted one: it is no
+                                            // longer `isFront` once the slots swap, and a tapped writing
+                                            // card starts its throw dead centre, over the new front.
+                                            zIndex: isThisSlotFlyingOut ? 3 : isFront ? 2 : 1,
                                             transform,
                                             transition,
                                             opacity,
                                             // Back card should never capture pointer events
                                             ...(!isFront && { pointerEvents: 'none', userSelect: 'none' }),
+                                            // Writing flp: the promoted back card grows from its peek pose
+                                            // into place under the throw. A keyframe for the same reason as
+                                            // the throw — its key changes (`slot-X` → `front-N`) on promotion,
+                                            // so it remounts and a transition would snap.
+                                            ...(writingFace && isFront && isAnimating ? {
+                                                animation: `writingPromote ${CARD_FLY_OUT_MS}ms cubic-bezier(0.2, 0.8, 0.3, 1) both`,
+                                                "@keyframes writingPromote": {
+                                                    "0%": { transform: "scale(0.97)", opacity: 0.9 },
+                                                    "100%": { transform: "translate(0px, 0px) rotate(0deg) scale(1)", opacity: 1 },
+                                                },
+                                            } : {}),
+                                            ...(writingFace && isThisSlotFlyingOut ? {
+                                                animation: `writingThrow${flyOut!.direction === 'right' ? 'Right' : 'Left'} ${CARD_FLY_OUT_MS}ms forwards`,
+                                                "@keyframes writingThrowRight": writingThrowKeyframes(1),
+                                                "@keyframes writingThrowLeft": writingThrowKeyframes(-1),
+                                            } : {}),
                                             ...(shakeActive ? {
                                                 animation: "cardShake 0.42s ease-in-out",
                                                 "@keyframes cardShake": {

@@ -25,14 +25,15 @@ export interface MarkCardResult {
     /**
      * The server declined to record the mark because the card's track had not
      * finished cooling down (docs/HYDRA_BUBBLES.md § 8). Nothing was written, so
-     * `markTimestamp` and `displacedMark` are null and there is nothing to undo.
+     * `markTimestamp` is null, `displacedMarks` is empty and there is nothing to undo.
      */
     suppressed: boolean;
     newCard: VocabEntry | null;
     /** Null only when `suppressed` — the one case where no mark exists to undo. */
     markTimestamp: string | null;
     markType: MarkType;
-    displacedMark: ReviewMark | null;
+    /** Marks this review pushed out of the 8-slot window, oldest first (0–2). */
+    displacedMarks: ReviewMark[];
 }
 
 // Per-card randomized choice of which language is shown on Side 1 of the card.
@@ -43,7 +44,7 @@ export interface LastMarkUndoSnapshot {
     cardId: number;
     markTimestamp: string;
     markType: MarkType;
-    displacedMark: ReviewMark | null;
+    displacedMarks: ReviewMark[];
     workingLoop: VocabEntry[];
     currentIndex: number;
     currentSideOneLanguage: SideOneLanguage;

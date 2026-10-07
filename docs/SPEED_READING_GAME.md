@@ -820,8 +820,11 @@ is not a block, only a signal that the dictionary ran dry, and a shorter queue s
 plays. Speed Reading plays a fixed known set, so its notice **names** the lent words.
 See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 
-Note the mid-run top-up (`opts` set) deliberately omits `surface`: a refill must not
-keep lending cards.
+The mid-run top-up (`opts` set) sends `need`, which alone stops it lending: the server
+runs `ensureBaseline` only for a request without `need` (`OnDeckVocabController.getGamePool`).
+It still sends `surface` — dropping it, as this hook used to, changed nothing, since
+`speed-reading` is not a rolling-supply surface. Built by `fetchGamePool`
+(`src/api/gamePool.ts`).
 
 ⚠️ **Why this game over-lent, and the fix.** Speed Reading kept lending ~18 cards on
 *every* load even to learners with hundreds of playable cards. Two facts combined: it

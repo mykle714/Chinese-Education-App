@@ -46,7 +46,7 @@ const FULL_BLEED_LIST_SX = FULL_BLEED_LIST_SX_ARRAY[0];
 // empty-state placeholder spells the formats out with one word written each accepted way; the
 // numbered form in particular is otherwise undiscoverable.
 const SEARCH_PLACEHOLDERS: Partial<Record<Language, string>> = {
-    zh: '你好, nǐ hǎo, ni3 hao3',
+    zh: '你好   ·   nǐ hǎo   ·   ni3 hao3', // middle-dot separators with triple-space gaps; input placeholders render whitespace verbatim
     es: 'hola, hello',
 };
 const searchPlaceholderFor = (language: Language): string =>
@@ -161,6 +161,7 @@ function DictionaryPage() {
                 >
                     <PinyinKeypad
                         className="dictionary-page__special-chars"
+                        size="large"
                         language={userLanguage}
                         inputRef={searchInputRef}
                         value={searchInput}

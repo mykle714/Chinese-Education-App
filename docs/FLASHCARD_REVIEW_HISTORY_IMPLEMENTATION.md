@@ -140,10 +140,14 @@ POST /api/flashcards/mark
    card's `typedMarkHistory`, `masteredAt` and language in one probe
 3. **Cooldown gate**: if that track has not finished cooling, nothing is written and
    the call returns `suppressed: true` (logged as `[MarkSuppressed]`)
-4. Creates the new review mark: `{ timestamp: new Date().toISOString(), isCorrect }`
+4. Creates the new review mark: `{ timestamp: new Date().toISOString(), isCorrect }`.
+   **Silent acceleration** (`marksToWrite`, [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 6):
+   a correct non-writing mark on a track whose newest 3 marks are correct is written
+   **twice**, both copies sharing the timestamp
 5. Appends it to **that type's** track, keeping the newest `MARK_WINDOW_SIZE` (8) —
-   `appendTypedMark`. The mark pushed out of a full window is returned as
-   `displacedMark` so undo can restore it precisely
+   `appendTypedMark`. Every mark pushed out of a full window (up to 2) is returned as
+   `displacedMarks` (oldest first; legacy `displacedMark` = the first) so undo can
+   restore them precisely. Undo removes every trailing mark with the undo timestamp
 6. Writes the history back, stamping `masteredAt.<bar>` in the same statement if this
    mark carried its bar from un-mastered to Mastered
 7. **Logs a velocity promotion** if the mark moved its bar up a utcm band —

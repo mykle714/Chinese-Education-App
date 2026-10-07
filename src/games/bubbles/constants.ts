@@ -197,6 +197,23 @@ export const HELD_OVERDRAG_RADII = 1;
 export const POP_DURATION_MS = 280; // green pop before a correct pair is removed
 export const WRONG_FEEDBACK_MS = 420; // red shake before a wrong pair is released
 
+/**
+ * The app's wrong-match SHAKE, as an MUI `sx` keyframes block: a damped side-to-side
+ * wobble, run for WRONG_FEEDBACK_MS. Shared so every "no, not there" reads identically —
+ * a wrong bubble (Bubble → `.bubble__inner`) and a wrong Bucket Drop bucket
+ * (bucket-drop/DropBucket). Spread into `sx` beside an
+ * `animation: \`bubbleShake ${WRONG_FEEDBACK_MS}ms ease-in-out\`` line.
+ */
+export const WRONG_SHAKE_KEYFRAMES = {
+    "@keyframes bubbleShake": {
+        "0%, 100%": { transform: "translateX(0)" },
+        "20%": { transform: "translateX(-6px)" },
+        "40%": { transform: "translateX(6px)" },
+        "60%": { transform: "translateX(-4px)" },
+        "80%": { transform: "translateX(4px)" },
+    },
+} as const;
+
 // ---- Post-run loop shutdown ----------------------------------------------
 // After a run ends the stage stays mounted behind the popup, but once the field
 // stops moving there's nothing left to animate, so the rAF loop stops
@@ -248,7 +265,8 @@ export const NOMATCH_BUBBLE_BORDER = COLORS.border;
  * var(--greyA)}`). Which side is coloured differs per game (see each game's palette),
  * but the rule — colour gets ink, neutral gets a line — is shared, so it lives here.
  *
- * The ring WIDTH stays the shared `Bubble`'s fixed 2px rather than the design's 2.5px:
+ * The ring WIDTH is the shared `Bubble`'s fixed 1px rather than the design's 2.5px (lightened from
+ * 2px on 2026-10-06 — the heavier ring read too heavy):
  * it is a geometry constant there (every bubble's border box is the same size), and
  * half a pixel is not worth making the two games' bubbles different sizes.
  */

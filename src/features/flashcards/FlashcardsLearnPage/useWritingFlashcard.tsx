@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Dialog } from "@mui/material";
 import { useAuth } from "../../../AuthContext";
 import WritingStage from "../../../components/handwriting/WritingStage";
@@ -31,7 +31,10 @@ import type { WritingFaceRenderer } from "./FlashCardSection";
  * `cardShake` the core flp plays) and its empty cells flash, to prompt the learner to
  * fill the rest. On the back, a
  * cell tap inspects it enlarged and a tap anywhere else dismisses the card — right only
- * when every character is correct. The learner never swipes.
+ * when every character is correct. The learner never steers the card: a swipe ATTEMPT
+ * on the graded back (`swipeHandlers`) is read as that same dismiss tap — the card goes
+ * right/left by its grade, never by the swipe's direction — and FlashCardSection plays
+ * its "grab and throw" fly-out (`writingThrowKeyframes`). A swipe on the front does nothing.
  *
  * Level 8: a character whose clock started is final once its editor closes (`locked`),
  * so closing and reopening cannot reset the clock. A locked cell counts as FILLED for the
@@ -48,6 +51,9 @@ interface Attempt {
     locked: boolean[];
     results: boolean[] | null;
 }
+
+/** Pointer travel (px) past which a press is a swipe attempt, not a tap — useCardDrag's tap slop. */
+const SWIPE_ATTEMPT_PX = 10;
 
 const blankAttempt = (entry: VocabEntry | null): Attempt => {
     const n = entry ? [...entry.entryKey].length : 0;
@@ -140,6 +146,21 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         flip();
     };
 
+    // Send the graded front card off — right only when every character is correct.
+    // Shared by the dismiss tap and a swipe attempt. Returns false when there is nothing
+    // to send (front face, ungraded, or a fly-out already running).
+    const sendOff = (): boolean => {
+        if (!enabled || isAnimating || !isFlipped || !live.results) return false;
+        const direction = live.results.every(Boolean) ? "right" : "left";
+        setOutgoing(live);
+        // Reset the wiggle nonce in the SAME batch as the dismiss: the front wrapper is
+        // keyed `front-${shakeNonce}`, so a reset left to the per-card effect would re-key
+        // (remount) the promoted card a frame later and restart its grow-in animation.
+        setShakeNonce(0);
+        dismiss(direction, { level, perChar: live.results });
+        return true;
+    };
+
     /**
      * A tap on the card body (cells stop their own taps). Front: submit when every cell
      * is filled, else wiggle the card. Back (graded): send the card off.
@@ -152,10 +173,50 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
             else setShakeNonce((n) => n + 1);
             return;
         }
-        if (!live.results) return;
-        const direction = live.results.every(Boolean) ? "right" : "left";
-        setOutgoing(live);
-        dismiss(direction, { level, perChar: live.results });
+        sendOff();
+    };
+
+    /**
+     * Swipe-attempt detection, in place of useCardDrag's handlers. The card never follows
+     * the finger; a press that travels past SWIPE_ATTEMPT_PX on the graded back is a
+     * dismiss, exactly as if tapped. Only start/end matter, so no move listener.
+     *
+     * The tap that would otherwise follow is swallowed so it cannot dismiss twice or
+     * open a cell's inspect view under the departing card (a swipe that STARTED on a
+     * cell still bubbles here): touch via preventDefault on touchend (React's touchend
+     * listener is not passive), mouse via a one-shot capture-phase click blocker —
+     * a mouse click fires after mouseup however far the pointer moved.
+     */
+    const pressStart = useRef<{ x: number; y: number } | null>(null);
+    const travelled = (x: number, y: number) =>
+        !!pressStart.current && Math.hypot(x - pressStart.current.x, y - pressStart.current.y) >= SWIPE_ATTEMPT_PX;
+    const swallowNextClick = () => {
+        const block = (ev: MouseEvent) => { ev.stopPropagation(); ev.preventDefault(); };
+        window.addEventListener("click", block, { capture: true, once: true });
+        // No click followed (pointer released off the card) — drop the blocker.
+        window.setTimeout(() => window.removeEventListener("click", block, { capture: true }), 0);
+    };
+    const swipeHandlers = {
+        onTouchStart: (e: React.TouchEvent) => {
+            const t = e.touches[0];
+            pressStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+        },
+        onTouchEnd: (e: React.TouchEvent) => {
+            const t = e.changedTouches[0];
+            const swiped = !!t && travelled(t.clientX, t.clientY);
+            pressStart.current = null;
+            if (swiped && sendOff()) e.preventDefault();
+        },
+        onMouseDown: (e: React.MouseEvent) => {
+            pressStart.current = { x: e.clientX, y: e.clientY };
+            // mouseup on the document: the release may land off the card.
+            const onUp = (up: MouseEvent) => {
+                const swiped = travelled(up.clientX, up.clientY);
+                pressStart.current = null;
+                if (swiped && sendOff()) swallowNextClick();
+            };
+            document.addEventListener("mouseup", onUp, { once: true });
+        },
     };
 
     const renderFace: WritingFaceRenderer = (cardEntry, side, role) => {
@@ -212,13 +273,16 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
                 )}
             </Dialog>
 
-            {/* Back face: one character enlarged, the learner's ink over the outline. */}
+            {/* Back face: one character enlarged, the learner's ink over the outline.
+                The dim is the Dialog's own backdrop (the theme's `COLORS.modalScrim`); this
+                full-paper box is only the tap-anywhere-to-close target. It used to paint a
+                second modalScrim over the backdrop, dimming the screen twice. */}
             <Dialog open={inspecting !== null} onClose={() => setInspecting(null)} PaperProps={{ elevation: 0, sx: PHONE_OVERLAY_SX }}>
                 {inspecting !== null && chars[inspecting] && (
                     <Box
                         className="writing-flashcard__inspect"
                         onClick={() => setInspecting(null)}
-                        sx={{ position: "relative", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", bgcolor: COLORS.modalScrim }}
+                        sx={{ position: "relative", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
                     >
                         <Box sx={{ position: "relative", width: WRITING_FOCUS_SIZE, height: WRITING_FOCUS_SIZE, bgcolor: COLORS.white, borderRadius: 3, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
                             <WritingStage
@@ -240,5 +304,5 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         </>
     ) : null;
 
-    return { renderFace, handleCardClick, shakeNonce, overlays };
+    return { renderFace, handleCardClick, swipeHandlers, shakeNonce, overlays };
 }

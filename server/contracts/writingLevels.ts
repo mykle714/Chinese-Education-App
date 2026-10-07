@@ -33,7 +33,7 @@ export const WRITING_LEVELS = [
   { level: 3, mode: 'walkthrough', name: 'Step-through' }, // was "Step Through" (display only)
   { level: 4, mode: 'quarters', name: 'Quarters' },
   { level: 5, mode: 'memorize', name: 'Memorize' },
-  { level: 6, mode: 'eighths', name: 'Eighths' },
+  { level: 6, mode: 'sixths', name: 'Sixths' }, // was 'eighths' (8 米 triangles) until 2026-10-06
   { level: 7, mode: 'test', name: 'Blank' }, // renamed from "Test" 2026-10-04 (display only)
   { level: 8, mode: 'timed', name: 'Timed' },
 ] as const;

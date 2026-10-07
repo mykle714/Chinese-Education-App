@@ -1,20 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { useCallback, useMemo } from "react";
 import { useAuth } from "../../../AuthContext";
 import { useSlideNavigate } from "../../../hooks/useSlideNavigate";
 import { useGameWins } from "../../../hooks/useGameWins";
-import { useDragScroll } from "../../../hooks/useDragScroll";
 import { GAME_REGISTRY, isGameAvailable } from "../../../games/registry";
 import { GAME_KEY as BUBBLE_MATCH_GAME_KEY } from "../../../games/bubble-match/constants";
 import { buildBubbleMatchCard } from "../../../games/bubble-match/bubbleMatchCard";
-import GameCard, { type GameCardData } from "../../../games/shared/GameCard";
+import type { GameCardData } from "../../../games/shared/GameCard";
 import { GAME_KEY as SPEED_READING_GAME_KEY } from "../../../games/speed-reading/constants";
+import { GAME_ID as BUCKET_DROP_GAME_ID, GAME_KEY as BUCKET_DROP_GAME_KEY } from "../../../games/bucket-drop/constants";
 import { buildPlayCard } from "../../../games/shared/gameCards";
 import { useWordSearchLauncher } from "../../../games/word-search/useWordSearchLauncher";
 import type { GameExit } from "../../../games/runtime/gameExit";
 import type { GameDef } from "../../../games/types";
-import { COLORS } from "../../../theme/colors";
 import { MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES } from "../masteryCenters";
+import GamesBelt from "./GamesBelt";
 
 /**
  * The Reading Center's games carousel — every game that can deal a READING board, as a
@@ -32,7 +31,15 @@ import { MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES } from "../masteryCenters";
  *                   ALWAYS a new board, behind the shared clobber confirm
  *                   (`NewGameConfirmDialog`) when one is parked.
  *   Speed Reading — reading by construction; zh only (its registry `languages`).
- * Memory Map also marks reading but is not in the design's carousel — left out.
+ *   Memory Map    — reading by construction (its MARK_TYPE). Play-only, and wins no
+ *                   pill: the game logs no wins. Its run resumes on its own (the map
+ *                   and run live server-side / in runStorage), so Play IS resume.
+ *   Bucket Drop   — the No Pinyin mode only (`state.mode: "no-pinyin"`, which marks
+ *                   reading; the hub tile is the Pinyin mode). Play-only. zh ONLY, gated
+ *                   here rather than by the registry's `languages`, because the game's
+ *                   Pinyin mode is playable in es from the hub — and an es "no pinyin"
+ *                   run would mark production (bucket-drop/constants.ts → runTrackFor), which has no place
+ *                   on a reading page.
  *
  * Every launch carries `state.exitTo` (`readingCenterExit`), so the game's Back and
  * "Back to …" buttons return here rather than to the Games hub (games/runtime/gameExit),
@@ -47,34 +54,10 @@ import { MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES } from "../masteryCenters";
  * Bubble Match's own LEVEL_CONFIGS (the design's "Gentle / Brisk / Relentless" is an
  * open flag in the doc, not restated here).
  *
- * ── The loop ──────────────────────────────────────────────────────────────────
- * The design's carousel wraps: it renders the cards three times, parks the scroller on
- * the middle copy, and after each swipe settles silently jumps back by one copy-width
- * when it has drifted into an outer copy. Snap points make the jump invisible (it lands
- * on the identical card). The dots read `index % count`.
- *
- * ── No momentum ───────────────────────────────────────────────────────────────
- * The belt moves one game per swipe, however big the swipe. Touch flings are held by
- * `scroll-snap-stop: always` on every card (the browser may not coast past a snap
- * point); mouse drags by `useDragScroll`'s paged mode, which caps a drag at one page.
- *
- * ── Desktop drag ──────────────────────────────────────────────────────────────
- * Mouse click-and-drag pans the track via `useDragScroll` in paged mode, one page per
- * card step, so a release settles on the neighbouring card the way a touch swipe snaps
- * to one. While
- * that drag is in flight the hook parks `scroll-snap-type` at "none"; the loop's
- * re-centre waits it out, because jumping `scrollLeft` mid-drag would fight the hook's
- * `startScrollLeft - delta` arithmetic.
+ * The belt itself (looping, one card per swipe, desktop drag, dots) is `GamesBelt`.
  *
  * Layer: feature component (src/features/flashcards/centers).
  */
-
-/** The design's `.gc` width and the row's gap / side gutter. */
-const CARD_WIDTH = 300;
-const CARD_GAP = 10;
-const SIDE_GUTTER = 22;
-/** How long the scroller must be still before the loop re-centres it. */
-const SETTLE_MS = 120;
 
 /**
  * Where a game launched from here exits to (games/runtime/gameExit → useGameExit).
@@ -108,6 +91,8 @@ const ReadingGamesCarousel: React.FC<ReadingGamesCarouselProps> = ({ className, 
     const { clearedLevels, totalWins: bubbleWins } = useGameWins(BUBBLE_MATCH_GAME_KEY);
     // Speed Reading logs a win per MEDALLED run (SpeedReadingPage → recordWin).
     const { totalWins: speedReadingWins } = useGameWins(SPEED_READING_GAME_KEY);
+    // Bucket Drop logs a win per MEDALLED run, across both modes (BucketDropPage).
+    const { totalWins: bucketDropWins } = useGameWins(BUCKET_DROP_GAME_KEY);
 
     // Same gating as the Games hub (`isGameAvailable`): auth-only games hide from
     // public accounts, language-scoped games hide from other languages.
@@ -150,121 +135,30 @@ const ReadingGamesCarousel: React.FC<ReadingGamesCarouselProps> = ({ className, 
                 slideNavigate(speed.route, { state: { exitTo: readingCenterExit(speed.gameId) } })
             ));
         }
+
+        const bucketDrop = gameById(BUCKET_DROP_GAME_ID);
+        if (bucketDrop && user?.selectedLanguage === "zh") {
+            out.push(buildPlayCard(bucketDrop, bucketDropWins, () =>
+                slideNavigate(bucketDrop.route, {
+                    state: { mode: "no-pinyin", exitTo: readingCenterExit(bucketDrop.gameId) },
+                })
+            ));
+        }
+
+        const memoryMap = gameById("memory-map");
+        if (memoryMap) {
+            // No `wins`: Memory Map records none, so its card carries no win pill.
+            out.push(buildPlayCard(memoryMap, undefined, () =>
+                slideNavigate(memoryMap.route, { state: { exitTo: readingCenterExit(memoryMap.gameId) } })
+            ));
+        }
         return out;
-    }, [gameById, bubbleWins, speedReadingWins, clearedLevels, wordSearch.card, slideNavigate]);
-
-    // ── Looping scroller ────────────────────────────────────────────────────────
-    const scrollRef = useRef<HTMLDivElement | null>(null);
-    const count = cards.length;
-    // The card to open on: the game just returned from, else the first. Read once —
-    // after mount the learner owns the position.
-    const [focusIndex] = useState(() => Math.max(0, cards.findIndex((c) => c.gameId === focusGameId)));
-    const [activeDot, setActiveDot] = useState(focusIndex);
-    // One card never loops — there is nothing to wrap to.
-    const copies = count > 1 ? 3 : 1;
-    const step = CARD_WIDTH + CARD_GAP;
-    const copyWidth = step * count;
-
-    // Desktop click-and-drag (touch already pans natively). See "Desktop drag" above.
-    useDragScroll(scrollRef, { paged: true, pageWidth: step });
-
-    // Park on the middle copy before first paint, so the first swipe can go either way —
-    // on the focused card's snap point within it (`focusIndex`; snap points are one
-    // `step` apart from the copy's start). A lone card has no copies to centre in.
-    useLayoutEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        const index = Math.min(focusIndex, Math.max(0, count - 1));
-        el.scrollLeft = (copies === 3 ? copyWidth : 0) + index * step;
-    }, [copies, copyWidth, count, step, focusIndex]);
-
-    const settleTimer = useRef<number | null>(null);
-    useEffect(() => () => { if (settleTimer.current) window.clearTimeout(settleTimer.current); }, []);
-
-    const handleScroll = () => {
-        const el = scrollRef.current;
-        if (!el || count === 0) return;
-        setActiveDot(((Math.round(el.scrollLeft / step) % count) + count) % count);
-        if (copies !== 3) return;
-        if (settleTimer.current) window.clearTimeout(settleTimer.current);
-        // Once the swipe has settled, jump back into the middle copy if it drifted into
-        // an outer one. The jump lands on the identical card, so it is invisible.
-        const recentre = () => {
-            // A mouse drag (or its release scroll) is still in flight — try again later.
-            if (el.style.scrollSnapType === "none") {
-                settleTimer.current = window.setTimeout(recentre, SETTLE_MS);
-                return;
-            }
-            if (el.scrollLeft < copyWidth * 0.5) el.scrollLeft += copyWidth;
-            else if (el.scrollLeft >= copyWidth * 1.5) el.scrollLeft -= copyWidth;
-        };
-        settleTimer.current = window.setTimeout(recentre, SETTLE_MS);
-    };
-
-    if (count === 0) return null;
+    }, [gameById, bubbleWins, speedReadingWins, bucketDropWins, clearedLevels, wordSearch.card, slideNavigate, user?.selectedLanguage]);
 
     return (
-        <Box className={`reading-games-carousel${className ? ` ${className}` : ""}`} sx={{ alignSelf: "stretch", marginTop: "16px" }}>
-            <Box
-                ref={scrollRef}
-                className="reading-games-carousel__track"
-                onScroll={handleScroll}
-                sx={{
-                    display: "flex",
-                    gap: `${CARD_GAP}px`,
-                    overflowX: "auto",
-                    scrollSnapType: "x mandatory",
-                    padding: `0 ${SIDE_GUTTER}px 4px`,
-                    scrollPadding: `0 ${SIDE_GUTTER}px`,
-                    scrollbarWidth: "none",
-                    "&::-webkit-scrollbar": { display: "none" },
-                    // Sideways scroller inside a vertically-scrolling page: both pans are
-                    // opt-in here (CLAUDE.md "Touch & Scroll"); the page passes
-                    // `horizontalPan` so its scroll area does not cap this.
-                    touchAction: "pan-x pan-y",
-                }}
-            >
-                {Array.from({ length: copies }, (_, copy) =>
-                    cards.map((card) => (
-                        <GameCard
-                            key={`${copy}-${card.gameId}`}
-                            card={card}
-                            classPrefix="reading-games-carousel"
-                            sx={{
-                                flex: `0 0 ${CARD_WIDTH}px`,
-                                scrollSnapAlign: "start",
-                                // No momentum: a fling, however hard, stops at the very next
-                                // card rather than coasting past several (see "No momentum"
-                                // in the header comment).
-                                scrollSnapStop: "always",
-                            }}
-                        />
-                    ))
-                )}
-            </Box>
-
-            {count > 1 && (
-                <Box className="reading-games-carousel__dots" sx={{ display: "flex", justifyContent: "center", gap: "5px", paddingTop: "9px" }}>
-                    {cards.map((card, i) => (
-                        <Box
-                            key={card.gameId}
-                            component="i"
-                            className={`reading-games-carousel__dot${i === activeDot ? " reading-games-carousel__dot--active" : ""}`}
-                            sx={{
-                                display: "block",
-                                height: 5,
-                                width: i === activeDot ? 14 : 5,
-                                borderRadius: "3px",
-                                backgroundColor: i === activeDot ? COLORS.onSurface : COLORS.border,
-                                transition: "width 160ms ease",
-                            }}
-                        />
-                    ))}
-                </Box>
-            )}
-
+        <GamesBelt cards={cards} classPrefix="reading-games-carousel" className={className} focusGameId={focusGameId}>
             {wordSearch.confirmDialog}
-        </Box>
+        </GamesBelt>
     );
 };
 

@@ -9,7 +9,7 @@
  *
  * ── WHY COLOURS ARE SAVED AT ALL ─────────────────────────────────────────────
  * The original design lost them on exit. That was reversed (Q10) once the run became
- * "colour the whole map" — up to 100 prompts is not a sitting, so a run that reset on
+ * "colour the whole map" — up to 50 prompts is not a sitting, so a run that reset on
  * every exit would be a run nobody ever finished.
  *
  * ── KEYED PER (user, language) ───────────────────────────────────────────────

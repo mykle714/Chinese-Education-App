@@ -156,7 +156,7 @@ Two entities render through it, so a change to any shell number moves both:
 | Entity | Inner layout |
 |---|---|
 | `BentoTile` | foot-aligned title + subtitle, geometry from `TILE_VARIANTS` |
-| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's |
+| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`, or a non-win `tally` drawn by the same `CountPill` — the Writing Notebook's card) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's — except a card with an EMPTY options row, whose title takes the hero tier's size (`TILE_VARIANTS.hero.title`) |
 
 `GameCard`'s other variant, `tile`, IS a `BentoTile` (see
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Games hub").

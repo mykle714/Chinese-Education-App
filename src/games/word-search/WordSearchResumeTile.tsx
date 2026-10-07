@@ -1,25 +1,22 @@
 import React, { useState } from "react";
 import { Box, Typography, IconButton, Button } from "@mui/material";
 import Icon from "../../components/Icon";
-import { COLORS } from "../../theme/colors";
+import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
-import { formatTimeMs } from "../../utils/timeUtils";
 import { GameOptionTile, OPTION_TITLE_SX } from "../shared/GameCard";
-import { savedWordCount, type SavedWordSearchState } from "./gameStateStorage";
+import { GAME_HUE } from "./constants";
 
 interface WordSearchResumeTileProps {
-    saved: SavedWordSearchState;
-    /** The device-local "show timer" preference (`useWordSearchSettings`). The parked
-     *  time is omitted when the player hid the in-game clock — a hidden timer must not
-     *  leak back out on a launch surface. */
-    showTimer: boolean;
     /** Tap on the normal face. Never fires while the delete-confirm face is armed. */
     onResume: (e: React.MouseEvent) => void;
     /** The ✕ → Delete confirmation went through; the caller clears the save slot. */
     onErase: () => void;
     /** BEM block of the launching surface (`games-page`, `reading-games-carousel`). */
     classPrefix: string;
+    /** The game's registry glyph — worn as the tile's corner ghost, echoing the
+     *  parent card's ghost. */
+    glyph: string;
 }
 
 /**
@@ -28,12 +25,18 @@ interface WordSearchResumeTileProps {
  * (`ReadingGamesCarousel`, No Pinyin slot), both placing it through
  * `buildWordSearchCard` as the `GameCard`'s "resume" option, so the two cannot drift
  * apart. Drawn on `GameOptionTile` — the SAME shell as a Bubble Match level tile, so
- * radius / padding / floor / outline / title type are shared, not copied. Sized by
- * GameCard's option slot (one Bubble Match level (~86–100px × 62px): the delete face
- * reads "Delete?" with Cancel / Delete stacked.
+ * radius / padding / floor / outline / title type are shared, not copied. Spans TWO
+ * of GameCard's option slots (two Bubble Match levels plus the gap between them,
+ * ~180–207px × 62px): the delete face reads "Delete?" with Cancel / Delete stacked.
  *
- * Normal face: "Resume", the parked time (only when `showTimer`) · X/N found, and a ✕
- * in the top-right corner. No mode label: each launch surface owns exactly one save
+ * Ground is the card hue's TINT tier (`RAMP[GAME_HUE].tint`) — the near-white second
+ * tone of the purple card, so it reads as part of the card yet stands off it. The
+ * normal face wears the game glyph as a small corner ghost (the parent card's ghost,
+ * scaled down), pulled inward (`ERASE_CLEAR_RIGHT`) so it sits just left of the ✕
+ * instead of under it.
+ *
+ * Normal face: just "Resume" and a ✕ in the top-right corner — no parked time or
+ * found count (the tile is a plain way back in, not a progress readout). No mode label: each launch surface owns exactly one save
  * slot (hub = Pinyin, Reading Center = No Pinyin), so the mode is implied by where
  * the tile sits. The ✕ flips the tile in place to a
  * delete-confirm face; only its Delete calls `onErase`.
@@ -42,8 +45,12 @@ interface WordSearchResumeTileProps {
  * navigation; this tile owns only the armed/unarmed face state.
  * Docs: docs/WORD_SEARCH_GAME.md § "Resume card", docs/READING_WRITING_CENTERS.md.
  */
+/** The ghost's right offset: the ✕ button sits at right 4 and is ~20px wide (16px
+ *  glyph + 2px padding each side), so a ghost whose right edge is at 26px clears it. */
+const ERASE_CLEAR_RIGHT = 26;
+
 const WordSearchResumeTile: React.FC<WordSearchResumeTileProps> = ({
-    saved, showTimer, onResume, onErase, classPrefix,
+    onResume, onErase, classPrefix, glyph,
 }) => {
     // Whether the ✕ has flipped the tile to its "delete this saved game?" face.
     const [confirmingErase, setConfirmingErase] = useState(false);
@@ -77,10 +84,17 @@ const WordSearchResumeTile: React.FC<WordSearchResumeTileProps> = ({
     const buttonSx = { py: 0, minHeight: 0, lineHeight: "16px" };
 
     return (
-        // Warm neutral ground, distinct from every mode / game hue so it reads as a
-        // parked board rather than another launch option. A `div` (not a button):
-        // both faces contain buttons of their own.
-        <GameOptionTile className={`${classPrefix}__resume`} ground={COLORS.cardBeige} onClick={handleClick}>
+        // The card hue's near-white tint tier. A `div` (not a button): both faces
+        // contain buttons of their own. The ghost glyph shows on the normal face only —
+        // behind the delete-confirm copy it would just be noise.
+        <GameOptionTile
+            className={`${classPrefix}__resume`}
+            ground={RAMP[GAME_HUE].tint}
+            onClick={handleClick}
+            glyph={confirmingErase ? undefined : glyph}
+            glyphClassName={`${classPrefix}__resume-ghost`}
+            glyphRight={ERASE_CLEAR_RIGHT}
+        >
             {confirmingErase ? (
                 // Delete-confirmation FACE. ABSOLUTELY INSET, and that is load-bearing:
                 // a flex row sizes its cross axis to its tallest item, so anything this
@@ -150,13 +164,6 @@ const WordSearchResumeTile: React.FC<WordSearchResumeTileProps> = ({
                         sx={{ ...OPTION_TITLE_SX, whiteSpace: "nowrap" }}
                     >
                         Resume
-                    </Typography>
-                    <Typography
-                        className={`${classPrefix}__resume-stats`}
-                        sx={{ fontSize: 10.5, color: COLORS.textSecondary, fontFamily: FONTS.mono, whiteSpace: "nowrap" }}
-                    >
-                        {showTimer && `${formatTimeMs(saved.elapsedMs)} · `}
-                        {saved.found.length}/{savedWordCount(saved)}
                     </Typography>
                 </>
             )}

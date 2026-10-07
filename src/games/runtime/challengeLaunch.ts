@@ -79,6 +79,13 @@ const LAUNCHES: Record<string, { route: string; title: string; state: Record<str
         title: "Hydra Bubbles",
         state: {},
     },
+    "bucket-drop": {
+        route: "/games/bucket-drop",
+        title: "Bucket Drop",
+        // Overwritten with the challenge's own mode below (always "pinyin" — the only
+        // eligible mode), exactly as Word Search's is.
+        state: { mode: "pinyin" },
+    },
 };
 
 /**

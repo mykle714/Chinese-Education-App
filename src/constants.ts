@@ -58,6 +58,9 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/speed-reading',
   '/games/memory-map',
   '/games/hydra-bubbles',
+  '/games/bucket-drop',
+  // The Writing Notebook (docs/WRITING_NOTEBOOK.md) — handwriting practice, not a game.
+  '/flashcards/writing/notebook',
   // The immersive-world PLAY surface (docs/IMMERSIVE_WORLD.md). A prefix, because the scene
   // itself is `/immersive-world/:sceneId` and a parameterized route cannot be listed exactly —
   // which is why the two NON-study routes that share the prefix are named in

@@ -11,16 +11,9 @@
  * Spec: docs/HANDWRITING_RECOGNITION.md ("Reading in user writing inputs").
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { eraseSweep } from "./inkErase";
 import { COLORS } from "../../theme";
 import type { Ink, Stroke, WritingCanvasHandle } from "./types";
-import {
-  VELOCITY_WIDTH_PROFILES,
-  buildVariableStrokePath,
-  computeStrokeWidths,
-  defaultProfileKey,
-  profileForPointerType,
-  type WidthProfileKey,
-} from "./velocityWidth";
 
 /**
  * What happens to a just-finished stroke (`onStrokeEnd`): kept as drawn, swapped for
@@ -63,14 +56,17 @@ interface WritingCanvasProps {
    */
   hideCommittedInk?: boolean;
   strokeColor?: string;
-  /** Base line width (CSS px). With `velocityWidth`, the drawn width varies around it. */
+  /** Line width (CSS px). Uniform along the stroke — the app draws no speed-varying ink. */
   strokeWidth?: number;
   /**
-   * Swell the line with pointer speed (fast = thick, slow = thin), with separate
-   * desktop (mouse) / mobile (touch, pen) tuning — see velocityWidth.ts. Visual only;
-   * the captured ink is identical either way. Default on.
+   * What a drag does. `pen` (default) draws a stroke. `eraser` is the PARTIAL eraser:
+   * rubbing through ink cuts that piece out and splits the stroke around it, so the ink
+   * stays real strokes (inkErase.ts). Read live — switching tools never rebinds the
+   * handlers. Only the Writing Notebook offers it today (docs/WRITING_NOTEBOOK.md).
    */
-  velocityWidth?: boolean;
+  tool?: "pen" | "eraser";
+  /** The eraser's radius (CSS px). */
+  eraserRadius?: number;
 }
 
 // Skip points closer than this (CSS px) to the previous one, so a slow pointer
@@ -82,7 +78,7 @@ const REJECT_HOLD_MS = 250;
 const REJECT_FADE_MS = 450;
 
 const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(function WritingCanvas(
-  { size, disabled = false, initialInk, onInkChange, onBlockedAttempt, onStrokeStart, onStrokeEnd, hideCommittedInk = false, strokeColor = COLORS.onSurface, strokeWidth = 6, velocityWidth = true },
+  { size, disabled = false, initialInk, onInkChange, onBlockedAttempt, onStrokeStart, onStrokeEnd, hideCommittedInk = false, strokeColor = COLORS.onSurface, strokeWidth = 7, tool = "pen", eraserRadius = 12 },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,19 +98,17 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
   const blockedAttemptRef = useRef(onBlockedAttempt);
   const strokeStartRef = useRef(onStrokeStart);
   const strokeEndRef = useRef(onStrokeEnd);
-  const styleRef = useRef({ strokeColor, strokeWidth, hideCommittedInk, velocityWidth });
-  // Which velocity-width profile each stroke was drawn with (from its pointerdown's
-  // pointerType). Strokes we never saw drawn (restored drafts, Snap substitutes) are
-  // absent and fall back to the device default.
-  const strokeProfileRef = useRef(new WeakMap<Stroke, WidthProfileKey>());
-  // Committed strokes are immutable, so their outline is built once and reused on every
-  // repaint; keyed on base width so a strokeWidth prop change rebuilds it.
-  const pathCacheRef = useRef(new WeakMap<Stroke, { baseWidth: number; path: Path2D }>());
+  const styleRef = useRef({ strokeColor, strokeWidth, hideCommittedInk });
+  const toolRef = useRef({ tool, eraserRadius });
+  // The eraser's live drag: its last sample (the next sweep starts there) and whether this
+  // drag has removed anything yet (only then is the change reported, on release).
+  const eraserRef = useRef<{ x: number; y: number; changed: boolean } | null>(null);
   disabledRef.current = disabled;
   blockedAttemptRef.current = onBlockedAttempt;
   strokeStartRef.current = onStrokeStart;
   strokeEndRef.current = onStrokeEnd;
-  styleRef.current = { strokeColor, strokeWidth, hideCommittedInk, velocityWidth };
+  styleRef.current = { strokeColor, strokeWidth, hideCommittedInk };
+  toolRef.current = { tool, eraserRadius };
 
   const notifyChange = () => onInkChange?.(inkRef.current);
 
@@ -168,24 +162,11 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = styleRef.current.strokeColor;
-    ctx.fillStyle = styleRef.current.strokeColor;
     ctx.lineWidth = styleRef.current.strokeWidth;
-    const baseWidth = styleRef.current.strokeWidth;
+    // One stroke() per path, so a translucent draw (the rejected-stroke fade) paints
+    // self-overlaps once rather than darkening them.
     const drawStroke = (s: Stroke) => {
       if (s.xs.length === 0) return;
-      if (styleRef.current.velocityWidth) {
-        // The in-progress stroke is still growing, so it is never cached.
-        const cached = s === currentRef.current ? undefined : pathCacheRef.current.get(s);
-        if (cached && cached.baseWidth === baseWidth) {
-          ctx.fill(cached.path);
-          return;
-        }
-        const profile = VELOCITY_WIDTH_PROFILES[strokeProfileRef.current.get(s) ?? defaultProfileKey()];
-        const path = buildVariableStrokePath(s, computeStrokeWidths(s, baseWidth, profile));
-        if (s !== currentRef.current) pathCacheRef.current.set(s, { baseWidth, path });
-        ctx.fill(path);
-        return;
-      }
       ctx.beginPath();
       ctx.moveTo(s.xs[0], s.ys[0]);
       for (let i = 1; i < s.xs.length; i++) ctx.lineTo(s.xs[i], s.ys[i]);
@@ -198,13 +179,20 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
     // Rejected strokes: red, holding then fading (see REJECT_HOLD_MS).
     const now = performance.now();
     ctx.strokeStyle = COLORS.redMk;
-    ctx.fillStyle = COLORS.redMk;
     for (const f of fadingRef.current) {
       const age = now - f.at;
       ctx.globalAlpha = age <= REJECT_HOLD_MS ? 1 : Math.max(0, 1 - (age - REJECT_HOLD_MS) / REJECT_FADE_MS);
       drawStroke(f.stroke);
     }
     ctx.globalAlpha = 1;
+    // The eraser's footprint, while it is down, so the learner sees what it covers.
+    if (eraserRef.current) {
+      ctx.beginPath();
+      ctx.arc(eraserRef.current.x, eraserRef.current.y, toolRef.current.eraserRadius, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = COLORS.textSecondary;
+      ctx.stroke();
+    }
   };
 
   /** Repaint every frame until the last rejected stroke has faded out. */
@@ -255,13 +243,38 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
       e.stopPropagation(); // keep draw gestures from reaching the flashcard's document-level drag/flip
       canvas.setPointerCapture(e.pointerId); // finish the stroke even if it leaves the canvas
       const { x, y } = pointFromEvent(e);
+      if (toolRef.current.tool === "eraser") {
+        eraserRef.current = { x, y, changed: false };
+        eraseTo(x, y);
+        return;
+      }
       currentRef.current = { xs: [x], ys: [y], ts: [performance.now()] };
-      strokeProfileRef.current.set(currentRef.current, profileForPointerType(e.pointerType));
       strokeStartRef.current?.();
       redrawAll();
     };
 
+    /** Sweep the eraser from its last sample to (x, y), then repaint. */
+    const eraseTo = (x: number, y: number) => {
+      const eraser = eraserRef.current;
+      if (!eraser) return;
+      const next = eraseSweep(inkRef.current, eraser.x, eraser.y, x, y, toolRef.current.eraserRadius);
+      if (next !== inkRef.current) {
+        inkRef.current = next;
+        eraser.changed = true;
+      }
+      eraser.x = x;
+      eraser.y = y;
+      redrawAll();
+    };
+
     const onMove = (e: PointerEvent) => {
+      if (eraserRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        const { x, y } = pointFromEvent(e);
+        eraseTo(x, y);
+        return;
+      }
       const stroke = currentRef.current;
       if (!stroke) return;
       e.preventDefault();
@@ -277,6 +290,18 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
     };
 
     const finishStroke = (e: PointerEvent) => {
+      if (eraserRef.current) {
+        e.stopPropagation();
+        if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+        const { changed } = eraserRef.current;
+        eraserRef.current = null;
+        // An erase rewrites history like a fresh stroke does: an undone stroke replayed
+        // onto the cut ink would land out of order.
+        if (changed) redoRef.current = [];
+        redrawAll();
+        if (changed) notifyChange();
+        return;
+      }
       const stroke = currentRef.current;
       if (!stroke) return;
       e.stopPropagation();
@@ -288,11 +313,6 @@ const WritingCanvas = forwardRef<WritingCanvasHandle, WritingCanvasProps>(functi
         fadingRef.current = [...fadingRef.current, { stroke, at: performance.now() }];
         runFade();
         return;
-      }
-      if (verdict.kind === "replace") {
-        // The substitute inherits the drawn stroke's profile (it came from the same pointer).
-        const key = strokeProfileRef.current.get(stroke);
-        if (key) strokeProfileRef.current.set(verdict.stroke, key);
       }
       inkRef.current = [...inkRef.current, verdict.kind === "replace" ? verdict.stroke : stroke];
       // A fresh stroke forks the history: whatever was undone is no longer "next".

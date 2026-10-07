@@ -54,8 +54,13 @@ const MemoryMapIslandCompass: React.FC<{ islands: OffscreenIsland[] }> = ({ isla
                     gap: "8px",
                     padding: "8px",
                     borderRadius: "999px",
+                    // Fully opaque (owner, 2026-10-06; was 0.85): a translucent chip let
+                    // words and water show through and muddied the arrow and count.
                     backgroundColor: COLORS.card,
-                    opacity: 0.85,
+                    // The app's standard outline (`--line2`, the same 1px `COLORS.border`
+                    // every button and card carries — CLAUDE.md § Buttons & cards), so the
+                    // white pill holds its edge against pale water and pale glyph tints.
+                    border: `1px solid ${COLORS.border}`,
                     // Never intercepts a pan: the whole viewport is the pan surface, and
                     // a marker that swallowed touches would create dead zones exactly
                     // where the player most wants to drag (the edges).

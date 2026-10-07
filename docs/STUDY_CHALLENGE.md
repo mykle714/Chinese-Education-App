@@ -946,9 +946,11 @@ inside `ChallengesPage`, which is inside `MobileTabScreen`'s scroll area — and
 carries the edge-fade **mask**, which clips fixed-position descendants. Its bottom band
 is transparent for the footer's height, so the sheet's pinned action bar was masked away
 entirely: the sheet looked right and had no **Send** button (fixed 2026-09-01). It now
-portals to `nearestOverlayHost` and holds `useHideFooter` while open, since the footer
-bar paints above that host and covers the same strip. The same applies to
-`SteppedHelpPopup` (§ 5.4c).
+portals to the phone frame (`useScreenOverlayHost`), `absolute` at z 1200/1201 — above
+the footer bar's 100 — so its scrim dims the whole screen, footer included, and the risen
+panel covers the bar (until 2026-10-06 it hosted at `nearestOverlayHost` and slid the
+footer away with `useHideFooter`). The same applies to `SteppedHelpPopup` (§ 5.4c).
+Rule: docs/UX_AND_NAVIGATION.md § Dimming the background.
 Full rule: docs/MOBILE_TAB_SCREEN_LAYOUT.md § "Edge fade".
 
 **Its own scroller wears the sheet fade.** The word list dissolves into the pinned action
@@ -962,7 +964,7 @@ the action bar is a sibling of the scroller, outside the mask.
 Code: `src/features/studyChallenge/ChallengeSheet.tsx` (the frame — local to this
 feature; promote to `src/components/` if a second surface needs it),
 `ChallengePanel.tsx` (the three modes), hosted by `ChallengesPage` → `panelTarget`;
-`src/components/overlayHost.ts` → `nearestOverlayHost`.
+`src/hooks/useScreenOverlayHost.ts` → `useScreenOverlayHost`.
 
 * Marking a word **already learned** removes it and pulls the next word from the same
   ranked candidate list — the replacement runs through the identical logic, with every
@@ -1283,7 +1285,8 @@ The selection and the **order** are drawn once per challenge and stored on the c
 row — **identical for both players**, same games, same sequence, because a score
 comparison across different games is not a comparison.
 
-Word Search being zh-only means an es-vs-es challenge has **two** eligible games today.
+Word Search being zh-only means an es-vs-es challenge draws from **four** eligible games
+(Bubble Match, Match Speed, Hydra Bubbles, Bucket Drop-Pinyin) where zh-vs-zh has five.
 Same constraint, sharper, in cross-language challenges — § 8.
 
 ### 5.1b The game sequence is hidden until Friday (Q63)
@@ -2932,7 +2935,7 @@ highlights, used ONLY by the round scoreboard),
 `src/games/runtime/{challengeScoring,useChallengeRound,challengeLaunch}.ts` +
 `ChallengeRoundScoreboard.tsx` (the round runner — § 5.2a),
 `src/games/match-speed/challengeDeal.ts` (the alternation rule — § 5.3),
-`src/games/{match-speed,bubble-match,word-search,hydra-bubbles}/*` (scoring emission, challenge mode),
+`src/games/{match-speed,bubble-match,word-search,hydra-bubbles,bucket-drop}/*` (scoring emission, challenge mode),
 `src/games/__tests__/{challengePool,challengeScoring,challengeDeal}.test.ts`,
 `server/services/OnDeckVocabService.ts` → `getChallengeGamePool` + `getWordSearchGrid(challenge)`,
 `server/controllers/OnDeckVocabController.ts` → `resolveChallengeRound`,

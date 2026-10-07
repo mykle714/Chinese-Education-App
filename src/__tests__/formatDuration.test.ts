@@ -73,7 +73,7 @@ describe("formatCooldownRemaining", () => {
     });
 
     it("keeps zero MIDDLE units so months can't be misread as minutes", () => {
-        // The four cooldown windows: Unfamiliar 5m, Target 24h, Comfortable 14d,
+        // The four cooldown windows: Unfamiliar 5m, Target 12h, Comfortable 14d,
         // Mastered 180d (= exactly 6 months at a flat 30 days).
         expect(formatCooldownRemaining(DAY)).toBe("1d 0h 0m 0s");
         expect(formatCooldownRemaining(14 * DAY)).toBe("2w 0d 0h 0m 0s");

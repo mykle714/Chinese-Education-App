@@ -62,9 +62,14 @@ import { useEffect } from "react";
  *   • src/components/MobileDemoFrame.tsx — `FrameRoot`.
  *   • src/components/Layout.tsx — the non-frame shell's `minHeight`.
  *
- * NOT a consumer: `PHONE_OVERLAY_SX` (src/components/phoneGeometry.ts). Those are
- * `position: fixed` dialogs, which resolve against the layout viewport already, so
- * plain `100dvh` is correct there.
+ * NOT a consumer: `PHONE_OVERLAY_SX` (src/components/phoneGeometry.ts), which still sizes
+ * its full-screen dialog papers in `100dvh`. ⚠️ The reason this note used to give — those
+ * dialogs are `position: fixed` against the layout viewport — stopped being true on
+ * 2026-10-06: every MUI Dialog now mounts INSIDE the frame with an `absolute` root
+ * (ThemeContext → `MuiDialog`), so the root is the frame's `--app-height` tall while the
+ * paper is `100dvh`. The BACKDROP still covers the whole frame (it is `inset: 0` on the
+ * root); only the paper's chrome could sit short in the iOS standalone app. Unverified
+ * on a device.
  *
  * Layer: presentational (a document-level side effect, like `useThemeColor`).
  * Docs: docs/UX_AND_NAVIGATION.md § Safe areas and the iOS status bar.
@@ -79,6 +84,30 @@ import { useEffect } from "react";
  * hundreds of pixels, which would move the footer bar off-screen.
  */
 const MAX_GAP_PX = 100;
+
+/**
+ * How far the measured gap may differ from `env(safe-area-inset-top)` and still count as
+ * "the gap IS the status bar". On the iPhone 15 the two agreed exactly (59 = 59); the
+ * slack only absorbs sub-pixel rounding between the two readings.
+ */
+const INSET_MATCH_TOLERANCE_PX = 2;
+
+/**
+ * Resolve `env(safe-area-inset-top)` to px. `env()` is only resolvable by the browser,
+ * so a throwaway element is sized with it and measured. (Reading it back through a
+ * custom property is not reliable: WebKit may hand back the unsubstituted `env(...)`
+ * string.) Returns 0 wherever the inset is unsupported.
+ */
+function measureSafeTop(): number {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+        "position:absolute;top:0;left:0;width:0;visibility:hidden;pointer-events:none;" +
+        "height:env(safe-area-inset-top, 0px)";
+    document.body.appendChild(probe);
+    const height = probe.getBoundingClientRect().height;
+    probe.remove();
+    return height;
+}
 
 /** True only in the iOS home-screen ("Add to Home Screen") web app. */
 function isIosStandalone(): boolean {
@@ -117,11 +146,22 @@ export function useAppHeight(): void {
             const containingBlock = root.clientHeight;
             const gap = webViewHeight - containingBlock;
 
-            if (gap > 0 && gap <= MAX_GAP_PX) {
+            // The gap is only the black-translucent bug when it IS the status bar, i.e.
+            // when the web view really extends under the clock. A LETTERBOXED web view
+            // (an icon installed while the tag was still `default` — iOS snapshots it at
+            // install — or any iOS that ignores black-translucent) shows the same
+            // `screen − statusBar` gap, but there the web view genuinely IS the short
+            // height, and `env(safe-area-inset-top)` is 0. Stretching the shell to
+            // `screen.height` there pushes its bottom ~60pt off screen: the flp More Info
+            // pill sliced at the bottom edge, reported on an iPhone 18 Pro 2026-10-06.
+            const gapIsStatusBar = Math.abs(gap - measureSafeTop()) <= INSET_MATCH_TOLERANCE_PX;
+
+            if (gap > 0 && gap <= MAX_GAP_PX && gapIsStatusBar) {
                 root.style.setProperty("--app-height", `${webViewHeight}px`);
             } else {
-                // No gap (iOS behaving) or one we do not model (> MAX_GAP_PX, e.g.
-                // landscape). Either way, hand the shell back to its CSS fallback.
+                // No gap (iOS behaving), one we do not model (> MAX_GAP_PX, e.g.
+                // landscape), or a letterboxed web view (gap ≠ the top inset). In every
+                // case, hand the shell back to its CSS fallback.
                 clear();
             }
         };

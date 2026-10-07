@@ -242,6 +242,23 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         return Math.ceil(Math.max(natural.width, natural.height));
     }, [showPinyin]);
 
+    /**
+     * No Pinyin mode: how far (px) to drop the glyph so it sits at the tile's
+     * optical center. The cpcd cell keeps its pinyin band (as padding-bottom
+     * under the glyph) even when the syllable is hidden, and the tile
+     * flex-centers that whole glyph+band stack — so with the band empty the
+     * character rides half a band above center. Half the band, measured from
+     * the same tables the cell renders with, puts it back. Zero when pinyin
+     * shows, because then the band is real content and the stack IS the thing
+     * to center. See docs/WORD_SEARCH_GAME.md §3.
+     */
+    const hiddenPinyinGlyphOffset = useMemo(() => {
+        if (showPinyin) return 0;
+        const withBand = cpcdNaturalSize(CELL_SIZE, { bigPinyin: false, reservePinyin: true }).height;
+        const withoutBand = cpcdNaturalSize(CELL_SIZE, { bigPinyin: false, reservePinyin: false }).height;
+        return (withBand - withoutBand) / 2;
+    }, [showPinyin]);
+
     const scale = useFitScale(containerRef, innerRef, [grid, showPinyin, cellSide], GRID_MARGIN);
 
     // Current in-progress selection path. Mirrored to a ref so the pointer
@@ -1017,6 +1034,19 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                         : "none",
                                 }}
                             >
+                                {/* Wrapper exists only to drop the glyph to center in
+                                    No Pinyin mode (`hiddenPinyinGlyphOffset`). A
+                                    transform, not padding, so the tile's square track
+                                    and the fit-scaler's measured box are untouched. */}
+                                <Box
+                                    className="word-search__cell-glyph"
+                                    sx={{
+                                        display: "flex",
+                                        transform: hiddenPinyinGlyphOffset
+                                            ? `translateY(${hiddenPinyinGlyphOffset}px)`
+                                            : undefined,
+                                    }}
+                                >
                                 <ForeignText
                                     size={CELL_SIZE}
                                     justifyContent="center"
@@ -1033,6 +1063,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // mode would push every glyph up for nothing.
                                     bigPinyin={showPinyin}
                                 />
+                                </Box>
                             </Box>
                         );
                     })

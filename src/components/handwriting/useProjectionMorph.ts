@@ -21,7 +21,7 @@ import { useImperativeHandle, useLayoutEffect, useRef, type Ref, type RefObject 
 /** Duration of the grow / shrink morph (ms). */
 export const PROJECTION_MORPH_MS = 280;
 // Material "emphasized decelerate" — fast out of the origin, gentle landing.
-const MORPH_EASING = "cubic-bezier(0.05, 0.7, 0.1, 1)";
+export const MORPH_EASING = "cubic-bezier(0.05, 0.7, 0.1, 1)";
 /** Corner radius assumed when the origin's own cannot be read (px). */
 const FALLBACK_ORIGIN_RADIUS = 14;
 
@@ -41,9 +41,23 @@ interface ProjectionMorphOptions {
   origin?: HTMLElement | null;
   /** Host layers (scrim, backdrop, hint) that fade in / out with the morph. */
   companions?: RefObject<HTMLElement | null>[];
-  /** The rectangle's resting corner radius (px). */
-  restRadius: number;
+  /**
+   * The rectangle's resting corner radius (px) — one value for all four corners, or
+   * `[topLeft, topRight, bottomRight, bottomLeft]` (the headerless notebook canvas
+   * squares its top corners).
+   */
+  restRadius: number | CornerRadii;
 }
+
+/** Per-corner radii (px), in CSS order: top-left, top-right, bottom-right, bottom-left. */
+export type CornerRadii = [number, number, number, number];
+
+/**
+ * The `round …` tail of an `inset()` clip-path, always spelled as four values so the
+ * open and collapsed keyframes have the same shape to interpolate between.
+ */
+const roundClause = (r: number | CornerRadii) =>
+  (typeof r === "number" ? [r, r, r, r] : r).map((v) => `${v}px`).join(" ");
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -79,7 +93,7 @@ function collapsedFrame(panel: HTMLElement, anchor: HTMLElement, originRect: DOM
   return {
     transformOrigin: `${a.left - p.left + a.width / 2}px ${a.top - p.top + a.height / 2}px`,
     transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
-    clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius / scale}px)`,
+    clipPath: `inset(${top}px ${right}px ${bottom}px ${left}px round ${roundClause(radius / scale)})`,
   };
 }
 
@@ -95,7 +109,7 @@ export function useProjectionMorph({ ref, panelRef, anchorRef, origin, companion
   const openFrame = (collapsed: Keyframe): Keyframe => ({
     transformOrigin: collapsed.transformOrigin,
     transform: "translate(0px, 0px) scale(1)",
-    clipPath: `inset(0px 0px 0px 0px round ${restRadius}px)`,
+    clipPath: `inset(0px 0px 0px 0px round ${roundClause(restRadius)})`,
   });
 
   const fadeCompanions = (direction: "in" | "out") => {

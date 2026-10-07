@@ -78,14 +78,14 @@ export interface BubbleBody {
 /**
  * The base (non-feedback) colors of one bubble. Supplied per body BY THE GAME,
  * because the two games key it on different things: Bubble Match colors by
- * `kind` (red word / grey definition), Hydra Bubbles colors by the card's
+ * `kind` (level-hued word / grey definition), Hydra Bubbles colors by the card's
  * PAYOUT TIER — `drain` / `bloom`, which is its lend tier or its mastery band
  * depending on where the card came from (docs/HYDRA_BUBBLES.md § 5). The status-driven feedback colors
  * — correct/wrong/revealed/nomatch — are shared and live in constants.ts, so
  * they are NOT part of this.
  *
  * COLOR IS THE ONLY THING A GAME MAY VARY. Every other property of a bubble —
- * the 40% squircle, the 2px ring, the three-shadow gloss, the grey held wash —
+ * the 28% squircle, the 1px ring, the three-shadow gloss, the grey held wash —
  * is fixed in `Bubble` with Bubble Match as the reference, so the two games
  * render one object in two palettes rather than two objects. There used to be a
  * `ringWidth` knob here (Hydra wore a 3px ring so ring WEIGHT could separate its

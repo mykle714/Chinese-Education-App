@@ -4,7 +4,7 @@ One registry file switches whole features, and individual games, on and off:
 **`server/contracts/featureFlags.ts`** → `FEATURE_FLAGS`, `isFeatureEnabled`,
 `GAME_FLAGS`, `isGameEnabled`.
 
-**Status: BUILT 2026-09-19; `nightMarket` + `immersiveWorld` added 2026-09-20. No migration.**
+**Status: BUILT 2026-09-19; `nightMarket` + `immersiveWorld` added 2026-09-20; `writingNotebook` added 2026-10-06. No migration of its own.**
 
 | Flag | Gates | State |
 |---|---|---|
@@ -13,7 +13,8 @@ One registry file switches whole features, and individual games, on and off:
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
 | `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | ON |
-| `GAME_FLAGS['<gameId>']` | One switch per game, seven of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
+| `writingNotebook` | The Writing Notebook page and its Writing Center belt card ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
+| `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
 **`studyChallenge` and `nightMarket` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.
@@ -156,6 +157,18 @@ parameter every other caller already omits, so there is nothing to switch off. L
 `/immersive-world` entries in `src/minutePoints/eligibility.ts` and
 `src/features/beginnerKeyboard/eligibility.ts` are path lists that simply stop matching.
 
+### 2f. `writingNotebook` — ON
+
+| Layer | Site |
+|---|---|
+| Server mount | `server/server.ts` → `app.use(writingNotebookRoutes)` — all five `/api/writingNotebook/*` endpoints. **No leaked endpoint**: the recogniser it calls is `recognizeChinese` in-process, not another route |
+| Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/flashcards/writing/notebook` |
+| Entry point | `src/features/flashcards/centers/WritingGamesCarousel.tsx` — the notebook card, the only entry; `useNotebookTotal` (`writingNotebook/notebookBelt.ts`) also skips its summary fetch when the flag is off |
+
+The notebook is a page, not a game, so it has a FEATURE flag rather than a `GAME_FLAGS`
+entry. The `/flashcards/writing/notebook` row in `MINUTE_POINTS_ELIGIBLE_PAGES` is a path
+list that simply stops matching.
+
 ---
 
 ## 3. Per-game flags
@@ -212,7 +225,7 @@ the same reason, and its game assertions from `GAME_REGISTRY`, which is already 
 1. Add one boolean to `FEATURE_FLAGS` with a comment saying what it gates.
 2. Guard the feature's `app.use(...)` in `server/server.ts`.
 3. **Find the leaks** — any endpoint, or column, serving the same feature from elsewhere.
-   Two of the five feature flags have one; assume yours does too until you have checked.
+   Two of the six feature flags have one; assume yours does too until you have checked.
 4. Add its paths to `FLAGGED_OFF_PATHS` in `src/routes/routeMeta.ts`.
 5. Guard every client entry point (tiles, shelves, buttons, badge fetches, tips).
    For tips, tag the entry in `src/data/tips.ts` with `feature:` (or `game:` for a game) —

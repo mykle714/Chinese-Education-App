@@ -50,9 +50,6 @@ import { useTTS } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { VocabEntry, SideOneLanguage } from "../types";
 
-/** The writing card's drag handlers: none. It is flipped and dismissed programmatically. */
-const INERT_DRAG_HANDLERS = { onTouchStart: () => {}, onTouchEnd: () => {}, onMouseDown: () => {} };
-
 const FlashcardsLearnPage: React.FC = () => {
     usePageTitle("Learn");
     const navigate = useNavigate();
@@ -110,7 +107,7 @@ const FlashcardsLearnPage: React.FC = () => {
     // re-pointed at the real drag controls after useCardDrag runs (latest-ref
     // pattern — see assignment after the useCardDrag call).
     const cardDragRef = useRef<CardDragControls>({
-        setIsFlipped: () => {},
+        resetCard: () => {},
         restoreFlipped: () => {},
         resetDragPosition: () => {},
     });
@@ -147,6 +144,7 @@ const FlashcardsLearnPage: React.FC = () => {
         isDragging,
         isFlipped,
         setIsFlipped,
+        resetCard,
         restoreFlipped,
         resetDragPosition,
         showSwipeHint,
@@ -156,7 +154,7 @@ const FlashcardsLearnPage: React.FC = () => {
     } = useCardDrag(isAnimating, handleCardDismiss, currentIndex);
 
     // Keep the bridge ref pointing at the live drag controls every render.
-    cardDragRef.current = { setIsFlipped, restoreFlipped, resetDragPosition };
+    cardDragRef.current = { resetCard, restoreFlipped, resetDragPosition };
 
     // Writing flp (`?bar=writing`): the same card, drawn with the writing face. The
     // learner never swipes — a tap on the front submits (or wiggles the card while a cell
@@ -577,8 +575,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 language={(user?.selectedLanguage ?? "zh") as Language}
                 onDismiss={leaveSession}
                 dismissLabel="Leave anyway"
-                // No game stage to sit inside, and flp's own dialogs live in the 1200s.
-                positioning="fixed"
+                // flp's own sheets live in the 1200s at frame level; stay above them.
                 zIndex={1400}
                 // Sorting navigates away from an unsaved icon-layout edit, so tear the
                 // editor down first exactly as leaving normally would.
@@ -743,8 +740,9 @@ const FlashcardsLearnPage: React.FC = () => {
                     // with an empty cell) rather than the swipe tutorial's.
                     shakeNonce={writingMode ? writing.shakeNonce : shakeNonce}
                     // The writing card is never dragged; it is flipped and sent off by the
-                    // writing hook (a tap on its front / its back via onCardClick).
-                    handlers={writingMode ? INERT_DRAG_HANDLERS : handlers}
+                    // writing hook (a tap on its front / its back via onCardClick, or a
+                    // swipe attempt on its back via swipeHandlers — direction ignored).
+                    handlers={writingMode ? writing.swipeHandlers : handlers}
                     writingFace={writingMode ? writing.renderFace : undefined}
                     onCardClick={writingMode ? writing.handleCardClick : undefined}
                     onSpeak={tts.speak}

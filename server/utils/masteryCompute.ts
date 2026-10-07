@@ -39,5 +39,8 @@ export {
   masteryBars,
   masteredAtForBar,
   appendTypedMark,
+  marksToWrite,
+  ACCELERATION_STREAK,
+  ACCELERATED_MARK_COUNT,
   coreMasteredTypedMarkHistory,
 } from '../contracts/mastery.js';

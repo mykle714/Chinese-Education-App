@@ -1,109 +1,135 @@
 import {
   IMemoryMapDAL,
   MemoryMapCandidateRow,
-  MemoryMapPlacedRow,
+  MemoryMapSlotRow,
+  NewSlot,
 } from '../dal/interfaces/IMemoryMapDAL.js';
 import {
   MEMORY_MAP_CAPACITY,
   type MemoryMapGraduateResponse,
   type MemoryMapResponse,
+  type MemoryMapSlot,
   type MemoryMapWord,
 } from '../contracts/wire.js';
-import { rankCardQueue } from './cardQueueRanking.js';
+import { rankCardQueue, rankCardQueueCooled } from './cardQueueRanking.js';
 import { barForMarkType } from '../contracts/mastery.js';
-import { spawnBatch, wordBoxSize, type MapBox, type Rng } from './memoryMapSpawn.js';
+import { planSlots, type Rng } from './memoryMapSpawn.js';
+import type { LayoutSlot } from './memoryMapLayout.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
 import { ValidationError } from '../types/dal.js';
 import type { MarkType } from '../contracts/wire.js';
+import type { ProvisionalCardService } from './ProvisionalCardService.js';
+
+/**
+ * The subset of ProvisionalCardService this service uses — narrowed so a test can hand
+ * in a two-line fake instead of standing up the provisional DAL and StarterPacksService.
+ */
+export type MemoryMapLender = Pick<ProvisionalCardService, 'acquireLentCards'>;
 
 /**
  * Memory Map policy (docs/MEMORY_MAP_GAME.md § 9).
  *
  * LAYER: service. Orchestration only — it reads through the DAL, decides WHICH words
- * belong on the map and in what order, delegates WHERE they go to the pure geometry
- * module, and writes the result back. It contains no SQL and no coordinate maths.
+ * occupy the map's slots and in what order, delegates WHERE new slots hang to the pure
+ * spawn module, and writes the result back. No SQL, no geometry.
  *
  * Two operations, and they are deliberately the whole API:
  *
- *   • `loadMap`   — the game's entry point. Top the map up to capacity and return it.
- *   • `graduate`  — a word was answered into reading mastery. Remove it, refill.
+ *   • `loadMap`   — the game's entry point. Fill the map to MEMORY_MAP_CAPACITY and
+ *                   return its slot tree plus occupants.
+ *   • `graduate`  — a word was answered into reading mastery. A new word moves into its
+ *                   slot.
  *
- * There is no "save my run" operation because a run is not server state (§ 4): colours,
- * the prompt queue and the camera live in localStorage. The only thing a run sends the
- * server is its reading marks, through the ordinary mark endpoint.
+ * ── THE MAP IS ALWAYS FULL (2026-10-06) ──────────────────────────────────────
+ * Every load fills empty slots and adds new ones until there are MEMORY_MAP_CAPACITY,
+ * drawing occupants down a ladder that matches the game pools' (PROVISIONAL_CARDS.md
+ * § 4b): the learner's RESTED cards in flp priority order → their COOLING cards,
+ * nearest-to-ready first → LENT cards. Lending sits at the bottom, so a learner with a
+ * real deck is re-served their own words early rather than handed strangers.
+ *
+ * There is no "save my run" operation because a run is not server state (§ 4).
  */
 export class MemoryMapService {
-  /**
-   * The single track this game exercises. Memory Map is a reading drill: the learner
-   * reads foreign script off the map to find an English gloss.
-   */
+  /** The single track this game exercises — a reading drill. */
   private static readonly MARK_TYPE: MarkType = 'reading';
 
   /**
-   * The utcm ladder, best-first — the flp offering priority list (Q31).
-   *
-   * Reused rather than reinvented so the map is populated by the same judgement of
-   * "what should this learner be working on now" as every other surface. Evaluated on
-   * the READING track, not the core one: a map ordered by a track it does not teach
-   * would put the learner's strongest reading words in front of their weakest
-   * (docs/MEMORY_MAP_GAME.md § 13.1).
-   *
-   * 'Mastered' is absent BY CONSTRUCTION, not by omission: a reading-mastered card is
-   * excluded from the candidate query in the first place (§ 2.1). Listing it would be
-   * dead code that reads like a live rule.
+   * The utcm ladder, best-first — the flp offering priority list (Q31), evaluated on the
+   * READING track (§ 13.1). 'Mastered' is absent by construction: a reading-mastered
+   * card is excluded from the candidate query (§ 2.1).
    */
   private static readonly CATEGORY_LADDER = ['Target', 'Unfamiliar', 'Comfortable'] as const;
 
+  /** Lending rounds per fill — see `selectOccupants`. Bounded so a dd-heavy dictionary cannot loop. */
+  private static readonly LEND_ROUNDS = 3;
+
   constructor(
     private memoryMapDAL: IMemoryMapDAL,
+    private lender: MemoryMapLender,
     /**
      * Randomness source, injected so a test can pin every spawn. Defaults to
-     * `Math.random` at the composition root. The geometry module takes the same
-     * parameter for the same reason — see services/memoryMapSpawn.ts.
+     * `Math.random` at the composition root.
      */
     private rng: Rng = Math.random
   ) {}
 
   /**
-   * The learner's map, topped up to capacity.
+   * The learner's map, filled to capacity.
    *
-   * Called once per game entry. Idempotent in the sense that matters: a map already at
-   * capacity places nothing and returns an empty `newlyPlaced`, so re-entering the game
-   * does not grow or churn it.
+   * Idempotent where it matters: a full map writes nothing and returns an empty
+   * `newlyPlaced`, so re-entering the game does not churn it.
    */
   async loadMap(userId: string, language: string): Promise<MemoryMapResponse> {
     if (!userId) throw new ValidationError('userId is required');
 
-    const existing = await this.memoryMapDAL.getPlacements(userId, language);
-    const openSlots = MEMORY_MAP_CAPACITY - existing.length;
+    const slots = await this.memoryMapDAL.getSlots(userId, language);
+    const emptySlots = slots.filter((slot) => slot.vocabEntryId === null);
+    const need = emptySlots.length + Math.max(0, MEMORY_MAP_CAPACITY - slots.length);
+    if (need === 0) return this.toResponse(slots, []);
 
-    // Already full (or over — see the note in `spawnInto`). Nothing to do.
-    if (openSlots <= 0) {
-      return {
-        words: existing.map((row) => this.toWord(row)),
-        newlyPlaced: [],
-        capacity: MEMORY_MAP_CAPACITY,
-      };
-    }
+    const chosen = await this.selectOccupants(userId, language, slots, need);
+    if (chosen.length === 0) return this.toResponse(slots, []);
 
-    const placed = await this.spawnInto(userId, language, existing, openSlots);
-    return {
-      words: [...existing, ...placed].map((row) => this.toWord(row)),
-      newlyPlaced: placed.map((row) => row.vocabEntryId),
-      capacity: MEMORY_MAP_CAPACITY,
-    };
+    // Empty slots first (oldest first): they are holes in an existing island, and a
+    // filled hole is better than a new coastline. The rest become new slots.
+    const fills = emptySlots
+      .slice(0, chosen.length)
+      .map((slot, i) => ({ slotId: slot.slotId, vocabEntryId: chosen[i].vocabEntryId }));
+    const newcomers = chosen.slice(fills.length);
+
+    // The tree the plan is computed against — with the fills applied, because a filled
+    // slot is sized by its new occupant and the newcomers must clear THAT tile.
+    const fillById = new Map(fills.map((fill, i) => [fill.slotId, chosen[i]]));
+    const tree: LayoutSlot[] = slots.map((slot) => ({
+      ...this.toLayoutSlot(slot),
+      entryKey: fillById.get(slot.slotId)?.entryKey ?? slot.entryKey,
+    }));
+
+    const plan = planSlots(
+      tree,
+      newcomers.map((card) => ({ entryKey: card.entryKey, language: card.language })),
+      this.rng
+    );
+    const inserts: NewSlot[] = plan.map((slot, i) => ({ ...slot, vocabEntryId: newcomers[i].vocabEntryId }));
+
+    const written = await this.memoryMapDAL.writeSpawn(userId, language, slots.length, fills, inserts);
+
+    // Re-read rather than splice: the fresh rows carry the real slot ids and the
+    // joined occupant columns. If a concurrent load won the race (`written` false), this
+    // simply serves the map IT wrote, and announces no growth of our own.
+    const fresh = await this.memoryMapDAL.getSlots(userId, language);
+    return this.toResponse(fresh, written ? chosen.map((card) => card.vocabEntryId) : []);
   }
 
   /**
-   * A word was answered and is now reading-mastered: retire it and refill its slot.
+   * A word was answered and is now reading-mastered: a new word moves into its slot.
    *
-   * The mastery test is re-read from the database rather than trusted from the client.
-   * The client knows it just sent a positive mark, but not whether that mark was the
-   * eighth — and a client that could assert "this word graduated" could delete any
-   * placement it liked.
+   * Mastery is re-read from the database rather than trusted from the client — the
+   * client knows it sent a positive mark, not whether it was the one that crossed the
+   * threshold, and a client that could assert graduation could evict any word.
    *
    * `graduated: false` is a normal, common answer: the client calls this after every
-   * correct answer, because it cannot know which one crosses the threshold.
+   * correct answer.
    */
   async graduate(
     userId: string,
@@ -118,154 +144,181 @@ export class MemoryMapService {
     const mastered = await this.memoryMapDAL.isReadingMastered(userId, language, vocabEntryId);
     if (!mastered) return { graduated: false, replacement: null };
 
-    await this.memoryMapDAL.deletePlacement(userId, language, vocabEntryId);
+    // The graduate's own row is still in `slots` here, so the dd guard below treats it
+    // as taken — harmless, since a reading-mastered card is never a candidate anyway.
+    const slots = await this.memoryMapDAL.getSlots(userId, language);
+    const [replacement] = await this.selectOccupants(userId, language, slots, 1);
 
-    // Refill IMMEDIATELY, mid-run (Q32). The freed space is reusable, so the newcomer
-    // may well land in the hole the graduate left.
-    const existing = await this.memoryMapDAL.getPlacements(userId, language);
-    const placed = await this.spawnInto(userId, language, existing, 1);
+    // Same slot, new occupant (owner-settled 2026-10-06). The slot keeps its bearing,
+    // tilt, bow and scale, so nothing else on the map moves except as the new word's shape
+    // pushes its own subtree. Null when nothing could be found or lent — the slot is
+    // then empty, and the next load tries again.
+    const slotId = await this.memoryMapDAL.replaceOccupant(
+      userId,
+      language,
+      vocabEntryId,
+      replacement?.vocabEntryId ?? null
+    );
+    if (slotId === null || !replacement) return { graduated: true, replacement: null };
 
-    return {
-      graduated: true,
-      replacement: placed.length > 0 ? this.toWord(placed[0]) : null,
-    };
+    const row = (await this.memoryMapDAL.getSlots(userId, language)).find((slot) => slot.slotId === slotId);
+    return { graduated: true, replacement: row ? this.toWord(row) : null };
   }
 
   /**
-   * Place up to `slots` new words onto a map that already holds `existing`.
+   * Choose up to `count` new occupants for a map that currently holds `slots`.
    *
-   * The three steps, in order, are the whole of the map's population policy:
-   *   1. ask the DAL for every eligible-but-unplaced card;
-   *   2. order them by the flp priority list, on the reading track;
-   *   3. hand the top `slots` to the geometry module and persist what comes back.
+   * The ladder (see the class docblock): rested → cooling → lent. Each tier is ordered
+   * by the utcm ladder outermost and the card queue within each rung, and every pick
+   * passes the "two words never read the same" guard against the words already on the
+   * map and those picked before it.
    *
-   * Returns the rows as persisted, hydrated for the wire.
+   * Lending fires only for what the learner's own cards could not cover, and only
+   * names the rows it lent (`lentIds`) — the candidate read is otherwise sorted-only.
    */
-  private async spawnInto(
+  private async selectOccupants(
     userId: string,
     language: string,
-    existing: MemoryMapPlacedRow[],
-    slots: number
-  ): Promise<MemoryMapPlacedRow[]> {
-    const candidates = await this.memoryMapDAL.getUnplacedCandidates(userId, language);
-    if (candidates.length === 0) return [];
-
-    // TWO WORDS ON ONE MAP NEVER READ THE SAME (2026-08-22). The prompt bar names a
-    // definition and asks the player to tap the word that means it; if 高兴 and 开心 are
-    // both on the map as "happy", the prompt has two right-looking answers and only one
-    // of them scores. The map-wide rule the games share
-    // (docs/GAMES_FEATURE.md § "No two cards may share a dd in one round"), with the
-    // sharpest form of it here: a placement is DURABLE, so a collision admitted once
-    // sits on the map for as long as the word does, not for one round.
-    //
-    // Seeded from the words ALREADY PLACED, then extended as newcomers are accepted —
-    // this runs on the graduation refill path too, where `existing` is the whole map and
-    // `slots` is 1. Filtering happens BEFORE the `slots` cut so a collision costs the
-    // map nothing: the next non-colliding candidate takes the spot rather than the slot
-    // going unfilled. An empty key ("no dd to confuse anyone with") never collides.
+    slots: MemoryMapSlotRow[],
+    count: number
+  ): Promise<MemoryMapCandidateRow[]> {
+    // TWO WORDS ON ONE MAP NEVER READ THE SAME (2026-08-22). The prompt names a
+    // definition and asks for the word that means it; two words glossed "happy" would
+    // give it two right-looking answers. Sharpest here because a slot is DURABLE.
     const takenDds = new Set<string>();
-    for (const row of existing) {
-      const key = ddCollisionKey({
-        definition: row.definition,
-        definitionClusters: row.definitionClusters as never,
-        selectedSense: row.selectedSense,
-      });
+    for (const slot of slots) {
+      if (slot.vocabEntryId === null) continue;
+      const key = this.ddKey(slot);
       if (key) takenDds.add(key);
     }
 
     const chosen: MemoryMapCandidateRow[] = [];
-    for (const card of this.prioritize(candidates, Date.now())) {
-      if (chosen.length >= slots) break;
-      const key = ddCollisionKey({
-        definition: card.definition,
-        definitionClusters: card.definitionClusters as never,
-        selectedSense: card.selectedSense,
+    const take = (ordered: MemoryMapCandidateRow[]) => {
+      for (const card of ordered) {
+        if (chosen.length >= count) return;
+        const key = this.ddKey(card);
+        if (key && takenDds.has(key)) continue;
+        if (key) takenDds.add(key);
+        chosen.push(card);
+      }
+    };
+
+    const candidates = await this.memoryMapDAL.getUnplacedCandidates(userId, language);
+    const now = Date.now();
+    take(this.prioritize(candidates, now, 'rested'));
+    take(this.prioritize(candidates, now, 'cooling'));
+    if (chosen.length >= count) return chosen;
+
+    // ── LEND THE REST ────────────────────────────────────────────────────────
+    // Excluding every card already on the map (a lent row placed by an earlier load is
+    // still "held" and would otherwise be re-lent onto a second slot) and every
+    // candidate we just saw (it is already in the ladder above).
+    //
+    // In up to LEND_ROUNDS rounds: a lent word can still lose the dd guard (it reads the
+    // same as a word already on the map), and each round re-asks for exactly the slots
+    // still open, excluding every row already tried — so the map ends full instead of
+    // one or two short, without minting more than it places.
+    const excludeIds = [
+      ...slots.map((slot) => slot.vocabEntryId).filter((id): id is number => id !== null),
+      ...candidates.map((card) => card.vocabEntryId),
+    ];
+    for (let round = 0; round < MemoryMapService.LEND_ROUNDS && chosen.length < count; round++) {
+      const { lentIds } = await this.lender.acquireLentCards(userId, language, count - chosen.length, 'default', {
+        excludeIds,
       });
-      if (key && takenDds.has(key)) continue;
-      if (key) takenDds.add(key);
-      chosen.push(card);
+      if (lentIds.length === 0) break; // the dictionary has nothing left to lend
+      excludeIds.push(...lentIds);
+
+      const lentSet = new Set(lentIds);
+      const lent = (await this.memoryMapDAL.getUnplacedCandidates(userId, language, lentIds)).filter(
+        (card) => lentSet.has(card.vocabEntryId)
+      );
+      // No cooldown gate for lent cards: they are here to fill the map, and a freshly
+      // minted row has no marks to be cooling on anyway. Lend order is preserved.
+      lent.sort((a, b) => lentIds.indexOf(a.vocabEntryId) - lentIds.indexOf(b.vocabEntryId));
+      take(lent);
     }
-    if (chosen.length === 0) return [];
-
-    // The boxes already on the map, so newcomers tangent against them rather than each
-    // other only. Sizes are recomputed from the stored scale by the SAME function the
-    // client draws with, which is what keeps geometry and typography in agreement.
-    const occupied: MapBox[] = existing.map((row) => ({
-      x: row.x,
-      y: row.y,
-      ...wordBoxSize(row.entryKey, row.scale, row.language),
-    }));
-
-    const positions = spawnBatch(
-      occupied,
-      chosen.map((card) => ({ entryKey: card.entryKey, language: card.language })),
-      this.rng
-    );
-
-    return this.memoryMapDAL.insertPlacements(
-      userId,
-      language,
-      chosen.map((card, i) => ({ vocabEntryId: card.vocabEntryId, ...positions[i] }))
-    );
+    return chosen;
   }
 
   /**
-   * Candidate cards in offering order: the utcm ladder outermost, the longest-waiting
+   * Candidate cards in offering order for one tier: the utcm ladder outermost, then the
    * queue within each rung (Q31).
    *
-   * WHY THE LADDER IS OUTERMOST. Ranking everything in one pass and letting arrival
-   * times decide would fill a map with Comfortable words purely because they have been
-   * resting the longest — which is exactly backwards for a learner. The ladder says
-   * which mastery band the learner should be working in; the queue says which card
-   * within that band has waited longest. Same two-level shape the flp uses.
+   * WHY THE LADDER IS OUTERMOST. Ranking everything in one pass would fill a map with
+   * Comfortable words purely because they have rested the longest — backwards for a
+   * learner. Same two-level shape the flp uses.
    *
-   * NOTE ON COOLDOWN. `rankCardQueue` DROPS cards that are still cooling down, so a map
-   * short of capacity does not necessarily mean the learner is short of cards — it can
-   * mean their remaining cards were all read correctly this morning. That is the right
-   * behaviour (a word answered an hour ago is not worth drilling) and it is why the map
-   * grows over days rather than all at once.
+   * `rested` = off cooldown, longest-waiting first (`rankCardQueue`); `cooling` = still
+   * on cooldown, nearest-to-ready first (`rankCardQueueCooled`). Marks fired at a
+   * cooling card are dropped by the mark endpoint's guard — the accepted trade for
+   * re-serving the learner's own words instead of lending strangers (§ 4b).
    */
   private prioritize(
     candidates: MemoryMapCandidateRow[],
-    now: number
+    now: number,
+    tier: 'rested' | 'cooling'
   ): MemoryMapCandidateRow[] {
+    const bar = barForMarkType(MemoryMapService.MARK_TYPE);
     const ordered: MemoryMapCandidateRow[] = [];
 
     for (const rung of MemoryMapService.CATEGORY_LADDER) {
       const inRung = candidates.filter((card) => card.readingCategory === rung);
-      const ranked = rankCardQueue(inRung, now, {
-        // The reading bar's clock, windowed by the reading band — the same band the
-        // rung is (`readingCategory` is `typeCategoryExpr('reading')`), so one track
-        // in, one track out (docs/MASTERY_REWORK.md § 6).
-        bar: barForMarkType(MemoryMapService.MARK_TYPE),
-      });
-      ordered.push(...ranked.map(({ card }) => card));
+      if (tier === 'rested') ordered.push(...rankCardQueue(inRung, now, { bar }).map(({ card }) => card));
+      else ordered.push(...rankCardQueueCooled(inRung, now, { bar }));
     }
-
     return ordered;
   }
 
-  /**
-   * A stored row as the client receives it.
-   *
-   * The one transformation that happens here is the dd: `resolveDisplayDefinition`
-   * honours the learner's per-card `selectedSense`, so the prompt reads exactly what
-   * their own flashcard reads. Showing a different sense's gloss makes the game look
-   * like it does not know their word — the games-wide sense-correctness rule.
-   */
-  private toWord(row: MemoryMapPlacedRow): MemoryMapWord {
+  private ddKey(row: { definition?: string | null; definitionClusters?: unknown; selectedSense?: string | null }) {
+    return ddCollisionKey({
+      definition: row.definition ?? null,
+      definitionClusters: row.definitionClusters as never,
+      selectedSense: row.selectedSense ?? null,
+    });
+  }
+
+  private toLayoutSlot(row: MemoryMapSlotRow): LayoutSlot {
     return {
-      vocabEntryId: row.vocabEntryId,
-      x: row.x,
-      y: row.y,
+      slotId: row.slotId,
+      parentSlotId: row.parentSlotId,
+      link: row.link,
+      angle: row.angle,
+      tilt: row.tilt,
+      bow: row.bow,
       scale: row.scale,
       entryKey: row.entryKey,
       language: row.language,
-      // Sense-resolved, exactly like the definition beside it. A heteronym's reading
-      // belongs to its SENSE, not to the word (过去 = `guò qù` "the past" vs `guò qu` the
-      // directional suffix), so printing the entry-level column here would show one
-      // sense's tones under another sense's gloss. That mattered little while the map
-      // hid pinyin behind a spoiler; the prompt bar now shows it outright.
+    };
+  }
+
+  private toResponse(rows: MemoryMapSlotRow[], newlyPlaced: number[]): MemoryMapResponse {
+    const slots: MemoryMapSlot[] = rows.map((row) => ({
+      slotId: row.slotId,
+      parentSlotId: row.parentSlotId,
+      link: row.link,
+      angle: row.angle,
+      tilt: row.tilt,
+      bow: row.bow,
+      scale: row.scale,
+      vocabEntryId: row.vocabEntryId,
+    }));
+    const words = rows.filter((row) => row.vocabEntryId !== null).map((row) => this.toWord(row));
+    return { slots, words, newlyPlaced, capacity: MEMORY_MAP_CAPACITY };
+  }
+
+  /**
+   * An occupied slot's word as the client receives it. The dd and pronunciation are
+   * resolved through the learner's `selectedSense`, so the prompt reads exactly what
+   * their own flashcard reads (the games-wide sense-correctness rule) — and a
+   * heteronym's reading belongs to its SENSE, not to the word (过去 `guò qù` vs `guò qu`).
+   */
+  private toWord(row: MemoryMapSlotRow): MemoryMapWord {
+    return {
+      vocabEntryId: row.vocabEntryId as number,
+      slotId: row.slotId,
+      entryKey: row.entryKey ?? '',
+      language: row.language,
       pronunciation: resolveDisplayPronunciation({
         pronunciation: row.pronunciation,
         definitionClusters: row.definitionClusters as never,

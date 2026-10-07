@@ -15,13 +15,13 @@ interface TimerEyeToggleProps {
     /** Whether the clock it controls is currently visible. */
     shown: boolean;
     onToggle: () => void;
-    /** BEM block prefix, e.g. "word-search__hud-timer-toggle". */
+    /** BEM block prefix, e.g. "game-timer__toggle". */
     className: string;
 }
 
 /**
- * TimerEyeToggle — the eye that shows/hides a game's clock (Word Search's HUD,
- * Writing Grid's `GameTimer`). Docs: docs/WORD_SEARCH_GAME.md §3,
+ * TimerEyeToggle — the eye that shows/hides a game's clock (drawn by `GameTimer`
+ * for Word Search, Writing Grid and Bucket Drop). Docs: docs/WORD_SEARCH_GAME.md §3,
  * docs/WRITING_PRACTICE_REWORK.md § 2.
  *
  * Absolutely positioned, so the parent strip must be `position: relative`; being out

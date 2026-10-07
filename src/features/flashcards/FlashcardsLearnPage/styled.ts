@@ -4,6 +4,7 @@ import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { COLORS } from "../../../theme/colors";
+import { SAFE_BOTTOM } from "../../../theme/safeArea";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
@@ -253,11 +254,16 @@ export const ContentArea = styled(Box)(() => ({
 // While the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`). It stays
 // VISIBLE in advanced mode too: the card no longer travels down over it (the slot reserves the
 // toolbar's band at its TOP instead — see DraggableCardContainer's toolbarInset).
+//
+// The 24px offset is measured from the TOP of the home-indicator strip (SAFE_BOTTOM), not
+// the screen edge: flp is footerless and the frame paints edge to edge, so a bare `bottom: 24`
+// sat inside the 34pt home-indicator band on Face ID iPhones. The card moves up with it for
+// free — useCardSlotPadding reserves the band from the pill's live `offsetTop` down.
 export const MoreInfoPill = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled",
 })<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean }>(({ isFlipped, hintActive, isDisabled, theme }) => ({
     position: "absolute",
-    bottom: 24,
+    bottom: `calc(24px + ${SAFE_BOTTOM})`,
     left: "50%",
     transform: "translateX(-50%)",
     display: "flex",
@@ -316,7 +322,9 @@ export const CARD_SLOT_BOTTOM_GAP = 8;
 /**
  * Fallback bottom inset, used only until the affordance has been measured (and on any
  * surface that renders the card slot without one). Matches the More Info pill: a 24px
- * offset from the bottom of ContentArea plus its ~32px height.
+ * offset from the bottom of ContentArea plus its ~32px height. It cannot include the
+ * pill's SAFE_BOTTOM term (an `env()` string, not a number), so on a Face ID iPhone it
+ * under-reserves for the one frame before the first measure lands.
  */
 export const CARD_SLOT_BOTTOM_INSET_FALLBACK = 56;
 

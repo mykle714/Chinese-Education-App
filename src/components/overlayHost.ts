@@ -39,24 +39,52 @@
  *
  * ⚠️ HOSTING BELOW THE FRAME DOES NOT CLEAR THE FOOTER. The footer bar is rendered at
  * frame level (`FooterPresenter`, z-index 100) and therefore paints above any host
- * inside a page surface. An overlay that owns the screen must ALSO take a suppression
- * hold (`useHideFooter`) for as long as it is up, or the bar sits on top of its action
- * bar — the same 74px of missing buttons, by a different route.
+ * inside a page surface, whatever z-index the overlay states.
  *
- * The one overlay that must NOT take a suppression hold is the beginner keyboard: by
- * design the footer stays put and the keyboard simply covers it. It hosts at the frame
- * (`frameOverlayHost`) and out-stacks the bar there.
+ * ── THE RULE FOR A DIM (2026-10-06): IT HOSTS AT THE FRAME ──────────────────────────
+ * Anything that dims the background — a scrim behind a modal sheet, a popup, a stepped
+ * explainer, a scoreboard — must dim the ENTIRE screen: status band, page header and the
+ * footer bar included. So a dim does not use `nearestOverlayHost` at all: it portals to
+ * `frameOverlayHost` (normally via `useScreenOverlayHost`, src/hooks/useScreenOverlayHost.ts),
+ * pins itself `position: absolute; inset: 0` (never `fixed` — the frame is not a
+ * containing block for fixed children, so on desktop a fixed scrim would dim the whole
+ * browser window instead of the phone card) and states a z-index above the footer's 100.
+ * The footer then stays exactly where it is and is dimmed with everything else; a dim
+ * takes NO `useHideFooter` hold. (Until 2026-10-06 the convention was the reverse —
+ * host inside the page surface and slide the footer away — which left headers lit above
+ * game popups and the footer lit above scp's completion popup.)
  *
- * Callers: `SheetPanel` (the flp eip, the decks sheet, scp, both cdps and the compare
- * sheet — `src/components/sheet/SheetPanel.tsx`), `ChallengeSheet` and `SteppedHelpPopup`
- * (Study Challenge). Documented in docs/UX_AND_NAVIGATION.md.
+ * One deliberate exception: the Writing Notebook's cell canvas (NotebookCellEditor) dims
+ * ONLY the scrollable sheet and leaves the header + word slot lit, by user decision
+ * (docs/WRITING_NOTEBOOK.md § Canvas). It hosts inside the sheet's own box, not here.
+ *
+ * The one cost: a frame-hosted overlay is not inside the page surface, so the page-slide
+ * exit clone (usePageSlide) does not carry it — navigating away with one open removes it
+ * at once rather than sliding it off with the page.
+ *
+ * `nearestOverlayHost` remains for an overlay that does NOT dim and must sit UNDER the
+ * footer: a PERSISTENT SheetPanel (`minHeight > 0`, `showScrim={false}`), page furniture
+ * the bar is meant to float over. No page mounts one today (the /decks sheets are modal),
+ * so in practice every SheetPanel hosts at the frame.
+ *
+ * The beginner keyboard also hosts at the frame (`frameOverlayHost`) and simply covers
+ * the footer; it is not a dim, but it obeys the same paint-order reasoning.
+ *
+ * MUI Dialogs follow the same rule through the theme: `MuiDialog.defaultProps.container`
+ * mounts them in the frame (src/contexts/ThemeContext.tsx).
+ *
+ * Callers: `useScreenOverlayHost` (every dim), `SheetPanel` (modal → frame, persistent →
+ * nearest), `BeginnerKeyboardHost`. Documented in docs/UX_AND_NAVIGATION.md § Dimming
+ * the background.
  *
  * LAYER: shared UI utility. It knows about the phone frame and about stacking
  * contexts, and nothing about any feature.
  */
 /**
  * The FRAME-level host alone: the positioned phone frame, or `document.body` for an
- * element outside the frame entirely (e.g. inside an MUI dialog, which portals to body).
+ * element outside the frame entirely (a page on the plain shell). MUI dialogs used to be
+ * that case — they portaled to body — but since 2026-10-06 they mount inside the frame
+ * (`dialogContainer` below), so a field inside one resolves to the frame like any other.
  *
  * Use this instead of `nearestOverlayHost` when the overlay must paint above the
  * frame-level chrome (the footer bar) rather than merely above its own page. A host
@@ -69,6 +97,22 @@ export function frameOverlayHost(el: HTMLElement): HTMLElement {
     // box; that box existed only to reserve an unpaintable strip that turned out not to
     // exist, and is gone.
     return (el.closest(".mobile-demo-frame") ?? document.body) as HTMLElement;
+}
+
+/**
+ * The container every MUI Dialog mounts into (`MuiDialog.defaultProps.container`,
+ * src/contexts/ThemeContext.tsx): the phone frame when one is on screen, else `body`
+ * (the plain shell — login, the font labs). A function MUI calls at open time, so it
+ * always finds the live frame.
+ *
+ * Why the frame and not MUI's default `body`: a dialog's backdrop is a dim, and a dim
+ * covers exactly the screen — on desktop that is the 402px phone card, not the whole
+ * browser window around it (§ "THE RULE FOR A DIM" above). The theme also re-pins the
+ * Modal root `absolute` inside the frame, because the frame is not a containing block
+ * for `position: fixed`.
+ */
+export function dialogContainer(): HTMLElement {
+    return document.querySelector<HTMLElement>(".mobile-demo-frame") ?? document.body;
 }
 
 export function nearestOverlayHost(el: HTMLElement): HTMLElement {

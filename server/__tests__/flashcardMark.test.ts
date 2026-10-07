@@ -313,6 +313,75 @@ describe('FlashcardMarkService.applyMark', () => {
     });
 });
 
+describe('FlashcardMarkService.applyMark — silent acceleration', () => {
+    // docs/MASTERY_REWORK.md § 6 "Silent acceleration": a correct review on a track
+    // whose newest 3 marks are correct is written twice.
+
+    it('writes TWO identical marks when the track ends in 3 correct marks', async () => {
+        const { service, vet, promotions } = makeService({
+            language: 'zh', typedMarkHistory: { reading: oldCorrectMarks(3) }, masteredAt: null,
+        });
+
+        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
+
+        const track = vet.writes[0].history.reading!;
+        expect(track).toHaveLength(5);
+        expect(track[3]).toEqual(track[4]);
+        expect(track[4].timestamp).toBe(result.markTimestamp);
+        // 3 → 5 positives stays inside Target (3..5), so no velocity row.
+        expect(result.displacedMarks).toEqual([]);
+        expect(promotions.recorded).toHaveLength(0);
+    });
+
+    it('writes ONE mark when the streak is shorter than 3 or broken', async () => {
+        for (const reading of [
+            oldCorrectMarks(2),
+            [...oldCorrectMarks(4), mark('2020-02-01T00:00:00.000Z', false), ...oldCorrectMarks(2)],
+        ]) {
+            const { service, vet } = makeService({ language: 'zh', typedMarkHistory: { reading }, masteredAt: null });
+            await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
+            expect(vet.writes[0].history.reading).toHaveLength(reading.length + 1);
+        }
+    });
+
+    it('never doubles an INCORRECT mark, even after a streak', async () => {
+        const { service, vet } = makeService({
+            language: 'zh', typedMarkHistory: { reading: oldCorrectMarks(5) }, masteredAt: null,
+        });
+        await service.applyMark({ userId: USER, cardId: CARD, isCorrect: false, markType: 'reading' });
+        expect(vet.writes[0].history.reading).toHaveLength(6);
+    });
+
+    it('reads the streak per TRACK — a recognition streak does not double a production mark', async () => {
+        const { service, vet } = makeService({
+            language: 'zh', typedMarkHistory: { recognition: oldCorrectMarks(3) }, masteredAt: null,
+        });
+        await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'production', surface: 'flp' });
+        expect(vet.writes[0].history.production).toHaveLength(1);
+    });
+
+    it('returns BOTH displaced marks when a full window takes a doubled review', async () => {
+        const reading = oldCorrectMarks(8);
+        const { service, vet } = makeService({ language: 'zh', typedMarkHistory: { reading }, masteredAt: null });
+
+        const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
+
+        expect(result.displacedMarks).toEqual([reading[0], reading[1]]);
+        expect(result.displacedMark).toEqual(reading[0]);
+        expect(vet.writes[0].history.reading).toHaveLength(8);
+    });
+
+    it('logs a multi-band climb as one velocity row when the doubled pair crosses a band', async () => {
+        // 5 correct = pbh 5 (Target); +2 = pbh 7 (Comfortable).
+        const { service, promotions } = makeService({
+            language: 'zh', typedMarkHistory: { reading: oldCorrectMarks(5) }, masteredAt: null,
+        });
+        await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
+        expect(promotions.recorded).toHaveLength(1);
+        expect(promotions.recorded[0]).toMatchObject({ fromCategory: 'Target', toCategory: 'Comfortable' });
+    });
+});
+
 describe('FlashcardMarkService.undoMark', () => {
     const LAST = '2026-08-28T12:00:00.000Z';
 
@@ -324,7 +393,7 @@ describe('FlashcardMarkService.undoMark', () => {
         });
 
         const result = await service.undoMark({
-            userId: USER, cardId: CARD, markTimestamp: LAST, markType: 'recognition', displacedMark: displaced,
+            userId: USER, cardId: CARD, markTimestamp: LAST, markType: 'recognition', displacedMarks: [displaced],
         });
 
         const reverted = vet.writes[0].history.recognition!;
@@ -335,6 +404,21 @@ describe('FlashcardMarkService.undoMark', () => {
         // The velocity row is deleted IN the undo transaction — unlike the write path
         // this is not best-effort, or an undone review would keep crediting velocity.
         expect(promotions.deleted[0]).toMatchObject({ cardId: CARD, markTimestamp: LAST, client: FAKE_CLIENT });
+    });
+
+    it('undoes an ACCELERATED review as one — both marks go, both displaced marks return', async () => {
+        const track = [...oldCorrectMarks(6), mark(LAST), mark(LAST)];
+        const displaced = [mark('2019-12-30T00:00:00.000Z'), mark('2019-12-31T00:00:00.000Z', false)];
+        const { service, vet } = makeService({
+            language: 'zh', typedMarkHistory: { reading: track }, masteredAt: null,
+        });
+
+        await service.undoMark({
+            userId: USER, cardId: CARD, markTimestamp: LAST, markType: 'reading', displacedMarks: displaced,
+        });
+
+        const reverted = vet.writes[0].history.reading!;
+        expect(reverted).toEqual([...displaced, ...oldCorrectMarks(6)]);
     });
 
     it('retracts the mastery stamp that this exact mark created', async () => {

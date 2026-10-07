@@ -20,6 +20,7 @@ Companion artifacts (filterable, same content):
 | Lexical Dimensions of Chinese | sweep 01 — the open adjective/adverb rows | https://claude.ai/code/artifact/dc3c8584-6ff4-43a4-8bcb-c708cdcd3767 |
 | Kinds of Thing | sweep 02 — physical-noun groups, with a needs-my-review filter | https://claude.ai/code/artifact/16774933-ddce-452d-9a33-63397d353d08 |
 | **The Word Tree** | **the live structure** — one uniform tree, every accepted node, browsable to any depth | https://claude.ai/code/artifact/2e229044-a7b6-45b3-a1e7-66e67c16629d |
+| Verb Sweep Review | *superseded by The Word Tree* — the same sweep-04 placements as per-group cards with in-page accept / change / reject | https://claude.ai/artifact/FKXynBYnGnvQRFFjsb2SdJ |
 | The Accepted Skeleton | *superseded by The Word Tree* — the three-column node/link map, kept for comparison | https://claude.ai/code/artifact/f4e75495-92a8-40eb-88f4-c1d3127984bf |
 
 Sources live in the session scratchpad (`words02.py` → `data02.json` → `mkart02.py` /
@@ -596,20 +597,24 @@ all words
 ├─ physical
 │  ├─ animate                accepted
 │  │  ├─ person              accepted   └─ fictional            new
-│  │  └─ animal              accepted   ├─ food animal          new
+│  │  │                                    ├─ Chinese myth & legend      new (2026-10-06)
+│  │  │                                    ├─ Greek & Roman myth         new
+│  │  │                                    ├─ Norse myth                 new
+│  │  │                                    └─ generic fantasy & folklore new
+│  │  └─ animal              accepted   ├─ commonly eaten animals  new (renamed from food animal 2026-10-06)
 │  │                                    └─ mythical             new
 │  ├─ plant                  accepted   └─ fungus               accepted
 │  ├─ microscopic            new        └─ microbe              accepted
 │  ├─ body part              accepted
-│  │  ├─ common anatomy      new        └─ common organs        new
-│  │  └─ medical             new
+│  │  ├─ common anatomy      accepted   └─ common organs        new
+│  │  └─ medical             accepted
 │  ├─ food                   accepted   dish · ingredient · drink  (all accepted)
 │  ├─ item                   accepted   loose: 花 花朵 鲜花
 │  │  ├─ man-made            accepted   tool · electric device · container · media
 │  │  └─ wearable            accepted   (moved here from made thing)
 │  ├─ object                 accepted
 │  │  └─ man-made            accepted   vehicle · machine · furnishing
-│  ├─ component              accepted   one group per whole it belongs to
+│  ├─ component              accepted   one group per whole it belongs to — every child accepted 2026-10-06
 │  ├─ structure              accepted   building · room · infrastructure
 │  ├─ science & engineering  new        electrical engineering · biology
 │  │                                    chemistry · physics
@@ -652,6 +657,18 @@ all words
    ├─ period                 NEW        season · tide · festival · time off
    └─ era                    NEW        generic loose; └─ proper noun (dynasties, 民国)
 ```
+
+**Rulings 2026-10-06.** `body part › medical`, `body part › common anatomy` and every
+group under `component` are accepted. `food animal` is renamed **`commonly eaten animals`**.
+`person › fictional` is split by where a figure comes from — `Chinese myth & legend`,
+`Greek & Roman myth`, `Norse myth` — plus **`generic fantasy & folklore`** for *kinds* of being
+(神, 女神, 死神, 美人鱼, 地精) as opposed to named individuals, the same kind-vs-individual line
+§ 5.65 draws. Figures of living religions (安拉, 天主, 如来) were deliberately left out; see Q46.
+
+**Q46 — Is `fictional` the right parent name for gods people still worship?** 土地公, 门神 and
+天后 (Mazu) are objects of active folk religion. Filing them under *fictional* reads as a
+judgement. Options: rename the node `myth & legend`, or move worshipped figures to a religion
+group (the verb sweep already proposes `activities › religion`).
 
 **`made thing` is dissolved.** `wearable` went under `item`; `component` and
 `structure` became siblings of `item` and `object`. Madeness is now said exactly
@@ -1202,11 +1219,18 @@ sitting in the same leaf, it is a facet.
 
 ## 7. Open questions
 
-**Q1 — What is it FOR?** The consumer decides the granularity and nothing else
-does. Sort/discover packs by category? A decks filter? A game mode? Better
-enrichment prompts (a taxon is a strong prior for icon choice, example sentences
-and classifier selection)? A 4-rank tree is overkill for a filter chip and too
-shallow for a curriculum.
+~~**Q1 — What is it FOR?**~~ **Answered 2026-10-06.** The consumer is a
+**learner-facing word map**: an organized visualization of the tree that the learner
+browses and gradually uncovers. It serves four jobs:
+
+1. **Discovery** — browse a category you are interested in and find new words in it.
+2. **Bite-sized goals** — complete groups one at a time.
+3. **Patterns** — seeing a group's words together exposes what they share (a
+   head character, an antonym pole, a radical), which aids memorization by connection.
+4. **Progress** — how much of the map you have uncovered.
+
+The design consequences of this answer (group-size bounds, what "complete" means,
+reachable vs structural members) are being worked out and are not yet ruled.
 
 **Q4 — Single-parent or multi-label?** "school" (institution + building),
 "chicken" (animal + meat), 春节 (time point + event + proper name) are one *sense*
@@ -1365,7 +1389,7 @@ and it should be settled before any storage decision (Q6).
 | 01 | adjective + adverb | 599 + 214 | **Pinned** — § 3 accepted, § 4 parked |
 | 02 | noun — physical things | 3,102 (subset) | **Mostly ruled** — § 5, § 5.0 |
 | 03 | noun — abstract, social, informational | 2,642 non-toponym | **First proposal** — § 5.5, all 18 groups need review |
-| 04 | verb | 925 | not started |
+| 04 | verb | 3,560 discoverable verb senses (2,717 words, 2026-10-06) | **First proposal** — AI-placed into 32 draft groups (`activities`, `change`, plus verbs routed to existing branches); grafted into The Word Tree (new top-level `activities` and `change`, an `unplaced verbs` holding branch, `?` marks low-confidence placements); rulings R1–R4 are listed on that page |
 | 05 | closed classes: classifier (47), numeral (46), pronoun (40), particle (27), conjunction (26), interjection (21), preposition (16) | 223 | **Partial** — § 5.6 proposes `conjunction` and rebuilds `time`; the rest not started |
 
 Coverage is verified against the POS histogram rather than by imagination — every

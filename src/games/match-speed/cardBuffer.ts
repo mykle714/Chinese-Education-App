@@ -214,11 +214,13 @@ export function topUpRequest(
     return anyNeeded ? request : null;
 }
 
-/** Serialize a top-up request as the pool endpoint's `?Target=3&…` query. Buckets
- *  needing nothing — and buckets outside the mode, which are absent from the
+/** Reduce a top-up request to the pool endpoint's band quotas (`{ Target: 3, … }`).
+ *  Buckets needing nothing — and buckets outside the mode, which are absent from the
  *  request entirely — are omitted so the server doesn't do useless per-bucket work. */
-export function topUpQuery(request: Partial<Record<GameCategory, number>>): string {
-    return ALL_CATEGORIES.filter((cat) => (request[cat] ?? 0) > 0)
-        .map((cat) => `${encodeURIComponent(cat)}=${request[cat]}`)
-        .join("&");
+export function topUpDistribution(
+    request: Partial<Record<GameCategory, number>>
+): Partial<Record<GameCategory, number>> {
+    return Object.fromEntries(
+        ALL_CATEGORIES.filter((cat) => (request[cat] ?? 0) > 0).map((cat) => [cat, request[cat]])
+    );
 }

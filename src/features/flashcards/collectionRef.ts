@@ -36,7 +36,7 @@
  *   src/features/flashcards/CollectionViewPage.tsx
  *   src/features/flashcards/FlashcardsDecksPage.tsx
  *   src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts
- *   src/games/{bubble-match,match-speed,word-search,speed-reading}/*
+ *   src/games/{bubble-match,match-speed,word-search,speed-reading,bucket-drop}/*
  * Server counterpart: `CollectionFilter` in server/services/OnDeckVocabService.ts
  * and `resolveCollection` in server/controllers/OnDeckVocabController.ts. The wire
  * VALUES themselves are shared rather than mirrored — `MASTERED_COLLECTION_IDS` and

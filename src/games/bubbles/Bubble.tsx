@@ -15,6 +15,7 @@ import {
     NOMATCH_BUBBLE_BORDER,
     POP_DURATION_MS,
     WRONG_FEEDBACK_MS,
+    WRONG_SHAKE_KEYFRAMES,
 } from "./constants";
 
 interface BubbleProps {
@@ -319,23 +320,25 @@ const Bubble: React.FC<BubbleProps> = ({
                 sx={{
                     width: "100%",
                     height: "100%",
-                    // `.bub` is a SOFT SQUARE, not a disc (border-radius 40% — see
+                    // `.bub` is a SOFT SQUARE, not a disc (border-radius 28% — eased from the
+                    // artboard's 40% on 2026-10-06, which read as over-rounded; see
                     // docs/SHELF_REDESIGN.md § 12). The physics body is still a circle,
                     // so the four corners reach ~8% of a radius past the collision
-                    // boundary; that is inside the overlap the field already tolerates
+                    // boundary (less at 28%); that is inside the overlap the field already tolerates
                     // (planSpawn's SPAWN_OVERLAP_FRACTION lets a new bubble penetrate a
                     // neighbour by 20% of its DIAMETER), so nothing about the shape is
                     // load-bearing for the simulation. The keycap read is: a bubble is a
                     // thing you press, and a squircle packs into the field with far less
                     // dead space between neighbours than a disc.
-                    borderRadius: "40%",
+                    borderRadius: "28%",
                     backgroundColor: bg,
                     // ONE ring weight for every bubble in every game, feedback status
-                    // included — 2px is a geometry constant, not a channel. The ring's
+                    // included — 1px is a geometry constant, not a channel (2px until
+                    // 2026-10-06, which read too heavy against the light fills). The ring's
                     // COLOUR is the game's: v2 rings a coloured bubble in ink and a
                     // neutral one in `--line2` (COLOURED_BUBBLE_RING / NEUTRAL_BUBBLE_RING
                     // in ./constants, artboards 12 and 16).
-                    border: `2px solid ${border}`,
+                    border: `1px solid ${border}`,
                     // `.bub` (docs/SHELF_REDESIGN.md § 12). Three shadows, and each does
                     // a different job: a white inset along the top edge and a dark inset
                     // along the bottom give the disc its convex, physical read — which is
@@ -363,13 +366,7 @@ const Bubble: React.FC<BubbleProps> = ({
                     }),
                     ...(status === "wrong" && {
                         animation: `bubbleShake ${WRONG_FEEDBACK_MS}ms ease-in-out`,
-                        "@keyframes bubbleShake": {
-                            "0%, 100%": { transform: "translateX(0)" },
-                            "20%": { transform: "translateX(-6px)" },
-                            "40%": { transform: "translateX(6px)" },
-                            "60%": { transform: "translateX(-4px)" },
-                            "80%": { transform: "translateX(4px)" },
-                        },
+                        ...WRONG_SHAKE_KEYFRAMES,
                     }),
                 }}
             >
@@ -377,7 +374,7 @@ const Bubble: React.FC<BubbleProps> = ({
 
                 {/* The borrowed-card mark (see the `lent` prop). Placed in PERCENTAGES,
                     not the px corner Match Speed's rectangular card uses: the bubble is a
-                    40%-radius squircle whose top-right corner is cut away, and its size
+                    28%-radius squircle whose top-right corner is cut away, and its size
                     varies with `targetRadius`, so a fixed px inset would hang off the
                     curve on a small bubble. 10% keeps the badge's box inside the arc at
                     every radius the field spawns. */}
@@ -401,7 +398,7 @@ const Bubble: React.FC<BubbleProps> = ({
                             inset: 0,
                             // Matches the bubble's own squircle — a circular veil inside
                             // a soft square leaves four unlit corners.
-                            borderRadius: "40%",
+                            borderRadius: "28%",
                             // `--scrim` (ink at 0.28): the framework's own wash,
                             // replacing an off-palette `rgba(90,90,90,0.32)` grey.
                             backgroundColor: COLORS.scrim,

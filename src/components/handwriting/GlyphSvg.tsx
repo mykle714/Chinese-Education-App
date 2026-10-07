@@ -69,6 +69,15 @@ const glyphPromises = new Map<string, Promise<GlyphData | null>>();
 const CDN_BASE = "https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1";
 
 /**
+ * The character's stroke data if it is already cached, else undefined — for a caller
+ * that must paint a cached glyph on its FIRST frame (see the render-time read below).
+ * Used by the Writing Notebook's shadow cells (features/flashcards/writingNotebook/ShadowCell).
+ */
+export function peekGlyph(char: string): GlyphData | undefined {
+    return glyphCache.get(char);
+}
+
+/**
  * Load one character's stroke data, local-first with a CDN fallback. Mirrors
  * `loadCharData`'s strategy but returns a promise rather than taking Hanzi
  * Writer's callback triple, and memoizes across every GlyphSvg instance.

@@ -1,5 +1,6 @@
 import { alpha } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, CircularProgress, IconButton, Snackbar, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -9,6 +10,7 @@ import { popupImageUrl } from '../iwPopupArt';
 import { useBlockEdgeSwipe } from '../../../hooks/useBlockEdgeSwipe';
 import { usePageTitle } from '../../../hooks/usePageTitle';
 import { useTTS } from '../../../hooks/useTTS';
+import { useScreenOverlayHost } from '../../../hooks/useScreenOverlayHost';
 import LeafPage from '../../../components/LeafPage';
 import AudioModeChip from '../../../components/AudioModeChip';
 import EipSheet from '../../flashcards/FlashcardsLearnPage/EipSheet';
@@ -182,6 +184,10 @@ export default function IWPlayPage() {
     [runtime.speakerLabels],
   );
   const popupUrl = runtime.popup ? popupImageUrl(runtime.popup.imageId) : undefined;
+  // The interaction popup dims the ENTIRE screen (header and composer included), so it is
+  // portaled to the phone frame rather than pinned inside `stage-wrap`
+  // (src/components/overlayHost.ts § "THE RULE FOR A DIM").
+  const popupOverlay = useScreenOverlayHost(!!runtime.popup);
 
   // Space a keyboard is taking at the bottom of the screen, if any, plus the timing
   // that space must travel on. The inset changes in ONE step, so without the
@@ -302,13 +308,16 @@ export default function IWPlayPage() {
         )}
 
         {/* A picture an interaction is showing — the one thing a poke can do that an authored
-            action cannot (§ 14 Q43). Tapping anywhere dismisses it and the script continues. */}
-        {runtime.popup && (
+            action cannot (§ 14 Q43). Tapping anywhere dismisses it and the script continues.
+            Written here, painted at the frame (see `popupOverlay`); z 200 clears the footer
+            layer the frame also hosts. */}
+        {runtime.popup && <span ref={popupOverlay.anchorRef} className="iw-play-page__popup-anchor" hidden />}
+        {runtime.popup && popupOverlay.host && createPortal(
           <Box
             className="iw-play-page__popup"
             onClick={runtime.dismissPopup}
             sx={{
-              position: 'absolute', inset: 0, zIndex: 5,
+              position: 'absolute', inset: 0, zIndex: 200,
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
               gap: 1, p: 3, bgcolor: alpha(COLORS.onSurface, 0.72),
             }}
@@ -321,7 +330,8 @@ export default function IWPlayPage() {
                 {runtime.popup.caption}
               </Typography>
             )}
-          </Box>
+          </Box>,
+          popupOverlay.host,
         )}
       </Box>
 

@@ -23,16 +23,17 @@
  * WritingSelectorPanel); this component only names the canvas as its anchor.
  *
  * Presentation only: the host owns the guide, clock, ink and grading.
- * Used by: PracticeWritingPopup (single-char panel + focused 2×2 slot) and
- * WritingFocusEditor (Writing Grid game, writing flp card).
+ * Used by: PracticeWritingPopup (single-char panel + focused 2×2 slot),
+ * WritingFocusEditor (Writing Grid game, writing flp card) and NotebookCellEditor
+ * (Writing Notebook — no header, `tools` footer).
  * Docs: docs/PRACTICE_WRITING.md § "The writing panel".
  */
 import { forwardRef, useRef, type ReactNode, type RefObject } from "react";
 import { Box, Button } from "@mui/material";
 import { DeleteOutline, Undo } from "@mui/icons-material";
 import { COLORS } from "../../theme";
-import { PANEL_RADIUS, WRITING_PANEL_FOOTER_SX, WRITING_PANEL_HEADER_SX, WRITING_PANEL_SHELL_SX } from "./writingPanelStyles";
-import { useProjectionMorph, type ProjectionHandle } from "./useProjectionMorph";
+import { PANEL_RADIUS, PANEL_SQUARE_TOP_RADIUS, WRITING_PANEL_FOOTER_SX, WRITING_PANEL_HEADER_SX, WRITING_PANEL_SHELL_SX } from "./writingPanelStyles";
+import { useProjectionMorph, type CornerRadii, type ProjectionHandle } from "./useProjectionMorph";
 
 /** `collapse()` shrinks the panel back onto its origin (see useProjectionMorph). */
 export type WritingPanelHandle = ProjectionHandle;
@@ -40,13 +41,20 @@ export type WritingPanelHandle = ProjectionHandle;
 interface WritingPanelProps {
   /** Canvas edge (px) — the WritingStage's `size`. */
   size: number;
-  header: ReactNode;
-  /** The WritingStage. */
+  /** The header band's content. Absent → no header band (the Writing Notebook's canvas). */
+  header?: ReactNode;
+  /** The WritingStage (or, on the notebook, a bare WritingCanvas over its guide). */
   children: ReactNode;
-  onClear: () => void;
-  onUndo: () => void;
+  /**
+   * A footer that REPLACES the default Clear / Undo / assist / Verify row — the Writing
+   * Notebook's pen / eraser toggle (docs/WRITING_NOTEBOOK.md § "Canvas"). When given,
+   * `onClear` / `onUndo` / `editDisabled` / `assist` / `verify` are ignored.
+   */
+  tools?: ReactNode;
+  onClear?: () => void;
+  onUndo?: () => void;
   /** Disables Clear + Undo (no ink, or the clock ran out). */
-  editDisabled: boolean;
+  editDisabled?: boolean;
   /** The level's assist button (Show / Next / Retry), when the level has one. */
   assist?: ReactNode;
   /**
@@ -64,13 +72,18 @@ interface WritingPanelProps {
 }
 
 const WritingPanel = forwardRef<WritingPanelHandle, WritingPanelProps>(function WritingPanel(
-  { size, header, children, onClear, onUndo, editDisabled, assist, verify, origin, companions = [], className },
+  { size, header, children, tools, onClear, onUndo, editDisabled = false, assist, verify, origin, companions = [], className },
   ref,
 ) {
   const panelRef = useRef<HTMLDivElement>(null);
   const canvasBoxRef = useRef<HTMLDivElement>(null);
+  // Headerless (the Writing Notebook): the canvas reaches the panel's top edge, and the
+  // notebook's cells are sharp squares, so the top two corners are only lightly rounded
+  // (PANEL_SQUARE_TOP_RADIUS) — the tools footer keeps the full rounded bottom.
+  const squareTop = header === undefined;
+  const restRadius: CornerRadii = squareTop ? [PANEL_SQUARE_TOP_RADIUS, PANEL_SQUARE_TOP_RADIUS, PANEL_RADIUS, PANEL_RADIUS] : [PANEL_RADIUS, PANEL_RADIUS, PANEL_RADIUS, PANEL_RADIUS];
   // The canvas region is what lands on the origin; header + footer clip away.
-  useProjectionMorph({ ref, panelRef, anchorRef: canvasBoxRef, origin, companions, restRadius: PANEL_RADIUS });
+  useProjectionMorph({ ref, panelRef, anchorRef: canvasBoxRef, origin, companions, restRadius });
 
   const editButtonSx = { color: COLORS.textSecondary, borderRadius: 999, textTransform: "none", minWidth: 0, px: 1.25 } as const;
 
@@ -79,43 +92,51 @@ const WritingPanel = forwardRef<WritingPanelHandle, WritingPanelProps>(function 
       ref={panelRef}
       className={`writing-panel${className ? ` ${className}` : ""}`}
       // + the 1px border each side, so the canvas is exactly `size`
-      sx={{ ...WRITING_PANEL_SHELL_SX, width: size + 2 }}
+      sx={{ ...WRITING_PANEL_SHELL_SX, width: size + 2, ...(squareTop && { borderTopLeftRadius: `${PANEL_SQUARE_TOP_RADIUS}px`, borderTopRightRadius: `${PANEL_SQUARE_TOP_RADIUS}px` }) }}
     >
-      <Box
-        className="writing-panel__header"
-        sx={WRITING_PANEL_HEADER_SX}
-      >
-        {header}
-      </Box>
+      {header !== undefined && (
+        <Box
+          className="writing-panel__header"
+          sx={WRITING_PANEL_HEADER_SX}
+        >
+          {header}
+        </Box>
+      )}
 
       <Box ref={canvasBoxRef} className="writing-panel__canvas" sx={{ position: "relative", width: size, height: size }}>
         {children}
       </Box>
 
-      <Box
-        className="writing-panel__footer"
-        sx={{
-          ...WRITING_PANEL_FOOTER_SX,
-          // No Verify: nothing anchors the right edge, so centre the row instead.
-          justifyContent: verify ? "flex-start" : "space-evenly",
-        }}
-      >
-        <Button className="writing-panel__clear" startIcon={<DeleteOutline />} disabled={editDisabled} onClick={onClear} sx={editButtonSx}>
-          Clear
-        </Button>
-        <Button className="writing-panel__undo" startIcon={<Undo />} disabled={editDisabled} onClick={onUndo} sx={editButtonSx}>
-          Undo
-        </Button>
-        {verify ? (
-          // Right-anchored, so an assist button appearing / vanishing never moves Clear/Undo.
-          <Box className="writing-panel__actions" sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.75 }}>
-            {assist}
-            {verify}
-          </Box>
-        ) : (
-          assist
-        )}
-      </Box>
+      {tools ? (
+        <Box className="writing-panel__footer writing-panel__footer--tools" sx={{ ...WRITING_PANEL_FOOTER_SX, justifyContent: "center" }}>
+          {tools}
+        </Box>
+      ) : (
+        <Box
+          className="writing-panel__footer"
+          sx={{
+            ...WRITING_PANEL_FOOTER_SX,
+            // No Verify: nothing anchors the right edge, so centre the row instead.
+            justifyContent: verify ? "flex-start" : "space-evenly",
+          }}
+        >
+          <Button className="writing-panel__clear" startIcon={<DeleteOutline />} disabled={editDisabled} onClick={onClear} sx={editButtonSx}>
+            Clear
+          </Button>
+          <Button className="writing-panel__undo" startIcon={<Undo />} disabled={editDisabled} onClick={onUndo} sx={editButtonSx}>
+            Undo
+          </Button>
+          {verify ? (
+            // Right-anchored, so an assist button appearing / vanishing never moves Clear/Undo.
+            <Box className="writing-panel__actions" sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.75 }}>
+              {assist}
+              {verify}
+            </Box>
+          ) : (
+            assist
+          )}
+        </Box>
+      )}
     </Box>
   );
 });

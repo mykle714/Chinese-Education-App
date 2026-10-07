@@ -7,8 +7,7 @@ import PageHeader from "../PageHeader";
 import SheetCloseX from "./SheetCloseX";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SAFE_TOP } from "../../theme/safeArea";
-import { useHideFooter } from "../../hooks/useHideFooter";
-import { nearestOverlayHost } from "../overlayHost";
+import { frameOverlayHost, nearestOverlayHost } from "../overlayHost";
 import { useKeyboardInset } from "../../features/beginnerKeyboard/useKeyboardInset";
 
 // Imperative handle exposing the gesture-root wrapper and the inner scrollable
@@ -97,7 +96,8 @@ interface SheetPanelProps {
     // collapses a sheet to its floor is not a close.
     showClose?: boolean;
     // Draw the minute-points flame to the LEFT of the ✕. Passed by the STUDY SURFACES
-    // (flp, scp, cdp — the minute-eligible pages of src/constants.ts), because a sheet
+    // eip sheets (flp, scp, cdp — the minute-eligible pages of src/constants.ts) and
+    // NEVER by pull-up dictionary flows (CompareSheet, NotebookWordPickerSheet), because a sheet
     // covers its page's header and takes the page's own flame with it: without this the
     // one indicator that says "your time is counting" disappears exactly while the
     // learner is reading a definition, which IS study time.
@@ -295,10 +295,16 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // `transform` (see the helper's comment for the mechanism).
     //
     // Whatever host is chosen fills the frame, so the dim still covers the page header.
-    // The footer sits at z-index 100 at frame level (FooterPresenter) and stays ABOVE the
-    // scrim when the scrim is hosted by the frame — deliberately: it is the frame's
-    // furniture, not the page's. Inside a slid page Surface the footer is a sibling of
-    // that Surface, so it stays undimmed there too.
+    //
+    // ---- Modal vs persistent host (2026-10-06) ----------------------------------
+    // A MODAL sheet dims, and a dim must cover the ENTIRE screen, footer bar included
+    // (src/components/overlayHost.ts § "THE RULE FOR A DIM"). The footer sits at z-index
+    // 100 at FRAME level (FooterPresenter), so no host inside a page Surface can get above
+    // it: a modal sheet therefore hosts at the frame itself (`frameOverlayHost`), where
+    // SCRIM/SHEET_BASE_Z_INDEX (1200+) out-stack the bar. The footer no longer slides away
+    // for a modal sheet — it stays put, dimmed by the scrim and covered by the risen sheet.
+    // A PERSISTENT sheet (minHeight > 0 — no caller mounts one today) is page furniture the
+    // footer is meant to float over, so it keeps `nearestOverlayHost` and stays under the bar.
     //
     // Resolved in a layout effect (the target is found by walking up from the mounted
     // sheet), so the scrim mounts on the commit after the sheet — still before paint.
@@ -320,17 +326,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         if (!el) return;
         // A state write in a LAYOUT effect is flushed before paint, so the sheet still
         // mounts in the same frame the host does — no flash of an unportaled sheet.
-        setScrimHost(nearestOverlayHost(el));
+        setScrimHost(minHeight <= 0 ? frameOverlayHost(el) : nearestOverlayHost(el));
+        // minHeight is fixed for a panel's lifetime (it decides modal vs persistent).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    // A modal sheet owns the screen for its lifetime, so the floating footer pill —
-    // rendered at frame level (FooterPresenter, z-index 100) and outside every page's
-    // DOM — must slide away. This used to be each host page's job (scp and cdp both
-    // called useHideFooter themselves, and flp/decks had simply never noticed the
-    // overlap); now that a sheet can cover the entire screen it is the sheet's own
-    // business, and one hold here covers every host. A persistent sheet keeps the
-    // footer: it is page furniture that the pill is meant to float over.
-    useHideFooter(minHeight <= 0);
 
     // ---- Height model -----------------------------------------------------
     // The sheet's height is driven IMPERATIVELY (heightRef + a direct write to
@@ -887,6 +886,38 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // the body is portaled and can swap, so the scroll element behind bodyRef changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [keyboardInset, bodyKey, scrimHost]);
+
+    // ---- Maximize when a dictionary search takes focus (2026-10-06) ----------
+    // Focusing a search field raises a keyboard (the OS's, or the beginner keyboard),
+    // which covers the bottom of the sheet — a 60% sheet would be left showing little
+    // more than the field. So any field inside an element marked
+    // `data-sheet-maximize-on-focus` animates the sheet to its max on focus, the same
+    // snap a drag to the top would end in. The marker lives on the FIELD's side
+    // (DictionaryWordSearch carries it), not as a SheetPanel prop, so every sheet that
+    // hosts a dictionary search — CompareSheet, the eip's Compare tab, the notebook's
+    // word picker — gets it without opting in, and a sheet's other inputs do not.
+    //
+    // A focusin, not the keyboard inset: it fires on the tap itself, so the sheet grows
+    // alongside the keyboard rather than after it. A plain tap is never a resize gesture
+    // (onTouchEnd ignores a gesture with no mode), so no release snap undoes this.
+    // Docs: docs/UX_AND_NAVIGATION.md § Keyboard and popups.
+    useEffect(() => {
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        const onFocusIn = (e: FocusEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (!target?.closest?.("[data-sheet-maximize-on-focus]")) return;
+            if (dismissingRef.current) return;
+            const max = maxHeight();
+            if (heightRef.current >= max - AT_MAX_EPSILON_PX) return;
+            stopMomentum();
+            writeHeight(max, true);
+        };
+        el.addEventListener("focusin", onFocusIn);
+        return () => el.removeEventListener("focusin", onFocusIn);
+        // Keyed on scrimHost: the sheet is portaled, so its container exists only once
+        // the host resolves (same reason as the open-animation effect).
+    }, [scrimHost, maxHeight, stopMomentum, writeHeight]);
 
     // Both layers are portaled to the frame-level host, so their z-indexes are always
     // stated here (the stylesheet's 10/11 only ever applied while they were rendered

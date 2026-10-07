@@ -15,8 +15,8 @@ import { useLocation } from "react-router-dom";
  *
  * A challenge round's Back still wins over this — see `useGameBack`.
  *
- * Referenced by: useGameBack, BubbleMatchPage, WordSearchPage, SpeedReadingPage, WritingGridPage;
- * launched with `exitTo` by ReadingGamesCarousel and WritingGridLauncher.
+ * Referenced by: useGameBack, BubbleMatchPage, WordSearchPage, SpeedReadingPage, MemoryMapPage, WritingGridPage;
+ * launched with `exitTo` by ReadingGamesCarousel and WritingGamesCarousel.
  * Referenced by docs: GAMES_FEATURE.md § "Second entry point: the Reading Center, and the exit destination", READING_WRITING_CENTERS.md.
  */
 export interface GameExit {

@@ -468,6 +468,38 @@ export function appendTypedMark(
 }
 
 /**
+ * SILENT ACCELERATION (2026-10-06, docs/MASTERY_REWORK.md § 6 "Silent acceleration").
+ *
+ * When the newest ACCELERATION_STREAK marks on a track are all correct, the next
+ * CORRECT mark on that track is written ACCELERATED_MARK_COUNT times. The point is to
+ * catch a learner who already knows a word up to its real band faster than one mark
+ * per cooldown window would; a learner who keeps getting it right is evidence the
+ * card is under-banded. "Silent" means no surface is told — the mark response does
+ * not flag it and no UI shows it; the bar simply climbs faster.
+ *
+ * Rules, all deliberate:
+ *   - PER TRACK: the streak is read from the track being marked only (a recognition
+ *     streak never speeds up a production mark, even though they share a clock).
+ *   - LITERAL WINDOW: a previous accelerated pair counts as two marks, so after a miss
+ *     ✗ ✓ ✓✓ the next ✓ is already accelerated. No per-mark tag is needed.
+ *   - CORRECT MARKS ONLY: a miss after a streak writes one ✗, never two.
+ *   - NOT WRITING: writing has its own model (per-character mastery, the anti-farming
+ *     level gate, clock-only word marks); `FlashcardMarkService.applyWritingResult`
+ *     never calls this.
+ *
+ * Consumer: `server/services/FlashcardMarkService.ts` → `applyMark`.
+ */
+export const ACCELERATION_STREAK = 3;
+export const ACCELERATED_MARK_COUNT = 2;
+
+/** How many marks a review of `isCorrect` on a track holding `track` should write. */
+export function marksToWrite(track: ReviewMark[] | undefined, isCorrect: boolean): number {
+  if (!isCorrect || !Array.isArray(track) || track.length < ACCELERATION_STREAK) return 1;
+  const recent = track.slice(-ACCELERATION_STREAK);
+  return recent.every((m) => m?.isCorrect === true) ? ACCELERATED_MARK_COUNT : 1;
+}
+
+/**
  * Seed history for a card the learner declares they ALREADY KNOW (the discover/sort
  * flows' "I know this" and the authored-pack mastered bucket).
  *

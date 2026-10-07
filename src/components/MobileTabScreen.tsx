@@ -5,7 +5,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
 import { type PageHeaderSize } from "./PageHeader";
 import { FOOTER_TOTAL_HEIGHT, FOOTER_TOTAL_CLEARANCE } from "./MobileFooter";
-import { edgeFadeAboveBand, edgeFadeBelowBand, trackScrollEdgeFade } from "./scrollEdgeFade";
+import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx, trackScrollEdgeFade } from "./scrollEdgeFade";
 import { COLORS } from "../theme/colors";
 
 // Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
@@ -62,14 +62,24 @@ const EDGE_FADE_BOTTOM_BAND = 34;
 // edge, clamped to the band size (`edgeFadeAboveBand` / `edgeFadeBelowBand`, fed by
 // `trackScrollEdgeFade` on ScrollArea). The fully-transparent run under the bar itself
 // stays on unconditionally, because the bar covers it anyway.
-const EDGE_FADE_BOTTOM_START = `calc(${FOOTER_TOTAL_HEIGHT} + ${edgeFadeBelowBand(EDGE_FADE_BOTTOM_BAND)})`;
+//
+// The band height is per page (`bottomFadeBand`): a page with furniture floating just
+// above the bar (the Reading/Writing Centers' Cards/Decks pills) runs a TALLER band so
+// the content scrolling behind that furniture is already dissolved, not busy text
+// under a button. A band must stay ≤ `EDGE_FADE_VAR_CAP` (scrollEdgeFade.ts), or the
+// tracked var caps it short of the requested height.
+const edgeFadeBottomStart = (band: number) =>
+    `calc(${FOOTER_TOTAL_HEIGHT} + ${edgeFadeBelowBand(band)})`;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
 // the top band is dropped so the first rows stay fully opaque (only the bottom
 // fades out behind the floating footer).
-const EDGE_FADE_MASK = `linear-gradient(to bottom, transparent 0, #000 ${edgeFadeAboveBand(EDGE_FADE_TOP)}, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
-// Bottom band only — no top fade. Also used by the Mastery Centers page variant of
-// DecksPanelBody, which tracks its own scroller the same way.
-export const EDGE_FADE_MASK_NO_TOP = `linear-gradient(to bottom, #000 0, #000 calc(100% - ${EDGE_FADE_BOTTOM_START}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
+const edgeFadeMask = (band: number) =>
+    `linear-gradient(to bottom, transparent 0, #000 ${edgeFadeAboveBand(EDGE_FADE_TOP)}, #000 calc(100% - ${edgeFadeBottomStart(band)}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
+const edgeFadeMaskNoTop = (band: number) =>
+    `linear-gradient(to bottom, #000 0, #000 calc(100% - ${edgeFadeBottomStart(band)}), transparent calc(100% - ${FOOTER_TOTAL_HEIGHT}))`;
+// Bottom band only, at the default height. Also used by the Mastery Centers page
+// variant of DecksPanelBody, which tracks its own scroller the same way.
+export const EDGE_FADE_MASK_NO_TOP = edgeFadeMaskNoTop(EDGE_FADE_BOTTOM_BAND);
 
 // Positioning context for the footer bar + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
@@ -89,8 +99,8 @@ const ScreenRoot = styled(Box)(() => ({
 // Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
 const ScrollArea = styled(Box, {
     shouldForwardProp: (prop) =>
-        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan",
-})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean }>(({ scrollable, topFade, horizontalPan }) => ({
+        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan" && prop !== "bottomFadeBand",
+})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean; bottomFadeBand: number }>(({ scrollable, topFade, horizontalPan, bottomFadeBand }) => ({
     flex: 1,
     minHeight: 0,
     overflowY: scrollable ? "auto" : "hidden",
@@ -119,12 +129,10 @@ const ScrollArea = styled(Box, {
     WebkitOverflowScrolling: "touch",
     paddingBottom: FOOTER_TOTAL_CLEARANCE,
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
-    // Pages that opt out of the top fade (topFade=false) drop the top band.
+    // Pages that opt out of the top fade (topFade=false) drop the top band. The
+    // scrollbar gutter is exempt, so a desktop scrollbar draws over the fade, not in it.
     ...(scrollable
-        ? (() => {
-              const mask = topFade ? EDGE_FADE_MASK : EDGE_FADE_MASK_NO_TOP;
-              return { maskImage: mask, WebkitMaskImage: mask };
-          })()
+        ? edgeFadeMaskSx(topFade ? edgeFadeMask(bottomFadeBand) : edgeFadeMaskNoTop(bottomFadeBand))
         : {}),
 }));
 
@@ -170,6 +178,10 @@ interface MobileTabScreenProps {
     // Drop the soft fade at the TOP edge (keeps the bottom fade). Pages whose first
     // element shouldn't dissolve as it scrolls (e.g. the card detail cdp) set false.
     topFade?: boolean;
+    // Height in px of the bottom fade band above the footer bar. Defaults to the
+    // design's 34px; a page with furniture floating over that strip (the Centers'
+    // pills) raises it so the content behind the furniture is already faded out.
+    bottomFadeBand?: number;
     // The page contains a horizontal scroller (a pager, a sideways shelf) that must be
     // pannable by touch. See the touch-action note on ScrollArea: without this the
     // scroller's own `touch-action` is overruled by this ancestor and the swipe does
@@ -205,6 +217,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     className,
     scrollable = true,
     topFade = true,
+    bottomFadeBand = EDGE_FADE_BOTTOM_BAND,
     horizontalPan = false,
     wrapHeader,
     children,
@@ -217,6 +230,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
             className="mobile-tab-screen__scroll"
             scrollable={scrollable}
             topFade={topFade}
+            bottomFadeBand={bottomFadeBand}
             horizontalPan={horizontalPan}
         >
             {(() => {

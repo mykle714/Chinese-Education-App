@@ -10,7 +10,7 @@ import { prefetchWordOfTheDay } from "./centerPrefetch";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import {
-    activeMasteryCenters, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
+    activeMasteryCenters, MASTERY_CENTER_BARS, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
     MASTERY_CENTER_HUES, MASTERY_CENTER_GLYPHS,
 } from "./masteryCenters";
 import Icon from "../../components/Icon";
@@ -225,9 +225,11 @@ const FlashcardsDecksPage: React.FC = () => {
                         {/* Mastery Centers. The rail is omitted ENTIRELY when the account
                             pursues neither skill (and always for Spanish, which cannot
                             accrue those marks) — an empty row would leave the hand short
-                            of the space it would otherwise have. With one goal set the
-                            single tile takes the full width, which is correct: it is the
-                            only other place to go.
+                            of the space it would otherwise have. The rail is a fixed
+                            two-slot grid: every tile is half width and sits in its OWN
+                            slot (reading left, writing right — the order of
+                            MASTERY_CENTER_BARS), so with one goal set the lone tile keeps
+                            its place and size rather than stretching across the row.
 
                             Coloured by the SKILL's hue as a PASTEL, not as the saturated
                             mark hue: this is a filled surface, and D2b puts surfaces on
@@ -237,7 +239,7 @@ const FlashcardsDecksPage: React.FC = () => {
                         {centers.length > 0 && (
                             <Box
                                 className="flashcards-decks__center-rail"
-                                sx={{ display: "flex", gap: "9px", flexShrink: 0 }}
+                                sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "9px", flexShrink: 0 }}
                             >
                                 {centers.map((bar) => (
                                     <Box
@@ -247,7 +249,9 @@ const FlashcardsDecksPage: React.FC = () => {
                                         className={`flashcards-decks__center-tile flashcards-decks__center-tile--${bar}`}
                                         onClick={() => slideNavigate(MASTERY_CENTER_PATHS[bar])}
                                         sx={{
-                                            flex: 1,
+                                            // Pinned to its bar's slot, so a lone writing
+                                            // tile still lands in the right column.
+                                            gridColumn: MASTERY_CENTER_BARS.indexOf(bar) + 1,
                                             minWidth: 0,
                                             display: "flex",
                                             flexDirection: "column",

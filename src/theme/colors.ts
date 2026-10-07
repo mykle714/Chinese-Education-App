@@ -172,6 +172,11 @@ export const COLORS = {
     frost: "rgba(255, 255, 255, 0.72)",
     scrim: "rgba(23, 22, 26, 0.28)",     // --scrim — behind sheets
     modalScrim: "rgba(23, 22, 26, 0.45)", // heavier scrim behind blocking modals
+    // Heaviest — behind a focused drawing surface whose scrim covers only PART of the
+    // screen (the Writing Notebook's cell editor, under a lit header + word bar). The
+    // busy sheet of inked cells beneath needs more knock-back for the canvas to read as
+    // the one thing in focus. Same ink as the two above.
+    focusScrim: "rgba(23, 22, 26, 0.62)",
 
     // ── Bucket / progress-category colors ─────────────────────────
     // The SURFACE tier of each band hue. Text on one of these is always INK
@@ -229,8 +234,9 @@ export const COLORS = {
     // ── Semantic roles ────────────────────────────────────────────
     // v2 SETS ALL FOUR TO INK (`--danger:var(--ink);--success:var(--ink);…`), and the
     // artboards follow through: the Delete Account button is a black pill, the arena's
-    // promotion banner is black, the swipe hints are black. Meaning is carried by WORDS,
-    // ICONS and position, not by hue — the palette's hues are all pale grounds now and
+    // promotion banner is black. (v2's swipe hints are black too, but the flp overrides
+    // them to the Mark tier — see CORRECT_LABEL in features/flashcards/constants.ts.)
+    // Meaning is carried by WORDS, ICONS and position, not by hue — the palette's hues are all pale grounds now and
     // none of them can be text.
     //
     // The four tokens are KEPT as names (the design keeps `--danger` & co. too) so a

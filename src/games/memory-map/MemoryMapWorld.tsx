@@ -1,14 +1,25 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
-import { connectedIslands, mapBounds, touchedSidesForAll, wordBoxSize, type MapBox } from "../../../server/services/memoryMapSpawn";
+import {
+    allParts,
+    estimatedShape,
+    islandsOf,
+    layoutMap,
+    mapBounds,
+    type LaidSlot,
+    type ShapeOf,
+} from "../../../server/services/memoryMapLayout";
+import { shapeFromMeasure, useGlyphShapes, type MeasuredWord } from "./glyphShapes";
 import MemoryMapWord from "./MemoryMapWord";
 import MemoryMapIslandCompass, { type OffscreenIsland } from "./MemoryMapIslandCompass";
 import { useTapGesture } from "./useTapGesture";
-import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
+import { clampCameraToMap } from "./cameraBounds";
+import type { MemoryMapSlot, MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 import type { Camera, WordOutcome } from "./types";
 import {
     FIT_PADDING,
+    FIT_ZOOM_BOOST,
     MAX_ZOOM,
     MIN_ZOOM,
     PIXELS_PER_WORLD_UNIT,
@@ -29,7 +40,7 @@ const COMPASS_INSET_PX = 24;
  *
  * ── DOM + A CSS TRANSFORM. NO rAF LOOP, NO PIXI ──────────────────────────────
  * The camera is one `transform` on one div; the words are absolutely-positioned
- * children that never move relative to it. The 100-word cap (MEMORY_MAP_CAPACITY) is
+ * children that never move relative to it. The 50-slot cap (MEMORY_MAP_CAPACITY) is
  * what makes this safe — at that size there is nothing to cull and no scene graph to
  * justify. A game that genuinely needed one should borrow the night market's Pixi host
  * rather than growing a second one here.
@@ -47,7 +58,24 @@ const COMPASS_INSET_PX = 24;
  */
 
 interface MemoryMapWorldProps {
+    /**
+     * Fixed chrome floated over the map, in VIEWPORT space (it does not pan or zoom) —
+     * the run counter (§ 6). Rendered above the compass; the caller positions it and
+     * must keep it `pointerEvents: none`, because the whole viewport is the pan surface.
+     */
+    overlay?: React.ReactNode;
+    /** The map's slot tree, empty slots included — the geometry (§ 2.4). */
+    slots: MemoryMapSlot[];
+    /** Occupants, keyed to slots by `slotId`. A mid-fade graduate is still here. */
     words: MemoryMapWordData[];
+    /** The map's language — sizes an EMPTY slot, which has no word to take it from. */
+    language: string;
+    /**
+     * The account's Chinese typeface id (`users."chineseFont"`). The glyphs are
+     * re-measured when it changes, because ink — and therefore every touching
+     * distance — differs face by face.
+     */
+    fontKey: string | undefined;
     outcomes: Record<number, WordOutcome>;
     /** The failed target, which pulses until tapped. */
     pulsingId: number | null;
@@ -62,17 +90,45 @@ interface MemoryMapWorldProps {
     onTapWater: () => void;
 }
 
-/** The boxes as placed, for fitting the camera to the map. */
-function boxesOf(words: MemoryMapWordData[]): MapBox[] {
-    return words.map((word) => ({
-        x: word.x,
-        y: word.y,
-        ...wordBoxSize(word.entryKey, word.scale, word.language),
-    }));
+/**
+ * Lay the slot tree out with the shared `layoutMap`, using each word's MEASURED glyph
+ * shape in the current face (glyphShapes.ts). Positions are never sent over the wire —
+ * this is the only place the client gets them (§ 2.4). An empty slot, or a word whose
+ * measurement has not arrived yet (a refill mid-run, for one render), falls back to the
+ * server's font-free estimate.
+ */
+function layOut(
+    slots: MemoryMapSlot[],
+    wordBySlot: Map<number, MemoryMapWordData>,
+    measured: Map<string, MeasuredWord>,
+    language: string
+): LaidSlot[] {
+    const shapeOf: ShapeOf = (slot) => {
+        const glyphs = slot.entryKey ? measured.get(slot.entryKey) : undefined;
+        return glyphs ? shapeFromMeasure(glyphs, slot.scale) : estimatedShape(slot.entryKey, slot.scale, slot.language);
+    };
+    return layoutMap(
+        slots.map((slot) => ({
+            slotId: slot.slotId,
+            parentSlotId: slot.parentSlotId,
+            link: slot.link,
+            angle: slot.angle,
+            tilt: slot.tilt,
+            bow: slot.bow,
+            scale: slot.scale,
+            entryKey: wordBySlot.get(slot.slotId)?.entryKey ?? null,
+            language: wordBySlot.get(slot.slotId)?.language ?? language,
+        })),
+        shapeOf
+    );
 }
 
 const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
+    overlay,
+    slots,
     words,
+    language,
+    fontKey,
     outcomes,
     pulsingId,
     selectedId,
@@ -112,9 +168,39 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
     const ownCameraRef = useRef<Camera | null>(null);
     if (camera !== ownCameraRef.current) cameraRef.current = camera;
 
-    /** Move the camera: ref first (so the next event in this frame sees it), then state. */
+    // The geometry. Recomputed only when the tree or an occupant changes (a spawn, a
+    // graduation swap) — never per camera frame. `laid` is in `slots` order.
+    const wordBySlot = useMemo(() => new Map(words.map((word) => [word.slotId, word])), [words]);
+    // Null until the face's glyphs have loaded and been measured. The map is not drawn
+    // before then: laying it out with guessed shapes would make every word jump the
+    // moment the real ones arrived.
+    const measured = useGlyphShapes(
+        useMemo(() => words.map((word) => word.entryKey), [words]),
+        language,
+        fontKey
+    );
+    const laid = useMemo(
+        () => (measured ? layOut(slots, wordBySlot, measured, language) : []),
+        [slots, wordBySlot, measured, language]
+    );
+    const bounds = useMemo(() => mapBounds(allParts(laid)), [laid]);
+
+    // Read through refs by `commit`, for the same reason the camera is: the gesture
+    // handlers are bound once, and must see the CURRENT map and viewport, not the ones
+    // captured when they were created.
+    const boundsRef = useRef(bounds);
+    boundsRef.current = bounds;
+    const viewportSizeRef = useRef(viewport);
+    viewportSizeRef.current = viewport;
+
+    /**
+     * Move the camera: clamp it to the map (`clampCameraToMap`, § 6), then ref first
+     * (so the next event in this frame sees it), then state. Every pan, pinch and wheel
+     * goes through here, so the limit cannot be bypassed by any one gesture.
+     */
     const commit = useCallback(
-        (next: Camera) => {
+        (requested: Camera) => {
+            const next = clampCameraToMap(requested, boundsRef.current, viewportSizeRef.current);
             cameraRef.current = next;
             ownCameraRef.current = next;
             onCameraChange(next);
@@ -141,15 +227,14 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
      *
      * Used only when there is no saved camera (a fresh run). A resumed run restores
      * where the player was looking instead — re-framing on resume would throw away the
-     * one piece of context that makes a 100-word map navigable.
+     * one piece of context that makes a 50-word map navigable.
      */
     const fitToMap = useCallback((): Camera | null => {
-        const bounds = mapBounds(boxesOf(words));
         if (!bounds || viewport.width === 0) return null;
 
         const worldWidth = bounds.maxX - bounds.minX + FIT_PADDING * 2;
         const worldHeight = bounds.maxY - bounds.minY + FIT_PADDING * 2;
-        const zoom = Math.min(
+        const zoom = FIT_ZOOM_BOOST * Math.min(
             viewport.width / (worldWidth * PIXELS_PER_WORLD_UNIT),
             viewport.height / (worldHeight * PIXELS_PER_WORLD_UNIT)
         );
@@ -158,13 +243,24 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
             y: (bounds.minY + bounds.maxY) / 2,
             zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)),
         };
-    }, [words, viewport]);
+    }, [bounds, viewport]);
 
     useEffect(() => {
         if (camera || viewport.width === 0 || words.length === 0) return;
         const fitted = fitToMap();
         if (fitted) onCameraChange(fitted);
     }, [camera, viewport, words, fitToMap, onCameraChange]);
+
+    // Re-clamp when the LIMIT moves rather than the camera: a graduation can shrink the
+    // map out from under the view, a rotation changes the viewport, and a resumed run
+    // restores a camera saved against a different screen. Without this the player could
+    // start a run already stranded in open water. A no-op when the camera is in range
+    // (`clampCameraToMap` returns the same object), so it cannot loop.
+    useEffect(() => {
+        const current = cameraRef.current;
+        if (!current) return;
+        if (clampCameraToMap(current, bounds, viewport) !== current) commit(current);
+    }, [bounds, viewport, camera, commit]);
 
     /** Pan by a screen-pixel delta, converted into world units at the current zoom. */
     const panBy = useCallback(
@@ -260,25 +356,17 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
 
     // ── Off-screen island markers ────────────────────────────────────────────
     //
-    // Split into two memos ON PURPOSE, and the split is a performance requirement
-    // rather than tidiness. `connectedIslands` is an O(n²) scan (10,000 comparisons at
-    // MEMORY_MAP_CAPACITY), but it depends only on the GEOMETRY — which changes when a
-    // word spawns or graduates, not when the camera moves. Recomputing it inside the
-    // camera-dependent memo would run that scan on every frame of every pan.
-    const boxes = useMemo(() => boxesOf(words), [words]);
-    // Which edges each word shares with a neighbour, for its fences. Memoized on the
-    // GEOMETRY alone — it does not change when the camera moves, and it is another
-    // O(n²) scan that must not run per pan frame.
-    const borders = useMemo(() => touchedSidesForAll(boxes), [boxes]);
+    // Islands come straight off the tree (`islandsOf` groups by island root), memoized
+    // on the geometry so the grouping never re-runs per pan frame.
     const islands = useMemo(
         () =>
-            connectedIslands(boxes).map((indices) => ({
+            islandsOf(laid).map(({ rootSlotId, indices }) => ({
                 indices,
-                // The smallest vet id is a stable key: it does not change as the island
-                // grows, so a marker does not remount when a neighbour spawns.
-                key: Math.min(...indices.map((i) => words[i].vocabEntryId)),
+                // The root's slot id is a stable key: a slot outlives its words, so the
+                // marker does not remount when the island grows or a word graduates.
+                key: rootSlotId,
             })),
-        [boxes, words]
+        [laid]
     );
 
     const offscreenIslands = useMemo<OffscreenIsland[]>(() => {
@@ -294,18 +382,19 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
             let sumY = 0;
 
             for (const i of island.indices) {
-                const box = boxes[i];
-                const sx = toScreenX(box.x);
-                const sy = toScreenY(box.y);
-                sumX += sx;
-                sumY += sy;
-                const halfW = (box.width / 2) * scale;
-                const halfH = (box.height / 2) * scale;
+                const slot = laid[i];
+                sumX += toScreenX(slot.x);
+                sumY += toScreenY(slot.y);
+                // The word's character boxes, by their rotated bounding rect — generous
+                // by a corner at most, which only ever errs toward "visible" and so
+                // toward fewer markers.
+                const box = mapBounds(slot.parts);
                 if (
-                    sx + halfW > 0 &&
-                    sx - halfW < viewport.width &&
-                    sy + halfH > 0 &&
-                    sy - halfH < viewport.height
+                    box &&
+                    toScreenX(box.maxX) > 0 &&
+                    toScreenX(box.minX) < viewport.width &&
+                    toScreenY(box.maxY) > 0 &&
+                    toScreenY(box.minY) < viewport.height
                 ) {
                     visible = true;
                     break; // one visible word is enough — the island is on screen
@@ -328,7 +417,7 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
             });
         }
         return markers;
-    }, [islands, boxes, viewport, zoom, centreX, centreY]);
+    }, [islands, laid, viewport, zoom, centreX, centreY]);
 
     return (
         <Box
@@ -336,7 +425,7 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
             ref={viewportRef}
             // ── TAPPING WATER CANCELS A SELECTION ───────────────────────────
             // The armed word is the only state a player can get stuck in, so open water
-            // is its escape hatch: a tap that hits no parcel disarms (§ 3.3a). A word's
+            // is its escape hatch: a tap that hits no word disarms (§ 3.3a). A word's
             // own tap stops propagating before it gets here, and a drag that merely ENDS
             // over water fails the same slop test the words apply, so panning never
             // disarms anything.
@@ -350,7 +439,7 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
                 flex: 1,
                 minHeight: 0,
                 overflow: "hidden",
-                // Water. The map is an archipelago — tangent boxes are land, the gaps
+                // Water. The map is an archipelago — touching words make islands, the gaps
                 // between islands are sea — and a blue ground is what makes that read at
                 // a glance instead of looking like words scattered on a page. It also
                 // gives the off-screen compass chips something to sit against.
@@ -379,24 +468,44 @@ const MemoryMapWorld: React.FC<MemoryMapWorldProps> = ({
                     height: 0,
                 }}
             >
-                {words.map((word, index) => (
-                    <MemoryMapWord
-                        key={word.vocabEntryId}
-                        word={word}
-                        borders={borders[index]}
-                        outcome={outcomes[word.vocabEntryId]}
-                        pulsing={pulsingId === word.vocabEntryId}
-                        selected={selectedId === word.vocabEntryId}
-                        flashing={flashing.includes(word.vocabEntryId)}
-                        fading={fading.includes(word.vocabEntryId)}
-                        onTap={onTapWord}
-                    />
-                ))}
+                {measured &&
+                    slots.map((slot, index) => {
+                        const placed = laid[index];
+                        const word = wordBySlot.get(slot.slotId);
+                        // An EMPTY slot (its card was deleted, or a refill found nothing
+                        // to lend) keeps its place in the tree — its estimated shape
+                        // still holds its children apart — but draws nothing: with no
+                        // tiles there is no "bare land" to show. The next load fills it.
+                        if (!word || !placed) return null;
+                        const glyphs = measured.get(word.entryKey);
+                        if (!glyphs) return null; // a refill, measured on the next render
+                        return (
+                            <MemoryMapWord
+                                // Keyed by WORD, not slot: a graduation swap must unmount
+                                // the faded word and mount its replacement fresh.
+                                key={word.vocabEntryId}
+                                word={word}
+                                x={placed.x}
+                                y={placed.y}
+                                tilt={placed.tilt}
+                                bow={slot.bow}
+                                scale={slot.scale}
+                                measured={glyphs}
+                                outcome={outcomes[word.vocabEntryId]}
+                                pulsing={pulsingId === word.vocabEntryId}
+                                selected={selectedId === word.vocabEntryId}
+                                flashing={flashing.includes(word.vocabEntryId)}
+                                fading={fading.includes(word.vocabEntryId)}
+                                onTap={onTapWord}
+                            />
+                        );
+                    })}
             </Box>
 
             {/* Outside the world layer on purpose: an edge marker must stay pinned to
                 the screen, not pan and scale with the map it points at. */}
             <MemoryMapIslandCompass islands={offscreenIslands} />
+            {overlay}
         </Box>
     );
 };

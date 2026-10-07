@@ -20,7 +20,7 @@ import type { ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
  * each keep their own. The window is the bar's own band, so these tests control the
  * window by controlling how many correct marks a track holds:
  *   1 correct  → Unfamiliar (5 min)   — reading bar, or core pbh 1
- *   3 correct  → Target (24 h)        — reading bar, or core pbh 3
+ *   3 correct  → Target (12 h)        — reading bar, or core pbh 3
  *   6 correct  → Comfortable (14 d)   — core pbh 6 (one track maxing the first term)
  */
 
@@ -81,7 +81,7 @@ describe('the know clock — recognition and production share one', () => {
   });
 
   it('a correct RECOGNITION mark rests PRODUCTION too', () => {
-    // pbh 3 → Target (24h). Recognition answered an hour ago; production never.
+    // pbh 3 → Target (12h). Recognition answered an hour ago; production never.
     const h = history({ recognition: [3, 1 * HOUR] });
     expect(isMarkOnCooldown(h, 'recognition', NOW)).toBe(true);
     expect(isMarkOnCooldown(h, 'production', NOW)).toBe(true);
@@ -196,7 +196,7 @@ describe('rankCardQueue', () => {
  */
 describe('rankCardQueueCooled', () => {
   const flp = { bar: 'core' as const };
-  /** Core pbh 3 (Target, 24 h window), newest correct mark `agoMs` ago. */
+  /** Core pbh 3 (Target, 12 h window), newest correct mark `agoMs` ago. */
   const target = (agoMs: number) => history({ recognition: [3, agoMs] });
 
   it('returns only resting cards — the exact complement of rankCardQueue', () => {
@@ -209,9 +209,9 @@ describe('rankCardQueueCooled', () => {
   });
 
   it('orders nearest-to-ready first', () => {
-    const almostReady = { id: 1, typedMarkHistory: target(23 * HOUR) };
+    const almostReady = { id: 1, typedMarkHistory: target(11 * HOUR) };
     const justMarked = { id: 2, typedMarkHistory: target(MINUTE) };
-    const midway = { id: 3, typedMarkHistory: target(12 * HOUR) };
+    const midway = { id: 3, typedMarkHistory: target(6 * HOUR) };
 
     expect(
       rankCardQueueCooled([justMarked, almostReady, midway], NOW, flp).map((c) => c.id)

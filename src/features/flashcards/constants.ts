@@ -9,11 +9,14 @@ import { COLORS } from "../../theme/colors";
 //     fluorescent tier is the only one that still reads at the overlay's 0.3 opacity
 //     cap over a cream card face; a surface pastel at 30% is indistinguishable from none;
 //   - the coaching LABEL (`.shint.l` / `.shint.r`) is `var(--danger)` / `var(--success)`
-//     in v2, which are both ink — the words "Again" / "Got it" carry the meaning.
+//     in v2, which are both ink. DIVERGES FROM v2 ON PURPOSE (2026-10-06, user call):
+//     the "← Incorrect" / "Correct →" labels take the same Mark tier as the wash, so
+//     each direction's label matches the color the card turns when dragged that way.
+//     The palette has no hue ink tier, so the Mark tier is the deepest red/green available.
 export const CORRECT_WASH   = COLORS.grnMk;
 export const INCORRECT_WASH = COLORS.redMk;
-export const CORRECT_LABEL   = COLORS.successInk;
-export const INCORRECT_LABEL = COLORS.dangerInk;
+export const CORRECT_LABEL   = COLORS.grnMk;
+export const INCORRECT_LABEL = COLORS.redMk;
 // (The streak-flame "fire active" color moved to theme/colors.ts → COLORS.fireActive,
 // since only MinutePointsFireBadge used it — it was never a flashcard color.)
 

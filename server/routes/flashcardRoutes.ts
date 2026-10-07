@@ -94,6 +94,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     category: markResult.category,
     markTimestamp: markResult.markTimestamp,
     markType: markResult.markType,
+    displacedMarks: markResult.displacedMarks,
     displacedMark: markResult.displacedMark,
     writing: markResult.writing ?? null,
     newCard: null as any,
@@ -189,7 +190,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
 // Undo the most recently saved flashcard mark (protected route)
 router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req, res) => {
   const userId = (req as any).user?.userId;
-  const { cardId, markTimestamp, markType: rawMarkType, displacedMark } = req.body || {};
+  const { cardId, markTimestamp, markType: rawMarkType, displacedMarks, displacedMark } = req.body || {};
 
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized', code: 'ERR_UNAUTHORIZED' });
@@ -208,7 +209,11 @@ router.post('/api/flashcards/undoLastMark', authenticateToken, handle(async (req
       cardId,
       markTimestamp,
       markType: resolveMarkType(rawMarkType),
-      displacedMark: (displacedMark ?? null) as ReviewMark | null,
+      // `displacedMarks` (0–2, oldest first) is the current form; a pre-acceleration
+      // client still sends the single legacy `displacedMark`.
+      displacedMarks: Array.isArray(displacedMarks)
+        ? (displacedMarks as ReviewMark[])
+        : displacedMark ? [displacedMark as ReviewMark] : [],
     });
     return res.status(200).json({ success: true, category });
   } catch (error: any) {

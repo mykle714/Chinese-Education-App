@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
-import { API_BASE_URL } from "../../constants";
-import { authHeader } from "../../utils/authHeader";
+import { fetchGamePool } from "../../api/gamePool";
+import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import type { VocabEntry } from "../../types";
 import { HYDRA_COLORS, type HydraCard, type HydraColor } from "./types";
 import {
@@ -55,10 +55,6 @@ import {
  */
 
 /** The pool endpoint's response, narrowed to what the buffers use. */
-interface GamePoolResponse {
-    cards: VocabEntry[];
-}
-
 export interface ColorBuffers {
     /**
      * Take a card of `color`. ASYNC ON PURPOSE: when that buffer is momentarily dry
@@ -81,15 +77,15 @@ export interface ColorBuffers {
 }
 
 /**
- * @param collectionSuffix `?deck=`/`?collection=` query fragment, or ""
- * @param restricted       a deck/collection run: never lend (§ 6.3)
+ * @param collection     the launch deck/collection, or null for an ordinary run.
+ *                       Non-null makes the run RESTRICTED: exactly the set the learner
+ *                       chose — no lending, and no cooldown either (§ 6.3).
  * @param challengeCards   a Study Challenge round's contested words (§ 7.5), which
  *                         ride the BLOOM slot ahead of that buffer's own stock.
  *                         Null/empty for an ordinary run.
  */
 export function useColorBuffers(
-    collectionSuffix: string,
-    restricted: boolean,
+    collection: CollectionRef | null,
     challengeCards: VocabEntry[] | null = null
 ): ColorBuffers {
     // All buffer state lives in refs. It is read and written from inside the rAF /
@@ -167,41 +163,35 @@ export function useColorBuffers(
         // zero, so the request still names the full set the color may be served from.
         const bands = BUCKETS_BY_COLOR[color];
         const per = Math.floor(need / bands.length);
-        const bandParams = bands.map((band, i) =>
-            `${band}=${per + (i === 0 ? need % bands.length : 0)}`
+        const distribution = Object.fromEntries(
+            bands.map((band, i) => [band, per + (i === 0 ? need % bands.length : 0)])
         );
-        const params = [
-            `markType=${MARK_TYPE}`,
-            `surface=${SURFACE}`,
-            ...bandParams,
+        const data = await fetchGamePool({
+            markType: MARK_TYPE,
+            surface: SURFACE,
+            distribution,
             // "These two bands or nothing." Without it the server tops a short request
             // up from ANY band, and Hydra would pay the player at the rolled color's
             // rate for a card of the opposite tier (§ 6.2d). Load-bearing since the
             // request became two bands wide: the server used to infer this from a
             // one-band request, and cannot any more.
-            `strictBuckets=1`,
-            `need=${need}`,
-            `exclude=${exclude.join(",")}`,
-            `avoid=${avoid.join(",")}`,
-        ];
-        // A restricted run plays the set the learner chose, so it must not ask for a
-        // lend tier at all — the server refuses to lend under a collection filter
-        // anyway (§ 6.3), and sending the param would imply otherwise to anyone
-        // reading the request log.
-        if (!restricted) params.push(`lendLevelOffset=${TIER_OFFSET_BY_COLOR[color]}`);
-
-        const res = await fetch(
-            `${API_BASE_URL}/api/onDeck/gamePool?${params.join("&")}${collectionSuffix}`,
-            { credentials: "include", headers: authHeader() }
-        );
-        if (!res.ok) throw new Error("Failed to load Hydra pool");
-        const data: GamePoolResponse = await res.json();
-        return data.cards ?? [];
-        // authHeader() reads the token at call time, so this callback's identity is
-        // stable across a silent token refresh (CLAUDE.md ⛔ rule). `collectionSuffix`
+            strictBuckets: true,
+            need,
+            exclude,
+            avoid,
+            // A restricted run plays the set the learner chose, so it must not ask for
+            // a lend tier at all — the server refuses to lend under a collection filter
+            // anyway (§ 6.3), and sending the param would imply otherwise to anyone
+            // reading the request log.
+            lendLevelOffset: collection ? undefined : TIER_OFFSET_BY_COLOR[color],
+            collection,
+        });
+        return data.cards;
+        // apiGet reads the token at call time, so this callback's identity is
+        // stable across a silent token refresh (CLAUDE.md ⛔ rule). `collection`
         // comes from this page's own URL and cannot change without a remount.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [restricted]);
+    }, []);
 
     /**
      * Refill one buffer to BUFFER_TARGET, returning the in-flight promise so a caller

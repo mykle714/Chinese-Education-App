@@ -1,5 +1,5 @@
-import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { COLOURED_BUBBLE_RING, NEUTRAL_BUBBLE_RING } from "../bubbles/constants";
+import { COLORS, type RampHue } from "../../theme/colors";
+import { NEUTRAL_BUBBLE_RING } from "../bubbles/constants";
 import type { MarkType } from "../../types";
 import type { LevelConfig } from "./types";
 
@@ -30,7 +30,7 @@ import type { LevelConfig } from "./types";
  * because the pool is bucketed and cooled on that same track when it is requested.
  *
  * This constant is what the run defaults to and what `GAME_REGISTRY` declares as the
- * game's track for STUDY CHALLENGE eligibility (`challengeEligibleGames()`), which is
+ * game's track for STUDY CHALLENGE eligibility (src/games/__tests__/challengePool.test.ts), which is
  * a property of the game rather than of one run's display setting.
  */
 export const MARK_TYPE: MarkType = "recognition";
@@ -124,34 +124,31 @@ export const MIN_PLAY_HEIGHT = 0; // px — the ceiling closes the play area com
 export const GAME_HUE: RampHue = "red";
 
 // ---- Base bubble palette (kind-keyed) ------------------------------------
-// TWO COLOURS, AND THE RULE IS EXACTLY ONE BIT WIDE (docs/SHELF_REDESIGN.md § 12):
-// the game's red accent means "this bubble is a foreign word", inert grey means "this
-// bubble is a meaning". Nothing else is encoded — not difficulty, not mastery, not
-// how long a bubble has been on the field.
+// TWO FILLS, AND THE RULE IS ONE BIT WIDE (docs/SHELF_REDESIGN.md § 12): a WHITE bubble
+// is a foreign word, a GREY bubble is a meaning. Both wear the same neutral `--line2`
+// ring — the word bubble is the white version of the meaning bubble, so FILL alone
+// carries the bit.
+// Nothing else is encoded — not difficulty, not mastery, not time on the field. The
+// level's colour lives on the board's two bands instead (the HUD strip and the cancel
+// strip, BubbleStage → `bandBg`), not on the bubbles (2026-10-06: word bubbles went from
+// red, to the level hue, to plain white).
 //
 // That restraint is what makes the STATUS colours (correct / wrong / nomatch, in
-// src/games/bubbles/constants.ts) readable: they are the only other fills a Bubble
-// Match bubble can ever take, so a green or a red bubble is unambiguously feedback.
-// Hydra Bubbles spends its colour budget differently — on the drain/bloom payout
-// ladder — which is why this palette is per-game and the shared `Bubble` takes a
-// `fill` prop rather than knowing either scheme.
+// src/games/bubbles/constants.ts) readable: they are the only coloured fills a Bubble
+// Match bubble can ever take. Hydra Bubbles spends its colour budget differently — on
+// the drain/bloom payout ladder — which is why this palette is per-game and the shared
+// `Bubble` takes a `fill` prop rather than knowing either scheme.
 //
-// ── SHELF SYSTEM v2 (artboard 12, `#bm`) ─────────────────────────────────────────
-// The artboard's base rule paints `.bub.zh` the game hue's MID tier (`--redK` = `--redM`)
-// and meaning bubbles `--grey`, and its caption says the same: "Two colours only: every
-// Chinese word carries the game's own red accent, every meaning is neutral … Mid:
-// bubbles". The artboard's LATER override block then inverts it (`.bub.zh` white,
-// `.bub:not(.zh)` red). We follow the CAPTION and the base rule, not the override:
-// the whole point of this palette is that the coloured bubble is the one the player
-// hunts (the Chinese word), and the inversion would put the game's accent on the
-// meaning side for no stated reason. Hydra Bubbles makes the same choice — colour on
-// the word side, where its payout tier lives.
-//
-// From the override we DO keep its ring rule, because it is not side-specific: the
-// coloured bubble wears an ink ring, the neutral one a `--line2` ring (see
-// COLOURED_BUBBLE_RING / NEUTRAL_BUBBLE_RING in ../bubbles/constants).
-export const WORD_BUBBLE_BG = RAMP[GAME_HUE].mid;
-export const WORD_BUBBLE_BORDER = COLOURED_BUBBLE_RING;
+// Artboard 12 rings the word side in ink. 2026-10-06 tried an ink ring, then a level-hued
+// ring (mid, then mark tier), and settled on the shared neutral ring for both sides
+// (NEUTRAL_BUBBLE_RING in ../bubbles/constants).
+
+/** The ramp hue a level is painted in — its LEVEL_HUES entry, falling back to the game's
+ *  own hue for a level with no entry. Shared by the level tile (bubbleMatchCard.ts) and
+ *  the board's surface (BubbleMatchPage → GameLeafPage, which the HUD + cancel strip read). */
+export const levelHue = (level: number): RampHue => LEVEL_HUES[level] ?? GAME_HUE;
+
+export const WORD_BUBBLE_BG = COLORS.white;
+export const WORD_BUBBLE_BORDER = NEUTRAL_BUBBLE_RING;
 export const DEFINITION_BUBBLE_BG = COLORS.grey;
 export const DEFINITION_BUBBLE_BORDER = NEUTRAL_BUBBLE_RING;
-

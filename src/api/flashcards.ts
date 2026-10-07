@@ -46,7 +46,9 @@ export type MarkSurface =
     // The Reading Center's word swipe grid (docs/READING_WRITING_CENTERS.md).
     | "reading-center"
     // The Writing Center's Writing Grid game (docs/WRITING_PRACTICE_REWORK.md § 2).
-    | "writing-grid";
+    | "writing-grid"
+    // Bucket Drop (docs/BUCKET_DROP_GAME.md).
+    | "bucket-drop";
 
 /** A single review mark. `mode` is flp-only — it caps the replacement card's category. */
 export interface MarkFlashcardRequest {
@@ -127,8 +129,12 @@ export interface MarkFlashcardResponse {
     markTimestamp: string | null;
     /** Echoed back so undo reverts the same typed stream. */
     markType: MarkType;
-    /** The mark pushed out of a full 8-slot window, so undo can restore it. */
-    displacedMark: ReviewMark | null;
+    /**
+     * Every mark this review pushed out of the 8-slot window, oldest first, so undo can
+     * restore them. Up to two: a silently ACCELERATED review (3 correct in a row on the
+     * track, then another correct) writes two marks — docs/MASTERY_REWORK.md § 6.
+     */
+    displacedMarks: ReviewMark[];
 }
 
 /**
@@ -175,7 +181,7 @@ export async function markFlashcard(
         markTimestamp: data.markTimestamp ?? null,
         // Prefer the server's echo; fall back to what we asked for.
         markType: data.markType ?? request.type,
-        displacedMark: data.displacedMark ?? null,
+        displacedMarks: Array.isArray(data.displacedMarks) ? data.displacedMarks : [],
     };
 }
 
@@ -184,8 +190,8 @@ export interface UndoMarkRequest {
     cardId: number;
     markTimestamp: string;
     markType: MarkType;
-    /** The mark that was displaced when this one was written, if any. */
-    displacedMark?: ReviewMark | null;
+    /** The marks displaced when this review was written, oldest first. */
+    displacedMarks?: ReviewMark[];
 }
 
 /**
@@ -198,6 +204,6 @@ export async function undoFlashcardMark(request: UndoMarkRequest): Promise<void>
         cardId: request.cardId,
         markTimestamp: request.markTimestamp,
         markType: request.markType,
-        displacedMark: request.displacedMark ?? null,
+        displacedMarks: request.displacedMarks ?? [],
     });
 }

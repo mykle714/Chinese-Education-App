@@ -15,15 +15,13 @@ import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import { GameLeafPage } from "../shared/GameSurface";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
 import { GAME_HUE } from "./constants";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
-import { FONTS } from "../../theme/fonts";
-import TimerEyeToggle from "../shared/TimerEyeToggle";
+import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import WordSearchHeaderControls from "./WordSearchHeader";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
-import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
+import { GameCentered, GameFrame, GameTimer } from "../shared/GameFrame";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import PersonalBestLine from "../shared/PersonalBestLine";
@@ -44,25 +42,6 @@ import { countComponentUnits } from "./componentUnits";
 import type { BonusWord, PlacedWord, WordSearchResponse } from "./types";
 
 type Phase = "loading" | "blocked" | "playing" | "won";
-
-/**
- * The HUD's clock, restyled from the shared overline (`GameHudLabel` →
- * `Label`: 10px, uppercase, tracked, `FONTS.label`) into this game's play-panel text size.
- *
- * - `SIZE.bodyLg` — the ONE size every text element of the play panel shares (the gloss
- *   list in `WordSearchWordList`, the reveal in `WordSearchHintRow`). Change them together.
- * - `FONTS.mono` — fonts.ts reserves the mono for DATA, timers named specifically; its
- *   fixed digit advance also stops the clock's width jittering per tick.
- * - Normal case, no tracking — those belong to the overline voice this no longer is.
- *
- * Local to Word Search (2026-09-25); every other game keeps `GameHudLabel`'s default.
- */
-const HUD_TEXT_SX = {
-    fontFamily: FONTS.mono,
-    fontSize: SIZE.bodyLg,
-    textTransform: "none",
-    letterSpacing: TRACKING.normal,
-} as const;
 
 /**
  * Word Search — page shell + game-flow state machine.
@@ -857,32 +836,18 @@ const WordSearchPage: React.FC = () => {
                     OUTSIDE it: both cover the full content area and must not be clipped
                     by the panel's radius. */}
                 <GameFrame className="word-search__frame">
-                {/* HUD: the clock, centred, plus the eye that shows/hides it.
-
-                    There is no mode label (fixed by the hub entry the run was launched
-                    from, and visible on the board itself) and no found count (the gloss
-                    list below already strikes through each found word, so the count was
-                    a second statement of the same fact).
-
-                    The strip is ALWAYS rendered, and the clock inside it is hidden with
-                    `visibility`, not unmounted: it keeps holding the strip's height, so
-                    tapping the eye mid-run never reflows the grid under the player's
-                    finger. The eye is absolutely positioned for the same reason — it is
-                    a 32px tap target and must not make the strip taller than its text.
-                    See docs/WORD_SEARCH_GAME.md §3. */}
-                <GameHud className="word-search__hud" sx={{ justifyContent: "center", position: "relative" }}>
-                    <GameHudLabel
-                        className={`word-search__hud-timer${showTimer ? "" : " word-search__hud-timer--hidden"}`}
-                        sx={{ ...HUD_TEXT_SX, visibility: showTimer ? "visible" : "hidden" }}
-                    >
-                        {formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
-                    </GameHudLabel>
-                    <TimerEyeToggle
-                        className="word-search__hud-timer-toggle"
-                        shown={showTimer}
-                        onToggle={() => updateWsSettings({ showTimer: !showTimer })}
-                    />
-                </GameHud>
+                {/* The clock, centred, plus the eye that shows/hides it — the shared
+                    `GameTimer`, so every game's clock reads the same (bare: no `fraction`,
+                    no track). There is no mode label (fixed by the hub entry the run was
+                    launched from) and no found count (the gloss list below strikes through
+                    each found word). Hiding keeps the numerals' height, so tapping the eye
+                    mid-run never reflows the grid. See docs/WORD_SEARCH_GAME.md §3. */}
+                <GameTimer
+                    className="word-search__hud-timer"
+                    value={formatTimeMs(phase === "won" ? finalMs : elapsedMs)}
+                    valueShown={showTimer}
+                    onToggleValueShown={() => updateWsSettings({ showTimer: !showTimer })}
+                />
 
                 <WordSearchWordList words={data.words} found={found} hintEntryKey={hintEntryKey} />
 

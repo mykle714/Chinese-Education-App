@@ -20,7 +20,8 @@
  */
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { Box, CircularProgress } from "@mui/material";
-import { CheckCircle, Cancel, Block } from "@mui/icons-material";
+import { Block } from "@mui/icons-material";
+import ResultStamp from "./ResultStamp";
 import { COLORS, FONTS } from "../../theme";
 import HanziGuide from "./HanziGuide";
 import WritingCanvas, { type StrokeVerdict } from "./WritingCanvas";
@@ -202,23 +203,9 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
 
       {clock && <StageClock remainingMs={clock.remainingMs} totalMs={clock.totalMs} />}
 
-      {result !== "idle" && (
-        <Box
-          className={`writing-stage__result writing-stage__result--${result}`}
-          sx={{
-            position: "absolute",
-            top: 6,
-            right: 6,
-            color: result === "correct" ? COLORS.successInk : COLORS.dangerInk,
-            pointerEvents: "none",
-          }}
-        >
-          {result === "correct" ? (
-            <CheckCircle className="writing-stage__result-icon" sx={{ fontSize: resultIconSize }} />
-          ) : (
-            <Cancel className="writing-stage__result-icon" sx={{ fontSize: resultIconSize }} />
-          )}
-        </Box>
+      {(result === "correct" || result === "wrong") && (
+        // The same mount-animated stamp as the Writing Grid / writing flp cells.
+        <ResultStamp className="writing-stage__result-icon" result={result} size={resultIconSize} inset={6} />
       )}
     </Box>
   );

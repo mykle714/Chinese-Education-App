@@ -28,6 +28,8 @@ export const PERSONAL_BEST_GAMES = {
   'hydra-bubbles': { direction: 'higher', unit: 'count' },
   /** Time to write all eight characters correctly. */
   'writing-grid': { direction: 'lower', unit: 'ms' },
+  /** Time to drop all 20 words, per mode (pinyin / no-pinyin). */
+  'bucket-drop': { direction: 'lower', unit: 'ms' },
 } as const satisfies Record<string, { direction: PersonalBestDirection; unit: 'ms' | 'count' }>;
 
 export type PersonalBestGame = keyof typeof PERSONAL_BEST_GAMES;

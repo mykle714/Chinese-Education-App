@@ -17,8 +17,9 @@ export function gameCardBase(game: GameDef, wins?: number): GameCardData {
     return { gameId: game.gameId, title: game.title, glyph: game.glyph, hue: game.hue, wins, options: [] };
 }
 
-/** A play-only card: no option tiles, just the corner play button (Speed Reading). */
-export function buildPlayCard(game: GameDef, wins: number, onPlay: () => void): GameCardData {
+/** A play-only card: no option tiles, just the corner play button (Speed Reading,
+ *  Memory Map). `wins` undefined = the game logs no wins, so the card wears no pill. */
+export function buildPlayCard(game: GameDef, wins: number | undefined, onPlay: () => void): GameCardData {
     return { ...gameCardBase(game, wins), play: { ariaLabel: `Start ${game.title}`, onSelect: onPlay } };
 }
 

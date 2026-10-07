@@ -1,7 +1,7 @@
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
-import { edgeFadeAboveBand, edgeFadeBelowBand } from "../scrollEdgeFade";
+import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx } from "../scrollEdgeFade";
 
 /**
  * Styled surfaces for `SheetPanel` — the app's modal/persistent bottom sheet.
@@ -92,7 +92,8 @@ export const InfoSheetGrabber = styled(Box)(({ theme }) => ({
 // surface in the app wears at the edges of its scroll area. The BOTTOM band is
 // where a panel differs from a page: a page spends the footer bar's height on it
 // (`EDGE_FADE_MASK`, MobileTabScreen), while a SHEET or PANEL has no footer to
-// clear — a modal sheet holds `useHideFooter` for its whole lifetime — so its
+// clear — a modal sheet is frame-hosted ABOVE the footer bar (SheetPanel, z 1201 vs
+// 100), so the bar is under it — so its
 // fade runs out AT its own bottom edge across a short band, instead of reserving
 // 164px of the sheet for emptiness.
 //
@@ -126,9 +127,6 @@ export const SHEET_EDGE_FADE_MASK_NO_TOP =
     `linear-gradient(to bottom, #000 0, #000 calc(100% - ${edgeFadeBelowBand(SHEET_EDGE_FADE_BAND)}), transparent 100%)`;
 
 // Spread into any scroller's `sx` to wear the fade, and track that scroller
-// (`trackScrollEdgeFade`) so the bands only show where content is cut off. Both spellings, because
-// iOS Safari still needs the prefixed property.
-export const sheetEdgeFadeSx = {
-    maskImage: SHEET_EDGE_FADE_MASK,
-    WebkitMaskImage: SHEET_EDGE_FADE_MASK,
-} as const;
+// (`trackScrollEdgeFade`) so the bands only show where content is cut off. The
+// scrollbar gutter is exempt (`edgeFadeMaskSx`), so a desktop scrollbar stays solid.
+export const sheetEdgeFadeSx = edgeFadeMaskSx(SHEET_EDGE_FADE_MASK);

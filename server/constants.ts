@@ -53,6 +53,8 @@ export const KNOWN_GAME_IDS = [
   'memory-map',
   // Writing Center only (docs/WRITING_PRACTICE_REWORK.md § 2).
   'writing-grid',
+  // Drag the stack's top word into its meaning's bucket (docs/BUCKET_DROP_GAME.md).
+  'bucket-drop',
 ] as const;
 
 export function isKnownGameId(value: unknown): value is (typeof KNOWN_GAME_IDS)[number] {

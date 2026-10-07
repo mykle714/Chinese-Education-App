@@ -93,7 +93,7 @@ important consequence to hold on to:
 
 ### 2.2 The palette
 
-Each bubble is a **flat body** with a 2px ring. The ladder is **yellow / blue**
+Each bubble is a **flat body** with a 1px ring (2px until 2026-10-06). The ladder is **yellow / blue**
 (2026-08-24) — warm is the harder tier, cool the easier one — on the **v2 MID tier**
 (2026-09-23, artboard 16 caption "Mid: bubbles"):
 
@@ -957,7 +957,7 @@ those cooled cards do not count — see § 8.
   > had started, froze the board, and named no words; the badge says the same thing
   > continuously, on the exact bubbles it is true of, and costs no interruption. The
   > earlier claim that "a bubble is far too small to carry a corner badge" did not
-  > survive contact — at 12px on a 40%-radius squircle, inset 10% from the corner so it
+  > survive contact — at 12px on a 28%-radius squircle (40% when this was written), inset 10% from the corner so it
   > stays on the curve at every spawn radius, it reads fine. Q6 (does the popup freeze
   > the board?) is therefore moot for lending; the freezing rule itself still stands for
   > any input-blocking modal Hydra does show.
@@ -1254,7 +1254,7 @@ reads from the constant and never hard-codes.
 
 | Piece | Where |
 |---|---|
-| The contested cards | fetched once before the run by `HydraBubblesPage` (`GET /api/onDeck/gamePool?challengeId=…&need=CHALLENGE_WORD_COUNT`), then **filtered through `challengeRound.isContested`** and handed to `useColorBuffers` as its third argument |
+| The contested cards | fetched once before the run by `HydraBubblesPage` (`GET /api/onDeck/gamePool?challengeId=…&need=CHALLENGE_WORD_COUNT`), then **filtered through `challengeRound.isContested`** and handed to `useColorBuffers` as its second argument |
 | The bloom slot | `useColorBuffers`'s `take()` serves the challenge queue first **for bloom only**; the cards are also hard-excluded from every refill so one cannot arrive twice |
 | The ending | `HydraStage`'s new `shouldEndRun(entry)` prop, asked after every correct match, fires `finishRun("challengeComplete")` once the last contested word is cleared — after the pop animation, so the board does not freeze mid-pop |
 | The score | the shared runner (`useChallengeRound`), same as every other eligible game |
@@ -1574,7 +1574,7 @@ nothing.
 | spawn distribution (§ 3) | `src/games/hydra-bubbles/spawnTable.ts` → `rollColor`, `PAYOUT_BY_COLOR`, `HYDRA_SPAWN_ANCHORS`, `DRAIN_ONLY_WEIGHTS`, `expectedPayoutAt` |
 | spawn algorithm + invariants (§ 4) | `src/games/hydra-bubbles/spawnPlanner.ts` → `planSpawnBatch`, `hasLiveMatch`, `nextKindByRatio` |
 | per-color guarantee (§ 4.3 invariant 3) | `src/games/hydra-bubbles/spawnPlanner.ts` → `neededColor`, `oldestStrayOf`, `completionOf`; threshold `COLOR_NEED_TIEBREAK_FILL` in `constants.ts` |
-| color buffers (§ 6.2b) | `src/games/hydra-bubbles/useColorBuffers.ts` → `useColorBuffers`, `fetchColor` (sends the band split + `strictBuckets=1`) |
+| color buffers (§ 6.2b) | `src/games/hydra-bubbles/useColorBuffers.ts` → `useColorBuffers`, `fetchColor` (sends the band split + `strictBuckets=1` via `fetchGamePool`, `src/api/gamePool.ts`) |
 | band → color mapping (§ 5) | `src/games/hydra-bubbles/constants.ts` → `BUCKETS_BY_COLOR` |
 | tier offsets (§ 6.2) | `src/games/hydra-bubbles/constants.ts` → `TIER_OFFSET_BY_COLOR` |
 | the field + palette (§ 2.2) | `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`, `BLUE_DARK`, `BLUE_LIGHT`; text ink is derived in `src/games/bubbles/Bubble.tsx` → `inkOnFill` |
@@ -1588,7 +1588,7 @@ nothing.
 | bubble palette | `src/games/hydra-bubbles/HydraStage.tsx` → `YELLOW_DRAIN`, `BLUE_LIGHT`, `FILL_BY_COLOR`, `DEFINITION_FILL`; `src/games/bubbles/constants.ts` → `COLOURED_BUBBLE_RING`, `NEUTRAL_BUBBLE_RING`, the status fills, `DANGER_VIGNETTE_BG`, `CANCEL_ZONE_COLORS` |
 | minute points (§ 9) | `src/constants.ts` → `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | challenge spec (§ 7.5) | `server/contracts/wire.ts` → `CHALLENGE_GAMES` |
-| challenge round wiring (§ 7.5) | `src/games/runtime/useChallengeRound.ts` (scorer + active-time clock) and `ChallengeRoundScoreboard.tsx`; `HydraBubblesPage.tsx` → `fetchChallengeCards`, `shouldEndRun`, `remainingContestedRef`; `useColorBuffers`'s third argument (the bloom-slot queue); `HydraStage.tsx` → the `shouldEndRun` prop |
+| challenge round wiring (§ 7.5) | `src/games/runtime/useChallengeRound.ts` (scorer + active-time clock) and `ChallengeRoundScoreboard.tsx`; `HydraBubblesPage.tsx` → `fetchChallengeCards`, `shouldEndRun`, `remainingContestedRef`; `useColorBuffers`'s second argument (the bloom-slot queue); `HydraStage.tsx` → the `shouldEndRun` prop |
 | **Server** | |
 | refill lending opt-out (§ 6.1) | `server/contracts/wire.ts` → `ROLLING_SUPPLY_SURFACES`, `isRollingSupplySurface`; `OnDeckVocabService.getGameVocabPool` → `lendOnRefill` |
 | tier resolution (§ 6.2) | `ProvisionalCardService.resolveLendLevel`; `?lendLevelOffset=` on the pool endpoint |

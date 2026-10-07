@@ -248,7 +248,7 @@ The end-of-session "sort these cards" CTA remains the pressure valve.
 
 | Endpoint | Surface | Notes |
 |---|---|---|
-| `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading | Skipped when `need` is set (a partial refill — see below) |
+| `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading, Bucket Drop | Skipped when `need` is set (a partial refill — see below) |
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
 | `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'` |
 
@@ -415,7 +415,7 @@ Whether the notice can **name** the words is a per-surface property, shared as
 
 | Surface | Itemized? | Why |
 |---|---|---|
-| Bubble Match, Speed Reading, Word Search | **yes** — tabulates the exact cards | fixed, known set |
+| Bubble Match, Speed Reading, Word Search, Bucket Drop | **yes** — tabulates the exact cards | fixed, known set |
 | Match Speed | no — generic message | deals from a rolling buffer |
 | flp | no — generic message | working loop refills as you go |
 
@@ -577,7 +577,11 @@ Minimizing the offer is the "not right now, but don't take it away" answer — i
 as the corner puck for the rest of the round; **Not now** dismisses it for good. The
 collapse/restore mechanics are shared by both popups and live in
 `src/components/MinimizablePopup.tsx`; `GameEndPopup` is now a thin wrapper that pins the
-end-of-run corner and color.
+end-of-run corner and color. Both scrims cover the **entire screen**, the game's header
+included: `MinimizablePopup` portals the scrim to the phone frame (`useScreenOverlayHost`),
+while both pucks still dock into the game panel's corners (`puckAnchorSelector=".game-frame"`).
+Speed Reading alone renders them `inPlace`, inside its rotating sideways stage
+(docs/UX_AND_NAVIGATION.md § Dimming the background).
 
 **On flp** there is no scoreboard to attach the offer to — a study session ends when the
 learner LEAVES — so the offer **gates the back arrow**. The first tap raises it listing
@@ -790,13 +794,27 @@ two features honest about each other:
 The strict `vetDeckClause` (no provisional branch) is used by every read that means
 "the deck itself" — the deck's card list, its count — so those never show a lent card.
 
-## 7c. Memory Map declares NO baseline — deliberately
+## 7c. Memory Map lends to stay full — without a `CARD_BASELINES` entry
 
-[MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) has **no entry in `CARD_BASELINES`** and is
-never topped up. It is the only game like this, and the omission is a decision rather
-than an oversight, so do not "complete" the table by adding it.
+**Since 2026-10-06** [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) fills every map to
+`MEMORY_MAP_CAPACITY` (50) and lends whatever the learner's own cards cannot cover
+(§ 2.1 there). Its ladder is the § 4b shape: rested sorted cards → cooling sorted cards
+→ lent cards, the last via `ProvisionalCardService.acquireLentCards` and admitted to the
+candidate read **by id only** (`MemoryMapDAL.getUnplacedCandidates(…, lentIds)`), in up
+to three rounds because a lent word can lose the dd guard. A lent card that the learner
+later sorts is promoted in place and keeps its slot.
 
-Two reasons, and the second is the important one:
+It still has **no `CARD_BASELINES` entry**, deliberately: a baseline is compared against
+the learner's SORTED count (`ensureBaseline`), while the map's deficit is "eligible, not
+reading-mastered, not already on the map" after the cooled ladder — a number only
+`MemoryMapService.selectOccupants` can compute. An entry would also make
+`?surface=memory-map` a legal game-pool surface.
+
+### History: why it originally declared NO baseline (overruled)
+
+Until 2026-10-06 the map was never topped up, for two reasons — the second overruled by
+owner decision, recorded here because the reasoning still explains why lent cards enter
+only by name:
 
 * **Nothing to block.** The map has no minimum viable size — a learner with four cards
   gets a four-word map and a perfectly playable run. There is no round to fail to build,
@@ -807,11 +825,8 @@ Two reasons, and the second is the important one:
   meant to portray the learner's own library. A borrowed word does not belong there.
 
 That second point made Memory Map the **first** game to select on `vetSortedClause()`.
-Since 2026-08-20 every game does (§ 4b), so Memory Map is no longer the exception — but
-it remains the strictest case: the others admit lent rows by id when a round genuinely
-has to borrow, and Memory Map admits none at all, because its selection creates
-something that outlives the session. A future surface whose selection writes a durable
-artifact should do the same.
+Since 2026-08-20 every game does (§ 4b), and since 2026-10-06 Memory Map, like the
+others, admits lent rows by id when it has to borrow.
 
 ## 8. Layering map
 

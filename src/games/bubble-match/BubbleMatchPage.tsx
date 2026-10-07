@@ -3,26 +3,24 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
-import { API_BASE_URL } from "../../constants";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
-import { authHeader } from "../../utils/authHeader";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
-import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
+import { fetchGamePool as requestGamePool } from "../../api/gamePool";
 import type { Language, MarkType, VocabEntry } from "../../types";
 import { foreignPromptTrack } from "../../../server/contracts/wire";
 import { GameLeafPage } from "../shared/GameSurface";
+import { COLORS } from "../../theme/colors";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
-import { GAME_HUE } from "./constants";
 import BubbleMatchHeaderControls from "./BubbleMatchHeader";
 import BubbleMatchEndPopup from "./BubbleMatchEndPopup";
 import BubbleStage from "./BubbleStage";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
-import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, MARK_TYPE, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
+import { GAME_DISTRIBUTION, GAME_KEY, LEVEL_CONFIGS, levelHue, MARK_TYPE, MAX_AVOID_IDS, MIN_REPLAY_PAIRS, TOTAL_PAIRS } from "./constants";
 import type { LevelConfig } from "./types";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
@@ -35,18 +33,6 @@ import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import { useGameExit } from "../runtime/gameExit";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
-
-/** Shape returned by GET /api/onDeck/gamePool. */
-interface GamePoolResponse {
-    cards: VocabEntry[];
-    requested: Record<string, number>;
-    available: Record<string, number>;
-    /** Number of cards a full board needs (sum of the requested distribution). */
-    total: number;
-    /** Cards this particular call had to return (< total for a partial refill). */
-    needed: number;
-    sufficient: boolean;
-}
 
 type Phase =
     | "loading"
@@ -74,10 +60,7 @@ function shuffle<T>(arr: T[]): T[] {
 // `surface` names which baseline the server tops the player up to before it builds
 // the pool, so a small deck is filled with temporary cards instead of blocking
 // (docs/PROVISIONAL_CARDS.md). Bubble Match's baseline is CARD_BASELINES['bubble-match'].
-const buildPoolQuery = (markType: MarkType) =>
-    [`markType=${markType}`, "surface=bubble-match"]
-        .concat(Object.entries(GAME_DISTRIBUTION).map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`))
-        .join("&");
+const POOL_SURFACE = "bubble-match";
 
 /**
  * Bubble Match — page shell + game-flow state machine.
@@ -101,7 +84,6 @@ const BubbleMatchPage: React.FC = () => {
     // for an ordinary launch from the Games hub. Appended to every pool request so
     // the round stays inside the set the learner picked.
     const launchCollection = useLaunchCollection();
-    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Bubble Match");
     const navigate = useNavigate();
     // Where Back / "Back to …" land: the hub, or the surface that launched us.
@@ -246,23 +228,22 @@ const BubbleMatchPage: React.FC = () => {
         refill?: { need: number; keepIds: number[]; avoidIds: number[] }
     ): Promise<VocabEntry[] | null> => {
         try {
-            // The collection suffix (docs/DECKS_FEATURE.md) goes on BOTH the full
-            // board and the Play-Again refill: a deck-launched game that dropped it
-            // on refill would start pulling replacements from the whole library.
-            // Latches the run's track on the FIRST fetch and reuses it for every
-            // Play-Again refill, so a refilled board stays on the track its kept
-            // cards were selected for.
-            const poolQuery = buildPoolQuery(lockRunTrack());
-            const query = (refill
-                ? `${poolQuery}&need=${refill.need}&exclude=${refill.keepIds.join(",")}`
-                  + `&avoid=${refill.avoidIds.join(",")}`
-                : poolQuery) + collectionSuffix + challengeParamsRef.current;
-            const res = await fetch(`${API_BASE_URL}/api/onDeck/gamePool?${query}`, {
-                credentials: "include",
-                headers: authHeader(),
+            // The collection (docs/DECKS_FEATURE.md) goes on BOTH the full board and
+            // the Play-Again refill: a deck-launched game that dropped it on refill
+            // would start pulling replacements from the whole library.
+            // `lockRunTrack()` latches the run's track on the FIRST fetch and reuses it
+            // for every Play-Again refill, so a refilled board stays on the track its
+            // kept cards were selected for.
+            const data = await requestGamePool({
+                markType: lockRunTrack(),
+                surface: POOL_SURFACE,
+                distribution: GAME_DISTRIBUTION,
+                need: refill?.need,
+                exclude: refill?.keepIds,
+                avoid: refill?.avoidIds,
+                collection: launchCollection,
+                challengeParams: challengeParamsRef.current,
             });
-            if (!res.ok) throw new Error("Failed to load game pool");
-            const data: GamePoolResponse = await res.json();
 
             // NO CARD-COUNT GATE. The server has already topped the player up to the
             // Bubble Match baseline with temporary cards, so `sufficient` can only be
@@ -280,11 +261,11 @@ const BubbleMatchPage: React.FC = () => {
             setPhase("blocked");
             return null;
         }
-        // authHeader() reads the token at call time, so this callback's identity
-        // stays stable across a silent token refresh. See CLAUDE.md "Never
-        // reload on token refresh". `collectionSuffix` is likewise omitted: it comes
-        // from this page's own URL, which cannot change without remounting the page,
-        // so the closure can never go stale.
+        // apiGet reads the token at call time, so this callback's identity stays
+        // stable across a silent token refresh. See CLAUDE.md "Never reload on token
+        // refresh". `launchCollection` is likewise omitted: it comes from this page's
+        // own URL, which cannot change without remounting the page, so the closure
+        // can never go stale.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -595,7 +576,12 @@ const BubbleMatchPage: React.FC = () => {
             language={(user?.selectedLanguage ?? "zh") as Language}
         />
         <GameLeafPage
-            hue={GAME_HUE}
+            // White screen, LEVEL-hued board: the HUD tint and frame follow the run's
+            // level (Chill green / Hustle orange / Torture red — the tile that launched
+            // it, and the word bubbles' colour), while the ground stays plain white so
+            // the coloured bubbles are the only colour mass on screen.
+            hue={levelHue(level.level)}
+            ground={COLORS.white}
             title="Bubble Match"
             // Destination + the "leaving ends this round" confirm (useGameBack).
             onBack={onBack}
@@ -649,7 +635,6 @@ const BubbleMatchPage: React.FC = () => {
                                 levelPairs={pool}
                                 config={level}
                                 levelNumber={level.level}
-                                levelLabel={level.label}
                                 showPinyin={boardShowPinyin}
                                 showPinyinColor={showPinyinColor}
                                 // Silent on a READING run: the whole point is to reach

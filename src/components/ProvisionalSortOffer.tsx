@@ -57,8 +57,6 @@ export interface ProvisionalSortOfferProps {
     minimized?: boolean;
     onMinimize?: () => void;
     onRestore?: () => void;
-    /** `absolute` (default) for a game stage; `fixed` for a page with no stage. */
-    positioning?: "absolute" | "fixed";
     /**
      * Stacking order. Default 210 — one step above a game's end popup (200), which it
      * deliberately stacks over. A page whose chrome sits higher (flp's dialogs run in
@@ -67,6 +65,8 @@ export interface ProvisionalSortOfferProps {
     zIndex?: number;
     /** Label of the dismiss button. Default "Not now". */
     dismissLabel?: string;
+    /** Render in place rather than at the frame — see MinimizablePopup's `inPlace`. */
+    inPlace?: boolean;
 }
 
 const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
@@ -78,9 +78,9 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     minimized,
     onMinimize,
     onRestore,
-    positioning = "absolute",
     zIndex = 210,
     dismissLabel = "Not now",
+    inPlace,
 }) => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -117,7 +117,12 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
             minimized={minimized}
             onMinimize={onMinimize}
             onRestore={onRestore}
-            positioning={positioning}
+            // Dock the puck in the game panel's top-left corner rather than the
+            // screen's (the scrim covers the whole screen, header included, so its own
+            // corner is the status band over the back arrow). A page with no game panel
+            // (flp) has no match and docks to the screen corner.
+            puckAnchorSelector=".game-frame"
+            inPlace={inPlace}
             // Above the end-of-run popup (200), with a lighter scrim: the field is
             // already dimmed once and dimming it twice reads as a broken overlay.
             zIndex={zIndex}

@@ -98,10 +98,12 @@ const AudioModeChip: React.FC<{ className?: string }> = ({ className }) => {
     return (
         <HeaderCycleChip
             // The state is in the class as well as the label so a surrounding
-            // surface can restyle one state (the game accent ground restyles the
-            // active chip — see gameSurfaceSx).
+            // surface can restyle one state.
             className={["audio-mode-chip", `audio-mode-chip--${mode}`, className ?? ""].filter(Boolean).join(" ")}
             active={chip.active}
+            // Mid blue rather than the shared ink inversion when audio is on (mute
+            // stays grey). Holds on game grounds too — see gameSurfaceSx.
+            tone="blu"
             widthCh={MODE_LABEL_WIDTH_CH}
             icon={chip.icon}
             ariaLabel={chip.ariaLabel}

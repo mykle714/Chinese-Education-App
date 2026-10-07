@@ -9,7 +9,6 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { markFlashcard } from "../../api/flashcards";
 import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
-import { collectionQuerySuffix } from "../../features/flashcards/collectionRef";
 import type { Language, VocabEntry } from "../../types";
 import { CHALLENGE_WORD_COUNT } from "../../types";
 import { GameLeafPage } from "../shared/GameSurface";
@@ -28,8 +27,7 @@ import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
 import { useColorBuffers } from "./useColorBuffers";
-import { API_BASE_URL } from "../../constants";
-import { authHeader } from "../../utils/authHeader";
+import { fetchGamePool } from "../../api/gamePool";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
@@ -51,7 +49,6 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
  */
 const HydraBubblesPage: React.FC = () => {
     const launchCollection = useLaunchCollection();
-    const collectionSuffix = collectionQuerySuffix(launchCollection);
     usePageTitle("Hydra Bubbles");
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -75,10 +72,6 @@ const HydraBubblesPage: React.FC = () => {
     // Bumped per run so HydraStage remounts with a clean field.
     const [runId, setRunId] = useState(0);
     const runIdRef = useRef(0);
-
-    // A deck/collection run plays exactly the set the learner chose: no lending, and
-    // the cooldown is not honored either (§ 6.3).
-    const restricted = launchCollection !== null;
 
     // ── STUDY CHALLENGE ROUND (§ 7.5, docs/STUDY_CHALLENGE.md § 5) ──
     // BACKGROUND PAUSE IS BACK, exactly as the note below the pause gate promised: a
@@ -113,7 +106,7 @@ const HydraBubblesPage: React.FC = () => {
     // params as a dependency. Same pattern as Bubble Match / Match Speed / Word Search.
     const challengeParamsRef = useRef("");
     challengeParamsRef.current = challengeRound.poolParams;
-    const buffers = useColorBuffers(collectionSuffix, restricted, challengeCards);
+    const buffers = useColorBuffers(launchCollection, challengeCards);
     /** Contested words still unmatched — the run ends when this empties (§ 7.5). */
     const remainingContestedRef = useRef<Set<string>>(new Set());
 
@@ -125,29 +118,23 @@ const HydraBubblesPage: React.FC = () => {
      */
     const fetchChallengeCards = useCallback(async (): Promise<VocabEntry[] | null> => {
         try {
-            const params = [
-                `markType=${MARK_TYPE}`,
-                `surface=${SURFACE}`,
-                `need=${CHALLENGE_WORD_COUNT}`,
-            ];
-            // The round's identity comes from `poolParams` (already `&`-prefixed) rather
-            // than being rebuilt here: it carries the tester `?anytime=1` hatch as well as
+            // The round's identity comes from `poolParams` rather than being rebuilt
+            // here: it carries the tester `?anytime=1` hatch as well as
             // `challengeId`/`gameId`, and hand-building the pair dropped the hatch — a
             // validator could open the round from the challenge page and then be 400'd
             // ("Your test window is not open") on its cards (docs/STUDY_CHALLENGE.md § 2a).
-            const res = await fetch(
-                `${API_BASE_URL}/api/onDeck/gamePool?${params.join("&")}${challengeParamsRef.current}`, {
-                credentials: "include",
-                headers: authHeader(),
+            const data = await fetchGamePool({
+                markType: MARK_TYPE,
+                surface: SURFACE,
+                need: CHALLENGE_WORD_COUNT,
+                challengeParams: challengeParamsRef.current,
             });
-            if (!res.ok) return null;
-            const data = await res.json() as { cards?: VocabEntry[] };
-            return data.cards?.length ? data.cards : null;
+            return data.cards.length ? data.cards : null;
         } catch {
             return null;
         }
-        // authHeader() reads the token at call time (CLAUDE.md ⛔ rule).
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // apiGet reads the token at call time (CLAUDE.md ⛔ rule), so nothing here
+        // is a dependency and the identity survives a silent token refresh.
     }, []);
 
     /**

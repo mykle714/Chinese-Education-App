@@ -195,12 +195,14 @@ animate. Returns `{ surfaceRef, style, exit }`:
 - **Exit:** `exit(performNavigate)` navigates **immediately** (so the destination
   mounts underneath) and slides a detached **clone** of the leaving page off the
   top. The incoming page is therefore already there beneath the departing one,
-  rather than rendering after it leaves. The clone is appended to the phone frame's positioned inner box
-  (`.mobile-demo-frame__viewport`) so it stays clipped to the card and paints above the
-  new route. (The inner box, not the outer `.mobile-demo-frame`, for the same reason
-  the sheet portal wants it — the clone is `position: absolute` and the outer box is
-  static, so on desktop it would slide across the whole window. See
-  `src/components/overlayHost.ts`.) (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
+  rather than rendering after it leaves. The clone is appended to the phone frame
+  (`.mobile-demo-frame`, which is `position: relative; overflow: hidden`) so it stays
+  clipped to the card and paints above the new route (`src/hooks/usePageSlide.ts`).
+  (An inner `.mobile-demo-frame__viewport` box used to be the target; it was removed
+  2026-09-13 and the frame itself became the positioned host — see
+  `src/components/overlayHost.ts`.) Overlays that dim are hosted at the frame too, OUTSIDE
+  the page surface, so the clone does not carry them: they vanish on navigation rather
+  than sliding off (docs/UX_AND_NAVIGATION.md § Dimming the background). (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
   Caveat: Night Market renders a Pixi.js **canvas**, which `cloneNode` does not
   copy — its exit clone shows the dark background + DOM header overlay but not the
   live scene during the brief down-slide. Acceptable since the destination beneath

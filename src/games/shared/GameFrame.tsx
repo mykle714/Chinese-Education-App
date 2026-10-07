@@ -3,6 +3,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { SIZE, TRACKING } from "../../theme/scale";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 import TimerEyeToggle from "./TimerEyeToggle";
 
@@ -277,11 +278,20 @@ export interface GameTimerProps {
      */
     valueShown?: boolean;
     onToggleValueShown?: () => void;
+    /**
+     * Optional content pinned to the strip's TOP-LEFT corner — a short fact that belongs
+     * with the clock (Writing Grid's "Phase 1" / "Phase 2"). Absolutely positioned, like
+     * the eye on the right, so it never pushes the clock off centre or makes the strip
+     * taller. Keep it to a word or two: it shares the row with the centred numerals.
+     */
+    leading?: React.ReactNode;
     className?: string;
 }
 
 /**
- * `.timer` — the run clock, inside the panel rather than in the page header.
+ * `.timer` — the run clock, inside the panel rather than in the page header. Every
+ * game's clock is this component (Word Search, Writing Grid, Bucket Drop, Match Speed),
+ * so they share one typeface, size and strip; only the colour differs per game.
  *
  * It sits here because it is GAME STATE, not chrome: the player's eyes are on the board,
  * and a countdown they have to look away to read is a countdown they stop reading. The
@@ -300,6 +310,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     pulse = false,
     valueShown = true,
     onToggleValueShown,
+    leading,
     className,
 }) => {
     const hue = useGameSurfaceHue();
@@ -311,7 +322,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             // Anchors the (absolutely positioned) eye, when there is one.
             position: "relative",
             textAlign: "center",
-            padding: "13px 15px 11px",
+            // GameHud's padding, so a timer strip and a HUD strip are the same height.
+            padding: "12px 15px",
             // Same tinted ground and same accent hairline as the HUD strip — the two
             // stack on one panel and have to read as one band of chrome.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
@@ -323,11 +335,16 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         <Box
             className="game-timer__value"
             sx={{
-                fontFamily: FONTS.sans,
-                fontSize: 28,
-                fontWeight: 700,
+                // Word Search's HUD clock is the house style for every game's clock
+                // (standardized 2026-10-06): the mono (fonts.ts reserves it for data,
+                // timers by name) at `SIZE.bodyLg` — the play panel's one text size —
+                // normal case, normal tracking, `Label`'s 1.2 line height. Only the
+                // COLOUR stays per game (`valueColor`, and the hue tint behind it).
+                fontFamily: FONTS.mono,
+                fontSize: SIZE.bodyLg,
+                letterSpacing: TRACKING.normal,
                 fontVariantNumeric: "tabular-nums",
-                lineHeight: 1.1,
+                lineHeight: 1.2,
                 color: valueColor,
                 transition: "color 300ms linear",
                 animation: pulse ? "game-timer-pulse 1s ease-in-out infinite" : "none",
@@ -340,6 +357,16 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         >
             {value}
         </Box>
+        {leading && (
+            <Box
+                className="game-timer__leading"
+                // Top-left corner: the strip's own top padding (12px) and the same 15px side
+                // inset the HUD's facts use, so it lines up with a HUD label's left edge.
+                sx={{ position: "absolute", top: "12px", left: "15px", lineHeight: 1.2 }}
+            >
+                {leading}
+            </Box>
+        )}
         {onToggleValueShown && (
             <TimerEyeToggle className="game-timer__toggle" shown={valueShown} onToggle={onToggleValueShown} />
         )}

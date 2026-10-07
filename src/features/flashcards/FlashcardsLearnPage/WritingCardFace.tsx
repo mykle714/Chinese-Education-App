@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import { CheckCircle, Cancel, Lock, TouchApp } from "@mui/icons-material";
+import { Lock, TouchApp } from "@mui/icons-material";
 import WritingStage from "../../../components/handwriting/WritingStage";
+import ResultStamp from "../../../components/handwriting/ResultStamp";
 import { levelPreview, WRITING_FOCUS_SIZE } from "../../../components/handwriting/levelBehavior";
 import type { Ink } from "../../../components/handwriting/types";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
@@ -9,7 +10,7 @@ import { WRITING_LEVELS, WRITING_MAX_CHARS } from "../../../../server/contracts/
 import type { VocabEntry } from "../../../types";
 import { COLORS, FONTS } from "../../../theme";
 import { SIZE } from "../../../theme/scale";
-import { FC_FONT } from "../constants";
+import { CARD_FLIP_MS, FC_FONT } from "../constants";
 import TonedPronunciation from "../../../components/TonedPronunciation";
 import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
 
@@ -28,7 +29,7 @@ import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
  *          cell wiggles the card and flashes every empty cell (`flashNonce`). An EMPTY or written cell
  *          previews what the editor will first show at this level (`levelPreview`):
  *          the outline for Snap / Trace / Step Through, the first region for
- *          Quarters / Eighths, nothing for Memorize / Blank / Timed (Memorize's outline is
+ *          Quarters / Sixths, nothing for Memorize / Blank / Timed (Memorize's outline is
  *          the editor's study phase, never previewed).
  *   BACK   the same layout; each cell shows the learner's ink over the WHOLE outline
  *          with its ✓ / ✗, and the bottom line says "Tap the card to continue".
@@ -157,7 +158,8 @@ export default function WritingCardFace({
                             px={cellPx}
                             className={`writing-card-face__cell${result ? ` writing-card-face__cell--${result}` : ""}`}
                             tappable={canOpen || canInspect}
-                            bg={result === "correct" ? COLORS.grnTint : result === "wrong" ? COLORS.redTint : COLORS.white}
+                            // Verdict = the corner ✓ / ✗ icon only; the ground stays white.
+                            bg={COLORS.white}
                             flash={flash}
                             onTap={(el) => {
                                 if (canInspect) onInspectCell?.(i);
@@ -195,11 +197,9 @@ export default function WritingCardFace({
                                     {!back && locked[i] && (
                                         <Lock className="writing-card-face__cell-locked" sx={{ position: "absolute", top: 6, left: 6, fontSize: 16, color: COLORS.textFaint }} />
                                     )}
-                                    {result === "correct" && (
-                                        <CheckCircle className="writing-card-face__result" sx={{ position: "absolute", top: 6, right: 6, fontSize: 20, color: COLORS.successInk }} />
-                                    )}
-                                    {result === "wrong" && (
-                                        <Cancel className="writing-card-face__result" sx={{ position: "absolute", top: 6, right: 6, fontSize: 20, color: COLORS.dangerInk }} />
+                                    {result && (
+                                        // Delayed by the flip so the stamp lands on a face the learner can see.
+                                        <ResultStamp className="writing-card-face__result" result={result} size={24} inset={6} delayMs={CARD_FLIP_MS} />
                                     )}
                                 </>
                             )}
@@ -273,7 +273,7 @@ function CellBox({ className, px, tappable, bg, flash, onTap, children }: {
     className: string;
     px: number;
     tappable: boolean;
-    /** Pulse the OUTLINE twice (orgMk — attention, deliberately NOT the red "wrong" tint). */
+    /** Pulse the OUTLINE twice (orgMk — attention, deliberately NOT red, which the ✗ "wrong" icon owns). */
     flash: boolean;
     bg: string;
     onTap: (el: HTMLElement) => void;

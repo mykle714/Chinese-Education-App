@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import { GameLeafPage } from "../shared/GameSurface";
@@ -11,10 +11,11 @@ import ForeignText from "../../components/ForeignText";
 import MinimizablePopup from "../../components/MinimizablePopup";
 import MemoryMapWorld from "./MemoryMapWorld";
 import MemoryMapPrompt from "./MemoryMapPrompt";
-import { GameFrame } from "../shared/GameFrame";
+import { GameFrame, GameHudLabel } from "../shared/GameFrame";
 import MemoryMapRestartDialog from "./MemoryMapRestartDialog";
-import { HeaderIconButton, HeaderMetaLabel } from "../../components/PageHeader";
+import { HeaderIconButton } from "../../components/PageHeader";
 import { useMemoryMapRun } from "./useMemoryMapRun";
+import { useGameExit } from "../runtime/gameExit";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
@@ -22,7 +23,8 @@ import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { GROWTH_TOAST_MS, MAX_TRIES } from "./constants";
+import { GROWTH_TOAST_MS, PROMPT_AUDIO_GAP_MS } from "./constants";
+import AudioModeChip from "../../components/AudioModeChip";
 import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 
 /**
@@ -51,6 +53,9 @@ import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
 const MemoryMapPage: React.FC = () => {
     usePageTitle("Memory Map");
     const navigate = useNavigate();
+    // Where Back / Exit lead: the Reading Center when launched from its games belt
+    // (ReadingGamesCarousel → `state.exitTo`), else the Games hub.
+    const gameExit = useGameExit();
     const { user } = useAuth();
     // Mandatory on every game page: stops the OS back-swipe stealing a pan that
     // starts near the screen edge (CLAUDE.md § Touch & Scroll).
@@ -58,9 +63,18 @@ const MemoryMapPage: React.FC = () => {
 
     const language = user?.selectedLanguage ?? "zh";
     const run = useMemoryMapRun(user?.id, language);
-    // Narration for the committed word (§ 3.3b). No speaker button anywhere on the
-    // page — the lock-in tap is the only thing that ever speaks.
+    // Narration: the committed word on every answer (§ 3.3b), and the new target's
+    // pronunciation each time a prompt appears (§ 3.1a). Both are AUTOMATIC
+    // (`autoSpeakSentence`), so the header's AudioModeChip mutes them. The prompt bar's
+    // speaker (`replayTarget`) is the one MANUAL call and speaks in every mode.
     const tts = useTTS();
+    // `useTTS()` returns a fresh object every render; the prompt-autoplay effect reads it
+    // through this ref so it can key on the target alone (docs/AUDIO_PLAYBACK.md § 1 —
+    // an autoplay effect must key on content identity only).
+    const ttsRef = useRef(tts);
+    ttsRef.current = tts;
+    // The answer narration still playing, if any — the next prompt's word waits for it.
+    const answerAudioRef = useRef<Promise<void> | null>(null);
 
     const [restartOpen, setRestartOpen] = useState(false);
     // The word whose definition popup is open. Tapping a COLOURED word opens this at
@@ -98,7 +112,7 @@ const MemoryMapPage: React.FC = () => {
      * A tap on a word.
      *
      * ── THE FIRST TAP SELECTS; THE SECOND ANSWERS (§ 3.3a) ───────────────────
-     * The map is dense, the parcels are small and the board is panned with the same
+     * The map is dense, the words are small and the board is panned with the same
      * finger that answers it, so a single-tap answer meant a fumbled touch could burn a
      * try — or resolve the prompt orange — with no chance to take it back. Arming the
      * word first makes every answer a deliberate act: tap once to point, tap the SAME
@@ -164,19 +178,90 @@ const MemoryMapPage: React.FC = () => {
         // session, which resolves only after an await.
         tts.unlockAudio();
         // autoSpeakSentence: answer feedback is automatic narration, so the
-        // autoplay setting gates it inside the hook.
-        void tts
+        // autoplay setting gates it inside the hook. Its promise settles when the sound
+        // ENDS (AUDIO_PLAYBACK.md § 4), which is what lets the next prompt wait for it.
+        const playing: Promise<void> = tts
             .autoSpeakSentence(word.entryKey, word.pronunciation ?? undefined)
-            .catch(() => {});
+            .then(
+                () => {},
+                () => {}
+            )
+            .finally(() => {
+                if (answerAudioRef.current === playing) answerAudioRef.current = null;
+            });
+        answerAudioRef.current = playing;
+    }
+
+    /**
+     * Autoplay the target's pronunciation whenever a new prompt appears (§ 3.1a) — the
+     * first prompt on load or resume, and each one after an answer, skip or restart.
+     *
+     * ── KEYED ON THE TARGET ALONE ────────────────────────────────────────────
+     * Deps are the target's identity and the run phase, never the autoplay setting:
+     * switching the chip to `default` must not narrate the prompt already on screen
+     * (AUDIO_PLAYBACK.md § 1, "Changing the mode must not make a sound"). Muting
+     * mid-word is handled once inside `useTTS`.
+     *
+     * ── AFTER THE ANSWER, NOT OVER IT ────────────────────────────────────────
+     * A correct commit speaks the committed word AND advances the target in the same
+     * tap. Speaking the new target straight away would cancel the answer narration
+     * (every speak cancels the one before it), so when one is in flight this waits for
+     * it to end, then leaves `PROMPT_AUDIO_GAP_MS` of silence. The cleanup's `cancelled`
+     * flag drops a pending word whose prompt has already moved on (a quick skip), and
+     * absorbs StrictMode's double-invoke.
+     *
+     * ── IT GIVES NOTHING AWAY ────────────────────────────────────────────────
+     * The prompt bar already prints the target's pinyin outright (§ 3.1, Q11
+     * superseded), so hearing it adds the sound of what is on screen, not a hint about
+     * where the word is. This is why Memory Map shows the AudioModeChip on every run,
+     * unlike Bubble Match / Bucket Drop's reading runs, which hide it because there the
+     * audio WOULD hand over the pronunciation being tested.
+     *
+     * No gesture unlock here: the prompt can land with no tap in its call stack (a load
+     * resolves after an await). The app-wide pointerdown listener has primed the sinks
+     * from the tap that opened the game (AUDIO_PLAYBACK.md § 5); on iOS a suspended
+     * AudioContext (`media` route) may still drop the very first word until the next tap.
+     */
+    const targetId = run.target?.vocabEntryId ?? null;
+    useEffect(() => {
+        if (run.phase !== "playing" || targetId === null) return;
+        const target = run.target;
+        if (!target) return;
+        let cancelled = false;
+        const pendingAnswer = answerAudioRef.current;
+        void (async () => {
+            if (pendingAnswer) {
+                await pendingAnswer;
+                await new Promise((resolve) => window.setTimeout(resolve, PROMPT_AUDIO_GAP_MS));
+            }
+            if (cancelled) return;
+            await ttsRef.current
+                .autoSpeakSentence(target.entryKey, target.pronunciation ?? undefined)
+                .catch(() => {});
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on target identity only (see above)
+    }, [run.phase, targetId]);
+
+    /**
+     * The prompt bar's speaker: replay the target's word (§ 3.1a). MANUAL narration
+     * (`speakSentence`, not `autoSpeakSentence`), so it speaks even when the header chip
+     * says mute — the speaker is the learner's explicit request (AUDIO_PLAYBACK.md § 4).
+     * The speaker's spinner reads `speakingKey`, which `useTTS` sets for any narration
+     * that actually RUNS — so it also lights while the prompt's autoplay is sounding the
+     * same word, and stays dark when a muted autoplay was suppressed.
+     */
+    function replayTarget() {
+        const target = run.target;
+        if (!target) return;
+        tts.unlockAudio();
+        void tts.speakSentence(target.entryKey, target.pronunciation ?? undefined).catch(() => {});
     }
 
     /** A tap on open water disarms — the map's "never mind" (§ 3.3a). */
     const handleTapWater = useCallback(() => setSelectedId(null), []);
-
-    // The hook owns the try counter; the bar only draws it. Clamped because a failed
-    // prompt stops incrementing (a wrong tap after the third costs nothing) and the
-    // pips must still read as all-spent.
-    const triesUsed = run.promptPhase === "failed" ? MAX_TRIES : run.tries;
 
     const playing = run.phase === "playing" || run.phase === "complete";
 
@@ -191,15 +276,10 @@ const MemoryMapPage: React.FC = () => {
      */
     const header = (
         <Box className="memory-map-header-actions" sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {/* `HeaderMetaLabel`, not a hand-rolled Typography: this is the header's
-                mono metadata slot (A2b), and being the shared component is also what
-                lets the accent ground repaint it white (§ A6b). It was the last game
-                header still styling its own text. */}
-            {playing && (
-                <HeaderMetaLabel className="memory-map-header-actions__progress">
-                    {run.answered}/{run.total}
-                </HeaderMetaLabel>
-            )}
+            {/* The app-wide narration setting, the same self-contained chip every other
+                game header carries (docs/AUDIO_PLAYBACK.md § 1). Mutes the prompt
+                autoplay and the answer narration alike; shown in every phase. */}
+            <AudioModeChip className="memory-map-header-actions__audio" />
 
             {/* A direct Restart button rather than a settings gear: Restart was the
                 gear's only item, and a cog that opens a one-row sheet is a drawer
@@ -226,7 +306,7 @@ const MemoryMapPage: React.FC = () => {
             hue={GAME_HUE}
             className="memory-map-page"
             title="Memory Map"
-            onBack={() => navigate("/games")}
+            onBack={() => navigate(gameExit.path, { state: gameExit.state })}
             rightContent={header}
             contentClassName="memory-map-page__content"
         >
@@ -276,13 +356,17 @@ const MemoryMapPage: React.FC = () => {
                     <MemoryMapPrompt
                         definition={run.target?.definition ?? null}
                         phase={run.promptPhase}
-                        triesUsed={triesUsed}
                         pronunciation={run.target?.pronunciation ?? null}
+                        onSpeak={replayTarget}
+                        speaking={run.target !== null && tts.speakingKey === run.target.entryKey}
                         onSkip={run.skipWord}
                         canSkip={run.canSkip}
                     />
                     <MemoryMapWorld
+                        slots={run.slots}
                         words={run.words}
+                        language={language}
+                        fontKey={user?.chineseFont}
                         outcomes={run.outcomes}
                         pulsingId={run.promptPhase === "failed" ? run.target?.vocabEntryId ?? null : null}
                         selectedId={selectedId}
@@ -292,6 +376,23 @@ const MemoryMapPage: React.FC = () => {
                         onCameraChange={run.setCamera}
                         onTapWord={handleTapWord}
                         onTapWater={handleTapWater}
+                        overlay={
+                            // ── THE RUN COUNTER FLOATS ON THE MAP ────────────────
+                            // Top-left corner of the play space, no container (owner,
+                            // 2026-10-06). It lived in LeafPage's header as a
+                            // `HeaderMetaLabel` before; on the map it sits beside what
+                            // it counts. `GameHudLabel` is the house style for an
+                            // in-play fact (full ink, mono) — legible straight on the
+                            // water, where the header's faint meta grey would not be.
+                            // Viewport-fixed (it does not pan) and pointerEvents none,
+                            // so a drag starting on it still pans the map.
+                            <GameHudLabel
+                                className="memory-map-page__progress"
+                                sx={{ position: "absolute", top: "8px", left: "16px", pointerEvents: "none" }}
+                            >
+                                {run.answered}/{run.total}
+                            </GameHudLabel>
+                        }
                     />
                 </GameFrame>
             )}
@@ -381,8 +482,8 @@ const MemoryMapPage: React.FC = () => {
                                 ] as const
                             ).map(([key, count, label]) => (
                                 <Box key={key} className={`memory-map-end__tally-item memory-map-end__tally-item--${key}`}>
-                                    {/* v2: the count sits on its outcome's fill (the same
-                                        OUTCOME_FILL the map's parcels wear) in ink — the
+                                    {/* v2: the count sits on its outcome's fill (OUTCOME_FILL,
+                                        the mid tier of the hue the map's outlines wear) in ink — the
                                         semantic inks it used to be tinted with are all
                                         plain ink now, which would have made the three
                                         counts indistinguishable. */}
@@ -412,7 +513,7 @@ const MemoryMapPage: React.FC = () => {
                                 className="memory-map-end__exit"
                                 fullWidth
                                 variant="outlined"
-                                onClick={() => navigate("/games")}
+                                onClick={() => navigate(gameExit.path, { state: gameExit.state })}
                             >
                                 Exit
                             </Button>

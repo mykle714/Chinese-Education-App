@@ -130,15 +130,16 @@ not painted: the panel looks correct and its buttons are missing, with no error 
 nothing in the DOM to suggest a problem. This is what hid the Study Challenge sheet's
 **Send** button (found 2026-09-01).
 
-The fix is not to weaken the mask. An overlay portals to
-`nearestOverlayHost(el)` (`src/components/overlayHost.ts`) — the nearest ancestor that
-both covers the frame and can host it without inverting paint order, which is
-`NodePage`'s transformed `Surface` on a node page and the frame's positioned inner box
-(`.mobile-demo-frame__viewport`) otherwise —
-and, because the footer bar paints above any such host, also calls
-`useHideFooter(open)` for its lifetime. Callers: `SheetPanel`, `ChallengeSheet`,
-`SteppedHelpPopup`, `ChallengeRoundScoreboard` (the last needs no `useHideFooter` —
-it lives on a leaf page, which has no footer).
+The fix is not to weaken the mask. An overlay portals OUT of the page, to the phone
+frame itself (`.mobile-demo-frame`, positioned) via `useScreenOverlayHost`
+(`src/hooks/useScreenOverlayHost.ts` → `src/components/overlayHost.ts` →
+`frameOverlayHost`), pinned `absolute; inset: 0` at a z-index above the footer bar's
+100 — so its dim covers the whole screen, footer included, and nothing in the page can
+mask it. Callers: `SheetPanel` (modal), `ChallengeSheet`, `SteppedHelpPopup`,
+`MinimizablePopup`, the Immersive World overlays. (Until 2026-10-06 overlays used
+`nearestOverlayHost` — `NodePage`'s transformed `Surface` — plus a `useHideFooter` hold;
+`ChallengeRoundScoreboard` still uses it, which is correct on a footerless leaf page.)
+Full rule: docs/UX_AND_NAVIGATION.md § Dimming the background.
 
 ### ⚠️ `touch-action: pan-y` is a CEILING on every scroller inside the page
 

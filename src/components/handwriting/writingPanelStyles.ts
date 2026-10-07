@@ -11,8 +11,13 @@ import { COLORS } from "../../theme";
 
 /** Corner radius of the panel (px). Kept literal: the clip-path keyframes need a px value. */
 export const PANEL_RADIUS = 16;
+/**
+ * The headerless panel's top corners (px) — the Writing Notebook's canvas, which grows
+ * out of a sharp copybook cell, so it only softens the corner rather than rounding it.
+ */
+export const PANEL_SQUARE_TOP_RADIUS = 4;
 /** Fixed footer height, so an assist button appearing never resizes the panel. */
-const FOOTER_HEIGHT = 52;
+export const WRITING_PANEL_FOOTER_HEIGHT = 52;
 
 /** Shared look for the footer's action buttons (assist, Verify) — outlined per the buttons rule. */
 export const WRITING_PANEL_ACTION_SX = {
@@ -50,7 +55,7 @@ export const WRITING_PANEL_HEADER_SX = {
   justifyContent: "center",
 } as const;
 export const WRITING_PANEL_FOOTER_SX = {
-  height: FOOTER_HEIGHT,
+  height: WRITING_PANEL_FOOTER_HEIGHT,
   bgcolor: COLORS.header,
   borderTop: `1px solid ${COLORS.border}`,
   display: "flex",

@@ -125,6 +125,12 @@ export function useWorkingLoop({
     const [isAnimating, setIsAnimating] = useState(false);
     const [isUndoing, setIsUndoing] = useState(false);
     const [lastMarkUndoSnapshot, setLastMarkUndoSnapshot] = useState<LastMarkUndoSnapshot | null>(null);
+    // Latest committed currentIndex, readable from inside a background mark's
+    // `.then` — by the time a refill response lands the learner may have swiped
+    // on (often more than once), so the dismiss-time closure's index is stale.
+    // Used to re-anchor on the card actually on front when a slot is removed.
+    const currentIndexRef = useRef(0);
+    currentIndexRef.current = currentIndex;
 
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
     // which slot is currently animating off-screen.
@@ -319,6 +325,27 @@ export function useWorkingLoop({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, bar]);
 
+    // Removes `cardId` from the loop and re-anchors currentIndex on whichever card is
+    // on front RIGHT NOW (read via currentIndexRef), so the visible card does not jump.
+    // Shared by the two wind-down paths in handleCardDismiss: the server had no
+    // replacement, or its replacement was already in the loop (the dedupe guard).
+    //
+    // Anchoring on the live front card rather than the card promoted at dismiss time
+    // matters because a mark response can land after the learner has swiped on
+    // again; anchoring on the dismiss-time successor would yank them backwards.
+    //
+    // Called from inside a setWorkingLoop updater: setCurrentIndex there is
+    // idempotent (same input ⇒ same index), so a StrictMode double-invoke is harmless.
+    const removeCardAndReanchor = useCallback((prevLoop: VocabEntry[], cardId: number): VocabEntry[] => {
+        const frontCard = prevLoop[currentIndexRef.current] ?? null;
+        const newLoop = prevLoop.filter(card => card.id !== cardId);
+        const anchorIndex = frontCard && frontCard.id !== cardId
+            ? newLoop.findIndex(card => card.id === frontCard.id)
+            : -1;
+        setCurrentIndex(anchorIndex >= 0 ? anchorIndex : 0);
+        return newLoop;
+    }, []);
+
     const handleCardDismiss = useCallback(async (direction: "left" | "right", writing?: WritingAttempt) => {
         if (workingLoop.length === 0 || isAnimating) return;
 
@@ -374,15 +401,34 @@ export function useWorkingLoop({
                 const { newCard, markTimestamp, displacedMarks } = markResult;
                 console.log(`Card marked: ${currentCard.entryKey} (${isCorrect ? "correct" : "incorrect"})`);
                 if (isCorrect && newCard) {
-                    // Patch the slot the dismissed card occupied — user won't see it for a full cycle
+                    // Patch the slot the dismissed card occupied — user won't see it for a full cycle.
+                    //
+                    // DEDUPE GUARD: two marks in flight at once (a fast swiper — each
+                    // refill takes ~1–2 s server-side) were each sent the SAME
+                    // `excludeIds`, because neither knew the other's replacement yet. The
+                    // server's ranking is deterministic, so both came back with the same
+                    // card and it landed in two adjacent slots — the learner saw it twice
+                    // in a row, and the second mark was dropped on cooldown (the 猪
+                    // report, 2026-10-08). If the replacement is already in the loop,
+                    // wind the dismissed slot down instead of duplicating it; the next
+                    // correct mark refills the loop back up.
+                    let duplicate = false;
                     setWorkingLoop(prevLoop => {
+                        // Locate the slot by id, not the dismiss-time index: an
+                        // intervening wind-down may have shifted the indices since.
+                        const slot = prevLoop.findIndex(card => card.id === currentCard.id);
+                        if (slot < 0) return prevLoop; // already gone (e.g. undo restored an older loop)
+                        if (prevLoop.some((card, i) => i !== slot && card.id === newCard.id)) {
+                            duplicate = true;
+                            return removeCardAndReanchor(prevLoop, currentCard.id);
+                        }
                         const newLoop = [...prevLoop];
-                        newLoop[preDismissSnapshot.currentIndex] = newCard;
+                        newLoop[slot] = newCard;
                         return newLoop;
                     });
                     // Pull the replacement's audio into the in-session blob cache
                     // while the user is studying other cards in the loop.
-                    prefetch(newCard);
+                    if (!duplicate) prefetch(newCard);
                 } else if (isCorrect && !newCard) {
                     // Card passed, but the server has no replacement — wind the loop
                     // down by removing the just-passed card instead of recycling it.
@@ -396,21 +442,9 @@ export function useWorkingLoop({
                     // sessions, re-showing a card the server just declined to serve.
                     //
                     // Remove by id (the optimistic currentIndex has already advanced, so
-                    // index math would be brittle), then re-anchor currentIndex to the
-                    // card now on front (the one promoted on dismiss) so the visible card
-                    // doesn't jump. Empty loop ⇒ currentEntry null ⇒ empty state.
-                    const preLoop = preDismissSnapshot.workingLoop;
-                    const promotedCard = preLoop.length > 1
-                        ? preLoop[(preDismissSnapshot.currentIndex + 1) % preLoop.length]
-                        : null;
-                    setWorkingLoop(prevLoop => {
-                        const newLoop = prevLoop.filter(card => card.id !== currentCard.id);
-                        const anchorIndex = promotedCard
-                            ? newLoop.findIndex(card => card.id === promotedCard.id)
-                            : -1;
-                        setCurrentIndex(anchorIndex >= 0 ? anchorIndex : 0);
-                        return newLoop;
-                    });
+                    // index math would be brittle) and re-anchor on the card now on
+                    // front. Empty loop ⇒ currentEntry null ⇒ empty state.
+                    setWorkingLoop(prevLoop => removeCardAndReanchor(prevLoop, currentCard.id));
                 }
                 // A writing result fans out onto several character cards and cannot be
                 // undone (FlashcardMarkService.undoMark refuses it), so offer no undo.
@@ -439,7 +473,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, noteMarkedLent, prefetch, cardDragRef, mode, bar]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, removeCardAndReanchor, noteMarkedLent, prefetch, cardDragRef, mode, bar]);
 
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;
@@ -491,7 +525,6 @@ export function useWorkingLoop({
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
-        /** Drop the front card from the loop after its vet row has been deleted. */
         /** Lent words this session has SHOWN; drives the notice. */
         provisionalSeen,
         /** Lent words this session REVIEWED; drives the "keep these" offers. */

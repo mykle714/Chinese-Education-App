@@ -108,6 +108,15 @@ POST /api/flashcards/mark
 - On marking correct: returns a replacement card for the flp working loop (`newCard`),
   or `newCard: null` when the pool is exhausted — an expected end-of-pool state for
   every kind of session, never an error.
+  The client sends `excludeIds` (the loop's current ids) so the replacement is not
+  already in the loop. That exclusion **cannot see a sibling mark still in flight**: two
+  quick swipes send the same `excludeIds` and the deterministic ranking returns the same
+  card to both. The client therefore owns a dedupe guard
+  (`src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` → `handleCardDismiss`
+  / `removeCardAndReanchor`): a replacement already in the loop is dropped and the
+  dismissed slot is removed, so the loop shrinks by one until the next correct mark
+  refills it. Without the guard, the same card sat in two adjacent slots and was shown
+  twice in a row, with the second mark suppressed on cooldown.
 - On marking incorrect: returns success with no replacement (the card stays in the loop).
 - On a mark whose track is still **cooling**: returns `suppressed: true` with
   `markTimestamp: null` and writes nothing. A success, not an error — see

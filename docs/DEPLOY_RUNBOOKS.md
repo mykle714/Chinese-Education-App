@@ -16,13 +16,13 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **174** (2026-10-06).
+PPE is current through migration **175** (2026-10-10).
 
 ## Open runbooks
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
-| [EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md](./EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md) | Example-sentence target index + per-occurrence tags. **No migration**; needs the manual `--locate-targets` heal on PPE | **NOT YET DEPLOYED** | Everything: deploy, heal, verify |
+| [EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md](./EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md) | Example-sentence target index + per-occurrence tags. **No migration**; needs the manual `--locate-targets` heal on PPE | Deployed + healed 2026-10-10 (161 rows tagged, 15 deliberate-repeat residue) | Someone must open 了's est on PPE and see 心中**了**然 underlined |
 | [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md) | Memory Map slot tree (migration **173**, contract) | Deployed 2026-10-06 | Someone must open Memory Map on PPE and see a full, tilted 50-tile map |
 | [DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md](./DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md) | 164 + 165 before the rebuild, contract drop 166 after it; `searchReadings` backfill | Deployed 2026-09-24 | Someone must run a logged-in dictionary search for 行 and see results |
 | [IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./IW_SCENE_NOTES_DEPLOY_RUNBOOK.md) | iw scene notes + scene events (migrations **160**, **161**; expand-only, applied BEFORE the rebuild because the shipped `ImmersiveWorldDAL` selects both columns by name) | Deployed 2026-09-05; notes/events confirmed 2026-09-06 | Someone must confirm a HALF-BUILT scene saves with amber warnings rather than being refused |

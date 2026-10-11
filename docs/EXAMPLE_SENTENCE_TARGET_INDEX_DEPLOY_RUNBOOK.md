@@ -3,9 +3,12 @@
 > **TEMPORARY.** Delete this file once PPE is verified (step 4 passes and someone has
 > opened 了's est on PPE and seen 心中**了**然 underlined, not 听**了**).
 >
-> **Status: NOT YET DEPLOYED to PPE** (written 2026-10-09). Dev is partially healed
-> (~38 of the ~135 affected words; the dev heal was stopped early on purpose). Do not
-> trust this line on its own: check with the SQL in step 1.
+> **Status: DEPLOYED + HEALED on PPE 2026-10-10.** Code shipped in `ebede87`. Step-1 SQL
+> before: 176 / 176 / 0; after the heal: `headword_repeats` 176, `unhealed` 15,
+> `with_occurrence_tags` 161 (162 of 176 located, 14 `could not locate target`, 0 failed
+> rows). 了's two sentences got `vocabCharIndex` 13 and 11, matching dev. **Only open
+> item:** someone opens 了 → eip → est on PPE and sees 心中**了**然 underlined.
+> Dev is still only partially healed (~38 of ~135 words) until the next `/data-ppe-to-dev`.
 
 Feature doc: [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) § Repeated segments.
 
@@ -48,7 +51,9 @@ script (8) and the manifest (7).
 
 ```bash
 git status --short          # PPE usually has local work — commit/push it first (docs/DEPLOY_RUNBOOKS.md)
-docker exec cow-backend sh -c 'test -n "$ANTHROPIC_API_KEY" && echo key-present'   # heal makes live API calls
+grep -q '^ANTHROPIC_API_KEY=.' .env && echo key-present   # heal makes live API calls; run-ppe.sh sources the repo-root .env
+# NOTE: the PPE backend image ships neither scripts/backfill/ nor tsx, so backfills run
+# on the HOST via server/scripts/backfill/run-ppe.sh — never `docker exec cow-backend`.
 ```
 
 Baseline (save the numbers):
@@ -84,7 +89,7 @@ Dry run on one word first. It must print 弄不【了】 and 心中【了】然 
 听【了】):
 
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-example-sentences.js \
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-example-sentences.js \
   --locate-targets --words=了 --dry-run
 ```
 
@@ -92,7 +97,7 @@ Then the full heal (~150 sentences, about 3 Sonnet calls each: locate, segmentat
 audit, tag; on the order of a dollar; ~10 min):
 
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-example-sentences.js \
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-example-sentences.js \
   --locate-targets 2>&1 | tee /tmp/locate-targets.log
 ```
 

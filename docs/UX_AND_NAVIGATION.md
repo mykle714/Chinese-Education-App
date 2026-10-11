@@ -9,8 +9,8 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs (Flashcards / Discover / Home / Account) + the `/` Home menu + back-arrow drill-ins. Settings + Logout live on the Account page. |
-| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home, Decks, Discover, Games hub, Account use it. |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the four footer tabs — **Home** (`/`, the fdp + account header), **Menu** (`/menu`, the hub bento), **Discover**, **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Home and Menu swapped contents 2026-10-10; `/flashcards/decks` now redirects to `/`. Account is a sheet raised from the Home header avatar (Logout lives in it); Settings is the gear beside that avatar. |
+| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home (the fdp), Menu, Discover, Dictionary, Games hub use it. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Discover surface** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | Two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer). |
@@ -258,7 +258,6 @@ useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
 |---|---|---|
 | Card preview grids (decks Learn Now, collection view, mastered, skipped, Quick Mark, challenge review) | `MiniVocabCardGrid` | y |
 | Lent-card previews (pre-round notice, end-of-round sort offer) | `ProvisionalCardGrid` | y |
-| The `/entries` card grid | `VocabEntryCards` | y |
 | Scrollable shelf rows (Decks, Discover, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
 | Community design strip | `community/CommunityFeedRow` | x |
 
@@ -302,7 +301,7 @@ which turns the elastic stretch into lag. Transition `box-shadow` alone. The ent
 `cardPopIn` is a keyframe *animation* rather than a transition and is unaffected — it
 runs at mount, when the list is not scrolling and the hook writes nothing.
 
-Applies to `MiniVocabCard` and `VocabEntryCards`. `QuickMarkCard` opts out of hover
+Applies to `MiniVocabCard`. `QuickMarkCard` opts out of hover
 feedback entirely (deliberate — see its own note).
 
 ### Contract for new card lists
@@ -588,14 +587,14 @@ popup, and MUI dialogs dimming the whole desktop browser window in MUI's own bla
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above
 
-### Collection pages (Flashcards tab drill-ins)
+### Collection pages (Home tab drill-ins)
 
 Several **node** routes share one component, `CollectionViewPage`
 ([DECKS_FEATURE.md](./DECKS_FEATURE.md)):
 
 | Path | Shows |
 | --- | --- |
-| `/flashcards/collection/learn-now` | The sorted Learn Now cards (moved off `/decks`) — `-reading` / `-writing` variants show the same idea for those bars |
+| `/flashcards/collection/learn-now` | The sorted Learn Now cards (moved off the fdp) — `-reading` / `-writing` variants show the same idea for those bars |
 | `/flashcards/collection/mastered` | The Mastered cards (replaces the old `/flashcards/mastered` page) — likewise `-reading` / `-writing` |
 | `/flashcards/collection/all` | Every sorted card |
 | `/flashcards/deck/:id` | One user-authored deck |
@@ -603,9 +602,9 @@ Several **node** routes share one component, `CollectionViewPage`
 `/flashcards/mastered` still exists as a **redirect** to the second of these, so
 older links keep working.
 
-Two more Flashcards-tab node pages sit beside them — the **Mastery Centers**,
+Two more Home-tab node pages sit beside them — the **Mastery Centers**,
 `/flashcards/reading` and `/flashcards/writing` (`MasteryCenterPage`). Each is a skill
-study page on its skill's ground colour, with the `/decks` panel behind the same two
+study page on its skill's ground colour, with the fdp panel behind the same two
 pill-raised sheets (read through that one skill bar); they are reached from the Centers
 rail above the fdp's card hand, present only when that account goal is set. See
 [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) and
@@ -615,6 +614,7 @@ Two route shapes rather than one `:collectionId` on purpose: a deck is addressed
 its numeric id under its own segment, so a deck a user names "mastered" can never
 shadow the built-in route.
 
-All of them keep the Flashcards footer tab lit and are reached from `/decks`, which is
-now a **deck list** (two built-in collection rows + the user's decks) rather than an
+All of them keep the Home footer tab lit (`footerTab: "home"`) and are reached from
+the fdp at `/` (the Home tab since 2026-10-10; `/flashcards/decks` only redirects there),
+which is a **deck list** (two built-in collection rows + the user's decks) rather than an
 inline card grid.

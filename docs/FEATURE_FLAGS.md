@@ -78,7 +78,7 @@ Gates **sharing**, not **authoring**.
 | Server mount | `server/server.ts` → `app.use(communityRoutes)` — the 7 `/api/community/*` endpoints (feeds, vote, unvote, `applyDesign`) |
 | **Leak** | `server/routes/userRoutes.ts` → `GET /api/users/:userId/designs` is registered inside an `isFeatureEnabled('community')` block. It serves the same designs from **outside** `communityRoutes.ts`, so not mounting that router would otherwise leave it live |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/community` |
-| Entry points | `src/pages/HomePage.tsx` — the Community tile, the **only** navigational entry |
+| Entry points | `src/pages/MenuPage.tsx` — the Community tile, the **only** navigational entry |
 | | `src/features/profile/UserProfilePage.tsx` → `ProfileDesignGrid` (another account's designs, with its own vote flow) |
 | | `src/data/tips.ts` — the Community tip (`feature: "community"`), which would otherwise point at a 404 |
 
@@ -92,7 +92,7 @@ Gates **sharing**, not **authoring**.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(arenaRoutes)`. **Arena has no leaked endpoint** — all six `/api/arena*` paths live in `arenaRoutes.ts`, so this single mount is the whole server gate |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/arena` |
-| Entry point | `src/pages/HomePage.tsx` — the Arena tile, the only navigational entry (nothing in the footer, no row on `/friends`) |
+| Entry point | `src/pages/MenuPage.tsx` — the Arena tile, the only navigational entry (nothing in the footer, no row on `/friends`) |
 
 **NOT gated, and worth knowing:**
 
@@ -120,7 +120,7 @@ The widest flag: the feature owns **three** server namespaces and **four** route
 | Server mounts | `server/server.ts` — **three** of them: `nightMarketRoutes` (`/api/nightMarket/*`), `nightMarketTemplateRoutes` (`/api/nightMarketTemplates/*`) and `nightMarketSandboxRoutes` (`/api/nightMarketSandbox/*`). The two authoring namespaces exist only to produce content for the market, so they are one flag, not three |
 | **No leak** | Every night-market endpoint lives in those three files. In particular the read-only visit to another user's market is `GET /api/nightMarket/layout?userId=`, *not* a `/api/users/:userId/...` path — so unlike community it needs nothing in `userRoutes.ts` |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/night-market`, `/night-market/user/:userId`, `/night-market/template-editor`, `/night-market/template-sandbox` |
-| Entry points | `src/pages/HomePage.tsx` — the hero tile, **and** the two `isTemplateAuthor` tiles below the hairline |
+| Entry points | `src/pages/MenuPage.tsx` — the hero tile, **and** the two `isTemplateAuthor` tiles below the hairline |
 | | `src/features/profile/UserProfilePage.tsx` — the "Visit their night market" button, the only way to reach `/night-market/user/:userId` |
 | | `src/data/tips.ts` — the Night Market tip (`feature: "nightMarket"`) |
 
@@ -149,7 +149,7 @@ for what is meant to be a temporary state.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(immersiveWorldRoutes)`. **One mount covers both halves** — the phase-1 authoring endpoints and the phase-2 learner runtime share the router (they share a URL prefix but not a service). No endpoint lives outside it |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/immersive-world`, `/immersive-world/:sceneId`, `/immersive-world/scene-editor` |
-| Entry points | `src/pages/HomePage.tsx` — the Immersive World tile, and the `isTemplateAuthor` Scene Editor tile |
+| Entry points | `src/pages/MenuPage.tsx` — the Immersive World tile, and the `isTemplateAuthor` Scene Editor tile |
 
 **NOT gated:** the TTS voice plumbing. `useTTS`'s per-call `voice` argument exists for iw
 alone (§ 6.4a of [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) but is an ordinary optional

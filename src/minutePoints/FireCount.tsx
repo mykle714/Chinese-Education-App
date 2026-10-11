@@ -162,7 +162,6 @@ const FireCount: React.FC<FireCountProps> = ({
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            height: `${fillPct}%`,
                             overflow: "hidden",
                             // Linear, and exactly the tick interval: the level should
                             // arrive at each second's value just as the next tick starts,
@@ -171,6 +170,10 @@ const FireCount: React.FC<FireCountProps> = ({
                             transition: animateFill ? "height 1s linear" : "none",
                             willChange: "height",
                         }}
+                        // The level in `style`, not `sx`: it changes every second on the
+                        // live badge and every FRAME during the hp banking run, and each
+                        // distinct sx value mints a new emotion CSS class.
+                        style={{ height: `${fillPct}%` }}
                     >
                         <Icon
                             name="local_fire_department"

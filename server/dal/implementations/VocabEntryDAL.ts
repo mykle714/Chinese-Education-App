@@ -2,6 +2,7 @@ import { PoolClient, QueryResult } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL, VetMarkState, MasteredAtWrite, CharacterMarkState } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
+import type { StarterPackBucket } from '../../contracts/wire.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
@@ -478,6 +479,85 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Find vocabulary entry by user and key
    */
+  // Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp" (the add/added toggle).
+  async findBucketRowByUserAndKey(
+    userId: string,
+    entryKey: string,
+    language: string
+  ): Promise<{ id: number; starterPackBucket: StarterPackBucket | null } | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    if (!language) throw new ValidationError('language is required');
+
+    const table = vetTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<{ id: number; starterPackBucket: StarterPackBucket | null }>(async (client) => {
+      return await client.query(
+        `SELECT id, "starterPackBucket" FROM ${table}
+          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
+        [userId, entryKey, language]
+      );
+    });
+    return result.recordset[0] ?? null;
+  }
+
+  // Docs: docs/PROVISIONAL_CARDS.md (in-place promotion). Moved out of
+  // VocabEntryService.addToLibrary, which used to run this SQL itself.
+  async insertLibraryRow(userId: string, entryKey: string, language: string): Promise<number> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    if (!language) throw new ValidationError('language is required');
+
+    // No mastery state is written: `typedMarkHistory` defaults to '{}' and every bar
+    // derived from it (server/contracts/mastery.ts) bands at 'Unfamiliar'. (The old
+    // GENERATED `category` column was dropped by migrations 101/143.) Spanish rows are a
+    // word-level save — one card per word since migration 123.
+    const table = vetTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
+      return await client.query(
+        `INSERT INTO ${table} ("userId", "entryKey", language, "starterPackBucket")
+         VALUES ($1, $2, $3, 'library')
+         RETURNING id`,
+        [userId, entryKey, language]
+      );
+    });
+    return result.recordset[0].id;
+  }
+
+  async promoteRowToLibrary(id: number, language: string): Promise<void> {
+    if (!id) throw new ValidationError('id is required');
+    if (!language) throw new ValidationError('language is required');
+
+    const table = vetTableForLanguage(language);
+    await this.dbManager.executeQuery(async (client) => {
+      return await client.query(
+        `UPDATE ${table} SET "starterPackBucket" = 'library' WHERE id = $1`,
+        [id]
+      );
+    });
+  }
+
+  // Docs: docs/PROVISIONAL_CARDS.md (demotion), docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
+  async demoteLibraryRowToProvisional(userId: string, entryKey: string, language: string): Promise<boolean> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    if (!language) throw new ValidationError('language is required');
+
+    // Guarded on the current bucket so a repeat tap (or a row that is already
+    // provisional) is a no-op rather than a write.
+    const table = vetTableForLanguage(language);
+    const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
+      return await client.query(
+        `UPDATE ${table}
+            SET "starterPackBucket" = 'provisional'
+          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
+            AND "starterPackBucket" = 'library'
+          RETURNING id`,
+        [userId, entryKey, language]
+      );
+    });
+    return result.recordset.length > 0;
+  }
+
   async findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');

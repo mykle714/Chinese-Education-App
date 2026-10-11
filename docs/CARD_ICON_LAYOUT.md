@@ -1126,14 +1126,24 @@ column that changes a box's height. A measured center within `MEASURED_CENTER_EP
   `inlineActions` too (default and custom), so it matches the fie 1:1; only the **front face /
   Side 1** keeps the absolute-button flex column (its text stays centered). The ENGLISH block's
   sense trigger (`CardFace.EnglishBlock` → `SensePicker`) has no such switch any more — it is
-  **always in-flow, in a `nowrap` row**, on every face: the absolute variant occupied no layout,
+  **always in-flow**, on every face: the absolute variant occupied no layout,
   so a wide gloss pushed the trigger past the card's (and on the large card view the viewport's)
-  right edge. A hidden twin of the trigger balances it on the text's other side, so the gloss
-  itself stays centered. The row must **not wrap**: flex wrapping follows DOM order, so a
-  wrapping row drops the trigger onto its own line while its hidden twin stays up on the text's
-  line, leaving the gloss pushed right by half the twin's width (the "dd shifted right on some
-  cards" bug). Overflow is absorbed inside the text instead — `minWidth: 0` on the text row plus
-  `overflowWrap: break-word` on the gloss. A **separate,
+  right edge. The block is a **3-column grid** — `minmax(0,1fr) | auto | minmax(min-content,1fr)`
+  (hidden spacer twin | gloss | trigger): the two `1fr` sides keep the gloss centered while it
+  fits, and when it's too wide the spacer column collapses first, so the gloss slides left into
+  that space instead of wrapping; the trigger column never drops below the chip's width. (A
+  fixed-width hidden twin in a `nowrap` flex row used to do the centering, but it cost the text
+  the chip's width twice and split long single words mid-word.) The twin also gives the
+  `max-content` back-face block its symmetric intrinsic width. Overflow the spacer can't absorb is taken inside the text — `minWidth: 0` on the text row plus
+  `overflowWrap: break-word` on the gloss. **Multi-line glosses stay centered too**: CSS can't
+  shrink-wrap wrapped text (a wrapped gloss's box stays as wide as the whole `auto` track, which
+  has already absorbed the collapsed spacer, so its lines sat left of center), so
+  `useShrinkWrapWrappedText` (`src/features/flashcards/card/useShrinkWrapWrappedText.ts`) binary-
+  searches the narrowest width that keeps the line count and writes it to the gloss's
+  `style.width`; the track shrinks to it and the `1fr` sides re-center the block. It measures with
+  `offsetWidth`/`offsetHeight` only (the faces are flipped/scaled/rotated), is a no-op on single-
+  line text, and re-runs on text change, block resize and font load. A side effect is balanced
+  line lengths (like `text-wrap: balance`). A **separate,
   simpler gesture path** (`bindText` / `bindTextHandle`, with `beginText*`/`runText*`
   handlers) drives them — tap selects, drag translates, pinch + a corner handle resize/rotate,
   lock freezes + shakes. It's separate from the icon path (only two fixed blocks: no
@@ -1244,7 +1254,7 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
 - Icon image serving + storage: [Icons8Controller.ts](../server/controllers/Icons8Controller.ts),
   `icons8` table (migration 71), representative-icon backfill
   `server/scripts/backfill/backfill-icons.js`.
-- Avatar picker (shares `IconPickerDialog`; consumed in `src/pages/AccountPage.tsx`):
+- Avatar picker (shares `IconPickerDialog`; consumed in `src/pages/AccountSheet.tsx`):
   `users."avatarIconId"` (migration 77).
 - vet read plumbing: `server/dal/shared/vetTable.ts`, `server/dal/shared/dictJoin.ts`,
   `server/dal/implementations/VocabEntryDAL.ts`.

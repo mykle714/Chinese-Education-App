@@ -93,7 +93,7 @@ function renderZoneDivider(prev: ArenaEntry, cur: ArenaEntry) {
 }
 
 /**
- * Arena (docs/ARENA_FEATURE.md) — a Home-hub drill-in showing the viewer's weekly cluster
+ * Arena (docs/ARENA_FEATURE.md) — a Menu drill-in showing the viewer's weekly cluster
  * of 25, ranked by minutes earned while the arena is live.
  *
  * Built to `Arena Flow - Shelf System.html`, which is the whole page: 15 artboards plus a
@@ -355,7 +355,7 @@ function ArenaPage() {
     return (
         <NodePage
             title="Arena"
-            onBack={() => slideNavigate("/")}
+            onBack={() => slideNavigate("/menu")}
             contentClassName="arena-page"
             // MobileTabScreen's content column defaults to `flex: 1; minHeight: 0`, which
             // pins it to the viewport height and lets content overflow it. Arena's column

@@ -171,7 +171,7 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
       autoplay narration is suppressed for the session.
 - [x] The flp's back arrow returns to the Center that launched the bar:
       `?bar=reading` → `/flashcards/reading`, `?bar=writing` → `/flashcards/writing`, core →
-      `/flashcards/decks` (`FlashcardsLearnPage` → `leaveSession`).
+      `/` (the fdp, Home tab) (`FlashcardsLearnPage` → `leaveSession`).
 - [x] **`FlpStudyHand`** — the fdp's hand (figures, Review gate, "resting" toast, launch
       URL) extracted from `FlashcardsDecksPage` and shared: fdp `bar="core"`, Reading
       Center `bar="reading"` (zh only). Replaced the one-button `ReadingFlashcardsStack`
@@ -309,7 +309,8 @@ Code: `centerPrefetch.ts` (`LIBRARY_SEED_MAX_AGE_MS`, `warmMasteryCenter`);
 - **Word Search card is all purple** (`RAMP.pur.mid`, no option tiles) with a round ink
   **play button** in its bottom-right corner (`GameCardData.play`, rendered by `GameCard`
   as the shared `RoundPlayButton` — `src/components/RoundPlayButton.tsx`, `size="card"`;
-  StudyHand's `study-hand__go--round` is the same component at `size="hand"`). **A card with a play button is
+  StudyHand's `study-hand__go--square` is the same component at `size="hand"`,
+  `shape="square"`, `glyph="arrow"` — a 14px-corner rounded square with a →). **A card with a play button is
   tappable as a whole**: a tap anywhere on it that no inner control claims (header,
   ghost glyph, the empty stretch of the options row) acts as the play button
   (`GameCard` root `onClick`; the option slot wrappers and the play

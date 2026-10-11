@@ -152,7 +152,7 @@ const MasteryCenterPage: React.FC = () => {
     return (
         <NodePage
             title={title}
-            onBack={() => navigate("/flashcards/decks")}
+            onBack={() => navigate("/")}
             contentClassName={`mastery-center-page__content mastery-center-page__content--${bar}`}
             surfaceColor={MASTERY_CENTER_GROUNDS[bar]}
             bottomFadeBand={CENTER_BOTTOM_FADE_BAND}

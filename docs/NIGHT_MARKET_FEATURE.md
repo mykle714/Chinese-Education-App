@@ -4,7 +4,7 @@
 > `server/contracts/featureFlags.ts` ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2d). Turning
 > it off unmounts **all three** of the feature's routers (`/api/nightMarket/*`,
 > `/api/nightMarketTemplates/*`, `/api/nightMarketSandbox/*`), removes the four
-> `/night-market*` routes, and hides the hp hero tile, the two template-author tiles and the
+> `/night-market*` routes, and hides the Menu hub's (`/menu`) hero tile, the two template-author tiles and the
 > "Visit their night market" button on a user profile. **Unlock accrual is deliberately NOT
 > gated** — `UserMinutePointsService` keeps granting and reconciling unlocks as minutes are
 > credited, so a learner who studies while the flag is off returns to a market that matches

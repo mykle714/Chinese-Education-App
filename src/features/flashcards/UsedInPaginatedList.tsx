@@ -27,8 +27,8 @@ interface UsedInPaginatedListProps {
 }
 
 /**
- * The single-char "Used In" list, shared by the eip "Used In" tab
- * (InfoCardPanelBody) and the cdp "Used In" section (VocabCardSections).
+ * The single-char "Used In" list of the eip "Used In" tab (InfoCardPanelBody) —
+ * on every eip host, including both cdps.
  *
  * Seeds from the card's embedded preview (no fetch for users who never expand),
  * then infinite-scrolls the rest via GET /api/dictionary/usedIn?offset=&limit=,

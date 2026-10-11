@@ -56,7 +56,8 @@ import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY } from "./constants";
 const DRAG_SLOP = 8;
 
 /** Tilt (deg per px of HORIZONTAL drag) — the same gentle lean the flp card takes. */
-const DRAG_TILT = 0.05;
+// Exported: StudyHand's loading shake rides this same x → tilt line (HAND_SHAKE_KEYFRAMES).
+export const DRAG_TILT = 0.05;
 
 /** Phase of the current pointer interaction. See "Claiming the gesture" above. */
 type GesturePhase = "idle" | "pending" | "dragging";
@@ -107,7 +108,7 @@ export interface UseHandSwipeReturn {
         onMouseDown: (e: React.MouseEvent) => void;
         /**
          * Swallows the click that a mouse drag would otherwise deliver to whatever sits
-         * under the release point — which on the front card is very often `Study now`.
+         * under the release point — which on the front card is very often `Start`.
          * Capture phase, so it lands before the button's own handler.
          */
         onClickCapture: (e: React.MouseEvent) => void;
@@ -223,7 +224,7 @@ export function useHandSwipe(onSwipe: () => void, axis: HandSwipeAxis = "free"):
     const handleTouchEnd = (e: React.TouchEvent) => {
         if (phaseRef.current !== "dragging") {
             // A tap — leave it to the elements beneath. Do NOT preventDefault: on a tap
-            // that would cancel the synthetic click the `Study now` button needs.
+            // that would cancel the synthetic click the `Start` button needs.
             phaseRef.current = "idle";
             return;
         }
@@ -269,7 +270,7 @@ export function useHandSwipe(onSwipe: () => void, axis: HandSwipeAxis = "free"):
             endGesture(dragRef.current);
             return;
         }
-        // Pending (a plain click): no commit, just release the listeners so `Study now`
+        // Pending (a plain click): no commit, just release the listeners so `Start`
         // gets its click.
         phaseRef.current = "idle";
         setIsDragging(false);

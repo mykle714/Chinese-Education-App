@@ -29,7 +29,7 @@ export interface ProvisionalSortDonePopupProps {
     originLabel: string | null;
     /** Return to the origin page. */
     onBack: () => void;
-    /** Go to the home hub. */
+    /** Go Home (`/`, the decks page). */
     onHome: () => void;
 }
 

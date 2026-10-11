@@ -126,9 +126,17 @@ const FooterItem = styled(Box, {
 }));
 
 // The four top-level footer tabs. Every other surface is a drill-in reached from
-// one of these (or from the Home menu) — there is no separate Games tab anymore;
-// Games lives under the Home menu.
-export type FooterTab = "flashcards" | "discover" | "home" | "account";
+// one of these — there is no separate Games tab anymore; Games lives under Menu.
+//
+// Dictionary took Account's slot (2026-10-09). Account is no longer a destination:
+// it is a maximizable sheet raised from the Home header's avatar button
+// (AccountSheet), with Settings as its own gear beside that avatar.
+//
+// Home and Menu swapped contents (2026-10-10): Home (`/`) is now the decks page (the
+// fdp — study hand + Cards/Decks sheets) under the account header, and the hub bento
+// that used to be Home moved to the second tab as Menu (`/menu`). The old
+// `"flashcards"` tab key is gone; its drill-ins light `"home"` now.
+export type FooterTab = "home" | "menu" | "discover" | "dictionary";
 
 interface MobileFooterProps {
     activePage?: FooterTab;
@@ -147,11 +155,11 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", style 
     // gone (decision D5) there was nothing left to justify the repetition.
     const TABS: { tab: FooterTab; label: string; onClick: () => void }[] = [
         { tab: "home", label: "Home", onClick: () => navigate("/") },
-        { tab: "flashcards", label: "Flashcards", onClick: () => navigate("/flashcards/decks") },
+        { tab: "menu", label: "Menu", onClick: () => navigate("/menu") },
         // Discover has its own navigation hook (it resolves the language segment), so
         // it cannot be a plain navigate() like the other three.
         { tab: "discover", label: "Discover", onClick: goToDiscover },
-        { tab: "account", label: "Account", onClick: () => navigate("/account") },
+        { tab: "dictionary", label: "Dictionary", onClick: () => navigate("/dictionary") },
     ];
 
     return (

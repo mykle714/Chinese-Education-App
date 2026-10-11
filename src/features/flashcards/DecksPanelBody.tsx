@@ -29,7 +29,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // CARDS themselves.
 //
 // ── Three hosts, one body (docs/DECKS_FEATURE.md § "Mastery Centers") ─────────
-//   fdp (/flashcards/decks)  — variant "sheet", lens core. TWO modal pull-up sheets,
+//   fdp (/, the Home tab)    — variant "sheet", lens core. TWO modal pull-up sheets,
 //       raised by that page's side-by-side "Cards" and "Decks" pills, each rendering
 //       this body with a different `section` (see below).
 //   Reading Center           — variant "page", lens reading, section "all".

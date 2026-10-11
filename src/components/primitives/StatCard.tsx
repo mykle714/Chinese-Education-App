@@ -29,6 +29,12 @@ import { FONTS } from "../../theme/fonts";
  */
 
 export interface StatCardProps {
+    /**
+     * Optional illustration drawn ABOVE the overline — the figure's picture, read before
+     * its name. Used by `VelocityStatCard` for the U-arrows that hang under the library
+     * shelf (docs/VELOCITY.md § 4). Rendered as-is; the caller owns its spacing.
+     */
+    lead?: React.ReactNode;
     /** Mono uppercase overline naming the figure — "current streak", "minutes today". */
     label: React.ReactNode;
     /** The figure itself. A node, not a number, so a caller can suffix a unit in smaller type. */
@@ -44,8 +50,9 @@ export interface StatCardProps {
     sx?: SxProps<Theme>;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ label, value, description, action, className, sx }) => (
+const StatCard: React.FC<StatCardProps> = ({ lead, label, value, description, action, className, sx }) => (
     <SectionCard className={className ? `stat-card ${className}` : "stat-card"} sx={sx}>
+        {lead}
         {/* The design's `.card .k` tracks at 0.13em where `.lab` tracks at 0.14em. That
             0.01em is below the threshold where anyone can tell, and keeping two overline
             recipes alive guarantees they drift, so this normalizes onto `Label`. */}

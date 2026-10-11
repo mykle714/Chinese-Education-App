@@ -49,9 +49,11 @@ The editor uses the same berth, so a note is typed at the width it is displayed 
 ### Why delete left the rail
 
 `CardOpsRail` had three cells: customize / add to deck / **delete**. The note took delete's
-slot. Deleting a card is rare, irreversible and takes its whole review history with it, so
-it belongs on a surface the learner has navigated **to** — the cdp header, and the shelf's
-multi-select bulk delete — rather than one tap from the card they are drilling. See
+slot. Deleting a card is rare and takes it out of every deck, so it belongs on a surface the
+learner has navigated **to** — the cdp header — rather than one tap from the card they are
+drilling. (Since 2026-10-09 the cdp delete is no longer destructive: it demotes the card to
+`'provisional'`, keeping its review history — PROVISIONAL_CARDS.md § "Removing from Learn
+Now demotes".) See
 [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21.
 
 One consequence: `useWorkingLoop.dropCurrentCard` (remove the front card from the session

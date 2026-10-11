@@ -12,6 +12,7 @@ import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
+import { useFlpEntrance, useFlpLeave } from "../flpLaunch";
 import { warmMasteryCenter } from "../centerPrefetch";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
@@ -254,13 +255,24 @@ const FlashcardsLearnPage: React.FC = () => {
     }, [flpBar, userId, userLanguage]);
 
     /** Perform the real exit, closing the offer first if it is up. */
+    // The ContentArea — the anchor for the fdp ⇄ flp choreography (its parent holds the
+    // header too) and the measure root for the toolbar/card-slot hooks below. Declared
+    // here because the Back exit needs it.
+    const contentAreaRef = useRef<HTMLDivElement | null>(null);
+    // Back plays the launch in reverse (flpLaunch.ts): this page slides off, then the fdp
+    // slides back in. `leaving` locks the page's input for the length of the exit.
+    const { leaving: flpLeaving, leave: leaveToDecks } = useFlpLeave(contentAreaRef);
+
     const leaveSession = useCallback(() => {
         setExitOfferOpen(false);
         if (editMode) exitEdit();
         // The reading and writing flps are launched from their Center's study hand, so
-        // back returns there; the core flp returns to the fdp.
-        navigate(flpBar === 'reading' ? '/flashcards/reading' : flpBar === 'writing' ? '/flashcards/writing' : '/flashcards/decks');
-    }, [editMode, exitEdit, navigate, flpBar]);
+        // back returns there, plainly (the Centers are not choreographed); the core flp
+        // returns to the fdp through the reverse of the hand's launch.
+        if (flpBar === 'reading') { navigate('/flashcards/reading'); return; }
+        if (flpBar === 'writing') { navigate('/flashcards/writing'); return; }
+        leaveToDecks(() => navigate('/'));
+    }, [editMode, exitEdit, navigate, flpBar, leaveToDecks]);
 
     /**
      * Back arrow. In edit mode it first cancels the edit (discarding the draft,
@@ -283,8 +295,8 @@ const FlashcardsLearnPage: React.FC = () => {
     // The three-row advanced toolbar is an absolute overlay, so it takes no flow height. These
     // refs feed useToolbarInset, which measures how far it intrudes past the card slot's top
     // padding; the slot reserves that much extra and the card re-centers in what's left. On a
-    // roomy viewport the intrusion is 0 and nothing moves.
-    const contentAreaRef = useRef<HTMLDivElement | null>(null);
+    // roomy viewport the intrusion is 0 and nothing moves. (`contentAreaRef` is declared
+    // above, with the Back exit.)
     const toolbarRef = useRef<HTMLDivElement | null>(null);
 
     // ── Card-slot padding ─────────────────────────────────────────────────────
@@ -513,6 +525,12 @@ const FlashcardsLearnPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentIndex]);
 
+    // The fdp → flp entrance (flpLaunch.ts): when this mount was launched from the fdp
+    // hand, the header drops in, the word tools arrive from the sides, the card stack rises
+    // and More Info follows it — once, on the first frame the dealt page exists. A no-op
+    // for every other way in. Called above the early returns (rules of hooks).
+    useFlpEntrance(contentAreaRef, !loading && !error);
+
     // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
     if (loading) {
@@ -598,6 +616,9 @@ const FlashcardsLearnPage: React.FC = () => {
             <ContentArea
                 ref={contentAreaRef}
                 className="mobile-demo-content"
+                // Mid-Back-exit the session is already being torn down: no flips, swipes
+                // or taps on a card that is sliding off the frame.
+                sx={flpLeaving ? { pointerEvents: "none" } : undefined}
                 // While the icon editor is open (advanced mode, an icon selected), a tap on
                 // the white space OUTSIDE the card canvas and the edit toolbar deselects the
                 // active icon — mirroring the empty-canvas deselect (CardIconCanvas). Taps

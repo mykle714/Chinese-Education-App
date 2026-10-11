@@ -1,8 +1,7 @@
 import { Box, Typography } from "@mui/material";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import DrawIcon from "@mui/icons-material/Draw";
-import DeckBuckets from "../../components/DeckBuckets";
-import VelocityStatCard from "../../components/VelocityStatCard";
+import LibraryShelfWithVelocity from "../../components/velocity/LibraryShelfWithVelocity";
 import FireCount from "../../minutePoints/FireCount";
 import { formatMinutesAsDuration } from "../../utils/formatDuration";
 import type { ProfileIdentity, ProfileLanguageStats, ProfileStats } from "../../api/userProfile";
@@ -72,8 +71,8 @@ function GoalBadge({ label, icon, on }: { label: string; icon: React.ReactNode; 
  * also why it is the full "Mandarin" rather than the compact region code the inline
  * badge uses.
  *
- * The band counts reuse `DeckBuckets`, the same display-only row the Account page draws
- * for the signed-in user, so a profile and your own account present progress
+ * The band counts and velocity reuse `LibraryShelfWithVelocity`, the same shelf + card the
+ * Account page draws for the signed-in user, so a profile and your own account present progress
  * identically.
  */
 function LanguagePanel({
@@ -140,25 +139,23 @@ function LanguagePanel({
                 </Typography>
             </Box>
 
-            {/* `gutter={false}`: the panel already pads itself, so the shelf's own
-                22px page gutter would be a second indent and would push the spines out
-                of line with the panel heading above them. The spines also narrow to fit
-                this container — see `useFittedSpineWidth` in components/DeckBuckets. */}
-            <Box className="profile-stats__buckets" sx={{ minHeight: 150 }}>
-                <DeckBuckets counts={stats.bandCounts} gutter={false} />
-            </Box>
-
-            {/* Velocity sits BELOW the shelf, in the Account page's order: the library
-                is the state and velocity is the rate of change, so the reader meets the
-                thing before the thing's derivative. `mx: 0` because `SectionCard`
-                carries an 18px page gutter for a card sitting directly in a scroll
-                column, and this one is already inset by the panel. */}
-            <VelocityStatCard
-                className="profile-stats__velocity"
-                velocity={stats.velocity}
-                windowDays={velocityWindowDays}
-                boundaryCounts={stats.velocityBoundaryCounts}
-                sx={{ mx: 0, mt: 0, textAlign: "center" }}
+            {/* The band shelf with the Velocity card hanging under it, the same
+                component as the Account page, so a profile and your own account show
+                progress the same way. `gutter={false}`: the panel already pads itself,
+                and the shelf's own 22px gutter would push the spines out of line with
+                the panel heading (the spines also narrow to fit — `useFittedSpineWidth`
+                in components/DeckBuckets; the arrows follow them). `mx: 0` cancels
+                SectionCard's page gutter for the same reason. */}
+            <LibraryShelfWithVelocity
+                className="profile-stats__library"
+                counts={stats.bandCounts}
+                velocity={{
+                    velocity: stats.velocity,
+                    windowDays: velocityWindowDays,
+                    boundaryCounts: stats.velocityBoundaryCounts,
+                }}
+                gutter={false}
+                cardSx={{ mx: 0 }}
             />
         </Box>
     );

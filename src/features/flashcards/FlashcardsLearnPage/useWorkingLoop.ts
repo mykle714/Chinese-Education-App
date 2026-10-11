@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { API_BASE_URL } from "../../../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
 import { collectionLaunchParams, collectionMarkFields } from "../collectionRef";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
+import { fetchDistributedWorkingLoop, workingLoopKey, type WorkingLoopRequest } from "../../../api/workingLoop";
+import { peekLaunchLoop, clearLaunchLoop } from "../flpLaunch";
 import { CARD_FLY_OUT_MS } from "../constants";
 import { provisionalWords } from "../../../utils/provisionalCards";
 import { useMarkedLentWords } from "../../../hooks/useMarkedLentWords";
@@ -118,9 +119,24 @@ export function useWorkingLoop({
     // URL, and threaded into BOTH the initial loop fetch and every mark call (which
     // is what refills the loop).
     const launchCollection = useLaunchCollection();
-    const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>([]);
+    // The initial deal's request — the SAME builder the fdp's prefetch uses, so a
+    // handoff from it matches by key (src/api/workingLoop.ts).
+    const loopRequest: WorkingLoopRequest = {
+        category: selectedCategory,
+        mode,
+        bar,
+        collection: launchCollection ? collectionLaunchParams(launchCollection) : null,
+    };
+    // A loop the fdp prefetched for exactly this request (flpLaunch.ts), captured once
+    // per mount. Peeked in an initializer and cleared in an effect — StrictMode may run
+    // the initializer twice, and consuming it there would leave the second run empty.
+    const [handoff] = useState(() => peekLaunchLoop(loopRequest));
+    const [handoffKey] = useState(() => workingLoopKey(loopRequest));
+    useEffect(() => { clearLaunchLoop(); }, []);
+    const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>(() => handoff ?? []);
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [loading, setLoading] = useState(true);
+    // No spinner frame when the loop was handed over: the page mounts dealt.
+    const [loading, setLoading] = useState(() => handoff === null);
     const [error, setError] = useState<string | null>(null);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isUndoing, setIsUndoing] = useState(false);
@@ -140,8 +156,9 @@ export function useWorkingLoop({
     // Side 1 language for the current card and the next (back-slot) card. Rolled
     // forward on dismiss so the peeking card's language matches what it will be
     // once promoted to front.
-    const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>("zh");
-    const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>("zh");
+    // Seeded from the handoff too, so the first dealt frame already shows the right face.
+    const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>(() => handoff ? sideOneForCard(handoff[0], bar) : "zh");
+    const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>(() => handoff ? sideOneForCard(handoff[1], bar) : "zh");
 
     // Current entry derived from the working loop.
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -177,6 +194,10 @@ export function useWorkingLoop({
     }, [workingLoop]);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
+    //
+    // A loop the fdp ALREADY fetched (its hand shook while it loaded — flpLaunch.ts) is
+    // adopted instead: `handoff` seeded the state above, so the first render has cards
+    // and no spinner, and the effect below only runs the per-deal side effects for it.
     useEffect(() => {
         // Only the LATEST fetch may apply. Without this, two overlapping fetches (React
         // StrictMode's dev double-mount, or a dep change while one is in flight) BOTH
@@ -185,57 +206,53 @@ export function useWorkingLoop({
         // per-card flip reset never runs (the "flipped the wrong card, More Info stays
         // greyed" bug, 2026-10-06).
         let cancelled = false;
+
+        // Everything a freshly dealt loop needs beyond `setWorkingLoop` — shared by the
+        // adopted handoff and the network fetch so the two cannot drift.
+        const dealLoop = (cards: VocabEntry[]) => {
+            setWorkingLoop(cards);
+            setLastMarkUndoSnapshot(null);
+
+            // Server pre-warmed the TTS disk cache before responding, so these
+            // prefetches just stream the MP3 bytes across the wire into the
+            // browser's in-session blob cache. Skipped per-card when
+            // hasAudio === false (synthesis errored server-side).
+            cards.forEach((card: VocabEntry) => prefetch(card));
+
+            // New deck: both visible cards start on Side 1. useCardDrag resets
+            // flip-tracking on a currentIndex change, but currentIndex stays 0 on a
+            // fresh fetch so that reset may not fire — run the FULL reset here
+            // (not just isFlipped=false, which left hasFlippedCurrentCard stale).
+            cardDragRef.current?.resetCard();
+            // Each card opens on its weaker know track, recognition on a tie
+            // (docs/MASTERY_REWORK.md § 6). This includes the session's FIRST card,
+            // which used to be forced English-first to dodge an iOS autoplay edge
+            // case on Chinese-side-one auto-narration — that override would break
+            // the rule, so it is gone; see the flag in docs/MASTERY_REWORK.md § 6.
+            setCurrentSideOneLanguage(sideOneForCard(cards[0], bar));
+            setNextSideOneLanguage(sideOneForCard(cards[1], bar));
+        };
+
+        // The handoff answers only the request it was fetched for. A later dep change
+        // (a different category/mode/bar) builds a different key and fetches normally.
+        if (handoff && handoffKey === workingLoopKey(loopRequest)) {
+            dealLoop(handoff);
+            setLoading(false);
+            return () => { cancelled = true; };
+        }
+
         const fetchInitialCards = async () => {
             try {
                 setLoading(true);
                 setError(null);
 
-                const params = new URLSearchParams();
-                if (selectedCategory) params.set("category", selectedCategory);
-                if (mode) params.set("mode", mode);
-                if (bar !== "core") params.set("bar", bar);
-                // Restrict the loop to the collection this session was launched from
-                // (docs/DECKS_FEATURE.md). Composes with `mode`: a deck opened in Challenge
-                // mode draws that deck's Unfamiliar/Target cards.
-                if (launchCollection) {
-                    for (const [key, value] of Object.entries(collectionLaunchParams(launchCollection))) {
-                        params.set(key, value);
-                    }
-                }
-                const query = params.toString();
-                const url = `${API_BASE_URL}/api/onDeck/distributedWorkingLoop${query ? `?${query}` : ""}`;
-
-                const response = await fetch(url, { credentials: "include" });
-
-                if (!response.ok) throw new Error("Failed to fetch distributed working loop");
-                const data = await response.json();
+                const cards = await fetchDistributedWorkingLoop(loopRequest);
                 if (cancelled) return;
-                const cards = Array.isArray(data) ? data : [data];
 
                 console.log(
                     `Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ""}${mode ? ` (mode: ${mode})` : ""}`
                 );
-                setWorkingLoop(cards);
-                setLastMarkUndoSnapshot(null);
-
-                // Server pre-warmed the TTS disk cache before responding, so these
-                // prefetches just stream the MP3 bytes across the wire into the
-                // browser's in-session blob cache. Skipped per-card when
-                // hasAudio === false (synthesis errored server-side).
-                cards.forEach((card: VocabEntry) => prefetch(card));
-
-                // New deck: both visible cards start on Side 1. useCardDrag resets
-                // flip-tracking on a currentIndex change, but currentIndex stays 0 on a
-                // fresh fetch so that reset may not fire — run the FULL reset here
-                // (not just isFlipped=false, which left hasFlippedCurrentCard stale).
-                cardDragRef.current?.resetCard();
-                // Each card opens on its weaker know track, recognition on a tie
-                // (docs/MASTERY_REWORK.md § 6). This includes the session's FIRST card,
-                // which used to be forced English-first to dodge an iOS autoplay edge
-                // case on Chinese-side-one auto-narration — that override would break
-                // the rule, so it is gone; see the flag in docs/MASTERY_REWORK.md § 6.
-                setCurrentSideOneLanguage(sideOneForCard(cards[0], bar));
-                setNextSideOneLanguage(sideOneForCard(cards[1], bar));
+                dealLoop(cards);
             } catch (err) {
                 if (cancelled) return;
                 setError(err instanceof Error ? err.message : "Unknown error");
@@ -253,7 +270,9 @@ export function useWorkingLoop({
     // `token` string. The access token silently refreshes every ~15 min; keying
     // on `token` would re-fetch the working loop and reset the card stack
     // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
-    // "Never reload on token refresh". prefetch/cardDragRef are stable refs.
+    // "Never reload on token refresh". prefetch/cardDragRef are stable refs;
+    // `loopRequest` is rebuilt every render, but it is a pure function of
+    // selectedCategory/mode/bar + the launch collection (stable per URL).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [Boolean(token), selectedCategory, mode, bar]);
 

@@ -10,11 +10,11 @@ The Discover feature is a **two-level** surface, mirroring the Games hub.
 Footer "Discover" tab
         │  goToDiscover()
         ▼
-/discover            ← Discover hub (DiscoverPage): a HubMenu of activities.
+/discover            ← Discover hub (DiscoverPage): a Bento of activities.
         │              Has the floating footer (footer-tab surface).
-        │  HubMenuRow "Sort Cards"    → sortPath
-        │  HubMenuRow "Quick Mark"    → quickMarkPath
-        │  HubMenuRow "Skipped Cards" → skippedPath
+        │  BentoTile "Sort Cards"    → sortPath
+        │  BentoTile "Quick Mark"    → quickMarkPath
+        │  BentoTile "Skipped Cards" → skippedPath
         ├───────────────────┬───────────────────────┐
         ▼                   ▼                       ▼
 /discover/sort/     /discover/quick-mark/     /discover/skipped/
@@ -38,8 +38,8 @@ Footer "Discover" tab
 | `/discover/skipped/:language`   | `SkippedCardsPage` | `NodePage` (← back arrow) → `/discover` | Floating pill |
 
 - **`/discover` (hub):** built on `MobileTabScreen` +
-  the shared `HubMenu` / `HubMenuRow` (same components the Games hub uses). It has three
-  rows, in order: **Sort Cards** (the drag-to-sort page), **Quick Mark** (the bulk-triage
+  the shared `Bento` / `BentoTile` (see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
+  deleted 2026-08-21). It has three tiles, in order: **Sort Cards** (the drag-to-sort page), **Quick Mark** (the bulk-triage
   grid), and **Skipped Cards** (the skipped-words list), all language-keyed.
 - **`/discover/quick-mark/:language` (quick mark):** a **node page** (`NodePage`, keeps
   the footer, ← back → `/discover`). A level dropdown (no Auto) filters to every
@@ -116,9 +116,9 @@ rest of the manifest lands.
 | Member          | Value                          | Used by                              |
 | --------------- | ------------------------------ | ------------------------------------ |
 | `discoverPath`  | `/discover`                    | hub navigation                       |
-| `goToDiscover()`| navigate → `/discover`         | footer Discover tab, decks nudges    |
+| `goToDiscover()`| navigate → `/discover`         | footer Discover tab (`MobileFooter`) |
 | `sortPath`      | `/discover/sort/{language}`    | the hub's Sort Cards row             |
-| `goToSort()`    | navigate → `sortPath`          | (available for direct sort entry)    |
+| `goToSort()`    | navigate → `sortPath`          | fdp Sort Cards tile (`DecksTopRail`) |
 | `quickMarkPath` | `/discover/quick-mark/{language}` | the hub's Quick Mark row          |
 | `goToQuickMark()`| navigate → `quickMarkPath`    | (available for direct quick-mark entry) |
 | `skippedPath`   | `/discover/skipped/{language}` | the hub's Skipped Cards row          |

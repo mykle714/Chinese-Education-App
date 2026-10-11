@@ -36,7 +36,7 @@ broken only during the rebuild, and the new code never sees the old schema.
 ### 1. Pre-checks (on PPE)
 
 ```bash
-git status --short          # PPE usually has local work — commit/push it first (CLAUDE.md)
+git status --short          # PPE usually has local work — commit/push it first (docs/DEPLOY_RUNBOOKS.md)
 ./database/deploy/migrate.sh --dry-run
 ```
 

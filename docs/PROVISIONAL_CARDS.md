@@ -745,7 +745,7 @@ same callback backs the NodePage back arrow in this state, so there is one exit 
 **Naming the origin.** `ProvisionalSortOffer` appends `&from=<pathname>` when it opens the
 flow, and `originLabelFor` (`src/utils/originLabel.ts`) turns that into a label — game
 titles read out of `GAME_REGISTRY` (so a renamed game renames the button), plus a small map
-for the non-game origins (flp, decks, discover, games hub). An unrecognised or missing
+for the non-game origins (flp, the fdp at `/`, labelled "Home"; discover, games hub). An unrecognised or missing
 origin degrades to a plain **Go back**.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding
@@ -775,6 +775,20 @@ earned in a game. It now branches, atomically, in one CTE:
   word returns to the normal fresh supply.
 
 "Has marks" is *any* `typedMarkHistory` track being non-empty.
+
+### Removing from Learn Now demotes (dictionary eip toggle + vet cdp delete)
+
+Both the dictionary eip's "Added!" toggle (`LearnNowToggle` + `useLearnNowToggle`, on the
+Dictionary page's eip and the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
+and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
+confirmation) remove a word from Learn Now by setting a `'library'` row's bucket to `'provisional'` —
+**always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
+its history and deck memberships; `vetSortedClause()` reads stop seeing it, and a re-add
+via `addToLibrary` promotes it back in place. Because it is now an ordinary held
+provisional row, it can be re-lent into a short round like any other (`findHeldProvisional`).
+Code: `VocabEntryService.removeFromLibrary` → `VocabEntryDAL.demoteLibraryRowToProvisional`;
+re-add: `VocabEntryService.addToLibrary` → `VocabEntryDAL.findBucketRowByUserAndKey` /
+`insertLibraryRow` / `promoteRowToLibrary`.
 
 ---
 
@@ -839,6 +853,7 @@ others, admits lent rows by id when it has to borrow.
 | Service | `server/services/OnDeckVocabService.ts` | the fill ladders (§ 4b), `fetchRowsByIds` — the only read that surfaces a lent row into a round — and `getChallengeGamePool` (docs/STUDY_CHALLENGE.md § 5.2a) |
 | Service (pure) | `server/services/cardQueueRanking.ts` | `rankCardQueue` (rested, longest-waiting first) and `rankCardQueueCooled` (resting, nearest-to-ready first — the flp's tier 3) |
 | Service | `server/services/StarterPacksService.ts` | `getCardsForWords`, in-place promotion, undo demotion |
+| Service | `server/services/VocabEntryService.ts` | `removeFromLibrary` (dictionary eip toggle demotion), `addToLibrary` (promotes a provisional row) |
 | Controller | `server/controllers/OnDeckVocabController.ts` | `ensureBaseline` before every set; Word Search retry ladder |
 | Controller | `server/controllers/StarterPacksController.ts` | `GET /api/starterPacks/:language/provisionalSet` |
 | Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalEntries`) from a served set, and adapt a `DiscoverCard` into the mini card's `VocabEntry` |

@@ -33,6 +33,8 @@ import { LEARN_NOW_HUE, LEARN_NOW_COLORS, MASTERY_BAR_HUES, MASTERY_BAR_COLORS }
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import { SHADOW } from "../../theme/shadows";
+import { lowSupplyGlowKeyframes, lowSupplyGlowPeak, LOW_SUPPLY_GLOW_TALLY, LOW_SUPPLY_GLOW_PULSE_MS } from "../../theme/lowSupplyGlow";
+import { LEARN_NOW_ENOUGH_THRESHOLD } from "../../../server/contracts/wire";
 import MiniCard from "../../components/MiniCard";
 import { MINI_CARD_DIMENSIONS, MINI_CARD_RADIUS, type MiniCardSize } from "../../components/miniCardFace";
 
@@ -524,12 +526,32 @@ const tallyGulpKeyframes = keyframes`
     100% { transform: scale(1, 1); }
 `;
 
+// The Learn Now pill's low-supply glow (§ 5.3a): a yellow halo that breathes while a
+// learner who ARRIVED under LEARN_NOW_ENOUGH_THRESHOLD is still under it. Reaching the
+// threshold simply drops the halo (the pill returns to plain — no "done" styling), and
+// an Undo back under it brings the glow back. Arriving at or above it, the pill is plain
+// for the whole visit. The halo's shape is shared with the fdp's Sort Cards tile
+// (theme/lowSupplyGlow.ts), which wears it in green. The
+// pill's own FILL stays the Learn Now hue; only the halo carries the signal.
+const tallyLowGlowKeyframes = lowSupplyGlowKeyframes(LOW_SUPPLY_GLOW_TALLY);
+
 const SortTallyValue = styled(Typography, {
-    shouldForwardProp: (prop) => prop !== "hue" && prop !== "gulp",
-})<{ hue: RampHue; gulp?: boolean }>(({ hue, gulp }) => ({
-    ...(gulp && {
-        animation: `${tallyGulpKeyframes} ${TALLY_GULP_MS}ms ease-out`,
+    shouldForwardProp: (prop) => prop !== "hue" && prop !== "gulp" && prop !== "lowGlow",
+})<{ hue: RampHue; gulp?: boolean; lowGlow?: boolean }>(({ hue, gulp, lowGlow }) => ({
+    // `animation` is one property, so the gulp and the low-glow pulse are listed
+    // together rather than one overwriting the other. The gulp's key-remount restarts
+    // the pulse's phase too, which is invisible at this amplitude.
+    ...((gulp || lowGlow) && {
+        animation: [
+            gulp && `${tallyGulpKeyframes} ${TALLY_GULP_MS}ms ease-out`,
+            lowGlow && `${tallyLowGlowKeyframes} ${LOW_SUPPLY_GLOW_PULSE_MS}ms ease-in-out infinite`,
+        ].filter(Boolean).join(", "),
         "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+    }),
+    // Static halo: the reduced-motion fallback (the pulse animation above overrides it
+    // otherwise).
+    ...(lowGlow && {
+        boxShadow: lowSupplyGlowPeak(LOW_SUPPLY_GLOW_TALLY),
     }),
     ...LEVEL_BAR_PILL_SHAPE,
     backgroundColor: RAMP[hue].surface,
@@ -979,7 +1001,7 @@ const SortCardsPage: React.FC = () => {
     // any word the user already has a vet row for (StarterPacksService._fetchSupplyRows'
     // NOT EXISTS clause) — every sortable on-deck card is therefore a brand-new library
     // row, never a re-categorization of one already counted in the fetched baseline.
-    const { counts: categoryCounts, loaded: countsLoaded } = useCategoryCounts();
+    const { counts: categoryCounts, loaded: countsLoaded, ok: countsOk } = useCategoryCounts();
     const [tallyDelta, setTallyDelta] = useState({ learnNow: 0, mastered: 0 });
     // How many cards each tally pill has "swallowed" this session. Used as the pill's
     // React `key`, so every landing remounts it and restarts its gulp animation; 0 means
@@ -1156,6 +1178,20 @@ const SortCardsPage: React.FC = () => {
         [categoryCounts, tallyDelta.learnNow]
     );
     const masteredCount = (categoryCounts["Mastered"] ?? 0) + tallyDelta.mastered;
+
+    // Did the learner ARRIVE short of Learn Now cards? Decided once, from the first
+    // successfully-loaded baseline (before any sort's delta), and never re-decided this
+    // visit — so a learner who arrives with plenty never sees the glow, and one who
+    // arrives short keeps seeing it (red until they reach the threshold) as they sort. null until the
+    // counts load; stays null on a failed fetch, which shows no glow at all.
+    // See § 5.3a and LEARN_NOW_ENOUGH_THRESHOLD (server/contracts/wire.ts).
+    const [arrivedShort, setArrivedShort] = useState<boolean | null>(null);
+    useEffect(() => {
+        if (!countsOk || arrivedShort !== null) return;
+        setArrivedShort(learnNowCount < LEARN_NOW_ENOUGH_THRESHOLD);
+    }, [countsOk, arrivedShort, learnNowCount]);
+    // Live: reaching the threshold drops the halo; an Undo back below it restores it.
+    const learnNowLowGlow = !!arrivedShort && learnNowCount < LEARN_NOW_ENOUGH_THRESHOLD;
 
     // Apply one card's effect on the tally. `direction` is +1 for a sort, -1 for an undo.
     // A skip touches neither bucket (it never creates a vet row).
@@ -1883,6 +1919,7 @@ const SortCardsPage: React.FC = () => {
                                 className="sort-cards__tally-value"
                                 key={tallyGulps.learnNow}
                                 gulp={tallyGulps.learnNow > 0}
+                                lowGlow={learnNowLowGlow}
                                 hue={LEARN_NOW_HUE}
                             >
                                 {learnNowCount}

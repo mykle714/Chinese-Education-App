@@ -11,10 +11,10 @@ the rebuild.
 **Remaining before deletion:** the § 4 behavioural check — open a real game board and
 confirm it fills rather than coming back short. That is the one over-blocking symptom the
 infrastructure checks cannot see. Once someone has done that, delete this file and record
-the retirement in CLAUDE.md.
+the retirement in docs/DEPLOY_RUNBOOKS.md.
 
 > Derive state from the checks in § 2, not from this banner. If they disagree, the banner is
-> the stale one — that is the standing rule in CLAUDE.md and it has caught five runbooks.
+> the stale one — that is the standing rule in docs/DEPLOY_RUNBOOKS.md and it has caught five runbooks.
 
 Owner doc: [GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md) § 6.
 Half A (the data) shipped 2026-08-24 — see

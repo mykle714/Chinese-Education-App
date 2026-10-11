@@ -21,7 +21,7 @@ SHELF_REDESIGN.md § A1.
 Everything below is live and unchanged; the flag exists so the feature *can* be switched
 off. If set to `false`: `app.use(arenaRoutes)` is skipped (all six `/api/arena*` endpoints
 404 — arena has **no** endpoint outside that router), `/arena` is filtered out of the route
-table, and the Home hub's Arena tile is dropped. Three things would deliberately stay:
+table, and the Menu hub's Arena tile is dropped. Three things would deliberately stay:
 the hourly `cow-arena` timer (so an in-flight week still resolves), the optional
 `arenaService` injection into `UserMinutePointsService`, and `users."arenaMessage"` in
 `UserDAL.findById`'s column list — a column rather than a route, which no client reads off
@@ -96,9 +96,9 @@ than above it. The banner is the page's masthead, not a card on it.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "node"`, `footerTab: "home"`, back-arrow → `/` |
+| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "node"`, `footerTab: "menu"`, back-arrow → `/menu` |
 
-The hp gains an **Arena** row beside **Friends** (`src/pages/HomePage.tsx`), with its own
+The Menu hub (`/menu`, `src/pages/MenuPage.tsx`; the `/` Home hub before 2026-10-10) has an **Arena** tile beside **Friends**, with its own
 persistent pastel colour and a `MilitaryTechIcon`/`EmojiEventsIcon`. It sits directly
 under Friends because the two are the same kind of thing — a ranking of people — and
 Arena is the one that changes weekly, so it earns the higher slot of the pair.
@@ -145,7 +145,7 @@ appearance is `DivisionBanner`'s now — and is currently an unstyled placeholde
 ⚠️ **The sketch below predates the arena flow** and is kept for the ROW anatomy only.
 Its first line — a board header carrying "CHINESE · IRIDIUM · ends Sun 4:00 PM" — no
 longer exists: the division is on the full-bleed banner at the top of the page and the
-countdown is its own centred block above the board (§ 2.3). The board itself has no
+countdown is its own left-aligned block above the board (§ 2.3). The board itself has no
 header row at all; the `Board · 25 / minutes` rule that briefly sat there was removed
 with the flow.
 
@@ -214,8 +214,8 @@ Differences from `/friends`, all of them additive:
   `languageRegionCode()` so the letters can never disagree with the flag, and degrading
   to "ES ES" on Windows rather than to nothing.
 * **The division and the countdown are PAGE chrome, not board chrome.** The rung is the
-  full-bleed banner the page header sits inside; the countdown is a centred 52px mono
-  block below it, counting to Sunday 16:00 while live and to Tuesday 04:00 otherwise
+  full-bleed banner the page header sits inside; the countdown is a left-aligned 52px mono
+  block below it (left-aligned so a changing digit count only moves its tail), counting to Sunday 16:00 while live and to Tuesday 04:00 otherwise
   (§ 2.3). It ticks **seconds** — a deliberate reversal, see SHELF_REDESIGN entry 9a.
 * **Ranking is the server's.** The client never re-sorts. Same rule as `/friends`.
 * **A row shows name, language flag, message and score — and nothing else.** (It showed
@@ -312,8 +312,8 @@ join — follows from the answer.
 |---|---|---|
 | **Live** | you hold a seat and the week is running | banner, countdown to Sunday 16:00, the live board |
 | **Results** | your arena closed; the break | the next countdown, Join, "Last Week's Results" + the outcome card, the **frozen** board |
-| **Waiting** | opted in, arena not yet formed (between your opt-in and Tuesday 04:00) | banner, "Your arena opens in…", the 25-seat field with **your seat lit**, Withdraw |
-| **Out** | not opted in and not in an arena | banner, "Next arena opens in…", the 25-seat field, **Join** — offered whether or not the break is open (§ 8) |
+| **Waiting** | opted in, arena not yet formed (between your opt-in and Tuesday 04:00) | banner, "Your arena opens in…", the seat field with **your seat lit**, Withdraw |
+| **Out** | not opted in and not in an arena | banner, "Next arena opens in…", the seat field, **Join** — offered whether or not the break is open (§ 8) |
 
 There is no fifth "you missed it" state — a player who did not opt in before Tuesday
 04:00 simply sits in **Out** until the next opening, with copy that says when that is.
@@ -330,7 +330,7 @@ Every state draws the division banner, deliberately: the rung you hold does not 
 existing between weeks, and without it the two seat-less states are a bare clock on an
 empty page with nothing naming the arena you are about to join.
 
-**The 25-seat field** (`ArenaSeatField`) in Waiting/Out is a DIAGRAM, not data — no cell
+**The seat field** (`ArenaSeatField`) in Waiting/Out is a DIAGRAM, not data — no cell
 corresponds to a person, and it must never be wired to one. A pre-formation arena *has*
 no members (§ 5.3), so a "real" version would be a fiction with a data source. It answers
 the two questions a newcomer actually has (how big is the field, what happens at its ends)
@@ -341,13 +341,17 @@ familiar when the live board arrives on Tuesday.
 default. The docked Waiting/Out layout is produced by flex growth (the content column, the
 page column and the seat field are all `flex: 1 0 auto` — grow, never shrink — so the
 seat field fills the gap and the action sits against the footer), *not* by `overflow: hidden`.
-**The seat grid resizes so the action stays docked on a short screen.** `ArenaSeatField`'s
+**The seat grid resizes so the action stays docked on a short screen.** It is always
+**five rows** (green promotion row, three middle rows, red relegation row) with **as many
+columns as fit** — the cell count is not a claim about the arena's 25 seats. `ArenaSeatField`'s
 outer box is a CSS size container (`containerType: "size"`), so its content does not
-force its height: it takes whatever the column has spare, and the grid sizes its cells
-from that (`100cqh`) — 60px tall at full size, down to a 28px floor, with width shrinking
-by the same pixels so a cell keeps its shape. Only below the floor does the page scroll.
-Code: `src/features/arena/ArenaSeatField.tsx` → `CELL_HEIGHT`, `CELL_WIDTH`,
-`MIN_FIELD_HEIGHT_PX`.
+force its height: it takes whatever the column has spare, and a ResizeObserver derives a
+square cell size from that height (60px at full size, down to a 28px floor) and the column
+count from the width. A tall phone gets five 60px columns; a short screen gets smaller
+cells and more columns. Top/bottom margins keep the grid off the countdown and the action
+(the grid used to fill its box exactly, so the red row sat flush against Join). Only below
+the floor does the page scroll. Code: `src/features/arena/ArenaSeatField.tsx` →
+`useSeatFieldGeometry`, `MIN_FIELD_HEIGHT_PX`.
 The column must never carry `minHeight: 0`: that lets it SHRINK to the viewport instead of
 scrolling, which is how the first cut overlapped the seat grid onto Join and squeezed the
 live board (an `overflow: hidden` flex item, so its min-height is 0) until its rows clipped
@@ -1370,7 +1374,7 @@ No change to `userminutepoints` or any vet table.
 | Client (shared) | `src/components/SteppedHelpPopup.tsx` + `steppedHelp.ts` | the stepped explainer, shared with Study Challenge (§ 2.4) |
 | Client (shared) | `src/components/NodePage.tsx` / `MobileTabScreen.tsx` | `wrapHeader`, which exists for this page's banner |
 | Client (shared) | `src/components/leaderboard/Board.tsx` | `Board` / `BoardRow` / `BoardZone` — the ranked-table primitive. **Not** the friends person row; see § 2.1 for why that plan was dropped |
-| Client | `src/pages/HomePage.tsx`, `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the hub row and the route |
+| Client | `src/pages/MenuPage.tsx`, `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the hub row and the route |
 
 ### Endpoints
 
@@ -1568,7 +1572,7 @@ exists for this page's banner — § 2),
 and locked board),
 `src/components/leaderboard/Board.tsx` (`Board` / `BoardRow` / `BoardZone` — shipped
 2026-08-21; `ArenaEntryRow` is a thin binding of it, see § 2.1),
-`src/pages/HomePage.tsx` (the Arena hub row),
+`src/pages/MenuPage.tsx` (the Arena hub tile),
 `src/routes/routeMeta.ts` + `src/routes/registry.ts`.
 
 Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST, and
@@ -1587,7 +1591,7 @@ rule),
   `division` and `"arenaOptInWeek"`; that doc's column table is the canonical one (§ 7.1).
 * [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — a second PPE-only cron now
   shares the host; its idempotency pattern is the model for arena formation (§ 10).
-* [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — the new hp row.
+* [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — the Menu hub tile.
 
 Related docs:
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) (the board this one looks like),

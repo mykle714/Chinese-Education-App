@@ -273,11 +273,11 @@ export const CATEGORY_ORDER: readonly FlashcardCategory[] = [
  * Index = the boundary's rank = the rank of the band BELOW it, which is the contract
  * the velocity wire relies on: `VelocityBreakdown.boundaryCounts[i]` is the number of
  * cards that crossed `CATEGORY_BOUNDARIES[i]` inside the window. Both halves read it —
- * the DAL builds its `COUNT(*) FILTER` list from the length, the card labels its
- * columns from the band names.
+ * the DAL builds its `COUNT(*) FILTER` list from the length, the card draws one
+ * arrow per boundary between neighbouring band spines.
  *
  * Consumers: `CategoryPromotionDAL.getVelocityByLanguage`,
- * `src/components/VelocityStatCard.tsx`. See docs/VELOCITY.md.
+ * `src/components/velocity/VelocityArrows.tsx`. See docs/VELOCITY.md.
  */
 export const CATEGORY_BOUNDARIES: readonly { from: FlashcardCategory; to: FlashcardCategory }[] =
   CATEGORY_ORDER.slice(0, -1).map((from, i) => ({ from, to: CATEGORY_ORDER[i + 1] }));

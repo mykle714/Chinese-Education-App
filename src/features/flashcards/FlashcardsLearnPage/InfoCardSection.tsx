@@ -1,6 +1,7 @@
 import { useRef, useEffect, forwardRef } from "react";
 import { Box } from "@mui/material";
 import SheetPanel, { type SheetPanelHandle } from "../../../components/sheet/SheetPanel";
+import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
@@ -31,6 +32,9 @@ interface InfoCardSectionProps {
     // (breakdown chars / example segments) that aren't yet in the library can be
     // added; undefined hides the button (see InfoCardPanelBody).
     onAddToLibrary?: (entry: VocabEntry) => void;
+    // The Learn Now TOGGLE under the header speaker (supersedes onAddToLibrary). Today:
+    // the Dictionary page's eip, via EipSheet. See EipEntryHeader.
+    learnNow?: LearnNowToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
     // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown
     // content — the Compare tab has no entry/breakdown/sub-tab of its own.
@@ -63,10 +67,13 @@ interface InfoCardSectionProps {
     // way the trail moved. Undefined (cdp, which has no trail) disables the animation.
     entryTabId?: string;
     entryTabIndex?: number;
-    // Appends Synonyms + Related Words to the definition tab. Passed by the cdp only,
-    // which uses this panel as its whole extra-info body and would otherwise lose the
-    // two lists its old stacked-SectionCard body showed (see InfoCardTabContent).
+    // Appends Synonyms + Related Words to the definition tab. Passed by the saved-card cdp
+    // (which uses this panel as its whole extra-info body) and by the Dictionary page's
+    // eip (via EipSheet) — see InfoCardTabContent.
     showSynonymsRelated?: boolean;
+    // Content pinned to the bottom of the definition tab (InfoCardTabContent
+    // `definitionFooter`). Today: the Dictionary page eip's word-tools rail, via EipSheet.
+    definitionFooter?: React.ReactNode;
     // SUPPRESSES the missing-pinyin warning (see `useMissingPinyinWarning` below). The eip
     // always shows pinyin, so a Chinese entry with none to show is presumed to be a bug in
     // the data or in what the host handed in. A host whose entries GENUINELY have no
@@ -136,6 +143,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeakSentence,
     speakingKey,
     onAddToLibrary,
+    learnNow,
     compareTab,
     onSetCompareSlot,
     onCompareResult,
@@ -147,6 +155,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     entryTabId,
     entryTabIndex,
     showSynonymsRelated,
+    definitionFooter,
     missingPinyinReason,
 }, ref) => {
     useMissingPinyinWarning(compareTab ? null : currentEntry, selectedSenseIndex, !!missingPinyinReason);
@@ -257,9 +266,11 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}
                         onAddToLibrary={onAddToLibrary}
+                        learnNow={learnNow}
                         selectedSenseIndex={selectedSenseIndex}
                         onSelectSense={onSelectSense}
                         showSynonymsRelated={showSynonymsRelated}
+                        definitionFooter={definitionFooter}
                         // `pan-y`, NOT `none`. SheetPanel decides between growing the sheet
                         // and scrolling the pane on the gesture's first committed move, and
                         // it expresses "scroll" by NOT calling preventDefault — the browser

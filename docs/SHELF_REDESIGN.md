@@ -444,7 +444,8 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
 - `COLORS.rowHoverBg` moved 0.04 → 0.05 to equal `--hover`.
 - The mastery window's cells grew 15 → 20px and the mini-card strip 3 → 3.5px, as v2 draws them.
 - `VelocityStatCard` figures moved their band hue from the TEXT onto a Mid-tier
-  highlighter pill behind ink figures.
+  highlighter pill behind ink figures. *(Superseded 2026-10-10: artboard 5 v2 replaced the
+  equation with ink U-arrows under the shelf — see docs/VELOCITY.md § 4.)*
 
 ### A1 addendum · Elevation (added 2026-08-24)
 
@@ -635,9 +636,11 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   **byte-identical 14-line `toggleSx` helper**. All three are gone; the chip skin
   lives once in `HeaderToggleChip`. Those three plus `MatchSpeedHeader` also dropped
   their `@mui/icons-material` imports for `<Icon>` names (D3).
-- `AccountPage`'s settings gear is the app's one `outlined` `HeaderIconButton` — it
-  is the only header carrying a single lone action on bare paper, which is exactly
-  the case the artboard boxes.
+- The Settings gear is the app's one `outlined` `HeaderIconButton` — it sits on bare
+  paper beside the outlined avatar, which is exactly the case the artboard boxes. It
+  was drawn in the Account header; since Account became a sheet (2026-10-09) it lives
+  in the Home header, left of `HeaderAvatarButton` (`src/pages/HomePage.tsx`, which since
+  2026-10-10 passes it into the fdp's header as `headerTrailingActions`).
 
 **Decisions taken**
 - **No `HeaderStreak`.** The plan listed it as a fourth export, but the app already
@@ -701,6 +704,10 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   screen corner regardless of how many actions a page contributes — the Account artboard
   draws flame-then-gear, and that one ordering was traded for a fixed position app-wide.
   All ~12 per-page call sites were deleted; pages no longer import it.
+  **One exception to "flame last" (2026-10-09): `trailingContent`.** `PageHeader` renders
+  it after the flame, and only the Home tab passes it (the Settings gear, then
+  `HeaderAvatarButton` — the profile picture that raises the AccountSheet — in the far
+  corner). So on Home alone the flame sits two controls in from the edge.
   Two consequences worth keeping in mind: exactly ONE `PageHeader` may be mounted at a
   time on an earning page (`useMinutePoints` runs a 1s accrual tick per instance), and
   the badge renders `null` when signed out.
@@ -765,7 +772,7 @@ become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnHeader.tsx`;
 `src/games/bubble-match/BubbleMatchHeader.tsx`;
 `src/games/word-search/WordSearchHeader.tsx`;
-`src/games/match-speed/MatchSpeedHeader.tsx`; `src/pages/AccountPage.tsx`.
+`src/games/match-speed/MatchSpeedHeader.tsx`; `src/pages/AccountSheet.tsx`.
 **Docs:** `docs/LEAF_NODE_PAGES.md`, `docs/MOBILE_TAB_SCREEN_LAYOUT.md`,
 `docs/GAMES_FEATURE.md`. **Size: M.**
 
@@ -849,6 +856,7 @@ related shelves). Built once; no page invents a copy.
 | `ShelfHeader` | `.shelfhd` | A row's caption + an optional right-hand affordance icon. Carries its own gutter, so it is a SIBLING of `Shelf`, not a child. |
 | `ShelfRow` | `.shrow` + `.spines` + `.board` | One row. A `scrollable` row also gets the scroll stretch — spines spread apart under a fling and close back up when it stops ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § "Scroll stretch"); a wrapping row opts out, never scrolling. A `distribute` row spreads its spines across the board (`space-between`) instead of packing them left — for a row of **fixed membership that always fits** only (the four utcm bands); a row the user adds to stays packed, and `scrollable` wins if both are passed. |
 | `ShelfNote` | `.shnote` | A sentence under a row. |
+| `ShelfRow` `board={false}` | — | A row without a board also drops its 12px board gap. Used by the utcm band row (`DeckBuckets`), which `LibraryShelfWithVelocity` closes with a plain section divider instead. |
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
 | `AddSpine` | `.sp.add` | The "make a new one" affordance. |
 | `spineHeight(count)` | — | The count→height band function. |
@@ -1640,6 +1648,10 @@ still to do). **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx`.
 
 ## 1 · Home — `/` — **Size: M**
 
+> **Moved 2026-10-10:** this bento is now the **Menu** tab (`/menu`,
+> `src/pages/MenuPage.tsx` → `MenuPage`); Home (`/`) now shows the entry-2 decks page.
+> The entry below describes the hub as it was built.
+
 **Status: DONE (2026-08-21).** `HomePage` is now a `Bento` mosaic: Night Market as
 the `hero`, Games / Arena / Reader / Dictionary as base tiles, Community / Friends /
 Compare Words as `low` tiles, `TipBox` + `FooterSpacer` below the grid. Hues and
@@ -1665,6 +1677,10 @@ as further `.lo` tiles — the mosaic must not assume a fixed tile count.
 **Docs:** `docs/BENTO_SYSTEM.md`, `docs/UX_AND_NAVIGATION.md`.
 
 ## 2 · Decks & Cards — `/flashcards/decks` — **Size: L**
+
+> **Moved 2026-10-10:** this page is now the **Home** tab at `/` (header title "Home");
+> `/flashcards/decks` only redirects there (`DecksRedirect`). See
+> [NAVIGATION.md](./NAVIGATION.md).
 
 **Status: DONE (2026-08-24).** Typecheck, lint, build and the 557-test suite clean.
 
@@ -1837,6 +1853,13 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 
 ## 5 · Account — `/account` — **Size: M**
 
+> **Superseded surface (2026-10-09):** `/account` is no longer a route. Dictionary took
+> its footer slot, and the same body now renders as `AccountSheet`, a maximizable
+> `SheetPanel` raised from the Home header avatar. The gear moved out to the Home header.
+> The artboard notes below still describe the body's contents.
+> **Off-artboard addition (2026-10-10):** a `StatCard` minute bank (`BankBanner`) sits
+> directly under the profile row. See [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 6.
+
 **Status: DONE (2026-08-23).** Typecheck, lint, `vite build` and the unit suite all
 clean; verified in a browser at 420px.
 
@@ -1921,7 +1944,8 @@ button means nobody has to read it, so it is left alone rather than truncated.
 cleanup for whoever touches A3 or A5 next; it is listed in
 [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
-**Code:** `src/pages/AccountPage.tsx`; `src/components/DeckBuckets.tsx`;
+**Code:** `src/pages/AccountSheet.tsx`; `src/components/DeckBuckets.tsx`;
+`src/components/velocity/` (shelf + velocity card, v2 arrows);
 `src/components/primitives/Row.tsx` (gained `meta`; `avatar` now replaces the box);
 `src/hooks/useCategoryCounts.ts`; `src/hooks/useVelocity.ts`;
 `src/components/InfoTip.tsx`; `src/utils/categoryColors.ts`;
@@ -2837,8 +2861,8 @@ that card's rail).
 
   **Superseded 2026-08-28**: the third cell is now **`note`** (the learner's own note on
   the card — [CARD_NOTES.md](./CARD_NOTES.md)), and delete is gone from the flp entirely.
-  Deleting is rare, irreversible and takes the review history with it, so it belongs on a
-  surface the learner navigated TO (the cdp header, the shelf's multi-select) rather than
+  Deleting is rare, so it belongs on a surface the learner navigated TO (the cdp header —
+  since 2026-10-09 a non-destructive demotion to `'provisional'`, see PROVISIONAL_CARDS.md) rather than
   one tap from the card they are drilling. `useWorkingLoop.dropCurrentCard`, which existed
   only for that flow, was deleted with it.
 
@@ -2855,7 +2879,8 @@ that card's rail).
   exactly what a sheet lifted off a chip inside a draggable card needs.
 - **20 / 20b · the definition tab.** `DefinitionFacts` (`.dfx`) replaces the centred chip
   strip, and replaces the VERBATIM DUPLICATE of it in `VocabCardDetailBody` — ~90 lines
-  each, down to the comments. Parts of speech split into terms with per-POS sense counts;
+  each, down to the comments. Parts of speech split into terms delimited by a middle dot (the per-POS sense counts
+  the artboard shows were dropped 2026-10-10);
   commonality and difficulty share a two-column row, since those are the two measures
   words get compared by. **20b's grouped AI treatment is a RULE, not a prop**: when every
   provenance-bearing value present (including the paragraph) is unapproved, the block
@@ -2867,8 +2892,8 @@ that card's rail).
   reflow as sentences are approved. The AI treatment and the underlines already shipped.
 - **25 · breakdown.** `BreakdownRow` (`.bkr`) replaces the wrapping grid of 1:1 block
   buttons — a square sized to the character clips the GLOSS, which is the part being
-  read, and a grid destroys the word's own order the moment it wraps. Used by BOTH
-  breakdown surfaces; `InfoCardBlockButton` is deleted.
+  read, and a grid destroys the word's own order the moment it wraps. Rendered by the
+  eip breakdown tab, which both cdps now mount; `InfoCardBlockButton` is deleted.
 - **The word trail (`.wtrail`).** The eip tab strip becomes filled pills — and **loses its
   tone colours**. Tone colour means ONE thing in this app (D2b); a pill tinted by a hue
   picked at random from the tone palette was borrowing that vocabulary to say "tab 3", on

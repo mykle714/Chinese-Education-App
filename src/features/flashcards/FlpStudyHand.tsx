@@ -6,6 +6,7 @@ import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import type { FlpBar } from "../../../server/contracts/studyMode";
 import type { RampHue } from "../../theme/colors";
+import type { WorkingLoopRequest } from "../../api/workingLoop";
 
 // ── What this is ──────────────────────────────────────────────────────────────
 //
@@ -15,18 +16,23 @@ import type { RampHue } from "../../theme/colors";
 // around it (the figures, the Review gate, the "resting" toast, the launch URL).
 //
 // Three hosts, one component, so they cannot drift:
-//   fdp (/flashcards/decks)        — bar `core`: the know flp.
+//   fdp (/, the Home tab)           — bar `core`: the know flp.
 //   Reading Center (/flashcards/reading) — bar `reading`: the READING flp in the same
 //       three modes (`?bar=reading`, docs/READING_WRITING_CENTERS.md § Phase 4).
 //   Writing Center (/flashcards/writing) — bar `writing`: the WRITING flp
 //       (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3), compact like Reading's.
 // Extracted from FlashcardsDecksPage on 2026-10-03 when the Reading Center adopted it.
 //
+// LAUNCH is the host's too, when it wants one: the fdp passes `onLaunch` (+ `shaking`)
+// so a commit loads the session while the hand shakes and plays the fdp → flp
+// choreography (flpLaunch.ts). The Centers pass neither and navigate directly.
+//
 // SIZING is the host's: StudyHand fills its container (`flex: 1 1 0`, container-query
 // sized), so the fdp lets it stretch over the study area and the Reading Center gives
 // it a fixed-height box.
 //
 // Layer: feature component (src/features/flashcards). Docs: docs/DECKS_FEATURE.md
+// § "Launching the flp from the hand", and
 // § "The card hand".
 
 /**
@@ -68,9 +74,18 @@ interface FlpStudyHandProps {
     /** `compact` (Reading Center): the old stack's look, no figures — StudyHand docblock. */
     variant?: "full" | "compact";
     className?: string;
+    /**
+     * Take over the launch instead of navigating straight to the flp. The fdp passes its
+     * `useFlpLaunch().launch`, which loads the session while the hand shakes and then plays
+     * the fdp → flp choreography (flpLaunch.ts). `request` is the flp's initial deal, built
+     * here because this is where mode and bar are decided. Omitted (the Centers): navigate.
+     */
+    onLaunch?: (path: string, request: WorkingLoopRequest) => void;
+    /** Shake the hand's cards — the host's "session loading" state (StudyHand `shaking`). */
+    shaking?: boolean;
 }
 
-const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", className }) => {
+const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", className, onLaunch, shaking = false }) => {
     const navigate = useNavigate();
     // Toast shown when a greyed Review card is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
@@ -136,12 +151,18 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
         if (id !== "mix") params.set("mode", id);
         if (bar !== "core") params.set("bar", bar);
         const query = params.toString();
-        navigate(query ? `/flashcards/learn?${query}` : "/flashcards/learn");
-    }, [navigate, reviewEligible, bar]);
+        const path = query ? `/flashcards/learn?${query}` : "/flashcards/learn";
+        if (onLaunch) {
+            // The hand launches the WHOLE library: no category, no collection.
+            onLaunch(path, { category: null, mode: id === "mix" ? null : id, bar, collection: null });
+            return;
+        }
+        navigate(path);
+    }, [navigate, reviewEligible, bar, onLaunch]);
 
     return (
         <>
-            <StudyHand className={className} cards={handCards} onStudy={handleStudy} variant={variant} />
+            <StudyHand className={className} cards={handCards} onStudy={handleStudy} variant={variant} shaking={shaking} />
 
             {/* Toast: greyed Review tapped. TWO reasons the figure can be 0, and they call
                 for opposite advice — go earn some cards, or come back later — so the

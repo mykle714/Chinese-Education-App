@@ -10,74 +10,128 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    redesign's A2a/D5 ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md)), and the bar is laid
    out left-to-right in the order below, matching the design's `.fbar`:
 
-   | Tab        | `FooterTab`   | Route               |
-   | ---------- | ------------- | ------------------- |
-   | Home       | `home`        | `/`                 |
-   | Flashcards | `flashcards`  | `/flashcards/decks` |
-   | Discover   | `discover`    | `/discover`         |
-   | Account    | `account`     | `/account`          |
+   | Tab        | `FooterTab`   | Route         | Page                                                         |
+   | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
+   | Home       | `home`        | `/`           | the fdp (`FlashcardsDecksPage`) wrapped by `HomePage`        |
+   | Menu       | `menu`        | `/menu`       | the hub bento (`MenuPage`)                                   |
+   | Discover   | `discover`    | `/discover`   | the dp (`DiscoverPage`)                                      |
+   | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
 
-   The **active** tab is resolved from the current route by `FooterPresenter`.
-   Pages do not declare it: the `activePage` prop that used to run through
-   `MobileTabScreen` / `NodePage` fed the header's tab badge, and both were removed
-   by the shelf redesign's A2b.
+   Dictionary took Account's slot on 2026-10-09. There is **no `/account` route** any
+   more — the account surface is a sheet raised from the Home header (see 2 below).
+   On 2026-10-10 Home and Menu **swapped contents**: the decks page (formerly the
+   Flashcards tab at `/flashcards/decks`) became Home, and the hub bento (formerly Home)
+   moved to the new Menu tab. The `flashcards` `FooterTab` key is gone, and
+   `/flashcards/decks` survives only as a legacy redirect to `/`
+   (`src/features/flashcards/DecksRedirect.tsx` → `DecksRedirect`, same pattern as
+   `MasteredRedirect`; its `routeMeta` row lights `home`).
+
+   The **active** tab is resolved from the current route by `FooterPresenter`
+   (`routeFooterTab` in `src/routes/routeMeta.ts`). Pages do not declare it: the
+   `activePage` prop that used to run through `MobileTabScreen` / `NodePage` fed the
+   header's tab badge, and both were removed by the shelf redesign's A2b.
+
+   **Which tab each drill-in lights** (the `footerTab` field of its `routeMeta` row;
+   leaf pages have no footer and so no `footerTab`):
+
+   | Lights | Routes |
+   | --- | --- |
+   | `home` | `/`, `/flashcards/decks` (redirect), `/flashcards/collection/:builtin`, `/flashcards/deck/:id`, `/flashcards/reading`, `/flashcards/writing`, `/flashcards/mastered` (redirect), `/flashcards/card/:id` |
+   | `menu` | `/menu`, `/games`, `/community`, `/arena`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
+   | `discover` | `/discover`, `/discover/sort/:language`, `/discover/quick-mark/:language`, `/discover/skipped/:language` |
+   | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
    itself is the `TABS` array in that file.
 
-2. **Home menu** (`/`, `HomePage`) — a `Bento` mosaic (the shared tile primitive, also
-   used by the Discover + Games hubs; `HubMenu` was deleted 2026-08-21 — see
-   [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
-   **Night Market**, **Games**, **Community**, **Reader**, **Dictionary**
-   (plus a validator- or admin-only **Tester Dashboard** tile and template-author-only tiles).
+2. **Home** (`/`, `src/pages/HomePage.tsx` → `HomePage`) — the fdp. `HomePage` is a
+   thin wrapper: it mounts `DailyBankingProvider` (see
+   [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md)), renders
+   `FlashcardsDecksPage` with the account header passed in as props, and adds
+   `BankingEmbers` and the `AccountSheet`. The decks page takes the header controls as
+   props (`headerExtraActions`, `headerTrailingActions`) because `features/` must not
+   import `pages/` ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)). The header title
+   is **"Home"**; the browser tab title is just "Cow" (`usePageTitle()` with no name).
+   The header carries, around the minute-points flame:
+   - left of the flame: the validator-only `BankingAlwaysPlayToggle`
+     (`headerExtraActions`; renders null for everyone else);
+   - right of the flame (`headerTrailingActions` → `PageHeader`'s `trailingContent`),
+     in order **flame · Settings gear · avatar**:
+     - the **Settings gear** (outlined `HeaderIconButton`, `home-page__settings-button`)
+       → `slideNavigate("/settings")`;
+     - the learner's **profile picture** as a round 32px button in the far-right corner
+       (`src/minutePoints/dailyBanking/BankingAvatarButton.tsx` wrapping
+       `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
+       (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` over Home. It shows
+       the icons8 `avatarIconId`, falling back to the name's initial on `COLORS.bluM`,
+       matching the sheet's own avatar row.
+
+3. **Menu** (`/menu`, `src/pages/MenuPage.tsx` → `MenuPage`) — a `Bento` mosaic (the
+   shared tile primitive, also used by the Discover + Games hubs; `HubMenu` was deleted
+   2026-08-21 — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
+   **Night Market**, **Games**, **Arena**, **Immersive World**, **Reader**,
+   **Community**, **Friends** (plus a validator- or admin-only **Tester Dashboard** tile
+   and template-author-only tiles). There is **no Dictionary tile** — Dictionary is a
+   footer tab, and a tile would be a second door to the same room. Its header is just the
+   title "Menu" and the normal minute-points flame — no Settings gear, no avatar, no
+   banking run (those stayed with the Home tab). Classes are `menu-page__*`.
    There is deliberately **no Compare Words row**: Compare is a sheet raised over the
    word you are already looking at, not a destination — see
    [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
 
-3. **Back-arrow drill-ins** — how Back behaves (arrow vs. browser back vs. edge swipe,
+4. **Back-arrow drill-ins** — how Back behaves (arrow vs. browser back vs. edge swipe,
    restoring state, guards) is specified in [BACK_NAVIGATION.md](./BACK_NAVIGATION.md).
    Every page reached from a hub has a common header
    with a back button. These come in two archetypes (see
    [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
    footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
    keep the footer, slide in-from-right / out-to-right via the arrow).
-   - Home-menu destinations → back to `/`: `/dictionary` (node), `/games` (node);
-     `/night-market`, `/reader`, `/tester-dashboard` use their own headers.
+   - Menu destinations → back to `/menu`: `/games`, `/arena`, `/friends`, `/community`,
+     `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the
+     Template Editor / Sandbox and leaving the Scene Editor (leaf).
    - Sort Cards (`/discover/sort/:language`) → back to `/discover` (node).
-   - Card Detail (`/flashcards/card/:id`, saved-card cdp) → back (node); collection and
-     deck pages (`/flashcards/collection/:builtin`, `/flashcards/deck/:id`; the legacy
-     `/flashcards/mastered` redirects to the Mastered collection) → back (node). The cdp's breakdown/used-in/
-     example drill-ins open the tapped word's saved card when the learner has one,
-     else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
-   - Dictionary result tap → the read-only dictionary cdp (`/dictionary/card/:word`,
-     node); its breakdown/example drill-ins open more read-only cdps. See
-     [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp): two surfaces".
-   - Settings (`/settings`) → back to `/account` (leaf; opened from the Account
-     header gear via `slideNavigate`, so it slides up into the phone frame).
+   - Home (fdp) drill-ins → back to `/`: the Mastery Centers (`/flashcards/reading`,
+     `/flashcards/writing`), collection and deck pages
+     (`/flashcards/collection/:builtin`, `/flashcards/deck/:id`; the legacy
+     `/flashcards/mastered` redirects to the Mastered collection), Card Detail
+     (`/flashcards/card/:id`, saved-card cdp) and leaving the flp. The cdp's
+     breakdown/used-in/example drill-ins open the tapped word's saved card when the
+     learner has one, else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
+   - Dictionary result tap → **no navigation**: the eip rises as a bottom sheet over the
+     results (`EipSheet`, 2026-10-10); its drill-ins (breakdown/used-in rows, example and
+     long-definition segments, Compare) open as eip TABS, not pages. Closing the sheet
+     leaves the reader on their results. The read-only dictionary cdp
+     (`/dictionary/card/:word`) is now reached only from the saved-card cdp's drill-in
+     fallback above. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp)".
+   - Settings (`/settings`) → back to `/` (leaf; opened from the Home header gear via
+     `slideNavigate`, so it slides up into the phone frame).
 
-## Account page absorbs the old drawer footer
+## Where the old drawer's global controls live
 
-The drawer's two global controls moved onto `AccountPage`:
-- **Settings** → a gear `IconButton` in the Account header (`headerExtraActions`)
-  that `slideNavigate`s to `/settings` (a leaf page rendered inside the phone frame).
-- **Log Out** → a button in the Account body (`account-page__logout-section`),
-  with the same confirm-then-`logout()` flow the drawer used.
+The drawer's two global controls first moved onto the Account page; since Account
+became a sheet (2026-10-09) they are:
+- **Settings** → the gear in the Home header, beside the avatar (see 2 above). Code:
+  `src/pages/HomePage.tsx` → `headerTrailingActions`.
+- **Log Out** → a button at the bottom of the AccountSheet body
+  (`account-sheet__logout-button`), with the same confirm-then-`logout()` flow the
+  drawer used. Logging out unmounts the sheet immediately rather than animating it
+  away. Code: `src/pages/AccountSheet.tsx` → `handleLogout`.
 
 ## Layout / frame
 
 `Layout.tsx` has two modes:
-- Mobile-demo routes (`MOBILE_DEMO_PATHS`, which now includes `/`) → wrapped in
-  `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
+- Frame routes (`shell: "frame"` in `src/routes/routeMeta.ts`, which replaced the old
+  `MOBILE_DEMO_PATHS` array; includes `/` and `/menu`) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
 - Everything else (auth pages, etc.) → full-height, no chrome; each owns its
   `PageHeader`. (Reader / Night Market / Settings / Tester Dashboard render inside
-  the frame as leaf pages; Dictionary + both card-detail cdps render inside the frame
-  as node pages.)
+  the frame as leaf pages; both card-detail cdps render inside the frame as node pages;
+  Dictionary is a footer tab.)
 
 ## Tester Dashboard
 
 `/tester-dashboard` (`TesterDashboardPage`) holds the **former landing-page**
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
-is now the Home menu.
+became the hub menu, which now lives at `/menu`; `/` is the fdp (see 1 above).
 
 **Validator- or admin-gated.** The surface is for testers/curators, not ordinary
 learners, so it is gated on `users.isValidator` (migration 104, see
@@ -85,11 +139,12 @@ learners, so it is gated on `users.isValidator` (migration 104, see
 (migration 168) in two places, mirroring the `isTemplateAuthor` gate on the Night
 Market template editor:
 
-- `src/pages/HomePage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
+- `src/pages/MenuPage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
   spread in only when `user?.isValidator || user?.isAdmin`, so nobody else sees the
   entry point.
 - `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved user who is
-  neither to `/` (`replace: true`), covering deep links and bookmarks.
+  neither to `/` (`replace: true`), covering deep links and bookmarks. Its back arrow
+  returns to `/menu`.
 
 The route (`src/routes/routeMeta.ts`, `/tester-dashboard`) is `access: "any"` on
 purpose: a validator may be a public account, and the generic `isPublic` redirect

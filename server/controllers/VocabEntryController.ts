@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { VocabEntryService } from '../services/VocabEntryService.js';
 import { DictionaryService } from '../services/DictionaryService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
+import type { Language } from '../types/index.js';
 
 /**
  * VocabEntry Controller - Handles HTTP requests and responses for vocabulary operations
@@ -127,6 +128,55 @@ export class VocabEntryController {
       res.json(result);
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.addToLibrary');
+    }
+  }
+
+  /**
+   * Is a word in the user's Learn Now? (bucket 'library'; provisional/no row → false)
+   * GET /api/vocabEntries/libraryStatus?entryKey=&language=
+   * Response: { inLibrary: boolean }
+   */
+  async getLibraryStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const entryKey = typeof req.query.entryKey === 'string' ? req.query.entryKey : '';
+      const language = typeof req.query.language === 'string' ? req.query.language : '';
+      if (!entryKey || !language) {
+        res.status(400).json({ error: 'Missing required query params: entryKey, language' });
+        return;
+      }
+
+      const result = await this.vocabEntryService.getLibraryStatus(userId, entryKey, language as Language);
+      res.json(result);
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.getLibraryStatus');
+    }
+  }
+
+  /**
+   * Remove a word from Learn Now by demoting its row to 'provisional' (never a delete;
+   * see VocabEntryService.removeFromLibrary).
+   * POST /api/vocabEntries/removeFromLibrary
+   * Body: { entryKey, language }
+   * Response: { status: 'removed' | 'not-in-library' }
+   */
+  async removeFromLibrary(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { entryKey, language } = req.body;
+      if (!entryKey || !language) {
+        res.status(400).json({ error: 'Missing required fields: entryKey, language' });
+        return;
+      }
+
+      const result = await this.vocabEntryService.removeFromLibrary(userId, entryKey, language);
+      res.json(result);
+    } catch (error) {
+      handleControllerError(error, res, 'VocabEntryController.removeFromLibrary');
     }
   }
 
@@ -308,32 +358,6 @@ export class VocabEntryController {
       res.json({ id: updated.id, selectedSense: updated.selectedSense ?? null });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateSelectedSense');
-    }
-  }
-
-  /**
-   * Delete vocabulary entry
-   * DELETE /api/vocabEntries/:id
-   */
-  async deleteEntry(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const entryId = parseInt(req.params.id);
-      if (isNaN(entryId)) {
-        res.status(400).json({
-          error: 'Invalid entry ID',
-          code: 'ERR_INVALID_ENTRY_ID'
-        });
-        return;
-      }
-
-      const language = await getUserLanguage(userId);
-      await this.vocabEntryService.deleteEntry(userId, entryId, language);
-      res.status(204).end();
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.deleteEntry');
     }
   }
 

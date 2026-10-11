@@ -1,8 +1,7 @@
 # Client Performance Diagnostics
 
 Real-user interaction-latency telemetry, built to diagnose the **PPE-only**
-"buttons take 1–2s before working" lag on the mobile-demo footer and `/decks`
-page (the lag does not reproduce locally, so synthetic profiling is not enough).
+"buttons take 1–2s before working" lag on the mobile-demo footer and the decks page (fdp — `/flashcards/decks` then, the Home tab `/` since 2026-10-10) (the lag does not reproduce locally, so synthetic profiling is not enough).
 
 ## Layers / components
 
@@ -152,7 +151,7 @@ From `server/`:
 
 ```bash
 npx tsx scripts/analyze-client-perf.ts                  # all data
-npx tsx scripts/analyze-client-perf.ts --path /flashcards/decks
+npx tsx scripts/analyze-client-perf.ts --path /     # the fdp (Home tab since 2026-10-10; older rows recorded it as /flashcards/decks)
 npx tsx scripts/analyze-client-perf.ts --since 2026-06-13
 npx tsx scripts/analyze-client-perf.ts --min 500        # only taps ≥500ms
 ```

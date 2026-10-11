@@ -1,5 +1,4 @@
 import { alpha } from "@mui/material/styles";
-import { useMemo } from "react";
 import { Box, Typography, useTheme } from "@mui/material";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
@@ -7,7 +6,6 @@ import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import MetaChipLabel from "./MetaChipLabel";
 import { resolveCommonality } from "../../utils/definitionUtils";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
 
@@ -30,10 +28,10 @@ import type { VocabEntry } from "../../types";
  *   • Centred values in a left-aligned reading column read as a caption to the
  *     paragraph rather than as facts of their own. `.dfx` left-aligns everything and
  *     puts each value under a mono overline, like every other section in the app.
- *   • "noun, verb, adjective, complement" as prose says nothing about SHAPE. Split
- *     into terms, each carrying how many of the word's senses sit under it, the same
- *     line answers "which of these is this word mostly?" — which is the question a
- *     learner looking at a four-POS word actually has.
+ *   • "noun, verb, adjective, complement" as a comma-joined string read as prose.
+ *     Split into separate terms delimited by a faint middle dot, each POS reads as a
+ *     tag. (Per-POS sense counts used to sit beside each term; dropped
+ *     2026-10-10 by request.)
  *   • Commonality and difficulty are the two measures words get COMPARED by, so they
  *     share a two-column row with a rule between them, not a centred huddle.
  *
@@ -88,25 +86,6 @@ export interface DefinitionFactsProps {
     className?: string;
 }
 
-/**
- * How many of the word's senses list each part of speech.
- *
- * The POS LIST comes from the entry-level `partsOfSpeech` column, because that is the
- * validatable field — a count derived from clusters cannot be approved or flagged. The
- * COUNTS come from `definitionClusters`. An entry with no clusters gets the list with
- * no counts rather than a fabricated "1" each: one sense per POS is a claim, and on an
- * unclustered word nobody has made it.
- */
-function senseCountsByPos(entry: VocabEntry): Map<string, number> {
-    const counts = new Map<string, number>();
-    for (const cluster of entry.definitionClusters ?? []) {
-        for (const pos of cluster.pos ?? []) {
-            counts.set(pos, (counts.get(pos) ?? 0) + 1);
-        }
-    }
-    return counts;
-}
-
 export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
     entry,
     selectedSenseIndex,
@@ -120,7 +99,6 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
 
     const commonality = resolveCommonality(entry, selectedSenseIndex);
     const posList = entry.partsOfSpeech ?? [];
-    const posCounts = useMemo(() => senseCountsByPos(entry), [entry]);
 
     const hasPos = posList.length > 0;
     // Held as a local so TypeScript narrows it for the meter below; `hasCommonality`
@@ -202,35 +180,30 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         approved={entry.partsOfSpeechApproved}
                         classPrefix={classPrefix}
                     />
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: "5px 16px", marginTop: "8px" }}>
-                        {posList.map((pos) => {
-                            const senses = posCounts.get(pos);
-                            return (
-                                <Typography
-                                    component="b"
-                                    key={pos}
-                                    className={`${classPrefix}__definition-facts-pos-term`}
-                                    sx={{ fontSize: 12.5, fontWeight: WEIGHT.semibold, letterSpacing: "-0.012em", color: fc.onSurface }}
-                                >
-                                    {pos}
-                                    {senses !== undefined && (
-                                        <Typography
-                                            component="em"
-                                            sx={{
-                                                fontStyle: "normal",
-                                                fontFamily: FONTS.mono,
-                                                fontSize: 9,
-                                                letterSpacing: "0.06em",
-                                                color: COLORS.textFaint,
-                                                marginLeft: "5px",
-                                            }}
-                                        >
-                                            {senses}
-                                        </Typography>
-                                    )}
-                                </Typography>
-                            );
-                        })}
+                    {/* Terms joined by a faint middle dot. The dot is its own span so it
+                        takes the label colour rather than the term's ink, and wrapping
+                        happens between terms (each term + its leading dot is one unit). */}
+                    <Box sx={{ display: "flex", flexWrap: "wrap", rowGap: "5px", marginTop: "8px" }}>
+                        {posList.map((pos, index) => (
+                            <Typography
+                                component="b"
+                                key={pos}
+                                className={`${classPrefix}__definition-facts-pos-term`}
+                                sx={{ fontSize: 12.5, fontWeight: WEIGHT.semibold, letterSpacing: "-0.012em", color: fc.onSurface, whiteSpace: "nowrap" }}
+                            >
+                                {index > 0 && (
+                                    <Typography
+                                        component="span"
+                                        aria-hidden
+                                        className={`${classPrefix}__definition-facts-pos-separator`}
+                                        sx={{ font: "inherit", color: COLORS.textFaint, margin: "0 7px" }}
+                                    >
+                                        ·
+                                    </Typography>
+                                )}
+                                {pos}
+                            </Typography>
+                        ))}
                     </Box>
                 </Box>
             )}

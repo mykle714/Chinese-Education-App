@@ -31,12 +31,14 @@ export class UserLanguagesDAL implements IUserLanguagesDAL {
       lifetimeminutesearned: number;
       currentstreak: number;
       laststreakdate: string | null;
+      lastbankingshowndate: string | null;
     }>(async (client) => {
       return await client.query(
         `SELECT "totalMinutePoints"     AS totalminutepoints,
                 "lifetimeMinutesEarned" AS lifetimeminutesearned,
                 "currentStreak"         AS currentstreak,
-                to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate
+                to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate,
+                to_char("lastBankingShownDate", 'YYYY-MM-DD') AS lastbankingshowndate
          FROM user_languages
          WHERE "userId" = $1 AND language = $2`,
         [userId, language]
@@ -52,6 +54,7 @@ export class UserLanguagesDAL implements IUserLanguagesDAL {
       lifetimeMinutesEarned: row?.lifetimeminutesearned ?? 0,
       currentStreak: row?.currentstreak ?? 0,
       lastStreakDate: row?.laststreakdate ?? null,
+      lastBankingShownDate: row?.lastbankingshowndate ?? null,
     };
   }
 
@@ -64,13 +67,15 @@ export class UserLanguagesDAL implements IUserLanguagesDAL {
       lifetimeminutesearned: number;
       currentstreak: number;
       laststreakdate: string | null;
+      lastbankingshowndate: string | null;
     }>(async (client) => {
       return await client.query(
         `SELECT language,
                 "totalMinutePoints"     AS totalminutepoints,
                 "lifetimeMinutesEarned" AS lifetimeminutesearned,
                 "currentStreak"         AS currentstreak,
-                to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate
+                to_char("lastStreakDate", 'YYYY-MM-DD') AS laststreakdate,
+                to_char("lastBankingShownDate", 'YYYY-MM-DD') AS lastbankingshowndate
          FROM user_languages
          WHERE "userId" = $1
          ORDER BY language ASC`,
@@ -84,6 +89,7 @@ export class UserLanguagesDAL implements IUserLanguagesDAL {
       lifetimeMinutesEarned: row.lifetimeminutesearned ?? 0,
       currentStreak: row.currentstreak ?? 0,
       lastStreakDate: row.laststreakdate ?? null,
+      lastBankingShownDate: row.lastbankingshowndate ?? null,
     }));
   }
 
@@ -125,6 +131,24 @@ export class UserLanguagesDAL implements IUserLanguagesDAL {
                        "lastStreakDate" = EXCLUDED."lastStreakDate",
                        "updatedAt"      = now()`,
         [userId, language, currentStreak, lastStreakDate]
+      );
+    });
+  }
+
+  async markBankingShown(userId: string, language: string, streakDate: string): Promise<void> {
+    if (!userId) throw new ValidationError('User ID is required');
+    if (!language) throw new ValidationError('Language is required');
+    if (!streakDate) throw new ValidationError('Streak date is required');
+
+    // UPDATE, not upsert — see the interface: no row means nothing was ever earned in
+    // this language, so there was no run to mark. "updatedAt" is left alone on purpose:
+    // it tracks wallet/streak changes, and this column moves no balance.
+    await dbManager.executeQuery(async (client) => {
+      return await client.query(
+        `UPDATE user_languages
+            SET "lastBankingShownDate" = $3
+          WHERE "userId" = $1 AND language = $2`,
+        [userId, language, streakDate]
       );
     });
   }

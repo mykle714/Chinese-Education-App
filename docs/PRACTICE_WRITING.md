@@ -52,9 +52,12 @@ outside its boundary, because the drill acts on the WORD, not on the card. Hosts
 
 - **flp** — `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`
 - **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
-- **dictionary cdp** — `src/features/dictionary/DictionaryCardDetailPage.tsx` (rail
-  rendered without `onCompare`, so only the `Write it` pill shows; the adapted det
-  entry has no vet row, so the drill records no Writing mark)
+- **Dictionary page eip** — `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx`
+  (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`) — and the
+  **dictionary cdp** (`src/features/dictionary/DictionaryCardDetailPage.tsx`). The
+  exception to "above the card": neither has a card, so the rail sits at the **bottom of
+  the eip's definition tab** (`definitionFooter`, 2026-10-10). Both pills show; a det
+  entry with no vet row records no Writing mark
 
 **Removed placements.** The compact `icon` button that stacked above the speaker on the
 card face (`ChineseBlock`'s `showWriting` prop) was deleted on 2026-08-28 — a relic of

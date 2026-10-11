@@ -260,12 +260,13 @@ each glyph with its syllable from `entry.pronunciation` and falling back to the 
 breakdown degrades to fewer rows rather than to placeholders.
 
 **One row component, both surfaces: `src/features/flashcards/BreakdownRow.tsx`** (the
-design's `.bkr`, 2026-08-24). Rendered by the eip's breakdown tab
-(`FlashcardsLearnPage/InfoCardTabContent.tsx`) and by the read-only dictionary cdp's
-Character Breakdown box (`VocabCardDetailBody.tsx`), which previously carried two copies of
-the same layout. The **saved-card cdp** goes through the eip's tab too — it raises
-`InfoCardSection` directly — and drills in by NAVIGATING to the tapped character's card
-detail instead of opening a nested eip tab (`VocabCardDetailPage.handleWordOpen`).
+design's `.bkr`, 2026-08-24). Rendered in ONE place, the eip's breakdown tab
+(`FlashcardsLearnPage/InfoCardTabContent.tsx`), and every surface reaches it through that
+tab: the **dictionary cdp** mounts the eip panel itself (`InfoCardPanelBody`, 2026-10-10 —
+its own Character Breakdown box in `VocabCardDetailBody.tsx` is gone), and the **saved-card
+cdp** raises `InfoCardSection` directly and drills in by NAVIGATING to the tapped
+character's card detail instead of opening a nested eip tab
+(`VocabCardDetailPage.handleWordOpen`).
 
 It replaced a wrapping grid of 1:1 block buttons (`InfoCardBlockButton`, deleted), for two
 reasons worth keeping:
@@ -276,10 +277,13 @@ reasons worth keeping:
   taken apart in ORDER, and order is what a column of rows shows and a wrapping grid
   destroys the moment it wraps.
 
-A row is glyph column (fixed 36px, so every gloss starts on the same margin) → the reading
-as tone-coloured TEXT (`getToneColor` per syllable, a literal palette — see
-SHELF_REDESIGN.md D2b) → the gloss → a chevron. Tapping one opens that character's own
-entry; inside the eip the **word trail** at the top of the panel is how you come back.
+A row is glyph column (fixed 52px holding an `md` cpcd — rows are always one character,
+so it can run larger than a word would; fixed so every gloss starts on the same margin)
+with the reading **under the glyph** as the cpcd's own pinyin line (tone-coloured via
+`useToneColor`, exactly like every other `CPCDRow`; 2026-10-10 — it used to be a separate
+text line above the gloss) → the gloss (`SIZE.body`) → a chevron. Tapping one opens that
+character's own entry; inside the eip the **word trail** at the top of the panel is how you
+come back.
 
 ⚠️ Artboard 25 also draws a titled paragraph under the rows, *"How the parts make the
 word"*. The det tables carry `breakdownElaboration` for exactly that, but it is **not on

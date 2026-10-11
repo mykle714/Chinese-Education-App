@@ -8,8 +8,8 @@ account is pursuing**.
 
 One card that moved `Unfamiliar → Comfortable` counts **2**, exactly as two cards
 that each moved up one band count 2. That total is also reported **split by which
-boundary was crossed** — see §2b, which is what the Velocity card renders on one
-line as `9 = 4 U→T + 3 T→C + 2 C→M`. The window **slides** — it is always
+boundary was crossed** — see §2b, which the Velocity card draws as one U-arrow per
+boundary hanging under the library shelf, each carrying `+N`. The window **slides** — it is always
 `now() - 7 days`, never a calendar week or the Sunday-04:00 boundary that
 [wins and community votes](./GAMES_FEATURE.md) use. A rolling rate must not
 collapse to near-zero every Sunday morning.
@@ -106,7 +106,7 @@ of boundaries crossed, so
 boundaryCounts.reduce(+) === SUM("bandsClimbed") === velocity
 ```
 
-and the card can show `9 = 4 + 3 + 2` without the arithmetic ever being a coincidence.
+and the card's three arrows (`+4`, `+3`, `+2`) always add up to the headline `9`.
 The alternative — bucketing rows by their literal `(fromCategory, toCategory)` pair —
 was rejected: it yields up to **six** buckets rather than three, and they do not sum to
 the headline figure, so the card would print parts that contradict their own total.
@@ -124,7 +124,7 @@ is no hand-written list of boundaries anywhere in the stack.
 
 **Code:** `CATEGORY_BOUNDARIES` (`server/contracts/mastery.ts`),
 `VelocityBreakdown` / `emptyVelocityBreakdown` (`server/types/velocity.ts`),
-`CategoryPromotionDAL.getVelocityByLanguage`, `VelocityStatCard` (§4).
+`CategoryPromotionDAL.getVelocityByLanguage`, `VelocityArrows` (§4).
 
 ---
 
@@ -170,7 +170,7 @@ of the window within 7 days.
 
 | Layer | File | Role |
 |---|---|---|
-| contract | `server/contracts/mastery.ts` — `CATEGORY_ORDER`, `CATEGORY_BOUNDARIES`, `categoryRank()`, `bandsClimbed()` | The band-step arithmetic. Shared with the client via `src/utils/masteryCompute.ts`; `VelocityStatCard` imports `CATEGORY_BOUNDARIES` from here directly, so the column order and the SQL column order are one list. |
+| contract | `server/contracts/mastery.ts` — `CATEGORY_ORDER`, `CATEGORY_BOUNDARIES`, `categoryRank()`, `bandsClimbed()` | The band-step arithmetic. Shared with the client via `src/utils/masteryCompute.ts`; `VelocityStatCard` / `VelocityArrows` import `CATEGORY_BOUNDARIES` from here directly, so the column order and the SQL column order are one list. |
 | DAL | `server/dal/implementations/CategoryPromotionDAL.ts` (behind `ICategoryPromotionDAL`) | The only SQL. Every method takes an optional `PoolClient` so a caller already holding a connection or a transaction can enlist the query (BACKEND_LAYERING §3). `getVelocityByLanguage` returns a `VelocityBreakdown` per language, not a bare number — one scan produces both the headline and its boundary split (§2b). |
 | write (mark) | `server/services/FlashcardMarkService.ts` → `applyMark`, after the mark's bar band is computed | `bandsClimbed(barCategoryBefore, barCategoryAfter) > 0` → `recordPromotion({…, bar})`. Note it measures **the mark's own bar**, not the core band. **Best-effort**, and issued AFTER the mark's transaction commits: a failed INSERT inside that transaction would abort the mark itself, and losing a stat must never fail a user's review write. |
 | write (undo) | `server/services/FlashcardMarkService.ts` → `undoMark`, inside the undo transaction | `deleteForMark(cardId, markTimestamp, client)`. **Not** best-effort: it rolls back with the rest of the undo. |
@@ -178,9 +178,8 @@ of the window within 7 days.
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |
 | client hook | `src/hooks/useVelocity.ts` | Keys on `isAuthenticated` + `selectedLanguage`, **never** `token` (CLAUDE.md silent-refresh rule). |
-| UI | `src/components/VelocityStatCard.tsx` | The figure, its ⓘ, and the boundary breakdown (§2b) — **all on one line**, as an equation: `9 = 4 U→T + 3 T→C + 2 C→M`. Built on the shared `StatCard` primitive (`src/components/primitives/StatCard.tsx`): the "VELOCITY" overline + a tappable ⓘ (`src/components/InfoTip.tsx`), and the equation in the single `value` slot — NOT in a second row under it, so the primitive keeps its "one big figure" shape (its own header warns that three stacked figures is a data table wearing a costume) and the card stays one line tall on both hosts. That slot renders inside a `<p>`, which is why every node in the equation is a `span`. The `=` and `+` are load-bearing, not decoration: they are what tells a reader the small figures are terms of the big one. Each term is tinted with its **destination** band's ink (`getBandInk`, `src/utils/categoryColors.ts`), so "cards that reached Mastered" is the same blue here as on every band chip in the app; the terms may **wrap** (centred) rather than clip, which only happens at three-digit velocities inside the profile's already-inset panel. The equation is skipped entirely when `boundaryCounts` is absent or the wrong length — mislabelling a term is worse than omitting it. It runs **without** a `description`: the window ("counted over the last N days") is said inside the ⓘ text instead. **The ⓘ sentence lives here and only here** — velocity is uninterpretable without the definition of a level-up, and a second host writing its own copy of that sentence is a copy that will drift. |
-| Hosts | `src/pages/AccountPage.tsx` — `account-page__velocity-card`; `src/features/profile/ProfileStatsCard.tsx` — `profile-stats__velocity` | Both render it centred, **under the library shelf** — the library is the state, velocity is its rate of change, so the reader meets the thing before its derivative. The account page shows the signed-in user's, page-wide; the profile shows one per language, inside a panel that already insets it (so it passes `sx={{ mx: 0 }}` to cancel `SectionCard`'s own page gutter). |
-| ⚠️ The window sentence is NOT in the layout | — | It was a permanent caption, then moved into the ⓘ to keep the number unexplained-until-asked. Artboard 5 of the shelf redesign draws it as visible body copy again, but **the shipped card has no `description`** — the window is stated only inside the ⓘ, which also defines a level-up (`Unfamiliar → Target → Comfortable → Mastered`) and now explains the breakdown row. If the caption is ever restored, make sure the two do not say the same thing; the ⓘ is the one carrying the definition. |
+| UI | `src/components/velocity/` — `LibraryShelfWithVelocity`, `VelocityStatCard`, `VelocityArrows` | Shelf System v2, artboard 5. **`LibraryShelfWithVelocity`** is the only exported piece: it renders the four utcm band spines (`DeckBuckets`) and the Velocity card under them as ONE component, because the card's arrows must line up with the spines. The band row is drawn **without its wooden board** (`board={false}`, and `ShelfRow` drops the 12px board gap with it). Instead, two plain **section dividers** (`SectionDivider`: a 1px `COLORS.rowBorder` hairline, the rule `SectionRule` draws) frame the Velocity block, one 12px under the spines and one 12px under the figure, inset by the shelf's gutter. The velocity card is drawn **frameless** (`FRAMELESS_CARD_SX`: no fill, hairline or padding), so the arrows hang straight off the top divider (`marginTop: -6`). It owns the ref between the two halves, holds each half back until it loads (`null` props) and reserves each half's height. **`VelocityStatCard`** is a `StatCard` with three parts: the arrows in the `lead` slot (above the overline), then the "Velocity ⓘ" heading (`src/components/InfoTip.tsx`), then the total. The heading is set in the app's heading voice (`FONTS.sans`, semibold, sentence case, `SIZE.subtitle`), not as `StatCard`'s 10px overline; the span overrides the `Label` recipe it is wrapped in. There is **no equation and no caption**: the old `9 = 4 U→T + 3 T→C + 2 C→M` line was replaced by the arrows. The artboard's "Mastery level-ups in the last 7 days" body copy was deliberately not rendered, because the window and the definition of a level-up live in the ⓘ. **The ⓘ sentence lives here and only here.** **`VelocityArrows`** draws one hand-marked U-arrow per `CATEGORY_BOUNDARIES` entry. Each leaves one spine, dips, and climbs into the next with an arrowhead, carrying `+N` in its cup; a zero still draws as `+0`. The arrow strokes are ink (`COLORS.onSurface`). Each `+N` is an ink figure on a highlighter pill in its **destination** band's Mid tier (`getBandMid`). The pills are HTML spans over the SVG, because in v2 hue never carries text. In the overline, the word VELOCITY is centred over the figure and the ⓘ hangs off its right edge, out of flow. They are placed from **measured** spine centres (`useSpineCenters` finds the spines by `DeckBuckets`' exported `BAND_SPINE_CLASS` and watches them with a `ResizeObserver`), not from the artboard's fixed x positions, because the band row is `distribute`d and the profile panel narrows its spines. Each arrow is ONE continuous **140°** circular arc (`arrowBetween`, `ARROW.sweepDegrees`). 160° still read as a semicircle. Its radius comes from the chord, R = chord / (2·sin 70°): at the design's 84px spacing that is R ≈ 33.5, with the lowest point ~22px down. The arrowhead keeps the artboard's 12px wings at ±34° off the tip tangent, which now leans 20° outward. Wider spacing draws a wider, deeper U, and the SVG grows to fit. The `+N` pill sits on the arc's lowest point and hides the stroke behind it. The felt-tip look is an `feTurbulence` → `feDisplacementMap` filter with a per-instance id (`useId`); the `+N` pills sit outside it so they stay crisp. The arrows **always** draw, reading `+0` in a week with no level-ups. The server sends `[0,0,0]` for an empty window, and if `boundaryCounts` is missing while the total is 0 (e.g. a failed fetch) the card substitutes three zeros, the only split of 0. The arrows are dropped only when `boundaryCounts` is missing or the wrong length while the total is non-zero, because mislabelling a boundary is worse than omitting it. |
+| Hosts | `src/pages/AccountSheet.tsx` — `account-sheet__library`; `src/features/profile/ProfileStatsCard.tsx` — `profile-stats__library` | Both render `LibraryShelfWithVelocity`: the library is the state and velocity is its rate of change, so the reader meets the thing before its derivative. The section header stays with the host. The profile renders one per language inside a panel that already pads itself, so it passes `gutter={false}` and `cardSx={{ mx: 0 }}`. |
 | second consumer | `server/services/FriendsService.getLeaderboard` → `src/features/friends/FriendsPage.tsx` | The friends leaderboard **ranks** on velocity (§ 4a). |
 
 ### 4a. Second consumer — the friends leaderboard
@@ -233,8 +232,8 @@ the core one) and `activeBars()` decides which bars the query sums.
 It also pins the boundary split (§2b): that `CATEGORY_BOUNDARIES` really is
 `CATEGORY_ORDER`'s adjacent pairs, and — for **every** ordered pair of bands, not just
 the adjacent ones — that the number of boundaries a promotion crosses equals
-`bandsClimbed`. That second test is what guarantees the card's `= x + y + z` equals the
-total it is written beside. The counting itself is SQL, so the test pins the *rule* the `COUNT(*)
+`bandsClimbed`. That second test is what guarantees the card's three arrows (`+x`, `+y`, `+z`) add up
+to the total printed under them. The counting itself is SQL, so the test pins the *rule* the `COUNT(*)
 FILTER` list implements rather than the query; the identity was also checked against
 dev data (111 + 35 + 1 = 147 = `SUM("bandsClimbed")`).
 

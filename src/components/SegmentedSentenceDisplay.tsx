@@ -60,6 +60,15 @@ interface SentenceData {
   // so each verb's popup gloss inflects on its own tag. Drives verb-form selection in
   // resolveWordForm. (Replaced a single sentence-level `tense`.)
   tenseDict?: Record<string, 'past' | 'present' | 'future'>;
+  // Per-OCCURRENCE overrides for a segment string that repeats with different jobs
+  // (了 particle vs 了然's liǎo), keyed by index into `_segments`. `segmentOccurrenceTags`
+  // overrides the three dicts above; `segmentMetadataByIndex` overrides
+  // `segmentMetadata[segment]`. See docs/EXAMPLE_SENTENCES.md § Repeated segments.
+  segmentOccurrenceTags?: Record<string, { pos?: string; number?: 'singular' | 'plural'; tense?: 'past' | 'present' | 'future' }>;
+  segmentMetadataByIndex?: Record<string, SegmentMeta>;
+  // Code-point offset of the target-word occurrence the sentence demonstrates (zh).
+  // Picks WHICH occurrence `vocabWord` underlines when the word appears more than once.
+  vocabCharIndex?: number;
 }
 
 interface SegmentedSentenceDisplayProps {
@@ -296,13 +305,16 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
     const segmentMetadata = sentence.segmentMetadata ?? {};
     let cursor = 0;
 
-    for (const segment of segments) {
+    for (const [segmentIndex, segment] of segments.entries()) {
       const segmentChars = [...segment];
       const segmentLength = segmentChars.length;
       if (segmentLength === 0) continue;
       if (cursor >= chars.length) break;
 
-      const meta = segmentMetadata[segment];
+      // Per-occurrence labels win over the segment-string-keyed ones (a repeated 了 can
+      // be "le" in one position and "liǎo" in another).
+      const occurrenceTag = sentence.segmentOccurrenceTags?.[segmentIndex];
+      const meta = sentence.segmentMetadataByIndex?.[segmentIndex] ?? segmentMetadata[segment];
       const pronunciation = meta?.pronunciation ?? "";
       const syllables = pronunciation.split(" ");
       const syllableMatches = pronunciation.length > 0 && syllables.length === segmentLength;
@@ -310,9 +322,10 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       let definition = meta?.particleOrClassifier?.definition ?? meta?.definition;
       // If the segment has wordForms and POS context is available, use the conjugated form
       if (meta?.wordForms && sentence.partOfSpeechDict && !meta.particleOrClassifier) {
-        const pos = sentence.partOfSpeechDict[segment];
-        const number = sentence.numberDict?.[segment];
-        const form = resolveWordForm(meta.wordForms, pos, sentence.tenseDict?.[segment], number);
+        const pos = occurrenceTag?.pos ?? sentence.partOfSpeechDict[segment];
+        const number = occurrenceTag?.number ?? sentence.numberDict?.[segment];
+        const tense = occurrenceTag?.tense ?? sentence.tenseDict?.[segment];
+        const form = resolveWordForm(meta.wordForms, pos, tense, number);
         if (form) definition = form;
       }
 
@@ -471,15 +484,24 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
       return;
     }
 
-    // Find the first run of consecutive characters that spell out vocabWord.
+    // Find the run of consecutive characters that spell out vocabWord.
     // This works even when the sentence's _segments didn't unify the word
     // (e.g. because vocabWord has a matchException in the dictionary).
     const vocabChars = [...vocabWord];
+    const spellsVocabAt = (i: number) => vocabChars.every((ch, j) => chars[i + j] === ch);
     let matchStart = -1;
-    for (let i = 0; i <= chars.length - vocabChars.length; i++) {
-      if (vocabChars.every((ch, j) => chars[i + j] === ch)) {
-        matchStart = i;
-        break; // underline only the first occurrence
+    // The backfill records WHICH occurrence the sentence demonstrates; without it a
+    // repeated word underlines the wrong one (复杂了 instead of 弄不了). Trusted only if
+    // it still spells the word, so a stale index falls back rather than mis-underlining.
+    const storedIndex = sentence.vocabCharIndex;
+    if (!isLatin && Number.isInteger(storedIndex) && spellsVocabAt(storedIndex as number)) {
+      matchStart = storedIndex as number;
+    } else {
+      for (let i = 0; i <= chars.length - vocabChars.length; i++) {
+        if (spellsVocabAt(i)) {
+          matchStart = i;
+          break; // no stored index — underline the first occurrence
+        }
       }
     }
 
@@ -534,7 +556,7 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         height: 0,
       }))
     );
-  }, [vocabWord, charData, chars, showSegmentSpaces, size]);
+  }, [vocabWord, charData, chars, showSegmentSpaces, size, sentence.vocabCharIndex, isLatin]);
 
   // The range a tap on `charIndex` selects: the tapped SEGMENT normally, or the entire run
   // (with the run translation as its popup text) in whole-run mode. `segment` stays empty in

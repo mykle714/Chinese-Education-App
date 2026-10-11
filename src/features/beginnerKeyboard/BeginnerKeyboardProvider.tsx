@@ -73,6 +73,7 @@ import type { KeyboardSource } from './KeyboardSwitchBar';
 import { EMPTY_DRAFT, type CompositionDraft } from './compositionRules';
 import {
   asEditableField,
+  defaultSourceOf,
   isEligibleField,
   isKeepOpenTarget,
   isKeyboardDisabledPath,
@@ -157,6 +158,24 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
   }, []);
 
   /**
+   * § 6z-3a: the keyboard for the CURRENT field when that field declares its own
+   * default (`data-beginner-keyboard-default`), or null when it follows the session.
+   *
+   * ⚠️ Separate from `source` so a flip on such a field stays on that field: the
+   * dictionary search opens on `ABC`, and switching it to `写` there must not make
+   * every later field open on `写` (or vice versa). Re-seeded from the attribute
+   * whenever the field changes IDENTITY — not on a refocus of the same field, which
+   * the host's own blur/refocus dance triggers on every switch to `写` and which
+   * would otherwise snap the learner's choice straight back to the default.
+   */
+  const [fieldSource, setFieldSource] = useState<KeyboardSource | null>(null);
+  const effectiveSource = fieldSource ?? source;
+  const changeSource = useCallback(
+    (next: KeyboardSource) => (fieldSource !== null ? setFieldSource(next) : setSource(next)),
+    [fieldSource, setSource],
+  );
+
+  /**
    * § 6z-9: the half-built character — buffer and ink — carried across fields.
    *
    * ⚠️ Held HERE for the same reason as `source`: the host is remounted per field
@@ -226,6 +245,7 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
         // The trigger. Also the retarget path: moving between two eligible
         // fields swaps the insertion target without an exit/enter flicker,
         // because `open` never goes false.
+        if (candidate !== fieldRef.current) setFieldSource(defaultSourceOf(candidate));
         setField(candidate);
         setOpen(true);
         return;
@@ -319,8 +339,8 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
           key={fieldKey(field)}
           field={field}
           open={open}
-          source={source}
-          onSourceChange={setSource}
+          source={effectiveSource}
+          onSourceChange={changeSource}
           onDismiss={close}
           onClosed={release}
           onInsetChange={handleInset}

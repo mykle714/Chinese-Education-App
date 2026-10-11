@@ -5,7 +5,10 @@ import type { useEipTabs } from "./useEipTabs";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import { saveSelectedSense } from "../../../utils/vocabApi";
 import { senseLabelForIndex } from "../../../utils/definitionUtils";
-import type { VocabEntry } from "../../../types";
+import { Alert, Snackbar } from "@mui/material";
+import WordToolsRail from "../../../components/WordToolsRail";
+import { useLearnNowToggle } from "../../../hooks/useLearnNowToggle";
+import type { Language, VocabEntry } from "../../../types";
 
 /**
  * The eip as a self-contained bottom sheet, for a host that has NO card faces of its own
@@ -20,8 +23,10 @@ import type { VocabEntry } from "../../../types";
  * Closing keeps the tab trail (the scp rule): reopening on the same root word resumes the
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
- * Hosts: scp (`SortCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold)
- * and the Reading Center's word grid (`centers/ReadingSwipeGrid`). The flp and cdp mount
+ * Hosts: scp (`SortCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold),
+ * the Reading Center's word grid (`centers/ReadingSwipeGrid`) and the Dictionary page
+ * (`features/dictionary/DictionaryPage`, the only host that turns on
+ * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
  * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
@@ -35,13 +40,34 @@ interface EipSheetProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
+    // Append Synonyms + Related Words to the bottom of the definition tab (the cdp's
+    // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page only.
+    showSynonymsRelated?: boolean;
+    // Put the word-tools rail (`Write it` · `Compare`, WordToolsRail) at the very bottom
+    // of the definition tab, under the synonyms. Compare opens the eip's OWN Compare tab
+    // (useEipTabs.openCompareTab) rather than a separate sheet, so the comparison joins
+    // the word trail like any drill-in. Dictionary page only: a reference lookup has no
+    // card to hang the rail above.
+    showWordTools?: boolean;
+    // Put the Learn Now TOGGLE (glowing "+" ⇄ "Added!", LearnNowToggle) under the header
+    // speaker, tracking whichever entry tab is showing. Dictionary page only. A failed
+    // add/remove raises this sheet's own error snackbar.
+    showLearnNow?: boolean;
 }
 
-const EipSheet: React.FC<EipSheetProps> = ({ eip, open, onClose, onSpeak, onSpeakSentence, speakingKey }) => {
+const EipSheet: React.FC<EipSheetProps> = ({
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow,
+}) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
     const entryTab = active?.kind === "entry" ? active : null;
     const compareTab = active?.kind === "compare" ? active : null;
+    // Membership of the SHOWING word — re-fetched as the trail moves between words.
+    // Fed `null` unless the host asked for it, which leaves the hook inert (no fetch).
+    const learnNow = useLearnNowToggle(
+        showLearnNow ? entryTab?.entry ?? null : null,
+        (entryTab?.entry.language ?? "zh") as Language,
+    );
 
     return (
         <>
@@ -61,6 +87,7 @@ const EipSheet: React.FC<EipSheetProps> = ({ eip, open, onClose, onSpeak, onSpea
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
+                    learnNow={showLearnNow ? learnNow : undefined}
                     selectedSenseIndex={entryTab ? entryTab.selectedSenseIndex : 0}
                     // The tab records the pick so the panel re-renders at once; the chosen
                     // cluster's LABEL is persisted for a word with a vet row. A word without
@@ -95,9 +122,32 @@ const EipSheet: React.FC<EipSheetProps> = ({ eip, open, onClose, onSpeak, onSpea
                         return true;
                     }}
                     showMinutePoints
+                    showSynonymsRelated={showSynonymsRelated}
+                    definitionFooter={showWordTools && entryTab ? (
+                        <WordToolsRail
+                            className="eip-sheet__word-tools"
+                            entry={entryTab.entry}
+                            onCompare={eip.openCompareTab}
+                            // The rail's default spacing is for sitting above a card; the
+                            // tab's footer slot spaces it here.
+                            sx={{ margin: "0 auto" }}
+                        />
+                    ) : undefined}
                 />
             )}
             <TooManyTabsSnackbar signal={eip.overflowSignal} />
+            {/* Learn Now failures only — a successful add/remove is shown by the toggle. */}
+            <Snackbar
+                className="eip-sheet__learn-now-error-snackbar"
+                open={learnNow.error !== null}
+                autoHideDuration={2500}
+                onClose={learnNow.clearError}
+                anchorOrigin={{ vertical: "top", horizontal: "center" }}
+            >
+                <Alert severity="error" variant="filled" onClose={learnNow.clearError}>
+                    {learnNow.error}
+                </Alert>
+            </Snackbar>
         </>
     );
 };

@@ -138,11 +138,11 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Three separate artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, and `LibraryDuo` now renders no sub-caption at all (label + figure only). **(b)** Artboard 25's breakdown tab ends in a titled paragraph, **"How the parts make the word"**; the det tables carry `breakdownElaboration` for exactly this, but it is not on `server/contracts/wire.ts` and no read path selects it, so `BreakdownRow` renders the rows and stops. **(c)** Artboard 20's `.dfx` shows a per-POS sense count; that one IS derivable (`definitionClusters[].pos`) and ships, but only for CLUSTERED entries — an unclustered word gets the POS list with no counts, deliberately |
-| **Why deferred** | (a) and (b) are each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. (c) is not deferred at all — it is the correct behaviour, listed here so nobody "fixes" it by defaulting to 1 |
+| **What** | Artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, and `LibraryDuo` now renders no sub-caption at all (label + figure only). **(b)** Artboard 25's breakdown tab ends in a titled paragraph, **"How the parts make the word"**; the det tables carry `breakdownElaboration` for exactly this, but it is not on `server/contracts/wire.ts` and no read path selects it, so `BreakdownRow` renders the rows and stops. |
+| **Why deferred** | (a) and (b) are each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. |
 | **Cost of leaving it** | (a) the sheet's Mastered tile shows a total with no sense of movement, which was the tile's whole argument for existing beside Learn Now. (b) the breakdown tab answers "what is this made of" but not "why does that add up to this meaning", which is the more interesting half |
 | **Trigger** | (b) is the cheaper and more valuable one: add `breakdownElaboration` to the det read path and the wire `VocabEntry`, then render it under the rows. (a) when a velocity/streak pass is next touching `masteredAt` |
-| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 2 and 19–25; `src/features/flashcards/LibraryDuo.tsx`, `src/features/flashcards/BreakdownRow.tsx`, `src/features/flashcards/DefinitionFacts.tsx`; [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 2 and 19–25; `src/features/flashcards/LibraryDuo.tsx`, `src/features/flashcards/BreakdownRow.tsx`; [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
 
 ---
 
@@ -338,6 +338,24 @@ displaced two marks restores only one of them.
 
 **Trigger.** When no build older than 2026-10-06 is in use, remove the field and the
 fallback.
+
+### 23. The daily banking animation ignores `prefers-reduced-motion`
+
+*Added 2026-10-10 (design stage — the feature is not built yet). Docs:
+[DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 3 and Q7.*
+
+**What.** The once-per-day hp banking animation (flame swells, drains, embers fly into the
+avatar) plays for every learner, including those whose OS asks for reduced motion. The
+proposed fallback was to skip the swell and the ember flight and show only the end state
+with a brief static avatar glow. Precedent for honoring the setting: `IWSceneIntroCard`,
+`StudyHand`.
+
+**Why deferred.** The owner chose to ignore the setting for the first build.
+
+**Cost to leave.** A learner sensitive to motion gets a large animation (up to ~5 s, 1.8×
+scale) once a day per language, on the app's landing screen.
+
+**Trigger.** Any accessibility pass, or any feedback about motion from a learner.
 
 ## Recently closed
 

@@ -20,10 +20,9 @@ const EXAMPLE_SENTENCE_FIELDS: ValidationField[] = [
   "exampleSentence0", "exampleSentence1", "exampleSentence2",
 ];
 
-// THE single source of truth for the est (example-sentence tab) UI. Both
-// card-detail surfaces render this so they can never drift again:
-//   - the eip's Examples tab (InfoCardPanelBody), and
-//   - the read-only + saved cdp (VocabCardDetailBody / VocabCardSections).
+// THE single source of truth for the est (example-sentence tab) UI, rendered by the
+// eip's Examples tab (InfoCardPanelBody) — and through it by every eip host, both cdps
+// included (the dictionary cdp mounts the panel inline since 2026-10-10).
 // Every est feature (headword underline, English-gloss underline, per-segment
 // definition popups + drill-in, per-sentence audio, per-word tap-to-narrate)
 // lives here exactly once.

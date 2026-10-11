@@ -24,7 +24,7 @@
  * composite PK on a table with at most a few thousand rows per user.
  *
  * NOTE: the count is of MEMBERSHIP ROWS, so it includes a card only while that
- * card exists; see the deleteEntry cleanup referenced in migration 141.
+ * card exists; see VocabEntryDAL.delete's membership cleanup (migration 141).
  */
 export interface DeckSummary {
   id: number;

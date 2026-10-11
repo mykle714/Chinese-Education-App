@@ -127,7 +127,7 @@ const GamesPage: React.FC = () => {
     });
 
     return (
-        <NodePage title="Games" onBack={() => navigate("/")} contentClassName="games-page__content">
+        <NodePage title="Games" onBack={() => navigate("/menu")} contentClassName="games-page__content">
                 <TipBox className="games-page__tip-box" />
                 <GamesCollectionSelector className="games-page__collection-selector" />
                 <Bento className="games-page__bento">

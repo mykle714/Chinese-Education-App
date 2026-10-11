@@ -15,7 +15,8 @@ import { GAME_REGISTRY } from "../games/registry";
  */
 const PAGE_LABELS: Record<string, string> = {
     "/flashcards/learn": "Learning",
-    "/flashcards/decks": "Decks",
+    // The fdp is the Home tab at "/" (2026-10-10); its old path only redirects.
+    "/": "Home",
     "/discover": "Discover",
     "/games": "Games",
 };

@@ -17,7 +17,7 @@ import { COLORS } from "../../theme/colors";
 /**
  * Incoming friend requests (docs/FRIENDS_FEATURE.md) — requests awaiting the
  * viewer's answer. Reached from the "Requests" button on FriendsPage; the back
- * arrow returns there rather than to the Home hub.
+ * arrow returns there rather than to Menu.
  *
  * Accept and Decline both remove the row from this list, so a single `busyId`
  * guard covers both and prevents a double-tap firing two calls against the same

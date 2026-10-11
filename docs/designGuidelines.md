@@ -58,7 +58,6 @@ src/
 ├── constants.ts         # Application-wide constants
 ├── DataForm.tsx         # Form for adding new entries
 ├── Message.tsx          # Message display component
-├── VocabEntryCards.tsx  # Component to display vocabulary entries
 ├── main.tsx            # Application entry point
 └── assets/             # Static assets
 ```
@@ -284,9 +283,6 @@ We plan to move towards using React Router (v6+) for client-side routing. This w
 
 ```
 /                   # Home page with overview
-/entries            # List of all vocabulary entries
-/entries/:id        # Detailed view of a specific entry
 /add                # Form to add a new entry
-/edit/:id           # Form to edit an existing entry
 /profile            # User profile page
 ``

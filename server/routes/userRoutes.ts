@@ -46,8 +46,12 @@ router.post('/api/users/minutePoints/increment', authenticateToken, handle(userM
 // Minute Points — calendar of minutes earned + penalties for a given month
 router.get('/api/users/minutePoints/calendar/:yearMonth', authenticateToken, handle(userMinutePointsController.getCalendar, userMinutePointsController));
 
-// Minute Points — per-language summary (lifetime total + today's minutes + global streak)
+// Minute Points — per-language summary (lifetime total + today's/yesterday's minutes + streak + bankingPending)
 router.get('/api/users/minutePoints/summary', authenticateToken, handle(userMinutePointsController.getSummary, userMinutePointsController));
+
+// Minute Points — mark today's hp banking animation as started (docs/DAILY_MINUTE_BANKING.md)
+router.post('/api/users/minutePoints/bankingSeen', authenticateToken, handle(userMinutePointsController.markBankingSeen, userMinutePointsController));
+
 
 // Game wins (append-only lifetime log; "this week" is a timestamp filter).
 // List this week's earned (game, level) badges + lifetime win counts.

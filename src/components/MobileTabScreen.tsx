@@ -8,8 +8,8 @@ import { FOOTER_TOTAL_HEIGHT, FOOTER_TOTAL_CLEARANCE } from "./MobileFooter";
 import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx, trackScrollEdgeFade } from "./scrollEdgeFade";
 import { COLORS } from "../theme/colors";
 
-// Shared layout shell for every SCROLLABLE footer-tab hub page (Flashcards/Decks,
-// Discover, Home, Account). It encodes two design rules so individual pages don't
+// Shared layout shell for every SCROLLABLE footer-tab hub page (Home,
+// Menu, Discover, Dictionary). It encodes two design rules so individual pages don't
 // have to re-implement them:
 //
 //   1. Scroll-away header — the page header lives INSIDE the scroll area (as its
@@ -151,7 +151,7 @@ const ContentInner = styled(Box)(() => ({
 interface MobileTabScreenProps {
     title: string;
     // When set, the header shows a back arrow (and drops to the smaller "node"/"leaf"
-    // title size). Used by hub pages that are also drill-ins from the Home menu (e.g. Games).
+    // title size). Used by hub pages that are also drill-ins from Menu (e.g. Games).
     showBack?: boolean;
     onBack?: () => void;
     // Back-chevron direction when showBack is set. "down" (default) for leaf-style
@@ -160,6 +160,9 @@ interface MobileTabScreenProps {
     arrowDirection?: "down" | "left";
     // Extra header actions rendered flush-right in the header.
     headerExtraActions?: ReactNode;
+    // Rendered to the RIGHT of the minute-points flame (PageHeader `trailingContent`).
+    // Only Home uses it, for the Settings gear and the profile-picture button.
+    headerTrailingActions?: ReactNode;
     // Title scale override, forwarded to PageHeader. Pass "dense" when
     // `headerExtraActions` carries three or more controls — the title drops to 18px
     // so it stops colliding with them. See PageHeader's SIZE_SPEC.
@@ -210,6 +213,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     onBack,
     arrowDirection = "down",
     headerExtraActions,
+    headerTrailingActions,
     headerSize,
     surfaceColor = COLORS.background,
     contentSx,
@@ -242,6 +246,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
                         arrowDirection={arrowDirection}
                         size={headerSize}
                         extraActions={headerExtraActions}
+                        trailingActions={headerTrailingActions}
                     />
                 );
                 return wrapHeader ? wrapHeader(header) : header;

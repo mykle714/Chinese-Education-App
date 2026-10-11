@@ -59,10 +59,11 @@ type RouteComponent = LazyExoticComponent<ComponentType>;
  * the arrow functions — the page itself is fetched when its route first matches.
  */
 const PAGE_COMPONENTS: Record<string, RouteComponent> = {
+  // Home = the fdp under the account header; Menu = the hub bento (swapped 2026-10-10).
   "/": lazy(() => import("../pages/HomePage")),
-  "/flashcards/decks": lazy(() => import("../features/flashcards/FlashcardsDecksPage")),
+  "/menu": lazy(() => import("../pages/MenuPage")),
+  "/flashcards/decks": lazy(() => import("../features/flashcards/DecksRedirect")),
   "/discover": lazy(() => import("../features/discover/DiscoverPage")),
-  "/account": lazy(() => import("../pages/AccountPage")),
   "/games": lazy(() => import("../games/GamesPage")),
   "/community": lazy(() => import("../features/community/CommunityPage")),
   "/arena": lazy(() => import("../features/arena/ArenaPage")),
@@ -108,9 +109,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/immersive-world": lazy(() => import("../features/immersiveworld/play/IWWorldPage")),
   "/immersive-world/:sceneId": lazy(() => import("../features/immersiveworld/play/IWPlayPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
-  "/entries": lazy(() => import("../pages/EntriesPage")),
-  "/entries/:id": lazy(() => import("../pages/EntryDetailPage")),
-  "/edit/:id": lazy(() => import("../pages/EditEntryPage")),
   "/flashcards": lazy(() => import("../features/flashcards/FlashcardsPage")),
   "/profile": lazy(() => import("../pages/ProfilePage")),
   "/login": lazy(() => import("../pages/LoginPage")),

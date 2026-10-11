@@ -21,6 +21,13 @@
  *   and where `tense` was a single sentence-level label (wrong for a sentence with two
  *   verbs in different tenses). See docs/EXAMPLE_SENTENCES.md.
  *
+ * REPEATED SEGMENTS (v8): the generator wraps the demonstrated occurrence of the
+ *   target in 【】 (applyTargetMarker → stored `vocabCharIndex`), and the tagging pass
+ *   labels a segment string that appears more than once PER OCCURRENCE (buildTagItems →
+ *   stored `segmentOccurrenceTags`, keyed by index into `segments`). Without these, 了 in
+ *   听了老师的解释，我心中了然 got one underline position and one sense for both 了s.
+ *   `--locate-targets` retrofits both onto already-stored sentences.
+ *
  * SENSE TAGGING (replaces the old `segmentGloss`):
  *   The senses come from `definitionClusters` (migration 90; see
  *   docs/DEFINITION_CLUSTERS.md), so **clustering MUST run before this script**
@@ -56,6 +63,8 @@
  * Usage:
  *   npx tsx /app/scripts/backfill-example-sentences.js             # full backfill
  *   npx tsx /app/scripts/backfill-example-sentences.js --spot-check # test 3 entries
+ *   npx tsx /app/scripts/backfill-example-sentences.js --locate-targets [--repeated-segments] [--dry-run]
+ *     # heal stored sentences that repeat the headword (target index + per-occurrence tags)
  */
 
 import dotenv from 'dotenv';
@@ -75,7 +84,7 @@ import {
   buildExcludeSet,
   segmentWithDict,
 } from '../../../dal/shared/segmentString.js';
-const SCRIPT_VERSION = 7; // bump when this script's logic/prompt changes (v7: add the segmentation-audit pass — a model call between the GSA and the tagger names multi-char segments the context-free GSA glued together wrongly, stored per-sentence as `segmentExceptions` and fed back as exclude tokens before tagging) (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
+const SCRIPT_VERSION = 8; // bump when this script's logic/prompt changes (v8: the generator wraps the demonstrated target occurrence in 【】 → stored `vocabCharIndex`; the tagger labels a REPEATED segment once per occurrence → stored `segmentOccurrenceTags`. requiredScripts.js deliberately stays at 7 — v7 rows only differ on the ~0.4% of sentences that repeat the headword, healed in place by --locate-targets instead of a corpus-wide regeneration) (v7: add the segmentation-audit pass — a model call between the GSA and the tagger names multi-char segments the context-free GSA glued together wrongly, stored per-sentence as `segmentExceptions` and fed back as exclude tokens before tagging) (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -86,6 +95,16 @@ const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chi
 // docs/DATA_VALIDATION_SYSTEM.md).
 const validatedFilter = `AND ${validatedClause(['exampleSentence0', 'exampleSentence1', 'exampleSentence2'], 'dictionaryentries_zh')}`;
 const isStale = process.argv.includes('--stale');
+
+// --locate-targets → HEAL mode (no generation): for existing sentences that repeat the
+// headword but carry no `vocabCharIndex`, ask the model which occurrence the sentence
+// demonstrates, then re-run the tagging pass so each occurrence gets its own labels.
+// Sentence text is never changed. Add --repeated-segments to also re-tag sentences where
+// ANY segment repeats (e.g. two 的) without per-occurrence tags. Add --dry-run to print
+// without writing. Rows are NOT re-stamped: only the healed sentences reach v8 shape.
+const isLocateTargets = process.argv.includes('--locate-targets');
+const includeRepeatedSegments = process.argv.includes('--repeated-segments');
+const isDryRun = process.argv.includes('--dry-run');
 
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -210,6 +229,7 @@ const CORE_FIELD_RULES = `Each sentence must:
 - Have an accurate English translation
 - Mirror the punctuation of the Chinese sentence in the English translation — if the Chinese uses a comma to separate two clauses, use a comma in the same position in English; match question marks, exclamation points, etc.
 - Match the clause structure of the Chinese sentence — if the Chinese has two clauses separated by a conjunction or comma, the English should have two parallel clauses in the same order
+- In "foreignText", wrap the ONE occurrence of the target word that the sentence demonstrates in 【】 — e.g. for 了 in the "to understand" sense: 听了老师的解释，我心中【了】然。 Mark exactly one occurrence even when the same characters appear elsewhere in the sentence, and use 【】 nowhere else.
 - Include a "translatedVocab" field: the English word or short phrase in your English translation that directly corresponds to the target word (e.g. if the word is 贴 and the sentence is "She stuck the photo on the wall.", translatedVocab is "stuck")
 - Include a "targetPos" field: the part of speech the TARGET word carries IN THIS sentence — one of: ${ALLOWED_POS_LINE}. If the target word is a verb but is used as a gerund or nominal subject/object here (e.g. 下单很简单 — "Ordering is simple"), tag it "noun", not "verb". (Per-segment POS for the whole sentence is derived later by a separate pass — you only report the target word's role here.)`;
 
@@ -229,7 +249,7 @@ const COVERAGE_SINGLE = `Aim to give the target word a variety of grammatical ro
 const JSON_ARRAY_TEMPLATE_MULTI = `Respond with ONLY a JSON array of the requested number of objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
 [
   {
-    "foreignText": "<Chinese sentence>",
+    "foreignText": "<Chinese sentence, the target occurrence wrapped in 【】>",
     "english": "<English translation>",
     "translatedVocab": "<english word or phrase>",
     "sense": "<one of the provided sense labels, verbatim>",
@@ -239,16 +259,16 @@ const JSON_ARRAY_TEMPLATE_MULTI = `Respond with ONLY a JSON array of the request
 const JSON_ARRAY_TEMPLATE_SINGLE = `Respond with ONLY a JSON array of the requested number of objects. Fill in every field of the template below for each sentence — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name (e.g. "english": "..."); never write a bare string value with no key name before it:
 [
   {
-    "foreignText": "<Chinese sentence>",
+    "foreignText": "<Chinese sentence, the target occurrence wrapped in 【】>",
     "english": "<English translation>",
     "translatedVocab": "<english word or phrase>",
     "targetPos": "<pos_tag the target word carries here>"
   }
 ]`;
 const JSON_OBJECT_TEMPLATE_MULTI = `Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name:
-{"foreignText": "...", "english": "...", "translatedVocab": "...", "sense": "<one of the provided sense labels, verbatim>", "targetPos": "<pos_tag the target word carries here>"}`;
+{"foreignText": "<Chinese sentence, the target occurrence wrapped in 【】>", "english": "...", "translatedVocab": "...", "sense": "<one of the provided sense labels, verbatim>", "targetPos": "<pos_tag the target word carries here>"}`;
 const JSON_OBJECT_TEMPLATE_SINGLE = `Respond with ONLY one JSON object. Fill in every field of the template below — do not skip, rename, or omit any key, and every string value must be immediately preceded by its key name:
-{"foreignText": "...", "english": "...", "translatedVocab": "...", "targetPos": "<pos_tag the target word carries here>"}`;
+{"foreignText": "<Chinese sentence, the target occurrence wrapped in 【】>", "english": "...", "translatedVocab": "...", "targetPos": "<pos_tag the target word carries here>"}`;
 
 // Assembled, cached system prompts (four shapes: batch/single-object × multi/single-sense).
 // Concatenation happens once at module load, so each constant is byte-stable → cacheable.
@@ -309,14 +329,74 @@ function isValidSentenceShape(s) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Target-occurrence marker (v8)
+//
+//  The generator wraps the occurrence of the target word its sentence demonstrates
+//  in 【】. Without it the reader can only underline the FIRST occurrence, which is
+//  wrong whenever the headword's characters repeat with a different job — 了's
+//  "to understand" sentences nearly always carry an ordinary aspect 了 earlier
+//  (听了老师的解释，我心中了然). Stored as `vocabCharIndex` (code-point offset into the
+//  CLEAN foreignText); read by src/components/SegmentedSentenceDisplay.tsx and by
+//  tagSentenceSegments (to fix the target's sense on that occurrence only).
+//  See docs/EXAMPLE_SENTENCES.md § Repeated segments.
+// ─────────────────────────────────────────────────────────────────────────────
+const MARKER_PAIR_REGEX = /【([^【】]*)】/g;
+const stripMarkers = (text) => text.replace(/[【】]/g, '');
+const codePointLength = (text) => [...text].length;
+
+// Every code-point offset at which `word` starts in `text`.
+function occurrenceOffsets(text, word) {
+  const chars = [...text];
+  const wordChars = [...word];
+  const offsets = [];
+  for (let i = 0; i + wordChars.length <= chars.length; i++) {
+    if (wordChars.every((ch, j) => chars[i + j] === ch)) offsets.push(i);
+  }
+  return offsets;
+}
+
+/**
+ * Strip the 【】 marker from `sentence.foreignText` in place and set
+ * `sentence.vocabCharIndex`. Lenient by design — a sentence is NEVER rejected over the
+ * marker, because correlative/split words (一边…一边, 帮个忙) legitimately resist one
+ * clean bracket, and losing coverage is worse than the old first-occurrence underline:
+ *   1. the first bracket whose text contains the word → that occurrence
+ *      (a bracket around 弄不了 still pins the 了 inside it);
+ *   2. no usable bracket, word appears exactly once → that occurrence;
+ *   3. otherwise (ambiguous or not contiguous) → no index; the client falls back.
+ * Returns true when a marker resolved the index, for the run summary.
+ */
+function applyTargetMarker(sentence, targetWord) {
+  const raw = sentence.foreignText;
+  const clean = stripMarkers(raw);
+  sentence.foreignText = clean;
+  delete sentence.vocabCharIndex;
+  if (!targetWord) return false;
+
+  for (const match of raw.matchAll(MARKER_PAIR_REGEX)) {
+    const inner = match[1];
+    const innerOffsets = occurrenceOffsets(inner, targetWord);
+    if (innerOffsets.length === 0) continue;
+    // Offset in the clean text = clean length of everything before the bracket.
+    sentence.vocabCharIndex = codePointLength(stripMarkers(raw.slice(0, match.index))) + innerOffsets[0];
+    return true;
+  }
+
+  const offsets = occurrenceOffsets(clean, targetWord);
+  if (offsets.length === 1) sentence.vocabCharIndex = offsets[0];
+  return false;
+}
+
 /**
  * Finalize a parsed sentence for a given sense-mode:
  *   • single-sense → auto-fill the one sense label (the model was never asked for it)
  *   • multi-sense  → require the model-picked `sense` to be one of the valid labels
  * Returns the finalized sentence, or null if it fails the shape or sense check.
  */
-function finalizeSentence(parsed, { isSingleSense, singleSenseLabel, senseLabelSet }) {
+function finalizeSentence(parsed, { isSingleSense, singleSenseLabel, senseLabelSet, targetWord }) {
   if (!parsed || !isValidSentenceShape(parsed)) return null;
+  applyTargetMarker(parsed, targetWord);
   if (isSingleSense) {
     parsed.sense = singleSenseLabel;
     return parsed;
@@ -590,6 +670,7 @@ Reviewer critique: ${critique || '(none)'}
 
 The replacement must follow the same requirements as the original generation:
 - Natural, native-sounding Mandarin, intermediate (HSK 3–4) level.
+- In "foreignText", wrap the ONE occurrence of "${word}" your sentence demonstrates in 【】 (exactly one, even if the characters appear again elsewhere).
 - "translatedVocab": the English word/phrase in your translation that corresponds to "${word}".
 - "targetPos": the part of speech "${word}" carries in your replacement — one of: ${ALLOWED_POS_LINE}. (A separate pass tags the other segments; only report the target word's role.)${senseClause}
 - The English translation must mirror the Chinese punctuation and clause structure.
@@ -645,7 +726,7 @@ async function validateAndRepairSentences(word, pronunciation, definitionText, s
  * Returns null when the entry is not yet clustered (caller SKIPS it — every
  * generated sentence must carry a validated sense; see docs/DEFINITION_CLUSTERS.md).
  */
-function buildSenseContext(definitionClusters) {
+function buildSenseContext(definitionClusters, targetWord) {
   const clusters = Array.isArray(definitionClusters)
     ? definitionClusters.filter(c => c && typeof c.sense === 'string' && c.sense.trim().length > 0)
     : [];
@@ -654,6 +735,8 @@ function buildSenseContext(definitionClusters) {
   const senseLabels = clusters.map(c => c.sense);
   const isSingleSense = clusters.length === 1;
   return {
+    // The headword — finalizeSentence needs it to resolve the 【】 target marker.
+    targetWord,
     isSingleSense,
     singleSenseLabel: senseLabels[0],
     senseLabelSet: new Set(senseLabels),
@@ -832,53 +915,102 @@ ${candidates.map((seg, i) => `${i + 1}. "${seg}"`).join('\n')}`;
 // list ride in the user message.
 const SEGMENT_TAGGER_SYSTEM = `You label the segments of a Chinese sentence with grammatical metadata for a language-learning app. You are given the sentence, its English translation, and its FIXED segmentation — use exactly the segments provided, in the given order; never re-split, merge, or add segments.
 
-For EACH segment return:
+A segment that appears MORE THAN ONCE in the sentence is listed once per occurrence, keyed "<segment>#<n>" (n counts its occurrences left to right) and shown in context with that occurrence wrapped in 【】. Label each occurrence on its own — the same characters can do different jobs in one sentence (e.g. in 听了老师的解释，我心中了然, the first 了 is an aspect particle and the second means "to understand").
+
+For EACH listed key return:
 - "pos": the segment's part of speech IN THIS sentence — one of: ${ALLOWED_POS_LINE}. If a verb segment is used nominally (gerund / subject / object), tag it "noun".
-- "sense": ONLY for segments shown with a "candidate senses" list — copy verbatim the ONE listed label that matches how the segment is used in this sentence, character-for-character. Never invent, translate, paraphrase, shorten, or combine labels. Omit "sense" for segments with no candidate list.
+- "sense": ONLY for keys shown with a "candidate senses" list — copy verbatim the ONE listed label that matches how the segment is used here, character-for-character. Never invent, translate, paraphrase, shorten, or combine labels. Omit "sense" for keys with no candidate list.
 - "number": ONLY for segments you tag "noun" — "singular" or "plural", judged from the English translation. Omit for non-nouns.
 - "tense": ONLY for segments you tag "verb" or "auxiliary verb" — "past", "present", or "future", judged from THAT verb's own temporal meaning in this sentence (a sentence may contain verbs in different tenses; label each on its own). Reason from meaning, not just grammatical markers (了 can mark a present state change; progressive aspect can appear in past or future contexts). Omit for non-verbs.
 
-Respond with ONLY a JSON object mapping each segment string to its metadata:
-{"<segment>": {"pos": "<pos_tag>", "sense": "<label>", "number": "singular|plural", "tense": "past|present|future"}}`;
+Respond with ONLY a JSON object mapping each key, exactly as listed, to its metadata:
+{"<key>": {"pos": "<pos_tag>", "sense": "<label>", "number": "singular|plural", "tense": "past|present|future"}}`;
 
-// One model call per sentence → Map<segment, { pos?, sense?, number?, tense? }>. Fails OPEN
-// (empty map) so a flaky/unparseable response never blocks storage: the caller still
-// auto-fills single-cluster + target senses and falls back to the dictionary POS.
-async function callSegmentTagger(sentence, targetWord, uniqueSegments, clustersBySeg) {
+const HAN_REGEX = /\p{Script=Han}/u;
+
+/**
+ * Split a segmentation into tagging items: one per UNIQUE Han segment, except that a
+ * segment string occurring more than once gets one item PER OCCURRENCE (key
+ * "<segment>#<n>", plus a 【】-marked context line), so its occurrences can be labelled
+ * independently. Punctuation is never tagged.
+ *
+ * `vocabCharIndex` (when set) picks out the one occurrence of the headword the sentence
+ * demonstrates; only that occurrence is the "target" whose sense/POS are fixed by
+ * generation. Without it (legacy rows, split words) every occurrence of the headword is
+ * treated as the target — the pre-v8 behaviour.
+ */
+function buildTagItems(foreignText, segments, targetWord, vocabCharIndex) {
+  const occurrences = [];
+  let charStart = 0;
+  segments.forEach((seg, index) => {
+    if (HAN_REGEX.test(seg)) occurrences.push({ seg, index, charStart });
+    charStart += codePointLength(seg);
+  });
+
+  const totalBySeg = new Map();
+  for (const o of occurrences) totalBySeg.set(o.seg, (totalBySeg.get(o.seg) ?? 0) + 1);
+
+  const targetSegIndex = Number.isInteger(vocabCharIndex)
+    ? occurrences.find(o => o.seg === targetWord && o.charStart === vocabCharIndex)?.index ?? null
+    : null;
+
+  const chars = [...foreignText];
+  const seenBySeg = new Map();
+  return occurrences.map(o => {
+    const nth = (seenBySeg.get(o.seg) ?? 0) + 1;
+    seenBySeg.set(o.seg, nth);
+    const repeated = totalBySeg.get(o.seg) > 1;
+    const segLength = codePointLength(o.seg);
+    return {
+      ...o,
+      repeated,
+      key: repeated ? `${o.seg}#${nth}` : o.seg,
+      context: repeated
+        ? `${chars.slice(0, o.charStart).join('')}【${o.seg}】${chars.slice(o.charStart + segLength).join('')}`
+        : null,
+      isTarget: !!targetWord && o.seg === targetWord && (targetSegIndex === null || o.index === targetSegIndex),
+    };
+  });
+}
+
+// One model call per sentence → Map<item key, { pos?, sense?, number?, tense? }>. Fails
+// OPEN (empty map) so a flaky/unparseable response never blocks storage: the caller
+// still auto-fills single-cluster + target senses and falls back to the dictionary POS.
+async function callSegmentTagger(sentence, items, clustersBySeg) {
   const result = new Map();
-  if (uniqueSegments.length === 0) return result;
+  if (items.length === 0) return result;
 
-  const segLines = uniqueSegments.map((seg, i) => {
-    const clusters = clustersBySeg.get(seg) ?? [];
-    // Offer sense candidates only for multi-sense NON-target segments: the target
-    // segment's sense is already fixed (generation-validated), and single-sense
+  const segLines = items.map((item, i) => {
+    const clusters = clustersBySeg.get(item.seg) ?? [];
+    // Offer sense candidates only for multi-sense NON-target occurrences: the target
+    // occurrence's sense is already fixed (generation-validated), and single-sense
     // segments are auto-filled by the caller without spending the model on them.
-    const offerCandidates = clusters.length > 1 && !(targetWord && seg === targetWord);
-    const candidates = offerCandidates
+    const candidates = clusters.length > 1 && !item.isTarget
       ? ` — candidate senses: ${clusters.map(c => `"${c.sense}"`).join('; ')}`
       : '';
-    return `${i + 1}. "${seg}"${candidates}`;
+    const context = item.context ? ` — this occurrence: ${item.context}` : '';
+    return `${i + 1}. "${item.key}"${candidates}${context}`;
   }).join('\n');
 
   const userText = `Chinese: ${sentence.foreignText}
 English: ${sentence.english}
 
-Segments (label every one, keyed by the exact segment string):
+Segments (label every one, keyed by the exact key shown):
 ${segLines}`;
 
   try {
     const response = await anthropic.messages.create({
       model: TAGGER_MODEL,
-      max_tokens: Math.max(500, 120 * uniqueSegments.length),
+      max_tokens: Math.max(500, 120 * items.length),
       temperature: 0.1,
       system: cachedSystem(SEGMENT_TAGGER_SYSTEM),
       messages: [{ role: 'user', content: userText }],
     });
     const parsed = parseJsonFromResponse(response.content[0].text);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const [seg, meta] of Object.entries(parsed)) {
+      for (const [key, meta] of Object.entries(parsed)) {
         if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-          result.set(seg, {
+          result.set(key, {
             pos: typeof meta.pos === 'string' ? meta.pos : undefined,
             sense: typeof meta.sense === 'string' ? meta.sense : undefined,
             number: typeof meta.number === 'string' ? meta.number : undefined,
@@ -898,19 +1030,62 @@ ${segLines}`;
 }
 
 /**
- * Produce the segment-keyed render data for one finished sentence:
- *   { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict }.
+ * Resolve one tagging item's final labels from the model's raw tag, applying the
+ * fallbacks. Returns only the fields that resolved.
+ */
+function resolveItemTag(item, rawTag, sentence, clusters, dictPos) {
+  const tag = rawTag ?? {};
+  const out = {};
+
+  // POS — the target occurrence reuses the generation-validated targetPos; others take
+  // the model's tag, falling back to the dictionary's primary POS.
+  if (item.isTarget && ALLOWED_POS_TAG_SET.has(sentence.targetPos)) out.pos = sentence.targetPos;
+  else if (ALLOWED_POS_TAG_SET.has(tag.pos)) out.pos = tag.pos;
+  else {
+    const fallback = dictPos.find(p => ALLOWED_POS_TAG_SET.has(p));
+    if (fallback) out.pos = fallback;
+  }
+
+  // Sense — target: the fixed generation sense; single-cluster: that cluster;
+  // multi-cluster: the model's pick if it is one of this segment's own labels.
+  if (item.isTarget && sentence.sense) out.sense = sentence.sense;
+  else if (clusters.length === 1) out.sense = clusters[0].sense;
+  else if (clusters.length > 1 && typeof tag.sense === 'string' && clusters.some(c => c.sense === tag.sense)) {
+    out.sense = tag.sense;
+  }
+
+  // Number — only for noun segments with a valid value.
+  if (out.pos === 'noun' && ALLOWED_NUMBERS.has(tag.number)) out.number = tag.number;
+
+  // Tense — only for verb segments with a valid value. Per-verb (not per-sentence)
+  // so a sentence mixing tenses inflects each verb's popup gloss independently.
+  if ((out.pos === 'verb' || out.pos === 'auxiliary verb') && ALLOWED_TENSES.has(tag.tense)) out.tense = tag.tense;
+
+  return out;
+}
+
+/**
+ * Produce the render data for one finished sentence:
+ *   { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict,
+ *     tenseDict, segmentOccurrenceTags }.
  * `audited` says whether step 2 actually ran (it is skipped when the dictionary load
  * failed), so the caller can print a denominator for the exception count.
  * `targetWord` is forced to win segmentation (prioritySegments) so it always surfaces
  * as its own segment, matching the read path.
  *
  * THREE steps, in this order — the audit MUST precede the tagger, because the tagger
- * tags whatever segmentation survives and its dict keys are the stored segment strings:
+ * tags whatever segmentation survives and its keys are the stored segment strings:
  *   1. GSA-segment the final text (read-path algorithm, entry-wide matchException applied)
  *   2. Audit that segmentation (auditSegmentation) → per-sentence `segmentExceptions`,
  *      then RE-segment with those folded into the exclude set
- *   3. Tag each surviving segment with POS / sense / number / tense
+ *   3. Tag each surviving segment with POS / sense / number / tense — once per
+ *      OCCURRENCE for a repeated segment string (buildTagItems)
+ *
+ * The four dicts stay keyed by segment string (every reader understands them). For a
+ * repeated string they hold the TARGET occurrence's labels when the string is the
+ * headword, else the first occurrence's; `segmentOccurrenceTags` (keyed by index into
+ * `segments`, present only for repeated strings) carries every occurrence's own labels
+ * and overrides the dicts at read time (buildOccurrenceSegmentMetadata).
  */
 async function tagSentenceSegments(client, sentence, targetWord) {
   const data = await loadSegmentDictData(client, sentence.foreignText);
@@ -943,62 +1118,213 @@ async function tagSentenceSegments(client, sentence, targetWord) {
   const clustersBySeg = data?.clustersBySeg ?? new Map();
   const posBySeg = data?.posBySeg ?? new Map();
 
-  // Unique, order-preserving list of Han-bearing segments (punctuation is never tagged).
-  const uniqueSegments = [];
-  const seen = new Set();
-  for (const seg of segments) {
-    if (seen.has(seg) || !/\p{Script=Han}/u.test(seg)) continue;
-    seen.add(seg);
-    uniqueSegments.push(seg);
-  }
-
-  const modelTags = await callSegmentTagger(sentence, targetWord, uniqueSegments, clustersBySeg);
+  const items = buildTagItems(sentence.foreignText, segments, targetWord, sentence.vocabCharIndex);
+  const modelTags = await callSegmentTagger(sentence, items, clustersBySeg);
 
   const partOfSpeechDict = {};
   const senseDict = {};
   const numberDict = {};
   const tenseDict = {};
+  const segmentOccurrenceTags = {};
+  // Which occurrence already wrote a repeated string's dict entry, and whether it was
+  // the target (a target occurrence outranks an earlier non-target one).
+  const dictOwner = new Map();
 
-  for (const seg of uniqueSegments) {
-    const clusters = clustersBySeg.get(seg) ?? [];
-    const tag = modelTags.get(seg) ?? {};
-    const isTarget = !!targetWord && seg === targetWord;
+  for (const item of items) {
+    const resolved = resolveItemTag(
+      item,
+      modelTags.get(item.key),
+      sentence,
+      clustersBySeg.get(item.seg) ?? [],
+      posBySeg.get(item.seg) ?? []
+    );
 
-    // POS — the target segment reuses the generation-validated targetPos; other
-    // segments take the model's tag, falling back to the dictionary's primary POS.
-    let pos = null;
-    if (isTarget && ALLOWED_POS_TAG_SET.has(sentence.targetPos)) {
-      pos = sentence.targetPos;
-    } else if (ALLOWED_POS_TAG_SET.has(tag.pos)) {
-      pos = tag.pos;
-    } else {
-      pos = (posBySeg.get(seg) ?? []).find(p => ALLOWED_POS_TAG_SET.has(p)) ?? null;
+    if (item.repeated && Object.keys(resolved).length > 0) {
+      segmentOccurrenceTags[item.index] = resolved;
     }
-    if (pos) partOfSpeechDict[seg] = pos;
 
-    // Sense — target: the fixed generation sense; single-cluster: that cluster;
-    // multi-cluster: the model's pick if it is one of this segment's own labels.
-    let sense = null;
-    if (isTarget && sentence.sense) {
-      sense = sentence.sense;
-    } else if (clusters.length === 1) {
-      sense = clusters[0].sense;
-    } else if (clusters.length > 1 && typeof tag.sense === 'string') {
-      if (clusters.some(c => c.sense === tag.sense)) sense = tag.sense;
-    }
-    if (sense) senseDict[seg] = sense;
+    const owner = dictOwner.get(item.seg);
+    if (owner && (owner.isTarget || !item.isTarget)) continue;
+    dictOwner.set(item.seg, { isTarget: item.isTarget });
+    for (const dict of [partOfSpeechDict, senseDict, numberDict, tenseDict]) delete dict[item.seg];
+    if (resolved.pos) partOfSpeechDict[item.seg] = resolved.pos;
+    if (resolved.sense) senseDict[item.seg] = resolved.sense;
+    if (resolved.number) numberDict[item.seg] = resolved.number;
+    if (resolved.tense) tenseDict[item.seg] = resolved.tense;
+  }
 
-    // Number — only for noun segments with a valid value.
-    if (pos === 'noun' && ALLOWED_NUMBERS.has(tag.number)) numberDict[seg] = tag.number;
+  return { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict, segmentOccurrenceTags };
+}
 
-    // Tense — only for verb segments with a valid value. Per-verb (not per-sentence)
-    // so a sentence mixing tenses inflects each verb's popup gloss independently.
-    if ((pos === 'verb' || pos === 'auxiliary verb') && ALLOWED_TENSES.has(tag.tense)) {
-      tenseDict[seg] = tag.tense;
+
+/**
+ * Assemble the stored jsonb shape for one sentence from its generated fields plus its
+ * tagSentenceSegments result. `targetPos` was a generation-time coverage signal only —
+ * dropped here (the tagging pass folds it into partOfSpeechDict[targetWord]). Optional
+ * fields are omitted when empty (the common case) so the stored jsonb doesn't grow an
+ * empty array/object on every sentence in the corpus.
+ */
+function toStoredSentence(sentence, tagged) {
+  const { targetPos, segmentOccurrenceTags: _staleOccurrenceTags, segmentExceptions: _staleExceptions, ...rest } = sentence;
+  return {
+    ...rest,
+    segments: tagged.segments,
+    ...(tagged.segmentExceptions.length > 0 ? { segmentExceptions: tagged.segmentExceptions } : {}),
+    partOfSpeechDict: tagged.partOfSpeechDict,
+    senseDict: tagged.senseDict,
+    numberDict: tagged.numberDict,
+    tenseDict: tagged.tenseDict,
+    ...(Object.keys(tagged.segmentOccurrenceTags).length > 0 ? { segmentOccurrenceTags: tagged.segmentOccurrenceTags } : {}),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  HEAL mode (--locate-targets) — retrofit v8's target index + per-occurrence tags
+//  onto already-stored sentences without regenerating them. See the flag comment at
+//  the top and docs/EXAMPLE_SENTENCES.md § Repeated segments.
+// ─────────────────────────────────────────────────────────────────────────────
+const TARGET_LOCATOR_SYSTEM = `You are given a Chinese example sentence written to demonstrate one target word, but the target word's characters appear in it more than once. Decide which single occurrence is the one being demonstrated — the one carrying the given sense and corresponding to the given English word/phrase. The other occurrences are incidental (e.g. an ordinary aspect particle 了 elsewhere in a sentence demonstrating 了 as "to understand").
+
+Respond with ONLY a JSON object: {"occurrence": <number from the list>}`;
+
+/**
+ * Ask which occurrence of `targetWord` the sentence demonstrates. Returns the chosen
+ * code-point offset, or null when the answer is unusable (the caller skips the sentence).
+ */
+async function locateTargetOccurrence(sentence, targetWord, offsets) {
+  const chars = [...sentence.foreignText];
+  const wordLength = codePointLength(targetWord);
+  const optionLines = offsets.map((offset, i) =>
+    `${i + 1}. ${chars.slice(0, offset).join('')}【${targetWord}】${chars.slice(offset + wordLength).join('')}`
+  ).join('\n');
+
+  const userText = `Target word: ${targetWord}
+Sense demonstrated: ${sentence.sense ?? '(unspecified)'}
+English: ${sentence.english}
+English word/phrase for the target: ${sentence.translatedVocab ?? '(unspecified)'}
+
+Occurrences:
+${optionLines}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: GENERATOR_MODEL,
+      max_tokens: 50,
+      temperature: 0,
+      system: cachedSystem(TARGET_LOCATOR_SYSTEM),
+      messages: [{ role: 'user', content: userText }],
+    });
+    const parsed = parseJsonFromResponse(response.content[0].text);
+    const n = Number(parsed?.occurrence);
+    return Number.isInteger(n) && n >= 1 && n <= offsets.length ? offsets[n - 1] : null;
+  } catch (err) {
+    if (err?.oracleExport) throw err; // control-flow signal — see auditSegmentation
+    return null;
+  }
+}
+
+function hasRepeatedHanSegment(segments) {
+  if (!Array.isArray(segments)) return false;
+  const seen = new Set();
+  for (const seg of segments) {
+    if (!HAN_REGEX.test(seg)) continue;
+    if (seen.has(seg)) return true;
+    seen.add(seg);
+  }
+  return false;
+}
+
+async function runLocateTargets(client) {
+  const { rows } = await client.query(`
+    SELECT id, word1, "exampleSentences"
+    FROM dictionaryentries_zh
+    WHERE language = 'zh'
+      AND jsonb_typeof("exampleSentences") = 'array'
+      ${discoverableGate}
+      ${wordsFilter}
+    ORDER BY id ASC
+  `);
+
+  const stats = { rows: 0, sentences: 0, located: 0, locateFailed: 0, retagged: 0, failedRows: 0 };
+  for (const row of rows) {
+    const word = row.word1;
+    const sentences = row.exampleSentences;
+    const healIndexes = sentences
+      .map((sentence, i) => {
+        if (typeof sentence?.foreignText !== 'string') return -1;
+        const ambiguousTarget = !Number.isInteger(sentence.vocabCharIndex)
+          && occurrenceOffsets(sentence.foreignText, word).length > 1;
+        const untaggedRepeat = includeRepeatedSegments
+          && !sentence.segmentOccurrenceTags
+          && hasRepeatedHanSegment(sentence.segments);
+        return ambiguousTarget || untaggedRepeat ? i : -1;
+      })
+      .filter(i => i !== -1);
+    if (healIndexes.length === 0) continue;
+
+    try {
+      stats.rows++;
+      console.log(`  ${word}`);
+      const next = [...sentences];
+      for (const i of healIndexes) {
+        const sentence = sentences[i];
+        stats.sentences++;
+        let vocabCharIndex = Number.isInteger(sentence.vocabCharIndex) ? sentence.vocabCharIndex : undefined;
+        if (vocabCharIndex === undefined) {
+          const offsets = occurrenceOffsets(sentence.foreignText, word);
+          if (offsets.length === 1) vocabCharIndex = offsets[0];
+          else if (offsets.length > 1) {
+            const located = await locateTargetOccurrence(sentence, word, offsets);
+            if (located === null) {
+              stats.locateFailed++;
+              console.log(`    ⚠ could not locate target — left untouched: ${sentence.foreignText}`);
+              continue;
+            }
+            vocabCharIndex = located;
+            stats.located++;
+          }
+        }
+
+        // The stored target POS lives in the old dict (pre-v8 the target string's entry
+        // WAS the target's generation-validated POS); feed it back as targetPos so the
+        // target occurrence keeps it.
+        const working = { ...sentence, targetPos: sentence.partOfSpeechDict?.[word] };
+        if (vocabCharIndex !== undefined) working.vocabCharIndex = vocabCharIndex;
+        const tagged = await tagSentenceSegments(client, working, word);
+        next[i] = toStoredSentence(working, tagged);
+        stats.retagged++;
+
+        const chars = [...sentence.foreignText];
+        const marked = vocabCharIndex === undefined
+          ? sentence.foreignText
+          : `${chars.slice(0, vocabCharIndex).join('')}【${word}】${chars.slice(vocabCharIndex + codePointLength(word)).join('')}`;
+        console.log(`    ${marked}  (${sentence.sense ?? '—'} / ${sentence.translatedVocab ?? '—'})`);
+        if (next[i].segmentOccurrenceTags) {
+          console.log(`      per-occurrence: ${JSON.stringify(next[i].segmentOccurrenceTags)}`);
+        }
+      }
+
+      if (!isDryRun) {
+        await client.query(
+          `UPDATE dictionaryentries_zh SET "exampleSentences" = $1::jsonb WHERE id = $2`,
+          [JSON.stringify(next), row.id]
+        );
+      }
+    } catch (err) {
+      if (err?.oracleExport) throw err;
+      stats.failedRows++;
+      console.log(`    FAILED: ${err.message}`);
     }
   }
 
-  return { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict };
+  console.log('\n' + '='.repeat(60));
+  console.log(`📊 Locate-targets ${isDryRun ? 'DRY RUN ' : ''}complete`);
+  console.log(`Rows touched        : ${stats.rows}${isDryRun ? ' (not written)' : ''}`);
+  console.log(`Sentences healed    : ${stats.retagged} of ${stats.sentences}`);
+  console.log(`Targets located (AI): ${stats.located}`);
+  console.log(`Locate failures     : ${stats.locateFailed}`);
+  console.log(`Failed rows         : ${stats.failedRows}`);
+  console.log('='.repeat(60) + '\n');
 }
 
 async function run() {
@@ -1016,6 +1342,12 @@ async function run() {
   const client = await db.getClient();
 
   try {
+    if (isLocateTargets) {
+      console.log(`🎯 Locate-targets heal mode${includeRepeatedSegments ? ' (+ repeated segments)' : ''}\n`);
+      await runLocateTargets(client);
+      return;
+    }
+
     const { rows: entries } = await client.query(`
       SELECT id, word1, pronunciation, definitions, "partsOfSpeech", "definitionClusters"
       FROM dictionaryentries_zh
@@ -1058,7 +1390,7 @@ async function run() {
         // Senses come from definitionClusters — clustering MUST run before this
         // script. An unclustered entry is skipped so we never ship a sentence with
         // an unvalidated sense.
-        const senseCtx = buildSenseContext(row.definitionClusters);
+        const senseCtx = buildSenseContext(row.definitionClusters, row.word1);
         if (!senseCtx) {
           console.log('⚠ SKIPPED — not yet clustered (run backfill-cluster-definitions first)');
           skipped++;
@@ -1090,20 +1422,9 @@ async function run() {
         let rowSentencesWithExceptions = 0;
         let rowSentencesAudited = 0;
         for (const s of finalSentences) {
-          const { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict, tenseDict } =
-            await tagSentenceSegments(client, s, row.word1);
-          const { targetPos, ...rest } = s;
-          // `segmentExceptions` is omitted when empty (the common case) so the stored
-          // jsonb doesn't grow an empty array on every sentence in the corpus.
-          taggedSentences.push({
-            ...rest,
-            segments,
-            ...(segmentExceptions.length > 0 ? { segmentExceptions } : {}),
-            partOfSpeechDict,
-            senseDict,
-            numberDict,
-            tenseDict,
-          });
+          const tagged = await tagSentenceSegments(client, s, row.word1);
+          const { segmentExceptions, audited } = tagged;
+          taggedSentences.push(toStoredSentence(s, tagged));
           if (audited) rowSentencesAudited++;
           if (segmentExceptions.length > 0) {
             rowSegmentExceptions += segmentExceptions.length;
@@ -1131,7 +1452,7 @@ async function run() {
             console.log(`    ${s.foreignText}${tag}`);
             console.log(`           ${s.english}`);
             console.log(`           translatedVocab: ${s.translatedVocab}`);
-            console.log(`           sense (target): ${s.sense}`);
+            console.log(`           sense (target): ${s.sense}${s.vocabCharIndex != null ? ` @ char ${s.vocabCharIndex}` : ' (no target index)'}`);
             console.log(`           segments: ${JSON.stringify(s.segments)}`);
             if (s.segmentExceptions?.length) {
               console.log(`           ✂ split by audit: ${JSON.stringify(s.segmentExceptions)}`);
@@ -1140,6 +1461,9 @@ async function run() {
             console.log(`           senses: ${JSON.stringify(s.senseDict)}`);
             console.log(`           number: ${JSON.stringify(s.numberDict)}`);
             console.log(`           tense: ${JSON.stringify(s.tenseDict)}`);
+            if (s.segmentOccurrenceTags) {
+              console.log(`           per-occurrence: ${JSON.stringify(s.segmentOccurrenceTags)}`);
+            }
           });
         } else {
           console.log(`✓${repaired ? ` (${repaired} repaired)` : ''}`);

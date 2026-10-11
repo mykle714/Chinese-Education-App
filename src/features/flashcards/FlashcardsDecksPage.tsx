@@ -9,17 +9,13 @@ import { useDecksPanel } from "./useDecksPanel";
 import { prefetchWordOfTheDay } from "./centerPrefetch";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import {
-    activeMasteryCenters, MASTERY_CENTER_BARS, MASTERY_CENTER_PATHS, MASTERY_CENTER_BUTTON_LABELS,
-    MASTERY_CENTER_HUES, MASTERY_CENTER_GLYPHS,
-} from "./masteryCenters";
-import Icon from "../../components/Icon";
+import { activeMasteryCenters } from "./masteryCenters";
 import FlpStudyHand from "./FlpStudyHand";
+import { LEARN_NOW_LOW_THRESHOLD } from "../../../server/contracts/wire";
+import DecksTopRail from "./DecksTopRail";
+import { useFdpEntrance, useFlpLaunch } from "./flpLaunch";
+import { useHideFooter } from "../../hooks/useHideFooter";
 import type { VocabEntry } from "../../types";
-import { COLORS, RAMP } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
-import { WEIGHT } from "../../theme/scale";
-import { CARD_SURFACE } from "../../theme/surfaces";
 
 // ── What this page is now ─────────────────────────────────────────────────────
 //
@@ -97,12 +93,16 @@ import { CARD_SURFACE } from "../../theme/surfaces";
 // stacked the library duo, Challenges, Decks and a several-hundred-card grid into one
 // scroller; splitting the panel split its entry point with it, so the pill's LABEL is
 // the answer to which sheet you get. See DecksSheets.tsx.
-// Breathing room between the study area's two rows (Centers rail / the card hand).
-const STUDY_AREA_GAP = 12;
+// Breathing room between the study area's two rows (top rail / the card hand),
+// measured from the rail's bottom to the back-left card's raised corner. The hand used
+// to carry ~28px of dead band above its fan (the design's literal `top: 40`) that stood
+// in for this spacer; `StudyHand` → `FAN_TOP` now starts the fan flush with the hand's
+// top, so the page owns the whole spacer explicitly (12px gap + the old band ≈ 40px).
+const STUDY_AREA_GAP = 40;
 // The bottom pad reserves ONLY the pills' own band: `MobileTabScreen`'s content area
 // already pads FOOTER_CLEARANCE for the footer bar, which is exactly where the pills
 // are anchored. Derived rather than typed, or a taller pill would silently overlap the
-// hand's `Study now` button.
+// hand's `Start` button.
 const STUDY_AREA_BOTTOM_PAD = DECKS_SHEET_PILL_BAND;
 
 const CONTENT_SX = {
@@ -112,9 +112,23 @@ const CONTENT_SX = {
 // This page is the CORE lens, so its sheets carry the bare names.
 const DECKS_SHEET_TITLES = { cards: "Cards", decks: "Decks" } as const;
 
+/**
+ * Header controls supplied by the route wrapper. The fdp is the Home tab (`/`) as of
+ * 2026-10-10, and `src/pages/HomePage.tsx` passes the account header through these —
+ * the validator always-play toggle, the Settings gear and the profile picture. They
+ * arrive as props rather than being built here because the account controls belong to
+ * no feature (AccountSheet lives in `src/pages/`), and `features/` must not import
+ * `pages/` (docs/FRONTEND_LAYERING.md § Dependency direction).
+ */
+interface FlashcardsDecksPageProps {
+    headerExtraActions?: React.ReactNode;
+    headerTrailingActions?: React.ReactNode;
+}
+
 // Main Component
-const FlashcardsDecksPage: React.FC = () => {
-    usePageTitle("Decks");
+const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraActions, headerTrailingActions }) => {
+    // No page name: this is Home, so the browser tab reads just "Cow" (usePageTitle).
+    usePageTitle();
     // Collection pages are node drill-ins that slide over this page, so they use
     // the view-transition navigate and Decks is held beneath. See useSlideNavigate.
     const slideNavigate = useSlideNavigate();
@@ -143,6 +157,23 @@ const FlashcardsDecksPage: React.FC = () => {
     }, [hasCenter, isZh]);
     // The pills + sheets layer — read only for its state at the moment of leaving.
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
+    // Lights the Sort Cards tile's "card count low" halo + badge (DecksTopRail).
+    // `learnNowCount` is undefined until the counts load successfully, so the glow never
+    // flashes on arrival or appears after a failed fetch.
+    const learnNowLow = panel.learnNowCount !== undefined && panel.learnNowCount < LEARN_NOW_LOW_THRESHOLD;
+
+    // ── Launching the flp from the hand (flpLaunch.ts) ───────────────────────
+    // Start on a hand card loads the session HERE — the hand shakes (`loading`) — then
+    // plays this page off by its edges (`exiting`) before navigating, and the flp plays
+    // its own entrance. The frame is the root the exit choreography is matched in.
+    const frameRef = useRef<HTMLDivElement | null>(null);
+    const flpLaunch = useFlpLaunch(frameRef);
+    // …and the way back: when the flp's Back arrow played its exit, this page returns
+    // with the launch's exit run in reverse. A no-op on every other arrival.
+    useFdpEntrance(frameRef);
+    // The footer lives outside this page (FooterPresenter), so it leaves through its own
+    // slide-down, held for the exit; the flp is footerless, so it stays down after.
+    useHideFooter(flpLaunch.phase === "exiting");
 
     // Card Detail is a NODE page that slides over this page. No lens param: this page is
     // the core bar, which is what a card page shows by default.
@@ -183,31 +214,45 @@ const FlashcardsDecksPage: React.FC = () => {
                 can't host it (the sheet would land inside the scroll area). The
                 floating footer is rendered above both, at frame level. */}
             <Box
+                ref={frameRef}
                 className="flashcards-decks__frame"
-                sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+                sx={{
+                    position: "relative",
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    // Once a launch is committed nothing on the page takes input — a sheet
+                    // opened mid-load would be swept off by the exit. The footer (outside
+                    // this frame) stays live: a tab tap abandons the launch (useFlpLaunch).
+                    pointerEvents: flpLaunch.phase === "idle" ? undefined : "none",
+                }}
             >
                 <MobileTabScreen
-                    title="Decks & Cards"
+                    // "Home", not "Decks & Cards": since the 2026-10-10 swap this page IS
+                    // the Home tab, and the header (title + account controls) stayed with
+                    // the tab while the contents changed. The short title also leaves
+                    // room for up to four controls on the right.
+                    title="Home"
                     contentClassName="decks-page-content"
+                    headerExtraActions={headerExtraActions}
+                    headerTrailingActions={headerTrailingActions}
                     contentSx={CONTENT_SX}
                     // Nothing behind the sheet scrolls any more — the sheet owns all
                     // of the page's scrollable content.
                     scrollable={false}
                 >
                     {/* THE STUDY AREA — the whole space above the resting sheet.
-                        Three rows, top to bottom (artboards 2 / 2b):
+                        Two rows, top to bottom (artboards 2 / 2b):
 
-                          • the library line — how many cards there are, and which set
-                            the three modes below draw from;
-                          • the Centers rail — Reading / Writing, present only for the
-                            goals this account pursues. It is a rail rather than two
-                            buttons under the hand because it is a different KIND of
-                            destination: a place to look at your library by skill, not a
-                            session to start;
+                          • the top rail — the Reading / Writing Centers (one per goal
+                            this account pursues) and the Sort Cards tile. A rail rather
+                            than buttons under the hand because its tiles are a different
+                            KIND of destination: places to go, not sessions to start;
                           • the card HAND — Study Mix / Review / Challenge, one played
                             forward (see StudyHand).
 
-                        All three modes are WHOLE-LIBRARY entry points; to study one
+                        The hand's three modes are WHOLE-LIBRARY entry points; to study one
                         collection, open it from the sheet below and use its "Study these
                         cards" button. */}
                     <Box
@@ -222,78 +267,19 @@ const FlashcardsDecksPage: React.FC = () => {
                             padding: `14px 18px ${STUDY_AREA_BOTTOM_PAD}px`,
                         }}
                     >
-                        {/* Mastery Centers. The rail is omitted ENTIRELY when the account
-                            pursues neither skill (and always for Spanish, which cannot
-                            accrue those marks) — an empty row would leave the hand short
-                            of the space it would otherwise have. The rail is a fixed
-                            two-slot grid: every tile is half width and sits in its OWN
-                            slot (reading left, writing right — the order of
-                            MASTERY_CENTER_BARS), so with one goal set the lone tile keeps
-                            its place and size rather than stretching across the row.
-
-                            Coloured by the SKILL's hue as a PASTEL, not as the saturated
-                            mark hue: this is a filled surface, and D2b puts surfaces on
-                            the ramp's 93% tier while marks and cells keep the saturated
-                            hex. Reading green, writing purple — the same hue the Center
-                            it opens grounds on (MASTERY_CENTER_HUES). */}
-                        {centers.length > 0 && (
-                            <Box
-                                className="flashcards-decks__center-rail"
-                                sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "9px", flexShrink: 0 }}
-                            >
-                                {centers.map((bar) => (
-                                    <Box
-                                        key={bar}
-                                        component="button"
-                                        type="button"
-                                        className={`flashcards-decks__center-tile flashcards-decks__center-tile--${bar}`}
-                                        onClick={() => slideNavigate(MASTERY_CENTER_PATHS[bar])}
-                                        sx={{
-                                            // Pinned to its bar's slot, so a lone writing
-                                            // tile still lands in the right column.
-                                            gridColumn: MASTERY_CENTER_BARS.indexOf(bar) + 1,
-                                            minWidth: 0,
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "9px",
-                                            alignItems: "flex-start",
-                                            textAlign: "left",
-                                            // Same object family as the hand below: a
-                                            // pastel card lying on the page. `CARD_SURFACE`
-                                            // (theme/surfaces.ts) is that object — hairline +
-                                            // RESTING elevation (never the front card's lifted
-                                            // one; a tile is not the played card) + the 15px
-                                            // card radius, which the flp card and the cdp hero
-                                            // now share. The hand keeps its own larger 22px
-                                            // radius because those cards are twice the size.
-                                            ...CARD_SURFACE,
-                                            cursor: "pointer",
-                                            padding: "13px 13px 14px",
-                                            backgroundColor: RAMP[MASTERY_CENTER_HUES[bar]].surface,  // v2 "Surface: Reading/Writing Centers"
-                                        }}
-                                    >
-                                        <Icon name={MASTERY_CENTER_GLYPHS[bar]} size={19} sx={{ opacity: 0.72 }} />
-                                        <Box
-                                            component="b"
-                                            sx={{
-                                                fontFamily: FONTS.sans,
-                                                fontSize: 14.5,
-                                                fontWeight: WEIGHT.bold,
-                                                letterSpacing: "-0.022em",
-                                                color: COLORS.onSurface,
-                                            }}
-                                        >
-                                            {MASTERY_CENTER_BUTTON_LABELS[bar]}
-                                        </Box>
-                                    </Box>
-                                ))}
-                            </Box>
-                        )}
+                        {/* The top rail — Center tiles + the Sort Cards tile, which
+                            glows while core Learn Now is low (DecksTopRail). */}
+                        <DecksTopRail centers={centers} learnNowLow={learnNowLow} />
 
                         {/* The card hand — Challenge / Review / Study Mix on the CORE bar.
                             Figures, Review gate and toast live in FlpStudyHand, shared with
                             the Reading Center (which mounts it on the reading bar). */}
-                        <FlpStudyHand className="flashcards-decks__study-hand" bar="core" />
+                        <FlpStudyHand
+                            className="flashcards-decks__study-hand"
+                            bar="core"
+                            onLaunch={flpLaunch.launch}
+                            shaking={flpLaunch.phase === "loading"}
+                        />
                     </Box>
                 </MobileTabScreen>
 

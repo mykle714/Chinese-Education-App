@@ -165,7 +165,7 @@ so nothing breaks.
   not fire one.) Used by the card-grid drill-ins (fdp, Mastery Centers, collection
   pages → cdp / collection; `useOpenWordCard`), Dictionary and Reader list taps,
   Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
-  `WordSearchHubItem`. The Bento hubs (Home, Discover, Games) do **not** use it — their
+  `WordSearchHubItem`. The Bento hubs (Menu, Discover, Games) do **not** use it — their
   tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
   arrow, which runs a forward slide on a back action — see
   [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § 3.2 finding 1.
@@ -235,18 +235,17 @@ bottom of the phone card when you move between footer-bearing and footerless
 routes. So a node page slides horizontally while the footer stays put; entering a
 leaf page slides the page up while the footer drops away.
 
-`FooterPresenter` holds the single source of truth for which routes show the
-footer (and which tab is active). Two match modes:
-
-- **Exact** (`FOOTER_ROUTES`): `/` (home), `/flashcards/decks`, `/discover`,
-  `/account`, `/games`, `/community`, `/flashcards/mastered`, `/dictionary` (→ `home`).
-- **Prefix** (`FOOTER_ROUTE_PREFIXES`, for parameterized node routes): `/discover/sort/`
-  and `/discover/skipped/` (both → `discover`), `/flashcards/card/` (→ `flashcards`,
-  the saved-card cdp) and `/dictionary/card/` (→ `home`, the read-only dictionary cdp).
-  Because these paths carry a `:language` / `:id` / `:word` segment, an exact-key
-  lookup would miss them and the footer would slide away — so node pages reached via a
-  parameterized path must be registered here. Keep in sync with `NODE_PREFIXES` in
-  `utils/pageTransition.ts`.
+`FooterPresenter` decides which routes show the footer (and which tab is active) from
+the `footerTab` field of each row in `src/routes/routeMeta.ts` (`routeFooterTab`) — the
+same row that decides the route's shell and page transition. A route with no
+`footerTab` is footerless (every leaf page, `/reader/:id`, `/flashcards/learn`, the
+games) and the footer slides away. Parameterized node routes (`/flashcards/card/:id`,
+`/dictionary/card/:word`, `/discover/sort/:language`, …) are matched with React Router's
+`matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
+`FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
+route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `home` for `/`
+and the fdp's drill-ins, `menu` for `/menu` and the hub's drill-ins, `discover` and
+`dictionary` for their own spaces.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
@@ -267,10 +266,13 @@ before the outgoing one's cleanup runs) can't have the first release un-hide the
 under the second. Provider: `FooterVisibilityProvider`, mounted in `MobileDemoFrame`
 wrapping both the pages and `FooterPresenter`.
 
-This exists because the bar **cannot be layered under** a page's modal: it is rendered
-at frame level, outside every page's DOM, so no z-index inside a page reaches it. Sliding
-it away is the only correct answer. Current caller: scp, while the eip sheet is open
-([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)).
+It was built for modals, because the bar is rendered at frame level, outside every
+page's DOM, so no z-index inside a page reaches it. **Modals no longer use it** (since
+2026-10-06): a dim hosts at the frame above the bar and dims it in place
+(`src/components/overlayHost.ts` § "THE RULE FOR A DIM"). Current caller: the fdp's
+launch exit — `FlashcardsDecksPage` holds it while the page slides off before navigating
+to the flp, so the bar leaves with the rest of the page
+([DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Launching the flp from the hand").
 
 ## Current classification
 
@@ -285,15 +287,15 @@ own-animation pages) are neither archetype.
 | `/discover/sort/:language` | `SortCardsPage` | Node |
 | `/discover/quick-mark/:language` | `QuickMarkPage` | Node |
 | `/discover/skipped/:language` | `SkippedCardsPage` | Node |
-| `/dictionary` | `DictionaryPage` | Node (footer added; tapping a result opens the dictionary cdp) |
-| `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word) |
-| `/reader` | `ReaderPage` | Node (document list; footer kept, Home tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
+| `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
+| `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
+| `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
 | `/flashcards/collection/:builtin` | `CollectionViewPage` | Node (Learn Now / Mastered / mastered-reading / mastered-writing — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)) |
 | `/flashcards/deck/:id` | `CollectionViewPage` | Node (a user-authored deck, addressed by numeric id) |
 | `/flashcards/mastered` | `MasteredRedirect` | Node (legacy path; `<Navigate replace>` to `/flashcards/collection/mastered`) |
-| `/friends` | `FriendsPage` | Node (Home tab stays lit) |
+| `/friends` | `FriendsPage` | Node (Menu tab stays lit) |
 | `/friends/requests` | `IncomingRequestsPage` | Node |
 | `/friends/sent` | `SentRequestsPage` | Node |
 | `/friends/remove` | `RemoveFriendsPage` | Node |
@@ -302,10 +304,10 @@ own-animation pages) are neither archetype.
 | `/games/word-search` | `WordSearchPage` | Leaf |
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |
 | `/games/speed-reading` | `SpeedReadingPage` | Leaf |
-| `/community` | `CommunityPage` | Node (reached from the Home hub; Home tab stays lit) |
+| `/community` | `CommunityPage` | Node (reached from the Menu hub; Menu tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
-| `/settings` | `SettingsPage` | Leaf (slide-up sheet from the Account header gear) |
+| `/settings` | `SettingsPage` | Leaf (slide-up sheet from the Home header gear) |
 
 > Game rows are not written out in `routeMeta.ts` — `GAME_ROUTE_META` derives one
 > `chrome: "leaf"` entry per `GAME_REGISTRY` member, so a new game is a leaf page
@@ -344,7 +346,7 @@ Unlike the dictionary singleton above it is keyed on the **history entry**
 (`location.key`), not on a route space: a page saves its snapshot as the learner opens a
 card or a set from it, and only a return to that same entry — any `POP`, arrow, browser
 button or edge swipe — finds it. A fresh arrival at the same URL (a footer-tab tap, the
-Centers' own `navigate("/flashcards/decks")` push) has a new key and opens fresh.
+Centers' own `navigate("/")` push back to the fdp) has a new key and opens fresh.
 
 **Why it is load-bearing on iOS, not just a nicety.** Safari's edge swipe drags a picture
 of the page saved when the learner left it, and after the gesture WebKit keeps that picture
@@ -368,42 +370,87 @@ The pieces, by layer:
 
 ## Card detail (cdp): two surfaces, two bodies
 
-There are two card-detail pages, both **Node** pages. They agree on everything above
-the fold (hero card + badges) and on every leaf renderer, but since 2026-08-24 they
-show the word's extra info through **different containers**:
+There are two card-detail pages, both **Node** pages. Both show the word's extra info
+through **the eip itself** (`InfoCardPanelBody`, `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`
+— entry header, definition / examples / breakdown tabs, Synonyms + Related at the bottom of
+the definition tab via `showSynonymsRelated`), but host it differently:
 
-| Surface | Extra-info container |
-|---|---|
-| Saved-card cdp (`VocabCardDetailPage`) | **the eip itself** — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and scp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
-| Read-only dictionary cdp (`DictionaryCardDetailPage`) | `VocabCardSections` (`src/features/flashcards/VocabCardDetailBody.tsx`) — stacked `SectionCard`s down the page |
+| Surface | Layout | How the eip is hosted |
+|---|---|---|
+| Saved-card cdp (`VocabCardDetailPage`) | scrolling page: **hero flashcard** (editable icon layout) + mastery window | in a sheet — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and scp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
+| Read-only dictionary cdp (`DictionaryCardDetailPage`) | **non-scrolling** page (`scrollable={false}`): category badge, then the panel filling the rest of the space above the footer; **no card** | **inline** — `InfoCardPanelBody` mounted straight on the page, no sheet; each tab pane scrolls on its own. The word-tools rail rides at the bottom of the definition tab (`definitionFooter`). (2026-10-10; replaced the hero card + stacked `VocabCardSections` boxes, which are deleted.) |
 
-Underneath, both render the same leaves — `DefinitionFacts`, `BreakdownRow`,
-`UsedInPaginatedList`, `ExampleSentenceList`, `SynonymsRelatedSection` — so a change to
-any one of them lands on both.
+So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
+`ExampleSentenceList`, `SynonymsRelatedSection` — renders through one component on both.
 
 - **Saved-card cdp** (`/flashcards/card/:id`, `VocabCardDetailPage`) — loads a vet
-  row by id; editable (icon-editor toolbar + delete). Reached from Decks/Mastered, so
-  the **Flashcards** tab stays active. Raises the eip from the "More Info" `SheetPill`; passes
+  row by id; editable (icon-editor toolbar + delete). Delete is one tap, no confirmation, and
+  non-destructive: `handleDelete` calls `removeFromLibrary`, demoting the card to
+  `'provisional'` (history kept; PROVISIONAL_CARDS.md), then returns to the fdp (`/`). Reached from the fdp and its collection pages, so
+  the **Home** tab stays active. Raises the eip from the "More Info" `SheetPill`; passes
   `onWordOpen` through the panel's drill-in callbacks (see § "Breakdown drill-in
   targets" below), so breakdown rows / used-in rows / example segments are tappable.
 - **Read-only dictionary cdp** (`/dictionary/card/:word`, `DictionaryCardDetailPage`)
   — fetches the det row via `/api/dictionary/lookup/:word` and adapts it
-  (`dictEntryAdapter`, which now carries `iconId`). **No edits**: no toolbar/delete,
-  and the hero always renders the det's representative icon in **basic** layout
-  (`iconLayout`/`textLayout` null, advanced off). Reached from the Dictionary node, so
-  the **Home** tab stays active. Passes `onWordOpen`, so breakdown/used-in rows and
-  example-sentence segments drill into the cdp of the tapped word (the same drill-in
+  (`dictEntryAdapter`). **No edits**: no toolbar/delete, and **no flashcard** — the
+  page IS the eip panel, mounted inline (see the table above), so the det's icon is not
+  shown here. The panel's sense chip drives every tab (`selectedSenseIndex`, page state,
+  reset on drill-in along with the tab); its speaker speaks the selected sense's reading.
+  The Learn Now toggle sits under the panel's speaker (`learnNow`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
+  the **bottom of the definition tab**, under Synonyms + Related, through the panel's
+  `definitionFooter` slot — there is no card for it to sit above.
+  Reached from the Dictionary node, so
+  the **Dictionary** tab stays active (`footerTab: "dictionary"`). Wires the panel's drill-in callbacks to `handleWordOpen`, so breakdown/used-in rows
+  and example-sentence segments drill into the cdp of the tapped word (the same drill-in
   the eip offers, except it navigates to a cdp instead of opening a nested eip tab).
   Every linked page is itself this read-only cdp, so read-only propagates recursively.
+  The one write affordance is the **Learn Now toggle** (discoverable entries only,
+  signed-in users only), stacked **under the speaker**, left-justified with it, in the panel's entry header
+  (2026-10-10; it used to sit in the page title bar). The SAME control rides in the
+  Dictionary page's eip (`EipSheet` `showLearnNow`), where it tracks whichever word tab
+  is showing:
+  - **Not in Learn Now** → a compact 24px **"+"** (`learn-now-toggle--add`) breathing the
+    soft green halo from `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE`, 3.6s pulse;
+    static at peak under reduced motion), the same "add cards" nudge the fdp's Sort Cards
+    tile wears (DECKS_FEATURE.md § "Sort Cards tile"). Tap → `addToLibrary`.
+  - **In Learn Now** (bucket `'library'`) → a small greyed **"Added!"** pill
+    (`learn-now-toggle--added`: `COLORS.grey` fill, `COLORS.textFaint` text, the app's
+    `COLORS.border` outline, no glow). Tap → `removeFromLibrary`, **no confirmation**:
+    removal demotes the row to `'provisional'` rather than deleting it, so marks and deck
+    memberships survive and a re-add promotes it back in place (PROVISIONAL_CARDS.md).
+  - Membership comes from `GET /api/vocabEntries/libraryStatus` (a `'provisional'` row
+    or no row = not in). Until it arrives nothing renders, so an added word never flashes
+    "+". It is stored with its `entryKey`, so moving to another word refetches. A
+    failed status fetch falls back to "+" (adding is idempotent).
+  - Success is silent — the toggle is the feedback. Only a failure raises a snackbar
+    (the host's: `EipSheet` or the cdp).
+  - The flp eip keeps its own older add-only "+" (`onAddToLibrary`, hidden once added) in
+    the same slot under the speaker.
+
+  *Code:* `src/hooks/useLearnNowToggle.ts` (state + rules), `src/components/LearnNowToggle.tsx`
+  (the control), `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (the
+  vertical action stack, `learnNow` prop); `src/utils/vocabApi.ts` (`getLibraryStatus`,
+  `removeFromLibrary`, `addToLibrary`); `server/services/VocabEntryService.ts`
+  (`getLibraryStatus`, `removeFromLibrary`); `server/dal/implementations/VocabEntryDAL.ts`
+  (`findBucketRowByUserAndKey`, `demoteLibraryRowToProvisional`).
+
+- **Dictionary page eip** (`/dictionary`, `DictionaryPage` → `EipSheet`) — not a cdp, but
+  where a dictionary result now lands (2026-10-10): `handleEntryClick` looks the word up
+  (`lookupVocabEntry`), seeds `useEipTabs.openForRoot` (on the hit's `matchedSense` when
+  there is one) and raises the shared `EipSheet`. Every link inside — breakdown / used-in
+  rows, example and long-definition segments, Compare — opens as an eip TAB in the word
+  trail, never a page. It is the only `EipSheet` host with the dictionary extras:
+  `showSynonymsRelated` (Synonyms + Related at the bottom of the definition tab),
+  `showWordTools` (`Write it` · `Compare` under them, Compare opening the eip's own Compare
+  tab) and `showLearnNow` (the toggle above).
 
 ### Breakdown drill-in targets
 
 Both surfaces make the Character Breakdown rows (`BreakdownRow`, which replaced the
 square `InfoCardBlockButton` grid on 2026-08-24), the
-single-char **Used In** rows and the example-sentence segments tappable — the dictionary
-cdp by passing `onWordOpen` to `VocabCardSections`, the saved-card cdp by wiring the
-eip's `onBreakdownItemClick` / `onUsedInItemClick` / `onExampleSegmentClick` to the same
-handler. **This is the one place the saved cdp deliberately behaves unlike the flp:** the
+single-char **Used In** rows and the example-sentence segments tappable (both through the eip panel).
+Both wire the eip's `onBreakdownItemClick` / `onUsedInItemClick` /
+`onExampleSegmentClick` to a navigating handler. **This is the one place the saved cdp deliberately behaves unlike the flp:** the
 flp pushes a nested eip entry tab, the cdp NAVIGATES to the tapped word's own card detail
 (which is what a detail page is for, and why the cdp mounts the panel without a
 `tabStrip`). They differ only in where a tap LANDS:
@@ -444,9 +491,9 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
 `VocabCardDetailPage` (`/flashcards/card/:id`):
 
 - **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
-  Home menu (`NodePage`, LEFT arrow → Home, footer kept —
-  same shape as `GamesPage`/`DictionaryPage`). Registered in `NODE_ROUTES`
-  (`src/utils/pageTransition.ts`) and `FOOTER_ROUTES` (`FooterPresenter.tsx`).
+  Menu hub (`NodePage`, LEFT arrow → `/menu`, footer kept, Menu tab lit —
+  same shape as `GamesPage`). Registered by its `src/routes/routeMeta.ts` row
+  (`chrome: "node"`, `footerTab: "menu"`).
   Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
   internal scroll region for the document list, matching the fixed-layout
   `NodePage` pattern used by `SortCardsPage`; `MobileTabScreen`'s scroll area

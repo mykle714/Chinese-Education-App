@@ -38,7 +38,7 @@ export default function IWWorldPage() {
   }, []);
 
   return (
-    <LeafPage title="Immersive World" onBack={() => navigate('/')} className="iw-world-page">
+    <LeafPage title="Immersive World" onBack={() => navigate('/menu')} className="iw-world-page">
       <Box className="iw-world-page__body" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {scenes === null && !error && (
           <Box sx={{ display: 'flex', justifyContent: 'center', pt: 4 }}><CircularProgress size={20} /></Box>

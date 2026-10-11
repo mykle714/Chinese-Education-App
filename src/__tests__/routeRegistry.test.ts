@@ -91,7 +91,7 @@ describe("findRoute", () => {
 
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
-    "/", "/flashcards/decks", "/flashcards/mastered", "/account", "/flashcards/learn",
+    "/", "/menu", "/flashcards/decks", "/flashcards/mastered", "/flashcards/learn",
     "/discover", "/games", "/reader", "/dictionary",
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
@@ -103,7 +103,7 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     ...GAME_REGISTRY.map((g) => g.route),
   ];
   const PLAIN = [
-    "/login", "/register", "/entries", "/entries/1", "/edit/1", "/flashcards",
+    "/login", "/register", "/flashcards",
     "/profile",
     ...(isFeatureEnabled("nightMarket")
       ? ["/night-market/template-editor", "/night-market/template-sandbox"]
@@ -125,23 +125,26 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
 
 describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
   const EXPECTED: Array<[string, string | undefined]> = [
+    // Home and Menu swapped contents (2026-10-10): "/" is the fdp, "/menu" the hub,
+    // and the fdp's old path is a redirect that still lights Home.
     ["/", "home"],
-    ["/flashcards/decks", "flashcards"],
+    ["/menu", "menu"],
+    ["/flashcards/decks", "home"],
     ["/discover", "discover"],
-    ["/account", "account"],
-    ["/games", "home"],
+    // Dictionary took Account's footer slot (2026-10-09); /account is no longer a route.
+    ["/dictionary", "dictionary"],
+    ["/games", "menu"],
     ...(isFeatureEnabled("community")
-      ? ([["/community", "home"]] as Array<[string, string | undefined]>)
+      ? ([["/community", "menu"]] as Array<[string, string | undefined]>)
       : []),
-    ["/flashcards/mastered", "flashcards"],
-    ["/dictionary", "home"],
-    ["/reader", "home"],
+    ["/flashcards/mastered", "home"],
+    ["/reader", "menu"],
     // Prefix-matched node pages.
     ["/discover/sort/zh", "discover"],
     ["/discover/quick-mark/zh", "discover"],
     ["/discover/skipped/zh", "discover"],
-    ["/flashcards/card/7", "flashcards"],
-    ["/dictionary/card/好", "home"],
+    ["/flashcards/card/7", "home"],
+    ["/dictionary/card/好", "dictionary"],
     // Footerless.
     ["/reader/abc", undefined],
     ["/flashcards/learn", undefined],
@@ -160,7 +163,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
-    "/games", "/flashcards/mastered", "/dictionary", "/reader",
+    "/games", "/flashcards/mastered", "/reader",
     "/discover/skipped/zh", "/discover/sort/zh", "/discover/quick-mark/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
@@ -169,7 +172,7 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/settings",
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
   ];
-  const NO_SLIDE = ["/", "/discover", "/account", "/flashcards/decks", "/login", "/flashcards/learn"];
+  const NO_SLIDE = ["/", "/menu", "/discover", "/dictionary", "/flashcards/decks", "/login", "/flashcards/learn"];
 
   it.each(NODE)("%s slides in from the right", (path) => {
     expect(routeSlideDir(path)).toBe("right");
@@ -209,10 +212,10 @@ describe("FIXED: every game page slides up", () => {
 });
 
 describe("access classification", () => {
-  it("requires a full account only for the legacy entry-management pages", () => {
+  it("requires a full account only for the legacy flashcards and profile pages", () => {
     const accountOnly = ROUTE_META.filter((r) => r.access === "account").map((r) => r.path).sort();
     expect(accountOnly).toEqual(
-      ["/edit/:id", "/entries", "/entries/:id", "/flashcards", "/profile"].sort()
+      ["/flashcards", "/profile"].sort()
     );
   });
 

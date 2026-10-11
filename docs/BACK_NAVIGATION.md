@@ -184,25 +184,25 @@ This is also the fallback source for Rule 1's first-entry case.
 | Card detail (saved) | `VocabCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Card detail (dictionary) | `DictionaryCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Collection / deck | `CollectionViewPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | ✅ backRestore | delete → `replace` ✅ |
-| Mastery Center | `MasteryCenterPage.tsx` | `navigate("/flashcards/decks")` | ⚠️ push to parent | ✅ backRestore | — |
-| Decks (fdp) | `FlashcardsDecksPage.tsx` | tab root | — | ✅ backRestore | — |
+| Mastery Center | `MasteryCenterPage.tsx` | `navigate("/")` (the fdp, Home tab) | ⚠️ push to parent | ✅ backRestore | — |
+| Decks (fdp) | `FlashcardsDecksPage.tsx` (rendered at `/` by `HomePage`) | tab root (Home) | — | ✅ backRestore | — |
 | User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Night Market visit | `NightMarketVisitPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Sort Cards | `SortCardsPage.tsx` | `navigate("/discover")`; set mode `exitToOrigin` | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | Quick Mark / Skipped | `QuickMarkPage.tsx`, `SkippedCardsPage.tsx` | `navigate("/discover")` | ✅ single hub parent | — | — |
 | flp | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` | — | — | provisional sort offer (arrow-only) ✅ |
-| Friends hub | `FriendsPage.tsx` | `navigate("/")` | ✅ hub | — | — |
+| Friends hub | `FriendsPage.tsx` | `navigate("/menu")` | ✅ hub | — | — |
 | Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `slideNavigate("/friends")` | ⚠️ forward slide on Back | — | — |
 | Challenge history | `ChallengeHistoryPage.tsx` | `slideNavigate("/friends/challenges")` | ⚠️ forward slide on Back | — | — |
 | Challenge detail | `ChallengeDetailPage.tsx` | `slideNavigate(state.from ?? "/friends/challenges")` | ⚠️ forward slide on Back; ✅ Rule 6 origin | — | — |
-| Arena | `ArenaPage.tsx` | `slideNavigate("/")` | ⚠️ forward slide on Back | — | — |
+| Arena | `ArenaPage.tsx` | `slideNavigate("/menu")` | ⚠️ forward slide on Back | — | — |
 | Account security | `AccountSecurityPage.tsx` | `slideNavigate("/settings")` | ⚠️ forward slide on Back | — | — |
-| Settings | `SettingsPage.tsx` | `navigate("/account")` | ✅ single parent | — | — |
-| Dictionary / Games / Community / Reader / Night Market / Tester Dashboard | hub pages | `navigate("/")` | ✅ hub | Dictionary: route-space singleton | — |
+| Settings | `SettingsPage.tsx` | `navigate("/")` | ✅ single parent (Home header gear) | — | — |
+| Games / Community / Reader / Night Market / Tester Dashboard | hub pages | `navigate("/menu")` | ✅ hub (Menu) | — | — |
 | Reader document | `ReaderDocumentPage.tsx` | `navigate("/reader")` | ✅ single parent | — | ⚠️ no guard for an unsaved inline edit |
 | IW world / play | `IWWorldPage.tsx`, `IWPlayPage.tsx` | `"/"` / `"/immersive-world"` | ✅ | — | play blocks swipe ✅ |
-| IW scene editor | `IWSceneEditorPage.tsx` | confirm if dirty → `navigate("/")` | ✅ | — | ✅ Rule 4 (arrow only; no unmount save) |
-| Template editor / sandbox | `TemplateEditorPage.tsx`, `TemplateSandboxPage.tsx` | `navigate("/")` | ✅ | — | — |
+| IW scene editor | `IWSceneEditorPage.tsx` | confirm if dirty → `navigate("/menu")` | ✅ | — | ✅ Rule 4 (arrow only; no unmount save) |
+| Template editor / sandbox | `TemplateEditorPage.tsx`, `TemplateSandboxPage.tsx` | `navigate("/menu")` | ✅ | — | — |
 | Bubble Match, Hydra Bubbles, Match Speed, Word Search | game pages | `useGameBack` → challenge or `/games` | ✅ | Word Search: saved game | ✅ confirm + swipe blocked + unmount finalise |
 | Memory Map, Speed Reading | game pages | `navigate("/games")` | ✅ | — | swipe blocked ✅ |
 
@@ -215,14 +215,14 @@ This is also the fallback source for Rule 1's first-entry case.
 
    *Guess at intent:* the parent should be "held beneath" like a forward drill-in. *Proposed:* switch to Rule 1 (`navigate(-1)` with fallback), keeping `ChallengeDetailPage`'s `state.from` as its fallback.
 2. **Five `navigate(-1)` arrows have no first-entry guard:** both cdps, `CollectionViewPage`, `UserProfilePage` and `NightMarketVisitPage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the `useBack(fallback)` helper from Rule 1.
-3. **`MasteryCenterPage` pushes to fdp.** It has only one parent, so this meets Rule 1's exception. But it grows history, and because it arrives as a PUSH it skips fdp's back-restore (fdp opens with its sheets closed). *Proposed:* `navigate(-1)` with fallback `/flashcards/decks`.
-4. **The cdp delete sends dead state.** `VocabCardDetailPage` → `handleDeleteConfirmed` navigates with `state: { refresh: Date.now() }`, and nothing reads `location.state.refresh`. It is also a push onto an entry whose card no longer exists, so browser Back returns to a deleted card's page. *Guess:* a leftover from when fdp listed cards directly. *Proposed:* `navigate(-1)` (or `replace` to fdp), and drop the unread state.
+3. **`MasteryCenterPage` pushes to fdp.** It has only one parent, so this meets Rule 1's exception. But it grows history, and because it arrives as a PUSH it skips fdp's back-restore (fdp opens with its sheets closed). *Proposed:* `navigate(-1)` with fallback `/`.
+4. **The cdp delete sends dead state.** `VocabCardDetailPage` → `handleDelete` navigates with `state: { refresh: Date.now() }`, and nothing reads `location.state.refresh`. It is also a push, so browser Back returns to the removed card's page (since 2026-10-09 the card still exists as a `'provisional'` row, so that page loads rather than 404ing — but it shows a card no longer in Learn Now). *Guess:* a leftover from when fdp listed cards directly. *Proposed:* `navigate(-1)` (or `replace` to fdp), and drop the unread state.
 5. **The Reader document has no guard for an inline edit.** `ReaderDocumentPage` → `handleBack` leaves mid-edit with nothing said. Compare `IWSceneEditorPage`. Add a Rule 4 confirm if an unsaved edit is worth protecting.
 
 ### 3.3 Open questions
 
 - **Re-tapping the active footer tab.** Does it push a duplicate entry (`MobileFooter` → `TABS` calls a plain `navigate`)? Unverified. If it does, repeated taps pad the stack that browser Back walks through.
-- **Hub parents.** Should "hub" pages (Dictionary, Games, Community) return with `navigate(-1)` too? They are reachable from Home only today, which meets the Rule 1 exception. Revisit if a second entry point appears.
+- **Hub parents.** Should "hub" pages (Games, Community) return with `navigate(-1)` too? They are reachable from the Menu hub (`/menu`) only today, which meets the Rule 1 exception. Revisit if a second entry point appears.
 
 ### 3.4 Dictionary browse state
 

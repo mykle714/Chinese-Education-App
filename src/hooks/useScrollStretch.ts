@@ -112,7 +112,7 @@ import { useEffect, type RefObject } from "react";
  *   as tracks.
  * • Honours `prefers-reduced-motion`.
  *
- * Used by: `MiniVocabCardGrid`, `ProvisionalCardGrid`, `VocabEntryCards`,
+ * Used by: `MiniVocabCardGrid`, `ProvisionalCardGrid`,
  * `shelf/Shelf` (ShelfRow), `community/CommunityFeedRow`.
  * Docs: docs/UX_AND_NAVIGATION.md § "Scroll stretch".
  */

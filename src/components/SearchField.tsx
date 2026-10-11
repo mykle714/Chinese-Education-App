@@ -31,7 +31,7 @@ import { COLORS } from "../theme/colors";
  * Layer: shared presentation component (src/components). No data access.
  *
  * Referenced by: CollectionViewPage, DecksPanelBody, DictionaryPage, CommunitySearchBar,
- * IconPickerDialog, CompareWorkspace, EntriesPage.
+ * IconPickerDialog, CompareWorkspace.
  * Docs: docs/DECKS_FEATURE.md § "Search + filter row".
  */
 export interface SearchFieldProps {
@@ -58,6 +58,12 @@ export interface SearchFieldProps {
      * button, inside the same adornment. See "The inline filter slot" above.
      */
     endAction?: React.ReactNode;
+    /**
+     * Extra attributes for the underlying `<input>` itself — e.g. the dictionary's
+     * `data-beginner-keyboard-default="os"`. Generic on purpose: this component stays
+     * ignorant of which feature reads them.
+     */
+    inputAttributes?: Record<`data-${string}`, string>;
     sx?: SxProps<Theme>;
 }
 
@@ -70,6 +76,7 @@ const SearchField: React.FC<SearchFieldProps> = ({
     size = "small",
     className,
     endAction,
+    inputAttributes,
     sx,
 }) => {
     // The adornment icons track the field's density so a `small` field does not carry
@@ -101,6 +108,7 @@ const SearchField: React.FC<SearchFieldProps> = ({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             inputRef={attachRef}
+            inputProps={inputAttributes}
             InputProps={{
                 startAdornment: (
                     <InputAdornment position="start">

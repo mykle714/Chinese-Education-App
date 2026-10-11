@@ -4,10 +4,14 @@
 > `server/contracts/featureFlags.ts` ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2e). One
 > mount gates BOTH halves of the feature — the phase-1 authoring endpoints and the phase-2
 > learner runtime share `immersiveWorldRoutes.ts` — plus the three `/immersive-world*`
-> routes and both hp tiles (the destination and the author-only Scene Editor). The flag is a
+> routes and both hub tiles (the destination and the author-only Scene Editor). The flag is a
 > separate question from `users.isTemplateAuthor`: the grant says who may author, the flag
 > says whether the feature exists at all. `useTTS`'s iw-only `voice` argument is not gated;
 > it is an ordinary optional parameter with no caller once the routes are gone.
+
+> **"hp" in this doc = the hub Bento**, which has been the **Menu** tab (`/menu`,
+> `src/pages/MenuPage.tsx`) since 2026-10-10, when Home and Menu swapped contents (Home `/`
+> is now the decks page). The iw tiles live there; iw's back arrows return to `/menu`.
 
 > STATUS: **PHASE 1 COMPLETE AND ITS KILL CONDITION SURVIVED — 1a–1e are built, and an
 > author has assembled a whole scene in the tool with no engineering help (§ 12 phase 1).
@@ -3963,7 +3967,7 @@ name still refuses too, but from the service rather than the validator.
 
 **How an author reaches it:** a `low` **Scene Editor** tile on the hp Bento, appended
 beside Template Editor and Template Sandbox and shown on the same `user.isTemplateAuthor`
-condition — one grant, three tools (`src/pages/HomePage.tsx`). It wears the `blu` ramp hue (teal until 2026-09-24, when it left the palette)
+condition — one grant, three tools (`src/pages/MenuPage.tsx`). It wears the `red` ramp hue (teal until 2026-09-24, when it left the palette; `blu` until 2026-10-10, when the hp moved to one hue per tile)
 rather than the night market's `pur`: it borrows that editor's map, but it does not edit
 night-market templates, and a shared hue would say it did. ⚠️ Not to be confused with the
 **learner-facing** hp row of § 14 Q9, which is phase 2 and ungated.
@@ -4136,7 +4140,7 @@ is the opposite of the test.
 - **The input:** ✅ BUILT — the throwaway writing assistant (Q4b), entirely under `features/iw`,
   header-commented as destined for replacement by BACKLOG item 1. ⚠️ It must answer *"I don't
   know where to begin"* — it is the learner's only safety net (Q24, Q29).
-- The hp row (Q9) and the route. ✅ BUILT — a `blu` bento tile on `/`, plus
+- The hp row (Q9) and the route. ✅ BUILT — a `red` bento tile on the Menu hub (`/menu`; it was `/` until 2026-10-10), plus
   `/immersive-world` (the scene list) and `/immersive-world/:sceneId` (one scene, running).
   Both rows sit BELOW the exact `/immersive-world/scene-editor` row in `routeMeta.ts`, because
   `findRoute` takes the first match and `:sceneId` would otherwise swallow the editor.
@@ -4437,7 +4441,7 @@ to be watched for deliberately.
   structural handful that still 400s
 - `server/services/iw/validateStoredNpcIds.ts` → `validateStoredNpcIds` — the § 12 phase 1a
   boot-time sweep over every stored npc id
-- `src/pages/HomePage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
+- `src/pages/MenuPage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
   way into the editor (§ 12 phase 1e). One grant, three tools.
 - `src/features/immersiveworld/IWScenePlacesPanel.tsx` → named places and the INTERACTION
   hanging off each (§ 5.4a, Q43); `src/features/immersiveworld/iwPopupArt.ts` → the
@@ -5045,7 +5049,7 @@ tile is an activity you can do as much as you like. A daily ritual with its own 
 as a pillar of the app, and an hp row is what the app already uses for pillars
 ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
 
-> **BUILT 2026-09-06 (the row, not its state).** A `blu` bento tile on `/` next to Arena and
+> **BUILT 2026-09-06 (the row, not its state).** A `red` bento tile on `/` next to Arena and
 > Friends, leading to `/immersive-world`. The state recommendation below is NOT built. ⚠️ The
 > reason given here — "read from a run row, and phase 2 has none" — **stopped being true on
 > 2026-09-08**: runs exist (§ 12 phase 3), and `listRuns` is the read. What is still missing is

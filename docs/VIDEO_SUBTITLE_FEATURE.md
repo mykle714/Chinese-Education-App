@@ -594,7 +594,7 @@ live, size/duration caps, and how they are obtained at all.
 
 | Layer | Component | Responsibility |
 |---|---|---|
-| **Client page** | `src/features/video/VideoCatalogPage.tsx` | The **browse** surface over prepared videos — the learner's entry point. A **Node** page, reached from an **hp row** (§ 11.6 — provisional placement). |
+| **Client page** | `src/features/video/VideoCatalogPage.tsx` | The **browse** surface over prepared videos — the learner's entry point. A **Node** page, reached from a **Menu hub tile** (`/menu`, `src/pages/MenuPage.tsx` — the hub was the `/` Home page until 2026-10-10; § 11.6 — provisional placement). |
 | **Client page** | `src/features/video/VideoSubtitlePage.tsx` | The player surface, drilled into from the catalog. A **Node** drill-in (back arrow). |
 | **Client hooks** | `useSubtitleTrack`, `usePlayerClock` | Cue lookup, current-cue state, speed/loop state, the polled clock. Keyed on `user?.id` / `youtubeVideoId` — **never** on `token` (see CLAUDE.md § token rule). |
 | **Client player** | `src/features/video/YouTubePlayer.tsx` | Owns the `YT.Player` instance and its lifecycle; exposes the imperative `PlayerHandle` below. The **only** file that knows YouTube exists. |

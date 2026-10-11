@@ -4,9 +4,6 @@ export const API_BASE_URL = import.meta.env.MODE === 'production'
 
 export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the 600ms flip animation
 
-// Default test user ID for development/testing
-export const DEFAULT_TEST_USER_ID = 'test-user-id';
-
 // Minute Points Configuration
 // Matched as path prefixes (see useMinutePoints) so parameterized child routes
 // like `/discover/sort/:language` are covered automatically.
@@ -120,14 +117,4 @@ export const STREAK_CONFIG = {
   // balance below the highest multiple of 1440 (24 h) at or under it; below the
   // first checkpoint a balance can still reach 0.
   CHECKPOINT_MINUTES: 1440,
-};
-
-// Vocabulary Search Configuration
-export const VOCAB_SEARCH_CONFIG = {
-  // Both 'entryKey' (the vocab word) and 'definition' (joined from det.definitions[0])
-  // are searched server-side; the search query also unnests det.definitions so
-  // any definition phrase can match.
-  SEARCH_FIELDS: ['entryKey', 'definition'] as const,
-  RESULT_LIMIT: 50,
-  DEBOUNCE_DELAY: 400
 };

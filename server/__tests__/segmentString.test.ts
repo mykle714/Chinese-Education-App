@@ -5,6 +5,7 @@ import {
   getAllSubstrings,
   segmentWithDict,
   buildSegmentMetadata,
+  buildOccurrenceSegmentMetadata,
   buildDrillRungs,
   splitHanRuns,
   SEGMENTATION_MAX_TOKEN_CHARS,
@@ -321,6 +322,43 @@ describe('buildSegmentMetadata — sense-aware pronunciation', () => {
  * (src/utils/segmentDrill.ts); this only has to emit the right candidates, with the
  * right offsets, in longest-first order.
  */
+/**
+ * buildOccurrenceSegmentMetadata — per-occurrence popups for a segment string that
+ * repeats with different jobs. See docs/EXAMPLE_SENTENCES.md § Repeated segments.
+ */
+describe('buildOccurrenceSegmentMetadata', () => {
+  const le = {
+    ...entry('了', 5),
+    pronunciation: 'le',
+    definitions: ['(completed action marker)', 'to understand'],
+    definitionClusters: [
+      { sense: 'completed-action particle', reading: 'le', pos: ['particle'], gender: null, frequencyScore: 5, glosses: ['(completed action marker)'] },
+      { sense: 'to understand', reading: 'liao3', pos: ['verb'], gender: null, frequencyScore: 2, glosses: ['to understand'] },
+    ],
+  } as DictionaryEntry;
+  // 听了…我心中了然 — segment 1 is the particle, segment 4 is liǎo.
+  const segments = ['听', '了', '我', '心中', '了', '然'];
+
+  it('resolves each tagged occurrence from its OWN sense', () => {
+    const byIndex = buildOccurrenceSegmentMetadata(segments, {
+      1: { pos: 'particle', sense: 'completed-action particle' },
+      4: { pos: 'verb', sense: 'to understand' },
+    }, dict(le));
+    expect(byIndex['1'].pronunciation).toBe('le');
+    expect(byIndex['4'].pronunciation).toBe('liǎo');
+    expect(byIndex['4'].definition).toBe('to understand');
+  });
+
+  it('ignores indexes that fall outside the segmentation', () => {
+    const byIndex = buildOccurrenceSegmentMetadata(segments, { 99: { sense: 'to understand' } }, dict(le));
+    expect(byIndex).toEqual({});
+  });
+
+  it('returns nothing when the sentence has no occurrence tags', () => {
+    expect(buildOccurrenceSegmentMetadata(segments, undefined, dict(le))).toEqual({});
+  });
+});
+
 describe('buildDrillRungs', () => {
   it('emits every shorter headword inside the segment, longest-first', () => {
     const rungs = buildDrillRungs('中国人', dict(entry('中国人'), entry('中国'), entry('国人'), entry('中'), entry('国'), entry('人')));

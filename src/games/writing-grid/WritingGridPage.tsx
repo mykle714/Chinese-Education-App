@@ -10,6 +10,8 @@ import { useGameExit } from "../runtime/gameExit";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import { useLocalGameSettings } from "../shared/useLocalGameSettings";
 import PersonalBestLine from "../shared/PersonalBestLine";
+import { HeaderToggleChip } from "../../components/PageHeader";
+import { useConfirmation } from "../../contexts/ConfirmationContext";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { recognizeHandwriting } from "../../components/handwriting/recognize";
 import type { Ink } from "../../components/handwriting/types";
@@ -42,10 +44,14 @@ import { CANVAS_SIZE, COUNTDOWN_STEPS, COUNTDOWN_STEP_MS, DEFAULT_SETTINGS, GAME
  *               out → top-1 Verify → ✓ / ✗ and a writing mark on the character's own
  *               card (the server applies the anti-farming gate). A ✗ cell can be
  *               reopened and rewritten (a fresh attempt: new ink, new Level 8 clock).
- *   ended     — every cell ✓; the stopwatch stops. Time, medal, personal best. The
+ *   ended     — every cell ✓ (or the learner gave up); the stopwatch stops. Time, medal, personal best. The
  *               popup minimizes to the corner puck so the finished board (every cell's
  *               ink over its full shadow) can be viewed. Tapping a cell reopens its
  *               canvas as drawn; a redraw is verified (✓ / ✗) but never marked.
+ *
+ * Give up — the header's "give up" chip (Phase 1 or 2, after a confirm) ends the run
+ * early onto the same End board, which reveals every character's full shadow. No
+ * medal, no personal best, no win, and no marks beyond the cells already checked.
  *
  * The stopwatch is ACCUMULATED active time, so a backgrounded app (useBackgroundPause)
  * is not billed — the app-wide games rule.
@@ -57,6 +63,7 @@ const WritingGridPage: React.FC = () => {
     const gameExit = useGameExit();
     const { token, isAuthenticated } = useAuth();
     const { recordWin } = useGameWins(GAME_KEY);
+    const { confirm } = useConfirmation();
     const personalBest = usePersonalBest(GAME_ID, "default");
 
     const [phase, setPhase] = useState<"loading" | "empty" | BoardPhase>("loading");
@@ -68,6 +75,12 @@ const WritingGridPage: React.FC = () => {
     const [openOrigin, setOpenOrigin] = useState<HTMLElement | null>(null);
     const [countdownStep, setCountdownStep] = useState(0);
     const [loadNonce, setLoadNonce] = useState(0);
+    // Set when the run ended through "give up" rather than an all-✓ board: the number of
+    // cells that were ✓ at that moment (frozen, so End-board practice redraws cannot
+    // change it). null = not given up. The End board is the same either way; only the
+    // popup (no time / medal / best) differs.
+    const [gaveUpCorrect, setGaveUpCorrect] = useState<number | null>(null);
+    const gaveUp = gaveUpCorrect !== null;
 
     // ── Deal ─────────────────────────────────────────────────────────────────────
     // Keyed on isAuthenticated, never the token (CLAUDE.md "Never reload on token refresh").
@@ -83,6 +96,7 @@ const WritingGridPage: React.FC = () => {
                 setInks({});
                 setOpenIndex(null);
                 setCountdownStep(0);
+                setGaveUpCorrect(null);
                 setPhase(dealt.length > 0 ? "countdown" : "empty");
             })
             .catch((err) => {
@@ -218,7 +232,32 @@ const WritingGridPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allCorrect, phase]);
 
-    const medal = phase === "ended" ? medalForWritingGrid(finalMs) : null;
+    const medal = phase === "ended" && !gaveUp ? medalForWritingGrid(finalMs) : null;
+
+    // ── Give up: end the run early and reveal the board ─────────────────────────
+    // Read through a ref so the confirm's async resolution sees the CURRENT phase —
+    // the closure's `phase` is whatever it was when the chip was tapped.
+    const phaseRef = useRef(phase);
+    phaseRef.current = phase;
+    const correctCountRef = useRef(0);
+    correctCountRef.current = cells.filter((c) => results[c.char] === "correct").length;
+    const handleGiveUp = () => {
+        void confirm("The run ends now and every character is revealed. It won't count for a medal or your personal best.", {
+            title: "Give up this grid?",
+            confirmText: "Give up",
+            cancelText: "Keep writing",
+        }).then((ok) => {
+            const live = phaseRef.current;
+            if (!ok || (live !== "arrange" && live !== "write")) return;
+            holdStopwatch();
+            setElapsedMs(accumulatedRef.current);
+            // An open canvas is discarded unchecked: giving up sends no further marks.
+            setOpenIndex(null);
+            setGaveUpCorrect(correctCountRef.current);
+            setPopupMinimized(false);
+            setPhase("ended");
+        });
+    };
 
     const playAgain = () => {
         personalBest.reset();
@@ -231,7 +270,20 @@ const WritingGridPage: React.FC = () => {
     const boardPhase: BoardPhase = phase === "loading" || phase === "empty" ? "countdown" : phase;
 
     return (
-        <GameLeafPage hue={GAME_HUE} title="Writing Grid" onBack={leave}>
+        <GameLeafPage
+            hue={GAME_HUE}
+            title="Writing Grid"
+            onBack={leave}
+            rightContent={
+                // Only while the stopwatch runs: nothing to give up during the countdown,
+                // and the End popup owns replay / exit once the run is over.
+                running ? (
+                    <HeaderToggleChip className="writing-grid__give-up" active={false} onClick={handleGiveUp}>
+                        give up
+                    </HeaderToggleChip>
+                ) : undefined
+            }
+        >
             {phase === "loading" && (
                 <GameCentered className="writing-grid__loading">
                     <DelayedCircularProgress className="writing-grid__spinner" />
@@ -360,12 +412,21 @@ const WritingGridPage: React.FC = () => {
                     onRestore={() => setPopupMinimized(false)}
                 >
                     <Typography className="writing-grid__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                        {medal ? `${MEDAL_LABEL[medal]}!` : "Finished!"}
+                        {gaveUp ? "Gave up" : medal ? `${MEDAL_LABEL[medal]}!` : "Finished!"}
                     </Typography>
-                    <Typography className="writing-grid__popup-time" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                        {formatTimeMs(finalMs)}
-                    </Typography>
-                    <PersonalBestLine game="writing-grid" best={personalBest.best} isNewBest={personalBest.isNewBest} className="writing-grid__personal-best" />
+                    {gaveUp ? (
+                        // A given-up run has no time worth reporting — say how far it got.
+                        <Typography className="writing-grid__popup-progress" sx={{ fontSize: SIZE.bodyLg, color: COLORS.onSurface }}>
+                            {gaveUpCorrect} of {cells.length} written
+                        </Typography>
+                    ) : (
+                        <>
+                            <Typography className="writing-grid__popup-time" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
+                                {formatTimeMs(finalMs)}
+                            </Typography>
+                            <PersonalBestLine game="writing-grid" best={personalBest.best} isNewBest={personalBest.isNewBest} className="writing-grid__personal-best" />
+                        </>
+                    )}
                     <Box className="writing-grid__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}>
                         <Button
                             className="writing-grid__popup-again"

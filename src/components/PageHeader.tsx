@@ -153,6 +153,11 @@ interface PageHeaderProps {
     // Leaving the header's copy in as well would put two flames one row apart AND mount a
     // second `useMinutePoints` accrual tick — see the ⚠️ on the right slot.
     showFlame?: boolean;
+    // Rendered to the RIGHT of the flame — the one thing allowed past it. Exists for
+    // Home's Settings gear + profile-picture button (HeaderAvatarButton), which
+    // the user asked to sit in the far corner, gear beside the avatar. Every other page leaves this
+    // unset, so the flame keeps its fixed corner everywhere else; see the right slot.
+    trailingContent?: React.ReactNode;
 }
 
 const PageHeader: React.FC<PageHeaderProps> = ({
@@ -164,6 +169,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     size,
     safeAreaTop = true,
     showFlame = true,
+    trailingContent,
 }) => {
     const navigate = useNavigate();
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
@@ -233,13 +239,19 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 so two live headers on such a page would count every second twice. Today
                 nothing renders two (every call site is one page = one header, and the
                 branchy pages return them from mutually exclusive branches) — keep it
-                that way rather than adding a second header to a page. */}
+                that way rather than adding a second header to a page.
+
+                EXCEPTION (2026-10-09): `trailingContent` renders AFTER the flame. Only
+                Home passes it (the Settings gear + the profile picture that
+                raises the AccountSheet), so on Home alone the flame sits two controls
+                in from the corner. */}
             <Box
                 className="page-header__right-content"
                 sx={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: `${spec.rightGap}px` }}
             >
                 {rightContent}
                 {showFlame && <MinutePointsFireBadge />}
+                {trailingContent}
             </Box>
         </Header>
     );

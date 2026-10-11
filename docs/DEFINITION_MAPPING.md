@@ -95,8 +95,8 @@ Child docs:
 - **Client call sites:** `FlashCardSection.tsx` (`EnglishBlock`, passes the live index),
   `InfoCardPanelBody.tsx` (eip header), `VocabCardDetailPage.tsx` + `FlashcardsLearnPage.tsx`
   (fie movable-text label + icon-search prefill, via `iconSearchTerm`),
-  `useCardIconEditor.ts` (icon prefetch warm), `MiniVocabCard.tsx`, `VocabEntryCards.tsx`,
-  `EntryDetailPage.tsx`, `FlashcardsPage.tsx` (`addToHistory` snapshots the resolved dd),
+  `useCardIconEditor.ts` (icon prefetch warm), `MiniVocabCard.tsx`,
+  `FlashcardsPage.tsx` (`addToHistory` snapshots the resolved dd),
   `games/bubble-match/Bubble.tsx` + `BubbleStage.tsx` (text and its radius measurement).
 - **Server call sites** (payloads that flatten dd to a string and drop the clusters):
   `OnDeckVocabService.getWordSearchGrid` (word list),

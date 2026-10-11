@@ -153,7 +153,7 @@ function NightMarketEnginePage() {
   // through one LeafPage so it stays a single instance and the enter slide plays once.
   if (isLoading) {
     return (
-      <LeafPage title="Night Market" onBack={() => navigate("/")}>
+      <LeafPage title="Night Market" onBack={() => navigate("/menu")}>
         <Box
           className="night-market-engine-loading"
           sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0 }}
@@ -166,7 +166,7 @@ function NightMarketEnginePage() {
 
   if (error) {
     return (
-      <LeafPage title="Night Market" onBack={() => navigate("/")}>
+      <LeafPage title="Night Market" onBack={() => navigate("/menu")}>
         <Box className="night-market-engine-error" sx={{ p: 3 }}>
           <Alert className="night-market-engine-error-alert" severity="error">{error}</Alert>
         </Box>
@@ -175,7 +175,7 @@ function NightMarketEnginePage() {
   }
 
   return (
-    <LeafPage title="Night Market" onBack={() => navigate("/")} className="night-market-engine-root">
+    <LeafPage title="Night Market" onBack={() => navigate("/menu")} className="night-market-engine-root">
     <Box
       className="night-market-engine-page"
       sx={{

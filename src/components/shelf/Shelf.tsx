@@ -32,9 +32,13 @@ const Shelf = styled(Box)(() => ({
 
 /**
  * `.shrow` — one row. `position: relative` is load-bearing: the board positions
- * against it, and the 12px of bottom padding is the gap the board sits in.
+ * against it, and the 12px of bottom padding is the gap the board sits in. A row
+ * without a board drops that padding, since it would only be dead space under the
+ * spines (the band row, whose Velocity card hangs directly under it).
  */
-const ShelfRowRoot = styled(Box)(() => ({
+const ShelfRowRoot = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "hasBoard",
+})<{ hasBoard: boolean }>(({ hasBoard }) => ({
     position: "relative",
     // Full width even inside a centred flex column. Without this the row shrinks to
     // its spines and both go adrift: the spines centre instead of starting on the
@@ -42,7 +46,7 @@ const ShelfRowRoot = styled(Box)(() => ({
     // becomes a short bar under the spines rather than a shelf they stand on.
     width: "100%",
     marginTop: 9,
-    paddingBottom: 12,
+    paddingBottom: hasBoard ? 12 : 0,
 }));
 
 /** `.spines` — bottom-aligned so banded heights grow UPWARD off the board. */
@@ -128,7 +132,7 @@ export const ShelfRow: React.FC<ShelfRowProps> = ({
     useScrollStretch(spinesRef, { axis: "x", enabled: scrollable });
 
     return (
-        <ShelfRowRoot className={`shelf-row${className ? ` ${className}` : ""}`}>
+        <ShelfRowRoot className={`shelf-row${className ? ` ${className}` : ""}`} hasBoard={board}>
             <Spines
                 ref={spinesRef}
                 className="shelf-row__spines"

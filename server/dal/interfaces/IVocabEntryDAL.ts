@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { IBaseDAL } from './IBaseDAL.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
-import type { MasteredAtByBar, MasteryBarId } from '../../contracts/wire.js';
+import type { MasteredAtByBar, MasteryBarId, StarterPackBucket } from '../../contracts/wire.js';
 
 /**
  * The three columns a mark/undo needs off a vet row, plus the row's language.
@@ -158,6 +158,34 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null>;
+  /**
+   * The row's id + `starterPackBucket` for (user, entryKey, language), or null when the
+   * user has no row for the word. A light read (no det join) for "is this word in Learn
+   * Now?". Used by VocabEntryService.getLibraryStatus and addToLibrary.
+   */
+  findBucketRowByUserAndKey(
+    userId: string,
+    entryKey: string,
+    language: string
+  ): Promise<{ id: number; starterPackBucket: StarterPackBucket | null } | null>;
+  /**
+   * Insert a fresh 'library' row (no mastery state: `typedMarkHistory` defaults to '{}',
+   * which bands every bar Unfamiliar). Returns the new id. Used by addToLibrary.
+   */
+  insertLibraryRow(userId: string, entryKey: string, language: string): Promise<number>;
+  /**
+   * Promote an existing non-library row (provisional, or a stray NULL bucket) to
+   * 'library' in place, keeping its marks. Used by addToLibrary.
+   */
+  promoteRowToLibrary(id: number, language: string): Promise<void>;
+  /**
+   * Move a 'library' row back to 'provisional' — the non-destructive "remove from Learn
+   * Now". The row, its marks and its deck memberships are all kept; only the bucket
+   * changes, so every list read (vetSortedClause) stops seeing it and re-adding
+   * promotes it in place with its progress intact. Returns true when a row was demoted,
+   * false when there was no 'library' row to demote. See docs/PROVISIONAL_CARDS.md.
+   */
+  demoteLibraryRowToProvisional(userId: string, entryKey: string, language: string): Promise<boolean>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
 
   // Search and filtering

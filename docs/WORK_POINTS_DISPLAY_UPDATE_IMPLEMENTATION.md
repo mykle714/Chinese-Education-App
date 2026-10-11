@@ -96,7 +96,7 @@ dispatch({
 
 This immediately affects:
 - `totalStudyTimeMinutes` calculation
-- HomePage's total study time display
+- The total study time display (former landing page, now `TesterDashboardPage` at `/tester-dashboard`)
 - MarketViewerPage's unlocked stands calculation
 - Leaderboard's accumulative points display
 
@@ -157,7 +157,7 @@ The server enforces a 59-second minimum between successful increments:
 
 3. **Test Total Study Time Display:**
    ```bash
-   # Go to HomePage
+   # Go to the Tester Dashboard (/tester-dashboard)
    # Note the total study time
    # Earn some work points
    # Verify total study time increases immediately

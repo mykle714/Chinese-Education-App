@@ -305,7 +305,7 @@ const CollectionViewPage: React.FC = () => {
             await deleteDeck(deckId);
             // Back to /decks rather than navigate(-1): the previous entry may be
             // this deck's own card detail, which would 404 now.
-            navigate("/flashcards/decks", { replace: true });
+            navigate("/", { replace: true });
         } catch (err: unknown) {
             setActionError(err instanceof Error ? err.message : "Could not delete this deck");
             setDeleteOpen(false);

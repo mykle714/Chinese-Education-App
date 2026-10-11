@@ -16,7 +16,7 @@ import { COLORS } from "../../theme/colors";
 /**
  * Unfriend screen (docs/FRIENDS_FEATURE.md) — the plain friend list, each row with
  * a Remove button. Reached from the "Remove" button on FriendsPage; the back arrow
- * returns there rather than to the Home hub.
+ * returns there rather than to Menu.
  *
  * WHY THIS IS ITS OWN PAGE: `/friends` is a leaderboard, and a destructive action
  * sitting on every row of a ranking invites a mis-tap while reading scores. Moving

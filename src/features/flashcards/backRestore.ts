@@ -17,7 +17,7 @@ import type { CardsFilter } from "./useDecksPanel";
  * ── Keyed on the HISTORY ENTRY, not the route ─────────────────────────────────
  * Snapshots are stored under React Router's `location.key`, which is unique per history
  * entry and is handed back unchanged when that entry is returned to with Back. A fresh
- * arrival at the same URL (a footer-tab tap, a `navigate("/flashcards/decks")` push)
+ * arrival at the same URL (a footer-tab tap, a `navigate("/")` push)
  * gets a NEW key, finds nothing, and opens fresh — so "restore" means "Back", never
  * "the last time you were here". Contrast `dictionaryBrowseState`, which is one
  * route-space singleton cleared on exit (docs/LEAF_NODE_PAGES.md).

@@ -1,6 +1,5 @@
-import { useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import NodePage from '../../components/NodePage';
+import { useRef, useEffect, useCallback, useState } from 'react';
+import MobileTabScreen from '../../components/MobileTabScreen';
 import SearchField from '../../components/SearchField';
 import {
     Container,
@@ -24,8 +23,12 @@ import { SectionRule } from '../../components/primitives/Label';
 import { FooterSpacer } from '../../components/MobileFooter';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useDictionarySearch } from '../../hooks/useDictionarySearch';
-import { useSlideNavigate } from '../../hooks/useSlideNavigate';
+import { useTTS } from '../../hooks/useTTS';
+import { lookupVocabEntry } from '../../api/dictionary';
+import EipSheet from '../flashcards/FlashcardsLearnPage/EipSheet';
+import { useEipTabs } from '../flashcards/FlashcardsLearnPage/useEipTabs';
 import { dictionaryBrowseState } from './dictionaryBrowseState';
+import { DEFAULT_SOURCE_ATTRIBUTE } from '../beginnerKeyboard';
 
 // `.dr` rows carry their own 22px side padding (the artboard's, matching every other
 // full-bleed list in the shelf system), so a list of them has to escape the Container's
@@ -54,8 +57,6 @@ const searchPlaceholderFor = (language: Language): string =>
 
 function DictionaryPage() {
     usePageTitle("Dictionary");
-    const navigate = useNavigate();
-    const slideNavigate = useSlideNavigate();
     // Dictionary is always rendered in its mobile layout regardless of viewport
     // width — the desktop two-column layout has been retired.
     const isMobile = true;
@@ -72,8 +73,29 @@ function DictionaryPage() {
     // Ref for search input to maintain focus
     const searchInputRef = useRef<HTMLInputElement>(null);
     // Ref on the page Container, used to reach the MobileTabScreen scroll container
-    // (.mobile-tab-screen__scroll) that NodePage owns, for scroll save/restore.
+    // (.mobile-tab-screen__scroll) that MobileTabScreen owns, for scroll save/restore.
     const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // ── Auto-focus the search box on a FRESH visit (2026-10-10) ───────────────────────
+    // Only when there is no query: coming back from a drill-in restores the query and
+    // scroll position, and a keyboard springing up would cover the results the learner
+    // came back to. Read once at mount (the persisted query, not the live input).
+    //
+    // ⚠️ Deferred a frame rather than MUI `autoFocus`. `autoFocus` fires during the
+    // commit that mounts this page, and `BeginnerKeyboardProvider` closes the keyboard
+    // on every pathname change in a passive effect of that SAME commit — which runs
+    // after the focus, so it would tear down the switch bar the focus just raised,
+    // leaving a focused field with no 写/ABC bar. A frame later that effect has run.
+    // `preventScroll` because the MobileTabScreen scroller owns the scroll position.
+    //
+    // Which keyboard comes up is decided by the field's `data-beginner-keyboard-default`
+    // below (docs/BEGINNER_KEYBOARD.md § 6z-3a). On iOS Safari a programmatic focus
+    // outside a user gesture places the caret but may not raise the OS keyboard.
+    useEffect(() => {
+        if (dictionaryBrowseState.search) return;
+        const frame = requestAnimationFrame(() => searchInputRef.current?.focus({ preventScroll: true }));
+        return () => cancelAnimationFrame(frame);
+    }, []);
 
     // Keep the persisted query + page in sync so a drill-in → back restores them.
     useEffect(() => { dictionaryBrowseState.search = searchInput; }, [searchInput]);
@@ -113,17 +135,45 @@ function DictionaryPage() {
         requestAnimationFrame(attempt);
     }, [loading, entries.length, segmentGroups.length]);
 
-    // Tapping a result-card opens the read-only dictionary card-detail page (cdp)
-    // for that word — a NODE-page slide (in from the right), replacing the old EIP
-    // popup. The cdp fetches the full det row itself (breakdown, examples, usedIn,
-    // etc.). See docs/LEAF_NODE_PAGES.md + DictionaryCardDetailPage.
+    // ── Result tap → the eip, as a bottom sheet over the results (2026-10-10) ──────────
+    // A result used to NAVIGATE to the read-only dictionary cdp (`/dictionary/card/:word`).
+    // It now raises the eip itself (EipSheet), so every link inside it — breakdown and
+    // used-in rows, example-sentence segments, Chinese embedded in the long definition,
+    // the Compare tool — opens as a TAB in the eip's word trail instead of a new page,
+    // and closing the sheet drops the reader straight back on their results. Only this
+    // host turns on the dictionary extras: Synonyms + Related and the `Write it` ·
+    // `Compare` rail at the bottom of the definition tab, and the Learn Now toggle
+    // (glowing "+" ⇄ "Added!") stacked under the header's speaker.
     //
-    // A hit found through a non-default sense (`matchedSense`, see resolveSearchRowView)
-    // passes that sense's label as `?sense=` so the cdp opens on the sense the row showed.
-    const handleEntryClick = useCallback((entry: DictionaryEntry) => {
-        const senseQuery = entry.matchedSense ? `?sense=${encodeURIComponent(entry.matchedSense)}` : '';
-        slideNavigate(`/dictionary/card/${encodeURIComponent(entry.word1)}${senseQuery}`);
-    }, [slideNavigate]);
+    // The cdp route still exists — the saved-card cdp's drill-in falls back to it for a
+    // word with no vet row (src/hooks/useOpenWordCard.ts) — it is just no longer reached
+    // from here.
+    const eip = useEipTabs({ language: userLanguage });
+    const [eipOpen, setEipOpen] = useState(false);
+    const tts = useTTS();
+    // The word whose lookup is in flight. A search row carries only the search
+    // projection (no breakdown / examples / usedIn), so the tap fetches the full det row
+    // first; a later tap supersedes an earlier one still loading.
+    const pendingLookupRef = useRef<string | null>(null);
+
+    const handleEntryClick = useCallback(async (entry: DictionaryEntry) => {
+        const word = entry.word1;
+        pendingLookupRef.current = word;
+        try {
+            const full = await lookupVocabEntry(word, userLanguage);
+            if (pendingLookupRef.current !== word) return;
+            // A hit found through a non-default sense (`matchedSense`, see
+            // resolveSearchRowView) opens the panel ON that sense: it outranks the
+            // learner's saved pick, because they just chose it by tapping that row.
+            // openForRoot derives the tab's sense index from `selectedSense`.
+            eip.openForRoot(entry.matchedSense ? { ...full, selectedSense: entry.matchedSense } : full);
+            setEipOpen(true);
+        } catch (err) {
+            console.error(`Failed to look up dictionary entry "${word}":`, err);
+        } finally {
+            if (pendingLookupRef.current === word) pendingLookupRef.current = null;
+        }
+    }, [eip, userLanguage]);
 
     const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
         setPage(value);
@@ -131,12 +181,12 @@ function DictionaryPage() {
     };
 
     return (
-        // Dictionary is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): keeps the footer,
-        // LEFT back arrow (returns to the Home menu), slides in from the right. The
-        // NodePage/MobileTabScreen scroll area owns scrolling + floating-footer
-        // clearance, so the page no longer wraps its content in its own scroll box.
-        // Opened from the Home menu, so the Home tab stays active.
-        <NodePage title="Dictionary" onBack={() => navigate("/")}>
+        // Dictionary is a FOOTER TAB (it took Account's slot on 2026-10-09; it used to be
+        // a node page drilled into from the old Home hub). Like Home/Menu/Discover it
+        // renders a bare MobileTabScreen: no back arrow, no slide — the footer switches
+        // instead. MobileTabScreen's scroll area owns scrolling, so the page does not
+        // wrap its content in its own scroll box.
+        <MobileTabScreen title="Dictionary" contentClassName="dictionary-page__content">
         <Container
             className="dictionary-page"
             ref={containerRef}
@@ -148,7 +198,7 @@ function DictionaryPage() {
                 minHeight: 'calc(100% - 8px)',
             }}
         >
-            {/* No page title here on purpose: NodePage's back-arrow header already
+            {/* No page title here on purpose: the MobileTabScreen header already
                 says "Dictionary", and the artboard has only that one. The h1 that
                 used to sit here printed the name a second time a few millimetres
                 below it (docs/SHELF_REDESIGN.md § entry 7, "Watch out"). */}
@@ -175,6 +225,10 @@ function DictionaryPage() {
                         onChange={setSearchInput}
                         onClear={clearSearch}
                         inputRef={searchInputRef}
+                        // Open on the learner's own (OS) keyboard rather than the
+                        // handwriting keyboard; the switch bar still offers 写. Per-field
+                        // only — flipping it here leaves the session choice alone.
+                        inputAttributes={{ [DEFAULT_SOURCE_ATTRIBUTE]: 'os' }}
                         sx={{ mt: 2 }}
                     />
                 </Box>
@@ -370,7 +424,21 @@ function DictionaryPage() {
 
             <FooterSpacer />
         </Container>
-        </NodePage>
+
+        {/* The result's eip — portals its own scrim + sheet (SheetPanel), so where it sits
+            here does not affect where it paints. See handleEntryClick above. */}
+        <EipSheet
+            eip={eip}
+            open={eipOpen}
+            onClose={() => setEipOpen(false)}
+            onSpeak={tts.speak}
+            onSpeakSentence={tts.speakSentence}
+            speakingKey={tts.speakingKey}
+            showSynonymsRelated
+            showWordTools
+            showLearnNow
+        />
+        </MobileTabScreen>
     );
 }
 

@@ -17,7 +17,7 @@ import type { VocabEntry } from "../../types";
 //
 // Three pages mount it, through three lenses (docs/DECKS_FEATURE.md § "Mastery
 // Centers", docs/READING_WRITING_CENTERS.md):
-//   fdp (/flashcards/decks)   — core lens, titles "Cards" / "Decks";
+//   fdp (/, the Home tab)      — core lens, titles "Cards" / "Decks";
 //   Reading Center            — reading lens, "Reading Cards" / "Reading Decks";
 //   Writing Center            — writing lens, "Writing Cards" / "Writing Decks".
 // It was extracted from FlashcardsDecksPage when the Centers stopped rendering the

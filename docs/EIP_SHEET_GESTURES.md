@@ -602,6 +602,20 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
 
 ---
 
+## Pane scrollbar (overlay, never a gutter)
+
+Each eip tab pane hides its native scrollbar (`hiddenNativeScrollbarSx`) and gets a thin
+thumb drawn **over** its content by `OverlayScrollbar`. A classic desktop scrollbar takes
+~15px of width, and reserving that width (`scrollbar-gutter: stable`, the old approach)
+pushed every pane's content off-centre. The thumb is display-only (`pointer-events:
+none`) — wheel/trackpad/touch still scroll the pane — appears while the pane scrolls and
+fades out ~0.9s after. It is a sibling of the scroller inside a non-scrolling
+`.mobile-demo-tab-pane-slot`, so it neither scrolls with the content nor gets clipped by
+the pane's edge-fade mask.
+
+Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
+`hiddenNativeScrollbarSx`; `InfoCardPanelBody.tsx` (the pane slot).
+
 ## Referenced code
 
 - `src/components/sheet/SheetPanel.tsx` — everything above
@@ -616,8 +630,9 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
   `bodyKey` (re-binds the coupling when the active tab's scroller changes), the entry
   pager slide (`entryTabId` / `entryTabIndex`)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` — body handle,
-  per-pane scrollers, horizontal tab-swipe axis lock, end-of-strip rubber-band, the
+  per-pane scrollers (each with an `OverlayScrollbar` thumb), horizontal tab-swipe axis lock, end-of-strip rubber-band, the
   entry-jump layout effect (`entryJumpRef`)
+- `src/components/OverlayScrollbar.tsx` — the pane scrollbar thumb (§ Pane scrollbar)
 - `src/features/flashcards/FlashcardsLearnPage/styled.ts` — `EipEntryTab` + the
   `eipPillIn` entrance keyframes
 - `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail pills (it no
@@ -641,5 +656,7 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
 - `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` — the shared non-flp mount
   (`InfoCardSection` + `EipTabStrip` + `TooManyTabsSnackbar`), used by
   `src/features/discover/SortCardsPage.tsx` (`handleOpenCardInfo`),
-  `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`) and
-  `src/features/flashcards/centers/ReadingSwipeGrid.tsx`
+  `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`),
+  `src/features/flashcards/centers/ReadingSwipeGrid.tsx` and
+  `src/features/dictionary/DictionaryPage.tsx` (`handleEntryClick` — the only host that
+  passes `showSynonymsRelated`, `showWordTools` and `showLearnNow`)

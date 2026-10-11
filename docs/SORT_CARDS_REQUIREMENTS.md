@@ -448,6 +448,41 @@ each end, so the user can see their collection grow as they sort:
   `learnNowCount` / `masteredCount` derivations, and `adjustTally` (called from
   `handleSortCard` and `handleUndo`).
 
+### 5.3a Learn Now supply glow
+
+The Learn Now tally pill tells a learner who came in **short** of cards when they have
+sorted enough. The decision is made **once per visit**, from the first successfully
+loaded baseline (before any sort):
+
+| Arrived with | Pill while `learnNowCount < 30` | Pill once `learnNowCount ≥ 30` |
+| --- | --- | --- |
+| **< 30** Learn Now | yellow halo, **pulsing** | plain (halo simply drops) |
+| **≥ 30** Learn Now | plain | plain |
+
+- 30 is `LEARN_NOW_ENOUGH_THRESHOLD` (`server/contracts/wire.ts`) = the fdp's "cards low"
+  threshold (`LEARN_NOW_LOW_THRESHOLD`, 20) + one 10-card sort session. A learner sent
+  over by the fdp's glowing Sort Cards tile (DECKS_FEATURE.md § "Sort Cards tile") always
+  arrives short. The halo's shape is shared with that tile (`src/theme/lowSupplyGlow.ts`),
+  which wears it in green.
+- **Live after the decision.** The halo follows the live count, so an Undo that takes the
+  count back under 30 brings the halo back. There is deliberately no "done" styling
+  (an earlier green halo was removed 2026-10-09). Nothing else happens at 30 — no toast, no
+  popup; the learner keeps sorting undisturbed.
+- **Failed fetch → no glow.** The decision waits on `useCategoryCounts().ok`, not
+  `loaded`; a failed fetch leaves `counts` empty, which would otherwise read as 0 and
+  pulse at a learner with a full library.
+- **Colour.** The halo is a soft `box-shadow` — pure blur, no crisp `0 0 0 Npx` ring — in the
+  ramp's **mid** tier — yellow, the Learn Now hue (`LOW_SUPPLY_GLOW_TALLY` = `RAMP.yel.mid`;
+  red until 2026-10-09), breathing 5px/1px ↔ 14px/4px. The
+  saturated mark tier with a solid ring read as harsh and was softened 2026-10-09. The
+  pill's fill stays the Learn Now hue. Not the `hl*` highlighter
+  tokens — those are dark-surface-only. Reduced motion: the halo is static.
+- The pulse shares the pill's `animation` property with the gulp (§ 5.3), so the two are
+  listed together rather than one replacing the other.
+
+*Code:* `SortCardsPage.tsx` → `arrivedShort`, `learnNowLowGlow`, `SortTallyValue`'s `lowGlow`,
+`tallyLowGlowKeyframes`.
+
 ### 5.1 Skip is a de-emphasized action, not a drag target
 - Skip is a single small **button in the top-right corner of the on-deck platform** — not a
   drag bucket, and not in the page header (moved 2026-09-28, so it reads as acting on the

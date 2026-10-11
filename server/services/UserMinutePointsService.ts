@@ -13,6 +13,7 @@ import {
   resolveTimezone,
   streakDateOf,
   daysBetween,
+  addDaysToDateString,
 } from '../utils/streakDate.js';
 
 /**
@@ -316,16 +317,6 @@ export class UserMinutePointsService {
   }
 
   /**
-   * Minutes earned today (4 AM-local-bounded streak day) studying `language`.
-   * Powers the fire badge so switching languages shows that language's count.
-   */
-  async getTodayMinutes(userId: string, language: string, timestamp: string, tz: string): Promise<number> {
-    const resolvedTz = resolveTimezone(tz);
-    const streakDate = streakDateOf(this.parseTimestamp(timestamp), resolvedTz);
-    return this.userMinutePointsDAL.getMinutesForDateAndLanguage(userId, streakDate, language);
-  }
-
-  /**
    * One-shot snapshot for the client's minute-points hook. EVERY figure is scoped to
    * `language` — since migration 130 there is no global balance or global streak:
    *   • totalMinutePoints — that language's penalty-debited NET wallet
@@ -336,30 +327,65 @@ export class UserMinutePointsService {
    *     DIFFER once that language has been penalised. Read from the migration-134 counter,
    *     not summed over the ledger.
    *   • todayMinutes — that language's minutes today (the fire badge).
+   *   • yesterdayMinutes — that language's minutes on the previous streak day. The size
+   *     of the hp daily banking animation (docs/DAILY_MINUTE_BANKING.md § 4).
+   *   • bankingPending — whether today's banking run is still owed: yesterday > 0 and
+   *     the run has not started yet this streak day (migration 175). Decided HERE so the
+   *     client never compares streak dates itself.
    *   • currentStreak — that language's streak.
    *
    * Switching languages therefore swaps the entire snapshot, which is the intended UX:
    * each language shows its own independent progress.
    *
-   * Two queries, not three: the wallet, the streak and the gross counter all live on the
-   * same user_languages row, so one getProgress() serves all three.
+   * Three single-row reads in parallel: today's and yesterday's ledger rows (both PK
+   * lookups) and the user_languages row, which serves the wallet, the streak, the gross
+   * counter and the banking marker at once.
    */
   async getLanguageSummary(
     userId: string,
     language: string,
     timestamp: string,
     tz: string
-  ): Promise<{ totalMinutePoints: number; lifetimeMinutesEarned: number; todayMinutes: number; currentStreak: number }> {
-    const [todayMinutes, progress] = await Promise.all([
-      this.getTodayMinutes(userId, language, timestamp, tz),
+  ): Promise<{
+    totalMinutePoints: number;
+    lifetimeMinutesEarned: number;
+    todayMinutes: number;
+    yesterdayMinutes: number;
+    bankingPending: boolean;
+    currentStreak: number;
+  }> {
+    const streakDate = streakDateOf(this.parseTimestamp(timestamp), resolveTimezone(tz));
+    const yesterday = addDaysToDateString(streakDate, -1);
+    const [todayMinutes, yesterdayMinutes, progress] = await Promise.all([
+      this.userMinutePointsDAL.getMinutesForDateAndLanguage(userId, streakDate, language),
+      this.userMinutePointsDAL.getMinutesForDateAndLanguage(userId, yesterday, language),
       this.userLanguagesDAL.getProgress(userId, language),
     ]);
     return {
       totalMinutePoints: progress.totalMinutePoints,
       lifetimeMinutesEarned: progress.lifetimeMinutesEarned,
       todayMinutes,
+      yesterdayMinutes,
+      // Q11a: a zero day has nothing to bank, so it never owes a run.
+      bankingPending: yesterdayMinutes > 0 && progress.lastBankingShownDate !== streakDate,
       currentStreak: progress.currentStreak,
     };
+  }
+
+  /**
+   * Record that the hp daily banking animation has STARTED for this (user, language)
+   * today (docs/DAILY_MINUTE_BANKING.md § 5). Sent at the start of the run, not the end,
+   * so closing the tab mid-animation cannot replay it on another device.
+   *
+   * The streak date is resolved here from the client's clock + timezone, clamped to
+   * server time exactly as the increment path is, so the stamp always matches the date
+   * `getLanguageSummary` compares it against.
+   */
+  async markBankingSeen(userId: string, language: string, timestamp: string, tz: string): Promise<void> {
+    const now = new Date();
+    const clientTimestamp = this.clampToServerNow(this.parseTimestamp(timestamp), now);
+    const streakDate = streakDateOf(clientTimestamp, resolveTimezone(tz));
+    await this.userLanguagesDAL.markBankingShown(userId, language, streakDate);
   }
 
   // ─────────────────────────────────────────────────────────────

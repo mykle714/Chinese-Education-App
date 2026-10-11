@@ -7,6 +7,7 @@
  */
 
 import { API_BASE_URL } from '../constants';
+import { apiPost } from '../api/http';
 // Moved to utils/ 2026-08-28: five of its callers are outside this feature, so it
 // is a shared util rather than a minute-points one. Imported here, not re-exported,
 // so there is exactly one path to it.
@@ -17,6 +18,8 @@ export interface LanguageMinuteSummary {
   totalMinutePoints: number;   // THIS LANGUAGE's penalty-debited NET balance; the prominent number. Decays on loss.
   lifetimeMinutesEarned: number;  // THIS LANGUAGE's lifetime minutes earned, ignoring penalties; only grows. gross ≥ net. Server-side this is the user_languages."lifetimeMinutesEarned" counter (migration 134), not a sum over the day ledger.
   todayMinutes: number;        // minutes earned today (4 AM-local day) for this language (fire badge)
+  yesterdayMinutes: number;    // minutes earned on the previous streak day — sizes the hp banking animation (docs/DAILY_MINUTE_BANKING.md)
+  bankingPending: boolean;     // today's hp banking run is still owed (yesterday > 0, not yet started today; migration 175)
   currentStreak: number;       // THIS LANGUAGE's streak (per-language since migration 130; see docs/PER_LANGUAGE_STREAKS.md)
 }
 
@@ -90,3 +93,21 @@ export async function incrementMinutePoint(
   }
 }
 
+
+/**
+ * Mark today's hp daily banking animation as started for `language`
+ * (POST /api/users/minutePoints/bankingSeen — docs/DAILY_MINUTE_BANKING.md § 5). Sent
+ * when the run STARTS so a mid-run tab close cannot replay it on another device. The
+ * server resolves the streak date from (timestamp, tz).
+ *
+ * Unlike the two calls above this goes through src/api/http.ts and takes no token
+ * (docs/FRONTEND_LAYERING.md § 3.2). Rejects on failure; the caller decides whether
+ * that matters.
+ */
+export function markBankingSeen(language: string): Promise<void> {
+  return apiPost<void>('/api/users/minutePoints/bankingSeen', {
+    language,
+    timestamp: new Date().toISOString(),
+    tz: getBrowserTimezone(),
+  });
+}

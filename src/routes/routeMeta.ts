@@ -106,51 +106,61 @@ export interface RouteMeta {
 /** Every non-game route. Order is irrelevant — React Router ranks by specificity. */
 const PAGE_ROUTES: RouteMeta[] = [
   // ── Footer-tab destinations ──
+  // Home (`/`) is the decks page — the fdp — under the account header (banking flame,
+  // Settings, avatar); the hub bento that used to be Home is Menu (`/menu`). Swapped
+  // 2026-10-10 (docs/UX_AND_NAVIGATION.md).
   { path: "/", access: "any", shell: "frame", chrome: "tab", footerTab: "home" },
-  { path: "/flashcards/decks", access: "any", shell: "frame", chrome: "tab", footerTab: "flashcards" },
+  { path: "/menu", access: "any", shell: "frame", chrome: "tab", footerTab: "menu" },
+  {
+    path: "/flashcards/decks",
+    access: "any",
+    shell: "frame",
+    chrome: "tab",
+    footerTab: "home",
+    note: "Legacy path of the fdp, which became Home (`/`) on 2026-10-10 — redirects there so older links and bookmarks keep working.",
+  },
   { path: "/discover", access: "any", shell: "frame", chrome: "tab", footerTab: "discover" },
-  { path: "/account", access: "any", shell: "frame", chrome: "tab", footerTab: "account" },
+  { path: "/dictionary", access: "any", shell: "frame", chrome: "tab", footerTab: "dictionary" },
 
   // ── Node pages (slide from the right) ──
-  // Dictionary, Reader, Compare and Games are reached from the Home menu, so they
-  // keep the Home tab lit.
-  { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // Reader, Games, Arena, Friends and Community are reached from Menu, so they keep
+  // the Menu tab lit.
+  { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Was `chrome: "tab"`, which contradicted both this comment block and the page:
   // CommunityPage renders <NodePage>, so it drew a back arrow and slid OUT to the
   // right on back, but got no slide on the way IN (routeSlideDir returns null for
   // "tab"). Asymmetric by accident, not by design — see docs/LEAF_NODE_PAGES.md.
-  { path: "/community", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/community", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Friends leaderboard + its three action screens (Send / Accept / Remove). All
-  // four keep the Home tab lit — they are reached from the Home menu, and the three
+  // four keep the Menu tab lit — they are reached from Menu, and the three
   // action pages drill in one level further (their back arrows return to /friends,
-  // not to Home). /friends itself is read-only; every mutation lives on a screen.
-  // Arena is a Home-hub drill-in, the same Node archetype as /friends.
-  { path: "/arena", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // not to Menu). /friends itself is read-only; every mutation lives on a screen.
+  // Arena is a Menu drill-in, the same Node archetype as /friends.
+  { path: "/arena", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Study Challenge — four more Node drill-ins under /friends, all with back arrows
   // that return to /friends/challenges rather than to Home (docs/STUDY_CHALLENGE.md § 1).
-  { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // User profile — the one screen for looking at somebody who is not you. A Node drill-in
   // reachable from the friends list, the leaderboard and the challenges page, so its back
   // arrow goes to actual history rather than a fixed parent (docs/USER_PROFILE_PAGE.md).
-  { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/dictionary", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Collection pages (docs/DECKS_FEATURE.md). Two routes, one component: a deck is
   // addressed by NUMERIC id under its own segment, so a deck named "mastered" can
   // never shadow the built-in collection route.
-  { path: "/flashcards/collection/:builtin", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
-  { path: "/flashcards/deck/:id", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  { path: "/flashcards/collection/:builtin", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/flashcards/deck/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   // Mastery Centers (docs/DECKS_FEATURE.md § "Mastery Centers") — the fdp's decks
-  // panel read through the reading / writing bar. Node drill-ins from /decks, so the
-  // Flashcards tab stays lit and the back arrow returns there.
-  { path: "/flashcards/reading", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
-  { path: "/flashcards/writing", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
+  // panel read through the reading / writing bar. Node drill-ins from Home (the fdp), so the
+  // Home tab stays lit and the back arrow returns there.
+  { path: "/flashcards/reading", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/flashcards/writing", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   {
     path: "/flashcards/writing/notebook",
     access: "any",
@@ -163,7 +173,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     access: "any",
     shell: "frame",
     chrome: "node",
-    footerTab: "flashcards",
+    footerTab: "home",
     note: "Legacy path for the Mastered collection — redirects to /flashcards/collection/mastered so older links and bookmarks keep working.",
   },
 
@@ -176,8 +186,8 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
   // Card-detail pages keep the tab of wherever they were reached from.
-  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "flashcards" },
-  { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary" },
 
   // Discover drill-ins.
   { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
@@ -194,7 +204,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     access: "any",
     shell: "frame",
     chrome: "leaf",
-    note: "Validator- or admin-only; the page bounces everyone else and the Home menu hides its tile. 'any' so the generic isPublic redirect can't pre-empt that gate.",
+    note: "Validator- or admin-only; the page bounces everyone else and Menu hides its tile. 'any' so the generic isPublic redirect can't pre-empt that gate.",
   },
   {
     path: "/settings",
@@ -268,9 +278,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
   // ── Full-account-only pages ──
-  { path: "/entries", access: "account", shell: "plain", chrome: "none" },
-  { path: "/entries/:id", access: "account", shell: "plain", chrome: "none" },
-  { path: "/edit/:id", access: "account", shell: "plain", chrome: "none" },
   { path: "/flashcards", access: "account", shell: "plain", chrome: "none" },
   { path: "/profile", access: "account", shell: "plain", chrome: "none" },
 

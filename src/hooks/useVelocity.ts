@@ -11,8 +11,8 @@ interface VelocityResult {
     byLanguage: Record<string, number>;
     /**
      * `velocity` split per band boundary (see `VelocityResponse.boundaryCounts`).
-     * Undefined until the fetch settles — the card then skips the breakdown row
-     * rather than drawing three zeroes it has not confirmed.
+     * Undefined until the fetch settles, or if it fails. With `velocity` then 0, the
+     * card draws its arrows as +0 (three zeros is the only split of 0).
      */
     boundaryCounts?: number[];
     /** False until the first fetch settles, so the caller can reserve space. */

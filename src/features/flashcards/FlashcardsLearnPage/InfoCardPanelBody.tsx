@@ -1,23 +1,18 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { Box, IconButton, Typography, useTheme } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
-import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
+import { Box, Typography, useTheme } from "@mui/material";
+import { type CPCDSize } from "../../../components/ForeignText";
 import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
 import { trackScrollEdgeFade } from "../../../components/scrollEdgeFade";
-import SensePicker from "../card/SensePicker";
-import { ddTextColor } from "../../../utils/cardTextColor";
+import OverlayScrollbar, { hiddenNativeScrollbarSx } from "../../../components/OverlayScrollbar";
 import InfoCardTabContent from "./InfoCardTabContent";
 import { tabAvailability } from "./infoCardTabAvailability";
 import {
-    InfoSheetEntryHeader,
     InfoSheetTabStrip,
     InfoSheetTab,
 } from "./styled";
 import {
     TAB_LABELS,
     FC_FONT,
-    FC_FONT_CJK,
     TAB_SWIPE_AXIS_LOCK_PX,
     TAB_SWIPE_COMMIT_RATIO,
     TAB_SWIPE_EDGE_RUBBER_MAX_PX,
@@ -25,7 +20,8 @@ import {
     TAB_SWIPE_TRANSITION,
 } from "../constants";
 import { WEIGHT } from "../../../theme/scale";
-import { SpeakerButton } from "./FlashCardSection";
+import EipEntryHeader from "./EipEntryHeader";
+import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
@@ -49,10 +45,12 @@ export interface InfoCardPanelBodyProps {
     // passive tooltip.
     onExampleSegmentClick?: (segment: string) => void;
     onSpeak?: (entry: VocabEntry) => void;
-    // When provided, renders a "+" button immediately after the SpeakerButton
-    // in the entry header. Used only by the dictionary EIP — flashcards EIP
-    // omits it because those cards are already in the library by definition.
+    // Add-only "+ to Learn Now" under the header's speaker (EipEntryHeader). Passed by
+    // the flp for a drilled-into word not yet in Learn Now.
     onAddToLibrary?: (entry: VocabEntry) => void;
+    // The Learn Now TOGGLE (glowing "+" ⇄ "Added!") under the speaker — supersedes
+    // onAddToLibrary. Dictionary page eip (EipSheet) + dictionary cdp. See EipEntryHeader.
+    learnNow?: LearnNowToggleState;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
@@ -83,9 +81,12 @@ export interface InfoCardPanelBodyProps {
     // re-renders) and persists it to the vet row when there is one — mirroring the
     // flashcard/cdp pickers. Undefined hides the picker entirely.
     onSelectSense?: (index: number) => void;
-    // Appends Synonyms + Related Words to the definition tab. cdp only — see
+    // Appends Synonyms + Related Words to the definition tab. cdps only — see
     // InfoCardTabContent's `showSynonymsRelated` for why it is a section and not a tab.
     showSynonymsRelated?: boolean;
+    // Content pinned to the bottom of the definition tab — see InfoCardTabContent's
+    // `definitionFooter`. Dictionary cdp only (its word-tools rail).
+    definitionFooter?: React.ReactNode;
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
@@ -102,9 +103,9 @@ export interface InfoCardPanelBodyHandle {
 /**
  * Shared inner content of the EIP: entry header (CPCD + English + sense picker +
  * speaker), underline tab strip, and the scrollable tab body (definition / examples /
- * breakdown-or-used-in). Reused by InfoCardSection (bottom-sheet wrapper)
- * and InfoCardPopup (centered-popup wrapper) — anything that changes here
- * shows up in both variants.
+ * breakdown-or-used-in). Hosted by InfoCardSection (the bottom-sheet wrapper on the
+ * flp/scp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
+ * that changes here shows up on every host.
  *
  * The forwarded ref exposes both the gesture-root wrapper and the inner
  * scrollable Box so wrappers that need to hook scroll mechanics (sheet does)
@@ -122,6 +123,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
+    learnNow,
     onSpeakSentence,
     speakingKey,
     headerCpcdSize = "md",
@@ -130,6 +132,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     selectedSenseIndex,
     onSelectSense,
     showSynonymsRelated,
+    definitionFooter,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     // Clipping viewport around the sliding tab track. NOT itself scrollable —
@@ -479,159 +482,22 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 },
             }}
         >
-            {/* Entry header: headword + English translation + speaker icon.
-                When the bottom-sheet wrapper passes headerDragBind, this row
-                also acts as a drag-to-resize handle (useDrag's filterTaps keeps
-                taps on speaker/+ icons working). */}
-            <InfoSheetEntryHeader
-                className="mobile-demo-eic-header"
+            {/* Entry header: headword + English translation + speaker icon. When the bottom-sheet wrapper passes headerDragBind, this row also acts
+                as a drag-to-resize handle (useDrag's filterTaps keeps taps on
+                speaker/+ icons working). */}
+            <EipEntryHeader
+                entry={currentEntry}
+                showPinyinColor={showPinyinColor}
+                cpcdSize={headerCpcdSize}
+                onSpeak={onSpeak}
+                speakingKey={speakingKey}
+                onAddToLibrary={onAddToLibrary}
+                learnNow={learnNow}
+                selectedSenseIndex={selectedSenseIndex}
+                onSelectSense={onSelectSense}
                 {...(headerDragBind ? headerDragBind() : {})}
                 sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
-            >
-                {currentEntry && (
-                    <ForeignText
-                        size={headerCpcdSize}
-                        justifyContent="flex-start"
-                        className="mobile-demo-eic-header-cpcd"
-                        text={currentEntry.entryKey}
-                        // Sense-resolved, like the dd printed beside it. The panel's own live
-                        // pick is the override so the reading changes on the tap, ahead of the
-                        // persisted `selectedSense` round-tripping back (useEipTabs.syncEntry).
-                        pronunciation={resolveDisplayPronunciation(currentEntry, selectedSenseIndex)}
-                        useToneColor={showPinyinColor}
-                        showPinyin
-                        // Tap the headword to copy it: first tap the characters, next
-                        // tap the pinyin (CPCDRow.tapToCopy). The header is the one place
-                        // the headword is shown purely as a reference, so a tap has
-                        // nothing else to mean here.
-                        tapToCopy
-                    />
-                )}
-                {/* Header action buttons laid out as a 2-column grid (reading order:
-                    Speaker · Add-to-library). Either cell may be absent — Speaker needs
-                    onSpeak and Add needs onAddToLibrary on a discoverable entry — so the
-                    grid auto-packs whatever renders and an unused column collapses to
-                    zero width.
-                    The header keeps ONLY the actions that are about the ENTRY ITSELF —
-                    hear it, save it. CARD operations have left the panel for good: the
-                    artboards make it information-only, so add-to-deck went onto the card's
-                    own `•••` rail and Practice Writing onto the word-tools rail above the
-                    card. `InfoCardActionBar`, which used to carry all three at the end of
-                    the definition tab, is deleted. Compare lives ONLY on `WordToolsRail`
-                    above the card (removed from this header 2026-09-04).
-
-                    Sits immediately after the headword rather than at the far right,
-                    because the far right now belongs to the sense chip — reading order
-                    is identity (word, how to hear it) → meaning → which sense. */}
-                {currentEntry && (
-                    onSpeak ||
-                    (onAddToLibrary && currentEntry.discoverable)
-                ) && (
-                    <Box
-                        className="mobile-demo-eic-actions"
-                        sx={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(2, auto)",
-                            alignItems: "center",
-                            justifyItems: "center",
-                            columnGap: 0.25,
-                            rowGap: 0.25,
-                        }}
-                    >
-                        {onSpeak && (
-                            <SpeakerButton
-                                onClick={() => onSpeak(currentEntry)}
-                                isLoading={speakingKey === currentEntry.entryKey}
-                            />
-                        )}
-                        {/* Only discoverable entries can be added to Learn Now —
-                            lookup-only (undiscoverable) dictionary words hide the button. */}
-                        {onAddToLibrary && currentEntry.discoverable && (
-                            <IconButton
-                                className="mobile-demo-eic-add-to-library"
-                                size="small"
-                                aria-label="Add to Learn Now"
-                                onClick={(e) => {
-                                    // Match SpeakerButton's stop-propagation pattern so
-                                    // taps don't bubble to flip/drag handlers in any
-                                    // wrapping card.
-                                    e.stopPropagation();
-                                    onAddToLibrary(currentEntry);
-                                }}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onTouchStart={(e) => e.stopPropagation()}
-                                onTouchEnd={(e) => e.stopPropagation()}
-                                sx={{
-                                    color: fc.textSecondary,
-                                    '&:hover': { color: fc.onSurface },
-                                }}
-                            >
-                                <AddIcon fontSize="small" />
-                            </IconButton>
-                        )}
-                    </Box>
-                )}
-                {/* `.eid` — the gloss of the SHOWING sense, right-aligned into the space
-                    between the headword and the sense chip, with the chip pinned to the
-                    far edge.
-
-                    Right-aligned on purpose: the chip is what the gloss belongs to, so
-                    setting the text against it reads as one statement ("this is what it
-                    means · sense 1 of 9") instead of two things at opposite ends of a
-                    rule. The chip is the SAME control, in the SAME place, on the card, the
-                    card detail and here — a pick made on any of them swaps everything
-                    below, which is why the panel needs no sense list of its own. */}
-                {currentEntry && (
-                    <Box
-                        className="mobile-demo-eic-header-english-row"
-                        sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0, justifyContent: "flex-end" }}
-                    >
-                    <Typography
-                        className="mobile-demo-eic-header-english"
-                        sx={{
-                            flex: 1,
-                            minWidth: 0,
-                            textAlign: "right",
-                            // Bumped 12.5 → 14.5 (2026-09-04): the gloss is the header's
-                            // payload and was reading as a caption. The header row has the
-                            // width for it now that the Compare button left the action grid.
-                            fontSize: 14.5,
-                            letterSpacing: "-0.008em",
-                            fontWeight: WEIGHT.regular,
-                            // Matches the flp card face via the shared dd color helper: zh
-                            // renders at full contrast, other languages are de-emphasized one
-                            // step off `onSurface` via the `dd` token.
-                            // (No Contrast pick is applied here — as before, this header
-                            // follows the card theme only, not the per-card override.)
-                            color: ddTextColor(currentEntry.language, undefined, fc),
-                            // FC_FONT_CJK (FONTS.cjk → `var(--cjk-font)`), not FC_FONT: the dd
-                            // follows the account's Chinese typeface (users."chineseFont",
-                            // written by useChineseFont) exactly like the flp card face's dd
-                            // in card/CardFace.tsx, so the two glosses read as the same text.
-                            fontFamily: FC_FONT_CJK,
-                            lineHeight: 1.35,
-                        }}
-                    >
-                        {/* The eip header gloss is a dd: it must agree with the flashcard face,
-                            so it resolves through the shared resolver (chosen sense →
-                            definitions[0] fallback) instead of reading definitions[0] directly. */}
-                        {resolveDisplayDefinition(currentEntry, selectedSenseIndex)}
-                    </Typography>
-                    {/* Same picker component the card face mounts (docs/DEFINITION_CLUSTERS.md).
-                        Self-hides when the entry has no real choice of sense. Readings are
-                        never censored here — the eip is a reference surface, not a quiz face. */}
-                    {onSelectSense && (
-                        <SensePicker
-                            entry={currentEntry}
-                            selectedSenseIndex={selectedSenseIndex}
-                            onSelectSense={onSelectSense}
-                            color={fc.textSecondary}
-                            classPrefix="mobile-demo-eic"
-                        />
-                    )}
-                    </Box>
-                )}
-            </InfoSheetEntryHeader>
+            />
 
             {/* Underline tab strip. Also acts as a drag-to-resize handle
                 (same bindHeaderDrag as the header) so a vertical drag started
@@ -705,47 +571,63 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     }}
                 >
                     {TAB_LABELS.map((_, index) => (
+                        // Non-scrolling slot per pane: the positioning context for the
+                        // OverlayScrollbar thumb, which must sit OUTSIDE the scroller so it
+                        // neither scrolls away nor gets clipped by the edge-fade mask.
                         <Box
                             key={index}
-                            ref={(node: HTMLDivElement | null) => { paneRefs.current[index] = node; }}
-                            className="mobile-demo-eic-scroll mobile-demo-tab-pane"
+                            className="mobile-demo-tab-pane-slot"
                             sx={{
                                 flex: `0 0 ${100 / TAB_LABELS.length}%`,
                                 minWidth: 0,
                                 height: "100%",
-                                overflowX: "hidden",
-                                overflowY: "auto",
-                                // Reserve the scrollbar gutter permanently so a
-                                // pane's content width never depends on whether
-                                // it currently overflows (classic-scrollbar
-                                // platforms would otherwise reflow content when
-                                // the scrollbar toggles).
-                                scrollbarGutter: "stable",
-                                padding: "16px 18px 8px",
-                                overscrollBehavior: "contain",
-                                touchAction: scrollTouchAction,
-                                // Each pane fades out at its own bottom edge, so a
-                                // long definition dissolves into the panel's edge
-                                // rather than being sliced by it. The mask is anchored
-                                // to the pane's box, so the band stays parked at the
-                                // bottom while the content scrolls under it.
-                                // (sheetStyled § Sheet bottom edge fade.)
-                                ...sheetEdgeFadeSx,
+                                position: "relative",
                             }}
                         >
-                            <InfoCardTabContent
-                                tabIndex={index}
-                                currentEntry={currentEntry}
-                                breakdownItems={breakdownItems}
-                                avail={avail}
-                                showPinyinColor={showPinyinColor}
-                                onBreakdownItemClick={onBreakdownItemClick}
-                                onUsedInItemClick={onUsedInItemClick}
-                                onExampleSegmentClick={onExampleSegmentClick}
-                                onSpeakSentence={onSpeakSentence}
-                                speakingKey={speakingKey}
-                                selectedSenseIndex={selectedSenseIndex}
-                                showSynonymsRelated={showSynonymsRelated}
+                            <Box
+                                ref={(node: HTMLDivElement | null) => { paneRefs.current[index] = node; }}
+                                className="mobile-demo-eic-scroll mobile-demo-tab-pane"
+                                sx={{
+                                    height: "100%",
+                                    overflowX: "hidden",
+                                    overflowY: "auto",
+                                    // No native scrollbar: a classic desktop bar takes ~15px
+                                    // of width (or, with a reserved gutter, pushes the content
+                                    // off-centre). The thumb is drawn over the content by the
+                                    // OverlayScrollbar sibling instead, and the content width
+                                    // never depends on whether the pane overflows.
+                                    ...hiddenNativeScrollbarSx,
+                                    padding: "16px 18px 8px",
+                                    overscrollBehavior: "contain",
+                                    touchAction: scrollTouchAction,
+                                    // Each pane fades out at its own bottom edge, so a
+                                    // long definition dissolves into the panel's edge
+                                    // rather than being sliced by it. The mask is anchored
+                                    // to the pane's box, so the band stays parked at the
+                                    // bottom while the content scrolls under it.
+                                    // (sheetStyled § Sheet bottom edge fade.)
+                                    ...sheetEdgeFadeSx,
+                                }}
+                            >
+                                <InfoCardTabContent
+                                    tabIndex={index}
+                                    currentEntry={currentEntry}
+                                    breakdownItems={breakdownItems}
+                                    avail={avail}
+                                    showPinyinColor={showPinyinColor}
+                                    onBreakdownItemClick={onBreakdownItemClick}
+                                    onUsedInItemClick={onUsedInItemClick}
+                                    onExampleSegmentClick={onExampleSegmentClick}
+                                    onSpeakSentence={onSpeakSentence}
+                                    speakingKey={speakingKey}
+                                    selectedSenseIndex={selectedSenseIndex}
+                                    showSynonymsRelated={showSynonymsRelated}
+                                    definitionFooter={definitionFooter}
+                                />
+                            </Box>
+                            <OverlayScrollbar
+                                className="mobile-demo-tab-pane-scrollbar"
+                                getScroller={() => paneRefs.current[index] ?? null}
                             />
                         </Box>
                     ))}

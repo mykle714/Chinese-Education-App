@@ -20,7 +20,7 @@ feature consumes it):
 
 | Surface | Hosts | Entry points | Where the state lives | Slot A on open |
 |---|---|---|---|---|
-| **eip Compare tab** | flp, scp — the two pages with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
+| **eip Compare tab** | flp, scp and the Dictionary page's eip (`EipSheet` `showWordTools`, 2026-10-10) — the hosts with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
 | **compare sheet** (`src/components/CompareSheet.tsx`) | both cdps — `VocabCardDetailPage`, `DictionaryCardDetailPage`, neither of which has a strip | the same two: the rail's `Compare` pill, and the eip header button on the fc cdp | `useState` inside `CompareSheet`, **discarded on close** | the calling word |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
@@ -111,8 +111,9 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   on the PAGE above the card and outside its boundary (`src/components/WordToolsRail.tsx`,
   artboards 18–25). Comparing is something you do with the WORD, not an operation on the
   card, which is the whole split that rail encodes. Two kinds of host, two destinations:
-  - **flp / scp** — have a tab strip, so the pill opens Compare as an eip TAB beside the word
-    (`openEicSheet()` then `eip.openCompareTab(entry)`).
+  - **flp / scp / Dictionary page eip** — have a tab strip, so the pill opens Compare as an
+    eip TAB beside the word (`eip.openCompareTab(entry)`; the flp first `openEicSheet()`).
+    On the Dictionary page the rail lives at the bottom of the eip's definition tab.
   - **cdp — both of them** (the saved-card `VocabCardDetailPage` and the read-only
     `DictionaryCardDetailPage`) — neither has a strip, so each raises the compare SHEET
     (`useCompareSheet().openCompare(entry)`), seeding slot A as the INITIAL value of the
@@ -334,7 +335,7 @@ CREATE TABLE word_comparison_cache (
 | Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
 | Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `InfoCardSection.tsx` | Hosts the Compare TAB body only. The entry-header Compare button and its `onCompare` prop were **removed 2026-09-04**; the header's action grid is Speaker · Add-to-Learn-Now |
-| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card, on the flp and **both** cdps — `VocabCardDetailPage` and `DictionaryCardDetailPage` (2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
+| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card on the flp and `VocabCardDetailPage`, and at the **bottom of the eip's definition tab** on `DictionaryCardDetailPage`, which has no card and mounts the eip inline (`definitionFooter`, 2026-10-10) (rail added 2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Shared | `src/components/WordSlot.tsx` | the two slots (giant "+" / the word, armed-delete ring). Extracted 2026-10-06 (the Writing Notebook used it briefly; its word selector is now a header button) |

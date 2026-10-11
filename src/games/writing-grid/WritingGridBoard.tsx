@@ -48,7 +48,7 @@ export type BoardPhase = "countdown" | "arrange" | "write" | "ended";
  *                       ink once written. Every cell keeps its pinyin at the bottom
  *                       centre (`PinyinCell`). ✓ / ✗ on every cell.
  *                       Tapping a cell that is not yet correct opens it for writing.
- *   ended            — every cell ✓, each showing the learner's ink over the
+ *   ended            — every cell ✓ (or the learner gave up — any verdict), each showing the learner's ink over the
  *                       character's full still shadow (all slots, any level), pinyin at
  *                       the bottom centre — the finished board to look back over.
  *                       Every cell is tappable: it reopens its canvas as drawn for a

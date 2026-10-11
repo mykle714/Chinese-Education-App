@@ -218,7 +218,7 @@ cdp `.msb` window paints recognition blue and production green, `MasteryWindow.t
 — note its per-track **cooldown rows** are the same leak), the mini-card two-mark strip
 (`MiniVocabCard.tsx`), the Games hub tile subtitles ("Recognition · 30-second clock",
 `src/games/GamesPage.tsx`), the Word Search hub sub-tile chip ("Reading & Production",
-`WordSearchHubItem.tsx`), and the Account page Goals copy (`src/pages/AccountPage.tsx`,
+`WordSearchHubItem.tsx`), and the Account page Goals copy (`src/pages/AccountSheet.tsx`,
 "Recognition + Production are always pursued"). Reading and Writing keep their names —
 they are real goals a learner opts into; only the core pair collapses.
 

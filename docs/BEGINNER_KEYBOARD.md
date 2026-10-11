@@ -2526,6 +2526,36 @@ A field mounted directly in `os` mode needs no dance: the suppression effect onl
 runs for `ours`, so the field is focused with its normal `inputMode` and the OS
 keyboard comes up on its own, with the bar perched on it.
 
+## 6z-3a. BUILT 2026-10-10 — a field may declare its own default keyboard
+
+**A field carrying `data-beginner-keyboard-default="os"` opens on `ABC` (the OS
+keyboard, switch bar perched on it) regardless of the session choice.** `"ours"` is
+accepted for symmetry. The only user today is the dictionary search box, which
+also auto-focuses on a fresh visit (empty query only — a back-navigation that
+restores results does not raise a keyboard over them).
+
+| question | decision (confirmed 2026-10-10) |
+|---|---|
+| bar on such a field? | **yes** — the default is the opening state, not an opt-out; `写` stays one tap away. (An opt-out is `data-beginner-keyboard="off"`, § 7a.) |
+| does a flip there persist? | **per field only.** Flipping on the field changes that field; the session choice (§ 6z-3) every other field opens with is untouched |
+| inherited? | **no** — read off the field itself, unlike `off`/`keep` |
+
+⚠️ **The override is re-seeded only when the field changes identity.** Switching
+to `写` runs the host's blur → refocus dance, which fires `focusin` on the *same*
+field; re-seeding there would snap the choice straight back to `ABC`. Closing and
+then refocusing the field (after the exit has released it) re-seeds, so the field
+always *opens* on its default.
+
+⚠️ **The dictionary's auto-focus is deferred one frame, not MUI `autoFocus`.** The
+provider's "close on pathname change" effect runs in the same commit that mounts
+the page, after an `autoFocus` focus — it would tear down the bar the focus just
+raised. iOS Safari may not raise the OS keyboard for a focus outside a user gesture.
+
+Code: `eligibility.ts` → `DEFAULT_SOURCE_ATTRIBUTE`, `defaultSourceOf`;
+`BeginnerKeyboardProvider` → `fieldSource`, `effectiveSource`, `changeSource`;
+`SearchField` → `inputAttributes`; `DictionaryPage` (auto-focus effect + the
+attribute on its `SearchField`).
+
 ## 6z-4. BUILT 2026-09-24 — hint bubbles over glyph chips
 
 **While the learner is drawing and has already locked in at least one component,

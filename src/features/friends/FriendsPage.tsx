@@ -112,7 +112,7 @@ function VelocityStat({ velocity }: { velocity: number }) {
 }
 
 /**
- * Friends page (docs/FRIENDS_FEATURE.md) — a Home-hub drill-in (NodePage) showing
+ * Friends page (docs/FRIENDS_FEATURE.md) — a Menu drill-in (NodePage) showing
  * the viewer and their accepted friends as a LEADERBOARD ranked by velocity
  * (utcm band-steps climbed in the last 7 days; see docs/VELOCITY.md).
  *
@@ -219,7 +219,7 @@ function FriendsPage() {
     };
 
     return (
-        <NodePage title="Friends" onBack={() => navigate("/")} contentClassName="friends-page__content">
+        <NodePage title="Friends" onBack={() => navigate("/menu")} contentClassName="friends-page__content">
             <Box className="friends-page">
 
                 {/* The three action screens. This board is READ-ONLY — every mutation

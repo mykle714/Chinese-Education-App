@@ -168,6 +168,20 @@ export interface SegmentDrillRung {
 }
 
 /**
+ * Tagging-pass labels for ONE occurrence of a segment (zh example sentences). The
+ * segment-keyed dicts on ExampleSentence hold one label per segment STRING, which is
+ * wrong when a string appears twice with different jobs — 了 in
+ * 听了老师的解释，我心中了然 is a completed-action particle (le) the first time and
+ * "to understand" (liǎo) the second. See docs/EXAMPLE_SENTENCES.md § Repeated segments.
+ */
+export interface SegmentOccurrenceTag {
+  pos?: string;
+  sense?: string;
+  number?: NumberLabel;
+  tense?: TenseLabel;
+}
+
+/**
  * One AI-generated example sentence with its tagging-pass metadata.
  *
  * Previously this object literal was inlined SIX times (three types × two sides).
@@ -182,6 +196,13 @@ export interface ExampleSentence {
   translatedVocab?: string;
   /** Exact definitionClusters sense label the target word carries here (zh only). */
   sense?: string;
+  /**
+   * Code-point offset in `foreignText` of the target-word occurrence this sentence
+   * demonstrates (zh only). The generator marks it in 【】, which the backfill strips.
+   * Absent on sentences where the headword appears once or not contiguously; the
+   * client then underlines the first occurrence.
+   */
+  vocabCharIndex?: number;
   /** Authoritative GSA segmentation from the tagging pass; rendered verbatim when present. */
   segments?: string[];
   /**
@@ -200,9 +221,21 @@ export interface ExampleSentence {
   tenseDict?: Record<string, TenseLabel>;
   /** definitionClusters sense label per segment; resolves each segment's dd. */
   senseDict?: Record<string, string>;
+  /**
+   * Per-OCCURRENCE labels, keyed by index into `segments`, for every occurrence of a
+   * segment string that appears more than once. Overrides the string-keyed dicts above
+   * at that position. Only valid against the stored `segments` (zh only).
+   */
+  segmentOccurrenceTags?: Record<string, SegmentOccurrenceTag>;
   /** Runtime GSA segmentation (fallback when `segments` is absent). */
   _segments?: string[];
   segmentMetadata?: SegmentMetadata;
+  /**
+   * Read-time, sparse: per-occurrence metadata keyed by index into `_segments`, built
+   * from `segmentOccurrenceTags`. When present for a segment index the client uses it
+   * instead of `segmentMetadata[segment]`.
+   */
+  segmentMetadataByIndex?: Record<string, SegmentMetadata[string]>;
   /**
    * Read-time: TRUE iff an approving `validations` row still matches this sentence's
    * current foreignText+english. Falsy ⇒ the client renders the AI-generated styling.
@@ -959,6 +992,24 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
   'bucket-drop': 20,
   flp: 20,
 };
+
+/**
+ * Learn Now supply thresholds — when the app nudges a learner toward Sort Cards.
+ * Both are read against the CORE Learn Now count (Unfamiliar + Target + Comfortable,
+ * `builtinCollectionCount` → `learn-now`), the same figure the fdp tile and the sort
+ * page's Learn Now pill show.
+ *
+ *   LOW    — below this the fdp's Sort Cards tile glows ("card count low"). Tied to the flp baseline
+ *            because that is the point where a Study Mix session starts being topped up
+ *            with lent cards (docs/PROVISIONAL_CARDS.md).
+ *   ENOUGH — the sort page's "you have enough" mark. LOW + one sort session's worth
+ *            (10 cards), so a learner sent over at 19 sorts ~10 and is told they're done;
+ *            the 10-card gap also keeps the two signals from flickering at one boundary.
+ *
+ * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 5.3a, docs/DECKS_FEATURE.md § "Sort Cards tile".
+ */
+export const LEARN_NOW_LOW_THRESHOLD = CARD_BASELINES.flp;
+export const LEARN_NOW_ENOUGH_THRESHOLD = LEARN_NOW_LOW_THRESHOLD + 10;
 
 /**
  * Surfaces whose ENTIRE supply model is the partial refill.

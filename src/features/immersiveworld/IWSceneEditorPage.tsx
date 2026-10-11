@@ -300,7 +300,7 @@ export default function IWSceneEditorPage() {
       );
       if (!ok) return;
     }
-    navigate('/');
+    navigate('/menu');
   }, [confirm, dirty, navigate]);
 
   return (

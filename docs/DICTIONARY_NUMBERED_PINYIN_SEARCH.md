@@ -133,10 +133,12 @@ a **different** sense, the search response names it, and the row shows that sens
   `definitions`, de-duplicated). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
   and Compare slot B), `src/features/community/CommunitySearchBar.tsx` and
   `src/features/immersiveworld/play/IWLookupResults.tsx`.
-- **Click-through.** `DictionaryPage` → `handleEntryClick` appends `?sense=<label>` to the cdp
-  route; `DictionaryCardDetailPage` seeds `selectedSenseIndex` from it (outranking the
-  requester's saved pick) through `resolveSelectedSenseIndex`. A gloss-less (particle) sense is
-  absent from the cdp's sense list, so the page falls back to its default sense there.
+- **Click-through.** `DictionaryPage` → `handleEntryClick` looks the word up and opens the eip
+  sheet with `selectedSense` overridden to the hit's `matchedSense`, so `useEipTabs.openForRoot`
+  seeds the root tab's sense from it (outranking the requester's saved pick) through
+  `resolveSelectedSenseIndex`. A gloss-less (particle) sense is absent from the sense list, so
+  the panel falls back to its default sense there. (`DictionaryCardDetailPage` still honours a
+  `?sense=<label>` query the same way, but nothing links to it with one any more.)
 
 Examples on dev: "row" → 行 shows háng with "row / line" first; "liao3" → 了 shows liǎo
 "to understand"; "zhang3" → 长 shows zhǎng "to grow".

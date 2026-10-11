@@ -9,15 +9,14 @@ import { FC_FONT } from "../constants";
 import { SIZE } from "../../../theme/scale";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
-import { sortedSenseClusters, hasSynonymsOrRelated } from "../../../utils/definitionUtils";
+import { hasSynonymsOrRelated } from "../../../utils/definitionUtils";
 import SynonymsRelatedSection, { EipSectionLabel } from "../SynonymsRelatedSection";
-import { Label } from "../../../components/primitives";
 
 // Empty run-out at the bottom of a tab pane, so its last row can be scrolled up off the
 // pane's bottom edge instead of ending flush against it — that edge is exactly where a
 // thumb rests on a phone. Only tabs that ROUTINELY overflow get one: adding it to a short
 // pane would make it scrollable for no reason. Two qualify — the est always, and the
-// definition tab when it is carrying Synonyms + Related Words (the cdp's mount, see
+// definition tab when it is carrying Synonyms + Related Words (the cdps' mount, see
 // `showSynonymsRelated`), which is what pushes that tab past a screen. Rigid
 // (`flexShrink: 0`) in case the pane ever becomes a flex column, and pointer-transparent
 // so it can never eat a tap meant for the content above it.
@@ -28,21 +27,6 @@ const PaneScrollSpacer: React.FC<{ className: string }> = ({ className }) => (
         className={className}
         sx={{ height: `${PANE_SCROLL_SPACER_PX}px`, flexShrink: 0, pointerEvents: "none" }}
     />
-);
-
-/**
- * `.shelfhd` inside an eip tab: what the tab is showing on the left, and a fact about
- * it on the right. Local to this file — it is two `Label`s in a row, and hoisting it
- * would be a shared component whose only job is to remember the padding.
- */
-const TabCaption: React.FC<{ left: string; right: string; className?: string }> = ({ left, right, className }) => (
-    <Box
-        className={className}
-        sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "13px 18px 0" }}
-    >
-        <Label>{left}</Label>
-        <Label>{right}</Label>
-    </Box>
 );
 
 /**
@@ -88,10 +72,10 @@ export interface InfoCardTabContentProps {
     /**
      * Append the Synonyms + Related Words lists to the bottom of the DEFINITION tab.
      *
-     * Only the cdp passes this. The eip has three tabs and none of them is synonyms, but
-     * the cdp's sheet body IS this panel now (VocabCardDetailPage), and those two lists
-     * are the one thing its old stacked-`SectionCard` body showed that the panel does
-     * not. They ride under the definition rather than becoming a fourth tab because a
+     * Only the cdps pass this — the saved-card cdp's sheet (VocabCardDetailPage) and
+     * the dictionary cdp's inline panel (DictionaryCardDetailPage). The eip has three
+     * tabs and none of them is synonyms, and those two lists are the one thing the
+     * cdps' old stacked-`SectionCard` bodies showed that the panel does not. They ride under the definition rather than becoming a fourth tab because a
      * tab is a promise of content and most entries have neither list — an empty tab in
      * the strip on every card is a worse trade than a section that simply is not there.
      *
@@ -99,6 +83,13 @@ export interface InfoCardTabContentProps {
      * view for a word in a drill, and the lists are reference material the cdp is for.
      */
     showSynonymsRelated?: boolean;
+    /**
+     * Host-supplied content rendered at the very BOTTOM of the definition tab, below
+     * Synonyms + Related Words. Only the dictionary cdp passes it — its word-tools rail
+     * (`Write it` · `Compare`, WordToolsRail) lives here because that page has no card
+     * to set the rail above (DictionaryCardDetailPage). Undefined renders nothing.
+     */
+    definitionFooter?: React.ReactNode;
 }
 
 const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
@@ -114,6 +105,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
     speakingKey,
     selectedSenseIndex,
     showSynonymsRelated = false,
+    definitionFooter,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -199,6 +191,14 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                 </Box>
             ) : null;
 
+            // The host's footer (see `definitionFooter`), set off from the content above
+            // by space alone — it is an action row, not another section, so no rule.
+            const footer = definitionFooter ? (
+                <Box className="mobile-demo-definition-footer" sx={{ marginTop: "20px", flexShrink: 0 }}>
+                    {definitionFooter}
+                </Box>
+            ) : null;
+
             return definitionTabHasContent && currentEntry ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
                     {/* The paragraph plus the three measured facts — one shared component
@@ -212,6 +212,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         classPrefix="mobile-demo"
                     />
                     {synonymsSection}
+                    {footer}
                     {/* Scroll-past spacer, only when this tab is carrying the extra
                         section — see PANE_SCROLL_SPACER_PX. */}
                     {synonymsSection && <PaneScrollSpacer className="mobile-demo-definition-scroll-spacer" />}
@@ -227,29 +228,18 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         </Typography>
                     </Box>
                     {synonymsSection}
+                    {footer}
                     {synonymsSection && <PaneScrollSpacer className="mobile-demo-definition-scroll-spacer" />}
                 </Box>
             );
         }
 
         if (tabIndex === 1) {
-            // Examples — shared est renderer (see ExampleSentenceList), under a caption
-            // naming WHICH SENSE these sentences illustrate (artboard 24). The sense
-            // matters here more than anywhere else in the panel: the sentences change
-            // with the pick, and without the caption a learner who has switched senses
-            // has no way to tell whether they are looking at the new set or the old one.
-            const senseCaption = currentEntry
-                ? sortedSenseClusters(currentEntry)?.[selectedSenseIndex ?? 0]?.sense
-                : undefined;
+            // Examples — shared est renderer (see ExampleSentenceList). No caption row:
+            // the sense label + example count that used to head this tab were removed
+            // 2026-10-10 (the header SensePicker already names the active sense).
             return examplesTabHasContent ? (
                 <>
-                    <TabCaption
-                        className="mobile-demo-examples-caption"
-                        left={senseCaption
-                            ? `sense ${(selectedSenseIndex ?? 0) + 1} · ${senseCaption}`
-                            : "examples"}
-                        right={`${currentEntry!.exampleSentences!.length} ${currentEntry!.exampleSentences!.length === 1 ? "example" : "examples"}`}
-                    />
                     <ExampleSentenceList
                         sentences={currentEntry!.exampleSentences!}
                         vocabWord={currentEntry?.entryKey}

@@ -10,7 +10,7 @@ import { designKey } from "../../types";
 import type { CommunityDesign, Language } from "../../types";
 
 /**
- * Community page (docs/COMMUNITY_PAGE.md) — a Home-hub drill-in (NodePage) with a dictionary
+ * Community page (docs/COMMUNITY_PAGE.md) — a Menu drill-in (NodePage) with a dictionary
  * search bar (`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds
  * of other users' advanced card-icon layouts:
  *   1. "For words you're learning" — designs for the viewer's non-mastered library words.
@@ -72,7 +72,7 @@ function CommunityPage() {
   }, []);
 
   return (
-    <NodePage title="Community" onBack={() => navigate("/")} contentClassName="community-page__content">
+    <NodePage title="Community" onBack={() => navigate("/menu")} contentClassName="community-page__content">
       <CommunitySearchBar
         language={language}
         votedKeys={votedKeys}

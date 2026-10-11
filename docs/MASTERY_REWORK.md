@@ -35,7 +35,7 @@
 >   the vet read/write is `VocabEntryDAL.findMarkState` / `updateMarkHistory`.
 > - Goal flags API: `PUT /api/users/goals` (`UserController.updateGoals` →
 >   `UserService.updateGoals`); surfaced via `useAuth().updateGoals` and the
->   account page Goals section (`src/pages/AccountPage.tsx`).
+>   account page Goals section (`src/pages/AccountSheet.tsx`).
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
 >   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
@@ -209,7 +209,7 @@ every account either way — the goal surfaces them, it does not start them.
 
 ### Account settings UI
 
-**Goals** section on the **account page** (`src/pages/AccountPage.tsx`) — a
+**Goals** section on the **account page** (`src/pages/AccountSheet.tsx`) — a
 `SectionHeader` overline plus two shelf-system `Row`s, each carrying a MUI `Switch`
 in its `trailing` slot:
 
@@ -222,7 +222,7 @@ in its `trailing` slot:
 the shelf redesign draws `toggle_on` / `toggle_off` Material Symbols; a glyph is not
 focusable, checkable or announced, so the control stays a real form control painted
 the artboard's colours (`COLORS.grnA` when on). The skin is `GOAL_SWITCH_SX` in
-`AccountPage.tsx` and belongs in `MuiSwitch.styleOverrides` once the other ten
+`AccountSheet.tsx` and belongs in `MuiSwitch.styleOverrides` once the other ten
 `Switch` call sites are converted.
 
 **The section-level description paragraph is gone**, replaced by the one-line
@@ -1398,7 +1398,7 @@ Implications to work through:
   `totalMarkCount`/`totalCorrectCount` were kept here but dropped later by
   migration 149 — see the References section.
 - ✅ **Goal-flag storage**: new `users.readingGoal` / `users.writingGoal` booleans.
-- ✅ **Settings host**: `src/pages/AccountPage.tsx`. Labels were "I want to learn
+- ✅ **Settings host**: `src/pages/AccountSheet.tsx`. Labels were "I want to learn
   reading" / "I want to learn writing"; the shelf-redesign conversion shortened them
   to "Learn reading" / "Learn writing" and moved the explanation into a per-row
   subtitle (see *Account settings UI*).
@@ -1418,7 +1418,7 @@ Settled since:
 
 - ✅ **`users.readingGoal` / `writingGoal` defaults** — `boolean NOT NULL DEFAULT false`
   (confirmed 2026-08-17). Neither goal is pursued until an account opts in on
-  `src/pages/AccountPage.tsx`, so no existing account's bars change height on deploy day.
+  `src/pages/AccountSheet.tsx`, so no existing account's bars change height on deploy day.
 
 ---
 
@@ -1478,8 +1478,7 @@ Settled since:
   `src/components/primitives/Segmented.tsx` (the `.trkseg` track switch),
 - `src/utils/vocabSort.ts` (`cooldownKey` — the Cooldown sort row),
   `src/components/MiniCard.tsx` (hairline strip; `MiniVocabCard.tsx` computes its bar),
-  `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window,
-  `src/features/flashcards/VocabCardDetailBody.tsx` — `SectionCard`/`SectionLabel`.
+  `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window.
 - `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by
   `src/__tests__/formatDuration.test.ts`).
 - `src/features/flashcards/collectionRef.ts`, `FlashcardsDecksPage.tsx`,
@@ -1487,4 +1486,4 @@ Settled since:
   collections. See [DECKS_FEATURE.md](./DECKS_FEATURE.md).
 - `src/utils/vocabSort.ts` — the per-bar sort keys.
 - `src/utils/categoryColors.ts`, `src/theme/colors.ts` — colors.
-- `src/pages/AccountPage.tsx` / `SettingsPage.tsx` — Goals settings section.
+- `src/pages/AccountSheet.tsx` / `SettingsPage.tsx` — Goals settings section.

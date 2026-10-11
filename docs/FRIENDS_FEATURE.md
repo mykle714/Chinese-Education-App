@@ -1,7 +1,7 @@
 # Friends Feature
 
 The friend graph: sending, answering and revoking friend requests, and the list of
-accepted friends. Reached from the **Friends** row on the hp (`/` Home hub).
+accepted friends. Reached from the **Friends** tile on the Menu hub (`/menu`; it was the `/` Home hub until Home and Menu swapped contents on 2026-10-10).
 
 Status: **implemented**, on dev. Migration **138** is not yet on PPE (see
 [§ Deploying](#deploying)).
@@ -11,7 +11,7 @@ Status: **implemented**, on dev. Migration **138** is not yet on PPE (see
 ## 1. Surfaces
 
 Four pages today (a **fifth is planned** — § 1b), all `chrome: "node"` with
-`footerTab: "home"`, so the footer stays visible and the Home tab stays lit. `/friends` is **read-only**; each of the three
+`footerTab: "menu"`, so the footer stays visible and the Menu tab stays lit; `/friends`' back arrow returns to `/menu`. `/friends` is **read-only**; each of the three
 mutations (send, answer, unfriend) has its own screen behind a top-row button.
 
 | Route | Component | What it is |
@@ -21,7 +21,7 @@ mutations (send, answer, unfriend) has its own screen behind a top-row button.
 | `/friends/requests` | `src/features/friends/IncomingRequestsPage.tsx` | Reached by **Accept**. Pending **incoming** requests, each with **Accept** / **Decline**. |
 | `/friends/remove` | `src/features/friends/RemoveFriendsPage.tsx` | Reached by **Remove**. The plain friend list ("Friends since …"), each row with **Remove** (unfriend). The board deliberately has no per-row Remove: a destructive control on a ranking row invites a mis-tap while reading scores. |
 
-Back-arrow targets: `/friends` → `/` (Home); all three action pages → `/friends`.
+Back-arrow targets: `/friends` → `/menu` (Menu); all three action pages → `/friends`.
 Every action page navigates via `useSlideNavigate` so the drill-in animates.
 
 **Every person row on all four screens opens that person's profile** — tapping the
@@ -84,9 +84,9 @@ for testing ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). It is rendered h
 because this is where the weekly rules are felt, but it is gated on `users.isValidator`
 and is invisible to everybody else.
 
-**Why it hangs off `/friends` rather than sitting on the Home menu:** a challenge is a
+**Why it hangs off `/friends` rather than sitting on the Menu hub:** a challenge is a
 thing you have *with a person*. Every entry point to it is a friend, unfriending ends it,
-and the per-pair block that suppresses it lives on `friendships`. Home is a menu of
+and the per-pair block that suppresses it lives on `friendships`. Menu is a menu of
 places; this is a property of a relationship.
 
 #### The badge chain, and the one place language scoping is deliberately violated
@@ -95,7 +95,7 @@ A pending challenge is announced **only** by an in-app badge chain the user walk
 no push, no email ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1, Q48):
 
 ```
-hp Friends row  →  Challenges button  →  the individual friend's row
+Menu Friends tile  →  Challenges button  →  the individual friend's row
 ```
 
 This reuses the existing pattern exactly: the count rides along with the friends payload
@@ -349,7 +349,7 @@ This document describes:
 `src/utils/formatDuration.ts` (shared with the Night Market badge),
 `src/routes/routeMeta.ts` (the four friends entries),
 `src/routes/registry.ts` (four `PAGE_COMPONENTS` entries),
-`src/pages/HomePage.tsx` (the `friends` hub row).
+`src/pages/MenuPage.tsx` (the `friends` Bento tile).
 
 Planned additions (with Study Challenge): a fifth `src/features/friends/*` page and its
 `routeMeta`/`registry` entries (§ 1b), the two `friendships` block columns (§ 2), and a
@@ -360,7 +360,7 @@ Related docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) (the Challenges page, t
 and the block columns — all planned),
 [VELOCITY.md](./VELOCITY.md) (the ranked metric),
 [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STREAKS.md) (the net wallet),
-[BENTO_SYSTEM.md](./BENTO_SYSTEM.md) (the hp row),
+[BENTO_SYSTEM.md](./BENTO_SYSTEM.md) (the Menu tile),
 [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) (the NodePage archetype),
 [BACKEND_LAYERING.md](./BACKEND_LAYERING.md), [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md).
 

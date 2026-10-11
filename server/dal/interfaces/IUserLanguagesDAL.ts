@@ -29,6 +29,12 @@ export interface LanguageProgress {
   currentStreak: number;
   /** Last local day this language crossed RETENTION_MINUTES, as YYYY-MM-DD. */
   lastStreakDate: string | null;
+  /**
+   * Streak date (YYYY-MM-DD) on which the hp daily banking animation last started for
+   * this language (migration 175). NULL = never. Presentational only — it records that
+   * a re-enactment was shown, never that a balance moved. See docs/DAILY_MINUTE_BANKING.md.
+   */
+  lastBankingShownDate: string | null;
 }
 
 /** Per-user aggregate across every language — what the global leaderboard ranks on. */
@@ -77,6 +83,14 @@ export interface IUserLanguagesDAL {
    * Called only when the increment path crosses the threshold for that language.
    */
   setStreak(userId: string, language: string, currentStreak: number, lastStreakDate: string): Promise<void>;
+
+  /**
+   * Stamp this language's `lastBankingShownDate` (migration 175) — the daily banking
+   * animation has started for `streakDate`. A plain UPDATE, not an upsert: the run is
+   * only owed when yesterday has minutes, and earning a minute always creates the row,
+   * so a missing row means there was nothing to bank and the no-op is correct.
+   */
+  markBankingShown(userId: string, language: string, streakDate: string): Promise<void>;
 
   /**
    * Σ wallets and MAX streak for EVERY user, for the global leaderboard.

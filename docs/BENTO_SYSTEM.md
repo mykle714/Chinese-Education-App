@@ -1,7 +1,11 @@
 # Bento System
 
-Shared menu primitive (`src/components/bento/`) behind the three footer-tab hubs:
-`HomePage.tsx` (`/`), `DiscoverPage.tsx` (`/discover`), `GamesPage.tsx` (`/games`).
+Shared menu primitive (`src/components/bento/`) behind the app's hubs: the two
+footer-tab hubs `src/pages/MenuPage.tsx` (`/menu`, the Menu tab) and
+`src/features/discover/DiscoverPage.tsx` (`/discover`), plus the drill-in hub
+`src/games/GamesPage.tsx` (`/games`). The Menu bento was the Home tab (`/`,
+`HomePage.tsx`) until 2026-10-10, when Home and Menu swapped contents — Home is now
+the decks page (see [NAVIGATION.md](./NAVIGATION.md)).
 
 Introduced by the shelf redesign (see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A4
 and entries 1/3/4). It **replaced `HubMenu`**, a 439-line vertical list of
@@ -171,7 +175,7 @@ control" meaning the strip header had.)*
 
 | Page | Shape |
 |---|---|
-| **Home** (`src/pages/HomePage.tsx`) | Night Market `hero`; Games / Arena / **Immersive World** (`blu`) / Reader / Dictionary `base`; Community / Friends `low`. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.home-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isValidator` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`blu`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
+| **Menu** (`src/pages/MenuPage.tsx` → `MenuPage`, tiles typed `MenuTile`) | Night Market `hero` (`pur`, flagged off); Games (`blu`) / Arena (`yel`) / **Immersive World** (`red`) / Reader (`pur`) `base`; Friends (`grn`) / Community (`org`) `low`, in that order. **One hue per live main tile:** the six live tiles each get a different one of the six tile hues. **No two warm hues (`yel`/`red`/`org`) share an edge:** they sit in a checkerboard on the 2-column grid (Arena top-right, Immersive World middle-left, Community bottom-right). Turning off a flagged tile moves every tile after it, so check the pattern again when a flag changes. Night Market would share `pur` with Reader if it were turned back on. There is no Dictionary tile, because Dictionary is a footer tab. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.home-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isValidator` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`red`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
 | **Discover** (`src/features/discover/DiscoverPage.tsx`) | Sort Cards `hero`; Quick Mark and Skipped Cards `base`. |
 | **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; EVERY game is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (the Reading Center carousel's card, drawn on `CardShell`), Match Speed / Hydra Bubbles / Memory Map as half-width `variant="tile"` (a `BentoTile`). Speed Reading is hub-hidden. |
 | **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |

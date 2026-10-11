@@ -3,7 +3,7 @@
 > **Status: IMPLEMENTED (first slice).** A template-author-only, **desktop-only** scratch
 > surface for tiling catalog templates together freely, to preview how they compose. Sibling
 > to the [Template Editor](./NIGHT_MARKET_TEMPLATE_EDITOR.md) (which *authors* templates); the
-> sandbox only *arranges existing* ones. Reached from **Home → Template Sandbox** (the hub row
+> sandbox only *arranges existing* ones. Reached from **Menu → Template Sandbox** (the `/menu` hub tile
 > is shown only when `user.isTemplateAuthor` — migration 115) → `/night-market/template-sandbox`.
 
 This is a **freeform** authoring aid: overlaps are allowed, there is **no** placement legality
@@ -373,11 +373,11 @@ orders the sprites **within** the ghost correctly.
 
 ### Page — `src/features/nightmarket/TemplateSandboxPage.tsx`
 
-A `LeafPage` (title "Template Sandbox", back → Home). Owns the placement list, the selection, and
+A `LeafPage` (title "Template Sandbox", back → `/menu`). Owns the placement list, the selection, and
 a **def cache** — the loaded `{width,height,masks,availableVersions}` for each
 `(templateName, version)` pair actually in use, keyed `name@version`, fetched on demand via
 `loadTemplate` so **any** version of **any** template can render. Bounces signed-in non-authors
-to Home (UX gate; the backend is the real boundary — same stance as the editor). The header hosts
+to Home (`/`) (UX gate; the backend is the real boundary — same stance as the editor). The header hosts
 the icon toolbar (Grid · Street · Version · Houses-cycle · Lock · Delete · Add · Iterate · Clear) plus the picker's
 Cancel; the picker is an overlay (`TemplateLoadGallery`
 + the dimension filter) shown over the scene. Moves / version-switches / deletes are **optimistic**
@@ -404,7 +404,7 @@ camelCase and must stay in step with `server/routes/nightMarketSandboxRoutes.ts`
 
 - `src/App.tsx` — `/night-market/template-sandbox` (`ProtectedRoute allowPublic`, same rationale
   as the editor route: a template author may be a public account).
-- `src/pages/HomePage.tsx` — the `isTemplateAuthor`-gated "Template Sandbox" hub row.
+- `src/pages/MenuPage.tsx` — the `isTemplateAuthor`-gated "Template Sandbox" hub tile.
 
 ---
 
@@ -431,7 +431,7 @@ camelCase and must stay in step with `server/routes/nightMarketSandboxRoutes.ts`
   `TemplateEditorViewer.tsx` (`OverlayDepthMode`, `cellTintZ`, `MaskTintOverlay`/`MaskTintCell`,
   `PlaceholderAreaOverlay`/`PlaceholderAreaTint`, `PlaceholderOccupantHouses`),
   `TemplateSandboxViewer.tsx` (`PlacedTemplate`, the `sortableChildren` camera container).
-- Routing/nav: `src/App.tsx`, `src/pages/HomePage.tsx`.
+- Routing/nav: `src/routes/routeMeta.ts`, `src/routes/registry.ts`, `src/pages/MenuPage.tsx`.
 - Backend: `server/services/NightMarketSandboxService.ts`,
   `server/controllers/NightMarketSandboxController.ts`,
   `server/routes/nightMarketSandboxRoutes.ts`,

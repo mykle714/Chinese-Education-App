@@ -1,153 +1,63 @@
-import { Box } from "@mui/material";
-import MobileTabScreen from "../components/MobileTabScreen";
-import { useAuth } from "../AuthContext";
-import { Bento, BentoTile, type BentoTileProps } from "../components/bento";
-import { FooterSpacer, ScrollPastSpacer } from "../components/MobileFooter";
-import TipBox from "../components/TipBox";
-import { usePageTitle } from "../hooks/usePageTitle";
-import { isFeatureEnabled } from "../../server/contracts/featureFlags";
-import { COLORS } from "../theme/colors";
+import { useState } from "react";
+import FlashcardsDecksPage from "../features/flashcards/FlashcardsDecksPage";
+import { DailyBankingProvider } from "../minutePoints/dailyBanking/DailyBankingContext";
+import BankingAvatarButton from "../minutePoints/dailyBanking/BankingAvatarButton";
+import BankingEmbers from "../minutePoints/dailyBanking/BankingEmbers";
+import BankingAlwaysPlayToggle from "../minutePoints/dailyBanking/BankingAlwaysPlayToggle";
+import { HeaderIconButton } from "../components/PageHeader";
+import AccountSheet from "./AccountSheet";
+import { useSlideNavigate } from "../hooks/useSlideNavigate";
 
-// Home hub (`/`) — the landing surface for the footer's Home tab. A BENTO MOSAIC of
-// the app's destinations (docs/SHELF_REDESIGN.md § A4 and entry 1), replacing the
-// vertical HubMenu of equal-weight rows this page used to be.
+// Home (`/`) — the footer's first tab. Since 2026-10-10 its CONTENT is the decks page
+// (the fdp: the study hand, the Reading/Writing Center rail and the Cards/Decks
+// sheets — `FlashcardsDecksPage`), while the hub bento that used to fill it moved to
+// the second tab as Menu (`/menu`, MenuPage). See docs/UX_AND_NAVIGATION.md.
 //
-// WHY A MOSAIC AND NOT A LIST: every row of the old menu was the same size, so the
-// page said all eight destinations mattered equally — which is false. Night Market is
-// the app's set-piece and Compare Words is a utility. The bento's three weights
-// (hero / base / low) let the page say that without adding a word.
+// What stayed with the TAB rather than moving with the bento is the account header:
+//   • the validator "always play" toggle (renders null for everyone else),
+//   • the Settings gear,
+//   • the profile picture, which raises AccountSheet,
+//   • and the daily banking run across the header flame, the avatar and the embers.
+// This file owns exactly that chrome and hands the controls to the decks page as
+// header props — the decks page cannot build them itself, because `features/` must
+// not import `pages/` (AccountSheet) — docs/FRONTEND_LAYERING.md.
 //
-// Phone-frame sizing comes from MobileDemoFrame; the scroll-away header + floating
-// footer come from MobileTabScreen.
-
-/** One destination. `hue` + `icon` are the design's, taken from artboard 1. */
-interface HomeTile extends Pick<BentoTileProps, "hue" | "icon" | "variant" | "pin"> {
-    key: string;
-    to: string;
-    title: string;
-    subtitle?: string;
-}
-
+// DAILY BANKING (docs/DAILY_MINUTE_BANKING.md): `DailyBankingProvider` wraps the whole
+// page so the header flame (inside the decks page's MobileTabScreen), the avatar and
+// `BankingEmbers` all read the one run. Home is the only page that mounts the provider.
 function HomePage() {
-    usePageTitle();
-    const { user } = useAuth();
-
-    // Order is the artboard's and is load-bearing: the mosaic reads left-to-right,
-    // top-to-bottom, so moving an entry re-weights the page even though every tile
-    // keeps its own variant.
-    const tiles: HomeTile[] = [
-        // Night Market is flagged (server/contracts/featureFlags.ts). This is the hub's
-        // only HERO tile, so with the flag off the mosaic opens on Games at base weight
-        // rather than promoting a replacement — the bento reads fine without a hero, and
-        // choosing a stand-in would re-weight the page for a temporary state.
-        ...(isFeatureEnabled("nightMarket")
-            ? [{ key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" } as HomeTile]
-            : []),
-        { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", hue: "blu", icon: "sports_esports" },
-        // Arena is flagged (server/contracts/featureFlags.ts). This tile is its ONLY
-        // navigational entry — nothing in the footer, no row on /friends — so dropping
-        // it is the whole client-side entry gate; the route goes in routeMeta.ts.
-        ...(isFeatureEnabled("arena")
-            ? [{ key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "pur", icon: "emoji_events" } as HomeTile]
-            : []),
-        // Its own destination rather than a Games tile (docs/IMMERSIVE_WORLD.md § 14 Q9): iw
-        // is once per day, earns no marks and is capped by design, so it behaves unlike
-        // everything on the Games shelf, where a tile is an activity you can do as much as
-        // you like. `blu` matches the Scene Editor tile below — one feature, one hue. (It was
-        // `tea` until teal left the palette on 2026-09-24.)
-        ...(isFeatureEnabled("immersiveWorld")
-            ? [{ key: "immersive-world", to: "/immersive-world", title: "Immersive World", subtitle: "Walk in and talk to somebody", hue: "blu", icon: "theater_comedy" } as HomeTile]
-            : []),
-        { key: "reader", to: "/reader", title: "Reader", subtitle: "Read texts and mine new words", hue: "org", icon: "article" },
-        { key: "dictionary", to: "/dictionary", title: "Dictionary", subtitle: "Look up words and add them", hue: "red", icon: "book" },
-        // The three `low` tiles are the utilities. The artboard drops their subtitles:
-        // at 90px tall a subtitle crowds the title, and these three are self-evident
-        // from their names in a way "Night Market" is not.
-        // Community is flagged off-able (server/contracts/featureFlags.ts). This tile is
-        // the ONLY navigational entry to /community, so dropping it is the whole
-        // client-side entry gate; the route itself is removed in routeMeta.ts.
-        ...(isFeatureEnabled("community")
-            ? [{ key: "community", to: "/community", title: "Community", hue: "grn", icon: "groups", variant: "low" } as HomeTile]
-            : []),
-        { key: "friends", to: "/friends", title: "Friends", hue: "grn", icon: "people", variant: "low" },
-        // NOTE: there is no "Compare Words" tile. Compare is not a destination — it is a
-        // sheet raised over the word you are already looking at, from the `Compare` pill on
-        // WordToolsRail (docs/WORD_COMPARE_FEATURE.md). The tile and its /compare page were
-        // deleted 2026-09-04; a cold open with two empty slots was the rarer half of the
-        // feature and cost a hub slot to reach.
-    ];
-
-    // ── Role-gated tiles ──────────────────────────────────────────────────────
-    // Not drawn in the artboard: these are authoring/QA tools that exist only for
-    // accounts carrying a grant, so they live BELOW A HAIRLINE in their own grid
-    // rather than appended to the mosaic. Two reasons the separator is worth a row
-    // of pixels: the main mosaic keeps a stable shape for every account (a gated
-    // tile no longer leaves the last artboard row half empty), and a tool that can
-    // rewrite authored content reads as a tool rather than as another destination.
-    const gatedTiles: HomeTile[] = [
-        // Validators AND admins (users.isAdmin, migration 168 — the tdp's User Usage
-        // section) reach the tester dashboard; the page applies the same pair.
-        ...(user?.isValidator || user?.isAdmin
-            ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as HomeTile]
-            : []),
-        // All three ride the SAME grant (users.isTemplateAuthor, migration 115) — the two
-        // night-market tools and the immersive-world scene editor are one authoring
-        // permission, not three (docs/IMMERSIVE_WORLD.md § 12 phase 1e). The scene editor
-        // wears `blu` (Immersive World's hue) rather than the night market's `pur` because it
-        // authors a different feature; sharing a hue would imply it edits night-market
-        // templates.
-        // Each tool needs BOTH the grant and its feature's flag: the grant says the
-        // account may author, the flag says the feature exists to be authored for. The
-        // three no longer rise or fall together — with one flag off the other tools stay,
-        // and the hairline section disappears only when nothing is left under it.
-        ...(user?.isTemplateAuthor && isFeatureEnabled("nightMarket")
-            ? [
-                  { key: "template-editor", to: "/night-market/template-editor", title: "Template Editor", hue: "pur", icon: "grid_view", variant: "low" } as HomeTile,
-                  { key: "template-sandbox", to: "/night-market/template-sandbox", title: "Template Sandbox", hue: "pur", icon: "dashboard_customize", variant: "low" } as HomeTile,
-              ]
-            : []),
-        ...(user?.isTemplateAuthor && isFeatureEnabled("immersiveWorld")
-            ? [{ key: "scene-editor", to: "/immersive-world/scene-editor", title: "Scene Editor", hue: "blu", icon: "theater_comedy", variant: "low" } as HomeTile]
-            : []),
-    ];
+    // Settings is a leaf page: slideNavigate plays the slide-up enter transition.
+    const slideNavigate = useSlideNavigate();
+    // The account surface is a sheet over Home, not a route (AccountSheet). Mounted only
+    // while open so each open starts fresh (counts + velocity re-fetch).
+    const [accountOpen, setAccountOpen] = useState(false);
 
     return (
-        <MobileTabScreen title="Home" contentClassName="home-page__content">
-            <Bento className="home-page__bento">
-                {tiles.map(({ key, ...tile }) => (
-                    <BentoTile
-                        key={key}
-                        className={`home-page__tile home-page__tile--${key}`}
-                        {...tile}
-                    />
-                ))}
-            </Bento>
-            {/* The separator and the second grid appear together or not at all — an
-                account with no grants must not see a rule with nothing under it. */}
-            {gatedTiles.length > 0 && (
-                <>
-                    <Box
-                        className="home-page__gated-divider"
-                        // `flexShrink: 0` is load-bearing, not defensive: MobileTabScreen's
-                        // content column is a flex column, so a 1px child collapses to
-                        // nothing the moment the column is squeezed to fit the viewport.
-                        sx={{ height: "1px", flexShrink: 0, backgroundColor: COLORS.border, margin: "20px 16px 0" }}
-                    />
-                    <Bento className="home-page__bento home-page__bento--gated">
-                        {gatedTiles.map(({ key, ...tile }) => (
-                            <BentoTile
-                                key={key}
-                                className={`home-page__tile home-page__tile--${key}`}
-                                {...tile}
-                            />
-                        ))}
-                    </Bento>
-                </>
-            )}
-            <TipBox className="home-page__tip-box" />
-            <FooterSpacer />
-            <ScrollPastSpacer />
-        </MobileTabScreen>
+        <DailyBankingProvider>
+            <FlashcardsDecksPage
+                // Validator-only test toggle: while on, the banking run plays on every
+                // Home landing. Left of the flame.
+                headerExtraActions={<BankingAlwaysPlayToggle />}
+                // Right of the flame: the Settings gear, then the profile picture in the
+                // far-right corner. Outlined variant to match the avatar's ring.
+                headerTrailingActions={
+                    <>
+                        <HeaderIconButton
+                            className="home-page__settings-button"
+                            icon="settings"
+                            label="Open settings"
+                            variant="outlined"
+                            onClick={() => slideNavigate("/settings")}
+                        />
+                        <BankingAvatarButton onClick={() => setAccountOpen(true)} />
+                    </>
+                }
+            />
+            <BankingEmbers />
+            {/* Portaled to the frame's overlay host by SheetPanel, so where it sits in
+                this tree does not affect its geometry. */}
+            {accountOpen && <AccountSheet onClose={() => setAccountOpen(false)} />}
+        </DailyBankingProvider>
     );
 }
 

@@ -29,8 +29,7 @@ two wrap it. Four numbers make it work, and until 2026-09-04 they were re-typed 
 on every page: **10px / 0.14em tracking / `COLORS.textFaint` / a mono face.**
 
 The trigger for this work was `.mobile-demo-examples-caption` — the eip Examples-tab
-caption in `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` →
-`TabCaption`. It renders strings like `sense 1 · to be located at`, which is the hardest
+caption (`TabCaption` in `InfoCardTabContent.tsx`, since removed 2026-10-10). It rendered strings like `sense 1 · to be located at`, which is the hardest
 thing this flavour is asked to do: a **sentence**, set at 10px, uppercased, tracked, in
 faint ink.
 

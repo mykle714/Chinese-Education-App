@@ -12,7 +12,7 @@ Referenced from [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) (findings 5 a
 | Directory | Holds | Test for belonging |
 |---|---|---|
 | `src/features/<x>/` | Everything **exclusive** to feature `<x>` — its pages, components, hooks, API client, local types | Every importer is inside `src/features/<x>/` |
-| `src/pages/` | App-level, auth, and legacy pages only (`AccountPage`, login/register, settings) | It is not part of any one feature |
+| `src/pages/` | App-level, auth, and legacy pages only (`AccountSheet`, login/register, settings) | It is not part of any one feature |
 | `src/components/` | Genuinely shared presentational components | Importers in **two or more** features |
 | `src/hooks/`, `src/utils/` | Shared, feature-agnostic logic | Same test as `components/` |
 | `src/engine/market/` | The night-market engine — pure simulation/geometry | No React, no DOM, no network, **and no Pixi** — see the rule below |

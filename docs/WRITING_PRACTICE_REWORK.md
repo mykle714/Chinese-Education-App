@@ -165,6 +165,15 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    `handleCellDone`, its `practice` branch). Closing unchanged, or cleared and left empty,
    keeps the cell's drawing and verdict (`sameInk`). The time, medal and personal best are
    final and never change.
+5. **Give up** — a mono **"give up"** chip in the header's right slot (`HeaderToggleChip`,
+   class `writing-grid__give-up`), shown only while the stopwatch runs (Phase 1 and 2; not
+   on the countdown or at End). It confirms first (`useConfirmation` — "Give up this
+   grid?"), then stops the stopwatch, discards any open canvas unchecked, and jumps to the
+   **same End board** — so every character's full shadow is revealed and practice redraw
+   works as above. The popup reads **"Gave up"** with "*N* of 8 written" (the ✓ count frozen
+   at the moment of giving up) instead of the time; **no medal, no personal best, no win,
+   and no marks** beyond the cells already checked during the run
+   (`WritingGridPage` → `handleGiveUp`, `gaveUpCorrect`).
 
 ### Dealing (`GET /api/writingGrid/deal`)
 `WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`:

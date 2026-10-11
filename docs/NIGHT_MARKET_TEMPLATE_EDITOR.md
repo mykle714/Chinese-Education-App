@@ -36,7 +36,7 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
 
 ## What it does
 
-- A **template author** opens **Home → Template Editor** (the hub row is shown only
+- A **template author** opens **Menu → Template Editor** (the `/menu` hub tile is shown only
   when `user.isTemplateAuthor` — migration 115, a flag SEPARATE from `isValidator`
   which now gates only dictionary data-approval) → `/night-market/template-editor`.
 - The board is a **rectangular `W×H` dirt plateau** (free-farm tileset). The
@@ -454,7 +454,7 @@ reloads the target from the server, discarding unsaved edits). `PropertiesDialog
 button (`handleNewVersion` copies the current board into the next version number; enabled
 only when the template is saved and not `dirty`). It also validates dims (`[2, 60]`) and
 runs the **rename gate** (a name must be free UNLESS it equals `loadedName`); name is
-locked with >1 version, dims are locked above version 0. Bounces non-validators to Home
+locked with >1 version, dims are locked above version 0. Bounces non-template-authors to Home (`/`)
 (UX gate; the backend is the real boundary).
 
 #### Toolbar chrome — `src/features/nightmarket/editorButtonStyles.tsx`
@@ -600,8 +600,8 @@ promote-to-code step) is a downstream decision.
   `src/features/nightmarket/editorButtonStyles.tsx` (toolbar chrome shared with the sandbox —
   `PaletteButton`, `HotkeyBadge`, `paletteBtnSx`, `toolGroupSx`, `headerBtnSx`,
   `headerBtnDangerSx`, `headerBtnPrimarySx`, `headerActionsSx`).
-- Routing/nav: `src/App.tsx` (`/night-market/template-editor`),
-  `src/pages/HomePage.tsx` (validator-gated hub row).
+- Routing/nav: `src/routes/routeMeta.ts` + `src/routes/registry.ts` (`/night-market/template-editor`),
+  `src/pages/MenuPage.tsx` (`isTemplateAuthor`-gated hub tile; the page's back arrow returns to `/menu`).
 - Backend: `server/services/NightMarketTemplateService.ts`,
   `server/controllers/NightMarketTemplateController.ts`,
   `server/routes/nightMarketTemplateRoutes.ts`, `server/dal/setup.ts`,

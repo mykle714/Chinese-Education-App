@@ -11,11 +11,17 @@ interface CategoryCountsResult {
     // minimum card total should fail open until this is true, so a slow fetch never
     // blocks a user who actually has plenty of cards.
     loaded: boolean;
+    // Whether the fetch actually SUCCEEDED. `loaded` also flips true on a failed fetch,
+    // leaving `counts` empty — which reads as "0 cards". Anything that would tell the
+    // learner they are LOW on cards (the fdp Sort Cards tile's glow, the sort page's Learn
+    // Now glow) must key on this instead, or a network blip nags a full library.
+    ok: boolean;
 }
 
 /**
  * Fetches the user's per-category flashcard library counts from the OnDeck service.
- * Shared by the decks panel (tile figures + the Review gate) and the Account page.
+ * Shared by the decks panel (tile figures + the Review gate + the Sort Cards tile's "card count low" glow),
+ * the sort page's tally, and the Account page.
  *
  * `bar` is the mastery LENS the four bands are read through (docs/DECKS_FEATURE.md
  * § "Mastery Centers"). It defaults to `core`, which is what every caller meant before
@@ -26,6 +32,7 @@ export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsRes
     const { token, isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loaded, setLoaded] = useState(false);
+    const [ok, setOk] = useState(false);
 
     useEffect(() => {
         if (!token) return;
@@ -38,6 +45,7 @@ export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsRes
                 if (response.ok) {
                     const data = await response.json();
                     setCounts(data && typeof data === "object" ? data : {});
+                    setOk(true);
                 }
             } catch (err) {
                 console.error("Error fetching category counts:", err);
@@ -51,5 +59,5 @@ export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsRes
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthenticated, bar]);
 
-    return { counts, loaded };
+    return { counts, loaded, ok };
 }

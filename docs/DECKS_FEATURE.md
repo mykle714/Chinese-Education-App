@@ -13,6 +13,15 @@ Two things landed together here, because one made the other possible:
    migration 141). Selecting one opens its collection view. The `/decks` page,
    whose space used to be the inline Learn Now card grid, is now the deck list.
 
+> **Where the fdp lives.** Since 2026-10-10 the fdp (`FlashcardsDecksPage`) is the
+> **Home** footer tab at `/`: `src/pages/HomePage.tsx` → `HomePage` renders it with the
+> account header (Settings gear, avatar → AccountSheet, daily banking) passed in as
+> `headerExtraActions` / `headerTrailingActions`, and its header title is "Home". The
+> old `/flashcards/decks` path is a redirect to `/`
+> (`src/features/flashcards/DecksRedirect.tsx`). "`/decks`" in this doc is the
+> historical shorthand for the fdp, not a live route. See
+> [NAVIGATION.md](./NAVIGATION.md).
+
 ---
 
 ## 1. Data model (migration 141)
@@ -58,6 +67,22 @@ of these two". The integrity an FK would have given us comes from two places:
   and every deck holding it would report an inflated `cardCount` forever.
 
 If the vet is ever unified into one table, add the FK and delete that cleanup.
+
+(Since 2026-10-09 no API path hard-deletes a card — `DELETE /api/vocabEntries/:id` was
+removed — so `VocabEntryDAL.delete` has no live caller; the cleanup stays for whatever
+script or future path deletes a vet row.)
+
+### Removed-from-Learn-Now cards keep their memberships
+
+Removing a card from Learn Now (the cdp delete, the dictionary eip's "Added!" toggle)
+demotes it to `'provisional'` instead of deleting it, and **leaves its `deck_cards`
+rows in place**, so a re-add puts it straight back into its decks
+(PROVISIONAL_CARDS.md § "Removing from Learn Now demotes"). Every deck read therefore
+filters on the bucket: `OnDeckVocabService.getDeckCards` and the game pools use
+`vetSortedClause()`, and `DeckSummary.cardCount` (`DeckDAL` → `CARD_COUNT`) counts only
+members whose vet row is `'library'`, probing both physical vet tables by primary key —
+the one place `DeckDAL` reads the vet (IDeckDAL's SCOPE note). `listDeckCardIds` and
+`listDeckIdsForCard` are raw membership and do NOT filter.
 
 ### `editMode` — user-authored vs. generated decks (migration 148, on dev)
 
@@ -298,7 +323,7 @@ deck would make the deck itself the answer key.
 | `src/games/GamesCollectionSelector.tsx` | The hub-header "Playing with …" pill + menu (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)) |
 | `src/features/flashcards/CollectionViewPage.tsx` | The generalized page (all three collection kinds) |
 | `src/features/flashcards/MasteredRedirect.tsx` | `/flashcards/mastered` → `/flashcards/collection/mastered` |
-| `src/features/flashcards/FlashcardsDecksPage.tsx` | `/decks` — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the **two** sheet pills (Cards / Decks) and the modal sheet's mounting. **Lens `core`.** |
+| `src/features/flashcards/FlashcardsDecksPage.tsx` | the fdp (rendered at `/` by `HomePage`, which supplies the header's account controls via `headerExtraActions` / `headerTrailingActions`) — the study buttons (Review / Challenge / Study Mix / the two Center buttons), the **two** sheet pills (Cards / Decks) and the modal sheet's mounting. **Lens `core`.** |
 | `src/features/flashcards/MasteryCenterPage.tsx` | `/flashcards/reading` + `/flashcards/writing` — a skill study page with the panel behind the fdp's two pill-raised sheets, lens `reading` / `writing` ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)) |
 | `src/features/flashcards/DecksSheets.tsx` | the two pills + modal sheets + New-deck dialog, shared by the fdp and both Centers |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
@@ -351,8 +376,8 @@ produce a third, meaningless Center; the page reads its own `pathname` against
 its own path segment, so a user who names a deck "mastered" gets
 `/flashcards/deck/42` — a deck name can never shadow a built-in collection route.
 
-All are **node pages** (docs/UX_AND_NAVIGATION.md): footer kept, left back arrow,
-horizontal slide.
+All are **node pages** (docs/UX_AND_NAVIGATION.md): footer kept (the **Home** tab
+stays lit — `footerTab: "home"`), left back arrow, horizontal slide.
 
 ### Which collections exist
 
@@ -416,7 +441,7 @@ day, drills, the skill's games) — its anatomy and build phases live in
 
 | | fdp | Reading Center | Writing Center |
 |---|---|---|---|
-| Route | `/flashcards/decks` | `/flashcards/reading` | `/flashcards/writing` |
+| Route | `/` (Home tab; `/flashcards/decks` redirects here) | `/flashcards/reading` | `/flashcards/writing` |
 | Lens | `core` | `reading` | `writing` |
 | Frame | tab page; two modal pull-up sheets (pill-raised) | node page; the same two sheets (`DecksSheets`) | node page; the same two sheets |
 | Sheet titles | Cards / Decks | Reading Cards / Reading Decks | Writing Cards / Writing Decks |
@@ -475,7 +500,7 @@ and the frame they mount. The pills + sheets are one shared component too
 
 The page is split across **three surfaces**:
 
-* **Page (behind)** — section 1 only, the library line, the Center rail and the card hand.
+* **Page (behind)** — section 1 only: the top rail (Center tiles + the Sort Cards tile) and the card hand. (The "library line" row it used to open with no longer exists.)
   `MobileTabScreen` is mounted with **`scrollable={false}`**: nothing behind the sheets
   scrolls any more.
 * **Cards sheet** — the uncaptioned `LibraryDuo` over the inline **Cards** grid,
@@ -534,9 +559,9 @@ while a sheet is up. The single `SheetPanel` is **keyed on the section**, so swi
 sheets remounts rather than swapping content under a held height. Dismiss is the eip's:
 drag below the default height, or tap the scrim.
 
-**Bottom edge — the sheet owes the footer nothing.** A *modal* sheet holds
-`useHideFooter` for its whole lifetime (`SheetPanel`), so the floating footer is off
-screen while either fdp sheet is up. `DecksPanelBody`'s scroller therefore reserves
+**Bottom edge — the sheet owes the footer nothing.** A *modal* sheet hosts at the
+phone frame above the footer bar (`src/components/overlayHost.ts` § "THE RULE FOR A
+DIM"), so the bar sits dimmed under the sheet's scrim while either fdp sheet is up. `DecksPanelBody`'s scroller therefore reserves
 only its own breathing room in the `"sheet"` variant (`SHEET_BOTTOM_PAD`, 12px) and
 fades out over a 24px band ending **at** the sheet's bottom edge
 (`SHEET_EDGE_FADE_MASK`, now shared from `src/components/sheet/sheetStyled.ts` — every
@@ -589,14 +614,19 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    `src/features/flashcards/StudyHand.tsx`). To study one collection instead, open it
    from the sheet and use its launch button.
 
-   **(b) The Centers rail** (`.ctr2`) — one tile per goal the account pursues, omitted
-   entirely when it pursues neither (and always for Spanish, which cannot accrue those
-   marks) so the hand keeps that space. The rail is a fixed two-column grid: each tile is
-   always half width and pinned to its own slot — reading left, writing right, the order of
-   `MASTERY_CENTER_BARS` — so a lone tile keeps its size and side instead of stretching
-   (`FlashcardsDecksPage.tsx` → the `flashcards-decks__center-rail` grid). They sit ABOVE the hand, not in it, because they
-   are a different KIND of destination: a place to look at your library by skill, not a
-   session to start. Filled with the ramp's **pastels** in the skill's own hue (reading
+   **(b) The top rail** (`.ctr2`) — the Mastery Center tiles, one per goal the account
+   pursues (none for an account that pursues neither, and always none for Spanish, which
+   cannot accrue those marks), followed by the **Sort Cards** tile, which is always
+   present and always rightmost (§ "Sort Cards tile"). Because Sort is always there, the
+   row always exists. It is a flex row, right-justified, whose tiles share the width
+   evenly — 1 tile → half, 2 → halves, 3 → thirds — and never grow past half the row
+   (`maxWidth: calc(50% − gap/2)`), so a lone Sort tile is a half-width tile on the right
+   rather than a full-width bar (`src/features/flashcards/DecksTopRail.tsx` →
+   `flashcards-decks__top-rail`, `railTileSx`). Until 2026-10-09 this was a Centers-only
+   two-slot grid (reading pinned left, writing pinned right), omitted entirely when empty.
+   The tiles sit ABOVE the hand, not in it, because they are a different KIND of
+   destination: places to go, not a session to start. Rail and hand are separated by the
+   study area's 40px flex `gap` (`FlashcardsDecksPage.tsx` → `STUDY_AREA_GAP`). The Center tiles are filled with the ramp's **pastels** in the skill's own hue (reading
    `grn`, writing `pur` — `MASTERY_CENTER_HUES`, the same hue the Center page grounds on;
    red / yel until 2026-10-02) rather than the saturated `MARK_TYPE_COLORS` — a tile is a surface, and only
    marks and mastery cells take the saturated hues (SHELF_REDESIGN.md D2b). They also
@@ -606,7 +636,8 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    Without those the rail read as a flat patch of colour sitting beside three real cards;
    with them it is the same object family, one row up — the same family the flp card and
    the cdp hero card now join. Its radius stays 15px against the hand's 22px because the
-   tile is about half the size. See § "Mastery Centers".
+   tile is about half the size. The Sort tile shares the same box (`railTileSx`), on the
+   `blu` pastel. See § "Mastery Centers".
 
    **(c) The card hand** (`StudyHand`, `.fanw`; its data — figures, Review gate, toast,
    launch URL — in `FlpStudyHand`, shared with the Reading Center, which mounts the same
@@ -620,7 +651,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    taking its place. Nothing is hidden and nothing is repeated.
 
    - **Bringing a card forward is deliberately not starting the session.** The front card
-     carries the figure and its own `Study now`, so choosing a mode and committing to it
+     carries the figure and its own `Start`, so choosing a mode and committing to it
      are two taps. That matters because Review and Challenge are the two modes a learner
      picks on purpose and wants to see the size of first.
    - **The fan is an ordered stack, and every arrangement is reachable.** `StudyHand`
@@ -628,6 +659,14 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      — rather than deriving the back slots from whichever card is forward. A derived rule
      has only three states (one per possible front card); the stack has all six.
      `FAN_ORDER` (challenge → review → mix) now seeds the opening arrangement only.
+   - **The fan starts at the top of the hand.** The `full` slots step 46px apart
+     (`FAN_STEP`), but the first one is not a fixed number: `FAN_TOP` places the back-left
+     card so its raised corner (the ±4.5° tilt pivots at top centre) just touches the
+     hand's top edge — `(50cqw − inset − shift) · sin 4.5°`, ≈ 12px on a phone. The
+     design's literal `top: 40` left a ~28px dead band inside the hand that stacked on the
+     rail→hand gap. On the fdp that band was the visible rail→hand spacer, so the page now
+     owns it explicitly: `STUDY_AREA_GAP` went 12 → 40px when the band was removed.
+     *Code:* `StudyHand.tsx` → `FAN_TOP`, `SLOTS`; `FlashcardsDecksPage.tsx` → `STUDY_AREA_GAP`.
    - **Two ways to bring a card forward, and no card ever leaves the frame.**
      **Throwing** the front card (`useHandSwipe`) sends it to the BACK of the stack and
      surfaces the card directly behind it — `[a, b, c] → [c, a, b]`, a 3-cycle. The throw is
@@ -654,7 +693,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      any direction, then claims the touch outright (`preventDefault`), and the front card
      is `touchAction: "none"`. A finger that starts on the played card drags the card; the
      page and the sheet are scrolled from anywhere else. Below 8px it is still a tap, so
-     `Study now` and the back cards keep their clicks.
+     `Start` and the back cards keep their clicks.
      **The compact variant is the exception** (Reading Center): `useHandSwipe` takes an
      `axis` argument, and `"horizontal"` locks the throw to left/right — the front card is
      `touchAction: "pan-y"` (exposed as `frontTouchAction`), a gesture whose slop-clearing
@@ -680,6 +719,25 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      place on arrival. On the queued card that button is `disabled`, `aria-hidden`, out of
      the tab order and `pointer-events: none`, so it can neither commit a mode that is not
      forward nor swallow the tap that brings the card forward.
+   - **On a short frame the numeral moves into the head.** The hand takes whatever height
+     the page leaves (`flex: 1 1 0`), so under the top rail (always present now) or on a small phone
+     the figure box between the name and `Start` gets short. Once it can no longer hold the
+     numeral + hairline with `FIGURE_BREATHING_ROOM` (16px) clear above **and** below, i.e.
+     as soon as it starts to look cramped rather than when the digits collide, the card
+     re-flows: the **same figure (numeral + hairline) at the same size** moves out from
+     under the name and centres in the block beside it — bounded by the name's right
+     edge, the card's right edge, the top padding and `Start` — and a zero card's
+     `zeroMessage` tag drops under the name (the space to its right is the figure's now). The full
+     face is a CSS grid and only the numeral's grid area changes, so the `SlotNumber`
+     reel is never remounted. The switch is measured, not a breakpoint: `useCrampedFigure`
+     re-measures the front card on every hand resize, and every input (card height, the
+     `30cqh` numeral, the `Start` bar, one line-height of the name) is independent of the
+     answer, so it cannot oscillate. **Only the front card re-flows:** the two back cards,
+     `backRight`'s pre-rendered face included, keep the roomy format no matter what, so a
+     promotion into a cramped front moves the numeral into the head at t=0 — the same hard
+     switch as the rest of a promotion. The hand root carries
+     `study-hand--cramped` while it applies. *Code:* `StudyHand.tsx` → `useCrampedFigure`,
+     `FIGURE_BREATHING_ROOM`.
    - **The quantity tag rides the BACK cards, and the front card only at zero.** A card
      in the fan wears its figure top-right as `N Cards` (`StudyHandCard.figureCaption`) —
      it has no big numeral showing, so the tag is the only place its number can be read,
@@ -701,7 +759,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      the page can explain ("Mark more cards in Study Mix…") rather than leaving a dead
      card. The card can always be brought forward; it is the commit that is refused.
      **The card is not greyed for it** — its ramp fill and opacity are unchanged, and only
-     the `Study now` button dims. A `0` is the ordinary end of a session (everything
+     the `Start` button dims. A `0` is the ordinary end of a session (everything
      marked, everything resting), and draining the card's colour would turn that into a
      failure state; the `zeroMessage` above says it in words instead.
 
@@ -824,10 +882,10 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    minimum-across-tracks rule and the core-window choice.
 
    **The hand's bottom padding is derived**, not typed:
-   `SETS_PILL_HEIGHT + STUDY_AREA_GAP` — the scroll area already reserves
-   `FOOTER_CLEARANCE`, which is exactly where the two sheet pills are anchored, so only
-   the pills' own band is missing. Change `SETS_PILL_HEIGHT` and `Study now` still stops
-   just above it instead of sliding under it.
+   `STUDY_AREA_BOTTOM_PAD` = `DECKS_SHEET_PILL_BAND` (`DecksSheets.tsx`: pill height + pill
+   gap) — the scroll area already reserves `FOOTER_CLEARANCE`, which is exactly where the
+   two sheet pills are anchored, so only the pills' own band is missing. Change the pill
+   height and `Start` still stops just above it instead of sliding under it.
 
    > **Renamed (was Easy / Mix / Hard).** The rename went all the way down — the
    > `StudyMode` values are `'review'` and `'challenge'` in both
@@ -982,6 +1040,118 @@ Every row is **left-aligned**. The old `TileGrid` centred its short rows and lef
 its growing ones; centring is wrong on a shelf, because the board runs the full width of
 the row and spines floating in the middle of it read as a mistake.
 
+### Launching the flp from the hand
+
+`Start` on the fdp's **core** hand does not navigate at once. The session is loaded from
+the fdp, then the two pages hand over **in sequence**: the fdp is completely cleared
+before the flp mounts. This was a design choice (2026-10-10) over an overlapping
+view-transition. **Back plays it all in reverse** (see "The way back" below). Only the
+fdp's core hand does this; the Reading / Writing Centers' hands navigate directly
+(`FlpStudyHand` without `onLaunch`), and their flps go back without animating.
+
+| Step | What moves | Owner |
+|---|---|---|
+| 1. Loading | The three hand cards **shake side to side in a light tremor, independently**: fast (90–130ms cycles), linear, with uneven amplitudes (up to ±2px), and each slot has its own period and phase. The shake follows the **swipe's tilt trajectory**: each offset carries the tilt a drag of that size gets (`x · DRAG_TILT`, `useHandSwipe`), pivoting at the card's top centre. The motion is on the individual `translate`/`rotate` properties so the fan's `transform` is untouched. There is **no minimum**, so a fast load skips straight to step 2. The hand and the page take no input; the footer stays live, and a tab tap abandons the launch. | `StudyHand` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `HAND_SHAKE_BEAT`); `FlashcardsDecksPage` (frame `pointerEvents`) |
+| 2. fdp exit (300ms, ease-in) | Header ↑. Rail tiles: with 2+ tiles the **leftmost goes ←** and the rest go →; a lone Sort tile goes →. Hand: **front and back-left cards ←, back-right (middle) card →**, staggered 0/40/80ms. Cards / Decks pills ↓. Footer ↓ through its own slide (`useHideFooter`). | `flpLaunch.ts` → `FDP_EXIT`, `useFlpLaunch` |
+| 3. Navigate | Happens only after every exit animation has finished. The flp **adopts the prefetched loop**, so it mounts already dealt, with no spinner frame. | `flpLaunch.ts` → `peekLaunchLoop` / `clearLaunchLoop`; `useWorkingLoop` (`handoff`) |
+| 4. flp entry (ease-out) | New header ↓ in. `Write it` comes in from the left and `Compare` from the right (a rail with only Compare brings it from the right). The card stack rises from the bottom. **More Info rises after the stack** (starts 300ms vs 80ms) so the two move out of phase. | `flpLaunch.ts` → `FLP_ENTER`, `useFlpEntrance` |
+
+How it works:
+
+- **Elements are found by selector, from one table per page**, scoped to the page's root
+  (`.flashcards-decks__frame` / the flp's ContentArea parent). Keeping every direction and
+  timing in one place makes the motion tunable as a whole. The cost is that the tables
+  name other components' classes: `.study-hand__card--slot-*` (added for this),
+  `.flashcards-decks__top-rail`, the `*-pill` classes, `.word-tools-rail`,
+  `.mobile-demo-card-slot`, `.mobile-demo-more-info-pill` and `.page-header`.
+- **Motion is on the `translate` property via the Web Animations API, never on
+  `transform`.** Almost every target already owns a `transform` (the fan geometry,
+  `SheetPill` / `MoreInfoPill` centring). Distances are **measured**: each element
+  travels from its bounding rect to `EDGE_CLEARANCE_PX` past the phone frame's edge.
+- **The prefetch is the flp's own request.** `src/api/workingLoop.ts` is the single
+  builder for `GET /api/onDeck/distributedWorkingLoop`, used by both `useWorkingLoop`
+  and the prefetch. The handoff is matched on `workingLoopKey(request)`, so a hand-built
+  query would silently miss it and the flp would fall back to its own fetch. The
+  prefetch also imports the flp's lazy route chunk, so its `Suspense` resolves from cache.
+- **Both latches are one-shot and short-lived.** The prefetched loop is ignored after
+  10s, and the entrance latch after 2s. Each is read in a `useState` initializer (safe
+  under StrictMode's double call) and cleared in an effect. Every other way into the flp
+  gets fresh cards and no entrance: a deck's "Study these cards", a Center, Back/Forward,
+  a reload, or an abandoned launch revisited.
+- **Failure degrades to the old behaviour.** If the prefetch fails, nothing is stashed.
+  The exit still plays, and the flp fetches (and reports errors) on its own. Its
+  entrance still runs once it is ready.
+- **Reduced motion:** no shake, no slides. The load still happens before navigating.
+
+**The way back.** The flp's back arrow, and the sort offer's "Leave anyway", both go
+through `leaveSession`. For the core flp they run `useFlpLeave`, which plays the launch
+in reverse:
+
+| Step | What moves | Owner |
+|---|---|---|
+| 1. flp exit (300ms, ease-in) | More Info ↓ first, then the card stack ↓ (120ms), `Write it` ← and `Compare` → (160ms), and the header ↑ last (180ms). The page stops taking input from the first tap, and a second tap on the arrow does nothing. | `flpLaunch.ts` → `FLP_EXIT`, `useFlpLeave` |
+| 2. Navigate | Goes to `/` (the fdp) once the exit has finished. | `FlashcardsLearnPage` → `leaveSession` |
+| 3. fdp entry (380ms, ease-out) | Every piece returns the way it left: header ↓, rail tiles from their sides, hand cards from their sides (bottom card first, then the middle, then the front), and the pills ↑. The footer rises by itself through `FooterPresenter`, because the fdp route has a footer. | `flpLaunch.ts` → `FDP_ENTER`, `useFdpEntrance` |
+
+**No shake on the way back.** Nothing needs to load before navigating, and the hand's
+figures already show their own loading state (the `SlotNumber` reel). The reverse
+tables are written out by hand rather than derived from the forward ones, so each
+direction can be tuned on its own. Browser Back and the iOS edge swipe skip the arrow,
+so they get no reverse.
+
+*Code:* `src/features/flashcards/flpLaunch.ts`; `src/api/workingLoop.ts`;
+`StudyHand.tsx` (`shaking`, slot classes); `FlpStudyHand.tsx` (`onLaunch`, `shaking`);
+`FlashcardsDecksPage.tsx` (`useFlpLaunch`, `useFdpEntrance`, `useHideFooter`);
+`FlashcardsLearnPage/FlashcardsLearnPage.tsx` (`useFlpEntrance`, `useFlpLeave` in `leaveSession`);
+`FlashcardsLearnPage/useWorkingLoop.ts` (`handoff`, `dealLoop`);
+`src/hooks/useHideFooter.ts`.
+
+### Sort Cards tile
+
+The rightmost tile of the top rail (§ 1 (b)) — **"Sort Cards"**, glyph `swap_vert`, on the
+`blu` pastel (`SORT_TILE_HUE`). Always present; tapping it opens Sort Cards
+(`useDiscoverNavigation` → `goToSort`).
+
+**"Low" glow.** While the learner's **core Learn Now count** is under
+`LEARN_NOW_LOW_THRESHOLD` (20 = `CARD_BASELINES.flp`, `server/contracts/wire.ts`), the tile
+breathes a soft **green halo** and carries a small green **"Low"** badge.
+
+* **Why it exists.** Provisional cards (PROVISIONAL_CARDS.md) mean a thin library never
+  blocks a session — the server lends cards instead — so nothing else tells the learner
+  their own supply is running out. 20 is the point where Study Mix starts being topped up.
+* **Which count.** The same figure as the Learn Now tile: Unfamiliar + Target +
+  Comfortable on the core bar (`builtinCollectionCount` → `learn-now`), exposed as
+  `DecksPanelState.learnNowCount`. That field is `undefined` until
+  `useCategoryCounts` reports `ok` — unlike `tileCount`, a failed or in-flight fetch never
+  reads as 0, so the glow cannot flash on arrival or appear after a network error. The
+  decision is made in `FlashcardsDecksPage.tsx` (`learnNowLow`) and passed down.
+* **fdp only.** The Mastery Centers have no top rail; their Learn Now is per-skill, and a
+  learner who has read everything has a reading problem, not a supply problem.
+* **Halo.** Green rather than the tile's blue so it stands out as an inviting "go here"
+  (it was red until 2026-10-09; red read as an alarm). It is the same halo SHAPE the sort
+  page's Learn Now pill wears when the learner arrives short (SORT_CARDS_REQUIREMENTS.md
+  § 5.3a) — that one in yellow: `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE` =
+  `RAMP.grn.mid`, a pure blur pulsing 5px → 14px
+  over 3.6s — slowed from 1.4s on 2026-10-09 to read as a calm breath, not an alarm). On the tile it is appended to the tile's own `SHADOW.cardRest` rather than
+  replacing it (`lowSupplyGlowKeyframes(color, base)`). Under reduced motion it holds at the peak.
+* **Badge.** A pill reading **"Low"** inside the tile's top-right corner, on the glyph's
+  row (`flashcards-decks__sort-tile-badge`, `top: 14px; right: 11px`), so it sits beside
+  the icon and clear of the label even in a third-width tile. `LOW_SUPPLY_GLOW_NUDGE` fill (matches the halo), the
+  app hairline, `SIZE.micro` bold `onSurface` text. It is `aria-hidden`; the tile's
+  `aria-label` ("Sort Cards — card count low") carries the message.
+* **Closing the loop.** The sort page picks the learner up from here: arriving under
+  `LEARN_NOW_ENOUGH_THRESHOLD` (30) lights its Learn Now pill yellow until they reach it
+  (SORT_CARDS_REQUIREMENTS.md § 5.3a).
+
+History: before 2026-10-09 this was a separate round, red, pulsing "Sort More!" button in
+a 40px spacer between the Centers rail and the hand, shown only while low. It was
+replaced by the always-present tile, so the route to sorting is never hidden and the
+low state is a glow on a known control rather than a control that appears.
+
+*Code:* `src/features/flashcards/DecksTopRail.tsx` (`DecksTopRail`, `RailTile`,
+`railTileSx`); mounted by `FlashcardsDecksPage.tsx` (`learnNowLow`); count from
+`useDecksPanel.ts` (`learnNowCount`); halo from `src/theme/lowSupplyGlow.ts`.
+
 ### Back restores the page
 
 Opening a card or a set from the fdp's Cards/Decks sheet, a Mastery Center or a
@@ -993,8 +1163,8 @@ arrives a moment later instead of the grid flashing a spinner. Reopening a sheet
 the same visit opens it fresh (the fdp drops its restore when that sheet closes).
 
 It is keyed on the history entry (`location.key`), so only Back restores: tapping the
-Flashcards footer tab opens the fdp with both sheets closed, as before. Deleting a card
-on the cdp (`navigate("/flashcards/decks")`, a push) also opens fresh, which is correct —
+Home footer tab opens the fdp with both sheets closed, as before. Deleting a card
+on the cdp (`navigate("/")`, a push) also opens fresh, which is correct —
 the cached library would still hold the deleted card.
 
 Before this, the fdp came back with its sheet closed, and on iOS the edge-swipe back
@@ -1353,7 +1523,7 @@ copy (the icon picker) that re-focused the input after clearing while the rest d
 The shared component takes the focus-after-clear behavior as the rule.
 
 Call sites: `CollectionViewPage`, `DecksPanelBody`, `DictionaryPage`,
-`CommunitySearchBar`, `IconPickerDialog`, `CompareWorkspace`, `EntriesPage`.
+`CommunitySearchBar`, `IconPickerDialog`, `CompareWorkspace`.
 
 **The `endAction` slot** is why the component exists rather than being a snippet. A
 surface that also filters or reorders its results renders that control **inside** the
@@ -1558,10 +1728,12 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `useDecksPanel.ts`, `DecksPanelBody.tsx`, `NewDeckDialog.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?bar=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `src/components/mastery/MasteryWindow.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?bar=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`, `parseMasteryBar`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `bar` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
+| §1 (b) top rail + §4 Sort Cards tile | `src/features/flashcards/DecksTopRail.tsx`; `src/theme/lowSupplyGlow.ts`; `FlashcardsDecksPage.tsx` (`learnNowLow`); `useDecksPanel.ts` (`learnNowCount`); `src/hooks/useCategoryCounts.ts` (`ok`); `server/contracts/wire.ts` (`LEARN_NOW_LOW_THRESHOLD`, `LEARN_NOW_ENOUGH_THRESHOLD`); `src/hooks/useDiscoverNavigation.ts` (`goToSort`). Sort-page half: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.3a. |
 | §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |
+| §4 Launching the flp from the hand | `src/features/flashcards/flpLaunch.ts` (`FDP_EXIT`, `FLP_ENTER`, `FLP_EXIT`, `FDP_ENTER`, `useFlpLaunch`, `useFlpEntrance`, `useFlpLeave`, `useFdpEntrance`, `peekLaunchLoop`, `clearLaunchLoop`); `src/api/workingLoop.ts` (`fetchDistributedWorkingLoop`, `workingLoopKey`); `StudyHand.tsx` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `study-hand__card--slot-*`); `FlpStudyHand.tsx` (`onLaunch`); `FlashcardsDecksPage.tsx`; `FlashcardsLearnPage.tsx`; `useWorkingLoop.ts` (`handoff`, `dealLoop`); `src/hooks/useHideFooter.ts` |
 | §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`barCooldownRemainingMs`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 

@@ -4,7 +4,7 @@
 > **Status: DEPLOYED 2026-09-24** — 164+165 applied by hand before the rebuild, 166 by `migrate.sh` after it; the `searchReadings` backfill wrote 2076 rows (行 = háng|héng|xíng…). Schema checks passed and the backend logged no errors. Open only until someone runs a logged-in dictionary search for 行 and sees results.
 > Renumbered 2026-09-23: the drop was 165 and became **166** so the expand-only `searchReadings`
 > column (165) could land with 164 before the rebuild; the contract migration goes last.
-> Per CLAUDE.md, derive what is actually pending from `schema_migrations` and
+> Per docs/DEPLOY_RUNBOOKS.md, derive what is actually pending from `schema_migrations` and
 > `migrate.sh --dry-run`, not from this line.
 
 ## What ships
@@ -18,7 +18,7 @@
 
 **Do not run a single `migrate.sh` pass before the rebuild** — it would apply 164, 165 AND 166
 together, and the old containers would 500 on every dictionary read until the rebuild
-finished. Split it as below (the 2026-08-17 lesson in CLAUDE.md).
+finished. Split it as below (the 2026-08-17 lesson in docs/DEPLOY_RUNBOOKS.md).
 
 ## Step order
 

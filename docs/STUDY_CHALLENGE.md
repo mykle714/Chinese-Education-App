@@ -161,7 +161,7 @@ drill-in ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)), sibling to `/friends/
 and `/friends/requests`, e.g. `/friends/challenges`. It is the single surface for the
 whole lifecycle: invitations to answer, accepted challenges awaiting Friday, the test
 entry point, and finished results. No new home-hub row and no push infrastructure — the
-badge count rides along with the friends payload the hp Friends row already fetches,
+badge count rides along with the friends payload the Menu hub's (`/menu`) Friends tile already fetches,
 which is what makes "you have a challenge" discoverable at all given there are no
 notifications ([FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md)).
 
@@ -299,8 +299,8 @@ the Chinese challenges page. See Q39.
 ### How a challenge is announced: in-app badges only (Q48)
 
 There is **no notification of any kind** — no push, no email, no native badge. A pending
-challenge is announced by a **badge chain the user has to walk into**: a dot on the hp
-**Friends** row → a dot on the **Challenges** row inside the friends drill-in → the
+challenge is announced by a **badge chain the user has to walk into**: a dot on the Menu hub's
+**Friends** tile → a dot on the **Challenges** row inside the friends drill-in → the
 friend's row itself showing *Incoming Challenge*. Every one of those counts rides the payload
 the surface already fetches; no new endpoint and no delivery infrastructure.
 
@@ -2241,7 +2241,7 @@ Market payout, no leaderboard entry, no tdp strip. Three reasons, in order of we
    what makes issuing a challenge to a stronger friend a reasonable thing to do.
 
 Nothing about the challenge appears outside the challenges page and its history log
-(§ 1) — the results page is reached from the friend's row, not from the hp, the tdp, or
+(§ 1) — the results page is reached from the friend's row, not from the Menu hub, the tdp, or
 the leaderboard. That also keeps the read paths to one.
 
 ### Unfriending ends the challenge

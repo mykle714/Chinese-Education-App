@@ -3,9 +3,10 @@ import { styled } from "@mui/material/styles";
 import { Shelf, ShelfRow, Spine, spineHeight, SPINE_VARIANTS } from "./shelf";
 import { BAND_COLORS } from "../utils/categoryColors";
 
-// The four utcm bands as a shelf row on the Account page — one spine per band,
-// standing on a board. The spine itself lives in components/shelf (A3); this file
-// only decides WHICH sets are on the shelf and in what order.
+// The four utcm bands as a shelf row on the Account page — one spine per band.
+// No board: the Velocity block under it is framed by plain hairlines instead (see
+// components/velocity/LibraryShelfWithVelocity). The spine itself lives in components/shelf (A3); this file only decides WHICH sets
+// are on the shelf and in what order.
 //
 // Converted from DeckTile (decision D9, docs/SHELF_REDESIGN.md): the stacked-card
 // tile is gone app-wide and the spine is the single visual for a set of cards.
@@ -98,6 +99,14 @@ function useFittedSpineWidth(ref: React.RefObject<HTMLElement | null>, gutter: b
     return width;
 }
 
+/**
+ * The class every band spine carries. Exported because the velocity arrows under this
+ * shelf find the spines by it and measure their centres
+ * (`components/velocity/VelocityArrows.tsx` → `useSpineCenters`) — one constant, so
+ * renaming the class cannot silently detach the arrows from the shelf.
+ */
+export const BAND_SPINE_CLASS = "deck-bucket";
+
 /** The four utcm bands, in ascending mastery order. */
 const BUCKETS = ["Unfamiliar", "Target", "Comfortable", "Mastered"] as const;
 
@@ -164,9 +173,11 @@ interface DeckBucketsProps {
 /**
  * The four flashcard deck buckets (Unfamiliar / Target / Comfortable / Mastered),
  * each showing its per-category card count. Display-only — the tappable equivalents
- * are the fdp's collection spines. Rendered on the Account page
- * (`src/pages/AccountPage.tsx`) and, per language, inside the user profile's stats
- * card (`src/features/profile/ProfileStatsCard.tsx`) — which is the narrow host the
+ * are the fdp's collection spines. Rendered only through
+ * `components/velocity/LibraryShelfWithVelocity`, which hangs the Velocity card's
+ * boundary arrows off these spines. Its hosts are the Account sheet
+ * (`src/pages/AccountSheet.tsx`) and, per language, the user profile's stats card
+ * (`src/features/profile/ProfileStatsCard.tsx`). The profile is the narrow host that the
  * `gutter` prop and the fitted spine width exist for.
  *
  * The row carries the count TWICE on purpose — as each spine's banded height and as
@@ -184,11 +195,14 @@ const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
             {/* `distribute`: the four bands are a FIXED row that always fits, so they
                 spread across the board rather than packing left and leaving dead
                 board on the right — which would read as a row cut off mid-shelf. */}
-            <ShelfRow className="decks-buckets-row" distribute>
+            {/* `board={false}`: the hairline that closes this row is drawn by
+                LibraryShelfWithVelocity, which frames the Velocity block with plain
+                section dividers rather than wooden boards (user, 2026-10-10). */}
+            <ShelfRow className="decks-buckets-row" distribute board={false}>
                 {BUCKETS.map((category, index) => (
                     <Spine
                         key={category}
-                        className={`deck-bucket deck-bucket--${category.toLowerCase()}`}
+                        className={`${BAND_SPINE_CLASS} ${BAND_SPINE_CLASS}--${category.toLowerCase()}`}
                         label={BUCKET_LABELS[category]}
                         count={counts[category] ?? 0}
                         glyph={BUCKET_GLYPHS[category]}

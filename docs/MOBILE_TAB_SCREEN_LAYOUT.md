@@ -18,10 +18,12 @@ pages don't re-implement (or drift from) them.
      `rightContent` primitives are documented in
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header component hierarchy.
    - **Every scrollable content page must use `MobileTabScreen`** so this stays
-     consistent. Today that is `/` (Home hub), `/flashcards/decks` (Decks),
-     `/discover` (Discover hub), `/games` (Games hub), and `/account` (Account).
-     The four footer tabs are Flashcards / Discover / Home / Account; Games is a
-     drill-in from the Home menu. Games (and the Mastered page) are **node pages** —
+     consistent. Today that is `/` (Home — the fdp, `FlashcardsDecksPage` inside
+     `HomePage`), `/menu` (Menu hub), `/discover` (Discover hub), `/dictionary`
+     (Dictionary), and `/games` (Games hub).
+     The four footer tabs are Home / Menu / Discover / Dictionary (Account is
+     no longer a page — it is `AccountSheet`, raised over Home); Games is a
+     drill-in from the Menu. Games (and the Mastered page) are **node pages** —
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +
      `arrowDirection="left"` and adds the horizontal slide. See
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
@@ -83,7 +85,7 @@ ScreenRoot            position: relative
   > is rendered at FRAME level by `FooterPresenter`, not inside the page, and it is
   > always painted `COLORS.background` (`--paper`) — the design gives `.fbar` no other
   > ground. A page that sets a distinctly different `surfaceColor` therefore gets a
-  > visible colour step across the bottom 74px of the frame. `/decks` and the Mastery
+  > visible colour step across the bottom 74px of the frame. The fdp and the Mastery
   > Centers used to pass the grey `COLORS.header` and did exactly that; both now use
   > the default. If a page needs to feel tinted, tint an INNER surface — a card, a
   > sheet, a section — not the page ground. The two card-detail pages used to pass

@@ -5,7 +5,7 @@
 
 import type { VocabEntry, VocabLookupResponse, DictionaryEntry } from '../types';
 import { getCachedEntries, cacheEntries, getCachedDictionaryEntries, cacheDictionaryEntries } from './vocabCache';
-import { apiDelete, apiPatch, apiPost, apiPut } from '../api/http';
+import { apiGet, apiPatch, apiPost, apiPut } from '../api/http';
 import { vocabLog } from './vocabDebug';
 
 /**
@@ -196,26 +196,6 @@ export async function updateVocabEntry(
 }
 
 /**
- * Deletes a vocabulary entry and removes from cache
- * @param entryId ID of entry to delete
- * @returns Promise resolving to success status
- */
-export async function deleteVocabEntry(entryId: number): Promise<boolean> {
-  try {
-    await apiDelete(`/api/vocabEntries/${entryId}`);
-
-    // Remove from cache
-    const { removeCachedEntry } = await import('./vocabCache');
-    removeCachedEntry(entryId);
-    
-    return true;
-  } catch (error) {
-    console.error('Error deleting vocabulary entry:', error);
-    throw error;
-  }
-}
-
-/**
  * Handles bulk import operations and invalidates cache
  * @param file CSV file to import
  * @returns Promise resolving to import results
@@ -334,6 +314,32 @@ export function estimateApiCalls(tokens: string[]): {
  * Extracted from the two call sites that had hand-rolled the same POST: the flp
  * entry panel and the dictionary cdp.
  */
+/**
+ * Is this word in the user's Learn Now (bucket 'library')? A provisional row or no row
+ * reads as false. Used by the dictionary cdp's add/added toggle.
+ */
+export async function getLibraryStatus(
+  entryKey: string,
+  language: string
+): Promise<{ inLibrary: boolean }> {
+  const query = new URLSearchParams({ entryKey, language });
+  return apiGet<{ inLibrary: boolean }>(`/api/vocabEntries/libraryStatus?${query}`);
+}
+
+/**
+ * Remove a word from Learn Now. Never a delete: the server demotes the row to
+ * 'provisional', keeping its progress, so re-adding restores it in place.
+ */
+export async function removeFromLibrary(
+  entryKey: string,
+  language: string
+): Promise<{ status: 'removed' | 'not-in-library' }> {
+  return apiPost<{ status: 'removed' | 'not-in-library' }>(
+    '/api/vocabEntries/removeFromLibrary',
+    { entryKey, language }
+  );
+}
+
 export async function addToLibrary(
   entryKey: string,
   // Optional to match VocabEntry.language, which is optional. When undefined the key

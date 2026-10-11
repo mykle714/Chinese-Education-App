@@ -162,6 +162,24 @@ const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every(
 
 /** Replace `oldGlosses` in the flat definitions array with `newGlosses` at the slot of
  *  the first old gloss. Returns null if any old gloss is missing (partition broken). */
+// v8 example sentences can carry per-occurrence tags (segmentOccurrenceTags, keyed by
+// index into `segments`) that override senseDict at read time. When the retagged target
+// occurrence has one, retag it too, or the stale label would still win there. Returns
+// the fields to spread onto the sentence ({} when there is nothing to update).
+// See backfill-example-sentences.js → tagSentenceSegments.
+function retagTargetOccurrence(sentence, word, newSense) {
+  const tags = sentence.segmentOccurrenceTags;
+  if (!tags || !Number.isInteger(sentence.vocabCharIndex) || !Array.isArray(sentence.segments)) return {};
+  let charStart = 0;
+  for (const [index, seg] of sentence.segments.entries()) {
+    if (seg === word && charStart === sentence.vocabCharIndex && tags[index]) {
+      return { segmentOccurrenceTags: { ...tags, [index]: { ...tags[index], sense: newSense } } };
+    }
+    charStart += [...seg].length;
+  }
+  return {};
+}
+
 function spliceDefinitions(definitions, oldGlosses, newGlosses) {
   const at = definitions.indexOf(oldGlosses[0]);
   if (at < 0 || oldGlosses.some((g) => !definitions.includes(g))) return null;
@@ -206,7 +224,7 @@ function planRow(row) {
       exampleSentences = exampleSentences.map((s) => {
         if (s?.sense !== rm.sense) return s;
         const senseDict = s.senseDict ? { ...s.senseDict, [row.word1]: rm.retagSenseDict } : s.senseDict;
-        return { ...s, sense: rm.retagTo, senseDict };
+        return { ...s, sense: rm.retagTo, senseDict, ...retagTargetOccurrence(s, row.word1, rm.retagSenseDict) };
       });
     }
     changed = true;

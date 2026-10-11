@@ -15,6 +15,7 @@ import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
 import SensePicker from "./SensePicker";
+import { useShrinkWrapWrappedText } from "./useShrinkWrapWrappedText";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import { resolveTextColor, DD_TONES } from "../../../utils/cardTextColor";
 import { resolveCardColor } from "../../../utils/cardColor";
@@ -183,6 +184,14 @@ export const EnglishBlock: React.FC<{
     // shows immediately, before the persisted `selectedSense` round-trips back.
     const text = resolveDisplayDefinition(entry, selectedSenseIndex);
 
+    // Multi-line dd centering: once the gloss wraps, its box would stay as wide as the
+    // whole text track (which has already absorbed the collapsed left spacer), leaving the
+    // lines off-center. Shrink-wrapping the text to its wrapped width lets the grid's `1fr`
+    // sides re-center it. See useShrinkWrapWrappedText.
+    const englishBlockRef = React.useRef<HTMLDivElement>(null);
+    const englishTextRef = React.useRef<HTMLParagraphElement>(null);
+    useShrinkWrapWrappedText(englishTextRef, englishBlockRef, text);
+
     // The sense-picker trigger, structured exactly like ChineseBlock's `actions`
     // (writing + speaker buttons): a small column Box, so the two blocks stay
     // visually/structurally consistent even though English currently has only
@@ -190,7 +199,8 @@ export const EnglishBlock: React.FC<{
     // the eip definition header mounts too (see SensePicker.tsx). The
     // `sortedClusters` gate is duplicated here — not to decide whether the picker
     // renders (SensePicker self-hides) but because the whole `actions` column, and
-    // the hidden spacer that balances it, must collapse when there is no choice.
+    // the hidden spacer twin that pads the grid's left column, must collapse when
+    // there is no choice.
     const actions = sortedClusters ? (
         <Box
             className="mobile-demo-flashcard-actions"
@@ -207,57 +217,75 @@ export const EnglishBlock: React.FC<{
     ) : null;
 
     return (
-        // Outer row fills the width and centers the English text within the card —
-        // mirrors ChineseBlock's outer row exactly.
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-english-block">
-            {/* Inner wrapper shrinks to the whole assembly's width — same role as
-                ChineseBlock's inner wrapper (see its comment for the centering rationale).
+        // Outer row fills the width; the grid inside does the centering (see "-inner").
+        // Class name kept parallel to ChineseBlock's outer row.
+        <Box ref={englishBlockRef} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-english-block">
+            {/* Inner wrapper — a 3-column grid: [spacer | text | chip].
 
-                `maxWidth: 100%` is what keeps the sense chip ON the card. The trigger used to
-                hang off the text's right edge absolutely (left: 100%), which is invisible to
-                layout: once the gloss grew wide enough to fill the card, the chip sat past the
-                card's — and on the large card view the viewport's — right edge and could not be
-                tapped. In flow it instead squeezes the text, which wraps internally (see the
-                text row's `overflowWrap`).
+                Goal: the TEXT is centered on the card whenever it fits, and only borrows the
+                left-hand space a centered layout would reserve when it is too wide for that.
+                The track list does this with no measuring:
 
-                The row is deliberately `nowrap`. It used to wrap, which put the chip on its own
-                line under a wide gloss — but only the CHIP wrapped: its hidden balancing twin
-                (below) stayed on the text's line, so the gloss was left visibly pushed to the
-                RIGHT by half the twin's width. Since flex wrapping follows DOM order, there is
-                no CSS way to make the twin wrap along with the chip it balances, so the row
-                never wraps at all and the two always share the text's line. */}
+                  - text  `auto`                    → grows to its max-content, capped by what's
+                                                      left after the chip column's minimum.
+                  - chip  `minmax(min-content, 1fr)` → never narrower than the chip itself, so the
+                                                      chip can never be squeezed or pushed off-card.
+                  - spacer `minmax(0, 1fr)`         → may collapse all the way to 0.
+
+                The two `1fr` columns split the leftover space equally, so the text sits dead-
+                center while each half is at least a chip wide. Once the gloss is wider than
+                that, the chip column holds at its min-content and the spacer column absorbs
+                the whole squeeze — the text slides LEFT into that space instead of wrapping.
+                If it wraps anyway, `useShrinkWrapWrappedText` narrows the text to its wrapped
+                (balanced) width, so the `auto` track shrinks and the `1fr` sides re-center
+                the multi-line gloss whenever it fits beside the chip.
+                Only when the spacer has hit 0 does the text column itself shrink (and wrap,
+                via the text's `overflowWrap`). No chip → both sides are empty `1fr` tracks
+                and the text simply centers across the full width.
+
+                History: the chip used to hang off the text absolutely (left:100%), invisible to
+                layout, so a wide gloss pushed it past the card's — and on the large card view the
+                viewport's — right edge. Then it moved in-flow in a `nowrap` flex row with a
+                fixed-width hidden twin on the left; that kept the text centered but cost it the
+                chip's width twice (~48px of a ~235px front / ~271px back face), splitting
+                single long words mid-word. The shrinkable spacer column keeps the centering
+                and gives that width back on demand. */}
             <Box
                 sx={{
                     position: 'relative',
-                    display: 'inline-flex',
-                    flexWrap: 'nowrap',
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto minmax(min-content, 1fr)',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    maxWidth: '100%',
+                    width: '100%',
                 }}
                 className="mobile-demo-flashcard-english-inner"
             >
-                {/* Hidden twin of the actions column, balancing the real one on the other
-                    side so the TEXT — not the text+chip group — is what ends up centered. */}
+                {/* Hidden twin of the chip in the collapsible spacer column. It does no layout
+                    work on a definite-width face (the `1fr` split does the centering), but on the
+                    back face the text block is `width: max-content`, and the twin is what makes
+                    that intrinsic width text + 2×chip — without it the block would hug text+chip
+                    and the text would sit half a chip left of the block's center. `minWidth: 0`
+                    + `overflow: hidden` let it be clipped as its column collapses. */}
                 {actions && (
-                    <Box aria-hidden className="mobile-demo-flashcard-english-actions-spacer" sx={{ visibility: 'hidden', mr: 1, flexShrink: 0 }}>{actions}</Box>
+                    <Box
+                        aria-hidden
+                        className="mobile-demo-flashcard-english-actions-spacer"
+                        sx={{ gridColumn: 1, visibility: 'hidden', minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}
+                    >
+                        <Box sx={{ mr: 1, display: 'flex', flexShrink: 0 }}>{actions}</Box>
+                    </Box>
                 )}
                 {/* Dedicated row layer around just the text — mirrors CPCDRow's own root Box
-                    (position:relative, distinct from ForeignText's enclosing "-inner" flex
-                    container). Keeps English structurally parallel to Chinese: a plain
-                    text/glyph layer as one sibling, the actions box as the other. This is the
-                    layer that stays the true visual center of the assembly — the hidden spacer
-                    above balances the in-flow actions below so centering the "-inner" wrapper
-                    (via "-block"'s justifyContent:center) centers THIS row, not the row+actions
-                    group.
+                    (position:relative). Keeps English structurally parallel to Chinese: a plain
+                    text/glyph layer as one sibling, the actions box as another.
 
-                    `minWidth: 0` overrides the flex default (min-content), so a long gloss
-                    shrinks and wraps here rather than pushing the chip out of the wrapper, and
-                    `overflowWrap: break-word` on the text is what catches the remaining case —
-                    a single word longer than the space left beside the chip breaks instead of
-                    spilling over the card's edge (the row itself never wraps; see above). */}
-                <Box className="mobile-demo-flashcard-english-row" sx={{ position: 'relative', minWidth: 0 }}>
-                    <Typography sx={{
+                    `minWidth: 0` lets the `auto` text track shrink below the gloss's min-content
+                    once the spacer column is spent, and `overflowWrap: break-word` on the text
+                    catches the last case — a single word wider than everything left beside the
+                    chip breaks instead of spilling over the card's edge. */}
+                <Box className="mobile-demo-flashcard-english-row" sx={{ gridColumn: 2, position: 'relative', minWidth: 0 }}>
+                    <Typography ref={englishTextRef} className="mobile-demo-flashcard-english-text" sx={{
+                        margin: '0 auto',
                         fontSize: englishFontSize(text),
                         fontWeight: WEIGHT.regular,
                         color: englishColor,
@@ -273,7 +301,7 @@ export const EnglishBlock: React.FC<{
                     on-card clamp include it (what `inlineActions` used to opt into on Side 2),
                     and so it can never be laid out past the card's edge. */}
                 {actions && (
-                    <Box className="mobile-demo-flashcard-english-actions" sx={{ ml: 1, display: 'flex', flexShrink: 0 }}>{actions}</Box>
+                    <Box className="mobile-demo-flashcard-english-actions" sx={{ gridColumn: 3, justifySelf: 'start', ml: 1, display: 'flex' }}>{actions}</Box>
                 )}
             </Box>
         </Box>

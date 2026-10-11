@@ -628,6 +628,44 @@ export function buildSegmentMetadata(
   return result;
 }
 
+/**
+ * Per-OCCURRENCE segment metadata for a stored example sentence whose segmentation
+ * repeats a segment string (zh). `buildSegmentMetadata` is keyed by segment text, so two
+ * occurrences of 了 share one popup + pinyin even when the tagging pass labelled them
+ * differently (听了 = particle "le"; 了然 = "to understand", liǎo). This re-resolves each
+ * tagged occurrence through the same `buildSegmentMetadata` rules with single-segment
+ * dicts built from that occurrence's own labels.
+ *
+ * Sparse: only indexes present in `occurrenceTags` come back. The caller must pass the
+ * STORED `segments` — the indexes are meaningless against a live re-segmentation.
+ *
+ * Writer: scripts/backfill/chinese/backfill-example-sentences.js → tagSentenceSegments.
+ * Reader: DictionaryDAL.enrichExampleSentencesMetadataBatch; client
+ * src/components/SegmentedSentenceDisplay.tsx. Doc: docs/EXAMPLE_SENTENCES.md
+ * § Repeated segments.
+ */
+export function buildOccurrenceSegmentMetadata(
+  segments: string[],
+  occurrenceTags: Record<string, { pos?: string; sense?: string }> | null | undefined,
+  dictMap: Map<string, SegmentMeta>,
+  opts?: Omit<NonNullable<Parameters<typeof buildSegmentMetadata>[2]>, 'partOfSpeechDict' | 'senseDict'>
+): Record<string, RenderedSegmentMeta> {
+  const result: Record<string, RenderedSegmentMeta> = {};
+  if (!occurrenceTags) return result;
+  for (const [indexKey, tag] of Object.entries(occurrenceTags)) {
+    const index = Number(indexKey);
+    const seg = Number.isInteger(index) ? segments[index] : undefined;
+    if (!seg || !tag) continue;
+    const meta = buildSegmentMetadata([seg], dictMap, {
+      ...opts,
+      partOfSpeechDict: tag.pos ? { [seg]: tag.pos } : {},
+      senseDict: tag.sense ? { [seg]: tag.sense } : {},
+    })[seg];
+    if (meta) result[indexKey] = meta;
+  }
+  return result;
+}
+
 // A maximal run of CJK characters: Han ideographs plus CJK symbols/punctuation
 // (　-〿, e.g. 、。《》) and fullwidth forms (＀-￯). Keeping adjacent
 // CJK punctuation inside the run lets an embedded Chinese clause render as one cpcd

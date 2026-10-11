@@ -14,7 +14,7 @@ import UsageDashboardSection from "../features/usageDashboard/UsageDashboardSect
 
 // Tester Dashboard — the former landing page content (study time, streak, monthly
 // calendar, leaderboard) plus, for admins only, the User Usage section
-// (docs/USAGE_DASHBOARD.md). Reached from the Home menu (the row is validator- or
+// (docs/USAGE_DASHBOARD.md). Reached from Menu (the tile is validator- or
 // admin-only, see HomePage.tsx); the back arrow returns there.
 function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
@@ -39,7 +39,7 @@ function TesterDashboardPage() {
     return (
         // Tester Dashboard is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer,
         // DOWN back arrow (→ Home), slides up on enter / down on exit.
-        <LeafPage title="Tester Dashboard" onBack={() => navigate("/")} className="tester-dashboard-page">
+        <LeafPage title="Tester Dashboard" onBack={() => navigate("/menu")} className="tester-dashboard-page">
             <Box className="tester-dashboard-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
                 {/* Always rendered in the mobile single-column layout regardless
                     of viewport width — the desktop two-column layout is retired. */}

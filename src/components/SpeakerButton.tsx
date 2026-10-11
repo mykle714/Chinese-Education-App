@@ -12,6 +12,14 @@ interface SpeakerButtonProps {
 }
 
 /**
+ * The speaker's hit-target size, in px — pinned explicitly (not left to MUI's
+ * `size="small"` padding + rem-based icon) because LearnNowToggle centers its "+"
+ * under the speaker using this number. It used to hard-code 32 while the real
+ * button rendered at 30, leaving the "+" 1px off the speaker's axis.
+ */
+export const SPEAKER_BUTTON_SIZE = 30;
+
+/**
  * Speaker icon button used across the flashcards/dictionary UI. Stops pointer
  * event propagation so taps don't bubble up to enclosing flip/drag handlers.
  *
@@ -37,6 +45,8 @@ export const SpeakerButton: React.FC<SpeakerButtonProps> = ({ onClick, isLoading
                 onTouchEnd={stop}
                 aria-label="Play narration"
                 sx={{
+                    width: SPEAKER_BUTTON_SIZE,
+                    height: SPEAKER_BUTTON_SIZE,
                     color: theme.palette.flashcard.textSecondary,
                     '&:hover': { color: theme.palette.flashcard.onSurface },
                 }}
@@ -44,19 +54,21 @@ export const SpeakerButton: React.FC<SpeakerButtonProps> = ({ onClick, isLoading
                 <VolumeUpIcon fontSize="small" />
             </IconButton>
             {isLoading && (
-                // Sized to ring the IconButton (small = 32px hit target).
+                // Rings the button: 1px larger than SPEAKER_BUTTON_SIZE on every side.
                 // pointerEvents:none keeps the underlying button clickable
                 // (so a rapid retap can cancel + restart playback).
                 <CircularProgress
                     className="speaker-button-spinner"
-                    size={32}
+                    size={SPEAKER_BUTTON_SIZE + 2}
                     thickness={3}
                     sx={{
                         position: "absolute",
                         top: "50%",
                         left: "50%",
-                        marginTop: "-16px",
-                        marginLeft: "-16px",
+                        // Negative margins, not translate(-50%,-50%): the indeterminate
+                        // spinner animates `transform` on this same element.
+                        marginTop: `-${(SPEAKER_BUTTON_SIZE + 2) / 2}px`,
+                        marginLeft: `-${(SPEAKER_BUTTON_SIZE + 2) / 2}px`,
                         color: theme.palette.flashcard.onSurface,
                         pointerEvents: "none",
                     }}

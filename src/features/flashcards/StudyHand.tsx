@@ -1,12 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import Icon from "../../components/Icon";
 import RoundPlayButton from "../../components/RoundPlayButton";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { WEIGHT } from "../../theme/scale";
+import { SIZE, WEIGHT } from "../../theme/scale";
 import { SHADOW } from "../../theme/shadows";
-import { useHandSwipe } from "./useHandSwipe";
+import { useHandSwipe, DRAG_TILT } from "./useHandSwipe";
 import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
 
 /**
@@ -22,7 +22,7 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * taking its place. Nothing is hidden and nothing is repeated.
  *
  * Bringing a card forward is deliberately NOT starting the session. The front card
- * carries the figure and its own `Study now`, so choosing a mode and committing to it
+ * carries the figure and its own `Start`, so choosing a mode and committing to it
  * are two taps — which matters because Review and Challenge are the two modes a
  * learner picks on purpose and wants to see the size of first.
  *
@@ -82,6 +82,30 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * `pointer-events: none`, so it can neither commit a mode that is not forward nor swallow
  * the tap that brings the card forward.
  *
+ * ── The cramped layout: the numeral moves into the head ───────────────────────
+ * The hand takes whatever height its host leaves (`flex: 1 1 0`), and on a short frame —
+ * the Centers rail present, a small phone — the figure box between the name and `Start`
+ * stops having room for the numeral. Rather than shrink or clip it, the card RE-FLOWS:
+ * the SAME figure (numeral + hairline, at the SAME size) moves out from under the name
+ * and centres in the block BESIDE it — bounded by the name's right edge, the card's right
+ * edge, the card's top padding and the `Start` bar. The name stays where it was.
+ *
+ * WHEN: as soon as the figure box can no longer hold the numeral + hairline with
+ * `FIGURE_BREATHING_ROOM` clear above AND below it — i.e. when it starts to look cramped,
+ * well before the digits actually run out of room. Measured, not a breakpoint
+ * (`useCrampedFigure`), so it stays right if the card's padding, name or `Start` bar change.
+ *
+ * HOW: the full face is a CSS grid and only the numeral's grid AREA changes, so it is one
+ * DOM node in both layouts — the `SlotNumber` reel is never remounted mid-spin. The switch
+ * is hard (no animation), like a promotion: it only happens on a resize, never mid-gesture.
+ * ONLY THE FRONT CARD re-flows. The two back cards — `backRight`'s pre-rendered face
+ * included — always keep the roomy format, so the fan never changes shape; a promotion
+ * into a cramped front therefore swaps the numeral into the head at t=0, the same hard
+ * switch the rest of a promotion already is.
+ *
+ * A zero front card's `zeroMessage` tag moves from beside the name to UNDER it, because the
+ * space to the name's right now belongs to the figure.
+ *
  * ── Waiting for the counts ───────────────────────────────────────────────────
  * A figure in flight spins as a blurred slot-machine reel (`SlotNumber`) and lands when
  * its count arrives. That reel is the card's ENTIRE loading state — one thing moving on a
@@ -113,8 +137,8 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * EVERYTHING above about behaviour — three modes, the stored fan, tap / throw to promote,
  * the ineligible commit — except that its throw is LOCKED to left/right (vertical drags
  * scroll the page; `useHandSwipe` "The horizontal lock"), and changes the drawing to the design's `.rstk` stack: a
- * tight ±3° fan, and a front card carrying the mode's glyph, its name and a round play
- * button. NO figures and NO tags: the compact hand is a launcher, not a dashboard, so
+ * tight ±3° fan, and a front card carrying the mode's glyph, its name and a rounded-square
+ * launch button (→). NO figures and NO tags: the compact hand is a launcher, not a dashboard, so
  * `figure`, `figureCaption` and `zeroMessage` are ignored in it.
  *
  * Referenced by docs/SHELF_REDESIGN.md (entry 2), docs/DECKS_FEATURE.md and
@@ -184,13 +208,45 @@ export interface StudyHandProps {
     /** `full` (the fdp) or `compact` (the Reading Center) — see the docblock. */
     variant?: "full" | "compact";
     className?: string;
+    /**
+     * The host's "session is loading" state: every card shakes on its own beat and the
+     * hand stops taking input (the launch is already committed). Driven by the fdp's
+     * `useFlpLaunch` (flpLaunch.ts). Default false.
+     */
+    shaking?: boolean;
 }
 
-/** Geometry of the three fan slots, straight off `.fc.l` / `.fc.r` / `.fc.f`. */
+/**
+ * The full fan's shape, off the design's `.fc.l` / `.fc.r` / `.fc.f`: back cards inset
+ * 20px, tilted ±4.5° and shifted ±14px; the played card inset 2px; each card 46px below
+ * the one behind it.
+ */
+const FAN_TILT_DEG = 4.5;
+const FAN_BACK_INSET = 20;
+const FAN_BACK_SHIFT = 14;
+const FAN_STEP = 46;
+
+/**
+ * Where the fan STARTS: the back-left card's top, chosen so its raised corner just
+ * touches the top of the hand — the hand's box begins exactly where the cards do, with no
+ * dead band above them. (The design's fixed `top: 40` left ~28px of empty hand above the
+ * corner, which on the fdp stacked on the study area's rail→hand gap.)
+ *
+ * The rise: cards pivot at TOP CENTRE (`transformOrigin: "50% 0"`), so a top corner sits
+ * half a card-width from the pivot and lifts by (half-width) · sin θ. The card is the
+ * hand's width less both insets, so half-width = 50cqw − inset (the hand is a size
+ * container). The shift is applied AFTER the rotate, i.e. along the tilted axis, so it
+ * carries the corner back down by shift · sin θ. Expressed in `cqw` so the corner touches
+ * on every phone width, not just the one it was measured on. (The cos θ term on the
+ * card's height is < 0.5px and ignored.)
+ */
+const FAN_TOP = `calc((50cqw - ${FAN_BACK_INSET + FAN_BACK_SHIFT}px) * ${Math.sin((FAN_TILT_DEG * Math.PI) / 180).toFixed(5)})`;
+
+/** Geometry of the three fan slots. The steps are unchanged; only the start moved. */
 const SLOTS = {
-    backLeft: { top: 40, inset: 20, zIndex: 1, transform: "rotate(-4.5deg) translateX(-14px)" },
-    backRight: { top: 86, inset: 20, zIndex: 2, transform: "rotate(4.5deg) translateX(14px)" },
-    front: { top: 132, inset: 2, zIndex: 3, transform: "none" },
+    backLeft: { top: FAN_TOP, inset: FAN_BACK_INSET, zIndex: 1, transform: `rotate(-${FAN_TILT_DEG}deg) translateX(-${FAN_BACK_SHIFT}px)` },
+    backRight: { top: `calc(${FAN_TOP} + ${FAN_STEP}px)`, inset: FAN_BACK_INSET, zIndex: 2, transform: `rotate(${FAN_TILT_DEG}deg) translateX(${FAN_BACK_SHIFT}px)` },
+    front: { top: `calc(${FAN_TOP} + ${2 * FAN_STEP}px)`, inset: 2, zIndex: 3, transform: "none" },
 } as const;
 
 /**
@@ -203,6 +259,102 @@ const COMPACT_SLOTS = {
     backRight: { top: 0, bottom: 16, inset: 4, zIndex: 2, transform: "rotate(3deg) translateX(6px)" },
     front: { top: 12, bottom: 0, inset: 0, zIndex: 3, transform: "none" },
 } as const;
+
+/**
+ * The full face's vertical rhythm. Named because `useCrampedFigure` re-adds them to work
+ * out what the figure box needs, so the sx below and the measurement cannot drift apart.
+ */
+const FIGURE_GAP = 2;              // numeral ↔ hairline flex gap
+const HAIRLINE_MARGIN_TOP = 11;
+const HAIRLINE_HEIGHT = 2;
+const GO_MARGIN_BOTTOM = 13;
+/**
+ * Clear space the numeral (+ hairline) must keep above AND below inside the figure box.
+ * Once the box cannot give it this much, the numeral moves into the head — the switch is
+ * meant to happen when it starts to look cramped, not when it actually collides.
+ */
+const FIGURE_BREATHING_ROOM = 16;
+
+/**
+ * Whether the full hand's front card is too short to centre its numeral in the figure
+ * box (see "The cramped layout" in the docblock).
+ *
+ * LOOP-FREE by construction: every input is independent of the answer. The card's height
+ * comes from its absolute `top`/`bottom` in the hand, the numeral is `30cqh` of the hand,
+ * the `Start` bar is fixed, and the head is taken as ONE line of the name (its computed
+ * line-height, not its rendered height — in the cramped layout the name may wrap beside a
+ * wide numeral, and measuring that would hold the hand cramped after it had grown back).
+ * So the "roomy" figure box can be computed even while the cramped layout is showing, and
+ * no hysteresis is needed.
+ *
+ * Re-measured whenever the HAND resizes — the only thing that changes any of the inputs.
+ */
+function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+    const [cramped, setCramped] = useState(false);
+    useLayoutEffect(() => {
+        const hand = handRef.current;
+        if (!enabled || !hand) return;
+        const measure = () => {
+            const card = hand.querySelector<HTMLElement>(".study-hand__card--front");
+            const label = card?.querySelector<HTMLElement>(".study-hand__label");
+            const numeral = card?.querySelector<HTMLElement>(".study-hand__figure-number");
+            const go = card?.querySelector<HTMLElement>(".study-hand__go");
+            if (!card || !label || !numeral || !go) return;
+            const cardStyle = getComputedStyle(card);
+            const inner = card.clientHeight - parseFloat(cardStyle.paddingTop) - parseFloat(cardStyle.paddingBottom);
+            // One line of the name. `lineHeight` can come back as "normal"; fall back to
+            // the rendered height then (exact whenever the name is on one line).
+            const labelLine = parseFloat(getComputedStyle(label).lineHeight);
+            const headHeight = Number.isFinite(labelLine) ? labelLine : label.offsetHeight;
+            const roomyFigureBox = inner - headHeight - go.offsetHeight - GO_MARGIN_BOTTOM;
+            const needed = numeral.offsetHeight + FIGURE_GAP + HAIRLINE_MARGIN_TOP + HAIRLINE_HEIGHT + 2 * FIGURE_BREATHING_ROOM;
+            setCramped(roomyFigureBox < needed);
+        };
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(hand);
+        return () => observer.disconnect();
+    }, [handRef, enabled]);
+    return enabled && cramped;
+}
+
+/**
+ * The loading shake — a light tremor, side to side. Fast (~90–130ms a cycle) and
+ * deliberately IRREGULAR: uneven amplitudes at uneven offsets, so it reads as a tremor
+ * rather than a metronome. Each slot has its OWN period and phase so the three cards
+ * rattle independently instead of as one rigid fan.
+ *
+ * It travels the SWIPE's trajectory: a dragged card tilts by `x · DRAG_TILT` degrees
+ * (useHandSwipe), pivoting at the card's top centre, so every keyframe here pairs its
+ * horizontal offset with exactly that tilt — the shake is a tiny, rapid back-and-forth
+ * throw, not a sideways slide. Same constant, so tuning the swipe's lean retunes this.
+ *
+ * Animated on the individual `translate` / `rotate` properties, NOT `transform`: the slot
+ * geometry already owns `transform` (and its transition), and the individual properties
+ * compose with it. flpLaunch.ts's exit then animates `translate` on top of this (a later
+ * animation wins).
+ */
+const HAND_SHAKE_OFFSETS_PX: Record<string, number> = {
+    "0%, 100%": 0,
+    // Peak ±2px (was ±4px — read as too aggressive on 2026-10-10).
+    "15%": -2,
+    "30%": 1.5,
+    "45%": -1,
+    "60%": 2,
+    "80%": -1.5,
+};
+const HAND_SHAKE_KEYFRAMES = Object.fromEntries(
+    Object.entries(HAND_SHAKE_OFFSETS_PX).map(([at, x]) => [
+        at,
+        { translate: `${x}px 0px`, rotate: `${x * DRAG_TILT}deg` },
+    ])
+);
+/** Per-slot period and phase. Linear timing: a tremor has no ease. */
+const HAND_SHAKE_BEAT: Record<keyof typeof SLOTS, { durationMs: number; delayMs: number }> = {
+    front: { durationMs: 110, delayMs: 0 },
+    backRight: { durationMs: 130, delayMs: -45 },
+    backLeft: { durationMs: 90, delayMs: -30 },
+};
 
 /** How long a card takes to travel between slots after a promotion. */
 const SLOT_TRANSITION_MS = 260;
@@ -237,7 +389,7 @@ function afterSwipe(order: HandOrder): HandOrder {
     return [c, a, b];
 }
 
-export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix", onStudy, variant = "full", className }) => {
+export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix", onStudy, variant = "full", className, shaking = false }) => {
     const compact = variant === "compact";
     // The fan is the single source of truth for where every card sits. Seeded from
     // `initialFront` through FAN_ORDER so the hand opens in the same layout it always has.
@@ -264,9 +416,19 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
     // swipe-grid tiles. The fdp's full hand keeps the free, any-direction throw.
     const swipe = useHandSwipe(handleSwipe, compact ? "horizontal" : "free");
 
+    // Full hand only: on a short frame the figure moves beside the name.
+    const handRef = useRef<HTMLDivElement | null>(null);
+    const cramped = useCrampedFigure(handRef, !compact);
+
     return (
         <Box
-            className={className ? `study-hand ${className}` : "study-hand"}
+            ref={handRef}
+            className={[
+                "study-hand",
+                cramped ? "study-hand--cramped" : null,
+                shaking ? "study-hand--shaking" : null,
+                className ?? null,
+            ].filter(Boolean).join(" ")}
             // `flex: 1 1 0` + `minHeight: 0`: the hand takes whatever height the rows
             // above it leave and the cards are absolutely positioned inside it, so the
             // fan compresses on a short frame instead of overflowing.
@@ -282,6 +444,10 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                 // apply. See docs/SHELF_REDESIGN.md § A3 "The reference width is PER
                 // VARIANT, and the scaling is JS, not cqw".
                 containerType: "size",
+                // A shaking hand has already committed — no promotions, throws or second
+                // Start while the session loads.
+                pointerEvents: shaking ? "none" : undefined,
+                "@keyframes studyHandShake": HAND_SHAKE_KEYFRAMES,
             }}
         >
             {cards.map((card) => {
@@ -311,11 +477,18 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                 // Only the played card is draggable, so it alone carries the ref the
                 // gesture measures its dismissal threshold against.
                 const isBeingDragged = isFront && swipe.isDragging;
+                // Only the PLAYED card ever takes the cramped layout. The two back cards
+                // keep the roomy format no matter what — including `backRight`'s
+                // pre-rendered face — so the fan always reads the same; a promotion into
+                // a cramped front swaps layouts at t=0 like every other promotion change.
+                const crampedFace = cramped && isFront;
                 return (
                     <Box
                         key={card.id}
                         ref={isFront ? swipe.cardRef : undefined}
-                        className={`study-hand__card study-hand__card--${card.id} study-hand__card--${isFront ? "front" : "back"}`}
+                        // `--slot-*` names the fan position (front / backRight / backLeft);
+                        // flpLaunch.ts's FDP_EXIT picks each card's exit side off it.
+                        className={`study-hand__card study-hand__card--${card.id} study-hand__card--${isFront ? "front" : "back"} study-hand__card--slot-${slot}`}
                         role="button"
                         aria-label={isFront ? undefined : `Bring ${card.label} forward`}
                         // A back card's whole face is the "bring me forward" target; the
@@ -346,6 +519,12 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                             // middle.
                             transformOrigin: "50% 0",
                             transition: isBeingDragged ? "none" : SLOT_TRANSITION,
+                            // The loading shake (see HAND_SHAKE_KEYFRAMES) — each slot on
+                            // its own beat. Reduced motion: the cards hold still.
+                            animation: shaking
+                                ? `studyHandShake ${HAND_SHAKE_BEAT[slot].durationMs}ms linear ${HAND_SHAKE_BEAT[slot].delayMs}ms infinite`
+                                : "none",
+                            "@media (prefers-reduced-motion: reduce)": { animation: "none" },
                             // Full hand: the throw is omnidirectional, so the played card
                             // claims the touch on BOTH axes (`none`) — the page/sheet beneath
                             // is scrolled from anywhere but this card. Compact hand: `pan-y`,
@@ -361,15 +540,31 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                 // reads as lifted off the two behind rather than pasted on.
                                 ? "0 -2px 5px rgba(20,18,26,0.05), 0 10px 26px rgba(20,18,26,0.16)"
                                 : SHADOW.cardRest,
-                            display: "flex",
-                            flexDirection: "column",
+                            // The full FACE is a grid so the figure can change place as one
+                            // DOM node — see "The cramped layout". Roomy: the figure fills the
+                            // middle row under the name. Cramped: the name takes only its own
+                            // width (`auto`), and the figure fills the whole right-hand block
+                            // beside it — from the card's top padding down to `Start`, and from
+                            // the name's right edge to the card's — centring in it on both
+                            // axes. Everything else stays a flex column.
+                            ...(!compact && showsFace
+                                ? {
+                                    display: "grid",
+                                    gridTemplateColumns: crampedFace ? "auto minmax(0, 1fr)" : "minmax(0, 1fr)",
+                                    gridTemplateRows: "auto minmax(0, 1fr) auto",
+                                    gridTemplateAreas: crampedFace
+                                        ? `"head figure" ". figure" "go go"`
+                                        : `"head" "figure" "go"`,
+                                    columnGap: crampedFace ? "12px" : 0,
+                                }
+                                : { display: "flex", flexDirection: "column" }),
                             cursor: isFront ? (isBeingDragged ? "grabbing" : "grab") : "pointer",
                             overflow: "hidden",
                         }}
                     >
                         {compact ? (
                             // COMPACT FACE — the design's `.rfc`: glyph top-left, name and a
-                            // round play button along the foot. Drawn on the played card and on
+                            // rounded-square → launch button along the foot. Drawn on the played card and on
                             // the one queued behind it (pre-rendered, as in the full hand);
                             // the bottom card stays a blank coloured edge.
                             showsFace && (
@@ -385,7 +580,12 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                         </Typography>
                                         <RoundPlayButton
                                             size="hand"
-                                            className="study-hand__go study-hand__go--round"
+                                            // A rounded square with a → rather than the
+                                            // games' ▶ circle: the 14px corner matches the
+                                            // full hand's `Start` bar.
+                                            shape="square"
+                                            glyph="arrow"
+                                            className="study-hand__go study-hand__go--square"
                                             ariaLabel={isFront ? `Start ${card.label}` : undefined}
                                             // Inert on the queued card, exactly as the full
                                             // hand's button is (see its comment below).
@@ -404,15 +604,19 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                         <Box
                             className="study-hand__head"
                             sx={{
+                                gridArea: "head",
                                 display: "flex",
-                                alignItems: "center",
+                                // Cramped: the space right of the name is the figure's, so a
+                                // zero card's tag drops UNDER the name instead of beside it.
+                                ...(crampedFace
+                                    ? { flexDirection: "column", alignItems: "flex-start", gap: "4px", minWidth: 0 }
+                                    : { alignItems: "center", gap: "9px" }),
                                 // Name LEFT, tag RIGHT — on the front card and on the one
                                 // queued directly behind it. `backLeft` clusters its head
                                 // right: it is two promotions away, and its left side is
                                 // the part the fan's overlap eats first, so a name pinned
                                 // there would slide under another card.
                                 justifyContent: showsFace ? "space-between" : "flex-end",
-                                gap: "9px",
                             }}
                         >
                             <Typography
@@ -472,18 +676,26 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                 <Box
                                     className="study-hand__figure"
                                     sx={{
-                                        flex: 1,
+                                        gridArea: "figure",
                                         minHeight: 0,
                                         display: "flex",
                                         flexDirection: "column",
+                                        // Centred in whichever block the grid gives it — the
+                                        // middle of the card, or (cramped) the space beside the
+                                        // name and above `Start`.
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        gap: "2px",
+                                        gap: `${FIGURE_GAP}px`,
                                     }}
                                 >
                                     <Typography
                                         component="b"
+                                        // Measured by `useCrampedFigure` — keep the class.
+                                        className="study-hand__figure-number"
                                         sx={{
+                                            // Its height is a measurement input; it must
+                                            // never wrap beside the name.
+                                            whiteSpace: "nowrap",
                                             fontFamily: FONTS.sans,
                                             // 118px is the artboard's size; `clamp` down to
                                             // the height the slot actually has, because the
@@ -509,8 +721,19 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     {/* The ink hairline under the figure — `.bignum:after` (v2 draws it in ink).
                                         It is the only rule on the card, and it exists to stop
                                         a 118px numeral floating in the middle of an empty
-                                        panel. */}
-                                    <Box sx={{ width: 34, height: 2, borderRadius: "1px", backgroundColor: COLORS.onSurface, opacity: 0.5, marginTop: "11px" }} />
+                                        panel. Kept in the cramped layout too: the figure moves
+                                        as one unit, rule and all. */}
+                                    <Box
+                                        className="study-hand__figure-rule"
+                                        sx={{
+                                            width: 34,
+                                            height: HAIRLINE_HEIGHT,
+                                            borderRadius: "1px",
+                                            backgroundColor: COLORS.onSurface,
+                                            opacity: 0.5,
+                                            marginTop: `${HAIRLINE_MARGIN_TOP}px`,
+                                        }}
+                                    />
                                 </Box>
 
                                 <Box
@@ -526,27 +749,50 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     disabled={!isFront}
                                     tabIndex={isFront ? undefined : -1}
                                     aria-hidden={isFront ? undefined : true}
+                                    // "Start" alone does not say what is started; screen
+                                    // readers get the same name as the compact hand's button.
+                                    aria-label={isFront ? `Start ${card.label}` : undefined}
                                     sx={{
                                         ...(isFront ? {} : { pointerEvents: "none" }),
-                                        marginTop: "auto",
-                                        marginBottom: "13px",
+                                        gridArea: "go",
+                                        marginBottom: `${GO_MARGIN_BOTTOM}px`,
+                                        // Anchors the → pinned to the right edge below.
+                                        position: "relative",
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        gap: "8px",
                                         backgroundColor: greyed ? COLORS.greyA : COLORS.onSurface,
                                         color: COLORS.white,
                                         border: "none",
                                         borderRadius: "14px",
                                         padding: "14px",
                                         fontFamily: FONTS.sans,
-                                        fontSize: 14,
+                                        // One step up the type scale from the design's 14px:
+                                        // the commit is the card's one action, and at 14px it
+                                        // read small under the 118px numeral.
+                                        fontSize: SIZE.bodyLg,
                                         fontWeight: WEIGHT.semibold,
                                         cursor: "pointer",
                                     }}
                                 >
-                                    <Icon name="play_arrow" size={18} color={COLORS.white} />
-                                    Study now
+                                    Start
+                                    {/* The same → as the compact hand's square button
+                                        (`RoundPlayButton glyph="arrow"`). Drawn at 20px
+                                        against the 16px label because a Material glyph
+                                        fills only ~2/3 of its box: at 20px the arrow stands
+                                        about as tall as the label's letters. It is
+                                        pinned to the bar's RIGHT EDGE (inset by the bar's own
+                                        14px padding) rather than set beside the label, so the
+                                        label stays centred on the card and the arrow points
+                                        off the end of the bar. Absolute, so it takes no
+                                        width from the label's centring. */}
+                                    <Icon
+                                        name="arrow_forward"
+                                        size={20}
+                                        color={COLORS.white}
+                                        className="study-hand__go-arrow"
+                                        sx={{ position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)" }}
+                                    />
                                 </Box>
                             </>
                         )}

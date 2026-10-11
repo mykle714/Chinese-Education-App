@@ -140,7 +140,7 @@ function ReaderPage() {
     return (
         <NodePage
             title="Reader"
-            onBack={() => navigate("/")}
+            onBack={() => navigate("/menu")}
             headerExtraActions={headerRightContent}
             scrollable={false}
             contentClassName="reader-page-root"

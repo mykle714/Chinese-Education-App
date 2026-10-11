@@ -24,6 +24,10 @@ import type { VocabEntry } from "../types";
  * without opening a menu, and it is clear of the bottom of the screen — which on these
  * pages belongs to the thumb (swiping the card, raising the info panel).
  *
+ * Exception: the read-only dictionary cdp (DictionaryCardDetailPage) has NO card — the
+ * page is the eip panel mounted inline — so it puts the rail at the bottom of the eip's
+ * DEFINITION tab (InfoCardPanelBody `definitionFooter`), zeroing the margin through `sx`.
+ *
  * ── Why the two tools are the ones here ───────────────────────────────────────
  * They are the app's two word-level drills that leave this page: `Write it` opens the
  * practice-writing popup (docs/PRACTICE_WRITING.md) and `Compare` loads this word into

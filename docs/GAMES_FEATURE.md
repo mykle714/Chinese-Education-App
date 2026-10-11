@@ -143,7 +143,7 @@ mark.
 
 | Path     | Component   | Footer tab | Notes                          |
 | -------- | ----------- | ---------- | ------------------------------ |
-| `/games` | `GamesPage` | Home       | Hub / menu; **node page** (left arrow → `/`, keeps footer, slides in-from-right). The tab is resolved from the route by `FooterPresenter`; pages no longer declare it. |
+| `/games` | `GamesPage` | Menu       | Hub / menu; **node page** (left arrow → `/menu`, keeps footer, slides in-from-right). The tab is resolved from the route by `FooterPresenter`; pages no longer declare it. |
 
 Each individual game gets its own route under `/games/<slug>`.
 
@@ -250,11 +250,12 @@ Full details, including the server-side filter: [DECKS_FEATURE.md](./DECKS_FEATU
 
 ## Navigation entry point
 
-Games is **not** a footer tab. It is a row in the **Home menu** (`/`, see
-[NAVIGATION.md](./NAVIGATION.md)). The footer tabs are Flashcards / Discover /
-Home / Account; the Games hub is reached by tapping **Games** in the Home menu.
+Games is **not** a footer tab. It is a tile on the **Menu** hub (`/menu`,
+`src/pages/MenuPage.tsx`; see [NAVIGATION.md](./NAVIGATION.md)). The footer tabs are
+Home / Menu / Discover / Dictionary; the Games hub is reached by tapping **Games** on the
+Menu, and `/games` lights the Menu tab (`footerTab: "menu"`).
 The hub is a **node page** (`NodePage`, see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)):
-its header shows a **left** back arrow returning to `/`, it keeps the floating
+its header shows a **left** back arrow returning to `/menu`, it keeps the floating
 footer, and it slides in from the right (out to the right only when the arrow is
 tapped — footer-tab nav does not animate).
 
@@ -343,7 +344,7 @@ placeholder rows tend to get shipped by accident.
 
 ### 3. Left back arrow on the hub (node page)
 The hub is a **node page** (`NodePage`), so it shows a **left** back arrow
-returning to `/` — Games is a drill-in from the Home menu, not a footer tab.
+returning to `/menu` — Games is a drill-in from the Menu hub, not a footer tab.
 It keeps the floating footer (lateral nav stays available) and only slides out
 to the right when the arrow is tapped. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
@@ -374,21 +375,20 @@ anymore (see [NAVIGATION.md](./NAVIGATION.md)); desktop is phone-frame-only.
 
 **Do not** re-introduce a per-page `IPhoneFrame = styled(Box)…` or local
 `desktopFrameSx` block when adding a new game page (or any other mobile-demo
-page). Just register the route in `MOBILE_DEMO_PATHS` and render the page's
+page). Just give the route a `shell: "frame"` row in `src/routes/routeMeta.ts` (which
+replaced the old `MOBILE_DEMO_PATHS` array in `Layout.tsx`) and render the page's
 content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
-Today's `MOBILE_DEMO_PATHS` (`src/components/Layout.tsx`): `/`,
-`/flashcards/decks`, `/flashcards/mastered`, `/account`, `/flashcards/learn`,
-`/discover`, `/games`, `/community`, `/night-market`, `/reader`, `/dictionary`,
-`/tester-dashboard`, `/settings`, `...GAME_ROUTES`, plus any path
-under `/discover/sort/`, `/discover/quick-mark/`, `/discover/skipped/`,
-`/flashcards/card/`, `/dictionary/card/`, or `/reader/`.
+The frame routes are every `routeMeta` row with `shell: "frame"` — the four footer tabs
+(`/`, `/menu`, `/discover`, `/dictionary`), their drill-ins, the game routes (generated
+from `GAME_REGISTRY`), `/flashcards/learn`, `/settings`, and the legacy redirects
+(`/flashcards/decks`, `/flashcards/mastered`). `src/routes/routeMeta.ts` is the list.
 
 ## Mobile demo header (shared header hierarchy)
 
 Two-layer header model (there is **no** hamburger / nav drawer — global nav is
-the footer tabs + the Home menu):
+the footer tabs + the Menu hub):
 
 - **`PageHeader`** (`src/components/PageHeader.tsx`) — base layout primitive.
   Defines the row: optional back chevron grouped with the title (`arrowDirection`
@@ -1256,7 +1256,7 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 
 ## Files
 
-- `src/components/MobileFooter.tsx` — footer tabs (Flashcards / Discover / Home / Account)
+- `src/components/MobileFooter.tsx` — footer tabs (Home / Menu / Discover / Dictionary)
 - `src/components/MobileDemoFrame.tsx` — shared phone-frame container
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)

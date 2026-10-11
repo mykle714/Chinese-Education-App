@@ -10,7 +10,8 @@ import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
 import { FOOTER_TOTAL_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
-import { API_BASE_URL } from "../../constants";
+import { useAuth } from "../../AuthContext";
+import { removeFromLibrary } from "../../utils/vocabApi";
 import type { VocabEntry } from "../../types";
 import IconPickerDialog from "../../components/IconPickerDialog";
 import { clearWritingDraft } from "../../components/handwriting/writingDraftStore";
@@ -74,6 +75,7 @@ const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     // The mastery LENS this card was opened under (docs/DECKS_FEATURE.md § "Mastery
     // Centers"). `?bar=reading` means the learner came from the Reading Center, so the
     // Mastery section below shows the reading bar alone; absent it reads `core` and the
@@ -97,9 +99,6 @@ const VocabCardDetailPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
-    // Guards the destructive delete behind an explicit confirmation (same pattern as
-    // the icon reset-to-default dialog below).
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     // The extra-info sheet. The definition / breakdown /
     // examples boxes used to run down the page under the hero card, which made the cdp
     // a long scroll whose first screen was the only part most visits read. They are the
@@ -320,19 +319,18 @@ const VocabCardDetailPage: React.FC = () => {
         return () => clearWritingDraft();
     }, []);
 
-    // Hard-deletes the VocabEntry and returns to the decks page. Only reachable
-    // after the user confirms in the delete dialog.
-    const handleDeleteConfirmed = async () => {
+    // "Delete" removes the card from Learn Now WITHOUT deleting it: the server demotes the
+    // row to 'provisional', so its review history and deck memberships survive and
+    // re-adding it (e.g. the dictionary cdp's "+") promotes it back in place. Nothing is
+    // lost, so there is no confirmation dialog. Returns to the decks page, where every
+    // list read (vetSortedClause) no longer shows the card.
+    // Docs: docs/PROVISIONAL_CARDS.md § "Removing from Learn Now demotes".
+    const handleDelete = async () => {
         if (!entry) return;
         try {
             setActionLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/vocabEntries/${entry.id}`, {
-                method: 'DELETE',
-                credentials: 'include',
-            });
-            if (!response.ok) throw new Error('Failed to delete card');
-            setDeleteConfirmOpen(false);
-            navigate('/flashcards/decks', { state: { refresh: Date.now() } });
+            await removeFromLibrary(entry.entryKey, entry.language ?? user?.selectedLanguage ?? 'zh');
+            navigate('/', { state: { refresh: Date.now() } });
         } catch (err) {
             console.error('Error deleting card:', err);
             setActionLoading(false);
@@ -342,7 +340,7 @@ const VocabCardDetailPage: React.FC = () => {
     return (
         // Card Detail is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): keeps the footer,
         // LEFT back arrow (returns to the previous screen), slides in from the right.
-        // Reached from Decks/Mastered, so the Flashcards tab stays active.
+        // Reached from Home (the fdp) or a collection, so the Home tab stays active.
         <NodePage
             title="Card Detail"
             onBack={() => navigate(-1)}
@@ -437,9 +435,10 @@ const VocabCardDetailPage: React.FC = () => {
                         doors to the same room is worse than one, and the flp already has
                         exactly one.
 
-                        Delete stays here, and deliberately never joins the rail: it is rare,
-                        irreversible and takes the card's whole review history with it, so it
-                        belongs on a surface the learner has navigated TO. See
+                        Delete stays here, and deliberately never joins the rail: it is rare and
+                        takes the card out of every deck, so it belongs on a surface the learner
+                        has navigated TO. (It is NOT destructive — it demotes the card to
+                        'provisional', keeping its history; see handleDelete.) See
                         docs/CARD_NOTES.md and docs/SHELF_REDESIGN.md (artboard 21).
 
                         The glyph is a Material Symbol via `Icon` (D3), not an
@@ -450,7 +449,7 @@ const VocabCardDetailPage: React.FC = () => {
                         className="vocab-card-detail__delete-button"
                         aria-label="Delete card"
                         disabled={actionLoading}
-                        onClick={() => setDeleteConfirmOpen(true)}
+                        onClick={handleDelete}
                     >
                         <Icon name="delete" size={20} color={COLORS.dangerInk} />
                     </IconButton>
@@ -755,30 +754,6 @@ const VocabCardDetailPage: React.FC = () => {
                     onTermChange={setLastIconQuery}
                     prefetched={pickerPrefetched}
                 />
-
-                {/* Delete-card confirmation — the delete is a hard delete of the
-                    VocabEntry (review history included), so it must be explicit. */}
-                <Dialog
-                    className="vocab-card-detail__delete-dialog"
-                    open={deleteConfirmOpen}
-                    onClose={() => !actionLoading && setDeleteConfirmOpen(false)}
-                >
-                    <DialogTitle>Delete this card?</DialogTitle>
-                    <DialogContent>
-                        <DialogContentText>
-                            This permanently removes{entry ? ` "${entry.entryKey}"` : " this card"} from
-                            your collection, along with its review history. This can't be undone.
-                        </DialogContentText>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setDeleteConfirmOpen(false)} disabled={actionLoading}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleDeleteConfirmed} color="error" disabled={actionLoading}>
-                            Delete
-                        </Button>
-                    </DialogActions>
-                </Dialog>
 
                 {/* Reset-to-default confirmation. */}
                 <Dialog

@@ -596,17 +596,17 @@ shape that is actually current; the group listings below it remain accurate abou
 all words
 ├─ physical
 │  ├─ animate                accepted
-│  │  ├─ person              accepted   └─ fictional            new
-│  │  │                                    ├─ Chinese myth & legend      new (2026-10-06)
-│  │  │                                    ├─ Greek & Roman myth         new
-│  │  │                                    ├─ Norse myth                 new
-│  │  │                                    └─ generic fantasy & folklore new
-│  │  └─ animal              accepted   ├─ commonly eaten animals  new (renamed from food animal 2026-10-06)
-│  │                                    └─ mythical             new
+│  │  ├─ person              accepted   └─ fictional            accepted (2026-10-07)
+│  │  │                                    ├─ Chinese myth & legend      accepted
+│  │  │                                    ├─ Greek & Roman myth         accepted
+│  │  │                                    ├─ Norse myth                 accepted
+│  │  │                                    └─ generic fantasy & folklore accepted
+│  │  └─ animal              accepted   ├─ commonly eaten animals  accepted (renamed from food animal 2026-10-06)
+│  │                                    └─ mythical             accepted
 │  ├─ plant                  accepted   └─ fungus               accepted
 │  ├─ microscopic            new        └─ microbe              accepted
 │  ├─ body part              accepted
-│  │  ├─ common anatomy      accepted   └─ common organs        new
+│  │  ├─ common anatomy      accepted   └─ common organs        accepted
 │  │  └─ medical             accepted
 │  ├─ food                   accepted   dish · ingredient · drink  (all accepted)
 │  ├─ item                   accepted   loose: 花 花朵 鲜花
@@ -615,15 +615,16 @@ all words
 │  ├─ object                 accepted
 │  │  └─ man-made            accepted   vehicle · machine · furnishing
 │  ├─ component              accepted   one group per whole it belongs to — every child accepted 2026-10-06
-│  ├─ structure              accepted   building · room · infrastructure
-│  ├─ science & engineering  new        electrical engineering · biology
+│  ├─ structure              accepted   building · public buildings ·
+│  │                                    household rooms · infrastructure (all accepted 2026-10-07)
+│  ├─ science & engineering  accepted   electrical engineering · biology
 │  │                                    chemistry · physics
 │  ├─ elements               accepted   fire · water · earth · air · metal · wood
-│  │                                    electricity · ice · light · dark · poison · spirit
+│  │                                    electricity · ice · light · dark · poison · spirit (all accepted 2026-10-07)
 │  ├─ weather                accepted   雨 雪 风 云 雷 闪电 …
 │  ├─ substance              accepted   (+ 石头 沙子, rehomed)
 │  ├─ geography              accepted
-│  ├─ celestial              accepted   └─ proper noun          new
+│  ├─ celestial              accepted   (proper noun child dropped 2026-10-07)
 │  ├─ space                  accepted   (renamed from void)
 │  └─ fictional              accepted   (renamed from fictive)
 ├─ collective                accepted   raised out of physical
@@ -649,7 +650,7 @@ all words
 │  ├─ negation               accepted   plain negators loose; └─ double negative
 │  ├─ measure word           accepted
 │  ├─ spatial relation       accepted
-│  └─ conjunction            NEW        joining · contrast · cause · condition · alternative
+│  └─ conjunction            accepted   joining · contrast · cause · condition · alternative
 └─ time                      accepted
    ├─ point · span           accepted
    ├─ unit                   NEW        秒 分钟 小时 天 日 星期 周 月 年 世纪
@@ -657,6 +658,29 @@ all words
    ├─ period                 NEW        season · tide · festival · time off
    └─ era                    NEW        generic loose; └─ proper noun (dynasties, 民国)
 ```
+
+**Rulings 2026-10-07.** Accepted: `person › fictional` and its four culture groups,
+`commonly eaten animals`, `mythical`, `common organs`, `structure › infrastructure`, everything
+under `science & engineering`, and `weather`. **`structure` was reworked**: `building` holds only
+generic words for a building (楼, 大楼, 房子, 公寓, 别墅, 摩天大楼 …); a new sibling
+**`public buildings`** holds the town's shared, publicly run buildings (医院, 图书馆, 学校, 市政厅,
+法院, 警察局, 邮局, 博物馆 …); `room` is renamed **`household rooms`**. Every `elements` group was
+filled out. `celestial › proper noun` was dropped and its words moved onto `celestial` — the
+first place the kind-vs-individual rule (§ 5.65) was set aside in favour of a flat group.
+The Word Tree now marks every word whose det row is `discoverable = false` (384 of 4,583 word
+rows on 2026-10-07; heavy in buildings, rooms and elements) — the Q40 problem made visible.
+**Qualities carry their own name.** A dimension node now holds, directly on itself, the noun
+that *names* the quality (size 大小 · quantity 多少 · temperature 温度 · price 价格 · age 年龄 ·
+colour 颜色 …), ahead of its `more` / `less` poles. The sweep-04 `verbs — pole not sorted`
+children were dropped from `qualities`; their 180 verb senses wait in `unplaced verbs`, one
+group per dimension (`qualities › emotional state` alone holds 149).
+**Sweep-04 grammar groups.** `grammar › modal` is renamed **`helper verbs`** (能, 可以, 得, 应, 会 —
+the word before a verb saying whether it is possible, allowed, required or advisable) and
+accepted. `light verb` is renamed **`generic verb`** (打, 搞, 进行). `being & having` was split
+into nine sibling groups under `grammar`: being · resembling · existing · located at · having ·
+containing · relating · coming from · counting as. All of these, plus `generic verb` and
+`directional complement` (name kept), were accepted 2026-10-07 — every `grammar` child is now
+accepted.
 
 **Rulings 2026-10-06.** `body part › medical`, `body part › common anatomy` and every
 group under `component` are accepted. `food animal` is renamed **`commonly eaten animals`**.
@@ -1051,7 +1075,7 @@ conjunctions were worth seeing before the rest of sweep 05.
 sets: **only the marked case earns a group.** An unmarked default does not need
 a node to name it — the same reasoning that dissolved `component of anything`.
 
-**`grammar › conjunction` — new, 25 words.** Sub-grouped by the relation the
+**`grammar › conjunction` — accepted 2026-10-07 (with every sub-group), 25 words.** Sub-grouped by the relation the
 conjunction asserts between the two halves it joins, because a conjunction names
 nothing and so has no other classification available:
 

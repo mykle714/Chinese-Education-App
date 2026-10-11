@@ -3,6 +3,7 @@ import { IDeckDAL } from '../interfaces/IDeckDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import type { DeckSummary } from '../../types/decks.js';
 import { ValidationError, DuplicateError } from '../../types/dal.js';
+import { VET_PHYSICAL_TABLES, vetSortedClause } from '../shared/vetTable.js';
 
 /**
  * The `decks` columns a DeckSummary needs, minus `cardCount`.
@@ -16,9 +17,19 @@ const DECK_COLS = `d.id, d.language, d.name, d."editMode", d."createdAt", d."upd
  * every selected deck column in its grouping key (noise that grows with the row
  * type), and this form returns 0 for an empty deck without relying on the reader
  * to notice that COUNT of a LEFT JOIN counts the joined column, not `*`.
- * It reads the composite PK's leading column, so it is an index-only scan.
+ *
+ * Counts only members still in Learn Now (`vetSortedClause`). Removing a card from
+ * Learn Now demotes it to 'provisional' but KEEPS its deck_cards rows, so a re-add
+ * restores it to its decks (docs/PROVISIONAL_CARDS.md § "Removing from Learn Now
+ * demotes"). The count must therefore match what OnDeckVocabService.getDeckCards
+ * shows, which filters the same way. This is the one place this DAL reads the vet
+ * (see IDeckDAL's SCOPE note). The vet is two physical tables sharing one id
+ * sequence, so the member is probed in each by primary key.
  */
-const CARD_COUNT = `(SELECT COUNT(*)::int FROM deck_cards dc WHERE dc."deckId" = d.id) AS "cardCount"`;
+const LEARN_NOW_MEMBER = VET_PHYSICAL_TABLES
+  .map((table) => `EXISTS (SELECT 1 FROM ${table} ve WHERE ve.id = dc."vocabEntryId" AND ${vetSortedClause('ve')})`)
+  .join(' OR ');
+const CARD_COUNT = `(SELECT COUNT(*)::int FROM deck_cards dc WHERE dc."deckId" = d.id AND (${LEARN_NOW_MEMBER})) AS "cardCount"`;
 
 /** Postgres unique-violation SQLSTATE — the deck-name index firing. */
 const PG_UNIQUE_VIOLATION = '23505';

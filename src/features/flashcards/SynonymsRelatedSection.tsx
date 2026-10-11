@@ -14,15 +14,13 @@ import type { VocabEntry } from "../../types";
  *
  * ── Why this is its own module ────────────────────────────────────────────────
  * These two lists are the ONLY part of the card-detail content that the eip has no
- * tab for (TAB_LABELS is definition/examples/breakdown). When the cdp's sheet body
- * was swapped from `VocabCardSections` to the eip proper (`InfoCardSection`), they
- * needed to live inside the eip's DEFINITION tab — while the read-only dictionary cdp
- * still renders them as its own `SectionCard`. One component, two hosts, so the chips
- * cannot drift apart the way the breakdown grid did before `BreakdownRow`.
+ * tab for (TAB_LABELS is definition/examples/breakdown), so on the cdps they ride at
+ * the bottom of the eip's DEFINITION tab (InfoCardTabContent, `showSynonymsRelated`).
+ * Both cdps — the saved-card cdp's sheet and the dictionary cdp's inline panel — reach
+ * it that way. Kept as its own module so the list logic stays out of the tab body.
  *
- * It renders CONTENT ONLY — no card, no padding of its own. Each host supplies its own
- * container: `VocabCardSections` wraps it in a `SectionCard`, the eip definition tab
- * renders it under `DefinitionFacts` (see InfoCardTabContent).
+ * It renders CONTENT ONLY — no card, no padding of its own; the definition tab supplies
+ * the ruled-off container under `DefinitionFacts`.
  *
  * Provenance: synonyms are AI-enriched with no validation field of their own, so the
  * whole list always carries the AI treatment — one badge for the list, plus the shared
@@ -137,8 +135,7 @@ export const SynonymsRelatedSection: React.FC<SynonymsRelatedSectionProps> = ({
 /**
  * The section's own heading style INSIDE the eip definition tab. The eip has no
  * `SectionLabel` of its own (its tabs are titled by the strip), so this mirrors the
- * `.shelfhd` caption weight used by InfoCardTabContent's TabCaption rather than
- * inventing a third label treatment.
+ * `.shelfhd` caption weight (`Label`) rather than inventing a third label treatment.
  */
 export const EipSectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const theme = useTheme();

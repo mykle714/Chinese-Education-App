@@ -15,7 +15,7 @@ interface LayoutProps {
 
 // Global app shell. There is no navigation chrome here anymore — the hamburger
 // drawer / desktop sidebar were removed in favor of the footer tabs
-// (Flashcards / Discover / Home / Account) plus the Home menu. Every page now
+// (Home / Menu / Discover / Dictionary). Every page now
 // owns its own header (a back arrow for drill-ins, or MobileTabScreen's header
 // for the footer-tab hubs).
 //

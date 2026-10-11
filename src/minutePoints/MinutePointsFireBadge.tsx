@@ -5,6 +5,7 @@ import { useMinutePoints } from "./useMinutePoints";
 import { useAuth } from "../AuthContext";
 import { useMinutePointsPaused } from "./minutePointsPause";
 import { COLORS } from "../theme/colors";
+import { useBankingAnchorRef, useBankingFrame } from "./dailyBanking/DailyBankingContext";
 
 /**
  * The largest rise (in points of the ink band) that is allowed to ANIMATE. One second of
@@ -95,11 +96,22 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  *
  * Renders nothing when signed out — there is no balance to report, and "0" would read
  * as a broken counter rather than as "no account".
+ *
+ * ── THE DAILY BANKING RUN (hp only) ──────────────────────────────────────────────────
+ * Under HomePage's `DailyBankingProvider`, the first hp visit of a streak day plays a
+ * banking run (docs/DAILY_MINUTE_BANKING.md): while a frame is live the badge draws the
+ * RUN's count, fill and scale instead of its own — yesterday's figure on a full flame,
+ * swelling, then draining to today's figure while embers leave for the avatar. The
+ * badge also registers itself as the embers' `flame` anchor. Outside the provider the
+ * frame is always null and none of this applies.
  */
 const MinutePointsFireBadge: React.FC = () => {
     const { user } = useAuth();
     const minutePoints = useMinutePoints();
     const paused = useMinutePointsPaused();
+    // Non-null only during an hp banking run — see THE DAILY BANKING RUN above.
+    const banking = useBankingFrame();
+    const flameAnchorRef = useBankingAnchorRef("flame");
 
     // A page that cannot accrue minutes gets the flat solid flame — see OFF-STUDY MODE
     // above. Note this is NOT `!isActive`: an eligible page the learner has gone quiet on
@@ -137,6 +149,32 @@ const MinutePointsFireBadge: React.FC = () => {
     // balance, so the header shows no flame at all.
     if (!user) return null;
 
+    if (banking) {
+        // The run's frame replaces the live readout wholesale. Always orange (the run
+        // only plays on the off-study hp), always a gauge (the fill IS the drain), never
+        // the point-landing pulse (the run's own scale is the motion).
+        const bankingFillPct = banking.fillLevel <= 0
+            ? 0
+            : INK_BOTTOM_PCT + banking.fillLevel * (INK_TOP_PCT - INK_BOTTOM_PCT);
+        return (
+            <Box
+                className="minute-points-fire-badge minute-points-fire-badge--banking"
+                ref={flameAnchorRef}
+                sx={{ display: "inline-flex", transformOrigin: "center", willChange: "transform" }}
+                // Per-frame value in `style`, not `sx` — sx would mint a CSS class per frame.
+                style={{ transform: `scale(${banking.flameScale})` }}
+            >
+                <FireCount
+                    value={banking.displayCount}
+                    tone={COLORS.fireActive}
+                    glyphSize={FIRE_GLYPH_SIZE_PX}
+                    fillPct={bankingFillPct}
+                    title={`${banking.displayCount} minute points`}
+                />
+            </Box>
+        );
+    }
+
     return (
         // The pulse is the one thing that is NOT `FireCount`'s: it marks a point
         // LANDING, which is an event in this component's state rather than a property
@@ -144,6 +182,7 @@ const MinutePointsFireBadge: React.FC = () => {
         // belongs on a wrapper rather than inside the shared visual.
         <Box
             className="minute-points-fire-badge"
+            ref={flameAnchorRef}
             sx={{
                 display: "inline-flex",
                 animation: (earning && minutePoints.isAnimating)

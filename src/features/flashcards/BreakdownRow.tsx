@@ -2,10 +2,9 @@ import { Box, Typography, useTheme } from "@mui/material";
 import Icon from "../../components/Icon";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { getToneColor } from "../../utils/toneColors";
 import { COLORS } from "../../theme/colors";
 import { FC_FONT } from "./constants";
-import { WEIGHT } from "../../theme/scale";
+import { SIZE } from "../../theme/scale";
 import type { Language } from "../../types";
 
 /**
@@ -28,8 +27,8 @@ import type { Language } from "../../types";
  * and gets a chevron — which is the honest affordance, because tapping one opens that
  * character's own entry (the panel's word trail is how you come back).
  *
- * Rendered by BOTH breakdown surfaces — the eip's breakdown tab and the cdp's
- * Character Breakdown box — which previously carried two copies of the grid.
+ * Rendered only by the eip's breakdown tab (InfoCardTabContent); both cdps reach it
+ * through the eip panel.
  *
  * ⚠️ Artboard 25 also draws a titled paragraph under the rows, "How the parts make the
  * word". The det tables have a `breakdownElaboration` column for exactly that, but it is
@@ -76,7 +75,10 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
                 alignItems: "center",
                 gap: "14px",
                 width: "100%",
-                padding: "11px 22px",
+                // No horizontal padding: the eip pane already insets its content 18px,
+                // so a row-level inset doubled the margin. Vertical padding stays — it
+                // spaces the glyph off the hairlines between rows.
+                padding: "11px 0",
                 // A hairline BETWEEN rows, drawn on the bottom of each and cancelled on
                 // the last: a bordered box per row would read as four cards rather than
                 // one word taken apart.
@@ -93,49 +95,31 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
             }}
         >
             {/* Fixed-width glyph column, so every row's gloss starts on the same margin
-                however wide the character renders. */}
-            <Box sx={{ width: 36, flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                however wide the character renders. A breakdown row is always ONE
+                character, so the glyph can afford the `md` step (36px) — a size a
+                multi-character word could not take in this column. Width tracks the
+                cpcd's own `md` column (50px) with a hair of slack.
+
+                The reading sits UNDER the glyph as the cpcd's own pinyin line (the
+                same layout as every other CPCDRow), tone-coloured through the cpcd's
+                `useToneColor` rather than a hand-rolled per-syllable span. */}
+            <Box sx={{ width: 52, flexShrink: 0, display: "flex", justifyContent: "center" }}>
                 <ForeignText
-                    size="sm"
+                    size="md"
                     language={language}
                     text={character}
-                    // The row prints the reading on its own line below, in tone colour,
-                    // so the per-character overlay would say it twice.
-                    showPinyin={false}
+                    pronunciation={pinyin}
+                    showPinyin={showPinyin && !!pinyin}
+                    useToneColor={showPinyinColor}
                     bold
                 />
             </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-                {showPinyin && pinyin && (
-                    <Typography
-                        className="breakdown-row__pinyin"
-                        sx={{ fontSize: 12.5, fontWeight: WEIGHT.semibold, fontFamily: FC_FONT, lineHeight: 1.2 }}
-                    >
-                        {/* The reading as TEXT on its own line, not as a per-character
-                            overlay: the glyph column beside it is one character wide, so
-                            an overlay would be a one-cell cpcd — all of the machinery and
-                            none of the alignment it exists for.
-
-                            Tone colour is applied here as a LITERAL hue per syllable
-                            (`getToneColor`, D2b): the five tone colours mean tones and
-                            nothing else, so they are deliberately not ramp members. */}
-                        {pinyin.split(/\s+/).filter(Boolean).map((syllable, i) => (
-                            <span
-                                key={i}
-                                style={{ color: showPinyinColor ? getToneColor(syllable) : fc.onSurface }}
-                            >
-                                {i > 0 ? " " : ""}{syllable}
-                            </span>
-                        ))}
-                    </Typography>
-                )}
-                <Typography
-                    className="breakdown-row__gloss"
-                    sx={{ fontSize: 12.5, color: fc.textSecondary, fontFamily: FC_FONT, marginTop: "2px", lineHeight: 1.35 }}
-                >
-                    {stripParentheses(definition)}
-                </Typography>
-            </Box>
+            <Typography
+                className="breakdown-row__gloss"
+                sx={{ flex: 1, minWidth: 0, fontSize: SIZE.body, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: 1.35 }}
+            >
+                {stripParentheses(definition)}
+            </Typography>
             {clickable && <Icon name="chevron_right" size={16} color={COLORS.textFaint} />}
         </Box>
     );

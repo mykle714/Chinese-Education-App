@@ -505,7 +505,7 @@ function TemplateSandboxPage() {
   }, [pickerOpen, pending, openPicker, handleIterate, handleDelete, handleToggleLock, handleCycleHouseMode, handleCycleVersion]);
 
   return (
-    <LeafPage title="Template Sandbox" onBack={() => navigate('/')} className="template-sandbox-root">
+    <LeafPage title="Template Sandbox" onBack={() => navigate('/menu')} className="template-sandbox-root">
       <Box
         className="template-sandbox-page"
         sx={{ display: 'flex', flexDirection: 'column', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}

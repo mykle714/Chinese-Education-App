@@ -19,6 +19,7 @@
  * offering a bar over one is worse than useless: it covers the screen and
  * suggests an action that would corrupt the value.
  */
+import type { KeyboardSource } from './KeyboardSwitchBar';
 
 /** Input types that can meaningfully hold a Chinese character. */
 const ALLOWED_INPUT_TYPES = new Set(['text', 'search', '']);
@@ -74,6 +75,31 @@ export const KEEP_OPEN_SELECTOR = `[${OPT_OUT_ATTRIBUTE}="${KEEP_OPEN_VALUE}"]`;
 
 /** Attribute value marking a region the keyboard must never offer itself on. */
 export const OFF_VALUE = 'off';
+
+/**
+ * § 6z-3a: a FIELD's own default keyboard, overriding the session choice.
+ *
+ * `data-beginner-keyboard-default="os"` makes the field open on the OS keyboard
+ * (`ABC`) — with the switch bar still perched on it, so `写` is one tap away —
+ * whatever the session is on. `"ours"` is accepted for symmetry.
+ *
+ * ⚠️ ISOLATED FROM THE SESSION PREFERENCE. Flipping the switch on such a field
+ * changes that field only; the session choice every other field opens with is
+ * left untouched (the provider holds the override separately — see
+ * `BeginnerKeyboardProvider` → `fieldSource`).
+ *
+ * Read off the FIELD only, not inherited: it is a per-field fact, and a region-wide
+ * default would make every field in it ignore the learner's session choice.
+ *
+ * Used by: DictionaryPage (the search box opens on the learner's own keyboard).
+ */
+export const DEFAULT_SOURCE_ATTRIBUTE = 'data-beginner-keyboard-default';
+
+/** The field's declared default keyboard, or null when it follows the session. */
+export function defaultSourceOf(field: EditableField): KeyboardSource | null {
+  const value = field.getAttribute(DEFAULT_SOURCE_ATTRIBUTE);
+  return value === 'os' || value === 'ours' ? value : null;
+}
 
 /**
  * The value in force for an element: the NEAREST declaration of the attribute on

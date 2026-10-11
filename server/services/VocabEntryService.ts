@@ -5,8 +5,6 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, Language, IconLayoutItem, ICON_LAYOUT_MAX_ITEMS, SnapConfig, TextColors, TextColorMode, TextLayout, TextLayoutItem, TextBlock, CARD_COLOR_VALUES, CARD_NOTE_MAX_LENGTH } from '../types/index.js';
 import { ValidationError, NotFoundError, BulkResult } from '../types/dal.js';
-import db from '../db.js';
-import { vetTableForLanguage } from '../dal/shared/vetTable.js';
 import { isAdvancedLayout } from '../dal/shared/advancedLayout.js';
 
 // ── Icon-layout geometry (mirrors src/pages/FlashcardsLearnPage/cardIconLayout.ts) ──
@@ -96,9 +94,10 @@ export class VocabEntryService {
    *  - no row → INSERT with starterPackBucket='library' (an empty `typedMarkHistory`
    *    bands every bar at 'Unfamiliar', so no mastery state is written here)
    *  - row already in library → no-op
-   *  - row with NULL bucket → bucket → 'library' (status='added'). ('skip' rows no
-   *    longer occur in vet — skips live in discover_skips since migration 80 — but
-   *    the non-library branch below still safely upgrades any stray NULL row.)
+   *  - row with any other bucket ('provisional' — lent, or removed from Learn Now —
+   *    or a stray NULL) → promoted to 'library' in place, marks kept (status='added').
+   *    ('skip' rows no longer occur in vet — skips live in discover_skips since
+   *    migration 80.)
    *
    * Returns the resulting vocabentry id and a status string the client can
    * translate into a flash message.
@@ -121,45 +120,56 @@ export class VocabEntryService {
       );
     }
 
-    // Per-language vet table (migration 66). This "add to library" path doesn't
-    // choose a specific POS, so es rows are inserted with pos NULL (a word-level
-    // save); the discover sort flow is what captures a specific POS.
-    const vetTable = vetTableForLanguage(language);
-    const client = await db.getClient();
-    try {
-      const existing = await client.query<{ id: number; starterPackBucket: string | null }>(
-        `SELECT id, "starterPackBucket" FROM ${vetTable}
-         WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
-        [userId, trimmedKey, language],
-      );
-
-      if (existing.rows.length === 0) {
-        const insertResult = await client.query<{ id: number }>(
-          // No mastery state is written: `typedMarkHistory` defaults to '{}' and every
-          // bar derived from it (server/contracts/mastery.ts) bands at 'Unfamiliar'.
-          // (The old GENERATED `category` column was dropped by migrations 101/143.)
-          `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket")
-           VALUES ($1, $2, $3, 'library')
-           RETURNING id`,
-          [userId, trimmedKey, language],
-        );
-        return { status: 'added', vocabEntryId: insertResult.rows[0].id };
-      }
-
-      const row = existing.rows[0];
-      if (row.starterPackBucket === 'library') {
-        return { status: 'already-in-library', vocabEntryId: row.id };
-      }
-
-      // Any non-library row (a stray NULL bucket) becomes a library add.
-      await client.query(
-        `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
-        [row.id],
-      );
-      return { status: 'added', vocabEntryId: row.id };
-    } finally {
-      client.release();
+    const existing = await this.vocabEntryDAL.findBucketRowByUserAndKey(userId, trimmedKey, language);
+    if (!existing) {
+      const id = await this.vocabEntryDAL.insertLibraryRow(userId, trimmedKey, language);
+      return { status: 'added', vocabEntryId: id };
     }
+
+    if (existing.starterPackBucket === 'library') {
+      return { status: 'already-in-library', vocabEntryId: existing.id };
+    }
+
+    // Any non-library row — a provisional card (lent, or removed from Learn Now) or a
+    // stray NULL bucket — is promoted in place, keeping its marks.
+    await this.vocabEntryDAL.promoteRowToLibrary(existing.id, language);
+    return { status: 'added', vocabEntryId: existing.id };
+  }
+
+  /**
+   * Is this word in the user's Learn Now (bucket 'library')? A 'provisional' (lent or
+   * removed) row and no row at all both read as "not in". Drives the dictionary cdp's
+   * add/added toggle. Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
+   */
+  async getLibraryStatus(userId: string, entryKey: string, language: Language): Promise<{ inLibrary: boolean }> {
+    const trimmedKey = entryKey?.trim();
+    if (!trimmedKey) {
+      throw new ValidationError('entryKey is required');
+    }
+    const row = await this.vocabEntryDAL.findBucketRowByUserAndKey(userId, trimmedKey, language);
+    return { inLibrary: row?.starterPackBucket === 'library' };
+  }
+
+  /**
+   * Remove a word from Learn Now WITHOUT deleting it: the row is demoted to
+   * 'provisional', so its marks, decks and progress survive and addToLibrary's
+   * non-library branch promotes it back in place. Because nothing is lost, the client
+   * asks for no confirmation. Backs both the dictionary cdp's "Added" toggle and the
+   * vet cdp's delete button — the only way a card leaves Learn Now (there is no hard
+   * delete endpoint).
+   * Docs: docs/PROVISIONAL_CARDS.md, docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
+   */
+  async removeFromLibrary(
+    userId: string,
+    entryKey: string,
+    language: Language,
+  ): Promise<{ status: 'removed' | 'not-in-library' }> {
+    const trimmedKey = entryKey?.trim();
+    if (!trimmedKey) {
+      throw new ValidationError('entryKey is required');
+    }
+    const demoted = await this.vocabEntryDAL.demoteLibraryRowToProvisional(userId, trimmedKey, language);
+    return { status: demoted ? 'removed' : 'not-in-library' };
   }
 
   /**
@@ -436,40 +446,6 @@ export class VocabEntryService {
       .forEach((entry, rank) => { entry.item.z = rank; });
 
     return items;
-  }
-
-  /**
-   * Delete a vocabulary entry
-   */
-  async deleteEntry(userId: string, entryId: number, language: string): Promise<boolean> {
-    const existingEntry = await this.vocabEntryDAL.findByIdAndLanguage(entryId, language);
-    if (!existingEntry) {
-      throw new NotFoundError('Vocabulary entry not found');
-    }
-
-    if (existingEntry.userId !== userId) {
-      throw new ValidationError('You can only delete your own vocabulary entries');
-    }
-
-    // Clean up orphaned StarterPackSorts row if one exists
-    try {
-      const client = await db.getClient();
-      try {
-        await client.query(`
-          DELETE FROM StarterPackSorts sps
-          USING dictionaryentries_zh de
-          WHERE sps."dictionaryEntryId" = de.id
-            AND de.word1 = $1
-            AND sps."userId" = $2
-        `, [existingEntry.entryKey, userId]);
-      } finally {
-        client.release();
-      }
-    } catch (e) {
-      console.warn('Failed to clean up StarterPackSorts for entry', entryId, e);
-    }
-
-    return await this.vocabEntryDAL.delete(entryId);
   }
 
   /**

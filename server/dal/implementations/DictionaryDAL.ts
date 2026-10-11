@@ -5,7 +5,7 @@ import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, De
 import { ValidationError } from '../../types/dal.js';
 import { generateShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
 import { ExampleSentenceDefinitionPronunciationOverride } from '../../types/index.js';
-import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, splitHanRuns, SEGMENTATION_MAX_TOKEN_CHARS, RenderedSegmentMeta } from '../shared/segmentString.js';
+import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, buildSegmentMetadata, buildOccurrenceSegmentMetadata, splitHanRuns, SEGMENTATION_MAX_TOKEN_CHARS, RenderedSegmentMeta } from '../shared/segmentString.js';
 import { LongDefinitionPart, LongDefinitionCitation } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { parsePinyinQuery, pinyinQueryTokens } from '../../utils/searchSenseMatch.js';
@@ -1145,28 +1145,39 @@ export class DictionaryDAL implements IDictionaryDAL {
           const sentenceExcludeTokens = sentence.segmentExceptions?.length
             ? new Set([...excludeTokens, ...sentence.segmentExceptions])
             : excludeTokens;
-          const segments = Array.isArray(sentence.segments) && sentence.segments.length > 0
+          const hasStoredSegments = Array.isArray(sentence.segments) && sentence.segments.length > 0;
+          const segments = hasStoredSegments
             ? sentence.segments
             : segmentWithDict(sentence.foreignText, dictMap, sentenceExcludeTokens, prioritySegments);
           // Build per-segment metadata via the shared helper. Example sentences use the
           // full feature set: particle/classifier annotation (gated by the segment POS dict),
           // per-segment sense → cluster dd (senseDict), context-matched fallback definitions
           // (against the English translation), and wordForms.
-          const segmentMetadata = buildSegmentMetadata(segments, dictMap, {
+          const metadataOpts = {
             pacMap,
-            partOfSpeechDict: sentence.partOfSpeechDict,
             translatedContext: sentence.english,
             includeWordForms: true,
-            senseDict: sentence.senseDict,
             // matchException tokens — and this sentence's own segmentExceptions — must not
             // come back as drill rungs either; see buildDrillRungs (docs/SEGMENT_DRILL_DOWN.md).
             excludeTokens: sentenceExcludeTokens,
+          };
+          const segmentMetadata = buildSegmentMetadata(segments, dictMap, {
+            ...metadataOpts,
+            partOfSpeechDict: sentence.partOfSpeechDict,
+            senseDict: sentence.senseDict,
           });
+          // A segment string that repeats with different jobs (了 … 了然) gets its own
+          // popup + pinyin per occurrence. Indexes address the STORED segmentation only,
+          // so a legacy row re-segmented live above never gets overrides.
+          const segmentMetadataByIndex = hasStoredSegments
+            ? buildOccurrenceSegmentMetadata(segments, sentence.segmentOccurrenceTags, dictMap, metadataOpts)
+            : {};
 
           return {
             ...sentence,
             _segments: segments,
             segmentMetadata,
+            ...(Object.keys(segmentMetadataByIndex).length > 0 ? { segmentMetadataByIndex } : {}),
             humanApproved: this.isSentenceHumanApproved(approvedContents, sentence),
           };
         }),

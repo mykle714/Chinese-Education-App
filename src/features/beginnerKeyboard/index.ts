@@ -6,7 +6,7 @@
  */
 export { default as BeginnerKeyboardProvider } from './BeginnerKeyboardProvider';
 export { default as BeginnerKeyboardHost } from './BeginnerKeyboardHost';
-export { isEligibleField, asEditableField, isKeepOpenTarget, OPT_OUT_ATTRIBUTE, KEEP_OPEN_VALUE } from './eligibility';
+export { isEligibleField, asEditableField, isKeepOpenTarget, OPT_OUT_ATTRIBUTE, KEEP_OPEN_VALUE, DEFAULT_SOURCE_ATTRIBUTE } from './eligibility';
 export { insertAtCaret } from './insertAtCaret';
 export { default as BeginnerKeyboard } from './BeginnerKeyboard';
 export { useKeyboardViewport } from './useKeyboardViewport';

@@ -42,7 +42,7 @@ export type CardsFilter = "all" | "learn-now" | "mastered";
  * Challenge decks, their own decks, and their whole card library as a searchable
  * grid. It is rendered by `DecksPanelBody` on three surfaces:
  *
- *   fdp (/flashcards/decks)      — as the persistent pull-up sheet, lens `core`
+ *   fdp (/, the Home tab)         — as the persistent pull-up sheet, lens `core`
  *   Reading Center (/flashcards/reading) — as a plain page, lens `reading`
  *   Writing Center (/flashcards/writing) — as a plain page, lens `writing`
  *
@@ -78,6 +78,13 @@ export interface DecksPanelState {
     tileCount: (entry: BuiltinCollectionEntry) => number | undefined;
     /** Band counts of the LENS bar — also what the fdp's Review gate reads. */
     categoryCounts: Record<string, number>;
+    /**
+     * The lens's Learn Now figure, or undefined until the band counts have loaded
+     * SUCCESSFULLY. Unlike `tileCount`, a failed or in-flight fetch never reads as 0 —
+     * this drives the fdp Sort Cards tile's "card count low" glow (DecksTopRail), which must not
+     * flash on page load or nag after a network error.
+     */
+    learnNowCount: number | undefined;
 
     challengeDecks: DeckSummary[];
     authoredDecks: DeckSummary[];
@@ -145,7 +152,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
     // fdp, the Review eligibility check). These count SORTED cards only — never the
     // temporary cards a game may have lent (docs/PROVISIONAL_CARDS.md), so the sizes
     // shown always mean "cards you chose to keep".
-    const { counts: categoryCounts } = useCategoryCounts(lens);
+    const { counts: categoryCounts, ok: categoryCountsOk } = useCategoryCounts(lens);
     // Mastered totals per bar. All three arrive in one response regardless of lens, so
     // the Mastered tile's figure needs no second request when the lens changes.
     const { counts: masteredCounts } = useMasteredCounts();
@@ -320,6 +327,15 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         [categoryCounts, masteredCounts]
     );
 
+    // Same derivation as the Learn Now tile (builtinCollectionCount), held back until
+    // the counts are real — see `learnNowCount` on DecksPanelState.
+    const learnNowCount = useMemo(
+        () => categoryCountsOk
+            ? builtinCollectionCount({ kind: "learn-now", bar: lens }, categoryCounts, masteredCounts)
+            : undefined,
+        [categoryCountsOk, categoryCounts, masteredCounts, lens]
+    );
+
     // Read by a host at the moment it navigates away (backRestore.ts). The RAW deck list,
     // not the split challenge/authored pair, so re-seeding re-derives the split.
     const snapshot = useCallback((): DecksPanelSnapshot => ({
@@ -333,6 +349,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         collections,
         tileCount,
         categoryCounts,
+        learnNowCount,
         challengeDecks,
         authoredDecks,
         decksLoading,

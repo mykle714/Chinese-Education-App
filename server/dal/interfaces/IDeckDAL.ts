@@ -12,6 +12,10 @@ import type { DeckSummary } from '../../types/decks.js';
  * library) — so that read stays there and this DAL only answers membership
  * questions (`listDeckCardIds`, `listDeckIdsForCard`).
  *
+ * ONE EXCEPTION: `cardCount` probes the vet by primary key for the member's
+ * `starterPackBucket`, so a card removed from Learn Now (demoted to 'provisional',
+ * memberships kept) stops counting. See DeckDAL's CARD_COUNT.
+ *
  * NO POLICY HERE. "Is this deck yours", "is that a supported language", "does a
  * card you are adding actually exist and match the deck's language" are all
  * DeckService's business. This layer only refuses input that would corrupt a row.

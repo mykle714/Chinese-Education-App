@@ -18,7 +18,7 @@ import { formatCountdownParts } from "./arenaStyles";
  *
  * ── IT IS NOT A CARD ────────────────────────────────────────────────────────────────
  * Despite the `.cdcard` class name it has no fill, no border and no radius — it is
- * centred type on the paper ground. That is the point: the countdown is the page's
+ * type on the paper ground. That is the point: the countdown is the page's
  * headline under the banner, and boxing it would make it one more panel in a stack of
  * panels. It was a bordered `SectionCard` with the viewer's rank on its right before the
  * arena flow; the rank moved out (it is on the viewer's own board row, highlighted) and
@@ -59,7 +59,7 @@ const ArenaCountdown: React.FC<ArenaCountdownProps> = ({ label, target, subtitle
     const parts = formatCountdownParts(remaining);
 
     return (
-        <Box className={className ? `arena-countdown ${className}` : "arena-countdown"} sx={{ margin: "16px 22px 0", textAlign: "center" }}>
+        <Box className={className ? `arena-countdown ${className}` : "arena-countdown"} sx={{ margin: "16px 22px 0", textAlign: "left" }}>
             <Typography
                 className="arena-countdown__label"
                 sx={{
@@ -74,7 +74,7 @@ const ArenaCountdown: React.FC<ArenaCountdownProps> = ({ label, target, subtitle
             </Typography>
             <Box
                 className="arena-countdown__row"
-                sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", marginTop: "8px" }}
+                sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px", marginTop: "8px" }}
             >
                 <Box
                     className="arena-countdown__figure"
@@ -85,7 +85,7 @@ const ArenaCountdown: React.FC<ArenaCountdownProps> = ({ label, target, subtitle
                         // ones in the middle of the big ones rather than sitting them on
                         // the same line.
                         alignItems: "baseline",
-                        justifyContent: "center",
+                        justifyContent: "flex-start",
                         gap: "5px",
                         fontFamily: FONTS.mono,
                         fontSize: 52,

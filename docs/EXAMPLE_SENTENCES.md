@@ -23,7 +23,9 @@ steps** in `backfill-example-sentences.js`:
 
 1. **Generation** (Sonnet, Opus repair) emits only the sentence text +
    `translatedVocab` + `sense` (target, multi-sense) + `targetPos` (the
-   target word's POS — a *coverage-steering signal only*, **not stored**).
+   target word's POS — a *coverage-steering signal only*, **not stored**). The
+   demonstrated occurrence is wrapped in 【】 and stored as `vocabCharIndex` — see
+   [Repeated segments](#repeated-segments-vocabcharindex-segmentoccurrencetags).
 2. **Segmentation audit** (`auditSegmentation`, Sonnet) runs the **same GSA the read
    path uses** on the final text, then one model call names the multi-character
    segments that are *not one word in this sentence*. Those become the sentence's
@@ -35,7 +37,8 @@ steps** in `backfill-example-sentences.js`:
    and the four dicts are keyed by the GSA segment string, so read-time lookups align
    exactly. `tense` is **per-verb**, not per-sentence, so a sentence mixing tenses
    (`I bought books, will return them tomorrow`) inflects each verb's popup gloss on
-   its own tag.
+   its own tag. A string that repeats is tagged once **per occurrence**
+   (`segmentOccurrenceTags`).
 
 Step 2 **must** precede step 3: the four dicts are keyed by the segment strings, so
 tagging a segmentation the audit is about to change would leave every key pointing at
@@ -163,6 +166,57 @@ handed to `buildSegmentMetadata`, so an audited token can never come back as a
 Shipped in `SCRIPT_VERSION 7`, so `--stale` regenerates every previously-stamped
 entry through the new pass.
 
+### Repeated segments (`vocabCharIndex`, `segmentOccurrenceTags`)
+
+The four dicts (and `segmentMetadata` on the wire) are keyed by segment **string**, so
+a string that appears twice in one sentence gets one label for both occurrences. That
+breaks exactly where it matters most — a heteronym headword whose sentence also uses
+the same character in its everyday role:
+
+> 听**了**老师的解释，我心中**了**然 — sense `to understand`. The first 了 is the
+> completed-action particle (*le*); only the second is the demonstrated *liǎo*.
+
+Two stored fields (zh, `SCRIPT_VERSION 8`) fix the two symptoms:
+
+| Field | Shape | Fixes | Writer |
+|---|---|---|---|
+| `vocabCharIndex` | code-point offset into `foreignText` | the headword underline landing on the first occurrence instead of the demonstrated one | generation: the model wraps the demonstrated occurrence in 【】; `applyTargetMarker` strips it and records the offset |
+| `segmentOccurrenceTags` | `{ [index into segments]: { pos?, sense?, number?, tense? } }` | every occurrence sharing one popup gloss + pinyin + word form | tagging pass: `buildTagItems` lists a repeated string once **per occurrence** (key `了#2`, shown in 【】 context) |
+
+- **Marker is lenient.** A sentence is never rejected over the marker: the first 【】
+  containing the headword wins, else a lone occurrence is used, else no index is
+  stored (split/correlative words like 一边…一边). The client then falls back to the
+  first occurrence — the pre-v8 behaviour.
+- **Only the target occurrence is the target.** With an index, the generation
+  `sense`/`targetPos` are pinned to that one occurrence; other occurrences of the
+  headword get candidate senses like any other multi-sense segment. Without an index
+  every occurrence is treated as the target (pre-v8).
+- **The dicts are kept.** For a repeated string they hold the target occurrence's
+  labels if it is the headword, else the first occurrence's, so every reader that
+  only knows the dicts keeps working. `segmentOccurrenceTags` is present only for
+  repeated strings and **overrides** the dicts at its index.
+- **Read path.** `DictionaryDAL.enrichExampleSentencesMetadataBatch` →
+  `buildOccurrenceSegmentMetadata` (`server/dal/shared/segmentString.ts`) re-resolves
+  each tagged occurrence through `buildSegmentMetadata` and ships a sparse
+  `segmentMetadataByIndex`. Only built against **stored** `segments` — indexes mean
+  nothing against a live re-segmentation.
+- **Client.** `src/components/SegmentedSentenceDisplay.tsx` prefers
+  `segmentMetadataByIndex[i]` over `segmentMetadata[segment]`, and
+  `segmentOccurrenceTags[i]` over the dicts for word-form selection; the underline
+  `useLayoutEffect` uses `vocabCharIndex` when it still spells the headword.
+- **Healing stored rows.** `backfill-example-sentences.js --locate-targets` (no
+  generation, text untouched) asks the model which occurrence a headword-repeating
+  sentence demonstrates (`locateTargetOccurrence`) and re-runs the tagging pass.
+  `--repeated-segments` widens it to any sentence with a repeated segment;
+  `--dry-run` prints without writing. Rows are not re-stamped. This is why
+  `requiredScripts.js` stays at version 7: only ~0.4% of sentences repeat their
+  headword, and a manifest bump would regenerate the whole corpus.
+- `rewrite-parenthetical-glosses.js` → `retagTargetOccurrence` keeps the target's
+  occurrence tag in step when it retags a removed sense.
+
+Known gap: `prioritySegments` forces the headword to win segmentation, so 了然 still
+renders as 了 + 然 in 了's own sentences (the tag is right, the word boundary isn't).
+
 ### Sense-aware pinyin (heteronyms)
 
 The pronunciation half exists because a heteronym's reading **is** a function of its
@@ -211,11 +265,11 @@ parity bugs — headword underline, English-gloss underline, and the per-sentenc
 speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
-  `InfoCardPanelBody`. This covers the flp, scp **and the saved-card cdp**, which since
-  2026-08-24 raises the eip itself rather than its own copy of the sections
-  (`VocabCardDetailPage` → `InfoCardSection`).
-- **Read-only dictionary cdp** — `VocabCardDetailBody.tsx` (`VocabCardSections`),
-  threaded from `features/dictionary/DictionaryCardDetailPage.tsx`.
+  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, scp, the saved-card
+  cdp (which since 2026-08-24 raises the eip in a sheet, `VocabCardDetailPage` →
+  `InfoCardSection`) and the read-only dictionary cdp (which since 2026-10-10 mounts the
+  panel inline, `features/dictionary/DictionaryCardDetailPage.tsx`; its old
+  `VocabCardSections` copy is deleted).
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
 `onSpeakSentence`; all three surfaces pass `useTTS`'s `speakSentence` directly —
@@ -226,21 +280,12 @@ the MANUAL variant, so a speaker press speaks in every narration mode, including
 rendered through `renderEnglishWithVocabUnderline` (`exampleSentenceText.tsx`, shared)
 which underlines the `translatedVocab` substring.
 
-**The two surfaces are now formatting-identical.** There is no surface-specific
-prop left: the cdp used to pass `compact` (smaller glyph/pinyin for denser
-stacking) and to omit `showSegmentSpaces`; both were removed so a sentence renders
-byte-for-byte the same in the eip's Examples tab and in the cdp's
-`vocab-card-detail__examples` `SectionCard`. The only remaining difference is the
-chrome *around* the block — the cdp wraps it in a `SectionCard` with an
-"EXAMPLE SENTENCES" `SectionLabel`, while the eip heads the tab with a `.shelfhd`
-caption (2026-08-24, artboard 24) naming **which sense** the sentences illustrate
-("sense 1 · the past") and how many there are.
-
-That caption is not decoration. The sentence set CHANGES with the sense pick, and the
-pick is made from a chip in the panel header directly above; without the caption a
-learner who has just switched senses has no way to tell whether they are looking at the
-new set or the old one. It lives in `InfoCardTabContent`, not in `ExampleSentenceList`,
-precisely so the cdp — which has no sense strip over its box — does not inherit it.
+**One renderer, one chrome.** Every surface reaches the est through the eip's Examples
+tab (`InfoCardTabContent`), which renders `ExampleSentenceList` with **no caption row** —
+the active sense is named only by the header `SensePicker` directly above. (The
+`.shelfhd` "sense N · <sense>" / "N examples" caption was removed 2026-10-10. The cdp used
+to pass `compact` and omit `showSegmentSpaces`, and the dictionary cdp used to wrap the
+list in its own "EXAMPLE SENTENCES" section; all gone.)
 (`SegmentedSentenceDisplay`/`CPCDRow` still accept `compact`; other cdp sections
 use it. `ExampleSentenceList` just never passes it.)
 

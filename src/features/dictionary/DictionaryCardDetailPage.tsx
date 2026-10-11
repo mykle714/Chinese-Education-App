@@ -1,24 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Box, Alert, Snackbar, IconButton } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import { Box, Alert, Snackbar } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import NodePage from "../../components/NodePage";
-import { FooterSpacer } from "../../components/MobileFooter";
 import { apiGet } from "../../api/http";
-import { addToLibrary } from "../../utils/vocabApi";
+import { useLearnNowToggle } from "../../hooks/useLearnNowToggle";
 import type { DictionaryEntry, VocabEntry, Language } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS } from "../../hooks/useTTS";
-import { CardFaceSide, ChineseBlock, EnglishBlock } from "../../features/flashcards/FlashcardsLearnPage/FlashCardSection";
-import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "../../features/flashcards/constants";
-import { CARD_SURFACE } from "../../theme/surfaces";
+import InfoCardPanelBody from "../../features/flashcards/FlashcardsLearnPage/InfoCardPanelBody";
+import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { dictionaryEntryToVocabEntry } from "../../utils/dictEntryAdapter";
 import { resolveSelectedSenseIndex } from "../../utils/definitionUtils";
-import { VocabCardBadges, VocabCardSections } from "../../features/flashcards/VocabCardDetailBody";
+import { VocabCardBadges } from "../../features/flashcards/VocabCardDetailBody";
 import WordToolsRail from "../../components/WordToolsRail";
 import { useCompareSheet } from "../../components/CompareSheet";
 
@@ -27,11 +24,14 @@ import { useCompareSheet } from "../../components/CompareSheet";
 // docs/LEAF_NODE_PAGES.md) reached from the Dictionary node, so the Home tab stays
 // active. Keyed by :word (not a vet id) because a searched word usually isn't one
 // of the user's saved cards — it fetches the det row via /api/dictionary/lookup and
-// adapts it to the VocabEntry shape the card sections consume.
+// adapts it to the VocabEntry shape the eip panel consumes.
 //
-// Read-only means: NO edit toolbar / delete, and the hero always renders the det's
-// representative icon in BASIC layout (never the advanced iconLayout editor). The
-// only write affordance is "+ to Learn Now" for discoverable entries (the word-tools
+// Layout: NO flashcard. The page IS the eip — InfoCardPanelBody mounted inline (entry
+// header, then the definition / examples / breakdown tabs, each pane scrolling on its
+// own), with the word-tools rail at the bottom of the definition tab. The page itself
+// does not scroll.
+//
+// Read-only means: NO edit toolbar / delete. The only write affordance is the "+ / Added!" Learn Now toggle (in the panel header, under the speaker) for discoverable entries (the word-tools
 // rail's Practice Writing drill records no mark here — there is no vet row to mark).
 //
 // Drill-ins: breakdown/used-in rows and example-sentence segments open the cdp of
@@ -52,19 +52,20 @@ const DictionaryCardDetailPage: React.FC = () => {
     const { user } = useAuth();
     const { settings } = useFlashcardLearnSettings();
     const { showPinyinColor } = settings;
-    // cdp always shows pinyin regardless of the flp pinyin toggle — pinyin is
-    // core reference info on the detail page, so we ignore settings.showPinyin here.
-    const showPinyin = true;
+    // No showPinyin: the eip panel ALWAYS shows pinyin (reference surface), whatever
+    // the flp pinyin toggle says.
     const tts = useTTS();
 
     const [entry, setEntry] = useState<VocabEntry | null>(null);
     // No narration on landing — same rule as the saved-card cdp (VocabCardDetailPage):
-    // a detail page is read, not played at. The hero card's speaker button is the only
+    // a detail page is read, not played at. The entry header's speaker button is the only
     // way a word is spoken here.
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    // Which definitionClusters sense EnglishBlock shows on the hero card.
+    // Which definitionClusters sense the panel shows (header dd + chip, definition tab, breakdown pinyin).
     const [selectedSenseIndex, setSelectedSenseIndex] = useState(0);
+    // Which eip tab (definition / examples / breakdown) the inline panel shows.
+    const [selectedTab, setSelectedTab] = useState(0);
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
 
@@ -76,13 +77,15 @@ const DictionaryCardDetailPage: React.FC = () => {
                 setLoading(true);
                 setError(null);
                 setSelectedSenseIndex(0);
+                // A drill-in reuses this component for the new word: start on Definition.
+                setSelectedTab(0);
                 const dictData = await apiGet<DictionaryEntry>(
                     `/api/dictionary/lookup/${encodeURIComponent(word)}`
                 );
                 if (cancelled) return;
                 const adapted = dictionaryEntryToVocabEntry(dictData);
                 setEntry(adapted);
-                // Seed the hero card from the requester's SAVED pick for this word when the
+                // Seed the entry header from the requester's SAVED pick for this word when the
                 // lookup carried one (they have it as a flashcard) - so the dictionary page and
                 // their card agree. Falls back to the default/starred sense otherwise. The
                 // picker here stays local-only: this page has no vet row to write when the word
@@ -104,6 +107,13 @@ const DictionaryCardDetailPage: React.FC = () => {
         // sense the reader had picked. See CLAUDE.md "Never reload on token refresh".
     }, [word, linkedSense]);
 
+    // Per-character rows for the panel's breakdown tab, following the sense the header
+    // shows (so each character's pinyin matches it). Memoized: the panel takes it as a prop.
+    const breakdownItems = useMemo(
+        () => (entry ? getBreakdownItems(entry, selectedSenseIndex) : []),
+        [entry, selectedSenseIndex],
+    );
+
     // Drill-in: open the cdp of a linked word (breakdown/used-in/example segment).
     // Same slide as the Dictionary → cdp navigation (node-in-from-right).
     const handleWordOpen = useCallback((target: string) => {
@@ -119,20 +129,10 @@ const DictionaryCardDetailPage: React.FC = () => {
     // exists to avoid). See docs/WORD_COMPARE_FEATURE.md.
     const { openCompare, compareSheet } = useCompareSheet();
 
-    // "+ to Learn Now" — the only write action on this read-only page. Mirrors the
-    // former dictionary-eip header button; shown only for discoverable entries.
-    const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
-    const handleAddToLibrary = useCallback(async () => {
-        if (!entry) return;
-        try {
-            const data = await addToLibrary(entry.entryKey, userLanguage);
-            setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learn Now' : 'Added to Learn Now');
-        } catch (err) {
-            console.error('Failed to add to library:', err);
-            setAddToLibSnack('Failed to add to Learn Now');
-        }
-        // No `token` dep: addToLibrary reads the header at call time.
-    }, [entry, userLanguage]);
+    // Learn Now toggle — the only write action on this read-only page, for discoverable
+    // entries. Lives in the panel header under the speaker (LearnNowToggle), the same
+    // control the Dictionary page's eip shows; state + rules in useLearnNowToggle.
+    const learnNow = useLearnNowToggle(entry, userLanguage);
 
     return (
         <NodePage
@@ -143,116 +143,88 @@ const DictionaryCardDetailPage: React.FC = () => {
             headerSize="dense"
             // No `surfaceColor` — the app's standard ground, in lockstep with the vet cdp
             // above. Both used to paint yellowAccent.
-            // No top edge-fade: the hero card shouldn't dissolve at the top.
-            topFade={false}
-            headerExtraActions={entry?.discoverable ? (
-                <IconButton
-                    className="dictionary-card-detail__add-to-library-button"
-                    aria-label="Add to Learn Now"
-                    onClick={handleAddToLibrary}
-                >
-                    <AddIcon />
-                </IconButton>
-            ) : undefined}
+            // Fixed, NON-scrolling page: the eip panel below fills the space between the
+            // header and the footer, and each of its tab panes scrolls on its own (the
+            // panel's own model — see InfoCardPanelBody). A scrolling page would let the
+            // panes grow to their content and the tabs would scroll away with them.
+            // (Non-scrolling pages drop the edge fades, so no topFade is needed.)
+            scrollable={false}
         >
             <Box
                 className="dictionary-card-detail__content"
-                sx={{ display: "flex", flexDirection: "column", padding: "16px", gap: "12px" }}
+                // Fills the non-scrolling page (flex: 1 + minHeight: 0 so the panel can
+                // shrink to the viewport instead of overflowing under the footer). No side
+                // gutter: the eip panel pads its own header/tabs/panes (18px), exactly as
+                // it does inside the sheet.
+                sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
             >
                 {loading ? (
                     <Box className="dictionary-card-detail__loading" sx={{ display: "flex", justifyContent: "center", pt: 6 }}>
                         <DelayedCircularProgress />
                     </Box>
                 ) : error ? (
-                    <Alert className="dictionary-card-detail__error-alert" severity="error">{error}</Alert>
+                    <Alert className="dictionary-card-detail__error-alert" severity="error" sx={{ m: "16px" }}>{error}</Alert>
                 ) : entry ? (
                     <>
-                        <VocabCardBadges entry={entry} />
+                        {entry.category && (
+                            <Box className="dictionary-card-detail__badges" sx={{ padding: "8px 18px 0" }}>
+                                <VocabCardBadges entry={entry} />
+                            </Box>
+                        )}
 
-                        {/* WORD TOOLS — `Write it` and `Compare`, on their own rail above
-                            the card and outside its boundary; this rail is the sole
-                            Practice Writing entry point for the page now that the on-card
-                            button is gone (see docs/PRACTICE_WRITING.md). Both tools act on
-                            the WORD rather than on a card, so this page being read-only is
-                            no obstacle to either: Compare just hands the word to the
-                            compare sheet, raised over this page. The rail still hides itself
-                            when neither tool can act — a non-zh / >4-character word has no
-                            writing drill. The adapted det entry has no vet row, so the rail
-                            passes no vocabEntryId and the drill records no writing mark. */}
-                        <WordToolsRail
-                            className="dictionary-card-detail__word-tools"
-                            entry={entry}
-                            onCompare={openCompare}
-                        />
-
-                        {/* Hero card — read-only: always the det's representative icon in
-                            BASIC layout (iconLayout/textLayout null, advanced off). */}
-                        <Box
-                            className="dictionary-card-detail__hero-card"
-                            sx={{
-                                aspectRatio: `${CARD_BASE_WIDTH} / ${CARD_BASE_HEIGHT}`,
-                                width: "100%",
-                                maxWidth: CARD_BASE_WIDTH,
-                                mx: "auto",
-                                mt: "16px",
-                                mb: "40px",
-                                position: "relative",
-                                // Same card object as the saved-card cdp: the face draws the
-                                // hairline + radius (CARD_SURFACE via CardFaceSide), the
-                                // wrapper casts the resting shadow and repeats the radius so
-                                // the shadow takes the card's shape.
-                                borderRadius: CARD_SURFACE.borderRadius,
-                                boxShadow: CARD_SURFACE.boxShadow,
-                            }}
-                        >
-                            <CardFaceSide
-                                rotated={false}
-                                contentGap={2}
-                                contentClassName="dictionary-card-detail__side-two"
-                                iconId={entry.iconId}
-                                showIcon
-                                iconLayout={null}
-                                textLayout={null}
-                                isUsingAdvancedLayout={false}
-                                cardColor={null}
-                                textBlocks={{
-                                    foreign: (
-                                        <ChineseBlock
-                                            entry={entry}
-                                            showPinyin={showPinyin}
-                                            showPinyinColor={showPinyinColor}
-                                            onSpeak={tts.speak}
-                                            speakingKey={tts.speakingKey}
-                                            inlineActions
-                                            selectedSenseIndex={selectedSenseIndex}
-                                        />
-                                    ),
-                                    english: (
-                                        <EnglishBlock
-                                            entry={entry}
-                                            selectedSenseIndex={selectedSenseIndex}
-                                            onSelectSense={setSelectedSenseIndex}
-                                        />
-                                    ),
-                                }}
-                            />
-                        </Box>
-
-                        {/* Info boxes — breakdown/used-in rows + example segments drill into
-                            the cdp of the tapped word via handleWordOpen. */}
-                        <VocabCardSections
-                            entry={entry}
-                            showPinyin={showPinyin}
+                        {/* THE EIP, INLINE — the same InfoCardPanelBody the flp/scp/saved-card
+                            sheet raises (entry header → definition/examples/breakdown tabs →
+                            swipeable per-tab scrolling panes), mounted straight on the page
+                            instead of in a SheetPanel. Synonyms + Related Words ride at the
+                            bottom of the definition tab (showSynonymsRelated), as on the
+                            saved-card cdp. Every drill-in (breakdown row, used-in row,
+                            example segment) navigates to that word's dictionary cdp rather
+                            than opening a nested eip tab, so browsing stays read-only.
+                            The Learn Now toggle rides under the header speaker (learnNow).
+                            No headerDragBind — there is no sheet to resize. */}
+                        <InfoCardPanelBody
+                            currentEntry={entry}
+                            selectedTab={selectedTab}
+                            onTabChange={setSelectedTab}
+                            breakdownItems={breakdownItems}
                             showPinyinColor={showPinyinColor}
-                            // Keeps the Definition box's long definition on the same sense
-                            // as the picker above (per-sense longDefinition).
-                            selectedSenseIndex={selectedSenseIndex}
-                            onWordOpen={handleWordOpen}
+                            isFlipped={false}
+                            onBreakdownItemClick={(item) => handleWordOpen(item.character)}
+                            onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
+                            onExampleSegmentClick={handleWordOpen}
+                            // Speak the reading of the sense the header is showing.
+                            onSpeak={(e) => tts.speak(e, selectedSenseIndex)}
                             onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
+                            learnNow={learnNow}
+                            selectedSenseIndex={selectedSenseIndex}
+                            onSelectSense={setSelectedSenseIndex}
+                            showSynonymsRelated
+                            // pan-y: the panes scroll natively; horizontal stays free for
+                            // the panel's own tab-swipe listener to claim.
+                            scrollTouchAction="pan-y"
+                            // WORD TOOLS — `Write it` and `Compare` at the bottom of the
+                            // DEFINITION tab, under Synonyms + Related (2026-10-10). Other
+                            // surfaces put this rail above their card; this page has no card,
+                            // so the rail closes out the word's main reading instead. It is
+                            // the page's sole Practice Writing entry point
+                            // (docs/PRACTICE_WRITING.md). Both tools act on the WORD, so a
+                            // read-only page is no obstacle: Compare hands the word to the
+                            // compare sheet raised over this page. The rail hides itself when
+                            // neither tool can act (a non-zh / >4-character word has no
+                            // writing drill). The adapted det entry has no vet row, so the
+                            // drill records no writing mark.
+                            definitionFooter={
+                                <WordToolsRail
+                                    className="dictionary-card-detail__word-tools"
+                                    entry={entry}
+                                    onCompare={openCompare}
+                                    // Drop the rail's default above-the-card bottom margin;
+                                    // the tab's footer slot spaces it.
+                                    sx={{ margin: "0 auto" }}
+                                />
+                            }
                         />
-
-                        <FooterSpacer />
                     </>
                 ) : null}
             </Box>
@@ -262,19 +234,20 @@ const DictionaryCardDetailPage: React.FC = () => {
                 the scrolling content Box, purely so it reads as page-level furniture. */}
             {compareSheet}
 
+            {/* Failures only — a successful add/remove is shown by the toggle itself. */}
             <Snackbar
-                className="dictionary-card-detail__add-to-library-snackbar"
-                open={addToLibSnack !== null}
+                className="dictionary-card-detail__library-error-snackbar"
+                open={learnNow.error !== null}
                 autoHideDuration={2500}
-                onClose={() => setAddToLibSnack(null)}
+                onClose={learnNow.clearError}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
                 <Alert
-                    severity={addToLibSnack === 'Failed to add to Learn Now' ? 'error' : 'success'}
+                    severity="error"
                     variant="filled"
-                    onClose={() => setAddToLibSnack(null)}
+                    onClose={learnNow.clearError}
                 >
-                    {addToLibSnack}
+                    {learnNow.error}
                 </Alert>
             </Snackbar>
         </NodePage>

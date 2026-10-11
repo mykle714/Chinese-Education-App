@@ -240,10 +240,11 @@ function SettingsPage() {
 
     return (
         // Settings is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN
-        // back arrow (→ Account, since it opens from the gear in the Account
-        // header), slides up on enter / down on exit. Phone-frame sizing comes from
-        // MobileDemoFrame via Layout.tsx (/settings is in MOBILE_DEMO_PATHS).
-        <LeafPage title="Settings" onBack={() => navigate("/account")} className="settings-page">
+        // back arrow (→ Home, since it opens from the gear beside the avatar in the
+        // Home header — /account is no longer a page, see AccountSheet), slides up on
+        // enter / down on exit. Phone-frame sizing comes from MobileDemoFrame via
+        // Layout.tsx (/settings is in MOBILE_DEMO_PATHS).
+        <LeafPage title="Settings" onBack={() => navigate("/")} className="settings-page">
             <Box className="settings-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
                 {/* ── Colour theme — a four-swatch row ────────────────────────────
                     The artboard's argument, and it is a good one: four full option

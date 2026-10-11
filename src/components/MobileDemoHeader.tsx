@@ -4,7 +4,7 @@ import PageHeader, { type PageHeaderSize } from "./PageHeader";
 // Shared header for mobile-demo surfaces. Composes the base `PageHeader`.
 //
 // There is no longer a hamburger/nav drawer — global navigation lives entirely
-// in the footer tabs (Flashcards / Discover / Home / Account) and the Home menu.
+// in the footer tabs (Home / Menu / Discover / Dictionary).
 // This header therefore only owns: the title, an optional back button
 // (`showBack`), and page-specific `extraActions` rendered flush-right.
 //
@@ -26,6 +26,8 @@ interface MobileDemoHeaderProps {
     arrowDirection?: "down" | "left";
     // Title scale override. Only "dense" is ever worth passing — see PageHeader.
     size?: PageHeaderSize;
+    // Forwarded to PageHeader's `trailingContent` (right of the flame). Home only.
+    trailingActions?: ReactNode;
 }
 
 const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
@@ -35,6 +37,7 @@ const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
     extraActions,
     arrowDirection = "down",
     size,
+    trailingActions,
 }) => (
     <PageHeader
         title={title}
@@ -43,6 +46,7 @@ const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
         arrowDirection={arrowDirection}
         size={size}
         rightContent={extraActions}
+        trailingContent={trailingActions}
     />
 );
 

@@ -197,18 +197,18 @@ out of that flow:
 |---|---|---|
 | Language | 40px flag over its name (above) | centred, top |
 | Banked minutes | `FireCount` — the app's flame readout | **absolutely** pinned top-right |
-| Band counts | `DeckBuckets` shelf | middle |
-| Velocity | `VelocityStatCard` — the Account page's own card, boundary breakdown included | below the shelf |
+| Band counts + Velocity | `LibraryShelfWithVelocity` — the Account page's own shelf + card, boundary arrows included | middle; the card sits below the shelf |
 
 **Velocity is below the shelf** because that is the Account page's order, and the order
 carries an argument: the library is the *state* and velocity is its *rate of change*, so
 the reader meets the thing before the thing's derivative. Both pages now render the
-literal same component (`src/components/VelocityStatCard.tsx`), ⓘ included — velocity is
-uninterpretable without the definition of a level-up, and two pages each writing that
-sentence out is two sentences that will drift. That includes the band-boundary breakdown
-sharing the figure's line as `9 = 4 U→T + 3 T→C + 2 C→M`
-([VELOCITY.md § 2b](./VELOCITY.md)): each panel gets its OWN language's split, carried
-per language as `velocityBoundaryCounts`.
+literal same component (`src/components/velocity/LibraryShelfWithVelocity.tsx`), ⓘ
+included — velocity is uninterpretable without the definition of a level-up, and two
+pages each writing that sentence out is two sentences that will drift. That includes
+the band-boundary breakdown, drawn as U-arrows between neighbouring band spines
+([VELOCITY.md § 2b, § 4](./VELOCITY.md)): each panel gets its OWN language's split,
+carried per language as `velocityBoundaryCounts`. The arrows follow the panel's narrowed
+spines, because they are placed from measured spine centres.
 
 **The minutes flame is absolutely positioned, and that is not decoration.** The title
 block is centred; a figure sharing its row would push the flag off-centre by half the
@@ -230,7 +230,7 @@ the same argument that gives the header badge its off-study mode.
 > and pulse.
 
 Code: `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
-`src/components/VelocityStatCard.tsx`; `src/minutePoints/FireCount.tsx`;
+`src/components/velocity/LibraryShelfWithVelocity.tsx`; `src/minutePoints/FireCount.tsx`;
 `src/minutePoints/MinutePointsFireBadge.tsx`.
 
 ### The band counts are a shelf, inside a card

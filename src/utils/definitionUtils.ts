@@ -41,6 +41,20 @@ function unwrapInlineMorphemes(text: string): string {
  * "(hand)bag" → "handbag". See unwrapInlineMorphemes for the exact rule.
  */
 export function stripParentheses(text: string): string {
+  return stripParenthesesKeepEdges(text).trim();
+}
+
+/**
+ * `stripParentheses` WITHOUT the final trim — for callers that render a definition as
+ * a stream of FRAGMENTS, where the whitespace at a fragment's edges is load-bearing.
+ * The long-definition parts path (LongDefinitionDisplay) splices `"noun: "` labels and
+ * `"\n\n"` separators in as their own text parts (resolveLongDefinitionForSense), and
+ * keeps the spaces between English prose and an embedded Chinese run; trimming each
+ * part individually turned `"\n\n"` into `""` and `"noun: "` into `"noun:"`, so a
+ * multi-POS sense rendered as one run-on line ("noun:…athletics.verb:To work…").
+ * Referenced by: src/components/LongDefinitionDisplay.tsx, docs/DEFINITION_MAPPING.md.
+ */
+export function stripParenthesesKeepEdges(text: string): string {
   // Inline morphemes are rejoined FIRST; everything the scanner then sees is a
   // genuine aside. See unwrapInlineMorphemes above for why the split is by content.
   text = unwrapInlineMorphemes(text);
@@ -60,7 +74,7 @@ export function stripParentheses(text: string): string {
     if (ch === ')') { if (depth > 0) depth--; continue; }
     if (depth === 0) out += ch;
   }
-  return out.trim();
+  return out;
 }
 
 /**

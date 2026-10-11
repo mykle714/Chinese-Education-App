@@ -9,7 +9,7 @@ and the clock stops on the last drop. Medals by time.
 
 **Status: BUILT on dev 2026-10-06. No migration, no new table or column** — the personal
 best rides the existing `game_personal_bests` (migration 171) under a new contract key.
-Not yet deployed to PPE. Medal thresholds are first guesses (§ 6).
+Deployed to PPE 2026-10-06. Medal thresholds are first guesses (§ 6).
 
 Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). Hub/launch: [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md).
 

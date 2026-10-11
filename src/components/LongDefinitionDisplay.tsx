@@ -1,5 +1,5 @@
 import { Box, Typography, type SxProps, type Theme } from "@mui/material";
-import { stripParentheses } from "../utils/definitionUtils";
+import { stripParentheses, stripParenthesesKeepEdges } from "../utils/definitionUtils";
 
 // Presentation-layer text prep shared by both render paths: strip parenthetical
 // asides (mirrors the flp gloss treatment). Blank lines are intentionally left
@@ -12,6 +12,14 @@ import { stripParentheses } from "../utils/definitionUtils";
 // the multi-sense join, which exists only in the validator review document.
 function prepareText(text: string): string {
   return stripParentheses(text);
+}
+
+// The parts-path variant: same parenthetical strip, but the edges are NOT trimmed.
+// Each text part is a fragment of one paragraph, so its edge whitespace is content —
+// the `"\n\n"` separator and `"noun: "` label spliced in by
+// resolveLongDefinitionForSense, and the spaces around embedded Chinese runs.
+function prepareTextPart(text: string): string {
+  return stripParenthesesKeepEdges(text);
 }
 import type { LongDefinitionPart, Language } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
@@ -142,10 +150,10 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
     >
       {longDefinitionParts.map((part, index) => {
         if (part.type === "text") {
-          // prepareText (stripParentheses) is applied per text part; whitespace and
+          // prepareTextPart (stripParenthesesKeepEdges) is applied per text part; whitespace and
           // newlines around embedded Chinese are preserved so words don't run together
           // across part boundaries.
-          return <span key={index}>{prepareText(part.value)}</span>;
+          return <span key={index}>{prepareTextPart(part.value)}</span>;
         }
         return (
           <Box

@@ -9,7 +9,7 @@ select, once to confirm (§ 3.3a) — and the word takes a colour recording how 
 knew it.
 
 **Status: SHIPPED (migration 151 is on PPE). The SLOT-TREE REWORK (2026-10-06,
-migration 173) is BUILT ON DEV, NOT ON PPE** — it replaced absolute `x`/`y` placements
+migration 173) is DEPLOYED to PPE 2026-10-06** — it replaced absolute `x`/`y` placements
 with a tree of slots (§ 2.3–§ 2.4), replaced the word tiles with bare characters (outlined
 only when armed or marked) that touch glyph to glyph, filled the map to 50 with lent
 cards (§ 2.1) and made graduation refill the same slot (§ 3.6). Deploy:

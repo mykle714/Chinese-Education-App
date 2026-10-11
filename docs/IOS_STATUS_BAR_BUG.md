@@ -179,7 +179,7 @@ the page is failing to paint at all.
   59px hole was on screen, because its verdict compared `body` against `innerHeight` —
   the very value under suspicion. **A test must not measure a suspect against itself.**
 
-### Round 7 — guard: the gap must equal the top inset — **NOT YET DEPLOYED**
+### Round 7 — guard: the gap must equal the top inset — **DEPLOYED 2026-10-06, unverified on the iPhone 18 Pro**
 - **Report (2026-10-06):** iPhone 18 Pro, home-screen icon. flp's More Info pill (`bottom:
   24` in ContentArea) is sliced at the very bottom edge — its top sits ~50–60pt lower than
   it should, so the whole frame is taller than the visible web view. Round 3's symptom,

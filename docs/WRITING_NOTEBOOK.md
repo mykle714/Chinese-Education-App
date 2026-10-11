@@ -1,6 +1,6 @@
 # Writing Notebook
 
-**Status: BUILT ON DEV (2026-10-06), migration 174 applied on DEV only — not yet on PPE.**
+**Status: DEPLOYED to PPE 2026-10-06 (migration 174).**
 Behind the `writingNotebook` feature flag (ON). zh only.
 
 An endless handwriting practice sheet, one per word. It is a **page, not a game**: no game

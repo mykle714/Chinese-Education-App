@@ -58,6 +58,12 @@ Child docs:
   so 27 discoverable glosses — 21 of them Spanish — leaked an aside's tail onto the card
   (的 rendered `" or 新的[xin1 de5] "new one")`). See
   [GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md) § 8l for the full diff and rationale.
+- **`stripParentheses` trims; `stripParenthesesKeepEdges` does not.** Use the trimming
+  form on a whole string. Use the edge-preserving form on a *fragment* of a paragraph —
+  today only the long-definition parts path (`src/components/LongDefinitionDisplay.tsx`
+  → `prepareTextPart`), whose text parts include the `"\n\n"` separators and `"<pos>: "`
+  labels spliced in by `resolveLongDefinitionForSense`. Trimming each part there turned a
+  multi-POS sense (运动 noun + verb) into one run-on line, `noun:…athletics.verb:…`.
 - **Inline-morpheme exception** (added 2026-08-28). A parenthetical GLUED to a word (no
   space on at least one side) whose content matches `^[a-z]{1,4}$` is an inline
   morpheme, not an aside, and is **rejoined** rather than dropped: `personal(ly)` →

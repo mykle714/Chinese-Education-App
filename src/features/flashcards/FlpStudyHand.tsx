@@ -1,12 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Snackbar } from "@mui/material";
-import StudyHand, { type StudyHandCard, type StudyModeId } from "./StudyHand";
+import StudyHand, { type HandOrder, type StudyHandCard, type StudyModeId } from "./StudyHand";
 import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
 import type { FlpBar } from "../../../server/contracts/studyMode";
 import type { RampHue } from "../../theme/colors";
+import { handLaunchRequest } from "./flpLaunch";
 import type { WorkingLoopRequest } from "../../api/workingLoop";
+import { useSoftIntro } from "../../softIntro/useSoftIntro";
 
 // ── What this is ──────────────────────────────────────────────────────────────
 //
@@ -68,6 +70,17 @@ const HAND_GLYPHS: Record<StudyModeId, string> = {
     mix: "menu_book",
 };
 
+/**
+ * The fan each bar's hand was in when the learner last STARTED a session from it. Coming
+ * back from the flp (Back arrow, footer tab, anything that remounts the host) the hand
+ * reopens in that arrangement, so the card they were playing is still forward instead of
+ * snapping back to Study Mix. Module memory, not storage: it lasts for the app session
+ * and a reload opens on the default fan. Recorded only on a launch that actually goes —
+ * a refused Review tap leaves it alone. Per bar, because the Reading/Writing Centers'
+ * hands are separate stacks from Home's.
+ */
+const rememberedHandOrder: Partial<Record<FlpBar, HandOrder>> = {};
+
 interface FlpStudyHandProps {
     /** Which track the sessions exercise — and so which bar the figures are read off. */
     bar: FlpBar;
@@ -87,6 +100,11 @@ interface FlpStudyHandProps {
 
 const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", className, onLaunch, shaking = false }) => {
     const navigate = useNavigate();
+    // The mark under the big numeral is a soft introduction (docs/SOFT_INTRODUCTION.md):
+    // "cards" until the learner has met the hand enough to know what the number counts,
+    // then the design's hairline. Only the FULL hand draws a numeral, so only it counts
+    // as a visit — the Centers' compact hands must not graduate it unseen.
+    const figureMark = useSoftIntro("handCardCount", { enabled: variant === "full" }) === "intro" ? "label" : "rule";
     // Toast shown when a greyed Review card is tapped (no eligible cards yet).
     const [markMoreSnackOpen, setMarkMoreSnackOpen] = useState(false);
 
@@ -143,18 +161,18 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
 
     // ONE commit handler for all three cards. Mode and bar are query params on the same
     // route (server/contracts/studyMode.ts), so the branch is only about the Review gate.
-    const handleStudy = useCallback((id: StudyModeId) => {
+    const handleStudy = useCallback((id: StudyModeId, order: HandOrder) => {
         // Only a KNOWN-empty Review pool is refused. While the count is still in flight
         // the tap goes through: the flp does its own provisioning and gating.
         if (id === "review" && reviewEligible === false) { setMarkMoreSnackOpen(true); return; }
+        rememberedHandOrder[bar] = order;
         const params = new URLSearchParams();
         if (id !== "mix") params.set("mode", id);
         if (bar !== "core") params.set("bar", bar);
         const query = params.toString();
         const path = query ? `/flashcards/learn?${query}` : "/flashcards/learn";
         if (onLaunch) {
-            // The hand launches the WHOLE library: no category, no collection.
-            onLaunch(path, { category: null, mode: id === "mix" ? null : id, bar, collection: null });
+            onLaunch(path, handLaunchRequest(id, bar));
             return;
         }
         navigate(path);
@@ -162,7 +180,7 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
 
     return (
         <>
-            <StudyHand className={className} cards={handCards} onStudy={handleStudy} variant={variant} shaking={shaking} />
+            <StudyHand className={className} cards={handCards} initialOrder={rememberedHandOrder[bar]} onStudy={handleStudy} variant={variant} shaking={shaking} figureMark={figureMark} />
 
             {/* Toast: greyed Review tapped. TWO reasons the figure can be 0, and they call
                 for opposite advice — go earn some cards, or come back later — so the

@@ -96,7 +96,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),
   "/discover/sort/:language": lazy(() => import("../features/discover/SortCardsPage")),
   "/discover/quick-mark/:language": lazy(() => import("../features/discover/QuickMarkPage")),
-  "/discover/skipped/:language": lazy(() => import("../features/discover/SkippedCardsPage")),
   "/night-market": lazy(() => import("../features/nightmarket/NightMarketEnginePage")),
   "/night-market/user/:userId": lazy(() => import("../features/nightmarket/NightMarketVisitPage")),
   "/tester-dashboard": lazy(() => import("../pages/TesterDashboardPage")),

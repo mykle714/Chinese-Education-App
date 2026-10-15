@@ -603,7 +603,14 @@ export class DictionaryDAL implements IDictionaryDAL {
     // unnest over a large match set — measured on dev 2026-09-24, the worst case (es "a", ~19k
     // matches) took ~260 ms vs ~80 ms for a typical term. The empty-term guard stays because
     // `\y\y` would match every row; callers already reject an empty term upstream.
-    const definitionsSearchEnabled = searchTerm.trim().length >= 1;
+    //
+    // Skipped entirely when the term parsed as numbered pinyin ("ma5", "jian4 shen1"): such a
+    // term is never English, and the gloss search would otherwise hit the pinyin inside CC-CEDICT
+    // cross-references — 达赖's "abbr. of 達賴喇嘛|达赖喇嘛[Da2 lai4 La3 ma5]" surfaced for
+    // "ma5", since the `(...)` stripping in STRIPPED_ALL_GLOSSES leaves `[...]` intact. With no
+    // gloss predicate the ranking degrades to the two-bucket word-first order (see below).
+    // See docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md § "No English search for numbered pinyin".
+    const definitionsSearchEnabled = searchTerm.trim().length >= 1 && numberedPinyinPattern === null;
     // Escape regex metacharacters in the user term, then anchor it to word boundaries.
     const escapedTerm = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const wholeWordDefinitionPattern = `\\y${escapedTerm}\\y`;

@@ -108,6 +108,18 @@ search.
 The interleaved head (below) samples buckets 1 and 2 as **one head group**, so its shape stays
 `0,0,1,1,2,2,3,3`; main readings fill that group's two slots first.
 
+### No English search for numbered pinyin
+
+When the term parses as numbered pinyin (`buildNumberedPinyinPattern` returns non-null — every
+token syllable-shaped, at least one carrying a tone digit), `searchByWord1` turns the
+English-definition predicate off (`definitionsSearchEnabled` in
+`server/dal/implementations/DictionaryDAL.ts`). Such a term is never English, and the gloss
+search otherwise matched the pinyin inside CC-CEDICT cross-references: `STRIPPED_ALL_GLOSSES`
+strips `(...)` but not `[...]`, so 达赖's "abbr. of 達賴喇嘛|达赖喇嘛[Da2 lai4 La3 ma5]" surfaced
+for "ma5". With no gloss predicate the ranking degrades to the two-bucket word-first order and the
+interleaved head is skipped. Tone-marked / toneless queries ("mā", "ma") still run the English
+search — they are ambiguous with English words.
+
 ### Sense matching (added 2026-10-03)
 
 A row qualifies through any reading or gloss but is drawn with its default sense. When the term hit

@@ -168,7 +168,7 @@ export class StarterPacksController {
   };
 
   /**
-   * List the user's currently-skipped words for a language (Skipped page grid).
+   * List the user's currently-skipped words for a language (scp's hidden skipped-cards sheet).
    * GET /api/starterPacks/:language/skipped
    * Response: DiscoverCard[]
    */
@@ -210,6 +210,37 @@ export class StarterPacksController {
       res.json({ recycled });
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.recycleSkips');
+    }
+  };
+
+  /**
+   * Recycle ONE skipped card back into the sort supply (scp's hidden skipped-cards
+   * sheet, hold-to-recycle — docs/SORT_CARDS_REQUIREMENTS.md §5.1a).
+   * POST /api/starterPacks/:language/recycleSkip
+   * Body: { cardId: number }
+   * Response: { success: true }
+   */
+  recycleSkip = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { language } = req.params;
+      if (!language || !VALID_LANGUAGES.includes(language as any)) {
+        res.status(400).json({ error: 'Invalid language parameter' });
+        return;
+      }
+
+      const cardId = Number(req.body?.cardId);
+      if (!Number.isInteger(cardId) || cardId <= 0) {
+        res.status(400).json({ error: 'cardId must be a positive integer' });
+        return;
+      }
+
+      await this.starterPacksService.recycleSkip(userId, cardId, language);
+      res.json({ success: true });
+    } catch (error: any) {
+      handleControllerError(error, res, 'StarterPacksController.recycleSkip');
     }
   };
 

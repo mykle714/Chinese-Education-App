@@ -53,10 +53,13 @@ interface EipSheetProps {
     // speaker, tracking whichever entry tab is showing. Dictionary page only. A failed
     // add/remove raises this sheet's own error snackbar.
     showLearnNow?: boolean;
+    // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
+    // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
+    depth?: number;
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow, depth = 0,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -83,7 +86,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     onBreakdownItemClick={(item) => { void eip.openForEntryKey(item.character); }}
                     onUsedInItemClick={(item) => { void eip.openForEntryKey(item.entryKey); }}
                     onExampleSegmentClick={(segment) => { void eip.openForEntryKey(segment); }}
-                    depth={0}
+                    depth={depth}
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}

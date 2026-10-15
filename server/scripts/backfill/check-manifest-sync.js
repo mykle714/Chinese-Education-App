@@ -10,6 +10,10 @@
  * stale rows are never re-run. (Real instance: migration 122 bumped
  * chinese/backfill-cluster-definitions to v5 and left the manifest at v4.)
  *
+ * A step may DECLARE an intentional gap with `heldBackScriptVersion` (see requiredScripts.js):
+ * exactly that script version is accepted ahead of the manifest and shown as "held back";
+ * any other version still fails, and a marker whose gap has closed fails as stale.
+ *
  * Also catches a manifest step whose script file no longer exists — the failure mode that
  * broke the oracle skill's Spanish path when backfill-parts-of-speech.js was deleted.
  *
@@ -19,7 +23,8 @@
  *
  * Exit 0 = in sync. Exit 1 = drift (details printed). Safe to wire into CI.
  *
- * Referenced by: .claude/commands/oracle-backfill.md §3.
+ * Referenced by: .claude/commands/oracle-backfill.md §3; preflighted every tick by
+ * scripts/backfill/oracle-cron.sh (aborts the round on exit 1).
  */
 
 import fs from 'fs';
@@ -53,6 +58,17 @@ for (const [lang, manifest] of [['zh', REQUIRED_SCRIPTS_ZH], ['es', REQUIRED_SCR
     } else if (version === null) {
       status = '❌ no SCRIPT_VERSION';
       problems.push(`${lang}: ${step.id} — script declares no SCRIPT_VERSION but is in the manifest`);
+    } else if (step.heldBackScriptVersion !== undefined && step.heldBackScriptVersion === version
+               && version > step.version) {
+      // A DECLARED hold-back (requiredScripts.js → heldBackScriptVersion): the gap is
+      // intentional and documented on the manifest entry, so it is not drift.
+      status = `⏸ held back (script v${version})`;
+    } else if (step.heldBackScriptVersion !== undefined && version === step.version) {
+      // The gap the marker excused is gone (manifest was bumped, or the script reverted) —
+      // a leftover marker would silently excuse the NEXT bump, so it has to go.
+      status = '⚠ stale hold-back marker';
+      problems.push(`${lang}: ${step.id} — heldBackScriptVersion: ${step.heldBackScriptVersion} is set but `
+        + `manifest and script both read v${version}; remove the marker.`);
     } else if (version > step.version) {
       // The dangerous direction: rows stamped at the older version read as current.
       status = `⚠ DRIFT — script is AHEAD (v${version})`;
@@ -81,4 +97,4 @@ if (problems.length) {
   console.error('');
   process.exit(1);
 }
-console.log('\n✅ All manifest versions match their scripts.\n');
+console.log('\n✅ All manifest versions match their scripts (or are declared held back).\n');

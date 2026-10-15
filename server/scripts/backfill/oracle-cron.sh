@@ -41,7 +41,7 @@
 #   A round is skipped (exit 0) when any active plan cap is at or above ITS OWN
 #   threshold. The two caps are gated separately because they fail in different
 #   currencies (see the budget gate below):
-#     ORACLE_MAX_UTILIZATION         (default 75%) — the weekly caps. Spend past the
+#     ORACLE_MAX_UTILIZATION         (default 85%) — the weekly caps. Spend past the
 #       weekly cap silently bills extra-usage credits rather than erroring, so the
 #       gate keeps a wide margin.
 #     ORACLE_MAX_UTILIZATION_SESSION (default 99%) — the five-hour window. Overrunning
@@ -203,12 +203,12 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # THE THRESHOLD IS PER CAP GROUP, because the two caps fail in completely different
 # currencies:
 #
-#   weekly  (weekly_all, weekly_scoped) — ORACLE_MAX_UTILIZATION, default 75.
+#   weekly  (weekly_all, weekly_scoped) — ORACLE_MAX_UTILIZATION, default 85.
 #     Overrunning this costs REAL DOLLARS: requests past 100% keep succeeding and bill
 #     against pay-as-you-go extra-usage credits. A round takes ~30 min, so starting at
 #     99% would cross the cap mid-manifest and finish on credits — the gate can only
 #     refuse to *start*, it cannot stop a round in flight. Hence a wide margin.
-#     Lowered from the original 95 default on 2026-08-28.
+#     Lowered from the original 95 default on 2026-08-28; raised to 85 on 2026-10-12.
 #
 #   session (the five-hour window)      — ORACLE_MAX_UTILIZATION_SESSION, default 99.
 #     Overrunning this costs only THROUGHPUT: at the five-hour boundary requests are
@@ -270,7 +270,7 @@ LAST_STATUS_FILE="$LOG_DIR/oracle-last-status.$SLUG"
 # malformed payload) increment a counter and shout on stderr once it reaches
 # ORACLE_GATE_FAIL_ESCALATE (default 3). An at-the-cap skip is NOT counted, because
 # the weekly cap can legitimately hold the cron down for most of a day.
-MAX_UTIL="${ORACLE_MAX_UTILIZATION:-75}"                 # weekly caps (dollars)
+MAX_UTIL="${ORACLE_MAX_UTILIZATION:-85}"                 # weekly caps (dollars)
 
 # WEEKLY OVERRIDE: a one-week replacement for MAX_UTIL, written by
 # oracle-weekly-override.sh (the /oracle-weekly-override skill) when the operator knows

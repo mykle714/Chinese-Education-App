@@ -30,7 +30,6 @@ export function useDiscoverNavigation() {
   const discoverPath = "/discover";
   const sortPath = `/discover/sort/${language}`;
   const quickMarkPath = `/discover/quick-mark/${language}`;
-  const skippedPath = `/discover/skipped/${language}`;
 
   const goToDiscover = useCallback(() => {
     navigate(discoverPath);
@@ -44,9 +43,5 @@ export function useDiscoverNavigation() {
     navigate(quickMarkPath);
   }, [navigate, quickMarkPath]);
 
-  const goToSkipped = useCallback(() => {
-    navigate(skippedPath);
-  }, [navigate, skippedPath]);
-
-  return { goToDiscover, discoverPath, goToSort, sortPath, goToQuickMark, quickMarkPath, goToSkipped, skippedPath };
+  return { goToDiscover, discoverPath, goToSort, sortPath, goToQuickMark, quickMarkPath };
 }

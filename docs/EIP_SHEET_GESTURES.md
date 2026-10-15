@@ -659,4 +659,7 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`),
   `src/features/flashcards/centers/ReadingSwipeGrid.tsx` and
   `src/features/dictionary/DictionaryPage.tsx` (`handleEntryClick` — the only host that
-  passes `showSynonymsRelated`, `showWordTools` and `showLearnNow`)
+  passes `showSynonymsRelated`, `showWordTools` and `showLearnNow`). `depth` (default 0) is
+  forwarded to SheetPanel; scp passes 1 while its hidden skipped-cards sheet
+  (`SkippedCardsSheet`, docs/SORT_CARDS_REQUIREMENTS.md §5.1a) is open, so an eip opened
+  from a card in that sheet stacks above it

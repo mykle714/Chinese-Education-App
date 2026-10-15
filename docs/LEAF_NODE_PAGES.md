@@ -286,7 +286,6 @@ own-animation pages) are neither archetype.
 |---|---|---|
 | `/discover/sort/:language` | `SortCardsPage` | Node |
 | `/discover/quick-mark/:language` | `QuickMarkPage` | Node |
-| `/discover/skipped/:language` | `SkippedCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |

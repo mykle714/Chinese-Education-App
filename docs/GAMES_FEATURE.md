@@ -65,6 +65,12 @@ games; each game lives as its own page linked from the hub.
   scaffolding was deleted (commit `70dc441`); see
   [§ Layer 2](#layer-2--runtime-srcgamesruntime).
 
+- **Listening Practice** (`/games/listening-practice`) — see [LISTENING_PRACTICE_GAME.md](./LISTENING_PRACTICE_GAME.md).
+  **DESIGN / DRAFT (2026-10-12), not built.** A zh-only minimal-pair listening drill: hear
+  a word, phrase or sentence (60/30/10) and pick which of several real words was said,
+  where the options differ along one axis only (tones, c/ch/q · s/sh/x · z/zh/j, -n/-ng,
+  u/ü). Moded hub tile. It is the first game that emits **no marks**, but it still accrues minutes.
+
 - **Memory Map** (`/games/memory-map`) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
   **BUILT ON DEV (migration 151), not on PPE.** A persistent, pan/zoom **reading** map:
   every card the learner sorted that is **not reading-mastered** owns a permanent spot

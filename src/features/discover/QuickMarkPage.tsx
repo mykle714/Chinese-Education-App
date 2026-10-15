@@ -1,48 +1,81 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Typography, Button, Chip, Menu, MenuItem, Snackbar } from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import NodePage from "../../components/NodePage";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { FooterSpacer } from "../../components/MobileFooter";
 import QuickMarkCard from "../../components/QuickMarkCard";
-import { type QuickMarkState, nextQuickMarkState } from "../../components/quickMarkState";
+import {
+    QUICK_MARK_BUCKET, QUICK_MARK_COLOR, QUICK_MARK_COMMIT_PX, QUICK_MARK_LABEL,
+    paintQuickMarkDrag, snapshotCardSlots, playCardSlotSlide, observeCardDrawWindow, type CardSlots,
+} from "../../components/quickMarkSwipe";
 import { useAuth } from "../../AuthContext";
-import { fetchQuickMarkPage, saveQuickMarks } from "./starterPacksApi";
+import { fetchQuickMarkPage, sortCard, undoSort } from "./starterPacksApi";
+import { lookupVocabEntry } from "../../api/dictionary";
+import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
+import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
+import { useTTS } from "../../hooks/useTTS";
+import { useSwipeCommit, type SwipeDirection } from "../../hooks/useSwipeCommit";
+import { CARD_FLY_OUT_MS } from "../flashcards/constants";
 import type { Language, DiscoverCard, VocabEntry } from "../../types";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { COLORS } from "../../theme/colors";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
+import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 
 // QUICK MARK (docs/QUICK_MARK.md) — the Discover hub's bulk-triage grid, the second
-// activity (between Sort Cards and Skipped Cards). The user picks a difficulty level,
+// activity (between Sort Cards and Skipped Cards). The user picks a difficulty level and
 // sees every not-yet-sorted discoverable word at that level as mini cards ordered by
-// frequency score, taps each to cycle a 3-state mark (empty → Learn Now → Mastered),
-// and hits Save to commit them all at once. Persistence reuses the Sort Cards buckets
-// verbatim (library / already-learned), so nothing new is stored.
+// frequency score. Each card is SWIPED: left = Add to Learn Now, right = Mastered. A
+// swipe saves immediately (one `sortCard` per card — the same library / already-learned
+// buckets as Sort Cards, so nothing new is stored), the card flies off, the grid closes
+// the gap, and an Undo toast offers to take the last swipe back. A tap opens the eip.
 //
-// LAYER: page (view). Fetches its own supply + posts the batch save; no shared hook.
+// LAYER: page (view). Fetches its own supply + posts each sort; no shared hook beyond the
+// gesture (`useSwipeCommit`, shared with the Reading Center's swipe grid).
 
 // Manual level dropdown — the generalized 1..6 difficulty scale (no "Auto": Quick Mark
 // is always a concrete level). Mirrors SortCardsPage's DIFFICULTY_LEVELS.
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 
-// A card cursor for keyset pagination — the last card's sort-key coordinates. Matches
-// the server's ORDER BY (frequencyScore DESC NULLS LAST, id ASC).
+// The grid container's class (passed as MiniVocabCardGrid's `containerClassName`), used
+// to find the cards for the gap-fill slide.
+const GRID_CLASS = "quick-mark-cards-preview";
+const GRID_SELECTOR = `.${GRID_CLASS}`;
+
+// How long the Undo toast stays up after a swipe.
+const UNDO_TOAST_MS = 4000;
+
+// A card cursor for keyset pagination — the last FETCHED card's sort-key coordinates.
+// Matches the server's ORDER BY (frequencyScore DESC NULLS LAST, id ASC).
 interface QuickMarkCursor {
     score: number | null;
     id: number;
 }
 
-// One legend swatch (matches the card's 18px corner badges).
-const LegendItem: React.FC<{ swatch: React.ReactNode; label: string; className: string }> = ({ swatch, label, className }) => (
+// The bottom toast: the last swipe (with Undo), or a failure message. `seq` keys the
+// Snackbar so back-to-back swipes restart its auto-hide instead of extending a stale one.
+type QuickMarkToastInput =
+    | { kind: "undo"; card: DiscoverCard; index: number; direction: SwipeDirection }
+    | { kind: "error"; message: string };
+type QuickMarkToast = QuickMarkToastInput & { seq: number };
+
+// One legend swatch — the destination collection's colour, as a dragged card turns.
+const LegendItem: React.FC<{ direction: SwipeDirection; className: string }> = ({ direction, className }) => (
     <Box className={className} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-        {swatch}
-        <Typography sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary }}>{label}</Typography>
+        {direction === "left" && <Typography sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary }}>←</Typography>}
+        <Box sx={{ width: 12, height: 12, borderRadius: "50%", backgroundColor: QUICK_MARK_COLOR[direction], border: `1px solid ${COLORS.border}` }} />
+        <Typography sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary }}>{QUICK_MARK_LABEL[direction]}</Typography>
+        {direction === "right" && <Typography sx={{ fontSize: SIZE.micro, color: COLORS.textSecondary }}>→</Typography>}
     </Box>
 );
+
+// Re-insert a card at (up to) its old position, unless it's already there.
+const reinsert = (cards: DiscoverCard[], card: DiscoverCard, index: number): DiscoverCard[] =>
+    cards.some((c) => c.id === card.id)
+        ? cards
+        : [...cards.slice(0, index), card, ...cards.slice(index)];
 
 const QuickMarkPage: React.FC = () => {
     usePageTitle("Quick Mark");
@@ -55,45 +88,63 @@ const QuickMarkPage: React.FC = () => {
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
+    // The cards still to triage. A swiped card leaves this list once its fly-off ends.
     const [cards, setCards] = useState<DiscoverCard[]>([]);
-    // Per-card mark, keyed by det id. Only cards the user has TAPPED appear here; a card
-    // absent from the map is `empty`. Save sends every entry (empty → delete/no-op).
-    const [marks, setMarks] = useState<Record<number, QuickMarkState>>({});
+    // Cards mid fly-off (committed, still on screen), keyed by det id.
+    const [leaving, setLeaving] = useState<Record<number, SwipeDirection>>({});
     const [loading, setLoading] = useState(true);        // initial page
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [saving, setSaving] = useState(false);
-    const [savedToast, setSavedToast] = useState(false);
-    // Snapshot of `marks` as of the last successful save (empty on a fresh/reset load).
-    // The Save button is enabled (green) only while `marks` differs from this baseline;
-    // saving re-baselines it, so tracking restarts from the just-saved state.
-    const [savedMarks, setSavedMarks] = useState<Record<number, QuickMarkState>>({});
+    const [toast, setToast] = useState<QuickMarkToast | null>(null);
+    const toastSeq = useRef(0);
 
     // Guard so the intersection-observer sentinel doesn't fire overlapping loads.
     const loadingMoreRef = useRef(false);
+    // The keyset cursor is the last card FETCHED, not the last card on screen: swipes
+    // remove cards from `cards`, and resuming after an earlier card would re-request
+    // rows the client already holds (or, with every card swiped, have no cursor at all).
+    const cursorRef = useRef<QuickMarkCursor | null>(null);
+    // Live mirror of `cards` for the swipe commit, which runs from a stable handler.
+    const cardsRef = useRef(cards);
+    cardsRef.current = cards;
+    // Per-card fly-off timers (cleared when a failed save or an Undo restores the card
+    // first) and in-flight sort promises (an Undo waits for its sort to land, so the
+    // delete can't race ahead of the insert it reverses).
+    const removeTimers = useRef(new Map<number, number>());
+    const pendingSorts = useRef(new Map<number, Promise<unknown>>());
+    useEffect(() => {
+        const timers = removeTimers.current;
+        return () => { for (const t of timers.values()) window.clearTimeout(t); };
+    }, []);
 
     const difficultyLabel = useCallback(
         (lvl: number) => (language === "zh" ? `HSK ${lvl}` : `Level ${lvl}`),
         [language]
     );
 
-    // Load a page. `reset` (level change / mount) replaces the grid and clears marks;
-    // otherwise the page is appended via the keyset cursor (last card's score+id).
-    const loadPage = useCallback(async (level: number | null, cursor: QuickMarkCursor | null, reset: boolean) => {
+    const showToast = useCallback((t: QuickMarkToastInput) => {
+        setToast({ ...t, seq: ++toastSeq.current });
+    }, []);
+
+    // Load a page. `reset` (level change / mount) replaces the grid; otherwise the page
+    // is appended after the keyset cursor.
+    const loadPage = useCallback(async (level: number | null, reset: boolean) => {
         if (reset) setLoading(true);
         else { setLoadingMore(true); loadingMoreRef.current = true; }
         setError(null);
         try {
-            const data = await fetchQuickMarkPage(language as Language, level, cursor);
+            const data = await fetchQuickMarkPage(language as Language, level, reset ? null : cursorRef.current);
             setHasMore(data.hasMore);
+            const last = data.cards[data.cards.length - 1];
+            if (last) cursorRef.current = { score: last.frequencyScore ?? null, id: last.id };
             if (reset) {
                 setCards(data.cards);
-                setMarks({});
-                setSavedMarks({}); // fresh session → nothing pending, Save starts grey
+                setLeaving({});
+                setToast(null); // an Undo for the previous level's card would be confusing
                 setSelectedLevel(data.level); // seed (mount) or confirm (user pick)
             } else {
-                // De-dupe defensively in case a concurrent save shifted the window.
+                // De-dupe defensively in case a concurrent sort shifted the window.
                 setCards((prev) => {
                     const seen = new Set(prev.map((c) => c.id));
                     return [...prev, ...data.cards.filter((c) => !seen.has(c.id))];
@@ -108,14 +159,14 @@ const QuickMarkPage: React.FC = () => {
         }
     // No `token` dep: starterPacksApi reads the bearer token itself at call time, so a
     // silent ~15-min refresh no longer re-creates this callback (which would re-run the
-    // load effect and wipe in-progress marks).
+    // load effect and reset the grid mid-triage).
     }, [language]);
 
     // Initial load (mount / language change / auth settle). Keyed on isAuthenticated,
-    // NOT token — a silent token refresh must not reload the page mid-triage and wipe
-    // the user's in-progress marks (CLAUDE.md "Never reload on token refresh").
+    // NOT token — a silent token refresh must not reload the page mid-triage
+    // (CLAUDE.md "Never reload on token refresh").
     useEffect(() => {
-        if (language) loadPage(null, null, true);
+        if (language) loadPage(null, true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [language, isAuthenticated]);
 
@@ -124,77 +175,149 @@ const QuickMarkPage: React.FC = () => {
         setLevelMenuAnchor(null);
         if (lvl === selectedLevel) return;
         setSelectedLevel(lvl);
-        loadPage(lvl, null, true);
+        loadPage(lvl, true);
     }, [selectedLevel, loadPage]);
 
-    // Load the next page after the last-shown card (keyset cursor).
+    // Load the next page after the last-fetched card (keyset cursor).
     const loadMore = useCallback(() => {
-        if (loadingMoreRef.current || !hasMore || cards.length === 0) return;
-        const last = cards[cards.length - 1];
-        loadPage(selectedLevel, { score: last.frequencyScore ?? null, id: last.id }, false);
-    }, [hasMore, cards, selectedLevel, loadPage]);
+        if (loadingMoreRef.current || !hasMore || !cursorRef.current) return;
+        loadPage(selectedLevel, false);
+    }, [hasMore, selectedLevel, loadPage]);
 
-    // Cycle one card's mark on tap. Functional update so onCycle stays referentially
-    // stable (the memoized cards only re-render for the tapped id).
-    const handleCycle = useCallback((cardId: number) => {
-        setMarks((prev) => ({ ...prev, [cardId]: nextQuickMarkState(prev[cardId] ?? "empty") }));
+    // Swiped the whole loaded page away while more exist: the sentinel lives inside the
+    // grid's card list, which is gone, so fetch the next page directly.
+    useEffect(() => {
+        if (!loading && cards.length === 0 && hasMore) loadMore();
+    }, [loading, cards.length, hasMore, loadMore]);
+
+    // ── Gap fill ────────────────────────────────────────────────────────────────
+    // When a card leaves (or comes back), the cards after it SLIDE to their new slots
+    // instead of jumping (quickMarkSwipe.ts → FLIP). The slots are snapshotted just before
+    // the list changes and the slide is played in a layout effect, i.e. before the browser
+    // paints the jumped layout. The grid is found by its class: MiniVocabCardGrid takes
+    // no ref, and the class is this page's own (`containerClassName` below).
+    const slotsBeforeChange = useRef<CardSlots | null>(null);
+    const snapshotSlots = useCallback(() => {
+        const root = document.querySelector(GRID_SELECTOR);
+        if (root) slotsBeforeChange.current = snapshotCardSlots(root);
     }, []);
+    useLayoutEffect(() => {
+        const before = slotsBeforeChange.current;
+        if (!before) return;
+        slotsBeforeChange.current = null;
+        const root = document.querySelector(GRID_SELECTOR);
+        if (root) playCardSlotSlide(root, before);
+    }, [cards]);
 
-    // Clear = reset every marked card to empty (docs §6). Only cards the user has
-    // TOUCHED are reset (untouched cards already render empty and have no vet row), and
-    // we keep them in the map as explicit `empty` rather than deleting the keys — so a
-    // subsequent Save deletes any vet row a prior Save created for them. This keeps the
-    // Save payload proportional to what the user actually did, not the whole loaded page.
-    const handleClear = useCallback(() => {
-        setMarks((prev) => {
-            const next: Record<number, QuickMarkState> = {};
-            for (const id of Object.keys(prev)) next[Number(id)] = "empty";
-            return next;
-        });
-    }, []);
+    // Draw window: only cards within two rows of the screen are painted
+    // (quickMarkSwipe.ts → observeCardDrawWindow). Rebuilt whenever the list changes so
+    // new cards (next page, an Undo) are observed and removed ones are released. The
+    // scroller is the NodePage's MobileTabScreen scroll area, as for the load sentinel.
+    useEffect(() => {
+        const root = document.querySelector(GRID_SELECTOR);
+        if (!root) return;
+        return observeCardDrawWindow(root, root.closest(".mobile-tab-screen__scroll"));
+    }, [cards]);
 
-    // Are there unsaved changes? Compare the current marks against the last-saved
-    // baseline over the union of both key sets, treating a missing key as `empty` —
-    // so a card cycled all the way back to empty (or cleared after a save that left it
-    // empty) correctly reads as "no change", while a Clear that undoes a saved mark
-    // reads as dirty (it still needs a save to delete the vet row).
-    const isDirty = useMemo(() => {
-        const ids = new Set([...Object.keys(marks), ...Object.keys(savedMarks)]);
-        for (const id of ids) {
-            const key = Number(id);
-            if ((marks[key] ?? "empty") !== (savedMarks[key] ?? "empty")) return true;
-        }
-        return false;
-    }, [marks, savedMarks]);
+    // Put a card back where it was: cancel its pending removal, clear its fly-off.
+    const restoreCard = useCallback((card: DiscoverCard, index: number) => {
+        const timer = removeTimers.current.get(card.id);
+        if (timer !== undefined) { window.clearTimeout(timer); removeTimers.current.delete(card.id); }
+        setLeaving((prev) => { const next = { ...prev }; delete next[card.id]; return next; });
+        snapshotSlots();
+        setCards((prev) => reinsert(prev, card, index));
+    }, [snapshotSlots]);
 
-    // Save = reconcile every touched card to its on-screen mark in one request. Cards
-    // stay in view afterward (their last chance to undo — docs §6); the page is NOT
-    // refetched, so already-loaded cards keep their positions.
-    const handleSave = useCallback(async () => {
-        // Re-entrancy guard: a concurrent tap while a save is in flight is ignored.
-        // (The button is also disabled while `saving`, but keep the guard for safety.)
-        if (saving || !isDirty) return;
-        // Snapshot the marks being committed — `marks` can change mid-flight, and the
-        // baseline must reflect exactly what the server received, not the later state.
-        const snapshot = marks;
-        const payload = Object.entries(snapshot).map(([cardId, state]) => ({ cardId: Number(cardId), state }));
-        if (payload.length === 0) return;
-        setSaving(true);
+    // Drop a card from the grid: the fly-off is over (or an Undo failed).
+    const removeCard = useCallback((cardId: number) => {
+        removeTimers.current.delete(cardId);
+        setLeaving((prev) => { const next = { ...prev }; delete next[cardId]; return next; });
+        snapshotSlots();
+        setCards((prev) => prev.filter((c) => c.id !== cardId));
+    }, [snapshotSlots]);
+
+    // A committed swipe: write the sort NOW, fly the card off, then close the gap. A
+    // failed write puts the card back and says so — the grid must never show a card as
+    // sorted that the server didn't take.
+    const handleCommit = useCallback((id: string, direction: SwipeDirection) => {
+        const cardId = Number(id);
+        const index = cardsRef.current.findIndex((c) => c.id === cardId);
+        const card = cardsRef.current[index];
+        if (!card || !language) return;
+        setLeaving((prev) => ({ ...prev, [cardId]: direction }));
+        removeTimers.current.set(cardId, window.setTimeout(() => removeCard(cardId), CARD_FLY_OUT_MS));
+        const sort = sortCard({ cardId, bucket: QUICK_MARK_BUCKET[direction], language, packId: null })
+            .catch((err) => {
+                console.error(`[QuickMark] sort failed → card ${cardId} (${QUICK_MARK_BUCKET[direction]}):`, err);
+                restoreCard(card, index);
+                showToast({ kind: "error", message: `Couldn't save ${card.entryKey} — try again.` });
+                throw err; // keep the rejection for an Undo awaiting this sort
+            })
+            .finally(() => pendingSorts.current.delete(cardId));
+        pendingSorts.current.set(cardId, sort);
+        showToast({ kind: "undo", card, index, direction });
+    }, [language, removeCard, restoreCard, showToast]);
+
+    // Undo the last swipe: put the card back immediately, then delete the vet row the
+    // sort created (`undoSort` — the same reversal Sort Cards uses). If the sort itself
+    // failed there is nothing to delete (and the card is already back).
+    const handleUndo = useCallback(async () => {
+        if (toast?.kind !== "undo" || !language) return;
+        const { card, index, direction } = toast;
+        setToast(null);
+        restoreCard(card, index);
         try {
-            await saveQuickMarks(language as Language, payload);
-            setSavedMarks(snapshot); // re-baseline → Save goes back to grey
-            setSavedToast(true);
-        } catch (err) {
-            console.error("Error saving quick marks:", err);
-            setError("Failed to save. Please try again."); // baseline untouched → stays green for a retry
-        } finally {
-            setSaving(false);
+            await pendingSorts.current.get(card.id);
+        } catch {
+            return; // the sort never landed — restoring the card was the whole undo
         }
-    }, [saving, isDirty, marks, language]);
+        try {
+            await undoSort({ cardId: card.id, bucket: QUICK_MARK_BUCKET[direction], language, packId: null });
+        } catch (err) {
+            console.error(`[QuickMark] undo failed → card ${card.id}:`, err);
+            removeCard(card.id); // still sorted on the server — don't show it as unsorted
+            showToast({ kind: "error", message: `Couldn't undo ${card.entryKey}.` });
+        }
+    }, [toast, language, restoreCard, removeCard, showToast]);
+
+    const swipe = useSwipeCommit({
+        axisLock: true,
+        threshold: () => QUICK_MARK_COMMIT_PX,
+        onCommit: handleCommit,
+        // Painted straight to the DOM: a state-driven drag re-rendered the page — and so
+        // the grid's whole card list — on every pointermove.
+        paint: paintQuickMarkDrag,
+    });
+
+    // ── The eip (tap a card) ────────────────────────────────────────────────────
+    // A DiscoverCard is NOT a VocabEntry — it lacks the clustered senses, long definition
+    // and the rest the panel renders — so the word is looked up in det first, exactly as
+    // the scp's card-info button does (SortCardsPage → handleOpenCardInfo). A failed
+    // lookup only clears the spinner: the eip is an optional detour off the triage.
+    const eip = useEipTabs({ language });
+    const [eipOpen, setEipOpen] = useState(false);
+    const [eipLoadingId, setEipLoadingId] = useState<number | null>(null);
+    const eipLoadingRef = useRef(false); // one lookup at a time, without re-creating the callback
+    const tts = useTTS();
+    const handleOpenInfo = useCallback(async (card: DiscoverCard) => {
+        if (eipLoadingRef.current) return;
+        eipLoadingRef.current = true;
+        setEipLoadingId(card.id);
+        try {
+            const entry = await lookupVocabEntry(card.entryKey, language);
+            eip.openForRoot(entry);
+            setEipOpen(true);
+        } catch (err) {
+            console.error(`[QuickMark] failed to open the info panel for "${card.entryKey}":`, err);
+        } finally {
+            eipLoadingRef.current = false;
+            setEipLoadingId(null);
+        }
+    }, [language, eip]);
 
     // MiniVocabCardGrid takes VocabEntry[]; a DiscoverCard supplies everything the
     // Quick Mark card reads (id + entryKey + definition + pronunciation + frequencyScore
-    // + iconId). Stable per `cards` so the grid's incremental reveal doesn't thrash.
+    // + iconId). Stable per `cards` so the grid's reveal doesn't thrash.
     const entries = useMemo(() => cards as unknown as VocabEntry[], [cards]);
     const cardById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
 
@@ -202,17 +325,21 @@ const QuickMarkPage: React.FC = () => {
         (entry: VocabEntry, _index: number, animationDelayMs?: number) => {
             const card = cardById.get(entry.id);
             if (!card) return null;
+            const cardLeaving = leaving[card.id] ?? null;
             return (
                 <QuickMarkCard
                     key={card.id}
                     card={card}
-                    state={marks[card.id] ?? "empty"}
-                    onCycle={handleCycle}
+                    leaving={cardLeaving}
+                    swipeHandlers={cardLeaving ? undefined : swipe.handlers}
+                    wasDrag={swipe.wasDrag}
+                    onOpenInfo={handleOpenInfo}
+                    infoLoading={eipLoadingId === card.id}
                     animationDelayMs={animationDelayMs}
                 />
             );
         },
-        [cardById, marks, handleCycle]
+        [cardById, leaving, swipe.handlers, swipe.wasDrag, handleOpenInfo, eipLoadingId]
     );
 
     // Infinite-scroll sentinel: observe it against the MobileTabScreen scroll container
@@ -238,38 +365,7 @@ const QuickMarkPage: React.FC = () => {
             onBack={() => navigate("/discover")}
             contentClassName="quick-mark-page__content"
             contentSx={{ alignItems: "center" }}
-            headerExtraActions={
-                <>
-                    <Button
-                        className="quick-mark-page__clear-button"
-                        variant="text"
-                        size="small"
-                        onClick={handleClear}
-                        disabled={cards.length === 0}
-                        sx={{ minWidth: "unset", px: 1, py: 0.25, height: "30px", fontSize: SIZE.micro, textTransform: "lowercase", lineHeight: LEADING.normal, borderRadius: "6px", color: COLORS.onSurface }}
-                    >
-                        clear
-                    </Button>
-                    <Button
-                        className="quick-mark-page__save-button"
-                        variant="contained"
-                        size="small"
-                        onClick={handleSave}
-                        // Grey + unpressable with nothing pending; green once the marks
-                        // diverge from the last-saved baseline, back to grey after saving.
-                        disabled={!isDirty || saving}
-                        sx={{
-                            minWidth: "unset", px: 1.25, py: 0.25, height: "30px", fontSize: SIZE.micro,
-                            textTransform: "lowercase", lineHeight: LEADING.normal, borderRadius: "6px",
-                            backgroundColor: COLORS.successInk,
-                            "&:hover": { backgroundColor: COLORS.successInk },
-                            "&.Mui-disabled": { backgroundColor: COLORS.card, color: COLORS.textSecondary },
-                        }}
-                    >
-                        save
-                    </Button>
-                </>
-            }
+            // No header actions: every swipe saves on its own (docs/QUICK_MARK.md § 6).
         >
             {/* Level dropdown (no Auto) */}
             <Box className="quick-mark-page__level-bar" sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 40, px: 2, py: 0.5 }}>
@@ -299,32 +395,20 @@ const QuickMarkPage: React.FC = () => {
                 </Menu>
             </Box>
 
-            {/* Legend — the three tap states */}
-            <Box className="quick-mark-page__legend" sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 1.5, px: 2, pb: 0.5 }}>
-                <LegendItem
-                    className="quick-mark-page__legend-empty"
-                    label="Skip"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${COLORS.border}` }} />}
-                />
-                <LegendItem
-                    className="quick-mark-page__legend-library"
-                    label="Add to Learn Now"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.successInk, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckIcon sx={{ fontSize: 11, color: COLORS.white }} /></Box>}
-                />
-                <LegendItem
-                    className="quick-mark-page__legend-mastered"
-                    label="Mastered"
-                    swatch={<Box sx={{ width: 16, height: 16, borderRadius: "50%", backgroundColor: COLORS.infoInk, color: COLORS.white, fontSize: 10, fontWeight: WEIGHT.bold, display: "flex", alignItems: "center", justifyContent: "center" }}>M</Box>}
-                />
+            {/* Legend — what each swipe direction does. */}
+            <Box className="quick-mark-page__legend" sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 2, px: 2, pb: 0.5 }}>
+                <LegendItem className="quick-mark-page__legend-learn-now" direction="left" />
+                <LegendItem className="quick-mark-page__legend-mastered" direction="right" />
             </Box>
 
             <MiniVocabCardGrid
-                containerClassName="quick-mark-cards-preview"
+                containerClassName={GRID_CLASS}
                 classPrefix="quick-mark"
                 loading={loading}
                 error={error}
                 entries={entries}
                 emptyMessage="No unsorted cards at this level. Try another level."
+                // Unused: `renderCard` draws the cards, and each one handles its own tap.
                 onCardClick={() => {}}
                 renderCard={renderCard}
                 staggerReveal
@@ -351,12 +435,40 @@ const QuickMarkPage: React.FC = () => {
             />
 
             <Snackbar
-                className="quick-mark-page__saved-toast"
-                open={savedToast}
-                autoHideDuration={2000}
-                onClose={() => setSavedToast(false)}
-                message="Saved"
+                key={toast?.seq}
+                className="quick-mark-page__toast"
+                open={toast !== null}
+                autoHideDuration={UNDO_TOAST_MS}
+                // Ignore clickaway: a swipe on another card is a "click away", and it
+                // would hide the toast that swipe is about to replace anyway.
+                onClose={(_e, reason) => { if (reason !== "clickaway") setToast(null); }}
+                message={
+                    toast?.kind === "undo"
+                        ? `${toast.card.entryKey} → ${QUICK_MARK_LABEL[toast.direction]}`
+                        : toast?.message
+                }
+                action={toast?.kind === "undo" ? (
+                    <Button
+                        className="quick-mark-page__undo-button"
+                        size="small"
+                        onClick={handleUndo}
+                        sx={{ color: COLORS.white, fontSize: SIZE.micro, fontWeight: WEIGHT.bold, textTransform: "lowercase" }}
+                    >
+                        undo
+                    </Button>
+                ) : undefined}
                 anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+            />
+
+            {/* eip bottom sheet (a tap on a card). SheetPanel's scrim covers the grid
+                while it's up, so no card can be swiped mid-read. */}
+            <EipSheet
+                eip={eip}
+                open={eipOpen}
+                onClose={() => setEipOpen(false)}
+                onSpeak={tts.speak}
+                onSpeakSentence={tts.speakSentence}
+                speakingKey={tts.speakingKey}
             />
         </NodePage>
     );

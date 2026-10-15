@@ -2530,9 +2530,8 @@ keyboard comes up on its own, with the bar perched on it.
 
 **A field carrying `data-beginner-keyboard-default="os"` opens on `ABC` (the OS
 keyboard, switch bar perched on it) regardless of the session choice.** `"ours"` is
-accepted for symmetry. The only user today is the dictionary search box, which
-also auto-focuses on a fresh visit (empty query only — a back-navigation that
-restores results does not raise a keyboard over them).
+accepted for symmetry. The only user today is the dictionary search box. (It no longer auto-focuses on
+visit — removed 2026-10-12; the learner taps it to raise a keyboard.)
 
 | question | decision (confirmed 2026-10-10) |
 |---|---|
@@ -2546,15 +2545,16 @@ field; re-seeding there would snap the choice straight back to `ABC`. Closing an
 then refocusing the field (after the exit has released it) re-seeds, so the field
 always *opens* on its default.
 
-⚠️ **The dictionary's auto-focus is deferred one frame, not MUI `autoFocus`.** The
-provider's "close on pathname change" effect runs in the same commit that mounts
+⚠️ **If a page ever auto-focuses a field, defer it one frame — never MUI `autoFocus`.**
+The provider's "close on pathname change" effect runs in the same commit that mounts
 the page, after an `autoFocus` focus — it would tear down the bar the focus just
 raised. iOS Safari may not raise the OS keyboard for a focus outside a user gesture.
+(The dictionary did this from 2026-10-10 until its auto-focus was removed 2026-10-12.)
 
 Code: `eligibility.ts` → `DEFAULT_SOURCE_ATTRIBUTE`, `defaultSourceOf`;
 `BeginnerKeyboardProvider` → `fieldSource`, `effectiveSource`, `changeSource`;
-`SearchField` → `inputAttributes`; `DictionaryPage` (auto-focus effect + the
-attribute on its `SearchField`).
+`SearchField` → `inputAttributes`; `DictionaryPage` (the attribute on its
+`SearchField`).
 
 ## 6z-4. BUILT 2026-09-24 — hint bubbles over glyph chips
 

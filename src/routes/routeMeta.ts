@@ -192,7 +192,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   // Discover drill-ins.
   { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
   { path: "/discover/quick-mark/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
-  { path: "/discover/skipped/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
 
   // ── Leaf pages (slide up, no footer) ──
   { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },

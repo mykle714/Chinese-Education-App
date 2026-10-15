@@ -48,6 +48,7 @@ rg = reading games
 wg = writing games
 coaw = classification of all words
 deip = dictionary eip
+si = soft introduction
 
 
 ## Terminology: "Learn Now" cards

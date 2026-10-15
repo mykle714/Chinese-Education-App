@@ -127,8 +127,9 @@ export function useWorkingLoop({
         bar,
         collection: launchCollection ? collectionLaunchParams(launchCollection) : null,
     };
-    // A loop the fdp prefetched for exactly this request (flpLaunch.ts), captured once
-    // per mount. Peeked in an initializer and cleared in an effect — StrictMode may run
+    // A loop Home preloaded for exactly this request (flpLaunch.ts), captured once per
+    // mount. The clear drops EVERY preloaded loop, not just this one — this session is
+    // about to mark cards, which makes the other modes' deals stale. Peeked in an initializer and cleared in an effect — StrictMode may run
     // the initializer twice, and consuming it there would leave the second run empty.
     const [handoff] = useState(() => peekLaunchLoop(loopRequest));
     const [handoffKey] = useState(() => workingLoopKey(loopRequest));

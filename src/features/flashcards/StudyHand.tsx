@@ -31,7 +31,8 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * (`HandOrder`, bottom → top) rather than derived from which card is forward. The
  * distinction matters: a derived rule can only ever produce three arrangements (one per
  * possible front card), and the swipe gesture below is required to reach all six
- * permutations of the three cards. `FAN_ORDER` now seeds the opening stack only.
+ * permutations of the three cards. `FAN_ORDER` seeds the opening stack only — unless the
+ * host passes `initialOrder`, the fan the learner last launched from (FlpStudyHand).
  *
  * ── Bringing a card forward ───────────────────────────────────────────────────
  * Two ways, and both promote a card without any card leaving the frame:
@@ -69,7 +70,7 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  *
  * ── The full face is pre-rendered on the card behind ─────────────────────────
  * `backRight` — the card the next swipe promotes — renders the WHOLE front face while
- * still in the fan: big numeral, hairline and commit button (plus the back card's own
+ * still in the fan: big numeral, the mark under it ("cards" or the hairline — `figureMark`) and commit button (plus the back card's own
  * quantity tag, which the promotion then drops). At rest none of it
  * shows (the played card covers it), so it costs the fan nothing; it earns its keep the
  * moment a throw begins, because the number the learner is deciding on is uncovered
@@ -86,11 +87,11 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * The hand takes whatever height its host leaves (`flex: 1 1 0`), and on a short frame —
  * the Centers rail present, a small phone — the figure box between the name and `Start`
  * stops having room for the numeral. Rather than shrink or clip it, the card RE-FLOWS:
- * the SAME figure (numeral + hairline, at the SAME size) moves out from under the name
+ * the SAME figure (numeral + its mark, at the SAME size) moves out from under the name
  * and centres in the block BESIDE it — bounded by the name's right edge, the card's right
  * edge, the card's top padding and the `Start` bar. The name stays where it was.
  *
- * WHEN: as soon as the figure box can no longer hold the numeral + hairline with
+ * WHEN: as soon as the figure box can no longer hold the numeral + its mark with
  * `FIGURE_BREATHING_ROOM` clear above AND below it — i.e. when it starts to look cramped,
  * well before the digits actually run out of room. Measured, not a breakpoint
  * (`useCrampedFigure`), so it stays right if the card's padding, name or `Start` bar change.
@@ -145,9 +146,12 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
  * docs/READING_WRITING_CENTERS.md.
  */
 
+/** What sits under the full face's big numeral — see `StudyHandProps.figureMark`. */
+export type FigureMark = "label" | "rule";
+
 /** The three session modes, in the order they seed the back slots. */
 export type StudyModeId = "challenge" | "review" | "mix";
-const FAN_ORDER: readonly StudyModeId[] = ["challenge", "review", "mix"];
+const FAN_ORDER: HandOrder = ["challenge", "review", "mix"];
 
 /**
  * The live fan, BOTTOM → TOP: `[back-left, back-right, front]`. Stored rather than
@@ -171,7 +175,7 @@ export interface StudyHandCard {
      * must not appear before it is known.
      */
     figure: number | undefined;
-    /** What the figure IS, in a word or two — it follows the number in the tag ("Cards"). */
+    /** What the figure IS, in a word or two — it follows the number in the tag ("Cards") and, lowercased, is the "cards" under the front card's big numeral while `figureMark` is `label`. */
     figureCaption: string;
     /**
      * What the FRONT card's tag says when its figure lands on zero — the only case in
@@ -201,10 +205,17 @@ export interface StudyHandCard {
 export interface StudyHandProps {
     /** The three cards. Order here is irrelevant — `FAN_ORDER` decides the layout. */
     cards: StudyHandCard[];
-    /** Which mode the hand opens on. */
-    initialFront?: StudyModeId;
-    /** Commit: start this mode's session (or explain why it can't be started). */
-    onStudy: (id: StudyModeId) => void;
+    /**
+     * The fan the hand opens in, bottom → top. Omitted: `FAN_ORDER` (Study Mix forward).
+     * Read once, on mount — the host restores a remembered hand with it (FlpStudyHand →
+     * `rememberedHandOrder`), so coming Back from the flp finds the launched card forward.
+     */
+    initialOrder?: HandOrder;
+    /**
+     * Commit: start this mode's session (or explain why it can't be started). `order` is
+     * the fan at the moment of the tap, so the host can remember it for the next mount.
+     */
+    onStudy: (id: StudyModeId, order: HandOrder) => void;
     /** `full` (the fdp) or `compact` (the Reading Center) — see the docblock. */
     variant?: "full" | "compact";
     className?: string;
@@ -214,6 +225,14 @@ export interface StudyHandProps {
      * `useFlpLaunch` (flpLaunch.ts). Default false.
      */
     shaking?: boolean;
+    /**
+     * What sits under the full face's big numeral. `label`: a small "cards" (the word is
+     * the card's `figureCaption`), so the learner learns the number is a card count.
+     * `rule`: the design's ink hairline, no word. The host picks via the `handCardCount`
+     * soft introduction (FlpStudyHand; docs/SOFT_INTRODUCTION.md) — label first, rule
+     * once the learner has graduated. Ignored by the compact variant (no numeral).
+     */
+    figureMark?: FigureMark;
 }
 
 /**
@@ -261,15 +280,44 @@ const COMPACT_SLOTS = {
 } as const;
 
 /**
- * The full face's vertical rhythm. Named because `useCrampedFigure` re-adds them to work
- * out what the figure box needs, so the sx below and the measurement cannot drift apart.
+ * The numeral's tracking. Browsers add letter-spacing after the LAST glyph too, so a
+ * negative value ends the numeral's box 0.06em short of its ink on the right and centres
+ * whatever sits under it (the "cards" label or the hairline) ~3.5px (at 118px) LEFT of the
+ * digits. The numeral pads that much back on its right so its box is centred on its ink.
+ * Measured, not assumed: every Instrument Sans `tnum` digit's ink — and a 2's foot bar —
+ * is centred in its 0.6em advance to within 0.005em (the 1 sits 0.035em right, as a 1
+ * does), and "cards" is centred in its own box, so the trailing tracking was the whole
+ * offset.
+ */
+const NUMERAL_TRACKING_EM = -0.06;
+
+/**
+ * `figureMark: "label"` — the numeral ↔ "cards" spacing. The two line boxes carry empty
+ * space the eye does not count: the numeral's box runs `NUMERAL_FOOT_EM` below its
+ * digits' baseline (Instrument Sans, descent 0.25em less the half-leading
+ * `SLOT_LINE_HEIGHT` 0.85 trims), and the label's box (line-height 1) runs
+ * `CAPTION_XHEIGHT_TOP_EM` above its lowercase x-height. Both are cancelled with negative
+ * margins — each in its OWN em, so the trim tracks the numeral's 56–118px clamp — leaving
+ * `CAPTION_GAP_PX` as the true baseline → x-height gap (user: "much closer", then 6px was
+ * "too close", 2026-10-12; it was ~21px at 118px). Re-derive the two em values if
+ * `FONTS.sans`, `SLOT_LINE_HEIGHT` or the label's line-height changes.
+ */
+const NUMERAL_FOOT_EM = 0.065;
+const CAPTION_XHEIGHT_TOP_EM = 0.35;
+const CAPTION_GAP_PX = 10;
+
+/**
+ * `figureMark: "rule"` — the design's hairline geometry (`.bignum:after`), measured from
+ * the numeral's untrimmed box exactly as the artboard draws it.
  */
 const FIGURE_GAP = 2;              // numeral ↔ hairline flex gap
 const HAIRLINE_MARGIN_TOP = 11;
 const HAIRLINE_HEIGHT = 2;
+
+/** Named because `useCrampedFigure` re-adds it, so the sx and the measurement cannot drift. */
 const GO_MARGIN_BOTTOM = 13;
 /**
- * Clear space the numeral (+ hairline) must keep above AND below inside the figure box.
+ * Clear space the numeral (+ its mark) must keep above AND below inside the figure box.
  * Once the box cannot give it this much, the numeral moves into the head — the switch is
  * meant to happen when it starts to look cramped, not when it actually collides.
  */
@@ -287,9 +335,9 @@ const FIGURE_BREATHING_ROOM = 16;
  * So the "roomy" figure box can be computed even while the cramped layout is showing, and
  * no hysteresis is needed.
  *
- * Re-measured whenever the HAND resizes — the only thing that changes any of the inputs.
+ * Re-measured whenever the HAND resizes, and when `figureMark` changes (the only other input).
  */
-function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabled: boolean): boolean {
+function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabled: boolean, figureMark: FigureMark): boolean {
     const [cramped, setCramped] = useState(false);
     useLayoutEffect(() => {
         const hand = handRef.current;
@@ -298,8 +346,10 @@ function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabl
             const card = hand.querySelector<HTMLElement>(".study-hand__card--front");
             const label = card?.querySelector<HTMLElement>(".study-hand__label");
             const numeral = card?.querySelector<HTMLElement>(".study-hand__figure-number");
+            // The label or the hairline, whichever `figureMark` drew.
+            const foot = card?.querySelector<HTMLElement>(".study-hand__figure-foot");
             const go = card?.querySelector<HTMLElement>(".study-hand__go");
-            if (!card || !label || !numeral || !go) return;
+            if (!card || !label || !numeral || !foot || !go) return;
             const cardStyle = getComputedStyle(card);
             const inner = card.clientHeight - parseFloat(cardStyle.paddingTop) - parseFloat(cardStyle.paddingBottom);
             // One line of the name. `lineHeight` can come back as "normal"; fall back to
@@ -307,14 +357,20 @@ function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabl
             const labelLine = parseFloat(getComputedStyle(label).lineHeight);
             const headHeight = Number.isFinite(labelLine) ? labelLine : label.offsetHeight;
             const roomyFigureBox = inner - headHeight - go.offsetHeight - GO_MARGIN_BOTTOM;
-            const needed = numeral.offsetHeight + FIGURE_GAP + HAIRLINE_MARGIN_TOP + HAIRLINE_HEIGHT + 2 * FIGURE_BREATHING_ROOM;
+            // Numeral top → label/hairline bottom, as laid out — the label's negative
+            // margins make a sum of offsetHeights wrong. The same in the roomy and cramped
+            // layouts (only the grid area moves), so this stays loop-free.
+            const figureHeight = foot.getBoundingClientRect().bottom - numeral.getBoundingClientRect().top;
+            const needed = figureHeight + 2 * FIGURE_BREATHING_ROOM;
             setCramped(roomyFigureBox < needed);
         };
         measure();
         const observer = new ResizeObserver(measure);
         observer.observe(hand);
         return () => observer.disconnect();
-    }, [handRef, enabled]);
+    // `figureMark` too: the validator si toggle swaps label ↔ hairline live, which
+    // changes the figure's height without resizing the hand.
+    }, [handRef, enabled, figureMark]);
     return enabled && cramped;
 }
 
@@ -389,14 +445,11 @@ function afterSwipe(order: HandOrder): HandOrder {
     return [c, a, b];
 }
 
-export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix", onStudy, variant = "full", className, shaking = false }) => {
+export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialOrder, onStudy, variant = "full", className, shaking = false, figureMark = "rule" }) => {
     const compact = variant === "compact";
-    // The fan is the single source of truth for where every card sits. Seeded from
-    // `initialFront` through FAN_ORDER so the hand opens in the same layout it always has.
-    const [order, setOrder] = useState<HandOrder>(() => {
-        const back = FAN_ORDER.filter((id) => id !== initialFront);
-        return [back[0], back[1], initialFront];
-    });
+    // The fan is the single source of truth for where every card sits. Seeded from the
+    // host's remembered fan when it has one, else FAN_ORDER (Study Mix forward).
+    const [order, setOrder] = useState<HandOrder>(() => initialOrder ?? FAN_ORDER);
 
     const slotOf = useCallback(
         (id: StudyModeId): keyof typeof SLOTS => SLOT_BY_DEPTH[order.indexOf(id)],
@@ -418,7 +471,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
 
     // Full hand only: on a short frame the figure moves beside the name.
     const handRef = useRef<HTMLDivElement | null>(null);
-    const cramped = useCrampedFigure(handRef, !compact);
+    const cramped = useCrampedFigure(handRef, !compact, figureMark);
 
     return (
         <Box
@@ -589,7 +642,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                             ariaLabel={isFront ? `Start ${card.label}` : undefined}
                                             // Inert on the queued card, exactly as the full
                                             // hand's button is (see its comment below).
-                                            onClick={isFront ? () => onStudy(card.id) : undefined}
+                                            onClick={isFront ? () => onStudy(card.id, order) : undefined}
                                             disabled={!isFront}
                                             tabIndex={isFront ? undefined : -1}
                                             ariaHidden={isFront ? undefined : true}
@@ -685,7 +738,10 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                         // name and above `Start`.
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        gap: `${FIGURE_GAP}px`,
+                                        // The hairline hangs off the numeral's full box with
+                                        // the design's 2px gap; the label sets its own
+                                        // (negative) spacing — see `NUMERAL_FOOT_EM`.
+                                        gap: figureMark === "rule" ? `${FIGURE_GAP}px` : 0,
                                     }}
                                 >
                                     <Typography
@@ -703,13 +759,19 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                             // and a fixed 118px numeral would clip.
                                             fontSize: "clamp(56px, 30cqh, 118px)",
                                             fontWeight: 800,
-                                            letterSpacing: "-0.06em",
+                                            letterSpacing: `${NUMERAL_TRACKING_EM}em`,
+                                            // Undo the trailing tracking so the box (which
+                                            // the caption centres on) is centred on the ink.
+                                            paddingRight: `${-NUMERAL_TRACKING_EM}em`,
                                             // Must match `SlotNumber`'s reel window, or
                                             // the figure would change height at the moment
                                             // the reels are swapped for the settled text.
                                             lineHeight: SLOT_LINE_HEIGHT,
                                             fontVariantNumeric: "tabular-nums",
                                             color: COLORS.onSurface,
+                                            // Under the label only: drop the box below the
+                                            // digits' baseline — see `NUMERAL_FOOT_EM`.
+                                            marginBottom: figureMark === "label" ? `-${NUMERAL_FOOT_EM}em` : 0,
                                         }}
                                     >
                                         {/* The figure spins as a slot-machine reel until
@@ -718,22 +780,50 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                             a card reads as "fetching", two read as noise. */}
                                         <SlotNumber value={card.figure} className="study-hand__figure-value" />
                                     </Typography>
-                                    {/* The ink hairline under the figure — `.bignum:after` (v2 draws it in ink).
-                                        It is the only rule on the card, and it exists to stop
-                                        a 118px numeral floating in the middle of an empty
-                                        panel. Kept in the cramped layout too: the figure moves
-                                        as one unit, rule and all. */}
-                                    <Box
-                                        className="study-hand__figure-rule"
-                                        sx={{
-                                            width: 34,
-                                            height: HAIRLINE_HEIGHT,
-                                            borderRadius: "1px",
-                                            backgroundColor: COLORS.onSurface,
-                                            opacity: 0.5,
-                                            marginTop: `${HAIRLINE_MARGIN_TOP}px`,
-                                        }}
-                                    />
+                                    {/* WHAT SITS UNDER THE NUMERAL — a soft introduction
+                                        (`figureMark`, docs/SOFT_INTRODUCTION.md). Either one
+                                        anchors a 118px numeral in an otherwise empty panel; both
+                                        carry `study-hand__figure-foot`, which `useCrampedFigure`
+                                        measures — keep the class. Both are drawn while the reel
+                                        spins too, so the figure never changes height on arrival,
+                                        and both move with the numeral in the cramped layout. */}
+                                    {figureMark === "label" ? (
+                                        /* INTRO: a small "cards" in the numeral's own face, so
+                                           the learner learns what the number counts (user,
+                                           2026-10-12; an underline was tried and dropped). */
+                                        <Typography
+                                            component="span"
+                                            className="study-hand__figure-foot study-hand__figure-caption"
+                                            sx={{
+                                                fontFamily: FONTS.sans,
+                                                fontSize: SIZE.bodyLg,
+                                                fontWeight: WEIGHT.semibold,
+                                                lineHeight: 1,
+                                                textTransform: "lowercase",
+                                                color: COLORS.iconColor,
+                                                whiteSpace: "nowrap",
+                                                // Pull the x-height up to `CAPTION_GAP_PX` under
+                                                // the digits' baseline — see `NUMERAL_FOOT_EM`.
+                                                marginTop: `calc(${CAPTION_GAP_PX}px - ${CAPTION_XHEIGHT_TOP_EM}em)`,
+                                            }}
+                                        >
+                                            {card.figureCaption}
+                                        </Typography>
+                                    ) : (
+                                        /* GRADUATED: the design's ink hairline (`.bignum:after`,
+                                           v2 draws it in ink) — the only rule on the card. */
+                                        <Box
+                                            className="study-hand__figure-foot study-hand__figure-rule"
+                                            sx={{
+                                                width: 34,
+                                                height: HAIRLINE_HEIGHT,
+                                                borderRadius: "1px",
+                                                backgroundColor: COLORS.onSurface,
+                                                opacity: 0.5,
+                                                marginTop: `${HAIRLINE_MARGIN_TOP}px`,
+                                            }}
+                                        />
+                                    )}
                                 </Box>
 
                                 <Box
@@ -745,7 +835,7 @@ export const StudyHand: React.FC<StudyHandProps> = ({ cards, initialFront = "mix
                                     // tap that promotes the card, and must not be a second
                                     // stop for a keyboard user on a card whose only action is
                                     // "bring forward" — hence inert on all three channels.
-                                    onClick={isFront ? () => onStudy(card.id) : undefined}
+                                    onClick={isFront ? () => onStudy(card.id, order) : undefined}
                                     disabled={!isFront}
                                     tabIndex={isFront ? undefined : -1}
                                     aria-hidden={isFront ? undefined : true}

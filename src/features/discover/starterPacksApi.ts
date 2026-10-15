@@ -23,14 +23,11 @@ import type {
 /** A Sort Cards drop bucket. Both persist as `starterPackBucket = 'library'` server-side. */
 export type SortBucket = "library" | "already-learned";
 
-/** One card's tri-state mark in Quick Mark. */
-export type QuickMarkMark = { cardId: number; state: string };
-
-/** Keyset cursor for Quick Mark paging — the last shown card's frequency score + id. */
+/** Keyset cursor for Quick Mark paging — the last fetched card's frequency score + id. */
 export interface QuickMarkCursorParams {
-    /** The last shown card's frequency score (may be null — those sort last). */
+    /** The last fetched card's frequency score (may be null — those sort last). */
     score: number | null;
-    /** The last shown card's det id — the tiebreaker that makes the cursor total. */
+    /** The last fetched card's det id — the tiebreaker that makes the cursor total. */
     id: number;
 }
 
@@ -65,7 +62,7 @@ export function fetchNextPack(input: {
 }
 
 /**
- * Sort one card into a bucket. `packId: null` is the Skipped-Cards shape (persist the
+ * Sort one card into a bucket. `packId: null` is the pack-less shape Quick Mark uses (persist the
  * vet row AND clear the `discover_skips` row); `lastInPack` tells the server to mark
  * the pack seen.
  */
@@ -111,6 +108,11 @@ export function recycleSkips(language: Language): Promise<unknown> {
     return apiPost<unknown>(`/api/starterPacks/${language}/recycleSkips`);
 }
 
+/** Return ONE skipped card to the sort supply (scp's hold-to-recycle). */
+export function recycleSkip(language: Language, cardId: number): Promise<unknown> {
+    return apiPost<unknown>(`/api/starterPacks/${language}/recycleSkip`, { cardId });
+}
+
 /** One keyset page of Quick Mark cards. `level: null` asks the server to seed one. */
 export function fetchQuickMarkPage(
     language: Language,
@@ -123,9 +125,4 @@ export function fetchQuickMarkPage(
             ...(cursor ? { cursorId: cursor.id, cursorScore: cursor.score } : {}),
         },
     });
-}
-
-/** Reconcile every touched Quick Mark card to its on-screen mark in one request. */
-export function saveQuickMarks(language: Language, marks: QuickMarkMark[]): Promise<unknown> {
-    return apiPost<unknown>("/api/starterPacks/quickMarkBatch", { language, marks });
 }

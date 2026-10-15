@@ -495,22 +495,56 @@ loaded baseline (before any sort):
   then advances to the next pack. (Already-sorted/locked cards in the pack are
   unaffected — they were never the user's to sort.)
 - Each deferred card is recorded **individually**, so it appears on its own in the
-  Skipped cards page (§7) and can be brought back one at a time.
+  skipped-cards sheet (§5.1a, §7) and can be brought back one at a time.
 - A skip carries **no level signal**. Users skip for any number of unknown reasons
   (not interested, distracted, undecided), so a skip must never move the level
   estimate up or down.
+
+### 5.1a Hidden: hold Skip for the skipped-cards sheet
+- **Pressing and holding Skip for 2 s** (`SKIP_HOLD_MS`) opens a bottom sheet listing the
+  user's currently-skipped cards for the language. It is **deliberately undiscoverable**:
+  no label, tooltip, onboarding, or resting-state hint advertises it. Feedback appears
+  only once a press is under way: the button's outline traces over the 2 s
+  (`HoldProgressRing`, the same timer the sheet's cards use), and a 10 ms vibration fires
+  when the sheet opens, on devices with the Vibration API (Android; iOS Safari and
+  desktop get none).
+- **Only a tap skips.** A press released within 250 ms (`useLongPress`'s `tapMaxMs`) is a
+  tap and skips the pack as in §5.1. A press released after that but before 2 s is an
+  abandoned hold and does **nothing**. A hold that completes opens the sheet and never
+  also skips (the click that follows it is swallowed).
+- Inside the sheet:
+  - **Tap a card** → the eip for that word (the same opener as an on-deck card's info
+    button, §4.7). The eip stacks above the sheet (`depth` 1).
+  - **Hold a card for 1.5 s** (`RECYCLE_HOLD_MS`) → a ring traces the card's outline over
+    the hold, with a **"recycling…"** label above the card. When the ring closes, the
+    card is recycled (its `discover_skips` row is cleared) and fades out of the list.
+    Letting go early, moving more than 10 px, or scrolling abandons the hold. As with Skip,
+    only a press released within 250 ms counts as the tap that opens the eip; a longer
+    abandoned hold does nothing.
+  - **Recycle all** → every skipped card back to the supply
+    (`POST /api/starterPacks/:language/recycleSkips`).
+- Recycled cards are **not** pushed into the current session's queue. They rejoin the
+  server supply and arrive through later `fetchNextPack` calls.
+- The sheet re-fetches the list each time it opens (it is mounted only while open). A
+  failed recycle re-fetches instead of guessing where to restore the card.
+- Code: `src/features/discover/SortCardsPage.tsx` → `skipPress`, `SKIP_HOLD_MS`;
+  `src/features/discover/SkippedCardsSheet.tsx` → `SkippedCardsSheet`,
+  `RecyclableSkippedCard`; `src/hooks/useLongPress.ts` → `useLongPress` (tap vs. hold,
+  click swallowing); `src/components/HoldProgressRing.tsx` → `HoldProgressRing` (the
+  outline-tracing hold timer, sized to its host); `src/utils/haptic.ts` → `quietHaptic`. Server:
+  `POST /api/starterPacks/:language/recycleSkip` → `StarterPacksController.recycleSkip` →
+  `StarterPacksService.recycleSkip`.
 
 ### 5.2 When skipped cards come back
 Skipped cards do **not** re-enter the sort flow automatically (this **replaces** the
 earlier "recycle once in-level cards run out" rule). A skipped card returns only when
 the user **chooses** to bring it back, in one of three ways:
 
-- **Recycle all** — a button in the Skipped cards page header (§7) clears the user's
-  skips for the language, returning all of them to the normal supply as fresh
+- **Recycle all** — a button in scp's hidden skipped-cards sheet (§5.1a) clears the
+  user's skips for the language, returning all of them to the normal supply as fresh
   single-card fallback packs.
-- **Sort it individually** — opening a skipped card's detail page (§7) and choosing
-  Add to Learn Now / Already Learned sorts it directly and removes it from the skipped
-  list.
+- **Recycle one** — holding a card in the hidden skipped-cards sheet (§5.1a) clears just
+  that card's skip.
 - **Inside an authored pack** — a skipped card that happens to belong to an authored
   pack is shown draggable again (§4.5); sorting it there also clears its skip.
 
@@ -634,10 +668,11 @@ the user **chooses** to bring it back, in one of three ways:
 
 ## 6.6 Client API module — `src/features/discover/starterPacksApi.ts`
 
-All three Discover pages (`SortCardsPage.tsx`, `QuickMarkPage.tsx`,
-`SkippedCardsPage.tsx`) reach the server through this one module. It exports
+Both Discover pages (`SortCardsPage.tsx`, `QuickMarkPage.tsx`) and scp's
+`SkippedCardsSheet.tsx` reach the server through this one module. It exports
 `fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` / `undoSort` /
-`fetchSkippedCards` / `recycleSkips` / `fetchQuickMarkPage` / `saveQuickMarks`.
+`fetchSkippedCards` / `recycleSkips` / `recycleSkip` / `fetchQuickMarkPage`.
+(`recycleSkip` is used only by `SkippedCardsSheet.tsx`, scp's hidden sheet — §5.1a.)
 
 Two rules it exists to enforce:
 
@@ -656,20 +691,18 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
 
 ---
 
-## 7. Skipped cards page
+## 7. Skipped cards (no page — the hidden sheet only)
 
-- A dedicated page lists **all words the user has currently skipped** in the active
-  language, modeled on the Mastered cards page. It is reachable from the **Discover
-  hub menu** (a row alongside Sort Cards).
-- **Tapping a skipped card** opens a small **action popup** with three choices —
-  **Cancel**, **Mark as Already Learned**, **Mark as Learn Now**. Choosing a
-  destination sorts the card into the library and **removes it from the skipped list**;
-  Cancel dismisses the popup with no change. (It does **not** navigate to the card
-  detail page.)
-- The page header carries a **Recycle all** action that returns *every* skipped card to
-  the normal sort supply at once (§5.2).
-- The list is **per-language** (§3) and shows only currently-skipped cards: a card that
-  has since been sorted (by any path) no longer appears.
+- Skipped cards are reached **only** through scp's hidden skipped-cards sheet (§5.1a):
+  hold the Skip button for 2 s. There is **no Discover tile and no route** for them.
+  The `/discover/skipped/:language` page (`SkippedCardsPage`) and its Discover bento
+  tile were removed 2026-10-12, when the sheet became the sole entry point.
+- The sheet lists **all words the user has currently skipped** in the route's language
+  (§3), newest skip first (`StarterPacksService.listSkipped`). A card that has since
+  been sorted or recycled (by any path) no longer appears.
+- The removed page let a learner sort a skipped card straight into Learn Now /
+  Already Learned from a tap popup. The sheet does not: tap opens the eip, and getting a
+  skipped word into a bucket means recycling it and sorting it when it comes back.
 
 ---
 
@@ -686,8 +719,8 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
    network delay; the client always has ≥1 pack ready behind the on-deck pack.
 5. **Already Learned:** sorting a card as already learned stamps it mastered
    immediately.
-6. **Skip is de-emphasized and signal-free:** Skip is a header button (not a drag
-   target); pressing it defers all remaining unsorted cards in the pack and never
+6. **Skip is de-emphasized and signal-free:** Skip is a small button on the on-deck
+   platform (not a drag target); pressing it defers all remaining unsorted cards in the pack and never
    changes the user's level estimate, in any quantity.
 7. **Pack composition:** a pack shows up to 4 cards (no sentence); cards already in the
    library render locked with a "sorted!" watermark; a pack whose cards are all already
@@ -703,11 +736,11 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
    an increment of a possibly-stale running target.
 10. **Out of in-level cards:** when the in-level pool is exhausted, the user is served
     nearest adjacent-level packs rather than hitting a dead end.
-11. **Skips never auto-return:** skipped cards re-enter the flow only via the Skipped
-    page (Recycle all / individual sort) or when shown inside an authored pack — never
-    automatically.
-12. **Skipped page truthfulness:** a skipped card appears on the Skipped page until it
-    is sorted (incl. via the tap popup) or recycled, then disappears from it.
+11. **Skips never auto-return:** skipped cards re-enter the flow only via the hidden
+    skipped-cards sheet (Recycle all / hold-to-recycle) or when shown inside an authored
+    pack — never automatically.
+12. **Skipped sheet truthfulness:** a skipped card appears in the skipped-cards sheet
+    until it is sorted or recycled, then disappears from it.
 13. **Pack shown once:** a pack the user has finished or skipped is never served again.
 14. **Per-card undo:** undo reverses one card action at a time — a sort **or** a skip —
     up to 4 actions back, restoring the card (bringing its pack back on deck if needed)
@@ -725,3 +758,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     reverse any level-target change that action's completing pack already triggered —
     the target it moved to stays in effect. See `SortCardsPage.tsx`'s
     `applyPackSignal`.
+19. **Hidden skipped sheet:** holding Skip for 2 s opens the skipped-cards sheet without
+    skipping the pack, its outline tracing over the hold; nothing at rest advertises the
+    gesture, and it is the only way to reach skipped cards. Holding a card in the sheet
+    for 1.5 s recycles it; tapping it opens the eip.

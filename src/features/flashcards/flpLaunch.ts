@@ -3,6 +3,8 @@ import type { RefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchDistributedWorkingLoop, workingLoopKey, type WorkingLoopRequest } from "../../api/workingLoop";
 import type { VocabEntry } from "../../types";
+import type { FlpBar } from "../../../server/contracts/studyMode";
+import type { StudyModeId } from "./StudyHand";
 
 // ── fdp ⇄ flp launch choreography ─────────────────────────────────────────────
 //
@@ -11,7 +13,8 @@ import type { VocabEntry } from "../../types";
 //
 //   1. LOADING  — the three hand cards shake side to side, each on its own beat
 //                 (StudyHand `shaking`), while the working loop and the flp's JS chunk load.
-//                 No minimum: a fast load goes straight to step 2.
+//                 No minimum: a fast load goes straight to step 2 — and usually it is
+//                 instant, because Home preloaded both (`preloadFlpSessions`).
 //   2. fdp EXIT — everything leaves by its nearest edge (FDP_EXIT): the header up; the
 //                 rail tiles sideways (leftmost ←, the rest →; a lone Sort tile →); the
 //                 front and bottom hand cards ←, the middle one →; the Cards / Decks
@@ -187,43 +190,153 @@ function playChoreography(root: Element, steps: readonly ChoreographyStep[], dir
     return Promise.all(finishes).then(() => undefined);
 }
 
-// ── The prefetched loop handoff ───────────────────────────────────────────────
-// A module slot rather than router state: the loop is a few KB of cards and has no
+// ── The preloaded loops ───────────────────────────────────────────────────────
+// Home (the fdp) PRELOADS the loop for each of the hand's three modes as soon as it
+// mounts (`preloadFlpSessions`), so a Start tap usually finds its loop already landed
+// and the hand barely shakes. Start then only joins or reuses that load
+// (`prefetchFlpSession`); it starts one of its own only when there is none.
+//
+// A module store rather than router state: a loop is ~100 KB of cards and has no
 // business in the history entry (a Back/Forward onto the flp must deal FRESH cards).
-// One-shot by construction — the flp peeks it on mount and clears it right after, and
-// a stash older than HANDOFF_FRESH_MS is ignored, so an abandoned launch (the learner
-// tapped a footer tab mid-shake) cannot feed a later visit stale cards.
-
-const HANDOFF_FRESH_MS = 10_000;
-let handoff: { key: string; cards: VocabEntry[]; at: number } | null = null;
+// One entry per `workingLoopKey`, i.e. per mode. The rules that keep it from serving
+// a stale deal:
+//   • a landed loop is good for LOOP_FRESH_MS (5 min — a learner does not linger on
+//     Home, and a cooldown that ran out in between is an accepted, marginal drift);
+//   • the flp CLEARS THE WHOLE STORE when it adopts a loop — the session is about to
+//     mark cards, so the other modes' deals are out of date; Home re-preloads on return;
+//   • an entry is tied to the (user, language) that preloaded it — a different scope
+//     drops the store before preloading;
+//   • a load that lands after its entry was cleared or replaced is discarded.
+//
+// Preloading costs one working-loop request per mode per Home landing that has no
+// fresh entry. Accepted (2026-10-12): the endpoint's side effects are harmless here —
+// a lent card in a loop that is never played is re-lent on the next visit instead of
+// a new one being minted (docs/PROVISIONAL_CARDS.md § 3b), and its TTS prewarm only
+// fills a cache we want full anyway.
 
 /**
- * The prefetched loop for exactly this request, if one is fresh. Does NOT consume it:
- * read it from a useState initializer (StrictMode may run that twice) and call
- * `clearLaunchLoop` from an effect.
+ * The working-loop request a hand card launches — the WHOLE library (no category, no
+ * collection) in that card's mode. Shared by FlpStudyHand (Start) and Home's preload
+ * (`preloadFlpSessions`); the handoff matches on `workingLoopKey`, so
+ * a request built anywhere else would silently miss the preload.
+ */
+export function handLaunchRequest(id: StudyModeId, bar: FlpBar): WorkingLoopRequest {
+    return { category: null, mode: id === "mix" ? null : id, bar, collection: null };
+}
+
+const LOOP_FRESH_MS = 5 * 60_000;
+
+/** The scope a preloaded loop belongs to — the server deals for the selected language. */
+export const flpPreloadScope = (userId: string | number, language: string | null | undefined) =>
+    `${userId}:${language ?? ""}`;
+
+interface PreloadedLoop {
+    /** `${userId}:${language}` of the Home that started the load. */
+    scope: string;
+    /** Resolves to the cards, or null on failure / an empty loop. Never rejects. */
+    promise: Promise<VocabEntry[] | null>;
+    /** Set once the load lands with cards; null while in flight. */
+    cards: VocabEntry[] | null;
+    landedAt: number;
+}
+
+const preloadedLoops = new Map<string, PreloadedLoop>();
+
+/** Is this entry still worth using — in flight, or landed within the window? */
+function isUsable(entry: PreloadedLoop | undefined): entry is PreloadedLoop {
+    if (!entry) return false;
+    return entry.cards === null || Date.now() - entry.landedAt <= LOOP_FRESH_MS;
+}
+
+/** Start (and store) a load for `request`. Failures and empty loops remove the entry. */
+function startLoopLoad(scope: string, request: WorkingLoopRequest): PreloadedLoop {
+    const key = workingLoopKey(request);
+    const entry: PreloadedLoop = { scope, promise: Promise.resolve(null), cards: null, landedAt: 0 };
+    entry.promise = fetchDistributedWorkingLoop(request).then(
+        (cards) => {
+            // Cleared (the flp adopted a loop) or replaced while in flight — the
+            // learner has moved on, so this deal must not be served later.
+            if (preloadedLoops.get(key) !== entry) return null;
+            if (cards.length === 0) { preloadedLoops.delete(key); return null; }
+            entry.cards = cards;
+            entry.landedAt = Date.now();
+            return cards;
+        },
+        () => {
+            // The flp fetches (and reports the error) itself on mount.
+            if (preloadedLoops.get(key) === entry) preloadedLoops.delete(key);
+            return null;
+        }
+    );
+    preloadedLoops.set(key, entry);
+    return entry;
+}
+
+/** The flp's lazy route chunk — the same module the route registry's `lazy()` imports,
+ *  so the route's Suspense resolves from cache. The browser dedupes repeat imports. */
+function importFlpChunk(): Promise<unknown> {
+    return import("./FlashcardsLearnPage").catch(() => null);
+}
+
+/**
+ * Preload the flp from Home: its JS chunk once the browser is idle, and the working loop
+ * for every request in `requests` (the hand's three modes) that has no usable entry.
+ *
+ * The FIRST request runs alone and the rest follow once it settles. The endpoint tops a
+ * short learner up with lent cards before dealing (`ensureBaselineForSurface`), and
+ * concurrent calls would all pick the same most-common words — the duplicate inserts
+ * are dropped (ON CONFLICT DO NOTHING), so the losing calls deal a short loop. Going
+ * first, one call lends; the others then re-lend what it lent.
+ *
+ * Fire-and-forget; never rejects.
+ */
+export function preloadFlpSessions(scope: string, requests: readonly WorkingLoopRequest[]): void {
+    // A different account or language preloaded what is here — none of it applies.
+    for (const entry of preloadedLoops.values()) {
+        if (entry.scope !== scope) { preloadedLoops.clear(); break; }
+    }
+
+    // The chunk does not compete with the page's own first loads: wait for idle.
+    // `requestIdleCallback` is missing on older iOS WebViews — fall back to a timeout.
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(() => { void importFlpChunk(); });
+    else window.setTimeout(() => { void importFlpChunk(); }, 1_000);
+
+    const pending = requests.filter((request) => !isUsable(preloadedLoops.get(workingLoopKey(request))));
+    if (pending.length === 0) return;
+    const [first, ...rest] = pending;
+    void startLoopLoad(scope, first).promise.then(() => {
+        for (const request of rest) {
+            // The learner may have launched (and cleared the store) meanwhile.
+            if (!isUsable(preloadedLoops.get(workingLoopKey(request)))) startLoopLoad(scope, request);
+        }
+    });
+}
+
+/**
+ * The preloaded loop for exactly this request, if it has landed and is fresh. Does NOT
+ * consume it: read it from a useState initializer (StrictMode may run that twice) and
+ * call `clearLaunchLoop` from an effect.
  */
 export function peekLaunchLoop(request: WorkingLoopRequest): VocabEntry[] | null {
-    if (!handoff || handoff.key !== workingLoopKey(request)) return null;
-    if (Date.now() - handoff.at > HANDOFF_FRESH_MS) return null;
-    return handoff.cards;
+    const entry = preloadedLoops.get(workingLoopKey(request));
+    return isUsable(entry) ? entry.cards : null;
 }
 
+/** Drop every preloaded loop — called by the flp once it has adopted (or skipped) one. */
 export function clearLaunchLoop(): void {
-    handoff = null;
+    preloadedLoops.clear();
 }
 
 /**
- * Load everything the flp needs to mount without a spinner: the working loop (stashed
- * for `peekLaunchLoop`) and the flp's lazy route chunk (the same module the route
- * registry's `lazy()` imports, so its Suspense resolves from cache). Never rejects — on
- * a failed fetch nothing is stashed and the flp simply fetches (and reports) itself.
+ * Load everything the flp needs to mount without a spinner, for a Start tap: the working
+ * loop (joined if Home's preload is still in flight, reused if it landed, fetched here
+ * otherwise) and the flp's route chunk. Never rejects — on a failed fetch nothing is
+ * stored and the flp simply fetches (and reports) itself.
  */
-async function prefetchFlpSession(request: WorkingLoopRequest): Promise<void> {
-    const [cards] = await Promise.all([
-        fetchDistributedWorkingLoop(request).catch(() => null),
-        import("./FlashcardsLearnPage").catch(() => null),
-    ]);
-    if (cards && cards.length > 0) handoff = { key: workingLoopKey(request), cards, at: Date.now() };
+async function prefetchFlpSession(scope: string, request: WorkingLoopRequest): Promise<void> {
+    const existing = preloadedLoops.get(workingLoopKey(request));
+    const entry = isUsable(existing) && existing.scope === scope ? existing : startLoopLoad(scope, request);
+    await Promise.all([entry.promise, importFlpChunk()]);
 }
 
 // ── fdp side ──────────────────────────────────────────────────────────────────
@@ -234,9 +347,10 @@ export type FlpLaunchPhase = "idle" | "loading" | "exiting";
  * The fdp's launcher. `launch(path, request)` runs steps 1–3 above; `phase` drives the
  * hand's shake (`loading`), the footer hold (`exiting`) and the page's input lock
  * (anything but `idle`). `frameRef` is the fdp's positioned frame — the root FDP_EXIT
- * is matched in.
+ * is matched in. `scope` is `flpPreloadScope(userId, language)`, the same one Home
+ * preloads under, so Start reuses the preload.
  */
-export function useFlpLaunch(frameRef: RefObject<HTMLElement | null>): {
+export function useFlpLaunch(frameRef: RefObject<HTMLElement | null>, scope: string): {
     phase: FlpLaunchPhase;
     launch: (path: string, request: WorkingLoopRequest) => void;
 } {
@@ -257,7 +371,7 @@ export function useFlpLaunch(frameRef: RefObject<HTMLElement | null>): {
         busyRef.current = true;
         setPhase("loading");
         void (async () => {
-            await prefetchFlpSession(request);
+            await prefetchFlpSession(scope, request);
             if (!aliveRef.current) return;
             setPhase("exiting");
             const root = frameRef.current;
@@ -266,7 +380,7 @@ export function useFlpLaunch(frameRef: RefObject<HTMLElement | null>): {
             armEntrance("flp");
             navigate(path);
         })();
-    }, [navigate, frameRef]);
+    }, [navigate, frameRef, scope]);
 
     return { phase, launch };
 }

@@ -17,6 +17,13 @@
  *   - version: the script's CURRENT `SCRIPT_VERSION`. **Keep in sync by hand when a
  *     script bumps its SCRIPT_VERSION** — this is the manifest's known-good version,
  *     used to detect a row stamped by an out-of-date script (§7 open item).
+ *   - heldBackScriptVersion (optional): the ONE script `SCRIPT_VERSION` that may sit
+ *     ahead of `version` on purpose — a bump whose old-version rows don't need a
+ *     corpus-wide re-run (they're healed some cheaper way, explained in a comment on the
+ *     entry). Read only by check-manifest-sync.js, which then reports the step as held
+ *     back instead of drift. Any OTHER script version still fails the check, and a marker
+ *     left behind after the gap closes fails it too — so it can't outlive its reason.
+ *     Not read by the planner: rows stamped at `version` stay "done".
  *   - optional (default false): OPT-IN step. Excluded from every manifest read unless
  *     the caller explicitly asks for it (`scriptsForLanguage(lang, {includeOptional:true})`
  *     / the `includeOptional` option on the helpers below). An optional step is
@@ -106,7 +113,12 @@ export const REQUIRED_SCRIPTS_ZH = [
   // that step's output and must follow it. Re-running long-definitions for a word invalidates
   // this column for that word. docs/DEFINITION_MAPPING.md #5b.
   { id: 'chinese/backfill-longdef-citations',         when: 'always',    version: 2, validationFields: ['definitions'] },
-  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 7, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
+  // HELD BACK: the script is at v8, the manifest deliberately stays at 7. v8 only changes
+  // sentences that repeat the headword (~0.4%: the 【】-marked target → `vocabCharIndex`, and
+  // per-occurrence `segmentOccurrenceTags`); those v7 rows are healed in place by the
+  // script's `--locate-targets` mode, so a bump to 8 would regenerate the whole zh corpus
+  // for no gain. check-manifest-sync.js accepts exactly this one gap and nothing else.
+  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 7, heldBackScriptVersion: 8, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
   // ── the breakdown chain (multi-char rows only) ──────────────────────────────
   // Placed LAST, after everything that can still rewrite `definitions`: the sense-tagger

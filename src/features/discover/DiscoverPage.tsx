@@ -9,18 +9,19 @@ import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 // A BENTO mosaic of the discover activities (docs/SHELF_REDESIGN.md § A4, entry 3),
 // replacing the vertical HubMenu of equal-weight rows.
 //
-// Sort Cards is the HERO: it is the activity the other two exist to support, and with
-// only three destinations a flat list of three identical rows made the page look like
-// it was still being built. Phone-frame sizing comes from MobileDemoFrame; the
+// Sort Cards is the HERO: it is the activity Quick Mark exists to support. Quick Mark
+// takes the full row beneath it (`fullWidth`) rather than leaving half the row empty. Phone-frame sizing comes from MobileDemoFrame; the
 // scroll-away header + floating footer come from MobileTabScreen.
 //
 // Activities (in order): Sort Cards (drag-to-sort, keyed by the user's language),
-// Quick Mark (bulk-triage grid, docs/QUICK_MARK.md), Skipped Cards.
+// Quick Mark (bulk-triage grid, docs/QUICK_MARK.md). There is deliberately NO Skipped
+// Cards tile: skipped cards are reached only by holding Sort Cards' Skip button
+// (SkippedCardsSheet, docs/SORT_CARDS_REQUIREMENTS.md §5.1a).
 //
 // ⚠️ NOT BUILT FROM ARTBOARD 3 — two pieces of it need data this client cannot get:
 //
-//   1. The tile PINS ("184 waiting" on Sort Cards, "31" on Skipped Cards). There is no
-//      unsorted-card or skipped-card count on the client: `useCategoryCounts` counts
+//   1. The tile PIN ("184 waiting" on Sort Cards). There is no unsorted-card count on
+//      the client: `useCategoryCounts` counts
 //      the user's LIBRARY by band, which is a different number, and nothing exposes
 //      "cards awaiting sort". Showing a wrong count is worse than showing none.
 //   2. The "Waiting to be sorted" SHELF beneath the grid — four spines whose heights
@@ -31,8 +32,8 @@ import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 
 const DiscoverPage: React.FC = () => {
     usePageTitle("Discover");
-    // Tiles link to the language-keyed sort / quick-mark / skipped pages.
-    const { sortPath, quickMarkPath, skippedPath } = useDiscoverNavigation();
+    // Tiles link to the language-keyed sort / quick-mark pages.
+    const { sortPath, quickMarkPath } = useDiscoverNavigation();
 
     return (
         <MobileTabScreen title="Discover" contentClassName="discover-page__content">
@@ -53,14 +54,7 @@ const DiscoverPage: React.FC = () => {
                     subtitle="Bulk-triage by level"
                     hue="pur"
                     icon="playlist_add_check"
-                />
-                <BentoTile
-                    to={skippedPath}
-                    className="discover-page__tile discover-page__tile--skipped"
-                    title="Skipped Cards"
-                    subtitle="Revisit skipped words"
-                    hue="org"
-                    icon="skip_next"
+                    fullWidth
                 />
             </Bento>
             <TipBox className="discover-page__tip-box" />

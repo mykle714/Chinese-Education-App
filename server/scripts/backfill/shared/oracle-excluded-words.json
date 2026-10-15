@@ -160,6 +160,41 @@
       "word1": "土共",
       "reason": "slur: primary sense is '(coll.) commie (derog., used by the KMT)'; other senses are partisan self-label / obscure abbreviations",
       "droppedAt": "2026-10-06T17:17:55Z"
+    },
+    {
+      "word1": "破处",
+      "reason": "explicit-sexual — only senses are 'to break the hymen' / 'to lose virginity'",
+      "droppedAt": "2026-10-12T18:47:51Z"
+    },
+    {
+      "word1": "进价",
+      "reason": "junk-headword (NOT a §3c content-policy drop): sole cedict gloss 'opening price' is wrong — 进价 means purchase/cost price (进货价格); backfill scripts may never rewrite definitions, so shipping it would teach a wrong meaning",
+      "droppedAt": "2026-10-12T18:58:00Z"
+    },
+    {
+      "word1": "绿教",
+      "reason": "slur — only sense is '(derog.) Islam', a derogatory epithet for a religion",
+      "droppedAt": "2026-10-13T04:47:51Z"
+    },
+    {
+      "word1": "群交",
+      "reason": "explicit-sexual: only sense is 'group sex' (a sex act)",
+      "droppedAt": "2026-10-13"
+    },
+    {
+      "word1": "金正银",
+      "reason": "junk-headword (NOT a §3c content-policy drop): only gloss is a cross-reference 'former spelling of Kim Jong-un 金正恩'",
+      "droppedAt": "2026-10-13"
+    },
+    {
+      "word1": "玉门",
+      "reason": "explicit-sexual: det row's only senses are '(literary) vaginal opening' / 'vulva'; the place-name reading Yu4men2 in cedict is only a cross-reference to 玉门市",
+      "droppedAt": "2026-10-13T18:17:57Z"
+    },
+    {
+      "word1": "大雷",
+      "reason": "explicit-sexual: only sense is '(slang) large breasts'",
+      "droppedAt": "2026-10-14T08:48:16Z"
     }
   ],
   "es": []

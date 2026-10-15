@@ -252,6 +252,10 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
   pack back on deck if it had advanced).
 
 ### 5.3 `SkippedCardsPage.tsx` (new — mirrored the then-current `MasteredCardsPage`)
+> **Superseded 2026-10-12:** the page, its route and its Discover entry (§5.4) were
+> removed. Skipped cards are now reached only through scp's hidden skipped-cards sheet
+> (`SkippedCardsSheet.tsx`, docs/SORT_CARDS_REQUIREMENTS.md §5.1a). Kept as the build record.
+
 - `NodePage` + `MiniVocabCardGrid`; fetch `GET /:language/skipped`.
 - Header `rightContent`: **Recycle all** → `POST /recycle-skips`, then refetch.
 - Tap a card → **action popup** (Cancel / Mark as Already Learned / Mark as Learn Now)

@@ -3,8 +3,9 @@
  *
  * Two callers, and they MUST build the same request:
  *   • `useWorkingLoop` (the flp) — the ordinary fetch on mount.
- *   • `flpLaunch.ts` (the fdp) — the PREFETCH that runs while the fdp's hand shakes,
- *     whose result the flp then adopts instead of fetching again.
+ *   • `flpLaunch.ts` (the fdp) — the PRELOAD Home runs on landing for each hand mode
+ *     (and the Start tap's fallback load), whose result the flp then adopts instead of
+ *     fetching again.
  * The handoff is matched on `workingLoopKey(request)`, so both sides go through the one
  * param builder below; a hand-built query on either side would silently miss the match
  * and the flp would fall back to its own fetch (and spinner).

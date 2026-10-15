@@ -4,6 +4,7 @@ import { DailyBankingProvider } from "../minutePoints/dailyBanking/DailyBankingC
 import BankingAvatarButton from "../minutePoints/dailyBanking/BankingAvatarButton";
 import BankingEmbers from "../minutePoints/dailyBanking/BankingEmbers";
 import BankingAlwaysPlayToggle from "../minutePoints/dailyBanking/BankingAlwaysPlayToggle";
+import SoftIntroToggle from "../softIntro/SoftIntroToggle";
 import { HeaderIconButton } from "../components/PageHeader";
 import AccountSheet from "./AccountSheet";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
@@ -35,9 +36,11 @@ function HomePage() {
     return (
         <DailyBankingProvider>
             <FlashcardsDecksPage
-                // Validator-only test toggle: while on, the banking run plays on every
-                // Home landing. Left of the flame.
-                headerExtraActions={<BankingAlwaysPlayToggle />}
+                // Validator-only test toggles, left of the flame: the banking run on
+                // every Home landing, and the soft-introduction viewer (Auto → Intro →
+                // Graduated) for the hand's card-count si (docs/SOFT_INTRODUCTION.md).
+                // Both render nothing for learners.
+                headerExtraActions={<><SoftIntroToggle /><BankingAlwaysPlayToggle /></>}
                 // Right of the flame: the Settings gear, then the profile picture in the
                 // far-right corner. Outlined variant to match the avatar's ring.
                 headerTrailingActions={

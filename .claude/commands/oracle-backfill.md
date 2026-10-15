@@ -82,8 +82,8 @@ on the next request and runs five hours from there.
 > (§6a) and wait for `resets_at`. Do not treat "requests still succeed" as permission to
 > continue — that is the failure mode, not the all-clear. `oracle-cron.sh` enforces the
 > same rule at launch (its budget gate refuses to start a round at or above
-> the **weekly** caps at `ORACLE_MAX_UTILIZATION`, default 75% as of 2026-08-28, lowered
-> from 95%, and the **session** window separately at `ORACLE_MAX_UTILIZATION_SESSION`,
+> the **weekly** caps at `ORACLE_MAX_UTILIZATION`, default 85% as of 2026-10-12 (lowered
+> from 95% to 75% on 2026-08-28, then raised to 85%), and the **session** window separately at `ORACLE_MAX_UTILIZATION_SESSION`,
 > default 99% — the two caps fail in different currencies), but it can only refuse to *start*; a round that
 > crosses the cap mid-manifest can only be stopped by you.
 >
@@ -92,7 +92,7 @@ on the next request and runs five hours from there.
 > writes `server/logs/oracle-weekly-override`, which the cron prefers over
 > `ORACLE_MAX_UTILIZATION` until that week's `weekly_all` `resets_at`, then deletes.
 > An interactive round should honour the same number: run
-> `oracle-weekly-override.sh show` and use the override in place of ~75% wherever this
+> `oracle-weekly-override.sh show` and use the override in place of ~85% wherever this
 > skill says "weekly cap".
 >
 > **When a cap parks the cron, it now sleeps to that cap's `resets_at`** rather than
@@ -215,6 +215,13 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/check-manifest-sync.js
 
 Drift where the *script* is ahead of the manifest is the dangerous direction: rows
 stamped at the older version read as current, so the planner never re-runs them.
+The one sanctioned exception is a step whose manifest entry declares
+`heldBackScriptVersion` (`shared/lib/requiredScripts.js`): that exact script version may
+sit ahead on purpose — its old rows are healed some cheaper way, explained on the entry —
+and the check prints it as `⏸ held back` and passes. Today:
+`chinese/backfill-example-sentences` (script v8, manifest v7; v7 rows are healed by
+`--locate-targets`). Don't "fix" it by bumping the manifest — that queues a full zh
+example-sentence regeneration.
 
 For **new** words, take the planner's candidates directly (no user check-in) and
 follow `/mark-discoverable` §A1 → A1.5 (**do not skip the cedict most-popular-reading
@@ -592,7 +599,7 @@ Re-check §1 and compare `five_hour.utilization` against the previous round.
 > you halted or kept going.
 
 If every active limit in `limits[]` is under **its own** threshold — session < ~99%,
-weekly (`weekly_all`/`weekly_scoped`) < ~75% (§1.2) — return to §3 with a fresh batch
+weekly (`weekly_all`/`weekly_scoped`) < ~85% (§1.2) — return to §3 with a fresh batch
 **immediately** — do not write the report, do not summarize, do not hand back. When any
 one of them reaches its threshold, go to §6a. The run ends only when a guardrail above
 trips.
@@ -604,7 +611,7 @@ trips.
 
 ### 6a. Crossing the window boundary — park, wait, resume
 
-At ~99% of the five-hour window (or ~75% of a weekly cap) the budget is effectively
+At ~99% of the five-hour window (or ~85% of a weekly cap) the budget is effectively
 spent. That asymmetry is the whole point: near the **five-hour** boundary requests do
 eventually start being refused — costing throughput, nothing more, and the window resets
 on its own — but at the **weekly** boundary they do not — with extra usage enabled you can author straight
@@ -744,7 +751,7 @@ costs the whole next hour — the tick is dropped, not queued.
 >
 > **Acted on 2026-09-06:** the PPE crontab went 1 → 2 workers on this reading
 > (`SHARD=0/2` at `:17`, `SHARD=1/2` at `:47`, staggered so the planner phases do not
-> collide). The `ORACLE_MAX_UTILIZATION=75%` gate caps the gain at **~1.5×**, not 2× —
+> collide). The `ORACLE_MAX_UTILIZATION=75%` gate (85% since 2026-10-12) caps the gain at **~1.5×**, not 2× —
 > two shards spend the same pool faster, the gate trips at 75%, and the rest of the week
 > becomes skipped ticks rather than overspend. **Halve it back to one worker when the
 > refresh backlog drains and the workers return to `--new` shipping**, where the plan,

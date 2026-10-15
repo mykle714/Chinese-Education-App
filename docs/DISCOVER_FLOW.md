@@ -12,20 +12,20 @@ Footer "Discover" tab
         ▼
 /discover            ← Discover hub (DiscoverPage): a Bento of activities.
         │              Has the floating footer (footer-tab surface).
-        │  BentoTile "Sort Cards"    → sortPath
-        │  BentoTile "Quick Mark"    → quickMarkPath
-        │  BentoTile "Skipped Cards" → skippedPath
-        ├───────────────────┬───────────────────────┐
-        ▼                   ▼                       ▼
-/discover/sort/     /discover/quick-mark/     /discover/skipped/
-  :language           :language                 :language
-  ← Sort Cards        ← Quick Mark              ← Skipped Cards
-    (SortCardsPage):    (QuickMarkPage): bulk-    (SkippedCardsPage): a
-    drag-to-sort.       triage grid at one        Mastered-style list of
-    Node page (keeps    level; tap cards to        skipped words. Node page.
-    footer). Back→hub.  cycle a 3-state mark,      Tap → action popup
-                        Save commits all.          (Cancel / Already
-                        Node page. Back→hub.       Learned / Learn Now).
+        │  BentoTile "Sort Cards"    → sortPath       (hero)
+        │  BentoTile "Quick Mark"    → quickMarkPath  (fullWidth)
+        ├───────────────────┬
+        ▼                   ▼
+/discover/sort/     /discover/quick-mark/
+  :language           :language
+  ← Sort Cards        ← Quick Mark
+    (SortCardsPage):    (QuickMarkPage): bulk-
+    drag-to-sort.       triage grid at one
+    Node page (keeps    level; swipe a card ←
+    footer). Back→hub.  Learn Now / → Mastered,
+    Hold Skip 2 s →     saved per swipe.
+    skipped-cards       Node page. Back→hub.
+    sheet (hidden).
 ```
 
 ## Pages
@@ -35,30 +35,29 @@ Footer "Discover" tab
 | `/discover`                     | `DiscoverPage`     | `MobileDemoHeader` (Discover badge)     | Floating pill |
 | `/discover/sort/:language`      | `SortCardsPage`    | `NodePage` (← back arrow) → `/discover`  | Floating pill |
 | `/discover/quick-mark/:language`| `QuickMarkPage`    | `NodePage` (← back arrow) → `/discover` | Floating pill |
-| `/discover/skipped/:language`   | `SkippedCardsPage` | `NodePage` (← back arrow) → `/discover` | Floating pill |
 
 - **`/discover` (hub):** built on `MobileTabScreen` +
   the shared `Bento` / `BentoTile` (see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
-  deleted 2026-08-21). It has three tiles, in order: **Sort Cards** (the drag-to-sort page), **Quick Mark** (the bulk-triage
-  grid), and **Skipped Cards** (the skipped-words list), all language-keyed.
+  deleted 2026-08-21). It has two tiles, in order: **Sort Cards** (the drag-to-sort page, `hero`) and **Quick
+  Mark** (the bulk-triage grid, `fullWidth` so it owns its row), both language-keyed.
+  There is deliberately **no Skipped Cards tile** — see the sort bullet below.
 - **`/discover/quick-mark/:language` (quick mark):** a **node page** (`NodePage`, keeps
   the footer, ← back → `/discover`). A level dropdown (no Auto) filters to every
   not-yet-sorted discoverable word at that level, shown in the shared `MiniVocabCardGrid`
-  ordered by frequency score. Each card has a frequency badge (top-left) and a tappable
-  3-state indicator (top-right: empty / green "Add to Learn Now" / blue "Mastered");
-  Save commits all marks at once, Clear resets them. See [QUICK_MARK.md](./QUICK_MARK.md).
+  ordered by frequency score. Each card is swiped (axis-locked, so vertical drags still
+  scroll): left = Add to Learn Now, right = Mastered — saved immediately, the card flies
+  off and the grid closes up, with an Undo toast for the last swipe. A tap opens the eip.
+  See [QUICK_MARK.md](./QUICK_MARK.md).
 - **`/discover/sort/:language` (sort):** a **node page** (see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
   the footer** (lateral nav stays available while sorting), owns the ← back arrow
-  (`onBack` → `/discover`) and the horizontal slide. Its `headerExtraActions` slot
-  holds the page actions (autoplay toggle, **Skip** button, undo, streak badge).
-- **`/discover/skipped/:language` (skipped):** a **node page** (`NodePage`, keeps the
-  footer + horizontal slide, ← back arrow → `/discover`) listing the user's skipped
-  words for the language via `MiniVocabCardGrid` (modeled on the Mastered cards page). A
-  **Recycle all** action at the top of the content returns every skipped card to the
-  sort supply. Tapping a card opens an **action popup** (Cancel / Mark as Already
-  Learned / Mark as Learn Now); choosing a destination sorts the card and removes it
-  from the skipped list. See [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §7.
+  (`onBack` → `/discover`) and the horizontal slide. The **Skip** button sits on the
+  on-deck platform's top-right (`OnDeckToolbar`), not in the header.
+  - **Skipped cards live here, hidden:** holding Skip for 2 s opens
+    `SkippedCardsSheet`, the only way to reach skipped cards (tap a card → eip, hold a
+    card → recycle it, Recycle all). The old `/discover/skipped/:language` page
+    (`SkippedCardsPage`) and its hub tile were removed 2026-10-12. See
+    [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §5.1a and §7.
 
 ## Card supply gate
 
@@ -121,8 +120,6 @@ rest of the manifest lands.
 | `goToSort()`    | navigate → `sortPath`          | fdp Sort Cards tile (`DecksTopRail`) |
 | `quickMarkPath` | `/discover/quick-mark/{language}` | the hub's Quick Mark row          |
 | `goToQuickMark()`| navigate → `quickMarkPath`    | (available for direct quick-mark entry) |
-| `skippedPath`   | `/discover/skipped/{language}` | the hub's Skipped Cards row          |
-| `goToSkipped()` | navigate → `skippedPath`       | (available for direct skipped entry) |
 
 `language` resolves from `user.selectedLanguage`, defaulting to `zh`.
 

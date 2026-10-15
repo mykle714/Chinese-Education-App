@@ -38,7 +38,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | --- | --- |
    | `home` | `/`, `/flashcards/decks` (redirect), `/flashcards/collection/:builtin`, `/flashcards/deck/:id`, `/flashcards/reading`, `/flashcards/writing`, `/flashcards/mastered` (redirect), `/flashcards/card/:id` |
    | `menu` | `/menu`, `/games`, `/community`, `/arena`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
-   | `discover` | `/discover`, `/discover/sort/:language`, `/discover/quick-mark/:language`, `/discover/skipped/:language` |
+   | `discover` | `/discover`, `/discover/sort/:language`, `/discover/quick-mark/:language` |
    | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list

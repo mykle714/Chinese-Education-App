@@ -13,7 +13,7 @@ import { activeMasteryCenters } from "./masteryCenters";
 import FlpStudyHand from "./FlpStudyHand";
 import { LEARN_NOW_LOW_THRESHOLD } from "../../../server/contracts/wire";
 import DecksTopRail from "./DecksTopRail";
-import { useFdpEntrance, useFlpLaunch } from "./flpLaunch";
+import { flpPreloadScope, handLaunchRequest, preloadFlpSessions, useFdpEntrance, useFlpLaunch } from "./flpLaunch";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import type { VocabEntry } from "../../types";
 
@@ -112,6 +112,9 @@ const CONTENT_SX = {
 // This page is the CORE lens, so its sheets carry the bare names.
 const DECKS_SHEET_TITLES = { cards: "Cards", decks: "Decks" } as const;
 
+/** The core hand's three sessions, preloaded on landing — Study Mix first (see below). */
+const HAND_LAUNCH_REQUESTS = (["mix", "challenge", "review"] as const).map((id) => handLaunchRequest(id, "core"));
+
 /**
  * Header controls supplied by the route wrapper. The fdp is the Home tab (`/`) as of
  * 2026-10-10, and `src/pages/HomePage.tsx` passes the account header through these —
@@ -167,7 +170,15 @@ const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraAc
     // plays this page off by its edges (`exiting`) before navigating, and the flp plays
     // its own entrance. The frame is the root the exit choreography is matched in.
     const frameRef = useRef<HTMLDivElement | null>(null);
-    const flpLaunch = useFlpLaunch(frameRef);
+    // Home preloads all three of the hand's sessions on landing, so a Start tap usually
+    // finds its loop already dealt. Study Mix goes first: it runs alone so a short
+    // learner's lend happens once (preloadFlpSessions). Keyed on the stable auth identity
+    // + language, never the token (CLAUDE.md § silent token refresh).
+    const preloadScope = user ? flpPreloadScope(user.id, user.selectedLanguage) : null;
+    useEffect(() => {
+        if (preloadScope) preloadFlpSessions(preloadScope, HAND_LAUNCH_REQUESTS);
+    }, [preloadScope]);
+    const flpLaunch = useFlpLaunch(frameRef, preloadScope ?? "");
     // …and the way back: when the flp's Back arrow played its exit, this page returns
     // with the launch's exit run in reverse. A no-op on every other arrival.
     useFdpEntrance(frameRef);

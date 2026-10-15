@@ -15,6 +15,10 @@ import { SAFE_BOTTOM } from "../../theme/safeArea";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
+import SkippedCardsSheet from "./SkippedCardsSheet";
+import { useLongPress } from "../../hooks/useLongPress";
+import HoldProgressRing from "../../components/HoldProgressRing";
+import { quietHaptic } from "../../utils/haptic";
 import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
 import { fetchStarterPacks, fetchNextPack, sortCard, skipPack, undoSort } from "./starterPacksApi";
 import { fetchProvisionalSortSet } from "../../api/provisional";
@@ -57,6 +61,13 @@ const UNDO_DEPTH = MAX_CARDS_PER_PACK;
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
 const MIN_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[0];
 const MAX_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[DIFFICULTY_LEVELS.length - 1];
+
+// Holding the Skip button this long opens the hidden skipped-cards sheet (§5.1a).
+// Deliberately long: the gesture is undiscoverable by design, and a tap must never
+// turn into one by accident.
+const SKIP_HOLD_MS = 2000;
+// The Skip button's corner radius — shared by its sx and its hold ring, which must agree.
+const SKIP_BUTTON_RADIUS_PX = 6;
 
 // Drag destinations (Skip is intentionally NOT here — §5.1).
 interface BucketZone {
@@ -1332,6 +1343,24 @@ const SortCardsPage: React.FC = () => {
         [eipLoadingKey, language, eip]
     );
 
+    // ---- hidden skipped-cards sheet (§5.1a) -------------------------------
+    // Holding Skip for SKIP_HOLD_MS opens it (with a quiet buzz where the device supports
+    // one); a shorter tap still skips the pack. useLongPress swallows the click that
+    // follows a fired hold, so a hold never ALSO skips. Nothing at rest hints that the
+    // hold exists; only once a press is under way does the button's outline trace
+    // (HoldProgressRing — the same timer as the sheet's hold-to-recycle cards).
+    const [skippedSheetOpen, setSkippedSheetOpen] = useState(false);
+    const skipPress = useLongPress({
+        delayMs: SKIP_HOLD_MS,
+        onLongPress: () => {
+            quietHaptic();
+            stopPackAutoplay();
+            setSkippedSheetOpen(true);
+        },
+        onTap: () => { void handleSkipPack(); },
+    });
+    const handleCloseSkippedSheet = useCallback(() => setSkippedSheetOpen(false), []);
+
     // Closing KEEPS the tabs (2026-09-06): the trail belongs to the card, so reopening the
     // panel on the same card resumes the drill-in chain where the learner left it. Opening
     // it on a DIFFERENT card is what starts clean — `openForRoot` reseeds whenever the root
@@ -1984,14 +2013,25 @@ const SortCardsPage: React.FC = () => {
                             className="sort-cards__skip-button"
                             variant="text"
                             size="small"
-                            onClick={handleSkipPack}
+                            // Tap = skip the pack; hold = the hidden skipped-cards sheet.
+                            {...skipPress.handlers}
                             sx={{
                                 minWidth: "unset", px: 1, py: 0.25, height: "24px",
                                 fontSize: SIZE.micro, textTransform: "lowercase", lineHeight: LEADING.normal,
-                                borderRadius: "6px", color: COLORS.onSurface,
+                                borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`, color: COLORS.onSurface,
                             }}
                         >
                             skip
+                            {/* Hold timer: traces the button's outline over SKIP_HOLD_MS.
+                                Mounted per press so each press starts from zero. */}
+                            {skipPress.pressing && (
+                                <HoldProgressRing
+                                    className="sort-cards__skip-hold-ring"
+                                    durationMs={SKIP_HOLD_MS}
+                                    radius={SKIP_BUTTON_RADIUS_PX}
+                                    strokeWidth={2}
+                                />
+                            )}
                         </Button>
                     </OnDeckToolbar>
                     <CardsRow
@@ -2045,6 +2085,18 @@ const SortCardsPage: React.FC = () => {
                     )}
                 </OnDeckSection>
 
+                {/* Hidden skipped-cards sheet (§5.1a) — opened only by holding Skip.
+                    Mounted only while open, so each open re-fetches the list. Rendered
+                    BEFORE the eip so the eip (opened by tapping a card in it) portals
+                    after it and, at depth 1, stacks on top. */}
+                {skippedSheetOpen && (
+                    <SkippedCardsSheet
+                        language={language as Language}
+                        onOpenInfo={handleOpenCardInfo}
+                        onClose={handleCloseSkippedSheet}
+                    />
+                )}
+
                 {/* eip bottom sheet. Only mounted while open so the open animation
                     replays on every reopen (same rule as the flp). The scrim inside
                     SheetPanel covers the buckets and the on-deck cards, so no card can
@@ -2053,6 +2105,7 @@ const SortCardsPage: React.FC = () => {
                 <EipSheet
                     eip={eip}
                     open={eipOpen}
+                    depth={skippedSheetOpen ? 1 : 0}
                     onClose={handleCloseEip}
                     // Wrapped: a speaker tap in the panel stops the pack's narration first.
                     onSpeak={handleEipSpeak}

@@ -658,7 +658,16 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      holds a `HandOrder` — the three modes bottom → top, `[back-left, back-right, front]`
      — rather than deriving the back slots from whichever card is forward. A derived rule
      has only three states (one per possible front card); the stack has all six.
-     `FAN_ORDER` (challenge → review → mix) now seeds the opening arrangement only.
+     `FAN_ORDER` (challenge → review → mix) seeds the opening arrangement only.
+   - **The hand comes back the way it was launched.** Start records the fan as it stood
+     (`onStudy(id, order)`), and the next mount of that bar's hand reopens in it
+     (`initialOrder`) — so Back from the flp lands on Home with the card the learner was
+     playing still forward, not snapped back to Study Mix. Kept in module memory per bar
+     (Home's core hand and the Centers' reading/writing hands are separate stacks), so it
+     lasts for the app session and a reload opens on `FAN_ORDER`. A refused Review tap
+     records nothing.
+     *Code:* `FlpStudyHand.tsx` → `rememberedHandOrder`, `handleStudy`;
+     `StudyHand.tsx` → `StudyHandProps.initialOrder`.
    - **The fan starts at the top of the hand.** The `full` slots step 46px apart
      (`FAN_STEP`), but the first one is not a fixed number: `FAN_TOP` places the back-left
      card so its raised corner (the ±4.5° tilt pivots at top centre) just touches the
@@ -710,7 +719,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
      and CSS interpolates from the currently-computed transform, so a thrown card carries
      on from where it was let go instead of snapping to centre first.
    - **The card behind pre-renders the whole front face.** `backRight` — the one the next
-     swipe promotes — draws its tag, big numeral, hairline and commit button while still in
+     swipe promotes — draws its tag, big numeral, the mark under it ("cards" or the hairline) and commit button while still in
      the fan. At rest none of it shows (the played card covers it), so it costs the fan
      nothing; it pays the moment a throw begins, because the number the learner is deciding
      on is uncovered **already drawn** instead of appearing once the gesture resolves. The
@@ -722,9 +731,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    - **On a short frame the numeral moves into the head.** The hand takes whatever height
      the page leaves (`flex: 1 1 0`), so under the top rail (always present now) or on a small phone
      the figure box between the name and `Start` gets short. Once it can no longer hold the
-     numeral + hairline with `FIGURE_BREATHING_ROOM` (16px) clear above **and** below, i.e.
+     numeral + its mark with `FIGURE_BREATHING_ROOM` (16px) clear above **and** below, i.e.
      as soon as it starts to look cramped rather than when the digits collide, the card
-     re-flows: the **same figure (numeral + hairline) at the same size** moves out from
+     re-flows: the **same figure (numeral + the mark under it — a soft introduction, docs/SOFT_INTRODUCTION.md `handCardCount`: a small "cards" (`figureCaption` lowercased, 16px `SIZE.bodyLg` semibold `FONTS.sans`, 10px `CAPTION_GAP_PX` from the digits' baseline to its x-height) until the learner graduates, then the design's ink hairline; either is centred on the digits' ink, the numeral padding back its trailing -0.06em tracking, `NUMERAL_TRACKING_EM`) at the same size** moves out from
      under the name and centres in the block beside it — bounded by the name's right
      edge, the card's right edge, the top padding and `Start` — and a zero card's
      `zeroMessage` tag drops under the name (the space to its right is the figure's now). The full
@@ -1051,9 +1060,9 @@ fdp's core hand does this; the Reading / Writing Centers' hands navigate directl
 
 | Step | What moves | Owner |
 |---|---|---|
-| 1. Loading | The three hand cards **shake side to side in a light tremor, independently**: fast (90–130ms cycles), linear, with uneven amplitudes (up to ±2px), and each slot has its own period and phase. The shake follows the **swipe's tilt trajectory**: each offset carries the tilt a drag of that size gets (`x · DRAG_TILT`, `useHandSwipe`), pivoting at the card's top centre. The motion is on the individual `translate`/`rotate` properties so the fan's `transform` is untouched. There is **no minimum**, so a fast load skips straight to step 2. The hand and the page take no input; the footer stays live, and a tab tap abandons the launch. | `StudyHand` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `HAND_SHAKE_BEAT`); `FlashcardsDecksPage` (frame `pointerEvents`) |
+| 1. Loading | The three hand cards **shake side to side in a light tremor, independently**: fast (90–130ms cycles), linear, with uneven amplitudes (up to ±2px), and each slot has its own period and phase. The shake follows the **swipe's tilt trajectory**: each offset carries the tilt a drag of that size gets (`x · DRAG_TILT`, `useHandSwipe`), pivoting at the card's top centre. The motion is on the individual `translate`/`rotate` properties so the fan's `transform` is untouched. There is **no minimum**, so a fast load skips straight to step 2, and when Home's preload has already landed there is no shake at all. The hand and the page take no input; the footer stays live, and a tab tap abandons the launch. | `StudyHand` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `HAND_SHAKE_BEAT`); `FlashcardsDecksPage` (frame `pointerEvents`) |
 | 2. fdp exit (300ms, ease-in) | Header ↑. Rail tiles: with 2+ tiles the **leftmost goes ←** and the rest go →; a lone Sort tile goes →. Hand: **front and back-left cards ←, back-right (middle) card →**, staggered 0/40/80ms. Cards / Decks pills ↓. Footer ↓ through its own slide (`useHideFooter`). | `flpLaunch.ts` → `FDP_EXIT`, `useFlpLaunch` |
-| 3. Navigate | Happens only after every exit animation has finished. The flp **adopts the prefetched loop**, so it mounts already dealt, with no spinner frame. | `flpLaunch.ts` → `peekLaunchLoop` / `clearLaunchLoop`; `useWorkingLoop` (`handoff`) |
+| 3. Navigate | Happens only after every exit animation has finished. The flp **adopts the preloaded loop**, so it mounts already dealt, with no spinner frame. | `flpLaunch.ts` → `peekLaunchLoop` / `clearLaunchLoop`; `useWorkingLoop` (`handoff`) |
 | 4. flp entry (ease-out) | New header ↓ in. `Write it` comes in from the left and `Compare` from the right (a rail with only Compare brings it from the right). The card stack rises from the bottom. **More Info rises after the stack** (starts 300ms vs 80ms) so the two move out of phase. | `flpLaunch.ts` → `FLP_ENTER`, `useFlpEntrance` |
 
 How it works:
@@ -1068,16 +1077,34 @@ How it works:
   `transform`.** Almost every target already owns a `transform` (the fan geometry,
   `SheetPill` / `MoreInfoPill` centring). Distances are **measured**: each element
   travels from its bounding rect to `EDGE_CLEARANCE_PX` past the phone frame's edge.
-- **The prefetch is the flp's own request.** `src/api/workingLoop.ts` is the single
+- **Home preloads all three sessions on landing.** When the fdp mounts it calls
+  `preloadFlpSessions` with the core hand's three requests (Study Mix, Challenge, Review)
+  and imports the flp's JS chunk once the browser is idle. A Start tap then reuses the
+  landed loop, or joins the load still in flight, so the shake is usually skipped
+  entirely. Study Mix's load runs **alone first** and the other two follow: the endpoint
+  lends cards to a short learner before dealing, and three concurrent calls would race
+  for the same most-common words (the losers' inserts are dropped by `ON CONFLICT DO
+  NOTHING`, leaving them a short loop). The cost is accepted (2026-10-12): up to three
+  working-loop requests per Home landing without a fresh entry. A lent card in an unplayed
+  loop is re-lent on the next visit rather than a new one being minted
+  ([PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § 3b), and the TTS prewarm only fills a
+  cache we want full.
+- **The preload is the flp's own request.** `src/api/workingLoop.ts` is the single
   builder for `GET /api/onDeck/distributedWorkingLoop`, used by both `useWorkingLoop`
-  and the prefetch. The handoff is matched on `workingLoopKey(request)`, so a hand-built
-  query would silently miss it and the flp would fall back to its own fetch. The
-  prefetch also imports the flp's lazy route chunk, so its `Suspense` resolves from cache.
-- **Both latches are one-shot and short-lived.** The prefetched loop is ignored after
-  10s, and the entrance latch after 2s. Each is read in a `useState` initializer (safe
-  under StrictMode's double call) and cleared in an effect. Every other way into the flp
-  gets fresh cards and no entrance: a deck's "Study these cards", a Center, Back/Forward,
-  a reload, or an abandoned launch revisited.
+  and the preload, and `handLaunchRequest` (flpLaunch.ts) is the single builder of a
+  hand card's request, used by both Start and the preload. The handoff is matched on
+  `workingLoopKey(request)`, so a hand-built request would silently miss it and the flp
+  would fall back to its own fetch.
+- **Preloaded loops are fresh for 5 minutes and cleared together.** A landed loop is
+  served for `LOOP_FRESH_MS` (5 min). A cooldown expiring in that window is accepted
+  drift. The flp **clears the whole store** when it mounts (`clearLaunchLoop`), because
+  the session is about to mark cards and the other modes' deals are then out of date;
+  Home re-preloads on return. Entries are scoped to `flpPreloadScope(userId, language)`,
+  and a load that lands after its entry was cleared is discarded.
+- **The entrance latch is one-shot and short-lived** (2s). Both it and the preloaded
+  loop are read in a `useState` initializer (safe under StrictMode's double call) and
+  cleared in an effect. Every other way into the flp gets fresh cards and no entrance: a
+  deck's "Study these cards", a Center, Back/Forward, or a reload.
 - **Failure degrades to the old behaviour.** If the prefetch fails, nothing is stashed.
   The exit still plays, and the flp fetches (and reports errors) on its own. Its
   entrance still runs once it is ready.
@@ -1733,7 +1760,7 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |
-| §4 Launching the flp from the hand | `src/features/flashcards/flpLaunch.ts` (`FDP_EXIT`, `FLP_ENTER`, `FLP_EXIT`, `FDP_ENTER`, `useFlpLaunch`, `useFlpEntrance`, `useFlpLeave`, `useFdpEntrance`, `peekLaunchLoop`, `clearLaunchLoop`); `src/api/workingLoop.ts` (`fetchDistributedWorkingLoop`, `workingLoopKey`); `StudyHand.tsx` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `study-hand__card--slot-*`); `FlpStudyHand.tsx` (`onLaunch`); `FlashcardsDecksPage.tsx`; `FlashcardsLearnPage.tsx`; `useWorkingLoop.ts` (`handoff`, `dealLoop`); `src/hooks/useHideFooter.ts` |
+| §4 Launching the flp from the hand | `src/features/flashcards/flpLaunch.ts` (`FDP_EXIT`, `FLP_ENTER`, `FLP_EXIT`, `FDP_ENTER`, `useFlpLaunch`, `useFlpEntrance`, `useFlpLeave`, `useFdpEntrance`, `peekLaunchLoop`, `clearLaunchLoop`, `preloadFlpSessions`, `handLaunchRequest`, `flpPreloadScope`, `LOOP_FRESH_MS`); `src/api/workingLoop.ts` (`fetchDistributedWorkingLoop`, `workingLoopKey`); `StudyHand.tsx` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `study-hand__card--slot-*`); `FlpStudyHand.tsx` (`onLaunch`); `FlashcardsDecksPage.tsx`; `FlashcardsLearnPage.tsx`; `useWorkingLoop.ts` (`handoff`, `dealLoop`); `src/hooks/useHideFooter.ts` |
 | §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
 | §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`barCooldownRemainingMs`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 

@@ -98,7 +98,7 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     ...(isFeatureEnabled("community") ? ["/community"] : []),
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
     "/tester-dashboard", "/settings",
-    "/discover/sort/zh", "/discover/quick-mark/es", "/discover/skipped/zh",
+    "/discover/sort/zh", "/discover/quick-mark/es",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
     ...GAME_REGISTRY.map((g) => g.route),
   ];
@@ -142,7 +142,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     // Prefix-matched node pages.
     ["/discover/sort/zh", "discover"],
     ["/discover/quick-mark/zh", "discover"],
-    ["/discover/skipped/zh", "discover"],
     ["/flashcards/card/7", "home"],
     ["/dictionary/card/好", "dictionary"],
     // Footerless.
@@ -164,7 +163,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
     "/games", "/flashcards/mastered", "/reader",
-    "/discover/skipped/zh", "/discover/sort/zh", "/discover/quick-mark/zh",
+    "/discover/sort/zh", "/discover/quick-mark/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
   const LEAF = [

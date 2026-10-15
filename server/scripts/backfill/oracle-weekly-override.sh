@@ -6,7 +6,7 @@
 # that oracle-cron.sh reads (see its WEEKLY OVERRIDE section).
 #
 # WHY THIS EXISTS: oracle-cron.sh refuses to start a round once a weekly plan cap
-# reaches ORACLE_MAX_UTILIZATION (default 75%). The 25% margin exists for interactive
+# reaches ORACLE_MAX_UTILIZATION (default 85%). The 15% margin exists for interactive
 # use later in the week; when the operator knows they will not need it, this lets them
 # hand some or all of it to the backfill for THIS WEEK ONLY. The override expires at
 # the weekly cap's own `resets_at`, so the next week automatically starts back at the
@@ -106,7 +106,7 @@ case "$cmd" in
         echo "Override: expired at ${O_EXP} (the cron removes it on its next tick) — default applies"
       fi
     else
-      echo "Override: none — default applies (ORACLE_MAX_UTILIZATION, 75% unless the crontab sets it)"
+      echo "Override: none — default applies (ORACLE_MAX_UTILIZATION, 85% unless the crontab sets it)"
     fi
     if WEEKLY="$(read_weekly)"; then
       IFS=$'\t' read -r NOW_PCT RESET_EPOCH RESET_AT <<< "$WEEKLY"

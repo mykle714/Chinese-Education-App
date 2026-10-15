@@ -13,6 +13,7 @@ import { markFlashcard } from "../../../api/flashcards";
 import EipSheet from "../FlashcardsLearnPage/EipSheet";
 import { useEipTabs } from "../FlashcardsLearnPage/useEipTabs";
 import { useTTS } from "../../../hooks/useTTS";
+import { useSwipeCommit, type SwipeDirection } from "../../../hooks/useSwipeCommit";
 import {
     CORRECT_WASH, INCORRECT_WASH, CARD_FLIP_MS, CARD_FLY_OUT_MS,
 } from "../constants";
@@ -58,14 +59,9 @@ import { SHADOW } from "../../../theme/shadows";
 const ARROW_ROOM = 30;
 /** A drag past this share of the grid's width commits the swipe… */
 const SWIPE_GRID_FRACTION = 0.18;
-/** …but never less than this, so a narrow grid still needs a deliberate drag. */
+/** …but never less than this, so a narrow grid still needs a deliberate drag.
+ *  (The flick + tap-slop rules live in the shared `useSwipeCommit`.) */
 const SWIPE_MIN_PX = 48;
-/** A flick commits early: at least this far… */
-const FLICK_MIN_PX = 24;
-/** …moving at least this fast (px/ms) when released, in the drag's direction. */
-const FLICK_MIN_VELOCITY = 0.5;
-/** A press that travels less than this (px) on the open tile is a TAP, not a drag. */
-const TAP_SLOP_PX = 6;
 /** The swipe-hint triangle, px. */
 const ARROW_W = 19;
 const ARROW_H = 26;
@@ -77,13 +73,11 @@ const tileArrive = keyframes`
     to   { opacity: 1; transform: scale(1); }
 `;
 
-/** The open tile's state machine. */
+/** The open tile's state machine. (Its live drag offset is `useSwipeCommit`'s `dx`.) */
 type OpenTile = {
     key: string;
-    /** Horizontal drag offset in px while the finger is down. */
-    dx: number;
     /** Set once a swipe commits: the tile is flying off this way. */
-    leaving: "left" | "right" | null;
+    leaving: SwipeDirection | null;
 };
 
 interface ReadingSwipeGridProps {
@@ -133,7 +127,6 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
 
     // ── The open tile ───────────────────────────────────────────────────────────
     const [open, setOpen] = useState<OpenTile | null>(null);
-    const dragStartX = useRef<number | null>(null);
     const leaveTimer = useRef<number | null>(null);
     useEffect(() => () => { if (leaveTimer.current) window.clearTimeout(leaveTimer.current); }, []);
 
@@ -143,9 +136,6 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
     const eip = useEipTabs();
     const [eipOpen, setEipOpen] = useState(false);
     const tts = useTTS();
-    // Set once the current press on the open tile travels past TAP_SLOP_PX, so the click
-    // that ends a drag (pointer capture keeps it on the tile) is not read as a tap.
-    const draggedRef = useRef(false);
 
     // The open tile's element, so a tap-away can tell "on the card" from "anywhere else".
     const openTileRef = useRef<HTMLElement | null>(null);
@@ -171,8 +161,8 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
     }, [openKey, openLeaving, eipOpen]);
 
     // Commit a swipe: fly the tile off, then write the mark and refill its cells.
-    const commit = (tile: PlacedTile, direction: "left" | "right") => {
-        setOpen({ key: tile.key, dx: 0, leaving: direction });
+    const commit = (tile: PlacedTile, direction: SwipeDirection) => {
+        setOpen({ key: tile.key, leaving: direction });
         markFlashcard({ cardId: tile.cardId, isCorrect: direction === "right", type: "reading", surface: "reading-center" })
             .catch((err) => console.error(`[ReadingCenter] reading mark failed → card ${tile.cardId}:`, err));
         leaveTimer.current = window.setTimeout(() => {
@@ -187,33 +177,18 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
     // window is ~290px — wider than a drag across the 402px phone frame can comfortably
     // reach — so every swipe snapped back.) A quick FLICK also commits, short of it.
     const threshold = () => Math.max(SWIPE_MIN_PX, gridWidth * SWIPE_GRID_FRACTION);
-    // Last pointer sample, for the flick velocity.
-    const lastSample = useRef<{ x: number; t: number; vx: number }>({ x: 0, t: 0, vx: 0 });
 
-    const onPointerDown = (e: React.PointerEvent) => {
-        if (open?.leaving) return;
-        dragStartX.current = e.clientX;
-        draggedRef.current = false;
-        lastSample.current = { x: e.clientX, t: e.timeStamp, vx: 0 };
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    };
-    const onPointerMove = (e: React.PointerEvent) => {
-        if (dragStartX.current === null || !open || open.leaving) return;
-        const prev = lastSample.current;
-        const dt = e.timeStamp - prev.t;
-        if (dt > 0) lastSample.current = { x: e.clientX, t: e.timeStamp, vx: (e.clientX - prev.x) / dt };
-        const dx = e.clientX - dragStartX.current;
-        if (Math.abs(dx) > TAP_SLOP_PX) draggedRef.current = true;
-        setOpen({ ...open, dx });
-    };
-    const onPointerUp = (tile: PlacedTile) => () => {
-        if (dragStartX.current === null || !open || open.leaving) return;
-        dragStartX.current = null;
-        const { vx } = lastSample.current;
-        const flicked = Math.abs(open.dx) >= FLICK_MIN_PX && Math.abs(vx) >= FLICK_MIN_VELOCITY && Math.sign(vx) === Math.sign(open.dx);
-        if (Math.abs(open.dx) >= threshold() || flicked) commit(tile, open.dx > 0 ? "right" : "left");
-        else setOpen({ ...open, dx: 0 });
-    };
+    // The drag itself (shared with Quick Mark). No axis lock: only the OPEN tile gets the
+    // handlers, and it is `touch-action: none`, so it owns every gesture that starts on it.
+    const swipe = useSwipeCommit({
+        axisLock: false,
+        threshold,
+        disabled: !!open?.leaving,
+        onCommit: (key, direction) => {
+            const tile = tiles.find((t) => t.key === key);
+            if (tile) commit(tile, direction);
+        },
+    });
 
     if (loading && tiles.length === 0) return null;
 
@@ -236,7 +211,7 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
                         {cell > 0 && tiles.map((tile) => {
                             const isOpen = open?.key === tile.key;
                             const rect = isOpen ? openRect(tile) : cellRect(tile);
-                            const dx = isOpen ? open.dx : 0;
+                            const dx = isOpen && swipe.activeId === tile.key ? swipe.dx : 0;
                             const leaving = isOpen ? open.leaving : null;
                             const flyX = leaving === "right" ? gridWidth + 120 : leaving === "left" ? -(gridWidth + 120) : dx;
                             // The wash fades in as the drag approaches the threshold,
@@ -250,16 +225,14 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
                                     onClick={() => {
                                         // First tap opens the tile; a second (non-drag) tap on
                                         // the open tile opens its eip.
-                                        if (!open) setOpen({ key: tile.key, dx: 0, leaving: null });
-                                        else if (isOpen && !open.leaving && !draggedRef.current) {
+                                        if (!open) setOpen({ key: tile.key, leaving: null });
+                                        else if (isOpen && !open.leaving && !swipe.wasDrag()) {
                                             eip.openForRoot(tile.entry);
                                             setEipOpen(true);
                                         }
                                     }}
-                                    onPointerDown={isOpen ? onPointerDown : undefined}
-                                    onPointerMove={isOpen ? onPointerMove : undefined}
-                                    onPointerUp={isOpen ? onPointerUp(tile) : undefined}
-                                    onPointerCancel={isOpen ? onPointerUp(tile) : undefined}
+                                    data-swipe-id={tile.key}
+                                    {...(isOpen ? swipe.handlers : {})}
                                     aria-label={isOpen ? `${tile.word}: ${tile.dd}` : `Read ${tile.word}`}
                                     role="button"
                                     sx={{
@@ -276,7 +249,7 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
                                             `left ${GROW_MS}ms ease`, `top ${GROW_MS}ms ease`,
                                             `width ${GROW_MS}ms ease`, `height ${GROW_MS}ms ease`,
                                             // Follow the finger exactly; animate only the snap-back and the fly-off.
-                                            dx !== 0 && !leaving ? "transform 0ms" : `transform ${leaving ? CARD_FLY_OUT_MS : GROW_MS}ms ease`,
+                                            dx !== 0 && swipe.dragging && !leaving ? "transform 0ms" : `transform ${leaving ? CARD_FLY_OUT_MS : GROW_MS}ms ease`,
                                         ].join(", "),
                                     }}
                                 >

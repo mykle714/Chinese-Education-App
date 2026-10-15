@@ -119,11 +119,16 @@ can scroll up past the floating pills rather than stopping dead on them.
       (min 48px) or on a flick (≥24px at ≥0.5px/ms) — not the flp's viewport-relative
       threshold, which on desktop exceeded the phone frame and made every swipe snap back
       (fixed 2026-10-03); flp wash colours and fly-out timing. The hole (plus any adjacent empty cells) refills in place.
+      The drag itself (follow-the-finger offset, flick velocity, tap slop) is the shared
+      `src/hooks/useSwipeCommit.ts` → `useSwipeCommit`, run with `axisLock: false` (the open
+      tile is `touch-action: none` and owns every gesture); Quick Mark runs the same hook
+      axis-locked ([QUICK_MARK.md](./QUICK_MARK.md) § 3). A `pointercancel` snaps back and
+      never commits.
 - [x] Tap elsewhere → flips back, no mark. Dismissal is a document-level capture `pointerdown` listener (`ReadingSwipeGrid` → tap-away effect), NOT a catcher element, so the same tap still performs its own action (tapping another tile opens it; a button fires; a drag scrolls).
 - [x] Tap the OPEN tile again (a press that moved ≤ 6px, `TAP_SLOP_PX`) → the eip opens for that card (`eip.openForRoot(tile.entry)` — the library card is a full VocabEntry, so no det lookup). The tile stays flipped under the sheet and tap-away is suspended while the eip is up, so closing it returns to the same card ready to swipe. Hinted by a pointer-transparent ⓘ (`InfoOutlined`, `textSecondary`, top-right of the back face — same icon as scp's card-info button). Rendered by the shared `FlashcardsLearnPage/EipSheet.tsx`.
 - [x] Model unit tests: `src/__tests__/wordGridModel.test.ts`.
 
-Code: `centers/ReadingSwipeGrid.tsx` (gesture + animation), `FlashcardsLearnPage/EipSheet.tsx` (the eip host), `centers/wordGridModel.ts`
+Code: `centers/ReadingSwipeGrid.tsx` (tile state + animation), `src/hooks/useSwipeCommit.ts` (the drag), `FlashcardsLearnPage/EipSheet.tsx` (the eip host), `centers/wordGridModel.ts`
 (`cellSpan`, `buildPool`, `drawWord`, `fillSegment`, `initialLayout`, `replaceTile` — shared with the
 writing grid since phase 5), `centers/useWordGridGeometry.ts`.
 

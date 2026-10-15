@@ -250,7 +250,7 @@ The end-of-session "sort these cards" CTA remains the pressure valve.
 |---|---|---|
 | `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading, Bucket Drop | Skipped when `need` is set (a partial refill — see below) |
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
-| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'` |
+| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`. Also called by Home's **preload** (`preloadFlpSessions`, `src/features/flashcards/flpLaunch.ts`), so a learner can be lent cards on landing without tapping Start; an unplayed lent card is re-lent next time (§ 3b), not re-minted |
 
 **Partial refills provision only if the game opts in.** Bubble Match's *Play Again*
 sends `need=N` to swap out only the pairs the player matched; lending on every tap

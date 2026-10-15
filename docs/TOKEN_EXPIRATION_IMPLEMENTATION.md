@@ -313,7 +313,7 @@ Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
 (the page that replaced `MasteredCardsPage.tsx`),
 `VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
 `EntryDetailPage.tsx`, `EditEntryPage.tsx`, `SortCardsPage.tsx`,
-`SkippedCardsPage.tsx`, `DictionaryPage.tsx`, `CommunityPage.tsx`,
+`DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
 `authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`
 (`useNightMarket.ts` was also on this list; the hook has since been deleted along

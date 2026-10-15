@@ -41,10 +41,13 @@ router.get('/api/starterPacks/:language/quickMark', authenticateToken, handle(st
 // Quick Mark: batch-reconcile marked cards into their buckets
 router.post('/api/starterPacks/quickMarkBatch', authenticateToken, handle(starterPacksController.quickMarkBatch, starterPacksController));
 
-// List the user's currently-skipped words for a language (Skipped page)
+// List the user's currently-skipped words for a language (scp's hidden skipped-cards sheet)
 router.get('/api/starterPacks/:language/skipped', authenticateToken, handle(starterPacksController.getSkipped, starterPacksController));
 
 // Recycle ALL of the user's skips for a language back into the supply
 router.post('/api/starterPacks/:language/recycleSkips', authenticateToken, handle(starterPacksController.recycleSkips, starterPacksController));
+
+// Recycle ONE skipped card back into the supply (scp's hidden skipped-cards sheet)
+router.post('/api/starterPacks/:language/recycleSkip', authenticateToken, handle(starterPacksController.recycleSkip, starterPacksController));
 
 export default router;

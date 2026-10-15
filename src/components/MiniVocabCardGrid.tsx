@@ -111,7 +111,7 @@ interface MiniVocabCardGridProps {
     // descriptive, distinct hooks (e.g. "flashcards-decks__library").
     classPrefix: string;
     // Optional custom card renderer. When omitted the grid draws the standard
-    // MiniVocabCard; callers that need a different card (e.g. Quick Mark's 3-state
+    // MiniVocabCard; callers that need a different card (e.g. Quick Mark's swipeable
     // triage card) pass their own. Receives the same paced-reveal index so the
     // cascade delay stays consistent.
     renderCard?: (entry: VocabEntry, index: number, animationDelayMs?: number) => ReactNode;

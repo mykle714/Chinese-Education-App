@@ -70,32 +70,16 @@ function DictionaryPage() {
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
 
-    // Ref for search input to maintain focus
+    // Ref for the search input — PinyinKeypad inserts tone marks at its caret.
     const searchInputRef = useRef<HTMLInputElement>(null);
     // Ref on the page Container, used to reach the MobileTabScreen scroll container
     // (.mobile-tab-screen__scroll) that MobileTabScreen owns, for scroll save/restore.
     const containerRef = useRef<HTMLDivElement | null>(null);
 
-    // ── Auto-focus the search box on a FRESH visit (2026-10-10) ───────────────────────
-    // Only when there is no query: coming back from a drill-in restores the query and
-    // scroll position, and a keyboard springing up would cover the results the learner
-    // came back to. Read once at mount (the persisted query, not the live input).
-    //
-    // ⚠️ Deferred a frame rather than MUI `autoFocus`. `autoFocus` fires during the
-    // commit that mounts this page, and `BeginnerKeyboardProvider` closes the keyboard
-    // on every pathname change in a passive effect of that SAME commit — which runs
-    // after the focus, so it would tear down the switch bar the focus just raised,
-    // leaving a focused field with no 写/ABC bar. A frame later that effect has run.
-    // `preventScroll` because the MobileTabScreen scroller owns the scroll position.
-    //
-    // Which keyboard comes up is decided by the field's `data-beginner-keyboard-default`
-    // below (docs/BEGINNER_KEYBOARD.md § 6z-3a). On iOS Safari a programmatic focus
-    // outside a user gesture places the caret but may not raise the OS keyboard.
-    useEffect(() => {
-        if (dictionaryBrowseState.search) return;
-        const frame = requestAnimationFrame(() => searchInputRef.current?.focus({ preventScroll: true }));
-        return () => cancelAnimationFrame(frame);
-    }, []);
+    // No auto-focus on visit (removed 2026-10-12): the learner taps the search box
+    // to raise a keyboard. The 2026-10-10 auto-focus effect was deferred one frame to
+    // dodge BeginnerKeyboardProvider's close-on-pathname-change — see
+    // docs/BEGINNER_KEYBOARD.md § 6z-3a if it is ever reinstated.
 
     // Keep the persisted query + page in sync so a drill-in → back restores them.
     useEffect(() => { dictionaryBrowseState.search = searchInput; }, [searchInput]);

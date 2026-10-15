@@ -663,7 +663,7 @@ export class StarterPacksService {
 
     // Sorting a card OVERRIDES any prior "skip for now" on it: a card that was skipped
     // and later sorted (from an authored pack, or the Skipped-page popup) must leave
-    // discover_skips so it no longer shows on the Skipped page.
+    // discover_skips so it no longer shows in the skipped-cards sheet.
     await this._clearSkip(userId, cardId, language);
 
     // On-sort lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5). A skip
@@ -1194,7 +1194,7 @@ export class StarterPacksService {
 
   /**
    * Skip a whole pack: record a discover_skips row for each remaining unsorted card
-   * (each independently recoverable on the Skipped page) and mark the pack seen (for
+   * (each independently recoverable from the skipped-cards sheet) and mark the pack seen (for
    * authored packs). Signal-free — no vet rows, no level movement (requirements §5.1).
    */
   async skipPack(userId: string, cardIds: number[], language: string, packId: number | null = null): Promise<void> {
@@ -1217,7 +1217,7 @@ export class StarterPacksService {
 
   /**
    * All words the user has currently skipped in a language, newest-first, as
-   * DiscoverCards for the Skipped page grid. (No example-sentence enrichment — the grid
+   * DiscoverCards for scp's skipped-cards sheet. (No example-sentence enrichment — the grid
    * only needs the card face.)
    */
   async listSkipped(userId: string, language: string): Promise<DiscoverCard[]> {
@@ -1242,8 +1242,18 @@ export class StarterPacksService {
   }
 
   /**
+   * Recycle ONE skipped card back into the normal supply — the hold-to-recycle gesture
+   * on a card in scp's hidden skipped-cards sheet (docs/SORT_CARDS_REQUIREMENTS.md
+   * §5.1a). A no-op when the card is not (or no longer) skipped. Reuses `_clearSkip`,
+   * the same delete a pack-less sort performs.
+   */
+  async recycleSkip(userId: string, cardId: number, language: string): Promise<void> {
+    await this._clearSkip(userId, cardId, language);
+  }
+
+  /**
    * Recycle ALL of the user's skips for a language back into the normal supply (the
-   * Skipped page "Recycle all" action). Returns how many were cleared.
+   * skipped-cards sheet's "Recycle all" action). Returns how many were cleared.
    */
   async recycleAllSkips(userId: string, language: string): Promise<number> {
     const client = await db.getClient();

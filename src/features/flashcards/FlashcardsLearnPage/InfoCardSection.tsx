@@ -20,6 +20,9 @@ interface InfoCardSectionProps {
     isFlipped: boolean;
     onClose: () => void;
     initialHeight?: number | null;
+    // Open height / resting stop as a fraction of the frame — forwarded to SheetPanel
+    // (`defaultHeightRatio`). Omitted = SheetPanel's 0.6. The Dictionary page passes 0.9.
+    defaultHeightRatio?: number;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
     onExampleSegmentClick?: (segment: string) => void;
@@ -135,6 +138,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     isFlipped,
     onClose,
     initialHeight,
+    defaultHeightRatio,
     onBreakdownItemClick,
     onUsedInItemClick,
     onExampleSegmentClick,
@@ -215,6 +219,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             onClose={onClose}
             depth={depth}
             initialHeight={initialHeight}
+            defaultHeightRatio={defaultHeightRatio}
             bodyRef={panelRef}
             // Fold selectedTab into the key: InfoCardPanelBody's scrollable
             // element is the ACTIVE tab's pane (each pane scrolls on its own),

@@ -188,8 +188,7 @@ This is also the fallback source for Rule 1's first-entry case.
 | Decks (fdp) | `FlashcardsDecksPage.tsx` (rendered at `/` by `HomePage`) | tab root (Home) | — | ✅ backRestore | — |
 | User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Night Market visit | `NightMarketVisitPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
-| Sort Cards | `SortCardsPage.tsx` | `navigate("/discover")`; set mode `exitToOrigin` | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
-| Quick Mark | `QuickMarkPage.tsx` | `navigate("/discover")` | ✅ single hub parent | — | — |
+| Sort Cards | `SortCardsPage.tsx` | `navigate("/")` (Home); set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | flp | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` | — | — | provisional sort offer (arrow-only) ✅ |
 | Friends hub | `FriendsPage.tsx` | `navigate("/menu")` | ✅ hub | — | — |
 | Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `slideNavigate("/friends")` | ⚠️ forward slide on Back | — | — |

@@ -26,7 +26,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
  * A `pointercancel` never commits: it means the browser (or the OS) took the gesture away.
  *
  * Used by: `src/features/flashcards/centers/ReadingSwipeGrid.tsx` (reading marks, state
- * mode) and `src/features/discover/QuickMarkPage.tsx` (Learn Now / Mastered triage,
+ * mode) and `src/features/discover/useQuickMarkGrid.ts` (Learn Now / Mastered triage,
  * imperative `paint` mode).
  * Documented in: docs/QUICK_MARK.md § 3, docs/READING_WRITING_CENTERS.md § Phase 2.
  */

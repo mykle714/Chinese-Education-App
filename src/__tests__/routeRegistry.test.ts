@@ -86,19 +86,21 @@ describe("findRoute", () => {
   it("returns undefined for an unknown path rather than the catch-all", () => {
     // "*" would match everything; consumers must not inherit the 404's shell.
     expect(findRoute("/no/such/page")).toBeUndefined();
+    // The Discover hub was deleted 2026-10-17; only its /discover/sort drill-in remains.
+    expect(findRoute("/discover")).toBeUndefined();
   });
 });
 
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
     "/", "/menu", "/flashcards/decks", "/flashcards/mastered", "/flashcards/learn",
-    "/discover", "/games", "/reader", "/dictionary",
+    "/games", "/reader", "/dictionary",
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
     ...(isFeatureEnabled("community") ? ["/community"] : []),
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
     "/tester-dashboard", "/settings",
-    "/discover/sort/zh", "/discover/quick-mark/es",
+    "/discover/sort/zh", "/discover/sort/es",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
     ...GAME_REGISTRY.map((g) => g.route),
   ];
@@ -130,7 +132,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     ["/", "home"],
     ["/menu", "menu"],
     ["/flashcards/decks", "home"],
-    ["/discover", "discover"],
     // Dictionary took Account's footer slot (2026-10-09); /account is no longer a route.
     ["/dictionary", "dictionary"],
     ["/games", "menu"],
@@ -140,8 +141,8 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     ["/flashcards/mastered", "home"],
     ["/reader", "menu"],
     // Prefix-matched node pages.
-    ["/discover/sort/zh", "discover"],
-    ["/discover/quick-mark/zh", "discover"],
+    // Sort Cards lights Home since the Discover hub was deleted (2026-10-17).
+    ["/discover/sort/zh", "home"],
     ["/flashcards/card/7", "home"],
     ["/dictionary/card/好", "dictionary"],
     // Footerless.
@@ -163,7 +164,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
     "/games", "/flashcards/mastered", "/reader",
-    "/discover/sort/zh", "/discover/quick-mark/zh",
+    "/discover/sort/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
   const LEAF = [
@@ -171,7 +172,7 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/settings",
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
   ];
-  const NO_SLIDE = ["/", "/menu", "/discover", "/dictionary", "/flashcards/decks", "/login", "/flashcards/learn"];
+  const NO_SLIDE = ["/", "/menu", "/dictionary", "/flashcards/decks", "/login", "/flashcards/learn"];
 
   it.each(NODE)("%s slides in from the right", (path) => {
     expect(routeSlideDir(path)).toBe("right");

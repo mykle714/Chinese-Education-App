@@ -258,7 +258,7 @@ Full details, including the server-side filter: [DECKS_FEATURE.md](./DECKS_FEATU
 
 Games is **not** a footer tab. It is a tile on the **Menu** hub (`/menu`,
 `src/pages/MenuPage.tsx`; see [NAVIGATION.md](./NAVIGATION.md)). The footer tabs are
-Home / Menu / Discover / Dictionary; the Games hub is reached by tapping **Games** on the
+Home / Menu / Deck / Dictionary; the Games hub is reached by tapping **Games** on the
 Menu, and `/games` lights the Menu tab (`footerTab: "menu"`).
 The hub is a **node page** (`NodePage`, see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)):
 its header shows a **left** back arrow returning to `/menu`, it keeps the floating
@@ -387,7 +387,7 @@ content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
 The frame routes are every `routeMeta` row with `shell: "frame"` — the four footer tabs
-(`/`, `/menu`, `/discover`, `/dictionary`), their drill-ins, the game routes (generated
+(`/`, `/menu`, `/deck-tower`, `/dictionary`), their drill-ins, the game routes (generated
 from `GAME_REGISTRY`), `/flashcards/learn`, `/settings`, and the legacy redirects
 (`/flashcards/decks`, `/flashcards/mastered`). `src/routes/routeMeta.ts` is the list.
 
@@ -415,7 +415,7 @@ the footer tabs + the Menu hub):
 
 Rules of thumb:
 
-- Footer-tab hubs (Flashcards/Decks, Discover, Home, Account) → use
+- Footer-tab pages (Home, Menu, Deck, Dictionary) → use
   `MobileDemoHeader` inside `MobileTabScreen`; pass `title` and optional
   `headerExtraActions`. (There is no `activePage` any more — A2b removed the
   header's tab badge, its only reader.)
@@ -1262,7 +1262,7 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 
 ## Files
 
-- `src/components/MobileFooter.tsx` — footer tabs (Home / Menu / Discover / Dictionary)
+- `src/components/MobileFooter.tsx` — footer tabs (Home / Menu / Deck / Dictionary)
 - `src/components/MobileDemoFrame.tsx` — shared phone-frame container
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)

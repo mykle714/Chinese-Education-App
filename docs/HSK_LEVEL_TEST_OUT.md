@@ -37,6 +37,11 @@ one transaction, and the action must be reversible.
 
 ## 2. Where it lives (navigation)
 
+> ⚠️ **The dp this section proposes was deleted 2026-10-17** (`/discover` is no longer
+> a route; Sort Cards is a Home drill-in — [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The
+> placement below is therefore open again and should be re-decided before building;
+> the `/discover/test-out` paths would now be orphaned under a prefix with no hub.
+
 Proposed: a **Bento tile on the discover hub (dp)** — "Test out of a level" — leading to
 a Node page `/discover/test-out` that lists the six levels with per-level state
 (*available* / *passed on <date>* / *locked until <date>*), each opening the Leaf test

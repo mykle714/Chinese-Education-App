@@ -743,8 +743,10 @@ dragging is most needed.
 owns its gestures.
 
 **Empty map:** since the map lends to stay full (§ 2.1), the empty state —
-*"Your map is empty — sort some cards and they'll appear here"*, with a button to
-`/discover` — is now reachable only when the dictionary has nothing left to lend.
+*"Your map is empty — sort some cards and they'll appear here"*, with a "Find words" button that
+goes straight to Sort Cards (`useDiscoverNavigation` → `goToSort`, in
+`src/games/memory-map/MemoryMapPage.tsx`; it pointed at the `/discover` hub until that
+hub was deleted 2026-10-17) — is now reachable only when the dictionary has nothing left to lend.
 
 ---
 
@@ -907,7 +909,7 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Q21 | Hub collection selector | **Ignored, and the game is hidden from the hub** unless All Cards is selected (§ 10) |
 | Q22 | Pause on background | **Skipped**, with the reason documented (§ 10) |
 | Q23 | Colour-blind redundancy | **None** — hue only, accepted knowingly (§ 3.3) |
-| Q24 | Empty map | **Empty state pointing at `/discover`** (§ 6) — now reachable only when nothing can be lent |
+| Q24 | Empty map | **Empty state pointing at `/discover`** (§ 6) — now reachable only when nothing can be lent. *(The CTA now goes straight to Sort Cards via `goToSort`; the `/discover` hub was deleted 2026-10-17.)* |
 | Q25 | Header during a run | **Progress count + gear → Restart**, behind a confirm (§ 6) |
 | Q26 | Tapping a finished word | **Opens a definition popup, any time, free** (§ 3.4) |
 | Q27 | Performance ceiling | **Cap the map at 100 words** (lowered to 70, then 49, then 50, all on 2026-10-06) — which removes the need for culling (§ 2.2, § 7) |

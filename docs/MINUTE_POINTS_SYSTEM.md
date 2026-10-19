@@ -237,7 +237,7 @@ seconds before the first tap; a scene is read for much longer than that, and its
 the learner's involvement explicit, so the ordinary first-interaction gate applies.
 
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
-(Home (the fdp), Menu, Discover, Games), the deck/collection browsers and the mastery
+(Home (the fdp), Menu, Games), the deck/collection browsers and the mastery
 centers. They still show the flame — solid orange with the count, in the badge's
 off-study mode (it was grey with a frozen fill level until 2026-08-28).
 

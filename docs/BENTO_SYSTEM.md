@@ -1,9 +1,10 @@
 # Bento System
 
-Shared menu primitive (`src/components/bento/`) behind the app's hubs: the two
-footer-tab hubs `src/pages/MenuPage.tsx` (`/menu`, the Menu tab) and
-`src/features/discover/DiscoverPage.tsx` (`/discover`), plus the drill-in hub
-`src/games/GamesPage.tsx` (`/games`). The Menu bento was the Home tab (`/`,
+Shared menu primitive (`src/components/bento/`) behind the app's hubs: the footer-tab
+hub `src/pages/MenuPage.tsx` (`/menu`, the Menu tab), plus the drill-in hubs
+`src/games/GamesPage.tsx` (`/games`) and `src/features/friends/FriendsPage.tsx`
+(`/friends`). The Discover hub (`/discover`, `DiscoverPage`, a one-tile Bento) was
+deleted 2026-10-17 — Sort Cards is now reached from Home ([DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The Menu bento was the Home tab (`/`,
 `HomePage.tsx`) until 2026-10-10, when Home and Menu swapped contents — Home is now
 the decks page (see [NAVIGATION.md](./NAVIGATION.md)).
 
@@ -176,7 +177,6 @@ control" meaning the strip header had.)*
 | Page | Shape |
 |---|---|
 | **Menu** (`src/pages/MenuPage.tsx` → `MenuPage`, tiles typed `MenuTile`) | Night Market `hero` (`pur`, flagged off); Games (`blu`) / Arena (`yel`) / **Immersive World** (`red`) / Reader (`pur`) `base`; Friends (`grn`) / Community (`org`) `low`, in that order. **One hue per live main tile:** the six live tiles each get a different one of the six tile hues. **No two warm hues (`yel`/`red`/`org`) share an edge:** they sit in a checkerboard on the 2-column grid (Arena top-right, Immersive World middle-left, Community bottom-right). Turning off a flagged tile moves every tile after it, so check the pattern again when a flag changes. Night Market would share `pur` with Reader if it were turned back on. There is no Dictionary tile, because Dictionary is a footer tab. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.home-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isValidator` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`red`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
-| **Discover** (`src/features/discover/DiscoverPage.tsx`) | Sort Cards `hero`; Quick Mark `base` + `fullWidth` (it owns its row). No Skipped Cards tile — skipped cards are reached only through scp's hidden skipped-cards sheet (docs/SORT_CARDS_REQUIREMENTS.md §5.1a). |
 | **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; EVERY game is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (the Reading Center carousel's card, drawn on `CardShell`), Match Speed / Hydra Bubbles / Memory Map as half-width `variant="tile"` (a `BentoTile`). Speed Reading is hub-hidden. |
 | **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 
@@ -208,11 +208,6 @@ ramp), via `buildBubbleMatchCard`.
   deleted 2026-08-22); since 2026-10-03 the hub tiles are name-only, so a player cannot
   see which track a game trains without opening it. `GameDef.markType` still drives
   the mark call and challenge eligibility.
-* **Discover's tile pins and its "Waiting to be sorted" shelf are not built.**
-  Artboard 3 draws `184 waiting` / `31` pins and a four-spine shelf beneath the grid.
-  There is no client-side count of unsorted or skipped cards — `useCategoryCounts`
-  counts the user's library by band, a different number. Both want one endpoint
-  returning the unsorted queue counted by band.
 * **`CollectionChip` shows no card count.** The artboard's `1,284` has no source in
   the current data flow.
 

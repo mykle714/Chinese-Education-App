@@ -119,7 +119,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     footerTab: "home",
     note: "Legacy path of the fdp, which became Home (`/`) on 2026-10-10 — redirects there so older links and bookmarks keep working.",
   },
-  { path: "/discover", access: "any", shell: "frame", chrome: "tab", footerTab: "discover" },
   { path: "/dictionary", access: "any", shell: "frame", chrome: "tab", footerTab: "dictionary" },
 
   // ── Node pages (slide from the right) ──
@@ -189,9 +188,10 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary" },
 
-  // Discover drill-ins.
-  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
-  { path: "/discover/quick-mark/:language", access: "any", shell: "frame", chrome: "node", footerTab: "discover" },
+  // Sort Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so scp is a
+  // drill-in from Home (the decks rail's Sort shortcut) and lights the Home tab. The
+  // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
+  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
 
   // ── Leaf pages (slide up, no footer) ──
   { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },
@@ -266,6 +266,15 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "leaf",
     note: "One scene, running. A LEAF: the down-arrow is the only way out, and the page owns its whole surface (canvas + bubbles + composer). No footer — a walkable board must not lose its bottom rows to one.",
+  },
+
+  {
+    path: "/deck-tower",
+    access: "any",
+    shell: "frame",
+    chrome: "tab",
+    footerTab: "deck",
+    note: "Experimental: the Learn Now deck as an isometric card tower, in the \"Good Job!\" art style (docs/DECK_TOWER.md). The footer's Deck tab — it took Discover's slot 2026-10-17.",
   },
 
   {

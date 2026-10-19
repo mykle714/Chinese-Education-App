@@ -762,7 +762,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
 
 **Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
 `VocabCardDetailPage`, `DictionaryCardDetailPage`, `CollectionViewPage`,
-`UserProfilePage`, `QuickMarkPage` and `SortCardsPage` header slots. They should
+`UserProfilePage` and `SortCardsPage` header slots. They should
 become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 
 **Code:** `src/components/PageHeader.tsx` → `PageHeader`, `Header`, `BackGroup`,
@@ -1741,9 +1741,18 @@ styled components and `studyButtonBase`.
 
 ## 3 · Discover — `/discover` — **Size: TBD**
 
-**Status: DONE (2026-08-21) — the MENU only.** Converted at the user's explicit
+**Status: PAGE DELETED (2026-10-17).** `DiscoverPage` and the `/discover` route are
+gone; with its last other tile folded into scp it was a one-tile hub, so Sort Cards
+became a Home drill-in (decks rail Sort shortcut, back arrow → `/`; see
+[DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The outstanding pins/shelf items below no longer
+have a screen to live on — any "waiting to be sorted" count would now belong on the decks
+rail's Sort tile or inside scp. Everything below is the entry's history.
+
+**Earlier status: DONE (2026-08-21) — the MENU only.** Converted at the user's explicit
 instruction, overriding the D11 block. Sort Cards is the `hero`, Quick Mark and
-Skipped Cards are base tiles; hues and glyphs are artboard 3's.
+Skipped Cards are base tiles; hues and glyphs are artboard 3's. (Both tiles have since
+been removed — Skipped Cards 2026-10-12, Quick Mark 2026-10-17, each folded into scp — so
+the hub now carries only the Sort Cards hero; see DISCOVER_FLOW.md.)
 
 **⚠️ Two pieces of artboard 3 are NOT built, because the data does not exist
 client-side:**
@@ -1780,8 +1789,8 @@ for the unsorted queue, any version of this page carrying that shelf is gated on
 server change. Worth confirming before the new design is finalized, so the design
 isn't drawn around data that doesn't exist.
 
-**Code:** `src/features/discover/DiscoverPage.tsx`;
-`src/hooks/useDiscoverNavigation.ts`; `src/hooks/useCategoryCounts.ts`.
+**Code:** `src/features/discover/DiscoverPage.tsx` (deleted 2026-10-17);
+`src/hooks/useDiscoverNavigation.ts` (now `goToSort` / `sortPath` only); `src/hooks/useCategoryCounts.ts`.
 **Docs:** `docs/DISCOVER_FLOW.md`, `docs/QUICK_MARK.md`, `docs/SORT_CARDS_REQUIREMENTS.md`.
 
 ## 4 · Games — `/games` — **Size: L**
@@ -2051,6 +2060,14 @@ row question.
 component, so it changed too: its 8px inter-row gap was removed (a `.dr` separates with
 its own hairline, and a gap leaves those hairlines floating) and it passes `inset={4}`,
 the row's one styling prop, so text inside an already-inset panel is not twice-indented.
+
+**Tapping the Chinese headword copies it instead of opening the entry.** The Dictionary
+page's rows pass `headwordTapToCopy`, which turns on `ForeignText`'s `tapToCopy` for the
+headword (characters first, pinyin on the next tap — the same behaviour as the eip
+header headword) and stops that tap at `.dictionary-entry-row__headword-block` so it never
+reaches the row's `<button>`. The gloss and chevron still open the entry. The Compare
+slot-B search leaves it off: there the row is a picker, and a tap anywhere means "choose
+this word". Spanish rows ignore it (ForeignText's plain branch has no tap-to-copy).
 
 **Code:** `src/features/dictionary/DictionaryPage.tsx` → `FULL_BLEED_LIST_SX`;
 `src/components/DictionaryEntryRow.tsx`; `src/components/PinyinKeypad.tsx` →
@@ -3366,7 +3383,8 @@ Nothing blocking. Two things to confirm *while building*, not before:
 - **Per-bucket queue counts** — whether the discover endpoints return the unsorted
   queue split by progress bucket. Parked under D11 until the new Discover design
   lands; worth answering before that design is finalized so it isn't drawn around
-  data that doesn't exist.
+  data that doesn't exist. *(The Discover hub was deleted 2026-10-17 — see entry 3 — so this
+  now applies only to a count on the decks rail's Sort tile or inside scp.)*
 - **The D10 primitive assignments** — each is a starting read, not a ruling.
 
 # Suggested order

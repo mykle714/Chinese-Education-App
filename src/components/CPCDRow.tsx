@@ -104,7 +104,8 @@ interface CPCDRowProps {
     // characters first ("Characters Copied!"), then the pinyin ("Pinyin Copied!"), then
     // back. A row with no pinyin at all only ever copies characters. Defaults to false:
     // most cpcd surfaces already own the tap (flip the card, select a segment), so this
-    // is opt-in per call site — currently the eip header headword only.
+    // is opt-in per call site — the eip header headword and the Dictionary page's
+    // search-result headwords (DictionaryEntryRow.headwordTapToCopy).
     tapToCopy?: boolean;
     // Optional override for the CHARACTER glyph color only (the per-card Contrast
     // setting on the flashcard — see docs/CARD_ICON_LAYOUT.md). The pinyin overlay is

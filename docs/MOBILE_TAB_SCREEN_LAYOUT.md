@@ -19,9 +19,9 @@ pages don't re-implement (or drift from) them.
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header component hierarchy.
    - **Every scrollable content page must use `MobileTabScreen`** so this stays
      consistent. Today that is `/` (Home — the fdp, `FlashcardsDecksPage` inside
-     `HomePage`), `/menu` (Menu hub), `/discover` (Discover hub), `/dictionary`
-     (Dictionary), and `/games` (Games hub).
-     The four footer tabs are Home / Menu / Discover / Dictionary (Account is
+     `HomePage`), `/menu` (Menu hub), `/dictionary` (Dictionary), and `/games`
+     (Games hub); `/deck-tower` (Deck) also mounts it, with `scrollable={false}`.
+     The four footer tabs are Home / Menu / Deck / Dictionary (Account is
      no longer a page — it is `AccountSheet`, raised over Home); Games is a
      drill-in from the Menu. Games (and the Mastered page) are **node pages** —
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +

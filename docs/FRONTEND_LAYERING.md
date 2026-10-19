@@ -89,7 +89,7 @@ into every user's main chunk; it now lives in
 > feature boundary.
 
 `src/pages/` is **not** "where pages live". A page belongs to its feature; the
-Discover, Dictionary, Games and Community pages all sit in their feature folders. What
+Sort Cards, Dictionary, Games and Community pages all sit in their feature folders. What
 survives in `src/pages/` is the handful of pages that belong to no feature.
 
 **Why this specific test, and not "pages here, parts there".** The old split was by
@@ -236,7 +236,7 @@ through a wrapper that depends on it, so its raw `fetch` calls stay.
 ### 3.3 API paths are camelCase
 
 `/api/starterPacks/...`, `/api/nightMarketTemplates/...`, `/api/users/displaySettings`.
-User-facing SPA URLs are kebab-case (`/discover/quick-mark/:language`) and are unrelated
+User-facing SPA URLs are kebab-case (`/deck-tower`, `/tester-dashboard`) and are unrelated
 to API paths. A client API module must stay in step with its `server/routes/*.ts` file —
 these are the two halves of one contract with no compiler linking them.
 

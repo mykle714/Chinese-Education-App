@@ -325,7 +325,7 @@ function DictionaryPage() {
                                 )}
                                 <Box className="dictionary-page__segment-exact-list" sx={FULL_BLEED_LIST_SX}>
                                     {group.exactEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} />
+                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy />
                                     ))}
                                 </Box>
                             </Box>
@@ -344,7 +344,7 @@ function DictionaryPage() {
                                 />
                                 <Box className="dictionary-page__segment-prefix-list" sx={FULL_BLEED_LIST_SX}>
                                     {group.prefixEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} />
+                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy />
                                     ))}
                                 </Box>
                             </Box>
@@ -365,6 +365,7 @@ function DictionaryPage() {
                             entry={entry}
                             onClick={handleEntryClick}
                             language={userLanguage}
+                            headwordTapToCopy
                         />
                     ))}
                 </Box>
@@ -421,6 +422,9 @@ function DictionaryPage() {
             showSynonymsRelated
             showWordTools
             showLearnNow
+            // A lookup is the whole point of this page, so the result opens tall — and a
+            // downward drag/fling clips back to this 90% rather than to the usual 60%.
+            defaultHeightRatio={0.9}
         />
         </MobileTabScreen>
     );

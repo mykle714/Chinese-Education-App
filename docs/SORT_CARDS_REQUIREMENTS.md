@@ -322,6 +322,97 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   scp exposes no toggle of its own — the panel is a
   read-only detour, not a second settings surface.
 
+### 4.8 Expanding the platform into the Quick Mark grid
+
+The on-deck platform can be **maximized** into Quick Mark, the bulk-triage grid
+([QUICK_MARK.md](./QUICK_MARK.md) owns the grid; this section owns how scp hosts it).
+Quick Mark has no page or hub tile of its own any more (deleted 2026-10-17): this is the
+only way in.
+
+- **Open — the ⊞ button** (`sort-cards__expand-button`, Material Symbol `apps`) sits
+  beside "skip" in `OnDeckToolbar`, the same 24px height and quiet ink. Only a press
+  opens it. A drag-up handle was considered and dropped. Hidden in set mode (§5.2.1):
+  a fixed set is not an open-ended supply to bulk-triage.
+- **Close — the ✕** in the panel header's right slot (the shared `SheetCloseX`). The
+  page header (back arrow, audio chip, Undo) is covered while the panel is open, so the
+  ✕ is the only way out of it.
+- **Coverage — maximized.** Fully open, the panel covers the whole frame: the NodePage
+  header, level bar, tallies, buckets and platform. It paints the page ground
+  (`COLORS.background`, MobileTabScreen's default `surfaceColor`) with square corners,
+  so it reads as a page, not a sheet. Like a maximized `SheetPanel` it ends **headed**: a
+  real `PageHeader` titled "Quick Mark" (no back chevron) with the close cluster — the
+  minute-points flame (scp's own is covered) and the ✕ — in its right slot, and
+  `SAFE_TOP` padding on the panel surface.
+  It runs down under the floating footer pill, exactly as the platform does.
+- **Contents.** The full Quick Mark supply at one level, with the on-deck pack's
+  **still-unsorted cards pinned first**. Pre-sorted (locked) cards and cards already
+  resolved this session stay on the platform. The grid opens at the dropdown's pinned
+  level, or the on-deck pack's own `level` when the dropdown is on Auto.
+- **The morph** (`QuickMarkPanel.tsx`). Opening is deliberately slower than closing
+  (`EXPAND_MS` 620 vs `COLLAPSE_MS` 340): it is a change of mode, the close a way back.
+  The panel grows up out of the platform: a clip-path inset starts at the platform's top
+  edge and opens to the top of the frame, its 20px top corners squaring off and its fill
+  shifting from the platform's white to the page ground (`slabFrame` → `PAGE_FRAME`).
+  Each pinned card flies from its slot (`CardWell[data-sort-card-id]`) into its cell on
+  a `MorphGhost` (a compact face grows into the regular one), the 4th card of a 4-card
+  pack straight into its row-2 cell (`startExpandFlights`). The rest of the panel's
+  cards **pop in** with the grid's stagger as it grows: the preloaded supply (next
+  bullet) — the cards in the grid at mount (`mountCardIdsRef`) — starts with the content
+  fade (`SUPPLY_POP_START_MS`) and steps `SUPPLY_POP_STAGGER_MS` per card. Without a
+  preload the supply pops in with the grid's own stagger when its fetch lands. Closing
+  plays the clip backwards (back to a white, rounded slab): every pinned card still
+  unsorted flies from its cell back to its slot. The panel and
+  its ghosts unmount on the same frame, uncovering the real cards beneath. Reduced
+  motion skips all of it.
+- **Preload** (`src/features/discover/useQuickMarkPreload.ts` → `useQuickMarkPreload`).
+  While the panel is closed and a pack is on deck, scp keeps the grid's FIRST supply
+  page fetched in the background for the level the panel would open at (the dropdown's
+  pin, else the on-deck pack's level), 800ms after the last trigger so it never competes
+  with a pack's own fetch and entrance. One page per level, not one per pack: words the
+  platform resolved since the fetch (`doneRef`, via `isResolvedAnywhere`) and every card
+  of the opening pack are filtered out when `handleOpenQuickMark` takes it. It is
+  refetched when the level changes, when that filter would leave fewer than 15 cards
+  (and more pages exist), and after a close on which the grid sorted supply words
+  (`invalidate`). With no usable page for that level the grid fetches at open as
+  before. The taken page rides `quickMark.seed` → `QuickMarkPanel.supplySeed` →
+  `useQuickMarkGrid`'s `seed`, which mounts the grid full and resumes paging from the
+  seed's cursor.
+- **A pinned card is still a pack card.** Its swipe goes through `handleSortCard` (via
+  `handleSortPinned`), so it leaves a crater, feeds the pack's §6.2 signal, credits the
+  tally, joins the §4.6 Undo stack and, when it is the pack's last card, completes the
+  pack. Its grid toast-undo is the scp Undo (`handleUndoPinned`, which only acts when
+  that card is the stack's top). Swiping a supply card writes `sortCard({ packId: null })`
+  inside the grid and only moves the tally (`handleSupplySorted` /
+  `handleSupplyUnsorted`). Supply swipes are **not** on the scp Undo stack: after
+  closing, only pinned-card sorts can be undone from the header.
+- **What runs while it is open.** A pack that completes in the grid advances
+  normally underneath, with no pack-exit overlay (`advancePack` checks
+  `quickMarkOpenRef`). Autoplay narration stops on open (`handleOpenQuickMark`); a pack
+  that lands while the panel is open is narrated when it closes
+  (`deferredNarrationKeyRef` → `narrationEpoch`).
+- **Level change in the panel** also pins scp's dropdown (`onPickLevel` = `setSelectedLevel`):
+  a normal §6.6 level switch, so the on-deck pack is replaced. The grid reloads at that
+  level **unpinned**. The panel stays mounted through the refetch's spinner branch
+  because every branch passes it as the same NodePage `overlay`.
+- **On close** (`handleCollapseQuickMark`):
+  - Supply words sorted in the grid are stripped from any queued pack still holding
+    them. A buffered pack left empty is dropped; the on-deck pack itself is never
+    emptied.
+  - If the pack on deck is not the one the panel opened from, `dockEpoch` re-keys its
+    slots so it plays its §4.1 "dock" entrance now, in view.
+- **Stacking.** The panel lives in NodePage's `overlay` slot (a sibling of the
+  scroll area, whose `touch-action: none` would forbid the grid's vertical pan), at
+  z 1100: above the page header and the on-deck cards' 1000, and below the eip (1200+), which a card tap opens
+  over it. It stays inside the Surface's stacking context, so the frame-level footer
+  still floats above it.
+- Client implementation: `src/features/discover/SortCardsPage.tsx` → `quickMark`
+  state, `useQuickMarkPreload` (`takeQuickMarkPreload` / `invalidateQuickMarkPreload`), `isResolvedAnywhere`, `handleOpenQuickMark`, `handleSortPinned`, `handleUndoPinned`,
+  `handleSupplySorted`, `handleSupplyUnsorted`, `handleCollapseQuickMark`,
+  `getPlatformRect`, `getSlotRect`; `src/features/discover/QuickMarkPanel.tsx` →
+  `QuickMarkPanel`, `MorphGhost`; `src/features/discover/useQuickMarkGrid.ts` →
+  `useQuickMarkGrid`; `src/features/discover/useQuickMarkPreload.ts` →
+  `useQuickMarkPreload`.
+
 ---
 
 ## 5. Sort destinations and Skip
@@ -489,6 +580,7 @@ loaded baseline (before any sort):
   cards it skips). It sits in its own slim in-flow row (`OnDeckToolbar`) above the cards
   rather than overlaying the corner, because the per-card header bands would collide with
   it. The intent is to **de-emphasize** skipping as an option.
+- The same row holds the ⊞ expand button to Skip's left (§4.8).
 - Client implementation: `src/features/discover/SortCardsPage.tsx` → `OnDeckToolbar`,
   `handleSkipPack`.
 - Pressing Skip **defers all remaining unsorted cards in the current pack** at once,
@@ -652,6 +744,10 @@ the user **chooses** to bring it back, in one of three ways:
 - A level switch is **exempt** from §6.5's "must not disturb the on-deck card" rule: it
   is an explicit user action, and it is acceptable (expected) for it to replace the
   on-deck pack with one matching the newly-selected level.
+- The Quick Mark panel's level chip (§4.8) is a second trigger for the same switch: a
+  pick there sets this dropdown to that level.
+- The level list itself is `src/features/discover/difficultyLevels.ts` →
+  `DIFFICULTY_LEVELS` (shared with the panel); the dropdown adds Auto on top.
 - Client implementation: `src/features/discover/SortCardsPage.tsx` — `autoLevelRef` (running
   target) and `packBucketsRef` (per-pack bucket outcomes this session, from which
   `applyPackSignal` derives the pack's one ±1 signal — there is no streak/threshold
@@ -666,9 +762,9 @@ the user **chooses** to bring it back, in one of three ways:
 
 ---
 
-## 6.6 Client API module — `src/features/discover/starterPacksApi.ts`
+## 6.7 Client API module — `src/features/discover/starterPacksApi.ts`
 
-Both Discover pages (`SortCardsPage.tsx`, `QuickMarkPage.tsx`) and scp's
+scp (`SortCardsPage.tsx`), its Quick Mark grid (`useQuickMarkGrid.ts`) and its
 `SkippedCardsSheet.tsx` reach the server through this one module. It exports
 `fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` / `undoSort` /
 `fetchSkippedCards` / `recycleSkips` / `recycleSkip` / `fetchQuickMarkPage`.
@@ -762,3 +858,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     skipping the pack, its outline tracing over the hold; nothing at rest advertises the
     gesture, and it is the only way to reach skipped cards. Holding a card in the sheet
     for 1.5 s recycles it; tapping it opens the eip.
+20. **Quick Mark expand:** the ⊞ button maximizes the platform into the Quick Mark grid
+    with the on-deck pack's unsorted cards first; swiping one of those counts exactly as
+    a bucket drop (crater, tally, Undo, pack completion). The ✕ returns every still-unsorted
+    pinned card to its slot, and a pack that replaced the pinned one docks in on close.

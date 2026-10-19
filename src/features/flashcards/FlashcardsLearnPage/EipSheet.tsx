@@ -56,10 +56,13 @@ interface EipSheetProps {
     // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
+    // Open height (and the stop a downward drag/fling clips back to) as a fraction of the
+    // frame — forwarded to SheetPanel's `defaultHeightRatio`. Omitted = 0.6. Dictionary: 0.9.
+    defaultHeightRatio?: number;
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow, depth = 0,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -87,6 +90,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     onUsedInItemClick={(item) => { void eip.openForEntryKey(item.entryKey); }}
                     onExampleSegmentClick={(segment) => { void eip.openForEntryKey(segment); }}
                     depth={depth}
+                    defaultHeightRatio={defaultHeightRatio}
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}

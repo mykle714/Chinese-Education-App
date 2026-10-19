@@ -73,6 +73,21 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
     leaf: { padTop: 27, padBottom: 8, padX: 18, titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
 };
 
+/**
+ * The header title's type style at a given size — face, weight, size, tracking and
+ * leading, but NOT colour (the header sets ink; a page drawing its own title over a
+ * coloured ground sets its own). Shared so a page-owned title can use the app's header
+ * voice without copying the numbers. Depended on by: PageHeader (below) and
+ * src/features/deckTower/DeckTowerPage.tsx (its floating "Learn Now" title).
+ */
+export const pageHeaderTitleTypeSx = (size: PageHeaderSize) => ({
+    fontFamily: FONTS.sans,
+    fontSize: SIZE_SPEC[size].titleSize,
+    fontWeight: WEIGHT.semibold,
+    letterSpacing: SIZE_SPEC[size].titleTracking,
+    lineHeight: LEADING.tight,
+});
+
 // THE SAFE-AREA TOP INSET LIVES HERE, once, for every header in the app.
 //
 // `index.html` ships `viewport-fit=cover` + `apple-mobile-web-app-status-bar-style:
@@ -179,12 +194,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         <Typography
             className="page-header__title"
             sx={{
-                fontSize: spec.titleSize,
-                fontWeight: WEIGHT.semibold,
-                letterSpacing: spec.titleTracking,
-                lineHeight: LEADING.tight,
+                ...pageHeaderTitleTypeSx(resolvedSize),
                 color: COLORS.onSurface,
-                fontFamily: FONTS.sans,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",

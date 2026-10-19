@@ -49,6 +49,13 @@ interface SheetPanelProps {
     // 0 → natural-content height. Used by child panels stacked on top of a
     // parent so they appear at the same vertical extent.
     initialHeight?: number | null;
+    // Open height as a FRACTION of the frame (default DEFAULT_HEIGHT_RATIO, 0.6). Unlike
+    // `initialHeight` (a px value copied from a parent panel) this is a host's standing
+    // choice of how tall its sheet opens — the Dictionary page opens at 0.9. It is also
+    // the RESTING STOP: on the way down the sheet clips back to this height (release
+    // snap, and a downward fling's momentum floor), and only a drag below it dismisses.
+    // Ignored when `initialHeight` is given or the panel is persistent (minHeight > 0).
+    defaultHeightRatio?: number;
     // Re-open ALREADY at this height, with no 0 → height animation and no scrim fade-in:
     // the sheet as it was when the learner left the page, for a Back restore
     // (src/features/flashcards/backRestore.ts). Unlike `initialHeight` it does NOT move the
@@ -247,9 +254,18 @@ function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: numb
 // reacts to a given gesture (touch is already top-only via DOM hit-testing).
 const mountedDepths = new Set<number>();
 
+// Module-level stack of the DISMISSIBLE (non-persistent) panels currently open, in mount
+// order. Escape closes only the last entry — the panel the user opened most recently,
+// which is the one on top. Kept separate from `mountedDepths` on purpose: that set is
+// keyed by depth and includes persistent sheets (the /decks sheet), so two panels at the
+// same depth, or a persistent sheet that owns no closed state, would make "topmost"
+// ambiguous for a key press. A token per panel keeps the stack identity-exact.
+const escapeStack: symbol[] = [];
+
 const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
+    defaultHeightRatio = DEFAULT_HEIGHT_RATIO,
     restoreHeight,
     minHeight = 0,
     showScrim = true,
@@ -508,6 +524,50 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         }, SNAP_DURATION_MS + 20);
     }, [persistent, stopMomentum, writeHeight]);
 
+    // Latest onCloseX, read by the Escape listener without re-binding it.
+    const onCloseXRef = useRef(onCloseX);
+    onCloseXRef.current = onCloseX;
+
+    // The ✕'s close request, shared by the ✕ tap and the Escape key so keyboard and
+    // pointer behave identically. `onCloseX` returning TRUE means the host handled it
+    // (the eip dropped a word off its trail) and the panel stays; otherwise dismiss.
+    const requestClose = useCallback(() => {
+        if (onCloseXRef.current?.() === true) return;
+        dismiss();
+    }, [dismiss]);
+
+    // Escape = the ✕ (desktop). Only the most recently opened dismissible panel reacts
+    // (see `escapeStack`), and a persistent panel never registers — it has no closed
+    // state. Deliberately fires even while focus is in a text field inside the sheet
+    // (the Compare tab's search box): one press closes, as in most web modals.
+    // Skipped when:
+    //   - the key is auto-repeating — holding Escape would otherwise strip the eip's
+    //     whole word trail in a blink;
+    //   - an IME composition is in progress — Escape there cancels the composition;
+    //   - the event comes from inside an MUI Modal/Dialog (z 1300, above every sheet),
+    //     which owns its own Escape-to-close. MUI does not stop propagation, so without
+    //     this a single press would close the dialog AND the sheet beneath it.
+    // Docs: docs/EIP_SHEET_GESTURES.md § Escape key (desktop).
+    useEffect(() => {
+        if (persistent) return;
+        const token = Symbol("sheet-panel");
+        escapeStack.push(token);
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== "Escape" || e.repeat || e.isComposing) return;
+            if (escapeStack[escapeStack.length - 1] !== token) return;
+            if (dismissingRef.current) return;
+            if ((e.target as Element | null)?.closest?.(".MuiModal-root")) return;
+            e.preventDefault();
+            requestClose();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            const i = escapeStack.indexOf(token);
+            if (i !== -1) escapeStack.splice(i, 1);
+        };
+    }, [persistent, requestClose]);
+
     // The one release rule, shared by every path that ends a gesture (grabber
     // drag release, touch release, momentum decay, momentum hitting a stop).
     const settle = useCallback(() => {
@@ -551,12 +611,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         //   1. explicit initialHeight (a child panel matching its parent's extent)
         //   2. the floor, for a persistent panel — it is already "closed", so
         //      there is no open animation to play and no default stop to grow to
-        //   3. the modal default fraction of the screen
+        //   3. the modal default fraction of the screen (the host's `defaultHeightRatio`)
         const targetHeight = initialHeight != null
             ? Math.min(initialHeight, parentH * MAX_HEIGHT_RATIO)
             : persistent
                 ? Math.min(minHeight, parentH * MAX_HEIGHT_RATIO)
-                : parentH * DEFAULT_HEIGHT_RATIO;
+                : parentH * clamp(defaultHeightRatio, 0, MAX_HEIGHT_RATIO);
         defaultHeightRef.current = targetHeight;
         if (restoreAtMount !== null && !persistent) {
             // A Back restore: already at the height the learner left it, from the first
@@ -946,14 +1006,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const closeCluster = (
         <>
             {showMinutePoints && depth === 0 && <MinutePointsFireBadge />}
-            <SheetCloseX
-                onClick={() => {
-                    // TRUE means the handler dealt with it (the eip dropped a word off the
-                    // trail) and the panel stays.
-                    if (onCloseX?.() === true) return;
-                    dismiss();
-                }}
-            />
+            <SheetCloseX onClick={requestClose} />
         </>
     );
 

@@ -262,6 +262,9 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
   → `POST /sort`; on success remove from the local list. No detail-page navigation.
 
 ### 5.4 Navigation wiring
+> **Superseded:** removed with §5.3 (2026-10-12), and `DiscoverPage` itself was deleted
+> 2026-10-17 — scp is now a Home drill-in (docs/DISCOVER_FLOW.md). Kept as the build record.
+
 - `src/hooks/useDiscoverNavigation.ts`: add `skippedPath` = `/discover/skipped/{language}`
   + `goToSkipped()`.
 - `src/features/discover/DiscoverPage.tsx`: add a "Skipped Cards" `HubMenuRow` → `skippedPath`.

@@ -16,6 +16,10 @@ import FrequencyScoreDots from "../../components/FrequencyScoreDots";
 import SpeakerButton from "../../components/SpeakerButton";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
+import QuickMarkPanel, { type QuickMarkPanelProps } from "./QuickMarkPanel";
+import { useQuickMarkPreload, type QuickMarkSupplySeed } from "./useQuickMarkPreload";
+import { DIFFICULTY_LEVELS, MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL, difficultyLabel as levelLabelFor } from "./difficultyLevels";
+import Icon from "../../components/Icon";
 import { useLongPress } from "../../hooks/useLongPress";
 import HoldProgressRing from "../../components/HoldProgressRing";
 import { quietHaptic } from "../../utils/haptic";
@@ -55,12 +59,9 @@ import { MINI_CARD_DIMENSIONS, MINI_CARD_RADIUS, type MiniCardSize } from "../..
 const MAX_CARDS_PER_PACK = 4;
 const UNDO_DEPTH = MAX_CARDS_PER_PACK;
 
-// Manual HSK/difficulty dropdown levels — mirrors the server's generalized 1..6
-// difficulty scale (StarterPacksService._levelConfig, migration 79) for every
-// language. `null` is the "auto" entry (the adaptive target the client tracks itself).
-const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5, 6];
-const MIN_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[0];
-const MAX_DIFFICULTY_LEVEL = DIFFICULTY_LEVELS[DIFFICULTY_LEVELS.length - 1];
+// Manual HSK/difficulty dropdown levels: DIFFICULTY_LEVELS (./difficultyLevels.ts),
+// shared with the expanded Quick Mark panel. `selectedLevel === null` is the dropdown's
+// extra "auto" entry (the adaptive target the client tracks itself).
 
 // Holding the Skip button this long opens the hidden skipped-cards sheet (§5.1a).
 // Deliberately long: the gesture is undiscoverable by design, and a tap must never
@@ -255,14 +256,16 @@ const OnDeckSection = styled(Box)({
     justifyContent: "center",
 });
 
-// A slim right-aligned row along the platform's top edge holding the Skip action
-// (docs/SORT_CARDS_REQUIREMENTS.md §5.1). In the flow rather than absolutely positioned:
+// A slim right-aligned row along the platform's top edge holding the expand (⊞, § 4.8)
+// and Skip (docs/SORT_CARDS_REQUIREMENTS.md §5.1) actions. In the flow rather than absolutely positioned:
 // the per-card header bands (CardDeckHeader) fill the platform's top strip, so an overlay
 // in the corner would sit on the right-hand card's two-line tier label.
 const OnDeckToolbar = styled(Box)({
     width: "100%",
     display: "flex",
     justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 4,
     paddingInline: 8,
 });
 
@@ -950,6 +953,35 @@ const SortCardsPage: React.FC = () => {
 
     // FIFO queue of PACKS. queue[0] is the on-deck pack; the rest is the buffer.
     const [queue, setQueue] = useState<SortPack[]>([]);
+
+    // ---- expanded Quick Mark panel (docs/SORT_CARDS_REQUIREMENTS.md § 4.8) ----------
+    // Non-null while the on-deck platform is maximized into the Quick Mark grid (the ⊞
+    // button opens it; its ✕ closes it). Captured at the moment of opening:
+    //   - pinned:   the on-deck pack's still-unsorted cards, placed first in the grid;
+    //   - packKey:  that pack — on close, a DIFFERENT pack on deck (the pinned one was
+    //               finished in the grid, or a level change replaced it) docks in fresh;
+    //   - level:    the grid's level when the dropdown is on Auto (the pack's own level);
+    //   - seed:     the preloaded first supply page for that level, if one was ready.
+    const [quickMark, setQuickMark] = useState<{ pinned: DiscoverCard[]; packKey: string; level: number; seed: QuickMarkSupplySeed | null } | null>(null);
+    const quickMarkOpen = quickMark !== null;
+    // Read synchronously by advancePack (no pack-exit overlay under the panel) and the
+    // autoplay effect, which run from closures that may predate the latest render.
+    const quickMarkOpenRef = useRef(false);
+    quickMarkOpenRef.current = quickMarkOpen;
+    // Supply (non-pack) cards sorted in the grid this expansion. On close they are
+    // stripped from any queued pack still holding them — a pack fetched before the grid
+    // sort would otherwise put an already-sorted word back on deck.
+    const gridSortedIdsRef = useRef<Set<number>>(new Set());
+    // Bumped on close when the pack on deck is not the one the panel opened from: it
+    // re-keys the slots so that pack plays its "dock" entrance now, in view, instead of
+    // the one it already played unseen under the panel.
+    const [dockEpoch, setDockEpoch] = useState(0);
+    // The platform: where the panel's morph opens from / closes to.
+    const onDeckElRef = useRef<HTMLDivElement | null>(null);
+    // A pack that landed on deck while the panel was open, owed its autoplay narration
+    // once the panel closes; `narrationEpoch` is how the close re-runs that effect.
+    const deferredNarrationKeyRef = useRef<string | null>(null);
+    const [narrationEpoch, setNarrationEpoch] = useState(0);
     // The pack most recently put back on deck by Undo. Its slots (re)mount with the
     // small "rise" entrance instead of the "dock" slide-up from the screen bottom —
     // see EnteringCardSlot. Only ever compared against the on-deck packKey, so it is
@@ -977,6 +1009,7 @@ const SortCardsPage: React.FC = () => {
     const onDeckSectionRef = useCallback((el: HTMLDivElement | null) => {
         dockResizeObserverRef.current?.disconnect();
         dockResizeObserverRef.current = null;
+        onDeckElRef.current = el;
         if (!el) return;
         setDockWidth(el.clientWidth);
         const observer = new ResizeObserver(([entry]) => {
@@ -1140,6 +1173,23 @@ const SortCardsPage: React.FC = () => {
     }, [language, isAuthenticated, selectedLevel, setMode, setWords]);
 
     const currentPack = queue[0];
+    // For the Quick Mark panel's close callback, which fires from an animation that
+    // started a render (or several) ago.
+    const currentPackKeyRef = useRef<string | undefined>(undefined);
+    currentPackKeyRef.current = currentPack?.packKey;
+
+    // The Quick Mark panel's first supply page, kept fetched in the background for the
+    // level it would open at, so the grid opens full (§ 4.8 "Preload"). Words resolved on
+    // the platform are filtered out when the panel takes it.
+    const isResolvedAnywhere = useCallback(
+        (cardId: number) => Object.values(doneRef.current).some((ids) => ids.has(cardId)), []);
+    const { take: takeQuickMarkPreload, invalidate: invalidateQuickMarkPreload } = useQuickMarkPreload({
+        language: language as Language | undefined,
+        level: selectedLevel ?? currentPack?.level ?? null,
+        enabled: !quickMarkOpen && currentPack !== undefined,
+        isExcluded: isResolvedAnywhere,
+        recheckKey: currentPack?.packKey,
+    });
 
     // "dock" entrance stagger (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Pack entrance"):
     // each on-deck card gets one of 0, STEP, 2·STEP, … ms in a random order, drawn once per
@@ -1161,14 +1211,12 @@ const SortCardsPage: React.FC = () => {
         const afterExitMs = leavingPack ? PACK_EXIT_MS : 0;
         currentPack.cards.forEach((card, i) => { delays[card.id] = afterExitMs + steps[i]; });
         return delays;
+    // dockEpoch: closing the Quick Mark panel onto a new pack replays its entrance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey]);
+    }, [currentPack?.packKey, dockEpoch]);
 
     // Difficulty label for a bare level number ("HSK 3" for zh, "Level 3" otherwise).
-    const difficultyLabel = useCallback(
-        (lvl: number) => (language === "zh" ? `HSK ${lvl}` : `Level ${lvl}`),
-        [language]
-    );
+    const difficultyLabel = useCallback((lvl: number) => levelLabelFor(language, lvl), [language]);
     // The chip shows the bare label once the user has pinned a specific difficulty via
     // the dropdown, or just "Auto" — the adaptive target moves per-pack and fluctuates
     // too much to show live (docs §6), so it is never rendered as a number.
@@ -1383,8 +1431,18 @@ const SortCardsPage: React.FC = () => {
     // audio chip. Changing a setting is not a request to hear the pack again; the
     // per-card speaker button is. The guard below reads the flag as it stood when
     // the pack landed, which is the only moment auto-narration is meant to start.
+    //
+    // The Quick Mark panel (§ 4.8) holds narration: opening it stops a run in progress
+    // (handleOpenQuickMark), and a pack that lands while it is open is only marked
+    // (`deferredNarrationKeyRef`); closing onto that pack bumps `narrationEpoch`, which
+    // re-runs this effect then. Closing onto the pack it opened from replays nothing.
     useEffect(() => {
         if (!currentPack) return;
+        if (quickMarkOpenRef.current) {
+            deferredNarrationKeyRef.current = currentPack.packKey;
+            return;
+        }
+        deferredNarrationKeyRef.current = null;
         if (!tts.autoplay) return;
         const run = { stopped: false };
         packAutoplayRunRef.current = run;
@@ -1405,7 +1463,7 @@ const SortCardsPage: React.FC = () => {
             tts.cancel();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey]);
+    }, [currentPack?.packKey, narrationEpoch]);
 
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.
@@ -1431,7 +1489,9 @@ const SortCardsPage: React.FC = () => {
         const row = cardsRowRef.current;
         // Reduced motion: no exit at all (the new pack also appears without its slide).
         const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-        if (attempt === 0 && !reducedMotion && leaving?.packKey === completedKey && rest.length > 0 && row) {
+        // Nor while the Quick Mark panel covers the platform: nobody would see it, and the
+        // replacement docks in when the panel closes (see dockEpoch).
+        if (attempt === 0 && !reducedMotion && !quickMarkOpenRef.current && leaving?.packKey === completedKey && rest.length > 0 && row) {
             exitIdRef.current += 1;
             setLeavingPack({ pack: leaving, rowTop: row.offsetTop, rowHeight: row.offsetHeight, exitId: exitIdRef.current });
         }
@@ -1516,11 +1576,11 @@ const SortCardsPage: React.FC = () => {
     );
     // Leave for the page that opened the offer. `history.state.idx === 0` means this page
     // IS the first entry — deep-linked or reloaded — where navigate(-1) would leave the
-    // app entirely, so fall back to the recorded origin, then to the discover hub.
+    // app entirely, so fall back to the recorded origin, then to Home.
     const exitToOrigin = useCallback(() => {
         const idx = (window.history.state as { idx?: number } | null)?.idx;
         if (idx == null || idx > 0) navigate(-1);
-        else navigate(originPath ?? "/discover");
+        else navigate(originPath ?? "/");
     }, [navigate, originPath]);
     const exitedRef = useRef(false);
     useEffect(() => {
@@ -1718,9 +1778,112 @@ const SortCardsPage: React.FC = () => {
         }
     }, [undoStack, unmarkResolved, adjustTally, language]);
 
+    // ---- expanded Quick Mark panel (§ 4.8) ---------------------------------
+    // Open: snapshot the pack's still-unsorted cards (pre-sorted and resolved ones stay
+    // on the platform as locked cards / craters) and the level the grid opens at — the
+    // dropdown's pin, else the pack's own level, which is what Auto is serving now.
+    // Narration stops: the words it would name are about to fly into a grid.
+    const handleOpenQuickMark = useCallback(() => {
+        const pack = currentPack;
+        if (!pack) return;
+        stopPackAutoplay();
+        ttsRef.current.cancel();
+        gridSortedIdsRef.current = new Set();
+        const pinned = pack.cards.filter((c) => !c.sorted && !isResolved(pack.packKey, c.id));
+        const level = selectedLevel ?? pack.level;
+        setQuickMark({
+            pinned,
+            packKey: pack.packKey,
+            level,
+            // Every card of this pack stays out of the supply: the unsorted ones are
+            // pinned, the rest are already sorted (some possibly still in flight).
+            seed: takeQuickMarkPreload(level, new Set(pack.cards.map((c) => c.id))),
+        });
+    }, [currentPack, isResolved, selectedLevel, stopPackAutoplay, takeQuickMarkPreload]);
+
+    // A pinned (pack) card swiped in the grid IS a sort of the on-deck pack: the same
+    // crater, adaptive-leveling signal, tally credit and Undo entry as a bucket drop.
+    const handleSortPinned = useCallback<QuickMarkPanelProps["onSortPinned"]>((card, bucket) => {
+        void handleSortCard(card.id, bucket);
+    }, [handleSortCard]);
+    // ...and the grid's Undo toast on it is this page's Undo. The panel only ever offers
+    // to undo its LAST swipe, and nothing else can push onto the stack while it is open,
+    // so that card is the stack's top; the check is a guard, not a search.
+    const handleUndoPinned = useCallback<QuickMarkPanelProps["onUndoPinned"]>((card) => {
+        if (undoStack[undoStack.length - 1]?.cardId === card.id) void handleUndo();
+    }, [undoStack, handleUndo]);
+    // A supply card the panel sorted (or un-sorted) itself: only the tally — and the
+    // strip-on-close list — need to know. Every supply card is a brand-new library row
+    // (the Quick Mark supply excludes words with a vet row, as the pack supply does), so
+    // the delta stays exact.
+    const handleSupplySorted = useCallback<QuickMarkPanelProps["onSupplySorted"]>((card, bucket) => {
+        gridSortedIdsRef.current.add(card.id);
+        adjustTally(bucket, 1);
+    }, [adjustTally]);
+    const handleSupplyUnsorted = useCallback<QuickMarkPanelProps["onSupplyUnsorted"]>((card, bucket) => {
+        gridSortedIdsRef.current.delete(card.id);
+        adjustTally(bucket, -1);
+    }, [adjustTally]);
+
+    // Close (the panel's morph has finished). Strip grid-sorted words out of the queue —
+    // never emptying the on-deck pack itself, and dropping a buffered pack only if
+    // nothing is left of it (the next advance refills the buffer). A pack on deck that is
+    // not the one the panel opened from docks in now, and is narrated if it is owed.
+    const handleCollapseQuickMark = useCallback(() => {
+        const opened = quickMark;
+        if (!opened) return;
+        const sortedInGrid = gridSortedIdsRef.current;
+        // The grid's own sorts moved the supply out from under the preloaded page.
+        if (sortedInGrid.size > 0) invalidateQuickMarkPreload();
+        if (sortedInGrid.size > 0) {
+            setQueue((prev) => prev.flatMap((pack, i) => {
+                const cards = pack.cards.filter((c) => !sortedInGrid.has(c.id));
+                if (cards.length === pack.cards.length) return [pack];
+                if (cards.length === 0) return i === 0 ? [pack] : [];
+                return [{ ...pack, cards }];
+            }));
+        }
+        if (currentPackKeyRef.current && currentPackKeyRef.current !== opened.packKey) setDockEpoch((e) => e + 1);
+        if (deferredNarrationKeyRef.current) setNarrationEpoch((e) => e + 1);
+        setQuickMark(null);
+    }, [quickMark, invalidateQuickMarkPreload]);
+
+    // Morph geometry, read live by the panel at open and at close.
+    const getPlatformRect = useCallback(() => onDeckElRef.current?.getBoundingClientRect() ?? null, []);
+    const getSlotRect = useCallback((cardId: number) => {
+        const well = cardsRowRef.current?.querySelector(`[data-sort-card-id="${cardId}"]`);
+        return well ? well.getBoundingClientRect() : null;
+    }, []);
+
+    // The expanded Quick Mark panel (§ 4.8), passed as `overlay` to EVERY NodePage below.
+    // Each branch returns a NodePage at the same position, so React keeps this subtree
+    // mounted across them — a level picked in the panel refetches the packs, which drops
+    // the page into its spinner branch for a moment, and the panel must ride that out
+    // with its grid, scroll and toast intact.
+    const quickMarkPanel = quickMark && language ? (
+        <QuickMarkPanel
+            language={language as Language}
+            level={selectedLevel ?? quickMark.level}
+            // A pick pins this page's dropdown too (a normal level switch: the pack on
+            // deck is replaced, and docks in when the panel closes).
+            onPickLevel={setSelectedLevel}
+            pinnedCards={quickMark.pinned}
+            supplySeed={quickMark.seed}
+            getPlatformRect={getPlatformRect}
+            getSlotRect={getSlotRect}
+            onSortPinned={handleSortPinned}
+            onUndoPinned={handleUndoPinned}
+            onSupplySorted={handleSupplySorted}
+            onSupplyUnsorted={handleSupplyUnsorted}
+            onOpenInfo={handleOpenCardInfo}
+            infoLoadingKey={eipLoadingKey}
+            onCollapsed={handleCollapseQuickMark}
+        />
+    ) : null;
+
     if (loading) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/")} scrollable={false} overlay={quickMarkPanel}>
                 <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="sort-cards__spinner" />
                 </Box>
@@ -1732,7 +1895,7 @@ const SortCardsPage: React.FC = () => {
     // the completion popup rather than falling through to the spinner branch below.
     if (setModeDone) {
         return (
-            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false}>
+            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false} overlay={quickMarkPanel}>
                 <ContentArea className="sort-cards__content sort-cards__content--set-complete">
                     <ProvisionalSortDonePopup
                         sortedCount={resolvedCount}
@@ -1747,7 +1910,7 @@ const SortCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/discover")} scrollable={false}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/")} scrollable={false} overlay={quickMarkPanel}>
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
@@ -1800,7 +1963,12 @@ const SortCardsPage: React.FC = () => {
                         </>
                     )}
                 </CardDeckHeader>
-                <CardWell className="sort-cards__card-well" cardSize={cardSize}>
+                <CardWell
+                    className="sort-cards__card-well"
+                    cardSize={cardSize}
+                    // The Quick Mark panel's morph finds a card's slot by this (live row only).
+                    data-sort-card-id={leaving ? undefined : card.id}
+                >
                     <CardCrater className="sort-cards__card-crater" aria-hidden />
                     {!resolvedHere && (
                         <DraggableCard
@@ -1860,8 +2028,9 @@ const SortCardsPage: React.FC = () => {
     return (
         <NodePage
             title="Sort Cards"
-            onBack={() => navigate("/discover")}
+            onBack={() => navigate("/")}
             scrollable={false}
+            overlay={quickMarkPanel}
             headerExtraActions={
                 <>
                     {/* The APP-WIDE narration audio mode, not a page-local pref. One
@@ -2009,6 +2178,22 @@ const SortCardsPage: React.FC = () => {
                         unsorted card in the on-deck pack. Lives on the platform (not in
                         the NodePage header) so it reads as acting on THESE cards. */}
                     <OnDeckToolbar className="sort-cards__on-deck-toolbar">
+                        {/* Expand (§ 4.8): maximize the platform into the Quick Mark grid,
+                            this pack's cards first. Not in set mode — a fixed set is not
+                            an open-ended supply to bulk-triage. */}
+                        {!setMode && (
+                            <IconButton
+                                className="sort-cards__expand-button"
+                                aria-label="Expand into the Quick Mark grid"
+                                onClick={handleOpenQuickMark}
+                                sx={{
+                                    width: "24px", height: "24px", p: 0,
+                                    borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`,
+                                }}
+                            >
+                                <Icon name="apps" size={18} color={COLORS.onSurface} />
+                            </IconButton>
+                        )}
                         <Button
                             className="sort-cards__skip-button"
                             variant="text"
@@ -2044,7 +2229,7 @@ const SortCardsPage: React.FC = () => {
                             // is live or has left a crater — sorting a card must not
                             // remount the slot (that would replay its entrance).
                             <EnteringCardSlot
-                                key={`${currentPack.packKey}:${card.id}`}
+                                key={`${dockEpoch}:${currentPack.packKey}:${card.id}`}
                                 entrance={undoRestoredPackKey === currentPack.packKey ? "rise" : "dock"}
                                 delayMs={dockDelays[card.id] ?? 0}
                             >

@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { useDiscoverNavigation } from "../hooks/useDiscoverNavigation";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { LEADING } from "../theme/scale";
@@ -136,7 +135,11 @@ const FooterItem = styled(Box, {
 // fdp — study hand + Cards/Decks sheets) under the account header, and the hub bento
 // that used to be Home moved to the second tab as Menu (`/menu`). The old
 // `"flashcards"` tab key is gone; its drill-ins light `"home"` now.
-export type FooterTab = "home" | "menu" | "discover" | "dictionary";
+//
+// Deck (the experimental Deck Tower, `/deck-tower`) took Discover's slot (2026-10-17),
+// and the Discover hub itself was deleted the same day; its one drill-in (Sort Cards)
+// now lights Home.
+export type FooterTab = "home" | "menu" | "deck" | "dictionary";
 
 interface MobileFooterProps {
     activePage?: FooterTab;
@@ -148,7 +151,6 @@ interface MobileFooterProps {
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", style }) => {
     const navigate = useNavigate();
-    const { goToDiscover } = useDiscoverNavigation();
 
     // One row per tab, in the design's left-to-right order. This used to be four
     // copy-pasted JSX blocks differing only in label, icon and handler; with the icons
@@ -156,9 +158,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", style 
     const TABS: { tab: FooterTab; label: string; onClick: () => void }[] = [
         { tab: "home", label: "Home", onClick: () => navigate("/") },
         { tab: "menu", label: "Menu", onClick: () => navigate("/menu") },
-        // Discover has its own navigation hook (it resolves the language segment), so
-        // it cannot be a plain navigate() like the other three.
-        { tab: "discover", label: "Discover", onClick: goToDiscover },
+        { tab: "deck", label: "Deck", onClick: () => navigate("/deck-tower") },
         { tab: "dictionary", label: "Dictionary", onClick: () => navigate("/dictionary") },
     ];
 

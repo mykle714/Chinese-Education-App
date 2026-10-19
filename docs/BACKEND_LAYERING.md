@@ -159,7 +159,7 @@ it on a method that uses `this` is the most common mistake here.
 
 Route modules: `server/routes/*.ts`, mounted in `server/server.ts`. API paths are
 **camelCase** (`/api/starterPacks/...`, `/api/nightMarket/...`); user-facing SPA
-URLs stay kebab-case (`/discover/quick-mark/:language`) and are unrelated.
+URLs stay kebab-case (`/deck-tower`, `/tester-dashboard`) and are unrelated.
 
 ---
 

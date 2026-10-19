@@ -165,7 +165,7 @@ so nothing breaks.
   not fire one.) Used by the card-grid drill-ins (fdp, Mastery Centers, collection
   pages → cdp / collection; `useOpenWordCard`), Dictionary and Reader list taps,
   Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
-  `WordSearchHubItem`. The Bento hubs (Menu, Discover, Games) do **not** use it — their
+  `WordSearchHubItem`. The Bento hubs (Menu, Games) do **not** use it — their
   tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
   arrow, which runs a forward slide on a back action — see
   [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § 3.2 finding 1.
@@ -244,8 +244,9 @@ games) and the footer slides away. Parameterized node routes (`/flashcards/card/
 `matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
 `FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
 route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `home` for `/`
-and the fdp's drill-ins, `menu` for `/menu` and the hub's drill-ins, `discover` and
-`dictionary` for their own spaces.
+and the fdp's drill-ins, `menu` for `/menu` and the hub's drill-ins, `deck` and
+`dictionary` for their own spaces. Sort Cards (`/discover/sort/:language`) lights
+`home` — it is a Home drill-in since the Discover hub was deleted (2026-10-17).
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
@@ -285,7 +286,6 @@ own-animation pages) are neither archetype.
 | Route | Page | Archetype |
 |---|---|---|
 | `/discover/sort/:language` | `SortCardsPage` | Node |
-| `/discover/quick-mark/:language` | `QuickMarkPage` | Node |
 | `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |

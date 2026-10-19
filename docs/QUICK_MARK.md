@@ -1,14 +1,15 @@
 # Quick Mark — bulk card triage grid
 
 > ↑ Part of [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) → [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
+> Sibling: [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md) — the panel host.
 >
 > STATUS: **IMPLEMENTED.** All open questions resolved (see §9). This doc describes
-> the shipped structure.
+> the shipped structure. Since 2026-10-17 Quick Mark is **not a page**: it is Sort
+> Cards' on-deck platform, maximized (§ 1 "Where it lives").
 
 ## 1. What it is
 
-**Quick Mark** is the **second** Discover-hub activity (after Sort Cards). Where
-Sort Cards is a slow, one-pack-at-a-time drag flow, Quick Mark is a **fast bulk
+Where Sort Cards is a slow, one-pack-at-a-time drag flow, **Quick Mark** is a **fast bulk
 triage grid**: the user picks a difficulty level, sees every not-yet-sorted
 discoverable word at that level as a wall of mini cards ordered by conversation-frequency
 score, and **swipes** each card — left = Add to Learn Now, right = Mastered. Every
@@ -18,26 +19,32 @@ It reuses the exact same two bucket effects as Sort Cards (§4) — through the 
 same per-card `sortCard` / `undoSort` endpoints — so it introduces **no new persistence** — same vet rows, same `starterPackBucket`, same
 `already-learned → Mastered` history trick.
 
-### Route / navigation
+### Where it lives
 
-| Route                             | Component        | Page type                         | Footer        |
-| --------------------------------- | ---------------- | --------------------------------- | ------------- |
-| `/discover/quick-mark/:language`  | `QuickMarkPage`  | `NodePage` (← back → `/discover`) | Floating pill |
+There is **no route**. The `/discover/quick-mark/:language` page, its `ROUTE_META` row,
+its Discover-hub Bento tile and `useDiscoverNavigation`'s `quickMarkPath` were all
+deleted on 2026-10-17. Quick Mark opens from inside Sort Cards (`/discover/sort/:language`):
+the **⊞ button beside "skip"** on the on-deck platform maximizes the platform into this
+grid, with the pack on deck pinned as its first cards, and the panel's **✕** shrinks it
+back. The open/close morph, the pinned-pack contract and everything else the host owns
+are specified in [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md); this
+doc owns the grid itself.
 
-`useDiscoverNavigation` (`src/hooks/useDiscoverNavigation.ts`) exposes
-`quickMarkPath` / `goToQuickMark()`, language-keyed exactly like `sortPath`. The
-route is registered in `src/App.tsx`. `DiscoverPage` (`src/features/discover/DiscoverPage.tsx`)
-renders the `HubMenuRow` as the **second** row — between Sort Cards and Skipped Cards
-(purple `COLORS.purpleAccent`, `PlaylistAddCheckIcon`).
+| Piece | File | Role |
+| ----- | ---- | ---- |
+| Panel (view) | `src/features/discover/QuickMarkPanel.tsx` → `QuickMarkPanel` | Chrome (✕, level chip, legend), the grid, the undo toast, the morph |
+| Grid state (hook) | `src/features/discover/useQuickMarkGrid.ts` → `useQuickMarkGrid` | Supply, keyset paging, swipe commit, undo, gap fill, draw window |
+| Preload (hook) | `src/features/discover/useQuickMarkPreload.ts` → `useQuickMarkPreload` | The first supply page, fetched in the background by the host so the grid opens full |
+| Host | `src/features/discover/SortCardsPage.tsx` → `handleOpenQuickMark` / `handleCollapseQuickMark` | Opens/closes it; owns every pack-level consequence of a pinned swipe |
 
-## 2. Page layout (top → bottom)
+## 2. Panel layout (top → bottom)
 
 ```
-NodePage header:  ← back        Quick Mark                        🔥
-────────────────────────────────────────────────────────────────────
-Level bar:                    [ HSK 3 ▾ ]          (dropdown, no Auto)
-Legend:              ← ● Learn Now     ● Mastered →
-────────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────┐  ← frame top (scp's
+│  Quick Mark                                               🔥  ✕  │    header covered;
+│                          [ HSK 3 ▾ ]                             │    page ground,
+│                ← ● Learn Now     ● Mastered →                    │    square corners)
+├──────────────────────────────────────────────────────────────────┤
                        ┌────┐  ┌────┐  ┌────┐
                        │card│  │card│  │card│      ← MiniVocabCardGrid
                        └────┘  └────┘  └────┘        (3-wide, cascade 15)
@@ -46,13 +53,27 @@ Legend:              ← ● Learn Now     ● Mastered →
                  [ 学习 → Mastered        undo ]   ← toast after each swipe
 ```
 
-- **Header**: no extra actions — there is nothing to Save or Clear, because each swipe
-  commits on its own (§6). The `MinutePointsFireBadge` is `PageHeader`'s own.
-- **Level bar**: the same HSK/difficulty `Chip`+`Menu` dropdown as
-  `SortCardsPage` (`src/features/discover/SortCardsPage.tsx`) **minus the `Auto`
-  menu item** — Quick Mark is always a concrete level. Label is `HSK N` for zh,
-  `Level N` otherwise (`difficultyLabel`).
-- **Legend** (`QuickMarkPage.tsx` → `LegendItem`): the two swipe directions, each with a
+- **Maximized.** Fully open, the panel covers the whole frame — Sort Cards' page header
+  included — on the page ground (`COLORS.background`) with square corners, so it reads
+  as a page rather than a sheet. The only undo while it is open is the toast (§6); scp's
+  header Undo is covered.
+- **Panel header**: the same final state as a maximized `SheetPanel`
+  ([EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md)) — a real `PageHeader` titled
+  "Quick Mark" (`size="node"`, no back chevron, PageHeader's own flame off) inside
+  `SheetHeaderSlot`, with the close cluster in its right slot: `MinutePointsFireBadge`
+  then the shared `SheetCloseX` ✕ ("Back to sorting"). The flame is shown because the
+  panel covers scp's header, the study surface's only minute-points indicator. The
+  status-bar clearance (`SAFE_TOP`) is on the panel surface, not the header, as on a
+  merged SheetPanel.
+- **Level row** (`QuickMarkPanel.tsx` → `PanelLevelRow`): the level chip, centred, under
+  the header. There is nothing to Save or
+  Clear, because each swipe commits on its own (§6).
+- **Level chip**: an HSK/difficulty `Chip`+`Menu` **without an `Auto` item** — Quick Mark is
+  always a concrete level. Levels and labels come from
+  `src/features/discover/difficultyLevels.ts` (`DIFFICULTY_LEVELS`, `difficultyLabel` —
+  shared with Sort Cards' own dropdown). Picking a level **also pins Sort Cards'
+  dropdown to it** (SORT_CARDS_REQUIREMENTS § 4.8).
+- **Legend** (`QuickMarkPanel.tsx` → `LegendItem`): the two swipe directions, each with a
   dot in its destination colour (§3).
 - **Grid**: `MiniVocabCardGrid` (`src/components/MiniVocabCardGrid.tsx`) — the
   same 364px 3-wide wrapping grid used by the `/decks` Learn Now preview and
@@ -123,11 +144,12 @@ transform overwrite the other.
 
 A `DiscoverCard` is not a `VocabEntry`, so a tap looks the word up in det first
 (`lookupVocabEntry`) and seeds the eip's root tab with the result — the same path as
-the scp's card-info button (`SortCardsPage.tsx` → `handleOpenCardInfo`). One lookup at a
-time; a slow one shows a small spinner on the card (`DelayedCircularProgress`, 1s
-delay); a failed one is logged and otherwise silent. The click that ends a drag is not
-a tap (`useSwipeCommit` → `wasDrag`). Rendered by the shared
-`FlashcardsLearnPage/EipSheet.tsx`, whose scrim blocks swiping while it is up.
+the scp's card-info button — it IS that opener (`SortCardsPage.tsx` → `handleOpenCardInfo`,
+passed as the panel's `onOpenInfo`). One lookup at a time; the looked-up card shows a
+small spinner (`DelayedCircularProgress`, 1s delay); a failed one is logged and otherwise
+silent. The click that ends a drag is not a tap (`useSwipeCommit` → `wasDrag`). Rendered
+by scp's own `EipSheet` (z 1200+, above the panel's 1100), whose scrim blocks swiping
+while it is up.
 
 ## 4. Persistence — reuses Sort Cards' buckets verbatim
 
@@ -170,16 +192,32 @@ vet-excluding result set. A numeric `OFFSET` would then skip that many
 still-unsorted cards on the next page. Instead the client sends the last card's
 `{ score, id }` as a cursor and the query resumes strictly after it on the stable sort
 key — immune to rows removed above. The cursor is the last card **fetched**
-(`QuickMarkPage.tsx` → `cursorRef`), not the last card on screen: swipes remove cards
+(`useQuickMarkGrid.ts` → `cursorRef`), not the last card on screen: swipes remove cards
 from the list, and with the whole page swiped away there would be no card to read it
 from. (When that happens the page fetches the next page directly — the infinite-scroll
 sentinel lives inside the card list and is gone with it.) `cursorScore` may be empty (the trailing
 NULL-`frequencyScore` block); the query switches to `(frequencyScore IS NULL AND
 id > cursorId)` there. `hasMore` is probed by fetching `limit + 1`.
 
-**Default level** (resolved): opening the page with no `level` seeds from the user's
-adaptive frontier — reuses Sort Cards' cold-start `estimateLevel` (mastered/learning
-vet counts) and returns it as `level` with the first page.
+**Default level**: the client always sends a concrete level now — the panel opens at
+Sort Cards' pinned level, else the on-deck pack's own level (what Auto is serving). The
+server still supports `level` omitted (seeds from the user's adaptive frontier via Sort
+Cards' cold-start `estimateLevel` and returns it as `level` with the first page), but
+nothing calls it that way since the standalone page was deleted.
+
+**First page — preloaded.** The host keeps page 1 fetched before the panel opens
+(`useQuickMarkPreload`, owned by [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md)
+"Preload") and hands it over as `useQuickMarkGrid`'s `seed`: the grid mounts with the
+pinned cards and then the seed (so it pops in with the expand morph rather than after it; § 4.8 of the requirements), takes
+`hasMore` and `cursorRef` from it, and skips its open-time fetch (`loadedKeyRef` holds the
+seed's language/level/auth key). A seed is used only for the level the grid opens at;
+without one the grid fetches page 1 itself. A later level change always fetches.
+
+**De-dupe**: every fetched page is filtered against the cards on screen AND against
+`useQuickMarkGrid.ts` → `supplyExcludedRef` (every pinned card, every swiped card until
+its Undo) — a page requested before a swipe's write landed can still carry that word.
+A page that lands after a newer reset (a quick level change) is dropped
+(`requestSeqRef`).
 
 Returns `{ cards: DiscoverCard[], level, hasMore }` (`DiscoverCard`, `src/types.ts`).
 
@@ -188,8 +226,13 @@ Returns `{ cards: DiscoverCard[], level, hasMore }` (`DiscoverCard`, `src/types.
 - **Every swipe saves immediately**: `sortCard({ cardId, bucket, language, packId: null })`
   → `POST /api/starterPacks/sort` (`StarterPacksService.sortCard`, the lightweight
   pack-mode path — writes the vet row + clears any skip, no replacement-card compute).
-  The card is removed from the grid when its fly-off ends (`QuickMarkPage.tsx` →
+  The card is removed from the grid when its fly-off ends (`useQuickMarkGrid.ts` →
   `handleCommit` / `removeCard`); the cards after it **slide** up into the gap (§6a).
+  **Pinned cards are the exception**: their swipe is handed to the host
+  (`onSortPinned` → `SortCardsPage.tsx` → `handleSortCard`, with the pack's `packId`), and
+  their toast-undo to the host's Undo stack (`onUndoPinned` → `handleUndo`). Supply
+  swipes are reported to the host (`onSupplySorted` / `onSupplyUnsorted`) for its tally,
+  each credit taken back at most once (`creditedRef`).
 - **Undo toast**: each swipe shows `<word> → <destination>` with an **undo** action for
   `UNDO_TOAST_MS` (4s). Only the most recent swipe is undoable. Undo puts the card back
   at its old position at once, waits for that card's in-flight `sortCard` (so the delete
@@ -210,7 +253,7 @@ When a card leaves the grid (or an Undo puts one back), every card after it chan
 slot. `MiniVocabCardGrid` is a plain flex-wrap, so a re-render alone would make them
 jump. Instead (FLIP, `src/components/quickMarkSwipe.ts`):
 
-1. `QuickMarkPage` → `removeCard` / `restoreCard` call `snapshotSlots` just before
+1. `useQuickMarkGrid` → `removeCard` / `restoreCard` call `snapshotSlots` just before
    `setCards`, recording each card's slot (`snapshotCardSlots`, keyed by
    `data-swipe-id`). Slots are layout offsets (`offsetLeft/Top`), so `useScrollStretch`'s
    transform on the outer card never leaks in; a card still mid-slide (back-to-back
@@ -229,7 +272,8 @@ Two things make sure no card ever *appears* during the slide:
   overrides `miniCardFaceSx`'s `content-visibility: auto` with `visible`, and the page
   runs a draw window (`quickMarkSwipe.ts` → `observeCardDrawWindow`, re-armed on every
   `cards` change): an IntersectionObserver on the scroll area with a margin of **two grid
-  rows (`DRAW_MARGIN_PX` = 2 × 148px) above and below the screen**. Cards inside the band
+  rows (`DRAW_MARGIN_PX` = 2 × 148px) above and below the screen** (the scroll area is
+  the panel's own `PanelScroll`). Cards inside the band
   paint; cards beyond it get inline `content-visibility: hidden` (layout footprint kept by
   `contain-intrinsic-size`, so FLIP measurements are unaffected). A one-at-a-time swipe
   pulls cards up at most one row; the second row covers the observer's one-frame lag on a
@@ -243,20 +287,18 @@ Two things make sure no card ever *appears* during the slide:
 
 ### Footer clearance
 
-The page keeps the nav footer (it's registered in all three route gates —
-`Layout.tsx` `isMobileDemoPage` mounts the phone frame + footer, `FooterPresenter`
-`FOOTER_ROUTE_PREFIXES` picks the Discover tab, `pageTransition.ts` `NODE_PREFIXES`
-gives the node-page horizontal slide). The grid renders an explicit `FooterSpacer`
-below its cards (in the grid `footer` slot): the ScrollArea's bottom padding is not
-honored at scroll-end in this flex + overflow-scroll layout, so without the in-flow
-spacer the last card row overlaps the footer bar by ~50px.
+The panel runs down to the frame's bottom edge, under the floating footer pill (which
+floats over it exactly as it floats over the on-deck platform). The grid renders an
+explicit `FooterSpacer` below its cards (in the grid `footer` slot) so the last row can
+scroll clear of the pill.
 
 ## 7. Layer summary
 
 | Layer            | Piece                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
-| Route/nav        | `useDiscoverNavigation` (quickMarkPath), `App` route, `DiscoverPage` row |
-| Page (view)      | `QuickMarkPage` (`NodePage` + level dropdown + legend + grid + undo toast + eip) |
+| Host page        | `SortCardsPage` — the ⊞ button, open/close, pinned-card delegates, eip (SORT_CARDS_REQUIREMENTS § 4.8) |
+| Feature view     | `QuickMarkPanel` (level chip + legend + grid + undo toast + morph) |
+| Feature hook     | `useQuickMarkGrid` (supply, paging, commit/undo, gap fill, draw window); `useQuickMarkPreload` (host-side page-1 preload) |
 | Component        | `QuickMarkCard` (mini card + frequency badge; at-rest / flying-off states), `quickMarkSwipe.ts` (direction tables + `paintQuickMarkDrag`) |
 | Hook (shared)    | `useSwipeCommit` — the axis-locked swipe gesture                      |
 | HTTP route       | `GET …/:language/quickMark`, `POST /api/starterPacks/sort`, `POST /api/starterPacks/undo` |
@@ -266,7 +308,11 @@ spacer the last card row overlaps the footer bar by ~50px.
 
 ## 8. Referenced code
 
-- `src/features/discover/QuickMarkPage.tsx` — the page (level dropdown, legend, grid, per-swipe save, undo toast, eip, keyset infinite scroll)
+- `src/features/discover/QuickMarkPanel.tsx` → `QuickMarkPanel`, `MorphGhost` — the panel (level chip, legend, grid, undo toast, open/close morph)
+- `src/features/discover/useQuickMarkGrid.ts` → `useQuickMarkGrid` — grid state (supply, keyset infinite scroll, per-swipe save, undo, pinned-card delegation, seeded first page)
+- `src/features/discover/useQuickMarkPreload.ts` → `useQuickMarkPreload` — the host's background page-1 preload (`take`, `invalidate`)
+- `src/features/discover/SortCardsPage.tsx` → `handleOpenQuickMark`, `handleSortPinned`, `handleUndoPinned`, `handleSupplySorted`, `handleCollapseQuickMark` — the host
+- `src/features/discover/difficultyLevels.ts` — `DIFFICULTY_LEVELS`, `difficultyLabel` (shared with Sort Cards)
 - `src/components/QuickMarkCard.tsx` + `src/components/quickMarkSwipe.ts` — the swipeable card + the direction → bucket/colour/label tables and the imperative drag painter
 - `src/hooks/useSwipeCommit.ts` — the shared swipe gesture (axis lock, flick, tap slop)
 - `src/components/MiniVocabCardGrid.tsx` — the shared grid; `renderCard` + `footer` + `staggerReveal` props added for Quick Mark. `staggerReveal` renders all cards at once and fans the first 15 in by a per-card animation-delay (instead of the paced batch reveal, which stepped as "3, then a batch, then the rest").
@@ -274,8 +320,6 @@ spacer the last card row overlaps the footer bar by ~50px.
 - `server/services/StarterPacksService.ts` — `listQuickMarkCards`, `sortCard`, `undoSort`
 - `server/controllers/StarterPacksController.ts` — `getQuickMarkCards`
 - `server/routes/starterPacksRoutes.ts` — the Quick Mark list route
-- `src/hooks/useDiscoverNavigation.ts`, `src/features/discover/DiscoverPage.tsx`, `src/App.tsx` — hub + route wiring
-- `src/components/Layout.tsx` (`isMobileDemoPage`), `src/components/FooterPresenter.tsx`, `src/utils/pageTransition.ts` — the three route gates that give the page its phone frame, nav footer (Discover tab), and node-page slide
 - `src/components/MobileFooter.tsx` `FooterSpacer` — the explicit bottom clearance the grid renders below its cards
 
 ### Dependency: the "already-learned" → Mastered write
@@ -301,5 +345,9 @@ of the delegation.
 | Tap                   | **Opens the eip** (2026-10-12; was: cycles the mark)                     |
 | Default level         | **User's current level** — seed from Sort Cards' adaptive frontier estimate |
 | New tables/columns    | **None** — reuses vet rows + existing `library`/`already-learned` effects |
+| Where it lives        | **Inside Sort Cards** (2026-10-17): the on-deck platform's maximized panel; route, hub tile and `quickMarkPath` deleted |
+| Opening / closing     | **⊞ button beside "skip" / ✕ in the panel** (2026-10-17) — a drag-up handle was considered and dropped |
+| Grid contents         | **Full Quick Mark supply, on-deck pack pinned first** (2026-10-17) |
+| Panel level change    | **Also pins Sort Cards' dropdown** (2026-10-17) — the pack is replaced, as on any level switch |
 </content>
 </invoke>

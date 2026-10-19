@@ -10,7 +10,7 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // Pages that accrue minute points, matched as PATH PREFIXES (the page itself and
 // everything under it). Only STUDY surfaces belong here — a screen where the learner
 // is working through cards, text or a game board. Browsing and menu screens
-// deliberately do not accrue: the hubs (Home, Discover, Games, Decks & Cards),
+// deliberately do not accrue: the hubs (Home, Menu, Games, Decks & Cards),
 // deck/collection lists and the mastery centers. They still show the header flame, in
 // its grey idle state, which is the honest answer to "am I earning right now?" — see
 // MinutePointsFireBadge / PageHeader.

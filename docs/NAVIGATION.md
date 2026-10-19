@@ -14,8 +14,17 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
    | Home       | `home`        | `/`           | the fdp (`FlashcardsDecksPage`) wrapped by `HomePage`        |
    | Menu       | `menu`        | `/menu`       | the hub bento (`MenuPage`)                                   |
-   | Discover   | `discover`    | `/discover`   | the dp (`DiscoverPage`)                                      |
+   | Deck       | `deck`        | `/deck-tower` | the Deck Tower (`DeckTowerPage`, experimental — [DECK_TOWER.md](./DECK_TOWER.md)) |
    | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
+
+   **Deck took Discover's slot on 2026-10-17**, and the Discover hub page (`/discover`,
+   `DiscoverPage`) was deleted the same day — its only tile was Sort Cards. Sort Cards
+   (scp, `/discover/sort/:language`, the `/discover/` prefix kept so existing links
+   work) is now a **Home drill-in**: reached from the decks rail's Sort shortcut
+   (`src/features/flashcards/DecksTopRail.tsx` → `goToSort`) and Memory Map's empty
+   state, it lights the Home tab and its back arrow returns to `/`
+   ([DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). Quick Mark has no route of its own — it
+   is a panel inside the sort page ([QUICK_MARK.md](./QUICK_MARK.md)).
 
    Dictionary took Account's slot on 2026-10-09. There is **no `/account` route** any
    more — the account surface is a sheet raised from the Home header (see 2 below).
@@ -36,9 +45,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 
    | Lights | Routes |
    | --- | --- |
-   | `home` | `/`, `/flashcards/decks` (redirect), `/flashcards/collection/:builtin`, `/flashcards/deck/:id`, `/flashcards/reading`, `/flashcards/writing`, `/flashcards/mastered` (redirect), `/flashcards/card/:id` |
+   | `home` | `/`, `/flashcards/decks` (redirect), `/flashcards/collection/:builtin`, `/flashcards/deck/:id`, `/flashcards/reading`, `/flashcards/writing`, `/flashcards/mastered` (redirect), `/flashcards/card/:id`, `/discover/sort/:language` |
    | `menu` | `/menu`, `/games`, `/community`, `/arena`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
-   | `discover` | `/discover`, `/discover/sort/:language`, `/discover/quick-mark/:language` |
+   | `deck` | `/deck-tower` |
    | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
@@ -67,7 +76,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
        matching the sheet's own avatar row.
 
 3. **Menu** (`/menu`, `src/pages/MenuPage.tsx` → `MenuPage`) — a `Bento` mosaic (the
-   shared tile primitive, also used by the Discover + Games hubs; `HubMenu` was deleted
+   shared tile primitive, also used by the Games hub; `HubMenu` was deleted
    2026-08-21 — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
    **Night Market**, **Games**, **Arena**, **Immersive World**, **Reader**,
    **Community**, **Friends** (plus a validator- or admin-only **Tester Dashboard** tile
@@ -89,12 +98,13 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    - Menu destinations → back to `/menu`: `/games`, `/arena`, `/friends`, `/community`,
      `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the
      Template Editor / Sandbox and leaving the Scene Editor (leaf).
-   - Sort Cards (`/discover/sort/:language`) → back to `/discover` (node).
    - Home (fdp) drill-ins → back to `/`: the Mastery Centers (`/flashcards/reading`,
      `/flashcards/writing`), collection and deck pages
      (`/flashcards/collection/:builtin`, `/flashcards/deck/:id`; the legacy
      `/flashcards/mastered` redirects to the Mastered collection), Card Detail
-     (`/flashcards/card/:id`, saved-card cdp) and leaving the flp. The cdp's
+     (`/flashcards/card/:id`, saved-card cdp), Sort Cards (`/discover/sort/:language`,
+     node; set mode exits to its origin instead — [DISCOVER_FLOW.md](./DISCOVER_FLOW.md))
+     and leaving the flp. The cdp's
      breakdown/used-in/example drill-ins open the tapped word's saved card when the
      learner has one, else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
    - Dictionary result tap → **no navigation**: the eip rises as a bottom sheet over the
@@ -160,5 +170,5 @@ OTHER accounts' data, so it has a real server-side gate as well — see
 ## Related
 
 - [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) — hub layout shell
-- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Discover hub → Sort Cards
+- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Sort Cards (scp), a Home drill-in
 - [GAMES_FEATURE.md](./GAMES_FEATURE.md) — Games hub + registry

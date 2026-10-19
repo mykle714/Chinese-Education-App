@@ -739,13 +739,13 @@ the last card leaving the board: the learner's final sort read as the card vanis
 an instant route change, with no acknowledgement that anything landed.
 
 **Back** runs `exitToOrigin`: `navigate(-1)` normally, falling back to the recorded origin
-and then `/discover` when this page is the first history entry (deep-link or reload). The
+and then `/` (Home) when this page is the first history entry (deep-link or reload). The
 same callback backs the NodePage back arrow in this state, so there is one exit path.
 
 **Naming the origin.** `ProvisionalSortOffer` appends `&from=<pathname>` when it opens the
 flow, and `originLabelFor` (`src/utils/originLabel.ts`) turns that into a label — game
 titles read out of `GAME_REGISTRY` (so a renamed game renames the button), plus a small map
-for the non-game origins (flp, the fdp at `/`, labelled "Home"; discover, games hub). An unrecognised or missing
+for the non-game origins (flp, the fdp at `/`, labelled "Home"; games hub). An unrecognised or missing
 origin degrades to a plain **Go back**.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding

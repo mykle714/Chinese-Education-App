@@ -7,19 +7,17 @@ import { useAuth } from "../AuthContext";
 const DEFAULT_DISCOVER_LANGUAGE = "zh";
 
 /**
- * Encapsulates Discover-flow navigation.
+ * Encapsulates navigation to Sort Cards (scp), `/discover/sort/{language}`, keyed by
+ * the user's selected language.
  *
- * The Discover flow is a two-level surface:
- * - `/discover` — the Discover hub (menu of discover activities; lists Sort Cards
- *   today). This is where the footer's Discover tab lands.
- * - `/discover/sort/{language}` — the drag-to-sort page, reached from the hub and
- *   keyed by the user's selected language.
+ * The Discover hub (`/discover`) that used to sit above scp was deleted 2026-10-17;
+ * scp is now a drill-in from Home (the decks rail's Sort shortcut) and its back arrow
+ * returns to Home. The `/discover/` URL prefix survives only as scp's path.
  *
- * Centralizing the default language + route shapes here keeps them in one place
- * (previously duplicated across MobileFooter / FlashcardsDecksPage).
+ * Callers: src/features/flashcards/DecksTopRail.tsx, src/games/memory-map/MemoryMapPage.tsx.
+ * Docs: docs/DISCOVER_FLOW.md.
  *
  * Returns:
- * - `goToDiscover()` / `discoverPath` — the Discover hub menu.
  * - `goToSort()` / `sortPath` — the language-keyed sort page.
  */
 export function useDiscoverNavigation() {
@@ -27,21 +25,11 @@ export function useDiscoverNavigation() {
   const { user } = useAuth();
 
   const language = user?.selectedLanguage || DEFAULT_DISCOVER_LANGUAGE;
-  const discoverPath = "/discover";
   const sortPath = `/discover/sort/${language}`;
-  const quickMarkPath = `/discover/quick-mark/${language}`;
-
-  const goToDiscover = useCallback(() => {
-    navigate(discoverPath);
-  }, [navigate, discoverPath]);
 
   const goToSort = useCallback(() => {
     navigate(sortPath);
   }, [navigate, sortPath]);
 
-  const goToQuickMark = useCallback(() => {
-    navigate(quickMarkPath);
-  }, [navigate, quickMarkPath]);
-
-  return { goToDiscover, discoverPath, goToSort, sortPath, goToQuickMark, quickMarkPath };
+  return { goToSort, sortPath };
 }

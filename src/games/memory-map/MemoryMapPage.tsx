@@ -17,6 +17,7 @@ import { HeaderIconButton } from "../../components/PageHeader";
 import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useGameExit } from "../runtime/gameExit";
 import { useAuth } from "../../AuthContext";
+import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useTTS } from "../../hooks/useTTS";
@@ -57,6 +58,9 @@ const MemoryMapPage: React.FC = () => {
     // (ReadingGamesCarousel → `state.exitTo`), else the Games hub.
     const gameExit = useGameExit();
     const { user } = useAuth();
+    // The empty-map CTA sends the learner straight to Sort Cards (the Discover hub it
+    // used to open was deleted 2026-10-17).
+    const { goToSort } = useDiscoverNavigation();
     // Mandatory on every game page: stops the OS back-swipe stealing a pan that
     // starts near the screen edge (CLAUDE.md § Touch & Scroll).
     useBlockEdgeSwipe(true);
@@ -340,7 +344,7 @@ const MemoryMapPage: React.FC = () => {
                     <Button
                         className="memory-map-page__empty-cta"
                         variant="contained"
-                        onClick={() => navigate("/discover")}
+                        onClick={goToSort}
                     >
                         Find words
                     </Button>

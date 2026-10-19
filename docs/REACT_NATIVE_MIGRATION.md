@@ -595,6 +595,7 @@ re-read.
 | **Replacing the OS keyboard** (the beginner handwriting keyboard, swappable from any focused text field) | [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 7a | works, but on two unreliable primitives: `window.visualViewport` to guess the keyboard's height (reports nothing until it has opened, jitters through the iOS animation) and `inputmode="none"` + a blur/refocus to dismiss it (does not reliably dismiss an already-open iOS keyboard; the caret must be captured and restored by hand) | `@capacitor/keyboard`: `keyboardWillShow` carries the **exact** `keyboardHeight` before the animation starts, `Keyboard.hide()` dismisses reliably without touching focus, and `setResizeMode('none')` stops the WebView reflowing under us. It replaces both guesses with facts. **It does not add a native accessory bar** — the swap bar stays web-rendered either way (see below) |
 | **Time-critical "join now" invite** (a friend has opened a live Study Challenge room and is waiting) | [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md) § 4 (Q21) | an in-app banner over the live WebSocket, reaching only a player who already has the app open. Live mode is **still fully playable without it** — the waiting room is a permanent rendezvous both players can enter from the challenge screen, so friends coordinate out of band | `@capacitor/push-notifications` → APNs/FCM, deep-linked into the waiting room, capped at one per day per (sender, target). Turns live mode from "arrange it by text first" into something **spontaneous** — a reach improvement, **not** a precondition |
 | **Haptic feedback** (a tap on a game answer, a flashcard mark, a drag-snap in scp, a component tap in bk) | not specified in any feature doc yet — recorded here **2026-09-20** as a standing want, so the packaging ledger is complete | `navigator.vibrate()`, which **iOS Safari does not implement at all** and which Chrome Android gates behind a user gesture and freely coalesces. On the platform this app is mostly played on, the web path is not degraded — it is **absent** | `@capacitor/haptics` → `UIImpactFeedbackGenerator` / `UINotificationFeedbackGenerator` / `UISelectionFeedbackGenerator` on iOS (Taptic Engine, iPhone 7+) and `VibrationEffect` on Android: `impact` (light/medium/heavy), `notification` (success/warning/error), and the `selectionStart/Changed/End` tick trio |
+| **Hiding the iOS form accessory bar** (the floating `⌃ ⌄ ✓` pill WebKit draws above the keyboard on every focused text field — iOS 26 restyled it as a Liquid Glass pill, which made it newly conspicuous; it sits over the footer and duplicates nothing the app needs) | observed on the dictionary search field **2026-10-15**; applies app-wide, not specified in any feature doc | **none** — WebKit exposes no API for web content to hide or restyle it, in Safari or an installed PWA. Rearranging which fields are focusable only greys out the arrows; the bar itself stays | `@capacitor/keyboard` (iOS only): `Keyboard.setAccessoryBarVisible({ isVisible: false })`, called once at startup. It is the **same plugin** the keyboard-replacement row above already needs, so it costs no extra dependency |
 
 The two notification rows are deliberately separate. The first is a **"come back
 sometime"** class — it can be late, batched, or missed without breaking anything, and the
@@ -617,7 +618,12 @@ The location entry is worth noting for *why* it is not a React Native argument:
 **Capacitor supplies it in full.** It moves the packaging question, not the
 framework question — consistent with the recommendation below.
 
-The haptics entry is the only row with **no web path at all**, which makes it the
+The accessory-bar entry is the other row with **no web path at all**. Unlike haptics it
+is a *removal*, so there is no degraded-mode question: on the web the bar simply stays.
+It is cosmetic — nothing breaks with it present — so it rides along with the keyboard
+row rather than arguing for a shell on its own.
+
+The haptics entry is the only row with **no web path at all** that *adds* something, which makes it the
 cleanest capability argument in the table — but also the smallest, because nothing
 currently depends on it. Two constraints should shape whatever is eventually built:
 

@@ -118,7 +118,7 @@ strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
 | Stop | Value | Meaning |
 |---|---|---|
 | `0` | — | dismissed (panel unmounts after the shrink animation) |
-| **default** | `parentHeight * DEFAULT_HEIGHT_RATIO` (0.6), or `initialHeight` for a stacked child panel | the open height; **also the floor** |
+| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` passes **0.9**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
@@ -395,6 +395,23 @@ argument to `applyResize`.
 content. A wheel gesture has no release, so crossing below the default height
 dismisses immediately. Only the top-most mounted `depth` reacts (module-level
 `mountedDepths` set); touch is already top-only via DOM hit-testing.
+
+### Escape key (desktop)
+
+Escape does exactly what the ✕ does: both call `requestClose`, which runs `onCloseX`
+first and only `dismiss()`es when it does not return `true`. So on the eip, Escape closes
+the word that is showing, and the panel closes only after the last word on the trail is
+gone. Only the **most recently opened dismissible panel** reacts. That panel is tracked
+by a module-level `escapeStack` of per-panel tokens in mount order. It is separate from
+`mountedDepths` because that set is keyed by depth and also holds persistent sheets.
+Persistent panels (`minHeight > 0`) never register. Escape still works while focus is
+in a text field inside the sheet. It is ignored when the key auto-repeats (holding
+Escape would empty the trail at once), during IME composition, and when it comes from
+inside an MUI Modal/Dialog. MUI handles Escape for its own dialogs and does not stop
+the event from propagating, so without that check one press would close both the dialog
+and the sheet under it.
+Code: `src/components/sheet/SheetPanel.tsx` → `requestClose`, `escapeStack`, the
+"Escape = the ✕" effect.
 
 ### Dismiss
 

@@ -22,6 +22,15 @@ interface DictionaryEntryRowProps {
      * sit twice-indented.
      */
     inset?: number;
+    /**
+     * Tap the (Chinese) headword to copy it — characters first, then pinyin on the
+     * next tap (CPCDRow.tapToCopy) — INSTEAD of opening the entry. The rest of the
+     * row still opens it. Opt-in: the Dictionary page's results turn it on; a
+     * picker (the Compare sheet's slot-B search) leaves it off, because there a tap
+     * anywhere on the row means "choose this word". Ignored for Latin-script rows
+     * (ForeignText's plain branch has no tap-to-copy).
+     */
+    headwordTapToCopy?: boolean;
 }
 
 /**
@@ -51,7 +60,7 @@ interface DictionaryEntryRowProps {
  * Depended on by: docs/SHELF_REDESIGN.md § Part B entry 7,
  * docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md.
  */
-function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: DictionaryEntryRowProps) {
+function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapToCopy = false }: DictionaryEntryRowProps) {
     // The artboard's gloss is a single ellipsized line carrying as many senses as
     // fit ("time; period"), not just the first one — the row has a fixed height
     // either way, so a second gloss is free information rather than extra space.
@@ -130,7 +139,15 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: Dictionary
                 <>
                     {/* `.hw` — the anchor: characters with their tone-coloured pinyin
                         beneath, which is exactly what a `sm` cpcd row renders. */}
-                    <Box className="dictionary-entry-row__headword-block" sx={{ flexShrink: 0 }}>
+                    <Box
+                        className="dictionary-entry-row__headword-block"
+                        // A copying tap is consumed here so it doesn't bubble to the row's
+                        // <button> and open the entry. The copy caption (CpcdPopup) is
+                        // portalled, but React still bubbles its clicks through this
+                        // subtree, so this one guard covers the caption too.
+                        onClick={headwordTapToCopy ? (e) => e.stopPropagation() : undefined}
+                        sx={{ flexShrink: 0 }}
+                    >
                         <ForeignText
                             className="dictionary-entry-row__headword"
                             language={language}
@@ -139,6 +156,7 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22 }: Dictionary
                             pronunciation={rowView.pronunciation}
                             size="sm"
                             bold
+                            tapToCopy={headwordTapToCopy}
                         />
                     </Box>
                     <Box className="dictionary-entry-row__text" sx={{ flex: 1, minWidth: 0 }}>

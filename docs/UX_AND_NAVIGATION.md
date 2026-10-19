@@ -9,12 +9,14 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the four footer tabs — **Home** (`/`, the fdp + account header), **Menu** (`/menu`, the hub bento), **Discover**, **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Home and Menu swapped contents 2026-10-10; `/flashcards/decks` now redirects to `/`. Account is a sheet raised from the Home header avatar (Logout lives in it); Settings is the gear beside that avatar. |
-| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home (the fdp), Menu, Discover, Dictionary, Games hub use it. |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the four footer tabs — **Home** (`/`, the fdp + account header), **Menu** (`/menu`, the hub bento), **Deck** (`/deck-tower`, took Discover's slot 2026-10-17; the Discover hub was deleted the same day and Sort Cards is a Home drill-in), **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Home and Menu swapped contents 2026-10-10; `/flashcards/decks` now redirects to `/`. Account is a sheet raised from the Home header avatar (Logout lives in it); Settings is the gear beside that avatar. |
+| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home (the fdp), Menu, Dictionary, Games hub use it. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
-| **Discover surface** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | Two-level Discover surface: the `/discover` hub menu (footer tab) → `/discover/sort/:language` drag-to-sort page (back-arrow header, no footer). |
+| **Sort Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (scp), a Home drill-in: node page (back arrow → `/`, keeps the footer with Home lit), hosting the Quick Mark panel and skipped-cards sheet. The `/discover` hub was deleted 2026-10-17. |
 | **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; validators cycle Auto → Intro → Graduated from a header toggle. First si: the fdp hand's "cards" label → hairline. |
+| **Deck Tower (experimental)** | [DECK_TOWER.md](./DECK_TOWER.md) | `/deck-tower`, the footer's Deck tab: the Learn Now deck drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. |
+| **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, carpet, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
 
@@ -259,7 +261,7 @@ useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
 |---|---|---|
 | Card preview grids (decks Learn Now, collection view, mastered, skipped, Quick Mark, challenge review) | `MiniVocabCardGrid` | y |
 | Lent-card previews (pre-round notice, end-of-round sort offer) | `ProvisionalCardGrid` | y |
-| Scrollable shelf rows (Decks, Discover, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
+| Scrollable shelf rows (Decks, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
 | Community design strip | `community/CommunityFeedRow` | x |
 
 A **non**-scrollable `ShelfRow` opts out (`enabled: scrollable`) — a wrapping row never

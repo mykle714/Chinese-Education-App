@@ -29,6 +29,9 @@ interface QuickMarkCardProps {
     // Optional staggered pop-in on mount — the grid passes index * step for the first
     // CASCADE_LIMIT cards, undefined thereafter.
     animationDelayMs?: number;
+    // Held invisible (still laid out, so its cell can be measured) while the scp panel's
+    // morph ghost flies to or from this cell (QuickMarkPanel → MorphGhost).
+    hidden?: boolean;
 }
 
 // A Quick Mark triage card: the shared MiniCard (src/components/MiniCard.tsx), driven by
@@ -50,7 +53,7 @@ interface QuickMarkCardProps {
 //   MiniCard   — its own pop-in keyframe (a keyframe on the swipe layer would pin its
 //                end transform over the drag's).
 const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({
-    card, leaving, swipeHandlers, wasDrag, onOpenInfo, infoLoading, animationDelayMs,
+    card, leaving, swipeHandlers, wasDrag, onOpenInfo, infoLoading, animationDelayMs, hidden = false,
 }) => {
     const flyX = leaving === "right" ? FLY_OUT_PX : leaving === "left" ? -FLY_OUT_PX : 0;
     // The pop-in delay is fixed at MOUNT. The grid assigns it by list POSITION (the first
@@ -73,6 +76,7 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({
                 // Lifted while flying so it passes over its neighbours (while dragged, the
                 // painter lifts it inline).
                 zIndex: leaving ? 3 : undefined,
+                visibility: hidden ? "hidden" : undefined,
             }}
         >
             <Box
@@ -127,7 +131,7 @@ const QuickMarkCardComponent: React.FC<QuickMarkCardProps> = ({
 };
 
 // Memoized: with the drag painted imperatively, a card re-renders only when its own
-// `leaving` / `infoLoading` changes. Every other prop is stable (`card` per fetch; the
+// `leaving` / `infoLoading` / `hidden` changes. Every other prop is stable (`card` per fetch; the
 // swipe handlers, `wasDrag` and `onOpenInfo` are stable in the page).
 const QuickMarkCard = memo(QuickMarkCardComponent);
 

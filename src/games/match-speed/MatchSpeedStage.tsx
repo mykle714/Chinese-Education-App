@@ -1,0 +1,916 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, ReactNode } from "react";
+import { Box, Button, Typography, useTheme } from "@mui/material";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
+import { useAuth } from "../../AuthContext";
+import { useTTS } from "../../hooks/useTTS";
+import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
+import { useGameWins } from "../../hooks/useGameWins";
+import { markFlashcard } from "../../api/flashcards";
+import { fetchGamePool, type GamePoolDistribution, type GamePoolResponse } from "../../api/gamePool";
+import { collectionTitle, type CollectionRef } from "../../features/flashcards/collectionRef";
+import type { GameStageFrameProps, GameStageHost } from "../types";
+import { matchSpeedPoolRequest } from "./poolRequest";
+import { COLORS } from "../../theme/colors";
+import type { Language, VocabEntry } from "../../types";
+import MatchSpeedBoard from "./MatchSpeedBoard";
+import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import PersonalBestLine from "../shared/PersonalBestLine";
+import MatchSpeedTimerBar from "./MatchSpeedTimerBar";
+import { GameCentered, GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
+import {
+    bufferedEntryIds,
+    emptyBuffer,
+    fillBuffer,
+    takePairs,
+    topUpDistribution,
+    topUpRequest,
+    type CardBuffer,
+} from "./cardBuffer";
+import type { CardPair, GameCategory, ModeConfig, Phase } from "./types";
+import { dealChallengePairs, emptyDealState, type ChallengeDealState } from "./challengeDeal";
+import {
+    CATEGORY_FALLBACK_ORDER,
+    COUNTDOWN_STEPS,
+    COUNTDOWN_STEP_MS,
+    GAME_KEY,
+    MARK_TYPE,
+    RUN_DURATION_MS,
+    medalForScore,
+} from "./constants";
+import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
+import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
+import { provisionalWords } from "../../utils/provisionalCards";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useChallengeRound } from "../runtime/useChallengeRound";
+import { useGameBack } from "../runtime/useGameBack";
+import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+
+/** How often the run clock re-renders. Fine enough for a smooth `m:ss`. */
+const CLOCK_INTERVAL_MS = 200;
+
+export interface MatchSpeedStageProps {
+    /** Who is hosting this run (docs/FLP_GAME_BREAKS.md § 6). */
+    host: GameStageHost;
+    /** The host's chrome — `GameLeafPage` on the route, `GameBreakFrame` in the flp. */
+    Frame: ComponentType<GameStageFrameProps>;
+    /** Header controls, passed through to `Frame` (the page's pinyin chip). */
+    headerRight?: ReactNode;
+    /** The difficulty mode's config — the hub's `state.mode`, or the flp's study mode. */
+    baseModeConfig: ModeConfig;
+    /** Pinyin on the board. The page passes the learner's setting; an flp break passes
+        the flp bar's answer (core ⇒ shown — docs/FLP_GAME_BREAKS.md § 5a). */
+    showPinyin: boolean;
+    /** Launch collection; rides EVERY pool request, top-ups included. */
+    collection: CollectionRef | null;
+    /** flp break only: the working loop to seed the OPENING board with (§ 4). */
+    seedIds?: number[];
+    /** flp break only: the opening pool, already fetched while card 10 was on screen,
+        so Play has no spinner. Consumed by the first run only; Play Again (page host)
+        always fetches fresh. */
+    prefetchedPool?: GamePoolResponse | null;
+    /** The results card's way out — "Back to Games" (page) / "Back to cards" (break). */
+    onDone: () => void;
+}
+
+/**
+ * Match Speed — the STAGE: phase machine, card supply, and marks, hosted either by
+ * `MatchSpeedPage` (the game's own route) or by an flp game break
+ * (src/games/flpBreak/matchSpeedBreak.ts, docs/FLP_GAME_BREAKS.md § 6).
+ *
+ * What differs by host is deliberately small:
+ *   - the chrome (`Frame`);
+ *   - the opening board (an flp break seeds it with the working loop, prefetched);
+ *   - the way out: the page's Back is `useGameBack` (with the challenge confirm), while
+ *     a break's Leave ENDS a live run into its results card — "leaving early" still
+ *     shows what the player did — and closes the break from any other phase;
+ *   - the results card offers Play Again only on the page.
+ *
+ * A 30-second recognition throughput drill: 6 foreign words on the left, their 6
+ * English glosses (shuffled independently) on the right. Tap one from each column
+ * to attempt a match; every 3 seconds the board refills the holes.
+ *
+ * Flow: loading → (blocked) → countdown → playing → ended → (popup minimized =
+ * cleanup) → Play Again → countdown …
+ *
+ * The difficulty MODE (Study Mix / Review / Challenge) arrives as `baseModeConfig` —
+ * the Games hub's `location.state.mode` (read by MatchSpeedPage), or the flp session's
+ * study mode in a game break (same slugs: `review` / `challenge`, else Mix); it only narrows which mastery buckets the pool may
+ * draw from (the /decks rule) — the clock, board and medals are identical across
+ * modes. Everything mode-dependent is read off one `ModeConfig`; see
+ * docs/MATCH_SPEED_GAME.md § Difficulty modes.
+ *
+ * Layer split: this stage owns ALL I/O (the pool fetch, the buffer, marks, the
+ * clock) and the phase machine; `MatchSpeedBoard` owns board/selection state and
+ * asks for cards through `drawPairs`; `cardBuffer.ts` is pure. Nothing below this
+ * file touches the network.
+ *
+ * Minute-points: the fire badge lives in the header and earning is gated by route
+ * prefix in the global activity-detection layer (MINUTE_POINTS_ELIGIBLE_PAGES); the
+ * page host renders the badge in its header.
+ *
+ * See docs/MATCH_SPEED_GAME.md, docs/FLP_GAME_BREAKS.md.
+ */
+const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
+    host,
+    Frame,
+    headerRight,
+    baseModeConfig,
+    showPinyin,
+    collection: launchCollection,
+    seedIds,
+    prefetchedPool,
+    onDone,
+}) => {
+    const isBreak = host === "flpBreak";
+    const theme = useTheme();
+    const fc = theme.palette.flashcard;
+    const { user } = useAuth();
+    const tts = useTTS();
+    // Only the colour setting is read here; `showPinyin` is the host's call (prop).
+    const { settings } = useFlashcardLearnSettings();
+    const { showPinyinColor } = settings;
+    const { recordWin } = useGameWins(GAME_KEY);
+
+    // `baseModeConfig` is a module constant (MODE_CONFIGS), so its identity is stable
+    // across renders and it is safe in effect/callback dep arrays.
+
+    // RELAXED MODE (docs/PROVISIONAL_CARDS.md § Nothing blocks on card count).
+    //
+    // Review/Challenge restrict the board to their own mastery buckets (MODE_CONFIGS in
+    // constants.ts — Review = Comfortable + Mastered, Challenge = Unfamiliar + Target).
+    //
+    // A lent card starts with an EMPTY mark history, so it is Unfamiliar. That means
+    // provisioning fills CHALLENGE's buckets for free, but can never fill REVIEW's:
+    // Comfortable and Mastered are earned, not granted, so a learner with no real
+    // progress has nothing on-mode no matter how many cards we lend them.
+    //
+    // Rather than blocking Review for everyone who hasn't got a card comfortable yet, a
+    // run with nothing on-mode widens the fallback order to all four buckets, so the
+    // server's cross-bucket top-up actually reaches the board.
+    //
+    // The mode's WEIGHTS are untouched: once the learner has real on-mode cards the
+    // widened fallback stops being reached and the mode plays exactly as designed.
+    const [relaxed, setRelaxed] = useState(false);
+    // Most pairs matched per difficulty mode, keyed on the mode slug
+    // (docs/MATCH_SPEED_GAME.md § Personal best).
+    const {
+        best: personalBestPairs,
+        isNewBest,
+        record: recordPersonalBest,
+        reset: resetPersonalBest,
+    } = usePersonalBest("match-speed", baseModeConfig.mode);
+    const modeConfig = useMemo(
+        () => (relaxed ? { ...baseModeConfig, fallbackOrder: CATEGORY_FALLBACK_ORDER } : baseModeConfig),
+        [relaxed, baseModeConfig]
+    );
+
+    // Temporary cards are in play this run. Match Speed deals from a rolling buffer, so
+    // the played set isn't known up front — the notice is the GENERIC form (no word
+    // list), per CARD_BASELINE_ITEMIZED in server/contracts/wire.ts.
+    const [noticeOpen, setNoticeOpen] = useState(false);
+    // The lent words the player actually REVIEWED this run, which is what the end-of-run
+    // "keep these" offer asks about even though the notice couldn't name anything up
+    // front. This used to accumulate every lent card the buffer FETCHED — a set that
+    // includes cards which never reached the board at all. Destructured because
+    // `note`/`reset` are stable while the object identity is not, and `markCard`'s
+    // identity has to survive a word being added.
+    const {
+        words: markedLentWords,
+        note: noteMarkedLent,
+        reset: resetMarkedLent,
+    } = useMarkedLentWords();
+
+    // `useBlockEdgeSwipe(true)` is the HOST's job (the page, or the flp break area):
+    // it must hold for the whole time the game is on screen, title card included.
+
+    const language = (user?.selectedLanguage ?? "zh") as Language;
+
+    const [phase, setPhase] = useState<Phase>("loading");
+    const [blockMessage, setBlockMessage] = useState("");
+    /** Index into COUNTDOWN_STEPS while phase === "countdown". */
+    const [countdownStep, setCountdownStep] = useState(0);
+    const [remainingMs, setRemainingMs] = useState(RUN_DURATION_MS);
+    // Mirror of `remainingMs` for the clock effect. After a pause the interval has
+    // to re-arm from the time LEFT rather than from RUN_DURATION_MS, and reading
+    // that out of state would mean listing `remainingMs` as a dependency — which
+    // would tear down and rebuild the interval five times a second.
+    const remainingMsRef = useRef(RUN_DURATION_MS);
+    remainingMsRef.current = remainingMs;
+    const [score, setScore] = useState(0);
+    /** Attempts (correct + wrong) — the denominator of the end card's accuracy. */
+    const [attempts, setAttempts] = useState(0);
+    const [popupMinimized, setPopupMinimized] = useState(false);
+    /** Bumped per run so the board remounts with a clean slate on Play Again. */
+    const [runId, setRunId] = useState(0);
+
+    // The per-category pair buffer. A ref, not state: it is read and mutated from
+    // the board's refill tick and from fetch callbacks, and nothing renders from
+    // it — making it state would re-render the whole page on every top-up.
+    const bufferRef = useRef<CardBuffer>(emptyBuffer());
+    // Vocab-entry ids currently ON THE BOARD. Together with the buffer's ids this
+    // is the `exclude` list every top-up sends. See the fetch comment for why.
+    const onBoardIdsRef = useRef<Set<number>>(new Set());
+    // Guards against overlapping top-ups: ticks fire every 3s but a request can
+    // take longer, and two in flight would both exclude the same ids and hand back
+    // the same cards — a duplicate on screen, the exact thing exclude prevents.
+    const topUpInFlightRef = useRef(false);
+
+    // Hoisted above the loaders because the challenge round's active-time clock
+    // needs it (the pause GATE itself still reads below, next to the run clock it
+    // protects — see `clockPaused`).
+    const { paused: backgroundPaused, resume: resumeFromBackground } =
+        useBackgroundPause(phase === "countdown" || phase === "playing");
+
+    // ── STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5) ──
+    // `paused`/`running` are the same two facts the run clock already uses, restated
+    // here rather than read from `clockPaused` (declared below, after the loaders):
+    // a challenge round's ACTIVE-TIME clock and the 30-second run clock must stop on
+    // exactly the same conditions (§ 5.8), and Match Speed's pause sources are the
+    // provisional notice plus backgrounding. (A settings sheet used to be a third:
+    // it was deleted on 2026-08-28 when both its settings moved to the header and
+    // /settings. Its replacements are header chips, which do NOT pause — they leave
+    // the board playable, and the pause rule covers input-blocking overlays only.
+    // See docs/GAMES_FEATURE.md § Backgrounding pauses the clock.)
+    const challengeRound = useChallengeRound({
+        gameId: "match-speed",
+        paused: noticeOpen || backgroundPaused,
+        running: phase === "playing",
+    });
+    // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
+    // round, the confirm that says leaving ends it (docs/STUDY_CHALLENGE.md § 5.1a).
+    const onBack = useGameBack(challengeRound);
+    // Read from a ref inside `fetchPool`, whose identity is stable by design.
+    const challengeParamsRef = useRef("");
+    challengeParamsRef.current = challengeRound.poolParams;
+
+    /**
+     * The challenge deal state — the contested queue plus its parity counter. The
+     * RULE itself lives in `challengeDeal.ts` (pure, tested); this is just where the
+     * run's copy of it is kept. See § 5.3.
+     */
+    const dealStateRef = useRef<ChallengeDealState>(emptyDealState());
+
+    /**
+     * Fetch pool cards into the buffer.
+     *
+     * `exclude` carries every card on the board PLUS every card in the buffer.
+     * This is NOT a repeat gate: repeats across a run are prevented by the
+     * server's own cooldown, and when a library is small, falling back to
+     * a cooled card is correct behavior the client must not block. `exclude`
+     * exists solely to prevent a DUPLICATE ON SCREEN — a card on the board or in
+     * the buffer has not been marked yet, so it isn't on cooldown and a top-up
+     * would happily hand it back, putting the same word in two rows at once.
+     * (Bubble Match has the identical case and solves it identically via keepIds.)
+     *
+     * We deliberately do not use the `avoid` soft-demote param.
+     */
+    const fetchPool = useCallback(
+        async (distribution: GamePoolDistribution, topUp = false): Promise<GamePoolResponse | null> => {
+            const data = await fetchGamePool(matchSpeedPoolRequest({
+                distribution,
+                exclude: [...onBoardIdsRef.current, ...bufferedEntryIds(bufferRef.current)],
+                collection: launchCollection,
+                challengeParams: challengeParamsRef.current,
+                // MID-RUN TOP-UPS ARE FILLER ONLY (§ 5.3). The contested words
+                // are dealt once, from the opening fetch, and are never recycled back
+                // into the buffer — so a refill that re-served them would hand the
+                // player a second bite at a word the round has already scored.
+                excludeContested: topUp,
+                // An flp break seeds the OPENING board only; a top-up is a refill of
+                // what the run has used, never another pass over the working loop.
+                seedIds: topUp ? undefined : seedIds,
+            }));
+            // Warm the TTS cache so in-game autoplay is instant (mirrors flp).
+            data.cards.forEach((c) => tts.prefetch(c));
+            return data;
+        },
+        // apiGet reads the token at call time, so this callback's identity stays
+        // stable across a silent token refresh. See CLAUDE.md "Never reload on token
+        // refresh". `launchCollection` and `seedIds` are likewise omitted: both are
+        // fixed for the stage's lifetime (the page's URL; the break's dealt loop).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        []
+    );
+
+    /**
+     * Restore every bucket toward BUFFER_DEPTH. Fired after each refill tick for
+     * exactly what was consumed, so the requests stay small and steady.
+     *
+     * FIRE-AND-FORGET with a .catch(): a failed top-up degrades to a thinner
+     * buffer and more category fallbacks, never to a broken run.
+     */
+    const topUpBuffer = useCallback(() => {
+        if (topUpInFlightRef.current) return;
+        const request = topUpRequest(bufferRef.current, modeConfig);
+        if (!request) return;
+        topUpInFlightRef.current = true;
+        fetchPool(topUpDistribution(request), true)
+            .then((data) => {
+                if (data) {
+                    // NOTHING IS ANNOUNCED HERE, deliberately. A top-up may well lend —
+                    // the buffer refills all run — but a modal mid-run costs a
+                    // reaction-time game clock and lands over a board the player is
+                    // mid-tap on. Lent cards arriving mid-run are visible instead
+                    // through the corner badge on the card itself (MatchSpeedCard).
+                    fillBuffer(bufferRef.current, data.cards, modeConfig);
+                }
+            })
+            .catch((err) => console.error("[MatchSpeed] buffer top-up failed:", err))
+            .finally(() => {
+                topUpInFlightRef.current = false;
+            });
+    }, [fetchPool, modeConfig]);
+
+    /**
+     * Hand the board `count` pairs, remembering them as on-board for `exclude`.
+     *
+     * The `isBlocked` predicate is the client-side duplicate gate: a pair whose
+     * entry is already on the board is discarded rather than placed, because two
+     * cards for one entry share a `pairId` and would make every combination of
+     * the four a "correct" match. `takePairs` separately gates within the batch.
+     * See cardBuffer.ts § takePairs for why `exclude` alone isn't sufficient.
+     *
+     * Reads the ref inside the predicate (not a captured value) so the test is
+     * against the board as it stands at draw time.
+     */
+    const drawPairs = useCallback((count: number): CardPair[] => {
+        const takeFiller = (n: number): CardPair[] =>
+            takePairs(bufferRef.current, n, Math.random, modeConfig, (pair) =>
+                onBoardIdsRef.current.has(pair.entry.id)
+            );
+
+        // A challenge round deals under the alternation rule (§ 5.3); an ordinary run
+        // is the buffered draw it has always been.
+        const pairs = challengeRound.active
+            ? dealChallengePairs(dealStateRef.current, count, () => takeFiller(1)[0] ?? null)
+            : takeFiller(count);
+        pairs.forEach((p) => onBoardIdsRef.current.add(p.entry.id));
+        return pairs;
+    }, [modeConfig, challengeRound.active]);
+
+    // The flp break's prefetched opening pool, handed over ONCE: the first run adopts
+    // it, and anything after (there is no Play Again on that host, but a remount-less
+    // re-deal must still be fresh) fetches normally.
+    const prefetchedRef = useRef<GamePoolResponse | null>(prefetchedPool ?? null);
+
+    /** Prime the buffer and start a run (shared by first load and Play Again). */
+    const beginRun = useCallback(async (): Promise<void> => {
+        setPhase("loading");
+        bufferRef.current = emptyBuffer();
+        onBoardIdsRef.current = new Set();
+        // A replay is judged on its own borrowed words, not the previous run's.
+        resetMarkedLent();
+        try {
+            const handedOver = prefetchedRef.current;
+            prefetchedRef.current = null;
+            if (handedOver) handedOver.cards.forEach((c) => tts.prefetch(c));
+            const data = handedOver ?? await fetchPool(modeConfig.poolDistribution);
+            if (!data) return;
+            // NO CARD-COUNT GATE. The server topped the player up to the Match Speed
+            // baseline before building this pool, so `sufficient` can only be false
+            // when the dictionary itself ran dry — and a short buffer still deals a
+            // playable run. See docs/PROVISIONAL_CARDS.md.
+            // How much the player has inside the mode's OWN buckets. This used to be a
+            // second block ("you have no Comfortable or Mastered cards"); it now only
+            // decides whether this run needs the widened fallback — in practice that is
+            // Review, whose buckets provisioning cannot fill.
+            const inModeAvailable = modeConfig.categories.reduce(
+                (sum: number, cat: GameCategory) => sum + (data.available[cat] ?? 0),
+                0
+            );
+            // Nothing on-mode: widen the fallback for this run instead of blocking (see
+            // `relaxed` above). The board fills from whatever the server could give,
+            // which for a new learner is a set of freshly-lent Unfamiliar cards.
+            const runMode = inModeAvailable === 0
+                ? { ...modeConfig, fallbackOrder: CATEGORY_FALLBACK_ORDER }
+                : modeConfig;
+            setRelaxed(inModeAvailable === 0);
+
+            // Generic notice only — Match Speed cannot name its set up front. Fired
+            // from HERE and nowhere else: this is the one moment before the clock
+            // starts, so the notice never interrupts a live run (see topUpBuffer).
+            setNoticeOpen(provisionalWords(data.cards).length > 0);
+
+            // A challenge board arrives as one shuffled set of contested + filler
+            // (the server never reveals which is which by position — Q74), so the
+            // split happens HERE, once, against the challenge's own word list. Fixed
+            // at deal time and never re-derived: a word can band up mid-round.
+            dealStateRef.current = emptyDealState();
+            const dealt = challengeRound.active
+                ? data.cards.filter((card) => {
+                    if (!challengeRound.isContested(card.entryKey)) return true;
+                    dealStateRef.current.contested.push({
+                        pairId: `pair-${card.id}`,
+                        entry: card,
+                        // The buffer's category stamp is a BAND, and a contested pair
+                        // is not drawn by band — it is dealt by the alternation. Any
+                        // in-mode value keeps `CardPair` honest without implying the
+                        // roll could have produced it.
+                        category: (card.gameCategory ?? runMode.fallbackOrder[0]) as GameCategory,
+                    });
+                    return false;
+                })
+                : data.cards;
+            fillBuffer(bufferRef.current, dealt, runMode);
+            setScore(0);
+            setAttempts(0);
+            setRemainingMs(RUN_DURATION_MS);
+            setPopupMinimized(false);
+            setCountdownStep(0);
+            setRunId((n) => n + 1);
+            setPhase("countdown");
+        } catch {
+            setBlockMessage("Couldn't load the game. Please try again.");
+            setPhase("blocked");
+        }
+        // `challengeRound`'s members are stable by construction; the object identity
+        // is not, and listing it would re-create `beginRun` on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchPool, modeConfig, resetMarkedLent]);
+
+    // A challenge round that cannot be played is stated, never silently downgraded
+    // to a casual run that scores nothing.
+    useEffect(() => {
+        if (challengeRound.error) {
+            setBlockMessage(challengeRound.error);
+            setPhase("blocked");
+        }
+    }, [challengeRound.error]);
+
+    // Initial load. Keyed on the STABLE auth identity, NOT `token`: a silent
+    // access-token refresh (~every 15 min) must not restart the game mid-run.
+    // See CLAUDE.md "Never reload/reset a page on a silent token refresh".
+    useEffect(() => {
+        if (!user) {
+            setBlockMessage("Sign in to play Match Speed.");
+            setPhase("blocked");
+            return;
+        }
+        // WAIT FOR THE CHALLENGE CONTEXT. The round's contested set arrives with the
+        // challenge payload, and a board dealt before it lands would be classified
+        // entirely as filler — a round scored at 20 points a card with no way to tell
+        // afterwards that it went wrong. `ready` flips once, so this costs an
+        // ordinary launch nothing (`active` is false and the guard never fires).
+        if (challengeRound.active && !challengeRound.ready) return;
+        void beginRun();
+        // Keyed on the mode too: navigating from one hub sub-card to another lands
+        // on the SAME route with only `state.mode` changed, so without this a
+        // remount-less switch would keep playing the previous mode's buffer.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, modeConfig.mode, challengeRound.active, challengeRound.ready]);
+
+    // ── Popup pause gate ─────────────────────────────────────────────────────
+    // No game clock may run while a MODAL popup is covering the board: the
+    // provisional-cards notice opens the instant a run is primed and the settings
+    // sheet can be opened mid-run, and both take the whole screen — reading them
+    // would otherwise be billed to the player's 30 seconds. Both are input-blocking
+    // overlays, so freezing the clock can't be used to study the live board for
+    // free. The end popup is deliberately absent: by then the clock has stopped.
+    // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
+    // the clock.
+    // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
+    // (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). The 30-second run
+    // clock is the thing being protected here: without this, backgrounding the app
+    // spent the whole run.
+    const clockPaused = noticeOpen || backgroundPaused;
+
+    // The 3·2·1·Go countdown. The board is already primed and readable behind it,
+    // so the opening board gets a beat to be read and the run clock starts from an
+    // identical state every time — nobody is billed for reading time.
+    //
+    // Driven by one timeout per step, re-armed by `countdownStep` changing, rather
+    // than an interval whose callback inspects the step inside a state updater —
+    // an updater must stay a pure function of previous state (StrictMode runs it
+    // twice), and advancing the phase from inside one is exactly the side effect
+    // that rule exists to prevent.
+    useEffect(() => {
+        if (phase !== "countdown" || clockPaused) return;
+        const isLastStep = countdownStep >= COUNTDOWN_STEPS.length - 1;
+        const id = setTimeout(
+            () => (isLastStep ? setPhase("playing") : setCountdownStep((step) => step + 1)),
+            COUNTDOWN_STEP_MS
+        );
+        return () => clearTimeout(id);
+    }, [phase, countdownStep, clockPaused]);
+
+    // The run clock. Deadline-based rather than decrementing a counter, so a
+    // backgrounded tab or a slow frame can't stretch the run past 30 seconds.
+    //
+    // The deadline is rebuilt from the time REMAINING every time the effect runs,
+    // so a pause (see `clockPaused`) simply tears the interval down and a resume
+    // re-arms it where it left off — the run still lasts RUN_DURATION_MS of
+    // *playable* time no matter how long a popup sat on top of it.
+    useEffect(() => {
+        if (phase !== "playing" || clockPaused) return;
+        const deadline = Date.now() + remainingMsRef.current;
+        const id = setInterval(() => {
+            const left = deadline - Date.now();
+            if (left <= 0) {
+                clearInterval(id);
+                setRemainingMs(0);
+                setPopupMinimized(false);
+                setPhase("ended");
+                return;
+            }
+            setRemainingMs(left);
+        }, CLOCK_INTERVAL_MS);
+        return () => clearInterval(id);
+    }, [phase, clockPaused]);
+
+    // Bank the win badge on a gold run only, once the run has ended. Gold-only
+    // keeps the hub badge an achievement rather than a play counter. The win is
+    // logged under the MODE's level key, so the hub stars the mode that was
+    // actually cleared (Mix keeps key 1 — the game's pre-modes key).
+    useEffect(() => {
+        if (phase !== "ended") return;
+        // `won: true` unconditionally: Match Speed has no win/loss and no survival
+        // bonus (its challenge shape is the alternation rule instead), so the flag
+        // only ever decides an all-or-nothing bonus this game does not have.
+        challengeRound.finish(true);
+        if (medalForScore(score)?.medal === "gold") recordWin(modeConfig.winLevel);
+        // A challenge round's deal is the round's shared word set, not the player's
+        // own pool, so it does not compete with their personal best. Nor does a
+        // RELAXED run: a Review/Challenge run that widened to every bucket was a
+        // different (easier) board than its mode's, and must not set that mode's best.
+        if (!challengeRound.active && !relaxed) void recordPersonalBest(score);
+        // Runs once per run end; recordWin's identity is not stable across renders.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase]);
+
+    /**
+     * Record a recognition mark for a matched/mismatched card. Fire-and-forget
+     * with a .catch(): the game never blocks or fails on a mark request.
+     * Suppressed entirely during cleanup — the board itself never calls onMatch /
+     * onMiss in that mode, so this is only ever reached from live play.
+     */
+    const markCard = useCallback(
+        (entry: VocabEntry, isCorrect: boolean) => {
+            // Match Speed is a recognition drill (foreign → meaning), same track
+            // as Bubble Match. excludeIds defaults to []: the game doesn't use the
+            // replacement card the endpoint returns.
+            markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "match-speed" })
+                .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
+            // Feeds the end-of-run "keep these cards?" offer. Recorded on the ATTEMPT,
+            // so a miss and a cooldown-suppressed mark both count, and never on the
+            // fetch — the buffer holds cards that never reach the board
+            // (docs/PROVISIONAL_CARDS.md § 5).
+            noteMarkedLent(entry);
+            // A challenge round is normal play plus a scored event (§ 5.7). A miss is
+            // charged at most once per foreign word per run, which the shared runner
+            // enforces off the spec — not here.
+            challengeRound.emit({
+                kind: isCorrect ? "hit" : "miss",
+                word: entry.entryKey,
+                contested: challengeRound.isContested(entry.entryKey),
+            });
+        },
+        // No `token` dep — markFlashcard reads the header at call time, so this
+        // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
+        // The challenge round's emit/isContested are stable by construction, as is
+        // `noteMarkedLent` (useCallback with no deps).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        []
+    );
+
+    const handleMatch = useCallback(
+        (entry: VocabEntry) => {
+            setScore((n) => n + 1);
+            setAttempts((n) => n + 1);
+            // The pair is leaving the board, so it stops excluding itself from
+            // top-ups; the server's cooldown governs whether it comes back.
+            onBoardIdsRef.current.delete(entry.id);
+            markCard(entry, true);
+        },
+        [markCard]
+    );
+
+    const handleMiss = useCallback(
+        (entry: VocabEntry) => {
+            // Score is pairs matched and nothing else — a wrong attempt costs only
+            // the time it wastes. It still counts toward accuracy, and still marks
+            // the FOREIGN card incorrect (the board resolves which that is).
+            setAttempts((n) => n + 1);
+            markCard(entry, false);
+        },
+        [markCard]
+    );
+
+    /** Play Again: Match Speed's board is fully transient, so a replay just
+     *  re-primes the buffer and starts a fresh 30s run. Primes the audio element
+     *  inside this real click gesture, before the awaited fetch, or mobile autoplay
+     *  policy would drop the first spoken word. */
+    const playAgain = useCallback(() => {
+        tts.unlockAudio();
+        resetPersonalBest();
+        void beginRun();
+    }, [tts.unlockAudio, beginRun, resetPersonalBest]);
+
+    /**
+     * The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends into its
+     * results card — the same path the clock's own expiry takes, so the medal, the win
+     * and the personal best are judged exactly as a natural end would judge them.
+     * From every other phase there is nothing to show, so the break closes.
+     */
+    const leaveBreak = useCallback(() => {
+        if (phase === "countdown" || phase === "playing") {
+            setPopupMinimized(false);
+            setPhase("ended");
+            return;
+        }
+        onDone();
+    }, [phase, onDone]);
+    const onExitRequest = isBreak ? leaveBreak : onBack;
+
+    // Cleanup: the run is scored and the popup has been tucked into its corner
+    // puck, so the leftover board becomes a no-stakes study surface — no clock, no
+    // refills, no marks, and tapping a card reveals its partner. Derived rather
+    // than a separate phase value so the two can never disagree.
+    const cleanupMode = phase === "ended" && popupMinimized;
+    const medal = medalForScore(score);
+    const accuracy = attempts > 0 ? Math.round((score / attempts) * 100) : 0;
+
+    // The centred column shown INSTEAD of the board (spinner, or the blocked
+    // message). The shape is shared — `GameCentered` also owns the rule that text on
+    // the accent ground is white — so this is only the page's class name for it.
+    const renderCentered = (children: React.ReactNode) => (
+        <GameCentered className="match-speed__overlay">{children}</GameCentered>
+    );
+
+    const showBoard = phase === "countdown" || phase === "playing" || phase === "ended";
+
+    // End-of-run offer to keep the lent cards; opens a beat after the end popup. Named
+    // from what the player REVIEWED — the pre-round notice could not name anything, and
+    // the served set would include cards that sat in the buffer untouched.
+    const sortOffer = useProvisionalSortOffer(phase === "ended", markedLentWords);
+
+    return (
+        // The host's `Frame` supplies the chrome: a LEAF PAGE on the route
+        // (docs/LEAF_NODE_PAGES.md), the game area's header in an flp break.
+        <>
+        {/* Generic (non-itemized) notice: Match Speed deals from a rolling buffer, so
+            the set of lent cards isn't known before the run starts. */}
+        <ProvisionalCardsNotice
+            open={noticeOpen}
+            onDismiss={() => setNoticeOpen(false)}
+            surfaceName="Match Speed"
+            language={(user?.selectedLanguage ?? "zh") as Language}
+            // Match Speed badges its lent cards in-round (MatchSpeedCard), so the
+            // notice teaches the mark instead of only announcing the lending.
+            badgedInRound
+        />
+        <Frame title="Match Speed" onExitRequest={onExitRequest} headerRight={headerRight}>
+            <Box
+                className="match-speed__content"
+                sx={{
+                    // Anchors the absolutely-positioned end-popup scrim.
+                    position: "relative",
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
+                }}
+            >
+                {phase === "loading" && renderCentered(<DelayedCircularProgress className="match-speed__spinner" />)}
+
+                {phase === "blocked" &&
+                    renderCentered(
+                        <>
+                            <Typography
+                                className="match-speed__block-msg"
+                                sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}
+                            >
+                                {blockMessage}
+                            </Typography>
+                            <Button
+                                className="match-speed__block-back"
+                                variant="contained"
+                                onClick={onDone}
+                            >
+                                {isBreak ? "Back to cards" : "Back to Games"}
+                            </Button>
+                        </>
+                    )}
+
+                {showBoard && (
+                    <GameFrame className="match-speed__frame">
+                        {/* Top of the PLAY AREA, not the header — the clock is game
+                            state and belongs where the player is already looking.
+                            Shown from the countdown on (at a full bar) so the board
+                            never shifts down when the run starts, and dimmed once
+                            the run is over rather than removed, for the same
+                            reason. */}
+                        <MatchSpeedTimerBar remainingMs={remainingMs} dimmed={phase === "ended"} />
+
+                        {/* What this run IS, and how it is going. The mode is chosen on
+                            the hub and the collection on /decks, so neither is visible
+                            anywhere else once the run starts — without this strip a
+                            player who launched the wrong mode only finds out from the
+                            cards. `divider={false}`: the timer above already draws the
+                            hairline. */}
+                        <GameHud className="match-speed__hud" divider={false}>
+                            <GameHudLabel className="match-speed__hud-mode">
+                                {modeConfig.label} · {launchCollection ? collectionTitle(launchCollection) : "All cards"}
+                            </GameHudLabel>
+                            <GameHudLabel className="match-speed__hud-score">{score} matched</GameHudLabel>
+                        </GameHud>
+
+                        <MatchSpeedBoard
+                            // Remounting per run is what resets the board; the buffer
+                            // and score are reset by beginRun.
+                            key={runId}
+                            language={language}
+                            showPinyin={showPinyin}
+                            showPinyinColor={showPinyinColor}
+                            drawPairs={drawPairs}
+                            onRefilled={topUpBuffer}
+                            onMatch={handleMatch}
+                            onMiss={handleMiss}
+                            cleanupMode={cleanupMode}
+                            // Readable but not yet live during the countdown, and
+                            // frozen once the run ends until the popup is minimized
+                            // into cleanup mode.
+                            frozen={phase === "countdown" || (phase === "ended" && !cleanupMode)}
+                            onSpeak={tts.autoplay ? tts.autoSpeak : undefined}
+                        />
+
+                        {/* 3·2·1·Go, over a readable board. */}
+                        {phase === "countdown" && (
+                            <Box
+                                className="match-speed__countdown"
+                                sx={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    backgroundColor: COLORS.scrim,
+                                    pointerEvents: "none",
+                                    zIndex: 5,
+                                }}
+                            >
+                                <Typography
+                                    className="match-speed__countdown-step"
+                                    // Keyed by step so the zoom animation replays on
+                                    // each tick rather than only on mount.
+                                    key={countdownStep}
+                                    sx={{
+                                        fontSize: "72px",
+                                        fontWeight: WEIGHT.bold,
+                                        color: COLORS.white,
+                                        textShadow: "0 2px 12px rgba(0,0,0,0.4)",
+                                        animation: "match-speed-countdown-pop 400ms ease-out",
+                                        "@keyframes match-speed-countdown-pop": {
+                                            from: { opacity: 0, transform: "scale(0.5)" },
+                                            to: { opacity: 1, transform: "scale(1)" },
+                                        },
+                                    }}
+                                >
+                                    {COUNTDOWN_STEPS[countdownStep]}
+                                </Typography>
+                            </Box>
+                        )}
+
+                        <GameHint className="match-speed__hint">tap a word, then its meaning</GameHint>
+                    </GameFrame>
+                )}
+
+                {/* A CHALLENGE ROUND ENDS ON THE SCOREBOARD (§ 5.5), which replaces
+                    the medal card entirely: the round is scored on contested/filler
+                    points rather than on pairs-per-30s, and there is no Play Again to
+                    offer because a submitted round is final (§ 5.1a). */}
+                {showBoard && phase === "ended" && challengeRound.active && (
+                    <ChallengeRoundScoreboard round={challengeRound} classPrefix="match-speed" />
+                )}
+
+                {showBoard && phase === "ended" && !challengeRound.active && (
+                    <MatchSpeedEndPopup
+                        minimized={popupMinimized}
+                        onMinimize={() => setPopupMinimized(true)}
+                        onRestore={() => setPopupMinimized(false)}
+                    >
+                        <Typography
+                            className="match-speed__popup-title"
+                            sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}
+                        >
+                            {medal ? `${medal.emoji} ${medal.medal[0].toUpperCase()}${medal.medal.slice(1)}!` : "Time!"}
+                        </Typography>
+                        <Typography
+                            className="match-speed__popup-score"
+                            sx={{ fontSize: SIZE.bodyLg, color: fc.onSurface, fontWeight: WEIGHT.bold }}
+                        >
+                            {score} {score === 1 ? "pair" : "pairs"} matched
+                        </Typography>
+                        {/* Information only — accuracy never gates a medal. */}
+                        <Typography
+                            className="match-speed__popup-accuracy"
+                            sx={{ fontSize: SIZE.body, color: fc.textSecondary }}
+                        >
+                            Accuracy {score}/{attempts} ({accuracy}%)
+                        </Typography>
+                        <PersonalBestLine
+                            game="match-speed"
+                            best={personalBestPairs}
+                            isNewBest={isNewBest}
+                            className="match-speed__personal-best"
+                        />
+                        <Box
+                            className="match-speed__replay-actions"
+                            sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
+                        >
+                            {/* An flp break is one run between cards: its only way on is
+                                back to the session (docs/FLP_GAME_BREAKS.md § 2). */}
+                            {isBreak ? (
+                            <Button
+                                className="match-speed__replay-btn match-speed__replay-btn--back-to-cards"
+                                variant="contained"
+                                onClick={onDone}
+                                sx={{
+                                    py: 1.25,
+                                    borderRadius: "14px",
+                                    textTransform: "none",
+                                    fontSize: SIZE.bodyLg,
+                                    fontWeight: WEIGHT.bold,
+                                    lineHeight: LEADING.tight,
+                                }}
+                            >
+                                Back to cards
+                            </Button>
+                            ) : (
+                            <>
+                            <Button
+                                className="match-speed__replay-btn match-speed__replay-btn--play-again"
+                                variant="contained"
+                                onClick={playAgain}
+                                sx={{
+                                    py: 1.25,
+                                    borderRadius: "14px",
+                                    textTransform: "none",
+                                    fontSize: SIZE.bodyLg,
+                                    fontWeight: WEIGHT.bold,
+                                    lineHeight: LEADING.tight,
+                                }}
+                            >
+                                Play Again
+                            </Button>
+                            <Button
+                                className="match-speed__replay-btn match-speed__replay-btn--back"
+                                variant="outlined"
+                                onClick={onDone}
+                                sx={{
+                                    py: 1,
+                                    borderRadius: "14px",
+                                    textTransform: "none",
+                                    fontWeight: WEIGHT.medium,
+                                }}
+                            >
+                                Back to Games
+                            </Button>
+                            </>
+                            )}
+                        </Box>
+                    </MatchSpeedEndPopup>
+                )}
+
+                {/* Stacks over the end popup, collapsing to the opposite corner.
+                    Renders nothing unless this run used lent cards. A sibling of the
+                    frame, not a child of it: both this and the end popup cover the whole
+                    content area, so they must not be clipped by the panel's radius. */}
+                {showBoard && (
+                    <ProvisionalSortOffer
+                        open={sortOffer.open}
+                        words={markedLentWords}
+                        language={(user?.selectedLanguage ?? "zh") as Language}
+                        onDismiss={sortOffer.dismiss}
+                        minimized={sortOffer.minimized}
+                        onMinimize={sortOffer.onMinimize}
+                        onRestore={sortOffer.onRestore}
+                    />
+                )}
+            </Box>
+
+            {/* Backgrounding paused the round — the app-wide rule
+                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
+                the board, like GameEndPopup, so the layout does not change shape when
+                paused; it covers the board so the pause cannot be used as a free look
+                at it, and the clock only restarts when the player taps Resume. */}
+            <GamePausedOverlay
+                open={backgroundPaused}
+                onResume={resumeFromBackground}
+                classPrefix="match-speed"
+            />
+        </Frame>
+        </>
+    );
+};
+
+export default MatchSpeedStage;

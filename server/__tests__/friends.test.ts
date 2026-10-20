@@ -384,9 +384,9 @@ describe('FriendsService.getLeaderboard', () => {
                 profile(BOB, 'Bob', { selectedLanguage: 'es' }),
             ],
             buckets: [
-                { userId: ALICE, language: 'zh', bar: 'core', bandsClimbed: 3 },
+                { userId: ALICE, language: 'zh', world: 'core', bandsClimbed: 3 },
                 // Bob's work is all Spanish — it must count, even though Alice studies zh.
-                { userId: BOB, language: 'es', bar: 'core', bandsClimbed: 9 },
+                { userId: BOB, language: 'es', world: 'core', bandsClimbed: 9 },
             ],
             netPoints: { [BOB]: { es: 500, zh: 4000 } },
         });
@@ -406,11 +406,11 @@ describe('FriendsService.getLeaderboard', () => {
                 profile(BOB, 'Bob'), // core only
             ],
             buckets: [
-                { userId: ALICE, language: 'zh', bar: 'core', bandsClimbed: 2 },
-                { userId: ALICE, language: 'zh', bar: 'reading', bandsClimbed: 5 },
-                { userId: BOB, language: 'zh', bar: 'core', bandsClimbed: 2 },
+                { userId: ALICE, language: 'zh', world: 'core', bandsClimbed: 2 },
+                { userId: ALICE, language: 'zh', world: 'reading', bandsClimbed: 5 },
+                { userId: BOB, language: 'zh', world: 'core', bandsClimbed: 2 },
                 // Logged but not pursued — must not inflate Bob past Alice.
-                { userId: BOB, language: 'zh', bar: 'writing', bandsClimbed: 50 },
+                { userId: BOB, language: 'zh', world: 'writing', bandsClimbed: 50 },
             ],
         });
 

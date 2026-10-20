@@ -260,7 +260,7 @@ describe('FlashcardMarkService.applyMark', () => {
 
         const result = await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
 
-        expect(vet.writes[0].masteredAt).toEqual({ bar: 'reading', stamp: result.markTimestamp });
+        expect(vet.writes[0].masteredAt).toEqual({ world: 'reading', stamp: result.markTimestamp });
         expect(promotions.recorded).toHaveLength(1);
         expect(promotions.recorded[0]).toMatchObject({
             bar: 'reading',
@@ -430,7 +430,7 @@ describe('FlashcardMarkService.undoMark', () => {
 
         await service.undoMark({ userId: USER, cardId: CARD, markTimestamp: LAST, markType: 'reading' });
 
-        expect(vet.writes[0].masteredAt).toEqual({ bar: 'reading', stamp: null });
+        expect(vet.writes[0].masteredAt).toEqual({ world: 'reading', stamp: null });
     });
 
     it('leaves a mastery stamp created by some OTHER mark alone', async () => {

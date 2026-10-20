@@ -44,11 +44,12 @@ interface FlashCardSectionProps {
     // Overrides the default empty-state text when present (e.g. mode run-out:
     // "No more easy cards remaining.").
     emptyMessage?: string;
-    showPinyin: boolean;
     showPinyinColor: boolean;
-    // The READING flp (`?bar=reading`, any mode, docs/READING_WRITING_CENTERS.md § Phase 4): the
+    // The READING flp (`?world=reading`, any mode, docs/READING_WRITING_CENTERS.md § Phase 4): the
     // question face shows the characters ALONE — no pinyin, no speaker — and the answer
-    // face always shows pinyin, whatever the learner's showPinyin setting is.
+    // face shows pinyin. This flag is the ONLY thing that decides pinyin on the flp: there
+    // is no learner toggle (the header chip was removed 2026-10-18), so the normal flp
+    // shows pinyin on every face.
     readingMode?: boolean;
     // When true, the card's progress category renders as a colored chip on Side 2.
     // Side 1 language for the front-slot card. Side 2 always shows both.
@@ -111,7 +112,7 @@ interface FlashCardSectionProps {
     noteEditing?: boolean;
     onSaveNote?: (note: string | null) => void;
     onCancelNote?: () => void;
-    // ── Writing flp (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3) ──────────
+    // ── Writing flp (`?world=writing`, docs/WRITING_PRACTICE_REWORK.md § 3) ──────────
     // Same card, same stack, same flip and fly-out — only the CONTENT differs. When set,
     // both faces of every card are drawn by this callback (no word blocks, icons, note
     // or card-ops rail). `role` tells the host which card it is drawing: the active
@@ -124,6 +125,16 @@ interface FlashCardSectionProps {
     // "tap anywhere to continue".
     writingFace?: WritingFaceRenderer;
     onCardClick?: () => void;
+    /**
+     * The flp game break's hold on the stack (docs/FLP_GAME_BREAKS.md § 1–2):
+     *   due    — the front card is the last before a break. The page passes
+     *            `nextEntry: null`, so nothing peeks behind it, and the card that flies
+     *            out keeps its OWN content (see `holdOutgoing`) instead of the slot's new
+     *            entry — with an empty back slot it would otherwise vanish on release.
+     *   active — a break is on screen. Every slot but a still-flying one is hidden, so
+     *            the card promoted under the fly-out never shows behind the game area.
+     */
+    gameBreak?: "due" | "active" | null;
 }
 
 export type WritingFaceRenderer = (entry: VocabEntry, side: "front" | "back", role: "front" | "peek" | "flying") => React.ReactNode;
@@ -186,7 +197,6 @@ const CardFace: React.FC<{
     entry: VocabEntry;
     isFlipped: boolean;
     isAnimating: boolean;
-    showPinyin: boolean;
     showPinyinColor: boolean;
     /** See FlashCardSectionProps.readingMode. */
     readingMode?: boolean;
@@ -227,7 +237,7 @@ const CardFace: React.FC<{
     // The writing flp's face content for this card (FlashCardSectionProps.writingFace),
     // already bound to the card's role. Absent on every other bar.
     writingFace?: (side: "front" | "back") => React.ReactNode;
-}> = ({ entry, isFlipped, isAnimating, showPinyin, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace }) => {
+}> = ({ entry, isFlipped, isAnimating, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
@@ -356,7 +366,7 @@ const CardFace: React.FC<{
                 {sideOneLanguage === 'zh'
                     // Reading mode: the pinyin and the speaker would both hand over the
                     // reading the card is asking for, so the question face drops them.
-                    ? <ChineseBlock entry={entry} showPinyin={readingMode ? false : showPinyin} showPinyinColor={showPinyinColor} onSpeak={readingMode ? undefined : speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
+                    ? <ChineseBlock entry={entry} showPinyin={!readingMode} showPinyinColor={showPinyinColor} onSpeak={readingMode ? undefined : speakWithSense} speakingKey={speakingKey} selectedSenseIndex={selectedSenseIndex} />
                     : <EnglishBlock
                         entry={entry}
                         selectedSenseIndex={selectedSenseIndex}
@@ -387,8 +397,9 @@ const CardFace: React.FC<{
                     foreign: (
                         <ChineseBlock
                             entry={entry}
-                            // Reading mode: the reading IS the answer, so it always shows here.
-                            showPinyin={readingMode || showPinyin}
+                            // The answer face always shows pinyin — in reading mode the
+                            // reading IS the answer, and the normal flp always shows it.
+                            showPinyin
                             showPinyinColor={showPinyinColor}
                             onSpeak={onSpeak}
                             speakingKey={speakingKey}
@@ -447,7 +458,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     isAnimating,
     selectedCategory,
     emptyMessage,
-    showPinyin,
     showPinyinColor,
     readingMode = false,
     sideOneLanguage,
@@ -470,6 +480,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     onCancelNote,
     writingFace,
     onCardClick,
+    gameBreak = null,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -510,8 +521,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     // running and held until it ends. (State, not a ref: it is read during render.)
     // Compared by id — the page's entry is an override-merged object whose identity can
     // change every render, which would make this render-time update loop.
+    //
+    // A game break needs the same hold on EVERY bar (`gameBreak` prop): the card before a
+    // break has an empty back slot, so without it the flying slot would render nothing.
+    const holdOutgoing = !!writingFace || gameBreak !== null;
     const [outgoingEntry, setOutgoingEntry] = React.useState<VocabEntry | null>(currentEntry);
-    if (writingFace && !flyOut && outgoingEntry?.id !== currentEntry?.id) setOutgoingEntry(currentEntry);
+    if (holdOutgoing && !flyOut && outgoingEntry?.id !== currentEntry?.id) setOutgoingEntry(currentEntry);
 
     // Side 1 language pairs with its slot's entry — not its slot index — so the
     // peeking card behind shows the correct language before promotion.
@@ -589,7 +604,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                             {([0, 1] as const).map((slot) => {
                                 const isFront = slot === activeFrontSlot;
                                 const isThisSlotFlyingOut = flyOut?.slot === slot;
-                                const entry = writingFace && isThisSlotFlyingOut ? outgoingEntry : slotEntries[slot];
+                                const entry = holdOutgoing && isThisSlotFlyingOut ? outgoingEntry : slotEntries[slot];
+                                // During a break only the card still flying out may show.
+                                const hiddenForBreak = gameBreak === "active" && !isThisSlotFlyingOut;
                                 const writingRole = isThisSlotFlyingOut ? "flying" : isFront ? "front" : "peek";
 
                                 // Compute transform and transition for this slot:
@@ -662,6 +679,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             opacity,
                                             // Back card should never capture pointer events
                                             ...(!isFront && { pointerEvents: 'none', userSelect: 'none' }),
+                                            ...(hiddenForBreak && { visibility: 'hidden', pointerEvents: 'none' }),
                                             // Writing flp: the promoted back card grows from its peek pose
                                             // into place under the throw. A keyframe for the same reason as
                                             // the throw — its key changes (`slot-X` → `front-N`) on promotion,
@@ -693,10 +711,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         {entry && (
                                             <CardFace
                                                 entry={entry}
-                                                // A flying writing card stays on its graded back face.
-                                                isFlipped={isFront ? isFlipped : !!writingFace && isThisSlotFlyingOut}
+                                                // A held flying card stays on the face it was sent off from: the
+                                                // writing card's graded back, and — before a game break — the
+                                                // answer face (a card is only swiped once flipped).
+                                                isFlipped={isFront ? isFlipped : holdOutgoing && isThisSlotFlyingOut}
                                                 isAnimating={isAnimating}
-                                                showPinyin={showPinyin}
                                                 showPinyinColor={showPinyinColor}
                                                 readingMode={readingMode}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}
@@ -765,7 +784,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         ? emptyMessage
                                         : selectedCategory
                                         ? `No cards in the ${selectedCategory} category yet. Cards will appear here as you study!`
-                                        : 'No Learn Now cards available. Add cards from the Discover page!'}
+                                        : 'No cards in Learning yet. Add cards from the Discover page!'}
                                 </Typography>
                             </CardContent>
                         </Card>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
-import type { MasteryBarId } from "../utils/masteryCompute";
+import type { MasteryWorldId } from "../utils/masteryCompute";
 
 interface CategoryCountsResult {
     // Per-category library card counts, keyed by category label
@@ -26,9 +26,9 @@ interface CategoryCountsResult {
  * `bar` is the mastery LENS the four bands are read through (docs/DECKS_FEATURE.md
  * § "Mastery Centers"). It defaults to `core`, which is what every caller meant before
  * the Mastery Centers existed — the whole-card question. A Center passes its own bar,
- * so its Learn Now tile counts what is left to READ rather than what is left to know.
+ * so its Learning tile counts what is left to READ rather than what is left to know.
  */
-export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsResult {
+export function useCategoryCounts(world: MasteryWorldId = "core"): CategoryCountsResult {
     const { token, isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loaded, setLoaded] = useState(false);
@@ -38,7 +38,7 @@ export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsRes
         if (!token) return;
         (async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/onDeck/categoryCounts?bar=${bar}`, {
+                const response = await fetch(`${API_BASE_URL}/api/onDeck/categoryCounts?world=${world}`, {
                     credentials: "include",
                     headers: { Authorization: `Bearer ${token}` },
                 });
@@ -57,7 +57,7 @@ export function useCategoryCounts(bar: MasteryBarId = "core"): CategoryCountsRes
     // See CLAUDE.md "Never reload on token refresh". `bar` IS a dep — it changes only
     // when the surface itself is a different lens, which genuinely needs new numbers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, bar]);
+    }, [isAuthenticated, world]);
 
     return { counts, loaded, ok };
 }

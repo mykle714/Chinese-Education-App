@@ -5,15 +5,16 @@ import { useCallback, useEffect, useState } from 'react';
 const STORAGE_KEY = 'flashcard.learn-settings';
 
 export interface FlashcardLearnSettings {
-    // Whether the reading line shows at all. Toggled from the flp header chip and
-    // the Match Speed settings sheet; read by every surface that renders a reading.
+    // Whether the reading line shows at all. Toggled from the game headers' pinyin
+    // chips (Match Speed, Hydra). The flp does NOT read it — flp pinyin is fixed by
+    // the bar (FlashCardSection `readingMode`); its header chip was removed 2026-10-18.
     showPinyin: boolean;
     // Whether that reading is tinted by tone. Toggled from /settings → Display (it
     // is a display preference, not a study control) and from Match Speed's sheet.
     showPinyinColor: boolean;
     // NOTE: this hook no longer has a settings sheet of its own. The flp's sheet was
-    // deleted on 2026-08-28 once its last row moved out; both prefs above are now
-    // edited from the flp header chip and /settings. Three things that used to live
+    // deleted on 2026-08-28 once its last row moved out; the prefs above are now
+    // edited from game header chips and /settings. Three things that used to live
     // here and where they went:
     //   • word spacing → account-level (users."showSegmentSpaces", migration 129),
     //     so the eip and the cdp can't disagree. Read from useAuth(), toggled on the

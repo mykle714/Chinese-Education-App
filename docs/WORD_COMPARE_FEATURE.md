@@ -124,7 +124,7 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   slot A** with the word the user navigated from.
 
 - **The eip entry header is NOT an entry point.** A `compare_arrows` button briefly lived
-  there (2026-09-04) beside `SpeakerButton` and "+ Add to Learn Now", acting on the word the
+  there (2026-09-04) beside `SpeakerButton` and "+ Add to Learning", acting on the word the
   header was showing; it was **removed the same day**. `WordToolsRail` is the only Compare
   affordance, so a word the learner has DRILLED INTO (a breakdown row, an example segment)
   must be opened as its own page before it can be compared — that is the Compare half of

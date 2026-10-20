@@ -310,9 +310,10 @@ const WritingGridPage: React.FC = () => {
                         dimmed={phase === "ended"}
                         valueShown={showTimer}
                         onToggleValueShown={() => updateGridSettings({ showTimer: !showTimer })}
-                        // The phase rides in the clock strip's top-left corner rather than on
-                        // its own row, so the board gets that row's height back.
-                        leading={
+                        // The phase rides in the clock strip's top-right corner rather than on
+                        // its own row, so the board gets that row's height back. (Top-right
+                        // since 2026-10-18: the timer eye owns the left edge.)
+                        trailing={
                             <Box className="writing-grid__phase" sx={{ fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
                                 {phase === "arrange" || phase === "countdown" ? "Phase 1" : "Phase 2"}
                             </Box>

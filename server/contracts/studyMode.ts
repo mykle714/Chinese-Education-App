@@ -1,4 +1,4 @@
-import type { MasteryBarId } from './wire.js';
+import type { MasteryWorldId } from './wire.js';
 
 /**
  * studyMode.ts — the two independent axes of an flp session, shared by server and client.
@@ -8,7 +8,7 @@ import type { MasteryBarId } from './wire.js';
  *     challenge — Unfamiliar + Target;
  *     (absent)  — Study Mix, all four in the 1-2-2-5 shape.
  *
- *   BAR (`?bar=`) — WHICH TRACK the session exercises, and so which bar those bands,
+ *   WORLD (`?world=`) — WHICH TRACK the session exercises, and so which bar those bands,
  *   the queue and the cooldown are read off:
  *     core    — the know flp (recognition / production faces). The default.
  *     reading — the READING flp (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only
@@ -35,13 +35,13 @@ export function parseStudyMode(raw: unknown): StudyMode | undefined {
 }
 
 /**
- * The bars an flp session can run on. Writing joined in the 8-level rework
+ * The worlds an flp session can run on. Writing joined in the 8-level rework
  * (docs/WRITING_PRACTICE_REWORK.md § 3): a writing card is drawn by hand at a level set
  * by its (averaged) writing mastery, and the flp writes per-character marks.
  */
-export type FlpBar = Extract<MasteryBarId, 'core' | 'reading' | 'writing'>;
+export type FlpWorld = Extract<MasteryWorldId, 'core' | 'reading' | 'writing'>;
 
-/** Parse a `?bar=` / body `bar` value. Anything unrecognized is the know flp (`core`). */
-export function parseFlpBar(raw: unknown): FlpBar {
+/** Parse a `?world=` / body `world` value. Anything unrecognized is the know flp (`core`). */
+export function parseFlpWorld(raw: unknown): FlpWorld {
   return raw === 'reading' ? 'reading' : raw === 'writing' ? 'writing' : 'core';
 }

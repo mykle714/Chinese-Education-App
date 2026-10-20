@@ -1,4 +1,4 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from "react";
+import { createElement, lazy, type ComponentType, type LazyExoticComponent } from "react";
 import { GAME_REGISTRY } from "../games/registry";
 import { FLAGGED_OFF_PATHS, ROUTE_META, type RouteMeta } from "./routeMeta";
 
@@ -115,8 +115,20 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
 };
 
 /** Game components, keyed by route, from the game registry. Already lazy there. */
+//
+// Each is wrapped in FocusGameGuard (docs/FOCUS_MODE.md § 5): a menu launch in a focused
+// world with too few of today's cards left is refused with a popup before the game mounts.
 const GAME_COMPONENTS: Record<string, RouteComponent> = Object.fromEntries(
-  GAME_REGISTRY.map((g) => [g.route, g.Component])
+  GAME_REGISTRY.map((g) => [
+    g.route,
+    // Lazy like every route (the guard's module is fetched with the game's); the game's own
+    // component inside stays the registry's lazy one.
+    lazy(() =>
+      import("../features/focusMode/FocusGameGuard").then(({ default: FocusGameGuard }) => ({
+        default: () => createElement(FocusGameGuard, { game: g, children: createElement(g.Component) }),
+      }))
+    ),
+  ])
 );
 
 /**

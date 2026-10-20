@@ -99,7 +99,7 @@ const ReadingSwipeGrid: React.FC<ReadingSwipeGridProps> = ({ cards, loading }) =
 
     useEffect(() => {
         if (poolRef.current || cards.length === 0) return;
-        const pool = buildPool(cards, Date.now(), Math.random, { bar: "reading" });
+        const pool = buildPool(cards, Date.now(), Math.random, { world: "reading" });
         poolRef.current = pool;
         const layout = initialLayout(pool, Math.random, nextKey);
         setTiles(layout);

@@ -9,7 +9,7 @@ import DecksSheets, { DECKS_SHEET_PILL_BAND, type DecksSheetsHandle } from "./De
 import { useDecksPanel } from "./useDecksPanel";
 import { withLens } from "./collectionRef";
 import {
-    MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, MASTERY_CENTER_GROUNDS, MASTERY_CENTER_HUES, type MasteryCenterBar,
+    MASTERY_CENTER_PATHS, MASTERY_CENTER_TITLES, MASTERY_CENTER_GROUNDS, MASTERY_CENTER_HUES, type MasteryCenterWorld,
 } from "./masteryCenters";
 import WritingPracticeGrid from "./centers/WritingPracticeGrid";
 import WritingGamesCarousel from "./centers/WritingGamesCarousel";
@@ -48,9 +48,9 @@ import { readBackSnapshot, saveBackSnapshot } from "./backRestore";
  * left back arrow, horizontal slide, and the Flashcards footer tab stays lit.
  *
  * ── Navigation carries the lens ───────────────────────────────────────────────
- * Every link OUT of the sheets keeps it. A per-bar collection (Learn Now / Mastered)
+ * Every link OUT of the sheets keeps it. A per-bar collection (Learning / Mastered)
  * carries its lens in its own id; a DECK and a CARD are bar-agnostic sets, so they get
- * `?bar=` (`withLens`). Without that, tapping a deck inside the Reading Center would
+ * `?world=` (`withLens`). Without that, tapping a deck inside the Reading Center would
  * silently drop the learner back into a core view of it.
  *
  * ── Not gated ─────────────────────────────────────────────────────────────────
@@ -94,15 +94,15 @@ const MasteryCenterPage: React.FC = () => {
     // cannot produce a third, meaningless Center. Anything unrecognized reads as the
     // Reading Center — a defined page beats a blank one if the table and the registry
     // ever disagree.
-    const bar: MasteryCenterBar =
+    const world: MasteryCenterWorld =
         pathname === MASTERY_CENTER_PATHS.writing ? "writing" : "reading";
-    const title = MASTERY_CENTER_TITLES[bar];
+    const title = MASTERY_CENTER_TITLES[world];
     usePageTitle(title);
 
     // Back restore (backRestore.ts): a Center left for a card or a set comes back with
     // the same sheet up at the same height, search, sort, filter and sheet scroll.
     const [restored] = useState(() => readBackSnapshot("mastery-center", locationKey));
-    const panel = useDecksPanel(bar, restored?.panel);
+    const panel = useDecksPanel(world, restored?.panel);
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
 
     // Returning from a game this Center launched — either Center's games belt (the
@@ -130,9 +130,9 @@ const MasteryCenterPage: React.FC = () => {
     const handleOpenCard = useCallback(
         (entry: VocabEntry) => {
             rememberPlaceRef.current();
-            slideNavigate(withLens(`/flashcards/card/${entry.id}`, bar));
+            slideNavigate(withLens(`/flashcards/card/${entry.id}`, world));
         },
-        [slideNavigate, bar]
+        [slideNavigate, world]
     );
 
     // Same rule for a set: the per-bar collections carry their lens in the id, a deck
@@ -140,25 +140,25 @@ const MasteryCenterPage: React.FC = () => {
     const handleOpenPath = useCallback(
         (path: string) => {
             rememberPlaceRef.current();
-            slideNavigate(withLens(path, bar));
+            slideNavigate(withLens(path, world));
         },
-        [slideNavigate, bar]
+        [slideNavigate, world]
     );
 
     // "Reading Cards" / "Writing Decks" — the sheet names carry the skill so a sheet
     // pulled to full height still says whose cards these are. The pills stay short.
-    const skill = bar === "reading" ? "Reading" : "Writing";
+    const skill = world === "reading" ? "Reading" : "Writing";
 
     return (
         <NodePage
             title={title}
             onBack={() => navigate("/")}
-            contentClassName={`mastery-center-page__content mastery-center-page__content--${bar}`}
-            surfaceColor={MASTERY_CENTER_GROUNDS[bar]}
+            contentClassName={`mastery-center-page__content mastery-center-page__content--${world}`}
+            surfaceColor={MASTERY_CENTER_GROUNDS[world]}
             bottomFadeBand={CENTER_BOTTOM_FADE_BAND}
             // The Reading Center's games carousel is a sideways scroller; the scroll
             // area's own touch-action would otherwise cap it (NodePage.horizontalPan).
-            horizontalPan={bar === "reading"}
+            horizontalPan={world === "reading"}
             // The pills + sheets sit beside the scroll area, in the frame-filling
             // positioned box SheetPanel measures itself against (NodePage.overlay).
             overlay={
@@ -176,7 +176,7 @@ const MasteryCenterPage: React.FC = () => {
         >
             <Box
                 ref={bodyRef}
-                className={`mastery-center-page__body mastery-center-page__body--${bar}`}
+                className={`mastery-center-page__body mastery-center-page__body--${world}`}
                 sx={{
                     width: "100%",
                     display: "flex",
@@ -189,8 +189,8 @@ const MasteryCenterPage: React.FC = () => {
                 }}
             >
                 {/* Both Centers open on the global Word of the Day, in the Center's hue. */}
-                <WordOfTheDayCard hue={MASTERY_CENTER_HUES[bar]} />
-                {bar === "writing" ? (
+                <WordOfTheDayCard hue={MASTERY_CENTER_HUES[world]} />
+                {world === "writing" ? (
                     <>
                         {/* The WRITING flp's hand — Writing Challenge / Review / Mix, the same
                             compact stack as the Reading Center's (docs/WRITING_PRACTICE_REWORK.md
@@ -200,7 +200,7 @@ const MasteryCenterPage: React.FC = () => {
                                 className="mastery-center-page__study-hand"
                                 sx={{ height: READING_HAND_HEIGHT, margin: "14px 22px 0", display: "flex", flexDirection: "column", flexShrink: 0 }}
                             >
-                                <FlpStudyHand bar="writing" variant="compact" />
+                                <FlpStudyHand world="writing" variant="compact" />
                             </Box>
                         )}
                         <WritingPracticeGrid
@@ -224,7 +224,7 @@ const MasteryCenterPage: React.FC = () => {
                                 className="mastery-center-page__study-hand"
                                 sx={{ height: READING_HAND_HEIGHT, margin: "14px 22px 0", display: "flex", flexDirection: "column", flexShrink: 0 }}
                             >
-                                <FlpStudyHand bar="reading" variant="compact" />
+                                <FlpStudyHand world="reading" variant="compact" />
                             </Box>
                         )}
                         <ReadingSwipeGrid cards={panel.allCards} loading={panel.cardsLoading} />

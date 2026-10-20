@@ -1,4 +1,4 @@
-import type { MasteryBarId, TypedMarkHistory } from '../contracts/wire.js';
+import type { MasteryWorldId, TypedMarkHistory } from '../contracts/wire.js';
 import { barCooldownRemainingMs, barReadyAt } from '../contracts/cooldown.js';
 
 /**
@@ -57,10 +57,10 @@ export {
  */
 export function queueArrivalAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   writingMastery?: number | null
 ): number {
-  return barReadyAt(typedMarkHistory, bar, writingMastery) ?? -Infinity;
+  return barReadyAt(typedMarkHistory, world, writingMastery) ?? -Infinity;
 }
 
 /** One ranked card, with the moment it became ready. */
@@ -93,14 +93,14 @@ export function rankCardQueue<T extends RankableCard>(
   now: number,
   options: {
     /** The bar whose clock gates this queue. */
-    bar: MasteryBarId;
+    world: MasteryWorldId;
   }
 ): RankedCard<T>[] {
   const scored: RankedCard<T>[] = [];
 
   for (const card of cards) {
-    if (barCooldownRemainingMs(card.typedMarkHistory, options.bar, now, card.writingMastery) > 0) continue;
-    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.bar, card.writingMastery) });
+    if (barCooldownRemainingMs(card.typedMarkHistory, options.world, now, card.writingMastery) > 0) continue;
+    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.world, card.writingMastery) });
   }
 
   scored.sort((a, b) => {
@@ -139,13 +139,13 @@ export function rankCardQueueCooled<T extends RankableCard>(
   cards: T[],
   now: number,
   options: {
-    bar: MasteryBarId;
+    world: MasteryWorldId;
   }
 ): T[] {
   const scored: Array<{ card: T; remainingMs: number }> = [];
 
   for (const card of cards) {
-    const remainingMs = barCooldownRemainingMs(card.typedMarkHistory, options.bar, now, card.writingMastery);
+    const remainingMs = barCooldownRemainingMs(card.typedMarkHistory, options.world, now, card.writingMastery);
     if (remainingMs === 0) continue; // rested — rankCardQueue's business, not ours
     scored.push({ card, remainingMs });
   }

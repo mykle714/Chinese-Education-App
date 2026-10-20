@@ -208,11 +208,11 @@ reach — or the cap may make the weighting unnecessary. Decide that before buil
 either.
 
 **(b) Stop surfacing Recognition vs Production.** The two tracks stay exactly as they
-are on the backend — `MarkType`, `BAR_MARK_TYPES`, the per-type 8-windows, the per-type
+are on the backend — `MarkType`, `WORLD_MARK_TYPES`, the per-type 8-windows, the per-type
 cooldowns, `compute_type_category()` — because the flp's face steering, the games'
 pool selection (§ 7) and the cooldown queue all read them. What goes away is every
 place a learner is *told* which of the two they are doing. The bar they already see is
-called **"Know"** (`BAR_LABELS.core`, `src/utils/masteryCompute.ts`) and blends the
+called **"Know"** (`WORLD_LABELS.core`, `src/utils/masteryCompute.ts`) and blends the
 two; the split leaks out around it in: `MARK_TYPE_LABELS` / `MARK_TYPE_COLORS` (the
 cdp `.msb` window paints recognition blue and production green, `MasteryWindow.tsx`
 — note its per-track **cooldown rows** are the same leak), the mini-card two-mark strip

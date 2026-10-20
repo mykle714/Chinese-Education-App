@@ -273,7 +273,7 @@ describe("sort menu", () => {
     // since the Mastery Centers shipped: a Center must be able to ask "what reading have
     // I been neglecting" without a long-rested recognition track answering for it.
     const cooldown = sortBundles("zh", GOALS).find((b) => b.id === "cooldown:core");
-    expect(cooldown?.bar).toBe("core");
+    expect(cooldown?.world).toBe("core");
     expect(cooldown?.directions.map((d) => d.key)).toEqual(["cooldownReady", "cooldownLongest"]);
     expect(keysOf({ reading: true, writing: true })).toContain("cooldownReadyReading");
     // …and a goal-less account still gets exactly one, the core one.
@@ -284,11 +284,11 @@ describe("sort menu", () => {
   it("tags every per-bar row with the bar it reads", () => {
     // What `allowPerSkillBars` filters on — an `id` match would have missed a new bar.
     const bundles = sortBundles("zh", { reading: true, writing: true });
-    expect(bundles.find((b) => b.id === "mastery:core")?.bar).toBe("core");
-    expect(bundles.find((b) => b.id === "mastery:reading")?.bar).toBe("reading");
-    expect(bundles.find((b) => b.id === "cooldown:writing")?.bar).toBe("writing");
+    expect(bundles.find((b) => b.id === "mastery:core")?.world).toBe("core");
+    expect(bundles.find((b) => b.id === "mastery:reading")?.world).toBe("reading");
+    expect(bundles.find((b) => b.id === "cooldown:writing")?.world).toBe("writing");
     // Two dimensions (mastery / cooldown) x two skill bars.
-    expect(bundles.filter((b) => b.bar && b.bar !== "core")).toHaveLength(4);
+    expect(bundles.filter((b) => b.world && b.world !== "core")).toHaveLength(4);
   });
 
   it("shows ONE bar's rows under a skill lens, whatever the goals say", () => {
@@ -296,8 +296,8 @@ describe("sort menu", () => {
     // including core. The goals argument is inert under a lens: the page is reached only
     // with that goal set, and the bar is computed for every account regardless.
     const bundles = sortBundles("zh", GOALS, "reading");
-    const bars = bundles.filter((b) => b.bar).map((b) => b.bar);
-    expect(new Set(bars)).toEqual(new Set(["reading"]));
+    const worlds = bundles.filter((b) => b.world).map((b) => b.world);
+    expect(new Set(worlds)).toEqual(new Set(["reading"]));
     // Single bar ⇒ unqualified labels; the page title carries the skill.
     expect(bundles.map((b) => b.label)).toContain("Mastery");
     expect(bundles.map((b) => b.label)).not.toContain("Mastery (Read)");

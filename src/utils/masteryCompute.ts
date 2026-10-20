@@ -15,7 +15,7 @@ import type { MarkType } from "../types";
 import { COLORS } from "../theme/colors";
 import { PBH_FULL as PBH_FULL_VALUE } from "../../server/contracts/mastery";
 import type { MasteryBar } from "../../server/contracts/mastery";
-import type { MasteryBarId } from "../../server/contracts/wire";
+import type { MasteryWorldId } from "../../server/contracts/wire";
 
 export type { MasteryGoals, MasteryBar, MasteryBarSegment } from "../../server/contracts/mastery";
 export {
@@ -27,7 +27,7 @@ export {
   isBarOnCooldown,
   isMarkOnCooldown,
 } from "../../server/contracts/cooldown";
-export type { MasteryBarId } from "../../server/contracts/wire";
+export type { MasteryWorldId } from "../../server/contracts/wire";
 export {
   PBH_FULL,
   PBH_BAND,
@@ -36,10 +36,10 @@ export {
   positiveCount,
   positivesByType,
   writingMasteryFromChars,
-  BAR_MARK_TYPES,
-  barForMarkType,
-  activeBars,
-  isBarActive,
+  WORLD_MARK_TYPES,
+  worldForMarkType,
+  activeWorlds,
+  isWorldActive,
   coreProgressBarHeight,
   barProgressBarHeight,
   barCategory,
@@ -156,7 +156,7 @@ export const MARK_TYPE_LABELS: Record<MarkType, string> = {
  * "core" anywhere else, and what the bar actually measures is whether they know the
  * word — recognition plus production — as opposed to reading or writing it.
  */
-export const BAR_LABELS: Record<MasteryBarId, string> = {
+export const WORLD_LABELS: Record<MasteryWorldId, string> = {
   core: "Know",
   reading: "Read",
   writing: "Write",

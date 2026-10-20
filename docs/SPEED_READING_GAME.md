@@ -665,7 +665,7 @@ player already has in their library**.
 
 `SpeedReadingDAL.getLibraryDistractors` builds the pool once at game load:
 
-1. Take the player's Learn Now (`library`) cards for `zh`.
+1. Take the player's Learning (`library`) cards for `zh`.
 2. Explode them into their constituent characters (CJK only), and dedupe.
 3. Annotate each with its **`difficultyBand`** and whether its **reading** track is
    mastered.

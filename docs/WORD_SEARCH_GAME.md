@@ -76,7 +76,7 @@ Algorithm (server-side):
 4. Re-run the substring scan. Repeat until the pool is clean **or** the user's
    entire library has been exhausted as replacement candidates.
 5. If a clean set of 9 cannot be assembled, the game is **blocked** with:
-   *"You need at least 9 Learn Now cards with distinct characters to play Word
+   *"You need at least 9 Learning cards with distinct characters to play Word
    Search."* (mirrors the bubble-match blocked-phase copy). ⚠️ This description predates
    the provisional-cards system (docs/PROVISIONAL_CARDS.md) — a short library is now
    topped up with lent cards rather than blocking; see `WordSearchPage.tsx`'s note that
@@ -388,7 +388,7 @@ Three consequences worth knowing:
 - **Two bars move.** `production` feeds the **core** bar, `reading` feeds the
   **reading** bar. The rule "a mark belongs to exactly one bar" is unchanged — these
   are two separate marks — but a No-Pinyin find is the first review ACTION that moves
-  two bars. `barForMarkType` and `FlashcardMarkService.applyMark` are untouched by this.
+  two bars. `worldForMarkType` and `FlashcardMarkService.applyMark` are untouched by this.
 - **The secondary mark is best-effort.** The board was pooled on the primary track, so
   a card can be off cooldown for `reading` while still cooling for `production`; the
   mark endpoint then drops the production mark and logs `[MarkSuppressed]`
@@ -564,7 +564,7 @@ Shelf redesign entry 13 (`docs/SHELF_REDESIGN.md`). Everything below lives insid
 
 | Row | Component | Content |
 |---|---|---|
-| HUD | `GameHud` | the clock, centred, with the eye toggle that shows/hides it at the right edge. Always rendered — with the clock hidden the strip holds the eye alone, centred |
+| HUD | `GameHud` | the clock, centred, with the eye toggle that shows/hides it at the left edge. Always rendered — with the clock hidden the strip holds the eye alone, still at the left edge |
 | glosses | `WordSearchWordList` | the target glosses, inline and middot-separated (§ above) |
 | grid | `WordSearchGrid` | the board; `flex: 1`, so it takes all remaining height |
 | hint | `WordSearchHintBar` | button (charge bars under it) · reveal (§5a). Last row, pinned to the panel's bottom edge; hairline on its TOP |
@@ -601,8 +601,8 @@ primitive, in full ink (`COLORS.onSurface`) like every other HUD fact:
 
 | `showTimer` | Glyph | Eye position | Clock |
 |---|---|---|---|
-| `true` | `visibility_off` (slashed eye — "hide") | right edge of the strip (`EYE_EDGE_INSET_PX`), clock stays dead-centre | visible |
-| `false` | `visibility` (open eye — "show") | centre of the strip, where the clock was | `visibility: hidden` |
+| `true` | `visibility_off` (slashed eye — "hide") | left edge of the strip (`EYE_EDGE_INSET_PX`), clock stays dead-centre | visible |
+| `false` | `visibility` (open eye — "show") | left edge of the strip — it does not move (since 2026-10-18; it used to jump to the centre) | `visibility: hidden` |
 
 - The glyph states what a tap will **do**, not the current state: the slashed eye hides
   the clock, the open eye brings it back.

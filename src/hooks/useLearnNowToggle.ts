@@ -4,8 +4,8 @@ import { addToLibrary, getLibraryStatus, removeFromLibrary } from "../utils/voca
 import type { Language, VocabEntry } from "../types";
 
 /**
- * Learn Now membership of ONE word, as a toggle — the state behind `LearnNowToggle`
- * (src/components/LearnNowToggle.tsx). ("Learn Now" is the UI name of the internal
+ * Learning membership of ONE word, as a toggle — the state behind `LearnNowToggle`
+ * (src/components/LearnNowToggle.tsx). ("Learning" is the UI name of the internal
  * `'library'` bucket — CLAUDE.md § Terminology; the API helpers keep `library`.)
  *
  * A TOGGLE, not an add-only button: removal is never a delete — the server demotes the
@@ -18,7 +18,7 @@ import type { Language, VocabEntry } from "../types";
  * a word that is already added. A failed status fetch falls back to "+" (adding is
  * idempotent server-side, so a wrong "+" costs at most a no-op tap).
  *
- * Only discoverable entries can join Learn Now, and only for a signed-in user; for any
+ * Only discoverable entries can join Learning, and only for a signed-in user; for any
  * other entry (or `null`) the hook stays inert and `available` is false.
  *
  * Hosts: EipSheet (the Dictionary page's eip) and DictionaryCardDetailPage.
@@ -40,7 +40,7 @@ export function useLearnNowToggle(entry: VocabEntry | null | undefined, language
         getLibraryStatus(entryKey, language)
             .then((data) => { if (!cancelled) setStatus({ entryKey, inLibrary: data.inLibrary }); })
             .catch((err) => {
-                console.error("Failed to load Learn Now status:", err);
+                console.error("Failed to load Learning status:", err);
                 if (!cancelled) setStatus({ entryKey, inLibrary: false });
             });
         return () => { cancelled = true; };
@@ -63,8 +63,8 @@ export function useLearnNowToggle(entry: VocabEntry | null | undefined, language
                 setStatus({ entryKey, inLibrary: true });
             }
         } catch (err) {
-            console.error("Failed to update Learn Now:", err);
-            setError(inLibrary ? "Failed to remove from Learn Now" : "Failed to add to Learn Now");
+            console.error("Failed to update Learning:", err);
+            setError(inLibrary ? "Failed to remove from Learning" : "Failed to add to Learning");
         } finally {
             setPending(false);
         }

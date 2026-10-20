@@ -2,7 +2,7 @@ import { forwardRef, type ReactNode } from "react";
 import { Box, Typography, useTheme, type BoxProps } from "@mui/material";
 import ForeignText from "./ForeignText";
 import { iconImageUrl } from "../cardIcons/cardIconLayout";
-import { masteryWindowCells, PBH_FULL, BAR_LABELS, MARK_TYPE_LABELS, type MasteryBar } from "../utils/masteryCompute";
+import { masteryWindowCells, PBH_FULL, WORLD_LABELS, MARK_TYPE_LABELS, type MasteryBar } from "../utils/masteryCompute";
 import { getBandMark } from "../utils/categoryColors";
 import type { Language } from "../types";
 import { COLORS } from "../theme/colors";
@@ -149,7 +149,7 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
     // Comfortable · Recognition 5, Production 2". One shared `title` rather than one per
     // cell — eight native tooltips along a 3px strip would fight each other.
     const stripTitle =
-        `${BAR_LABELS[bar.id]} ${Number.isInteger(bar.pbh) ? bar.pbh : bar.pbh.toFixed(1)}/${PBH_FULL} · ${bar.category}` +
+        `${WORLD_LABELS[bar.id]} ${Number.isInteger(bar.pbh) ? bar.pbh : bar.pbh.toFixed(1)}/${PBH_FULL} · ${bar.category}` +
         ` · ${bar.segments.map((seg) => `${MARK_TYPE_LABELS[seg.type]} ${seg.positive}`).join(", ")}`;
     return (
         <Box

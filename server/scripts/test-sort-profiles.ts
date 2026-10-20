@@ -102,7 +102,7 @@ async function main() {
     },
     {
       name: 'B · learn-now everything',
-      blurb: 'Every card → "Add to Learn Now" (Unfamiliar). learning[L] grows; after the 2nd unmastered card the level should STALL (tolerance=1).',
+      blurb: 'Every card → "Add to Learning" (Unfamiliar). learning[L] grows; after the 2nd unmastered card the level should STALL (tolerance=1).',
       pick: () => 'library',
       steps: 10,
     },

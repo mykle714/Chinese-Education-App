@@ -45,10 +45,10 @@ export interface InfoCardPanelBodyProps {
     // passive tooltip.
     onExampleSegmentClick?: (segment: string) => void;
     onSpeak?: (entry: VocabEntry) => void;
-    // Add-only "+ to Learn Now" under the header's speaker (EipEntryHeader). Passed by
-    // the flp for a drilled-into word not yet in Learn Now.
+    // Add-only "+ to Learning" under the header's speaker (EipEntryHeader). Passed by
+    // the flp for a drilled-into word not yet in Learning.
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learn Now TOGGLE (glowing "+" ⇄ "Added!") under the speaker — supersedes
+    // The Learning TOGGLE (glowing "+" ⇄ "Added!") under the speaker — supersedes
     // onAddToLibrary. Dictionary page eip (EipSheet) + dictionary cdp. See EipEntryHeader.
     learnNow?: LearnNowToggleState;
     // Speaker callback for an example sentence. When provided, each sentence

@@ -35,7 +35,7 @@ discards the marks that would let us reconstruct the movement.
 
 So a promotion is observable at exactly **one instant**: inside
 `POST /api/flashcards/mark`, which computes the band on both sides of the mark, for
-the one bar that mark belongs to (`barForMarkType`). The `category_promotions` table
+the one bar that mark belongs to (`worldForMarkType`). The `category_promotions` table
 is that observation, appended.
 
 **Consequence:** velocity is **not backfillable**. Every account starts at 0 on
@@ -54,7 +54,7 @@ deploy and the number becomes meaningful after ~7 days of use.
 | Seeding a card as "already learned" (`updateTypedMarkHistory`) | ❌ | Goes through `VocabEntryDAL`, not `FlashcardMarkService` — a declaration, not a review. |
 | Undoing a mark | 🔁 rows deleted | `undoMark` deletes by `(vocabEntryId, markTimestamp)`, so an undone mark gives back the band-steps it earned. |
 
-**One mark writes at most one row.** `BAR_MARK_TYPES` partitions the four mark types
+**One mark writes at most one row.** `WORLD_MARK_TYPES` partitions the four mark types
 across the three bars, so a review can promote exactly one bar — there is no fan-out
 and no chance of double-counting a single mark.
 
@@ -69,7 +69,7 @@ getVelocityByLanguage(userId, windowDays, bars = ['core'])
 ```
 
 `VelocityController` loads the account and passes
-`activeBars({ reading: user.readingGoal, writing: user.writingGoal })`.
+`activeWorlds({ reading: user.readingGoal, writing: user.writingGoal })`.
 
 **Why filter at read.** Writing only the goal bars' rows would freeze history against
 the settings at the time of the review: a learner who turns on the writing goal today
@@ -151,7 +151,7 @@ Indexes: `("userId", language, "promotedAt")` for the velocity query,
 `("vocabEntryId", "markTimestamp")` for the undo delete. **No index on `bar`** —
 that predicate discards a handful of rows from an already-tiny 7-day window.
 
-`bar` is derived from `markType` via `barForMarkType()`, so it is redundant in the
+`bar` is derived from `markType` via `worldForMarkType()`, so it is redundant in the
 strict sense — but it is the column the velocity query filters on, and deriving it in
 SQL would mean a `CASE` in the `WHERE` clause on every read. Pre-143 rows are all
 `core` by construction (there was only one bar). The `DEFAULT` is deliberately kept
@@ -174,7 +174,7 @@ of the window within 7 days.
 | DAL | `server/dal/implementations/CategoryPromotionDAL.ts` (behind `ICategoryPromotionDAL`) | The only SQL. Every method takes an optional `PoolClient` so a caller already holding a connection or a transaction can enlist the query (BACKEND_LAYERING §3). `getVelocityByLanguage` returns a `VelocityBreakdown` per language, not a bare number — one scan produces both the headline and its boundary split (§2b). |
 | write (mark) | `server/services/FlashcardMarkService.ts` → `applyMark`, after the mark's bar band is computed | `bandsClimbed(barCategoryBefore, barCategoryAfter) > 0` → `recordPromotion({…, bar})`. Note it measures **the mark's own bar**, not the core band. **Best-effort**, and issued AFTER the mark's transaction commits: a failed INSERT inside that transaction would abort the mark itself, and losing a stat must never fail a user's review write. |
 | write (undo) | `server/services/FlashcardMarkService.ts` → `undoMark`, inside the undo transaction | `deleteForMark(cardId, markTimestamp, client)`. **Not** best-effort: it rolls back with the rest of the undo. |
-| controller | `server/controllers/VelocityController.ts` | `GET /api/users/me/velocity`. No service layer — the only rules are picking the headline language (mirrors `WinsController`) and resolving `activeBars()` from the account's goal flags. It always loads the user now, since the bar filter needs the flags. |
+| controller | `server/controllers/VelocityController.ts` | `GET /api/users/me/velocity`. No service layer — the only rules are picking the headline language (mirrors `WinsController`) and resolving `activeWorlds()` from the account's goal flags. It always loads the user now, since the bar filter needs the flags. |
 | route | `server/routes/userRoutes.ts` | Registered before `GET /api/users/:id` so the param route can't shadow it. |
 | client api | `src/api/velocity.ts` | `fetchVelocity(language?)`. No `token` param (FRONTEND_LAYERING §3.2). |
 | client hook | `src/hooks/useVelocity.ts` | Keys on `isAuthenticated` + `selectedLanguage`, **never** `token` (CLAUDE.md silent-refresh rule). |
@@ -193,7 +193,7 @@ of the window within 7 days.
   board, no N+1.
 * It is deliberately **not** bar-filtered in SQL, unlike `getVelocityByLanguage`:
   which bars count depends on each row's own goal flags, and the result spans many
-  users. `FriendsService` folds the buckets against each person's `activeBars`.
+  users. `FriendsService` folds the buckets against each person's `activeWorlds`.
 * Each person is scored in **their own** `selectedLanguage`, not the viewer's.
 
 If the window ever changes, `VELOCITY_WINDOW_DAYS` remains the single source —
@@ -227,7 +227,7 @@ language panel renders its own breakdown.
 `server/__tests__/velocity.test.ts` pins `categoryRank` / `bandsClimbed`, the
 demotion-returns-0 rule, the single-mark-crosses-two-bands case, and the post-143
 rules: a mark scores on **its own** bar (a reading mark moves the reading bar, never
-the core one) and `activeBars()` decides which bars the query sums.
+the core one) and `activeWorlds()` decides which bars the query sums.
 
 It also pins the boundary split (§2b): that `CATEGORY_BOUNDARIES` really is
 `CATEGORY_ORDER`'s adjacent pairs, and — for **every** ordered pair of bands, not just

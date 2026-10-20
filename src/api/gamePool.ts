@@ -58,6 +58,12 @@ export interface GamePoolRequest {
     exclude?: number[];
     /** SOFT demote — cards already cleared this session. */
     avoid?: number[];
+    /**
+     * Cards to put on the board FIRST if they can take this game's marks — an flp game
+     * break's working loop (docs/FLP_GAME_BREAKS.md § 4). The server keeps the markable
+     * ones and uses the rest only as a fallback; the caller never filters them itself.
+     */
+    seedIds?: number[];
     /** "These bands or nothing" — no top-up from outside `distribution` (Hydra). */
     strictBuckets?: boolean;
     /** Lend at the learner's level plus this offset (Hydra's payout tiers). */
@@ -81,6 +87,7 @@ export function gamePoolParams(req: GamePoolRequest): QueryParams {
     if (req.need !== undefined) params.need = req.need;
     if (req.exclude?.length) params.exclude = req.exclude.join(',');
     if (req.avoid?.length) params.avoid = req.avoid.join(',');
+    if (req.seedIds?.length) params.seedIds = req.seedIds.join(',');
     if (req.strictBuckets) params.strictBuckets = 1;
     if (req.lendLevelOffset !== undefined) params.lendLevelOffset = req.lendLevelOffset;
     if (req.collection) Object.assign(params, collectionLaunchParams(req.collection));

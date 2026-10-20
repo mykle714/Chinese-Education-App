@@ -89,7 +89,7 @@ export const COLORS = {
     teaTint: "#EAFBFA",  // oklch(97.5% 0.018  195)
 
     // `--yel` — v2 promotes it from a side hue to a BAND hue: Target is yellow now
-    // (artboard 18: "Target yellow"). It also still carries Study Mix / Learn Now.
+    // (artboard 18: "Target yellow"). It also still carries Study Mix / Learning.
     yel: YEL_SURFACE,    // oklch(94%   0.085   92) clipped
     yelM: "#FFE66E",     // oklch(92.5% 0.1425  97) clipped
     // Darkened 5% L on 2026-09-28, which also made it deep enough for the mini-card's
@@ -107,6 +107,18 @@ export const COLORS = {
     // add them here from `shelf-system-v2.css` when a page needs one. Both are in gamut.
     grnBg: "#C4E7CA",    // oklch(89.5% 0.055  150)
     purBg: "#DED2F7",    // oklch(88.5% 0.052  300)
+
+    // ── Lime and pink: two single-tier hues outside the design's ramp ──────────
+    // Added 2026-10-19 for the Deck Tower's reading world (lime sky, pink platform —
+    // src/features/deckTower/towerWorlds.ts, docs/DECK_TOWER.md § Worlds), asked for as
+    // #C2F127 / #FFCFFF and snapped onto the v2 recipe (per-channel clip). Not in RAMP:
+    // they have no other tiers yet. Add the rest from the same recipe before using them
+    // elsewhere.
+    //  - limMk is a MARK (C 0.24) but at 89% L, not the marks' 80–83%: at 83% this hue
+    //    is an olive #ABDD00, not the lime asked for.
+    //  - pnk is a SURFACE (pur's own 92% / 0.085), on hue 326 between pur and red.
+    limMk: "#BEF200",    // oklch(89%   0.24   123) clipped
+    pnk: "#FFD1FF",      // oklch(92%   0.085  326) clipped
 
     // ── `--gld`, the action metal ─────────────────────────────────
     // A saturated gold, the one ramp member that is NOT a pale ground. The arena flow

@@ -206,7 +206,7 @@ function defineMode(
  * and "Challenge" mean on /decks.
  */
 export const MODE_CONFIGS: ModeConfig[] = [
-    defineMode("mixed", "Study Mix", 1, "Learn Now", CATEGORY_WEIGHTS, CATEGORY_FALLBACK_ORDER),
+    defineMode("mixed", "Study Mix", 1, "Learning", CATEGORY_WEIGHTS, CATEGORY_FALLBACK_ORDER),
     defineMode("review", "Review", 2, "Comfortable or Mastered", { Comfortable: 70, Mastered: 30 }, [
         "Comfortable",
         "Mastered",

@@ -1,6 +1,6 @@
 # Daily Minute Banking (hp banking animation + AccountSheet bank banner)
 
-> **Status: BUILT on DEV 2026-10-10 (migration 175), not yet on PPE.** All design questions
+> **Status: BUILT 2026-10-10 (migration 175); deployed to PPE 2026-10-10.** All design questions
 > are answered (see the [question log](#question-log)); the numbers in § 4 are first-pass
 > values still to be tuned on device. Migration 175 is expand-only and ships with a
 > standard `/deploy` — no runbook.

@@ -17,7 +17,7 @@
  * reading/writing. See docs/MASTERY_REWORK.md § 6.
  *
  * Every caller asks the question per BAR (or per mark type, which resolves to its bar
- * through `barForMarkType`); there is deliberately no per-track entry point left, so no
+ * through `worldForMarkType`); there is deliberately no per-track entry point left, so no
  * surface can accidentally time recognition on its own clock again.
  *
  * Contract rules (same as wire.ts): no enums, no Node or DOM globals, and no relative
@@ -26,8 +26,8 @@
  *
  * Referenced by docs/MASTERY_REWORK.md § 6 and § 7.
  */
-import type { MarkType, MasteryBarId, TypedMarkHistory } from './wire.js';
-import { BAR_MARK_TYPES, barCategory, barForMarkType } from './mastery.js';
+import type { MarkType, MasteryWorldId, TypedMarkHistory } from './wire.js';
+import { WORLD_MARK_TYPES, barCategory, worldForMarkType } from './mastery.js';
 
 /**
  * Per-category cooldown after a correct mark: a card marked correct recently should
@@ -73,10 +73,10 @@ export function lastCorrectMarkTimestamp(
  */
 export function lastCorrectOnBar(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId
+  world: MasteryWorldId
 ): number | null {
   let latest: number | null = null;
-  for (const type of BAR_MARK_TYPES[bar]) {
+  for (const type of WORLD_MARK_TYPES[world]) {
     const ts = lastCorrectMarkTimestamp(typedMarkHistory, type);
     if (ts !== null && (latest === null || ts > latest)) latest = ts;
   }
@@ -92,7 +92,7 @@ export function lastCorrectOnBar(
  */
 export function barReadyAt(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   /**
    * The card's computed writing mastery (`VocabEntryBase.writingMastery`). A
    * multi-character word's writing CLOCK is its own (clock-only) track, but its window
@@ -100,31 +100,31 @@ export function barReadyAt(
    */
   writingMastery?: number | null
 ): number | null {
-  const lastCorrect = lastCorrectOnBar(typedMarkHistory, bar);
+  const lastCorrect = lastCorrectOnBar(typedMarkHistory, world);
   if (lastCorrect === null) return null;
-  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(typedMarkHistory, bar, writingMastery)] ?? 0;
+  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(typedMarkHistory, world, writingMastery)] ?? 0;
   return lastCorrect + window;
 }
 
 /** Milliseconds left on `bar`'s clock; 0 when it is ready (or has never been marked). */
 export function barCooldownRemainingMs(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   now: number,
   writingMastery?: number | null
 ): number {
-  const readyAt = barReadyAt(typedMarkHistory, bar, writingMastery);
+  const readyAt = barReadyAt(typedMarkHistory, world, writingMastery);
   return readyAt === null ? 0 : Math.max(0, readyAt - now);
 }
 
 /** Whether `bar`'s clock is still running. */
 export function isBarOnCooldown(
   typedMarkHistory: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   now: number,
   writingMastery?: number | null
 ): boolean {
-  return barCooldownRemainingMs(typedMarkHistory, bar, now, writingMastery) > 0;
+  return barCooldownRemainingMs(typedMarkHistory, world, now, writingMastery) > 0;
 }
 
 /**
@@ -137,5 +137,5 @@ export function isMarkOnCooldown(
   now: number,
   writingMastery?: number | null
 ): boolean {
-  return isBarOnCooldown(typedMarkHistory, barForMarkType(type), now, writingMastery);
+  return isBarOnCooldown(typedMarkHistory, worldForMarkType(type), now, writingMastery);
 }

@@ -1,7 +1,7 @@
 import type { VocabEntry } from "../types";
 import type { MarkType, SideOneLanguage } from "../features/flashcards/types";
 import { positiveCount } from "./masteryCompute";
-import type { FlpBar } from "../../server/contracts/studyMode";
+import type { FlpWorld } from "../../server/contracts/studyMode";
 
 /**
  * flpFaceSteering — which face an flp card opens on, and which mark that face writes.
@@ -30,12 +30,12 @@ import type { FlpBar } from "../../server/contracts/studyMode";
  *
  * A know track in every session but one. "Show pinyin" off does NOT turn the
  * foreign-first face into a reading review (it did until 2026-09-25); reading marks come
- * from the dedicated READING flp — `bar: "reading"` (any mode), launched from the Reading
+ * from the dedicated READING flp — `world: "reading"` (any mode), launched from the Reading
  * Center's study hand (docs/READING_WRITING_CENTERS.md § Phase 4) — where every mark is
  * `reading`.
  */
-export const markTypeForSideOne = (sideOne: SideOneLanguage, bar: FlpBar = "core"): MarkType =>
-    bar === "reading" ? "reading" : bar === "writing" ? "writing" : sideOne === "en" ? "production" : "recognition";
+export const markTypeForSideOne = (sideOne: SideOneLanguage, world: FlpWorld = "core"): MarkType =>
+    world === "reading" ? "reading" : world === "writing" ? "writing" : sideOne === "en" ? "production" : "recognition";
 
 /**
  * Choose which language shows on a card's Side 1: the face for whichever know track
@@ -55,10 +55,10 @@ export const markTypeForSideOne = (sideOne: SideOneLanguage, bar: FlpBar = "core
  * which was kept a bias so a session would not be predictable. The trade was made
  * knowingly: the weaker track is now always the one drilled.
  */
-export const sideOneForCard = (card: VocabEntry | null | undefined, bar: FlpBar = "core"): SideOneLanguage => {
+export const sideOneForCard = (card: VocabEntry | null | undefined, world: FlpWorld = "core"): SideOneLanguage => {
     // The reading flp always opens on the characters: reading them IS the question.
     // The writing flp draws its own face content (useWritingFlashcard); "zh" is nominal.
-    if (bar === "reading" || bar === "writing") return "zh";
+    if (world === "reading" || world === "writing") return "zh";
     const history = card?.typedMarkHistory;
     const recognition = positiveCount(history?.recognition);
     const production = positiveCount(history?.production);

@@ -63,13 +63,13 @@ export interface ProfileLanguageStats {
  *
  * `languages` arrives in RENDER ORDER and must not be re-sorted client-side: selected
  * language first, then the rest by `netMinutes` descending, with zero-balance languages
- * already dropped by the server. `velocityWindowDays` and `activeBars` sit outside the
+ * already dropped by the server. `velocityWindowDays` and `activeWorlds` sit outside the
  * array because they are account-wide, not per-language.
  */
 export interface ProfileStats {
   velocityWindowDays: number;
   /** Which mastery bars their goals make active. */
-  activeBars: string[];
+  activeWorlds: string[];
   /** Selected language first, then by `netMinutes` desc. Never empty. */
   languages: ProfileLanguageStats[];
 }

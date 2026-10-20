@@ -4,6 +4,10 @@ A top-level section of the mobile demo where users access mini-games that
 reinforce vocabulary and character learning. The hub page lists all registered
 games; each game lives as its own page linked from the hub.
 
+> **Second host:** games embedded mid-session in the flp as "game breaks" — **phase 1
+> built (Match Speed only)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
+> game is split into a page + an embeddable Stage (§ "Routes" below; § 6 there).
+
 ## Status
 
 - 🚩 **Every game sits behind its own feature flag (2026-09-19), and all eight are ON.**
@@ -183,6 +187,16 @@ There is no generic in-game shell to adopt — each game owns its page. (A
 `src/games/runtime/GamePage.tsx` used to exist and rendered node-style chrome, which
 was wrong for a leaf page; it was deleted unused. See § Layer 2.)
 
+**Second host: the flp game break (2026-10-18).** A game that can run between flp cards
+is split into its **page** (the route: `GameLeafPage`, `useBlockEdgeSwipe`, launch
+`state`) and a **Stage** (the run itself), and the Stage renders inside a host-injected
+`Frame` (`GameStageFrameProps`, `GameStageHost` in `src/games/types.ts`). This is NOT a
+generic shell: there is no shared stage, each game keeps its own, and the page stays the
+standalone experience unchanged. Match Speed is split (`MatchSpeedStage`); the rest
+follow one at a time. The flp side — adapters, candidate derivation, the title card —
+is `src/games/flpBreak/` + `src/games/shared/GameBreakTitleCard.tsx`; see
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
+
 ## Launching a game with one collection of cards
 
 Every game is played with **the collection selected in the Games hub header**.
@@ -190,7 +204,7 @@ Every game is played with **the collection selected in the Games hub header**.
 | Collection | Param | Effect |
 | --- | --- | --- |
 | All Cards *(default)* | *(none)* | Every playable card — the pool games have always drawn from |
-| Learn Now | `?collection=learn-now` | Sorted cards that aren't core-mastered |
+| Learning | `?collection=learn-now` | Sorted cards that aren't core-mastered |
 | Mastered (per bar) | `?collection=mastered[-reading|-writing]` | Pool restricted to that bar's mastered cards |
 | A deck | `?deck=<id>` | Pool restricted to that deck, plus any card lent to reach the game's baseline |
 
@@ -210,7 +224,7 @@ fetch is still in flight / failed), the menu would hold All Cards alone, so
 `GamesCollectionSelector` returns `null` and the hub renders no chip; games launch
 with All Cards, the store's default. The chip appears once a deck exists.
 
-**Deliberately narrower than the fdp (2026-10-03).** Learn Now and the Mastered
+**Deliberately narrower than the fdp (2026-10-03).** Learning and the Mastered
 collections (core / reading / writing) are NOT offered here — the hub's choice is
 "everything, or one deck". They are browsed from the fdp and the Mastery Centers. Their
 `?collection=` ids still work end to end, so a game launched from a collection page
@@ -563,7 +577,11 @@ Presentational only; nothing here holds state.
   to the edge used to look like it had left the app. It is also `position: relative`, so a
   game's own overlays (a countdown, a pause veil) stop at the panel's rounded edge instead
   of covering its margin, and it gives a physics surface **one** element to measure for
-  bounds.
+  bounds. Under a `GameFrameExitContext` provider (`gameFrameExit.ts`) it also draws a
+  host's exit button top-right on its top strip — only the flp game break provides one
+  (its Leave; docs/FLP_GAME_BREAKS.md § 6), so on a game's own route nothing extra shows.
+  The flp break's title card (`GameBreakTitleCard`) is itself a `GameFrame`, filled with
+  the game's `RAMP[hue].mid`.
 - **`GameHud`** (`.hud`) + **`GameHudLabel`** (`.hud .lab`) — the bordered strip of mono
   facts across the panel's top. `space-between`, so the child count is load-bearing: two
   children pin to the edges, three put one in the middle — and so is the ORDER: only a
@@ -584,9 +602,12 @@ Presentational only; nothing here holds state.
   (standardized 2026-10-06): `FONTS.mono`, `SIZE.bodyLg`, normal case/tracking, regular
   weight, on a strip padded like `GameHud` (`12px 15px`). Only **colour** varies per game:
   the strip's hue tint (`useGameSurfaceHue`) and `valueColor` (Match Speed's urgency ink).
-  Opt-in show/hide eye via `valueShown` / `onToggleValueShown` (`TimerEyeToggle`).
-  Optional `leading` slot pinned to the strip's top-left corner (absolutely positioned, so
-  it never shifts the centred clock or grows the strip) — Writing Grid's phase label.
+  Opt-in show/hide eye via `valueShown` / `onToggleValueShown` (`TimerEyeToggle`), always
+  pinned to the strip's **left** edge in both states (since 2026-10-18; it used to sit
+  right and jump to centre when hidden — docs/FLP_GAME_BREAKS.md § 7).
+  Optional `trailing` slot pinned to the strip's top-**right** corner (absolutely
+  positioned, so it never shifts the centred clock or grows the strip) — Writing Grid's
+  phase label. (Was `leading`, top-left, until the eye took the left edge.)
   Takes an **already-formatted** `value`; the frame does no clock math. Its `pulse` prop is
   a deliberate departure from the design, which draws no pulse — a colour change plus a
   nearly-drained track is easy to miss in peripheral vision, which is exactly where a clock
@@ -727,6 +748,7 @@ Every `GET /api/onDeck/gamePool` call goes through **one** function,
 | `distribution` | `Unfamiliar`/`Target`/`Comfortable`/`Mastered` | Band quotas |
 | `need` | `need` | Present = partial refill (no baseline top-up) |
 | `exclude` / `avoid` | `exclude` / `avoid` | Hard exclude / soft demote, comma-joined; omitted when empty |
+| `seedIds` | `seedIds` | Put these on the board FIRST if they can take the game's marks (`isCardGameEligible`); the rest are a fallback after every fresh card. An flp game break's working loop — docs/FLP_GAME_BREAKS.md § 4. Capped at 40 server-side |
 | `strictBuckets` | `strictBuckets=1` | "These bands or nothing" (Hydra) |
 | `lendLevelOffset` | `lendLevelOffset` | Lend tier offset (Hydra) |
 | `collection` | `deck` / `collection` | Via `collectionLaunchParams` — must ride refills too |
@@ -740,7 +762,7 @@ a refill never lends unless its `surface` is in `ROLLING_SUPPLY_SURFACES` (Hydra
 caller always sends its real `surface`.
 
 Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
-(`MatchSpeedPage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`),
+(`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`),
 Bucket Drop (`BucketDropPage` → `fetchPool`), Hydra (`HydraBubblesPage` →
 `fetchChallengeCards`; `useColorBuffers` → `fetchColor`), and Immersive World
 (`iwPlayApi.fetchKnownWords`). **Not** through it: Word Search
@@ -901,7 +923,7 @@ it to whatever moves on its own:
 
 | Game | `clockPaused` is true while | What freezes | Code |
 | --- | --- | --- | --- |
-| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedPage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
+| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedStage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
 | Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |

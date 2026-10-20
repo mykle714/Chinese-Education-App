@@ -1,9 +1,9 @@
 import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
-import type { MasteryBarId } from '../contracts/wire.js';
+import type { MasteryWorldId } from '../contracts/wire.js';
 import { isFlpOnlyMark } from '../contracts/mastery.js';
-import { STUDY_MIX_QUOTAS } from '../contracts/studyMix.js';
-import type { StudyMode, FlpBar } from '../contracts/studyMode.js';
+import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER } from '../contracts/studyMix.js';
+import type { StudyMode, FlpWorld } from '../contracts/studyMode.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
@@ -33,7 +33,7 @@ import type { DictionaryEntry } from '../types/index.js';
 // MODE shapes BOTH the initial working-loop distribution and the replacement-card pool
 // handed back by the mark endpoint, so banned categories never leak in via a refill; the
 // BAR decides which bar those categories, the queue and the cooldown are read off.
-export { parseStudyMode, parseFlpBar, type StudyMode, type FlpBar } from '../contracts/studyMode.js';
+export { parseStudyMode, parseFlpWorld, type StudyMode, type FlpWorld } from '../contracts/studyMode.js';
 
 /**
  * Which collection a game/flp round was launched from (docs/DECKS_FEATURE.md).
@@ -46,7 +46,17 @@ export { parseStudyMode, parseFlpBar, type StudyMode, type FlpBar } from '../con
  */
 export type CollectionFilter =
   | { kind: 'deck'; deckId: number }
-  | { kind: 'builtin'; id: BuiltinCollectionId };
+  | { kind: 'builtin'; id: BuiltinCollectionId }
+  /**
+   * FOCUS MODE (docs/FOCUS_MODE.md § 4): the cards still playable today in a focused
+   * world — the daily snapshot minus those already marked correct. Never sent by the
+   * client: OnDeckVocabController / flashcardRoutes substitute it for an UNRESTRICTED
+   * launch when the round's world is focused. Riding the collection slot is what makes
+   * a focused round behave like a named set everywhere at once: every candidate query
+   * narrows to `ids`, and every lend tier is skipped (`canLendProvisional`, the game
+   * pool's `!opts.collection` gate), so nothing outside the day's set can appear.
+   */
+  | { kind: 'focus'; ids: number[] };
 
 interface ModeLoopConfig {
   // Ordered initial fetch quotas (summing to the loop total).
@@ -91,7 +101,7 @@ export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
 // grid samples by the same proportions (docs/READING_WRITING_CENTERS.md).
 const DEFAULT_LOOP_CONFIG: Omit<ModeLoopConfig, 'allowed'> = {
   quotas: STUDY_MIX_QUOTAS.map((q) => ({ ...q })),
-  fillOrder: ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'],
+  fillOrder: [...STUDY_MIX_FILL_ORDER],
 };
 
 // Total cards in a working loop, regardless of distribution.
@@ -151,10 +161,10 @@ export class OnDeckVocabService {
   // pure module shared with Memory Map, which ranks the reading clock the same way
   // (docs/MEMORY_MAP_GAME.md § 13.1).
   //
-  // The ONE exception is the reading flp (`bar: 'reading'`, any mode), which marks the
+  // The ONE exception is the reading flp (`world: 'reading'`, any mode), which marks the
   // reading track and therefore gates on the reading bar instead — every flp selection
   // helper below takes the bar as a parameter, defaulting to this one.
-  private static readonly FLP_BAR: MasteryBarId = 'core';
+  private static readonly FLP_WORLD: MasteryWorldId = 'core';
 
   /**
    * The flp-eligible subset of `cards` (the know clock has run out), ordered AS A
@@ -179,8 +189,8 @@ export class OnDeckVocabService {
    * Ties (notably the whole never-marked tail) keep the caller's incoming order, which
    * is `createdAt DESC` — newest first. Array.sort is stable.
    */
-  private rankFlpEligible(cards: VocabEntry[], now: number, bar: MasteryBarId = OnDeckVocabService.FLP_BAR): VocabEntry[] {
-    return rankCardQueue(cards, now, { bar }).map(({ card }) => card);
+  private rankFlpEligible(cards: VocabEntry[], now: number, world: MasteryWorldId = OnDeckVocabService.FLP_WORLD): VocabEntry[] {
+    return rankCardQueue(cards, now, { world }).map(({ card }) => card);
   }
 
   /**
@@ -553,14 +563,14 @@ export class OnDeckVocabService {
    * multi-char or non-zh entries — those continue to use the precomputed `breakdown`
    * map for the bt tab.
    */
-  private async enrichWithUsedIn(userId: string, entry: VocabEntry, bar: MasteryBarId = 'core'): Promise<VocabEntry> {
+  private async enrichWithUsedIn(userId: string, entry: VocabEntry, world: MasteryWorldId = 'core'): Promise<VocabEntry> {
     if (entry.language !== 'zh') return entry;
     if ([...entry.entryKey].length !== 1) return entry;
 
     try {
       const [usedIn, writingUsedIn] = await Promise.all([
         this.vocabEntryDAL.findUsedInForCharacter(userId, entry.entryKey, entry.language, 4),
-        bar === 'writing'
+        world === 'writing'
           ? this.vocabEntryDAL.findWritingUsedInForCharacter(userId, entry.entryKey, entry.language, 2)
           : Promise.resolve(undefined),
       ]);
@@ -571,8 +581,8 @@ export class OnDeckVocabService {
     }
   }
 
-  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[], bar: MasteryBarId = 'core'): Promise<VocabEntry[]> {
-    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry, bar)));
+  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[], world: MasteryWorldId = 'core'): Promise<VocabEntry[]> {
+    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry, world)));
   }
 
   /**
@@ -614,7 +624,7 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Every card in one user-authored deck, enriched exactly like the Learn Now and
+   * Every card in one user-authored deck, enriched exactly like the Learning and
    * Mastered collections above, so one client component renders all three
    * (docs/DECKS_FEATURE.md).
    *
@@ -682,15 +692,21 @@ export class OnDeckVocabService {
    * lent cards must be servable even though they are not deck members. See
    * docs/DECKS_FEATURE.md § Playing a small deck.
    *
-   * There is no 'learn-now' variant, and that is not an omission: the Learn Now
+   * There is no 'learn-now' variant, and that is not an omission: the Learning
    * collection IS every sorted card, which is exactly what these queries already
    * select. Adding a clause for it would restate `vetPlayableClause()`.
    */
   private deckPlayFilter(
     collection: CollectionFilter | null | undefined,
     nextParamIndex: number
-  ): { clause: string; params: number[] } {
+  ): { clause: string; params: Array<number | number[]> } {
     if (collection == null) return { clause: '', params: [] };
+
+    if (collection.kind === 'focus') {
+      // Bound as one int[] parameter. Strict membership, no provisional escape hatch:
+      // a focused round never lends, so there is no lent card it would need to admit.
+      return { clause: `AND ve.id = ANY($${nextParamIndex}::int[])`, params: [collection.ids] };
+    }
 
     if (collection.kind === 'builtin') {
       // Every built-in collection is a COMPUTED set, not a stored one, so it filters
@@ -718,17 +734,17 @@ export class OnDeckVocabService {
    * three Mastered rows (migration 143).
    *
    * One query with three FILTERed counts rather than three round trips, and rather
-   * than a `bar` parameter on getCategoryCounts: the page needs all three numbers at
+   * than a `world` parameter on getCategoryCounts: the page needs all three numbers at
    * once and the three predicates share a single scan of the same rows.
    *
    * Every bar is counted even when its goal is off. The caller decides which rows to
    * show; making the count itself goal-aware would mean re-fetching on a goal toggle
    * to populate a row whose answer we already had.
    */
-  async getMasteredCountsByBar(
+  async getMasteredCountsByWorld(
     userId: string,
     language: string
-  ): Promise<Record<MasteryBarId, number>> {
+  ): Promise<Record<MasteryWorldId, number>> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -780,7 +796,12 @@ export class OnDeckVocabService {
     userId: string,
     language: string,
     /** Which bar's bands and clock the figures are read off (the Reading Center: reading). */
-    bar: FlpBar = 'core'
+    world: FlpWorld = 'core',
+    /**
+     * Count only these vet ids — a focused world's remaining daily set
+     * (docs/FOCUS_MODE.md § 4). Omitted = every sorted card.
+     */
+    onlyIds?: number[]
   ): Promise<{ counts: Record<string, number>; reviewNextReadyMs: number | null }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -792,11 +813,12 @@ export class OnDeckVocabService {
         FROM ${vetReadFrom(language)}
         WHERE ve."userId" = $1
         AND ve."language" = $2
-        ${bar === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-        -- SORTED: deck read, same rule as getMasteredCountsByBar — a lent provisional
+        ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
+        -- SORTED: deck read, same rule as getMasteredCountsByWorld — a lent provisional
         -- card must not inflate a figure the learner reads as "my deck".
         AND ${vetSortedClause()}
-      `, [userId, language]);
+        ${onlyIds ? 'AND ve.id = ANY($3::int[])' : ''}
+      `, onlyIds ? [userId, language, onlyIds] : [userId, language]);
 
       const now = Date.now();
       const rows = result.rows.map((row) => ({
@@ -804,8 +826,8 @@ export class OnDeckVocabService {
         writingMastery: row.writingMastery,
       }));
       return {
-        counts: flpReadyCountsByBand(rows, now, bar),
-        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now, bar),
+        counts: flpReadyCountsByBand(rows, now, world),
+        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now, world),
       };
     } finally {
       client.release();
@@ -893,7 +915,7 @@ export class OnDeckVocabService {
     /** Vet ids lent to this loop — see fetchGameCandidates. */
     lentIds: number[] = [],
     /** The bar whose band `category` is read off — core except for the reading flp. */
-    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
     // Optional collection restriction; $6 is the next free placeholder after the five below.
     const deck = this.deckPlayFilter(collection, 6);
@@ -905,9 +927,9 @@ export class OnDeckVocabService {
       -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
       -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
       AND (${vetSortedClause()} OR ve.id = ANY($5::int[]))
-      AND ${barCategoryExpr(bar)} = $2
+      AND ${barCategoryExpr(world)} = $2
       AND ve.id != ALL($3::int[])
-      ${bar === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
+      ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       ${deck.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code — but
       -- the tie is REAL for never-marked cards, which all score equally and keep this
@@ -960,7 +982,7 @@ export class OnDeckVocabService {
     allowedCategories?: string[],
     collection?: CollectionFilter | null,
     /** The session's flp bar (studyMode.ts) — core unless this is a reading session. */
-    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -987,9 +1009,9 @@ export class OnDeckVocabService {
       // Take the head of the first category queue that has an eligible card.
       const serveFrom = async (categories: string[]): Promise<VocabEntry | null> => {
         for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], bar);
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], world);
           if (cards.length === 0) continue;
-          const ranked = this.rankFlpEligible(cards, now, bar);
+          const ranked = this.rankFlpEligible(cards, now, world);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -1000,8 +1022,8 @@ export class OnDeckVocabService {
       // dropped at POST /api/flashcards/mark, which is what the cooldown means.
       const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
         for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], bar);
-          const resting = rankCardQueueCooled(cards, now, { bar });
+          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], world);
+          const resting = rankCardQueueCooled(cards, now, { world });
           if (resting.length > 0) return resting[0];
         }
         return null;
@@ -1018,9 +1040,9 @@ export class OnDeckVocabService {
         if (lentIds.length === 0) return null;
         for (const category of fallbackBase) {
           const lent = await this.fetchFlpCandidates(
-            client, userId, category, language, excludeIds, collection, lentIds, bar
+            client, userId, category, language, excludeIds, collection, lentIds, world
           );
-          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, bar);
+          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, world);
           if (ranked.length > 0) return ranked[0];
         }
         return null;
@@ -1050,7 +1072,7 @@ export class OnDeckVocabService {
       // Enrich only the chosen card (candidates were fetched un-enriched).
       const enriched = await this.enrichEntriesPipeline([winner], language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, bar);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
       return withUsedIn[0];
     } finally {
       client.release();
@@ -1072,11 +1094,11 @@ export class OnDeckVocabService {
     now: number,
     collection?: CollectionFilter | null,
     lentIds: number[] = [],
-    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, bar);
-    return this.rankFlpEligible(candidates, now, bar).slice(0, limit);
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, world);
+    return this.rankFlpEligible(candidates, now, world).slice(0, limit);
   }
 
   /**
@@ -1103,11 +1125,11 @@ export class OnDeckVocabService {
     now: number,
     collection?: CollectionFilter | null,
     lentIds: number[] = [],
-    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
     if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, bar);
-    return rankCardQueueCooled(candidates, now, { bar }).slice(0, limit);
+    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, world);
+    return rankCardQueueCooled(candidates, now, { world }).slice(0, limit);
   }
 
   /**
@@ -1136,7 +1158,7 @@ export class OnDeckVocabService {
     excludeIds: number[],
     now: number,
     collection?: CollectionFilter | null,
-    bar: MasteryBarId = OnDeckVocabService.FLP_BAR
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
     const { lentIds } = await this.provisionalCardService.acquireLentCards(
@@ -1160,9 +1182,9 @@ export class OnDeckVocabService {
     for (const category of ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']) {
       if (rows.length >= need) break;
       const candidates = await this.fetchFlpCandidates(
-        client, userId, category, language, excludeIds, collection, lentIds, bar
+        client, userId, category, language, excludeIds, collection, lentIds, world
       );
-      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, bar);
+      const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, world);
       rows.push(...ranked.slice(0, need - rows.length));
     }
     return rows;
@@ -1217,7 +1239,7 @@ export class OnDeckVocabService {
         lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
     lentIds: number[] = [],
     /** The session's flp bar — `reading` for the reading flp (any mode), else core. */
-    bar: FlpBar = 'core'
+    world: FlpWorld = 'core'
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -1225,11 +1247,11 @@ export class OnDeckVocabService {
 
     // The reading flp is Chinese-only: a Latin-script card has nothing to read that its
     // meaning does not already give away, and no es card can accrue reading marks.
-    if (bar === 'reading' && language !== 'zh') {
+    if (world === 'reading' && language !== 'zh') {
       throw new ValidationError('Reading flashcards are only available for Chinese');
     }
     // So is the writing flp: the recognizer is zh_CN and the card draws hanzi.
-    if (bar === 'writing' && language !== 'zh') {
+    if (world === 'writing' && language !== 'zh') {
       throw new ValidationError('Writing flashcards are only available for Chinese');
     }
 
@@ -1250,7 +1272,7 @@ export class OnDeckVocabService {
         // single tapped category.
         loopCategories = [categoryFilter];
         workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, bar
+          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, world
         );
       } else {
         // Data-driven distribution: pick the per-mode config (or the Mix default),
@@ -1264,7 +1286,7 @@ export class OnDeckVocabService {
         // Initial quota fetches (eligibility-filtered).
         for (const { category, count } of config.quotas) {
           const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, bar
+            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, world
           );
           workingLoop.push(...rows);
         }
@@ -1299,7 +1321,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchEligibleCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, bar
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, world
         );
         workingLoop.push(...rows);
       }
@@ -1310,7 +1332,7 @@ export class OnDeckVocabService {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchCooledCategoryCards(
           client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, bar
+          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, world
         );
         workingLoop.push(...rows);
       }
@@ -1319,7 +1341,7 @@ export class OnDeckVocabService {
       if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
         const lent = await this.lendIntoLoop(
           client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
-          workingLoop.map(c => c.id), now, collection, bar
+          workingLoop.map(c => c.id), now, collection, world
         );
         workingLoop.push(...lent);
       }
@@ -1333,7 +1355,7 @@ export class OnDeckVocabService {
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(workingLoop, language);
       const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, bar);
+      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
 
       // Pre-warm the TTS disk cache for every card before responding. The client
       // still fetches MP3s via /api/tts/synthesize after this returns, but those
@@ -1373,7 +1395,7 @@ export class OnDeckVocabService {
     userId: string,
     language: string,
     categories: string[] = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'],
-    bar: MasteryBarId = 'core'
+    world: MasteryWorldId = 'core'
   ): Promise<Record<string, number>> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -1383,7 +1405,7 @@ export class OnDeckVocabService {
     // pass their own bar, so their tile figures count the skill the page is about
     // (docs/DECKS_FEATURE.md § "Mastery Centers"). `bar` is a validated union value,
     // so `barCategoryExpr` can only produce one of three fixed SQL fragments.
-    const categoryExpr = barCategoryExpr(bar);
+    const categoryExpr = barCategoryExpr(world);
     const client = await db.getClient();
     try {
       // category is computed per row from typedMarkHistory (migration 143), so we
@@ -1630,6 +1652,12 @@ export class OnDeckVocabService {
           (`ProvisionalCardService.ensureBaseline`). Selection is sorted-only, so
           without these the lent cards are invisible to the pool. */
       lentIds?: number[];
+      /** Vet ids the caller wants on the board FIRST — an flp game break's working
+          loop (docs/FLP_GAME_BREAKS.md § 4). Partitioned by `isCardGameEligible`: the
+          seeds that can take this game's marks fill the board before any bucket
+          quota; the ones that cannot (cooling, or flp-only at core pbh ≥ 6) are a
+          FALLBACK drawn only after every fresh card, ahead of the cooled tier. */
+      seedIds?: number[];
     } = {}
   ): Promise<{
     cards: VocabEntry[];
@@ -1667,10 +1695,27 @@ export class OnDeckVocabService {
 
     const client = await db.getClient();
     try {
-      // Per-category candidates split fresh (game type off cooldown) vs cooled.
+      // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so BOTH halves
+      // come back, then split on the same test the candidate query uses. Seeds that are
+      // already excluded (on the caller's board) are dropped — exclude always wins.
+      const excludeSet = new Set(excludeIds);
+      const seedIds = (opts.seedIds ?? []).filter((id) => !excludeSet.has(id));
+      const seedRows = await this.fetchRowsByIds(
+        client, userId, language, seedIds, gameMarkType, now, undefined, true
+      );
+      const seedMarkable: VocabEntry[] = [];
+      const seedFallback: VocabEntry[] = [];
+      for (const row of seedRows) {
+        (this.isCardGameEligible(row, gameMarkType, now) ? seedMarkable : seedFallback).push(row);
+      }
+
+      // Per-category candidates split fresh (game type off cooldown) vs cooled. The
+      // seed ids are kept OUT of this query so a seed can only enter through its own
+      // tier below — otherwise an ineligible seed would ride in on the cooled tier
+      // ahead of its fallback position, or a markable one be counted twice.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, excludeIds, opts.collection,
+        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, [...excludeIds, ...seedIds], opts.collection,
         opts.lentIds ?? []
       );
 
@@ -1724,6 +1769,7 @@ export class OnDeckVocabService {
         ...Object.values(eligible).flat().map(ddCollisionKey),
         ...Object.values(cooled).flat().map(ddCollisionKey),
         ...Object.values(avoided).flat().map(ddCollisionKey),
+        ...seedRows.map(ddCollisionKey),
       ];
       const glossKeyToGroup = await this.fetchGroupIds(client, candidateDdKeys);
       const takenGroups = new Set<number>();
@@ -1762,9 +1808,21 @@ export class OnDeckVocabService {
         }
       };
 
-      // 1. Fill each requested bucket up to its (target-scaled) quota from FRESH
-      //    cards, never overshooting the target.
-      for (const [category, count] of Object.entries(scaled)) {
+      // 0. SEED → markable seeds first (docs/FLP_GAME_BREAKS.md § 4), still through
+      //    `drain` so the dd / meaning-group guard applies to them like any card. Each
+      //    seed placed is charged to its bucket's quota, so the requested difficulty
+      //    mix still shapes what the top-up adds rather than being overfilled on top.
+      const quotaLeft: Record<string, number> = { ...scaled };
+      const beforeSeed = cards.length;
+      drain(seedMarkable, target);
+      for (const card of cards.slice(beforeSeed)) {
+        const bucket = card.gameCategory;
+        if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
+      }
+
+      // 1. Fill each requested bucket up to its (target-scaled, seed-charged) quota
+      //    from FRESH cards, never overshooting the target.
+      for (const [category, count] of Object.entries(quotaLeft)) {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], Math.min(count, target - cards.length));
       }
@@ -1813,6 +1871,11 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], target - cards.length);
       }
+      // 2b. Still short → the UNMARKABLE seeds (cooling, or flp-only at pbh ≥ 6). Every
+      //     fresh card has been tried, so nothing markable is being displaced; and a
+      //     card the learner just studied is a better fill than a random cooling one.
+      //     Not bucket-restricted: the seed is the caller's own set, not a band request.
+      if (cards.length < target) drain(seedFallback, target - cards.length);
       // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
       //    just-played library still assembles a full board.
       //

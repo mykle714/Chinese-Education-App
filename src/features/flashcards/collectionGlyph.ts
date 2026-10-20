@@ -46,7 +46,7 @@ export function collectionGlyph(ref: CollectionRef): string {
         case "learn-now":
             return "autorenew";
         case "mastered":
-            switch (ref.bar) {
+            switch (ref.world) {
                 case "reading":
                     return "menu_book";
                 case "writing":

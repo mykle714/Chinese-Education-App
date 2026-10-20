@@ -19,7 +19,7 @@ writing bar), [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (hidden character r
 | 1 | Eight levels | `src/components/handwriting/` |
 | 2 | Writing Grid game | `src/games/writing-grid/`, `server/services/WritingGridService.ts` |
 | 2a | Personal bests (every game but Bubble Match / Memory Map) | `game_personal_bests`, `src/games/shared/usePersonalBest.ts` |
-| 3 | Writing flp | `?bar=writing`, `FlashcardsLearnPage/useWritingFlashcard.tsx` + `WritingCardFace.tsx` |
+| 3 | Writing flp | `?world=writing`, `FlashcardsLearnPage/useWritingFlashcard.tsx` + `WritingCardFace.tsx` |
 | 3a | Writing mastery lives on characters | migration 170, `FlashcardMarkService.applyWritingResult` |
 
 ---
@@ -103,8 +103,8 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    (`visibility`) and never pauses the clock; the end popup always shows the final time.
    The preference is device-local, under this game's own key (`constants.ts` →
    `SETTINGS_STORAGE_KEY` = `writingGrid.settings`, read by `useLocalGameSettings`). The
-   current phase ("Phase 1" / "Phase 2") sits in the stopwatch strip's top-left corner
-   (`GameTimer`'s `leading` slot), not on a row of its own. Drag a character to another slot: the 8 cells are one
+   current phase ("Phase 1" / "Phase 2") sits in the stopwatch strip's top-right corner
+   (`GameTimer`'s `trailing` slot — top-left until 2026-10-18, when the eye took the left edge), not on a row of its own. Drag a character to another slot: the 8 cells are one
    list, so it **moves** (`gridOrder.ts` → `moveItem`), everything between shifts. Each
    cell (also on the countdown's board) shows its character as the full, still **shadow**
    outline — every slot, regardless of level, since arranging needs to see them all — with
@@ -225,10 +225,10 @@ are never recorded (they are dealt from the round's set).
 
 ---
 
-## 3. Writing flp (`/flashcards/learn?bar=writing`)
+## 3. Writing flp (`/flashcards/learn?world=writing`)
 
 Launched from the Writing Center's compact study hand (`FlpStudyHand bar="writing"` —
-Writing Challenge / Review / Mix). `FlpBar` includes `writing`
+Writing Challenge / Review / Mix). `FlpWorld` includes `writing`
 (`server/contracts/studyMode.ts`); the server deals only 1–4-character all-Han words
 (`WRITING_FLP_WORD_CLAUSE`) and bands, rests and refills on the writing bar.
 

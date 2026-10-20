@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activeBars,
+  activeWorlds,
   appendTypedMark,
   barCategory,
-  barForMarkType,
+  worldForMarkType,
   barProgressBarHeight,
   categoryForPbh,
   computeCoreCategory,
@@ -67,25 +67,25 @@ describe('positiveCount', () => {
   });
 });
 
-describe('activeBars', () => {
+describe('activeWorlds', () => {
   it('always includes core', () => {
-    expect(activeBars(NO_GOALS)).toEqual(['core']);
+    expect(activeWorlds(NO_GOALS)).toEqual(['core']);
   });
 
   it('adds a bar per opt-in goal, core first', () => {
-    expect(activeBars({ reading: true, writing: false })).toEqual(['core', 'reading']);
-    expect(activeBars(ALL_GOALS)).toEqual(['core', 'reading', 'writing']);
+    expect(activeWorlds({ reading: true, writing: false })).toEqual(['core', 'reading']);
+    expect(activeWorlds(ALL_GOALS)).toEqual(['core', 'reading', 'writing']);
   });
 });
 
-describe('barForMarkType', () => {
+describe('worldForMarkType', () => {
   it('maps every mark type into exactly one bar', () => {
-    expect(barForMarkType('recognition')).toBe('core');
-    expect(barForMarkType('production')).toBe('core');
-    expect(barForMarkType('reading')).toBe('reading');
-    expect(barForMarkType('writing')).toBe('writing');
+    expect(worldForMarkType('recognition')).toBe('core');
+    expect(worldForMarkType('production')).toBe('core');
+    expect(worldForMarkType('reading')).toBe('reading');
+    expect(worldForMarkType('writing')).toBe('writing');
     // Totality matters: the mark handler assumes one mark moves exactly one bar.
-    expect(MARK_TYPES.map(barForMarkType)).toHaveLength(MARK_TYPES.length);
+    expect(MARK_TYPES.map(worldForMarkType)).toHaveLength(MARK_TYPES.length);
   });
 });
 
@@ -121,7 +121,7 @@ describe('coreProgressBarHeight', () => {
     expect(computeCoreCategory(h)).toBe('Mastered');
     for (const goals of [NO_GOALS, { reading: true, writing: false }, ALL_GOALS]) {
       expect(barCategory(h, 'core')).toBe('Mastered');
-      expect(activeBars(goals)[0]).toBe('core');
+      expect(activeWorlds(goals)[0]).toBe('core');
     }
   });
 });

@@ -16,14 +16,14 @@
  */
 import { apiGet } from './http';
 import type { VocabEntry } from '../types';
-import type { FlpBar, StudyMode } from '../../server/contracts/studyMode';
+import type { FlpWorld, StudyMode } from '../../server/contracts/studyMode';
 
 export interface WorkingLoopRequest {
     /** Mastery-category filter (`?category=`), or null for the whole library. */
     category: string | null;
     /** Review / Challenge, or null for the default Study Mix distribution. */
     mode: StudyMode | null;
-    bar: FlpBar;
+    world: FlpWorld;
     /** The launch collection's params (`collectionLaunchParams`), when launched from one. */
     collection?: Record<string, string> | null;
 }
@@ -33,7 +33,7 @@ function workingLoopParams(request: WorkingLoopRequest): URLSearchParams {
     const params = new URLSearchParams();
     if (request.category) params.set('category', request.category);
     if (request.mode) params.set('mode', request.mode);
-    if (request.bar !== 'core') params.set('bar', request.bar);
+    if (request.world !== 'core') params.set('world', request.world);
     for (const [key, value] of Object.entries(request.collection ?? {})) params.set(key, value);
     return params;
 }

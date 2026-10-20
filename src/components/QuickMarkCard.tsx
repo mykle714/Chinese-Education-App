@@ -36,7 +36,7 @@ interface QuickMarkCardProps {
 
 // A Quick Mark triage card: the shared MiniCard (src/components/MiniCard.tsx), driven by
 // a raw DiscoverCard (not a saved VocabEntry), that the learner SWIPES — left = Add to
-// Learn Now, right = Mastered (docs/QUICK_MARK.md § 3) — and TAPS to read about in the eip.
+// Learning, right = Mastered (docs/QUICK_MARK.md § 3) — and TAPS to read about in the eip.
 // The swipe is axis-locked (`touch-action: pan-y` + `useSwipeCommit({ axisLock: true })`),
 // so a vertical drag that starts on a card still scrolls the page.
 //

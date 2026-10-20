@@ -12,7 +12,7 @@
 Where Sort Cards is a slow, one-pack-at-a-time drag flow, **Quick Mark** is a **fast bulk
 triage grid**: the user picks a difficulty level, sees every not-yet-sorted
 discoverable word at that level as a wall of mini cards ordered by conversation-frequency
-score, and **swipes** each card — left = Add to Learn Now, right = Mastered. Every
+score, and **swipes** each card — left = Add to Learning, right = Mastered. Every
 swipe saves on its own; the card flies off and the grid closes up behind it.
 
 It reuses the exact same two bucket effects as Sort Cards (§4) — through the very
@@ -43,7 +43,7 @@ doc owns the grid itself.
 ┌──────────────────────────────────────────────────────────────────┐  ← frame top (scp's
 │  Quick Mark                                               🔥  ✕  │    header covered;
 │                          [ HSK 3 ▾ ]                             │    page ground,
-│                ← ● Learn Now     ● Mastered →                    │    square corners)
+│                ← ● Learning     ● Mastered →                    │    square corners)
 ├──────────────────────────────────────────────────────────────────┤
                        ┌────┐  ┌────┐  ┌────┐
                        │card│  │card│  │card│      ← MiniVocabCardGrid
@@ -76,7 +76,7 @@ doc owns the grid itself.
 - **Legend** (`QuickMarkPanel.tsx` → `LegendItem`): the two swipe directions, each with a
   dot in its destination colour (§3).
 - **Grid**: `MiniVocabCardGrid` (`src/components/MiniVocabCardGrid.tsx`) — the
-  same 364px 3-wide wrapping grid used by the `/decks` Learn Now preview and
+  same 364px 3-wide wrapping grid used by the `/decks` Learning preview and
   `/flashcards/mastered`, in its `staggerReveal` mode: the first 15 cards fan in
   via per-card animation delay, the rest render with no entrance animation.
 
@@ -89,7 +89,7 @@ are not the learner's cards yet.
 
 | Gesture | Effect |
 | ------- | ------ |
-| Swipe **left**  | **Add to Learn Now** — bucket `library` → core band Unfamiliar |
+| Swipe **left**  | **Add to Learning** — bucket `library` → core band Unfamiliar |
 | Swipe **right** | **Mastered** — bucket `already-learned` → core band Mastered |
 | Tap | Opens the eip for the word (det lookup first — §3a) |
 | Vertical drag | Scrolls the page, even when it starts on a card |
@@ -103,7 +103,7 @@ disagree.
 
 **Feedback while dragging — colour only, no overlay or label.** The card follows the
 finger with a slight tilt, and its own fill blends (`color-mix`) toward the colour of the
-**collection it joins**, reaching it in full at the commit distance: left = Learn Now
+**collection it joins**, reaching it in full at the commit distance: left = Learning
 gold (`LEARN_NOW_COLORS.main`), right = the core bar's Mastered blue
 (`MASTERY_BAR_COLORS.core.main`) — the same surfaces the fdp draws those collections
 with (`src/utils/categoryColors.ts`). Release past `QUICK_MARK_COMMIT_PX` (60px, about
@@ -340,7 +340,7 @@ of the delegation.
 | Grid volume           | **Paginate** — infinite scroll, ~100 rows/page (KEYSET cursor, `hasMore`) |
 | Skipped words         | **Included** — no `discover_skips` exclusion; skips get a second triage   |
 | Commit model          | **Per swipe, immediately** (2026-10-12; was a batched Save) + Undo toast for the last swipe |
-| Swipe directions      | **Left = Learn Now, right = Mastered** (2026-10-12)                      |
+| Swipe directions      | **Left = Learning, right = Mastered** (2026-10-12)                      |
 | After a swipe         | **Fly off, grid closes up** (2026-10-12; was: stays in view, re-editable) |
 | Tap                   | **Opens the eip** (2026-10-12; was: cycles the mark)                     |
 | Default level         | **User's current level** — seed from Sort Cards' adaptive frontier estimate |

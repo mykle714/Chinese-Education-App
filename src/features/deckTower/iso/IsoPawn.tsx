@@ -4,7 +4,8 @@ import { flatPath, type WorldRect } from "./geometry";
 import { shadowFootprint, type IsoSurface } from "./light";
 import { ISO } from "./palette";
 import { useIsoProjector } from "./sceneContext";
-import { LOOK_UP_LEAN_DEG, PAWN_FOOT_RADIUS, usePawnMotion, type PawnRoam } from "./usePawnMotion";
+import { LOOK_UP_LEAN_DEG, PAWN_FOOT_RADIUS, usePawnMotion, type PawnEntranceCue, type PawnRoam, type PawnStep } from "./usePawnMotion";
+import { prefersReducedMotion } from "./skyTraffic";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 
@@ -29,9 +30,11 @@ import { WEIGHT } from "../../../theme/scale";
  * counter-translated by usePawnMotion so the decals themselves stay put on the floor.
  *
  * Behaviour (usePawnMotion): with `roam`, it wanders the floor around the obstacles with
- * a bouncing walk. When `startled` turns true it leans back to look up at `startledBy`,
+ * a bouncing walk, stepping up onto any `steps` it crosses. When `startled` turns true it leans back to look up at `startledBy`,
  * leaps away from it, a white "!" bubble pops over its head, it stares up for a few
- * seconds, straightens up, and goes back to wandering.
+ * seconds, straightens up, and goes back to wandering. When `alarmed` turns true only the
+ * bubble pops (no lean, no leap). With `entrance` it first ARRIVES
+ * (pawnEntrances.ts — e.g. dropping out of the sky), timed so it lands at a given moment.
  */
 interface IsoPawnProps {
     /** World x/y where the pawn starts (and is drawn before its motion transform). */
@@ -44,9 +47,11 @@ interface IsoPawnProps {
     roam?: PawnRoam;
     /** What startles it: it leaps away from this footprint and looks up at it. */
     startledBy?: WorldRect;
+    /** Pops the "!" bubble each time this turns true, with no lean or leap (usePawnMotion `alarmed`). */
+    alarmed?: boolean;
     /**
-     * Called when the pawn's draw position among `roam.obstacles` changes: the number of
-     * obstacles it stands in front of. The caller renders it after that many of them.
+     * Called when the pawn's draw position among `roam.obstacles` changes: its slot in their
+     * back-to-front order (`depthRankAmong`). The caller renders it after that many of them.
      */
     onDepthRankChange?: (rank: number) => void;
     /**
@@ -55,6 +60,16 @@ interface IsoPawnProps {
      * shadow falls on a decal it darkens the decal instead of covering it.
      */
     decals?: React.ReactNode;
+    /**
+     * Arrive this way on mount (read once). The pawn is hidden until `startAt`, plays the
+     * entrance, and lands `animation.landMs` after `startAt`. Remount (new key) to replay.
+     */
+    entrance?: PawnEntranceCue;
+    /**
+     * Raised floor it steps up onto rather than walking around (e.g. a raised
+     * IsoFloorLabel, at its current height). Heights are read live (usePawnMotion `steps`).
+     */
+    steps?: PawnStep[];
 }
 
 /** Sizes in world units. */
@@ -91,11 +106,11 @@ const PAWN_CSS = `
 }
 `;
 
-const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, onDepthRankChange, decals }) => {
+const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, alarmed, onDepthRankChange, decals, entrance, steps }) => {
     const proj = useIsoProjector();
     // `url(#…)` needs a plain id; React's useId wraps its ids in colons.
     const decalClipId = `iso-pawn-decal-clip-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    const { refs, emote } = usePawnMotion({ proj, at, startled, roam, startledBy, onDepthRankChange });
+    const { refs, emote } = usePawnMotion({ proj, at, startled, roam, startledBy, onDepthRankChange, entrance, alarmed, steps });
     // The id of the last emote whose one-shot has finished. A finished bubble must be
     // UNMOUNTED, not just left at its keyframes' final opacity 0: the page reorders the
     // pawn among its siblings as it walks behind / in front of the tower, React does that
@@ -126,7 +141,12 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
     return (
         <g className="iso-pawn">
             <style>{PAWN_CSS}</style>
-            <g className="iso-pawn__travel" ref={refs.travel}>
+            {/* Hidden from the first paint when it has an entrance to make: the motion loop
+                only starts after mount, and would otherwise let the pawn flash standing on
+                the floor for a frame before its entrance hides it. (Not under reduced
+                motion: no loop runs then to un-hide it.) The loop owns
+                `visibility` from then on (React never rewrites an unchanged style). */}
+            <g className="iso-pawn__travel" ref={refs.travel} style={entrance && !prefersReducedMotion() ? { visibility: "hidden" } : undefined}>
                 <g className="iso-pawn__shadow-hop" ref={refs.shadow}>
                     <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
                 </g>

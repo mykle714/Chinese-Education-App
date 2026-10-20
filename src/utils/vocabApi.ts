@@ -303,11 +303,11 @@ export function estimateApiCalls(tokens: string[]): {
 }
 
 /**
- * Add a discoverable word to the user's "Learn Now" bucket.
+ * Add a discoverable word to the user's Learning bucket.
  *
  * NOTE ON NAMING: the endpoint, the returned status, and this function keep the
  * internal `library` name because they are backend contracts; only the user-facing
- * copy says "Learn Now" (CLAUDE.md § Terminology: "Learn Now" cards).
+ * copy says "Learning" (CLAUDE.md § Terminology: "Learning" cards).
  *
  * Takes no `token` — apiPost supplies the header at call time, so callers can omit
  * `token` from their dependency arrays (CLAUDE.md ⛔ "Never reload on token refresh").
@@ -315,7 +315,7 @@ export function estimateApiCalls(tokens: string[]): {
  * entry panel and the dictionary cdp.
  */
 /**
- * Is this word in the user's Learn Now (bucket 'library')? A provisional row or no row
+ * Is this word in the user's Learning (bucket 'library')? A provisional row or no row
  * reads as false. Used by the dictionary cdp's add/added toggle.
  */
 export async function getLibraryStatus(
@@ -327,7 +327,7 @@ export async function getLibraryStatus(
 }
 
 /**
- * Remove a word from Learn Now. Never a delete: the server demotes the row to
+ * Remove a word from Learning. Never a delete: the server demotes the row to
  * 'provisional', keeping its progress, so re-adding restores it in place.
  */
 export async function removeFromLibrary(

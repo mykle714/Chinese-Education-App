@@ -30,12 +30,12 @@ interface InfoCardSectionProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
-    // Renders the header's "Add to Learn Now" (+) button in the 2×2 action grid,
+    // Renders the header's "Add to Learning" (+) button in the 2×2 action grid,
     // gated on `currentEntry.discoverable`. Wired by the flp so drilled-in words
     // (breakdown chars / example segments) that aren't yet in the library can be
     // added; undefined hides the button (see InfoCardPanelBody).
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learn Now TOGGLE under the header speaker (supersedes onAddToLibrary). Today:
+    // The Learning TOGGLE under the header speaker (supersedes onAddToLibrary). Today:
     // the Dictionary page's eip, via EipSheet. See EipEntryHeader.
     learnNow?: LearnNowToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders

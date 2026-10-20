@@ -6,7 +6,7 @@
  * Kept out of IsoScene.tsx so that file exports only a component (react-refresh).
  */
 import { createContext, useContext } from "react";
-import type { Projector } from "./geometry";
+import type { Hinge, Projector } from "./geometry";
 
 export const IsoSceneContext = createContext<Projector | null>(null);
 
@@ -16,3 +16,11 @@ export function useIsoProjector(): Projector {
     if (!proj) throw new Error("Iso components must be rendered inside an <IsoScene>.");
     return proj;
 }
+
+/**
+ * The open trap door a platform's DECALS are printed on, or null while it is shut.
+ * IsoPlatform provides it around its `decals`, which it draws inside one
+ * `hingedPlaneTransform` — exact for flat prints only. A decal with HEIGHT (IsoFloorLabel's
+ * raised plate) reads it to undo that transform and draw itself in true 3-D on the door.
+ */
+export const IsoDeckHingeContext = createContext<Hinge | null>(null);

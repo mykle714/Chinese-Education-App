@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
-import { onDeckVocabService, flashcardMarkService } from '../dal/setup.js';
-import { MODE_CONFIGS, parseStudyMode, parseFlpBar, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import { onDeckVocabService, flashcardMarkService, focusModeService } from '../dal/setup.js';
+import { FOCUS_ENDED_HEADER } from '../contracts/focusMode.js';
+import { MODE_CONFIGS, parseStudyMode, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { ReviewMark, MarkType, MARK_TYPES } from '../types/index.js';
 import { DALError } from '../types/dal.js';
 import { handle } from './asyncHandler.js';
@@ -112,7 +113,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   const mode = parseStudyMode(rawMode);
   // The session's flp bar (studyMode.ts): a reading session's replacement is chosen by
   // the READING bar, the bar its queue is built on. Echoed by the client like `mode`.
-  const refillBar = parseFlpBar(req.body?.bar);
+  const refillWorld = parseFlpWorld(req.body?.world);
 
   // Optional collection restriction (docs/DECKS_FEATURE.md). The client echoes back
   // the collection the session was launched from, because THIS endpoint refills the
@@ -125,12 +126,22 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // its normal never-stall behaviour. Coerced defensively — a malformed value must
   // mean "no restriction", never a crash mid-review.
   const markedBuiltin = parseBuiltinCollectionId(rawCollection);
-  const collection: CollectionFilter | undefined =
+  let collection: CollectionFilter | undefined =
     Number.isInteger(rawDeckId) && rawDeckId > 0
       ? { kind: 'deck', deckId: rawDeckId }
       : markedBuiltin
         ? { kind: 'builtin', id: markedBuiltin }
         : undefined;
+
+  // FOCUS MODE (docs/FOCUS_MODE.md § 4): an unrestricted session in a focused world
+  // refills only from today's remaining set — resolved AFTER the mark committed, so a
+  // card just marked correct is already out of it. Same rule as
+  // OnDeckVocabController.applyFocus, which builds the loop being refilled here.
+  if (!collection) {
+    const focus = await focusModeService.resolveWorld(userId, markResult.language, refillWorld);
+    if (focus.active) collection = { kind: 'focus', ids: focus.ids };
+    else if ('ended' in focus && focus.ended) res.setHeader(FOCUS_ENDED_HEADER, refillWorld);
+  }
 
   // excludeIds is the list of card ids currently in the client's working loop, so the
   // replacement picker avoids handing back a duplicate.
@@ -144,7 +155,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
   // A reading session paces the refill on the READING band the learner just left, since
   // its pool is banded by the reading bar; every other session uses the core band.
-  const preferredCategory = refillBar === 'core' ? markResult.categoryBeforeMark : markResult.markedBarCategoryBefore;
+  const preferredCategory = refillWorld === 'core' ? markResult.categoryBeforeMark : markResult.markedBarCategoryBefore;
 
   // DEGRADES TO NO REFILL, never to an error. The mark is already committed by this
   // point, so a failure in the picker must not surface to the learner as "failed to
@@ -155,7 +166,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   try {
     newCard = await onDeckVocabService.getNextLibraryCardWithFallback(
       userId, preferredCategory, markResult.language,
-      excludeIds, allowedCategories, collection, refillBar
+      excludeIds, allowedCategories, collection, refillWorld
     );
   } catch (refillError) {
     console.error(`Replacement pick failed after a committed mark (card ${cardId}):`, refillError);

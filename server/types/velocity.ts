@@ -14,7 +14,7 @@
  * Backed by the append-only `category_promotions` table (migration 137); nothing
  * here is a stored counter. See docs/VELOCITY.md.
  */
-import type { FlashcardCategory, MarkType, MasteryBarId } from '../contracts/wire.js';
+import type { FlashcardCategory, MarkType, MasteryWorldId } from '../contracts/wire.js';
 import { CATEGORY_BOUNDARIES } from '../contracts/mastery.js';
 
 /** One logged promotion: a card moving up one or more utcm bands. */
@@ -24,8 +24,8 @@ export interface CategoryPromotion {
   language: string;
   /** vet id (globally unique across vocabentries_zh / vocabentries_es). */
   vocabEntryId: number;
-  /** Which bar moved — derived from the causing mark's type (`barForMarkType`). */
-  bar: MasteryBarId;
+  /** Which bar moved — derived from the causing mark's type (`worldForMarkType`). */
+  bar: MasteryWorldId;
   fromCategory: FlashcardCategory;
   toCategory: FlashcardCategory;
   /** rank(to) - rank(from); always >= 1. */
@@ -41,7 +41,7 @@ export interface CategoryPromotionInput {
   userId: string;
   language: string;
   vocabEntryId: number;
-  bar: MasteryBarId;
+  bar: MasteryWorldId;
   fromCategory: FlashcardCategory;
   toCategory: FlashcardCategory;
   bandsClimbed: number;

@@ -13,7 +13,7 @@ import { DistractorChar } from '../../contracts/wire.js';
  */
 export interface ISpeedReadingDAL {
   /**
-   * Distinct characters across the player's Learn Now (library) cards, each with
+   * Distinct characters across the player's Learning (library) cards, each with
    * the difficulty band of its standalone dictionary entry and whether the
    * player has mastered its READING track.
    *

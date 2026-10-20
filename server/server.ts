@@ -23,6 +23,7 @@ import dictionaryRoutes from './routes/dictionaryRoutes.js';
 import gamesRoutes from './routes/gamesRoutes.js';
 import speedReadingRoutes from './routes/speedReadingRoutes.js';
 import memoryMapRoutes from './routes/memoryMapRoutes.js';
+import focusModeRoutes from './routes/focusModeRoutes.js';
 import nightMarketRoutes from './routes/nightMarketRoutes.js';
 import communityRoutes from './routes/communityRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
@@ -87,7 +88,11 @@ app.use(cors({
       callback(null, false);
     }
   },
-  credentials: true
+  credentials: true,
+  // A cross-origin client (the Capacitor app) can only read a response header the
+  // server exposes. X-Focus-Ended signals that a request switched focus mode off
+  // (docs/FOCUS_MODE.md § 4) — must match FOCUS_ENDED_HEADER in contracts/focusMode.ts.
+  exposedHeaders: ['X-Focus-Ended'],
 }));
 
 // Middleware to parse JSON bodies and cookies
@@ -126,6 +131,8 @@ if (isFeatureEnabled('nightMarket')) {
   app.use(nightMarketSandboxRoutes);
 }
 app.use(onDeckRoutes);
+// Focus mode (docs/FOCUS_MODE.md) — /api/focus/*.
+app.use(focusModeRoutes);
 app.use(starterPacksRoutes);
 app.use(dictionaryRoutes);
 // Speed Reading's specific /api/games/speedReading/* namespace goes BEFORE the

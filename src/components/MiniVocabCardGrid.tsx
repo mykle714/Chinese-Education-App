@@ -2,14 +2,14 @@ import { useRef, type ReactNode } from "react";
 import { Box, Alert } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import MiniVocabCard from "./MiniVocabCard";
-import type { MasteryBarId } from "../utils/masteryCompute";
+import type { MasteryWorldId } from "../utils/masteryCompute";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { useIncrementalList } from "../hooks/useIncrementalList";
 import { useScrollStretch } from "../hooks/useScrollStretch";
 import { useWindowedRows } from "../hooks/useWindowedRows";
 import type { VocabEntry } from "../types";
 
-// Fixed-width wrapping grid of MiniVocabCards. Shared by the /decks Learn Now
+// Fixed-width wrapping grid of MiniVocabCards. Shared by the /decks Learning
 // preview and the dedicated /flashcards/mastered page so the loading / error /
 // empty / list states stay identical across them.
 const CardsPreviewContainer = styled(Box)(() => ({
@@ -137,7 +137,7 @@ interface MiniVocabCardGridProps {
     // Mastery Center each card shows that ONE bar and badges its band
     // (docs/DECKS_FEATURE.md § "Mastery Centers"). Ignored when `renderCard` is set —
     // a custom card owns its own readout.
-    lens?: MasteryBarId;
+    lens?: MasteryWorldId;
     // Whether the rows spread apart while the page scrolls (docs/UX_AND_NAVIGATION.md
     // § "Scroll stretch"). On by default. Turn it OFF for a grid that is not the thing
     // the reader is scrolling through — on View Challenge the nine words are a static

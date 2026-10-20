@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { IBaseDAL } from './IBaseDAL.js';
 import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
 import { BulkResult, ITransaction } from '../../types/dal.js';
-import type { MasteredAtByBar, MasteryBarId, StarterPackBucket } from '../../contracts/wire.js';
+import type { MasteredAtByBar, MasteryWorldId, StarterPackBucket } from '../../contracts/wire.js';
 
 /**
  * The three columns a mark/undo needs off a vet row, plus the row's language.
@@ -40,7 +40,7 @@ export interface CharacterMarkState {
  * marks cross nothing. See docs/MASTERY_REWORK.md.
  */
 export interface MasteredAtWrite {
-  bar: MasteryBarId;
+  world: MasteryWorldId;
   stamp: string | null;
 }
 

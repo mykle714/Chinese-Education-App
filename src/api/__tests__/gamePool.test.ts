@@ -32,6 +32,11 @@ describe('gamePoolParams', () => {
     expect(params).not.toHaveProperty('avoid');
   });
 
+  it('joins seedIds (an flp game break\'s working loop) and drops an empty seed', () => {
+    expect(gamePoolParams({ markType: 'recognition', seedIds: [7, 8, 9] }).seedIds).toBe('7,8,9');
+    expect('seedIds' in gamePoolParams({ markType: 'recognition', seedIds: [] })).toBe(false);
+  });
+
   it('keeps need=0 (a real value, not "absent")', () => {
     expect(gamePoolParams({ markType: 'recognition', need: 0 }).need).toBe(0);
   });

@@ -69,6 +69,10 @@ const ALL_GAMES: GameDef[] = [
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
         hue: BUBBLE_MATCH_HUE,
         markType: BUBBLE_MATCH_MARK_TYPE,
+        // Pinyin hidden on a zh board marks READING (constants.ts → MARK_TYPE; the run's
+        // `runTrack`). Stated here so the flp game-break picker can offer Bubble Match on
+        // the reading flp (docs/FLP_GAME_BREAKS.md § 3).
+        noPinyinMarkType: "reading",
         challengeScoring: challengeScoringFor("bubble-match"),
     },
     {

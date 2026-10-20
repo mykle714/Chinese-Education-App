@@ -10,7 +10,7 @@ import { LEARN_NOW_COLORS, MASTERY_BAR_COLORS } from "../utils/categoryColors";
 
 // The server bucket each direction commits. The values ARE `StarterPacksService.sortCard`
 // bucket ids: right = "I already know it" (8/8 core history → Mastered), left = "Add to
-// Learn Now" (empty history → Unfamiliar). Right = known mirrors the Reading Center's
+// Learning" (empty history → Unfamiliar). Right = known mirrors the Reading Center's
 // right = "I could read it".
 export const QUICK_MARK_BUCKET: Record<SwipeDirection, "library" | "already-learned"> = {
     left: "library",
@@ -18,7 +18,7 @@ export const QUICK_MARK_BUCKET: Record<SwipeDirection, "library" | "already-lear
 };
 
 // Each direction is painted with the colour of the COLLECTION the card joins — the same
-// surface the fdp draws that collection's card with: Learn Now gold (`LEARN_NOW_COLORS`)
+// surface the fdp draws that collection's card with: Learning gold (`LEARN_NOW_COLORS`)
 // and the core bar's Mastered blue (`MASTERY_BAR_COLORS.core`). The card's own fill
 // shifts to it as it is dragged (no overlay).
 export const QUICK_MARK_COLOR: Record<SwipeDirection, string> = {
@@ -26,9 +26,9 @@ export const QUICK_MARK_COLOR: Record<SwipeDirection, string> = {
     right: MASTERY_BAR_COLORS.core.main,
 };
 
-// User-facing names ("Learn Now" is the library bucket's front-end name — CLAUDE.md).
+// User-facing names ("Learning" is the library bucket's front-end name — CLAUDE.md).
 export const QUICK_MARK_LABEL: Record<SwipeDirection, string> = {
-    left: "Learn Now",
+    left: "Learning",
     right: "Mastered",
 };
 

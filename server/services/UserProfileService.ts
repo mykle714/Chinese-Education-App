@@ -6,8 +6,8 @@ import { ICommunityLayoutDAL } from '../dal/interfaces/ICommunityLayoutDAL.js';
 import { OnDeckVocabService } from './OnDeckVocabService.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { VELOCITY_WINDOW_DAYS, emptyVelocityBreakdown } from '../types/velocity.js';
-import { activeBars } from '../utils/masteryCompute.js';
-import type { MasteryBarId } from '../contracts/wire.js';
+import { activeWorlds } from '../utils/masteryCompute.js';
+import type { MasteryWorldId } from '../contracts/wire.js';
 import type { CommunityDesign } from '../types/community.js';
 import type {
   UserProfileResponse,
@@ -86,17 +86,17 @@ export class UserProfileService {
     // A brand-new account may not have picked a language yet; 'zh' is the app's
     // default everywhere else (VelocityController and FriendsService do the same).
     const language = identity.selectedLanguage || 'zh';
-    const bars = activeBars({
+    const worlds = activeWorlds({
       reading: identity.readingGoal,
       writing: identity.writingGoal,
-    }) as MasteryBarId[];
+    }) as MasteryWorldId[];
 
     // Three independent reads — issued together rather than stacked. The friendship
     // read is included here (not awaited first) because nothing above depends on it:
     // the stats are identical whether or not the two are friends.
     const [friendship, velocityByLanguage, netPoints] = await Promise.all([
       this.friendshipDAL.findBetween(viewerUserId, targetId),
-      this.categoryPromotionDAL.getVelocityByLanguage(targetId, VELOCITY_WINDOW_DAYS, bars),
+      this.categoryPromotionDAL.getVelocityByLanguage(targetId, VELOCITY_WINDOW_DAYS, worlds),
       this.userLanguagesDAL.getNetPointsForUsers([targetId]),
     ]);
 
@@ -179,7 +179,7 @@ export class UserProfileService {
       },
       stats: {
         velocityWindowDays: VELOCITY_WINDOW_DAYS,
-        activeBars: bars,
+        activeWorlds: worlds,
         languages: languageStats,
       },
       relationship,

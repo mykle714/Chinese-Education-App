@@ -315,7 +315,7 @@ validator accounts** (`users.isValidator`):
 | Trigger | Hook | When it fires |
 |---|---|---|
 | **on-open** | `DictionaryController.lookupTerm` (after the response) | a validator opens a word's card-detail page — the **eip drill-in link** lands on the cdp, which calls `GET /api/dictionary/lookup/:term` |
-| **on-sort** | `StarterPacksService.sortCard` (after the vet upsert) | a validator sorts a card into **Learn Now / Already-Learned** (the `skip` bucket returns early, so it never triggers) |
+| **on-sort** | `StarterPacksService.sortCard` (after the vet upsert) | a validator sorts a card into **Learning / Already-Learned** (the `skip` bucket returns early, so it never triggers) |
 
 > **DECIDED (2026-07-17, revised): the standing cron was retired.** Earlier this was a
 > cron-style *drain* worker that periodically scanned the derived candidate set. That

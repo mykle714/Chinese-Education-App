@@ -370,7 +370,7 @@ removes the ink tier and gives each hue four FILL tiers:
 
 | Tier | Token (red) | `RAMP` field | Used for (caption wording) |
 |---|---|---|---|
-| Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Reading/Writing Centers, the fanned Study Mix cards, Learn Now, the Mastered section, community previews, theme swatches, Match Speed's picked card |
+| Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Reading/Writing Centers, the fanned Study Mix cards, Learning, the Mastered section, community previews, theme swatches, Match Speed's picked card |
 | Mid | `COLORS.redM` (the design's `--redK` aliases it) | `mid` | every bento tile, shelf spines, rows, band pills, avatars, bubbles, a game's whole-screen ground, arena zone dividers |
 | Mark | `COLORS.redMk` | `mark` | "fluorescent" — the dictionary vowel keypad, mastery cells, mini-card mastery bars |
 
@@ -412,8 +412,8 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    `INCORRECT_LABEL` in `src/features/flashcards/constants.ts` take the Mark tier
    (`grnMk` / `redMk`), the same colors as the drag wash.
 3. **Target is yellow** (`BAND_HUES.Target = "yel"`), per artboard 18 ("Target yellow").
-   ⚠️ **Open collision:** Learn Now / Study Mix are also yellow (`LEARN_NOW_HUE`). The
-   design avoids it by drawing Learn Now purple; the user kept Learn Now yellow. One
+   ⚠️ **Open collision:** Learning / Study Mix are also yellow (`LEARN_NOW_HUE`). The
+   design avoids it by drawing Learning purple; the user kept Learning yellow. One
    constant to change if it reads badly on device.
 4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` and
    the mini-card strip both use `getBandMark` (identical colours since 2026-09-28, when
@@ -1701,7 +1701,7 @@ AREA behind it plus one change inside the sheet.
   — so they sit apart from the hand rather than joining it. Pastel fills (D2b), reading on
   `red` and writing on the new `yel`.
 - **`LibraryDuo` (`.duo`) replaces the Collections spine row.** This resolves conflict
-  (b): the sheet now opens on the learner's two CONSTANTS — Learn Now and Mastered — as
+  (b): the sheet now opens on the learner's two CONSTANTS — Learning and Mastered — as
   two wide tiles carrying their figures. **This narrows D9** (see the amendment there).
   No per-skill Mastered spine returns; the header comment's rule is intact.
 - **The `.duebar` is gone** (2026-09-05). Its artboard reads "24 due today", which the
@@ -3171,7 +3171,7 @@ slot — both budgeted into **entry 4**.
 
 > **Narrowing (2026-08-24), on the user's ruling.** The spine remains the single visual
 > for a set of cards, and still governs decks, challenges and bands. **The decks sheet's
-> two LIBRARY CONSTANTS — Learn Now and Mastered — are the one exception** (artboard 2's
+> two LIBRARY CONSTANTS — Learning and Mastered — are the one exception** (artboard 2's
 > `.duo`, built as `LibraryDuo`), and the reason is what the surface is for rather than a
 > change of mind:
 >

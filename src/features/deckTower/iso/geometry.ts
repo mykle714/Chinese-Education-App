@@ -240,3 +240,170 @@ export function faceTransform(proj: Projector, z: number): string {
     // Columns of the affine map: world x̂ → (u, u/2), world ŷ → (−u, u/2).
     return `matrix(${u} ${u / 2} ${-u} ${u / 2} ${o.x.toFixed(2)} ${o.y.toFixed(2)})`;
 }
+
+/** `faceTransform` as an `Affine`, for composing with other plane maps (e.g. a hinge). */
+export function faceAffine(proj: Projector, z: number): Affine {
+    const o = proj.project(0, 0, z);
+    const u = proj.unit;
+    return { a: u, b: u / 2, c: -u, d: u / 2, e: o.x, f: o.y };
+}
+
+// ── Affine maps ─────────────────────────────────────────────────────────────────
+// A FLAT thing (a decal, a whole floor) that tilts out of the XY plane is still flat, and
+// the projection is affine — so where it lands on screen is an affine image of where it
+// was drawn. That lets a tilting plane be redrawn with one SVG `matrix(…)` instead of
+// re-projecting every path in it. Used by the hinged platform (its floor and decals
+// swing with the door).
+
+/** A 2-D affine map in SVG matrix order: (x, y) → (a·x + c·y + e, b·x + d·y + f). */
+export interface Affine {
+    a: number;
+    b: number;
+    c: number;
+    d: number;
+    e: number;
+    f: number;
+}
+
+/** The affine map sending (0,0) → p00, (1,0) → p10 and (0,1) → p01. */
+export function affineFrom3(p00: Pt, p10: Pt, p01: Pt): Affine {
+    return { a: p10.x - p00.x, b: p10.y - p00.y, c: p01.x - p00.x, d: p01.y - p00.y, e: p00.x, f: p00.y };
+}
+
+export function invertAffine(m: Affine): Affine {
+    const det = m.a * m.d - m.b * m.c;
+    // A degenerate map (a plane seen exactly edge-on) has no inverse; callers only invert
+    // the untilted floor map, which never is.
+    if (Math.abs(det) < 1e-9) return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    const a = m.d / det;
+    const b = -m.b / det;
+    const c = -m.c / det;
+    const d = m.a / det;
+    return { a, b, c, d, e: -(a * m.e + c * m.f), f: -(b * m.e + d * m.f) };
+}
+
+/** `outer ∘ inner`: apply `inner` first. */
+export function composeAffine(outer: Affine, inner: Affine): Affine {
+    return {
+        a: outer.a * inner.a + outer.c * inner.b,
+        b: outer.b * inner.a + outer.d * inner.b,
+        c: outer.a * inner.c + outer.c * inner.d,
+        d: outer.b * inner.c + outer.d * inner.d,
+        e: outer.a * inner.e + outer.c * inner.f + outer.e,
+        f: outer.b * inner.e + outer.d * inner.f + outer.f,
+    };
+}
+
+export function affineToSvg(m: Affine): string {
+    return `matrix(${[m.a, m.b, m.c, m.d, m.e, m.f].map((v) => v.toFixed(4)).join(" ")})`;
+}
+
+// ── Hinges (trap doors) ─────────────────────────────────────────────────────────
+
+/** A point in world space. */
+export interface Pt3 {
+    x: number;
+    y: number;
+    z: number;
+}
+
+/**
+ * A hinge running along world y through (x, ·, z) — a rect's BACK-LEFT edge (its xMin
+ * edge: the upper-left edge on screen) when `x = rect.x`. `angle` is in radians: 0 is
+ * shut, and a positive angle swings the +x side DOWN, like a trap door dropping open.
+ * At π/2 the door hangs straight down, its top face turned toward the viewer.
+ *
+ * Depended on by: IsoPlatform (`hinge`), docs/DECK_TOWER_TRANSITIONS.md § "Trap door".
+ */
+export interface Hinge {
+    x: number;
+    z: number;
+    angle: number;
+}
+
+/** Where a world point ends up when the door it belongs to swings on `hinge`. */
+export function hingePoint(hinge: Hinge, p: Pt3): Pt3 {
+    const c = Math.cos(hinge.angle);
+    const s = Math.sin(hinge.angle);
+    const dx = p.x - hinge.x;
+    const dz = p.z - hinge.z;
+    // A rotation in the XZ plane: (dx, dz) → (dx·c + dz·s, −dx·s + dz·c), so a point in
+    // front of the hinge (dx > 0) on its plane (dz = 0) goes DOWN as the angle grows.
+    return { x: hinge.x + dx * c + dz * s, y: p.y, z: hinge.z - dx * s + dz * c };
+}
+
+/** A rounded rect's outline at height z, swung on `hinge`, as world points. */
+export function hingedOutline(rect: WorldRect, z: number, hinge: Hinge): Pt3[] {
+    return roundedRectWorld(rect).map((p) => hingePoint(hinge, { x: p.x, y: p.y, z }));
+}
+
+/**
+ * `prism` for an extruded rounded rect swung on a hinge. A rotated convex solid is still
+ * convex, so its silhouette is still the hull of its two outlines. Its top face stays
+ * toward the viewer up to 3π/4 (its normal (sin θ, 0, cos θ) against the view direction
+ * (1, 1, 1)), and its underside never shows, so the IsoSolid recipe — walls, then the top
+ * over them — still holds for every angle a door swings through.
+ */
+export function hingedPrism(proj: Projector, rect: WorldRect, zBottom: number, zTop: number, hinge: Hinge): PrismGeometry {
+    const toScreen = (pts: Pt3[]) => pts.map((p) => proj.project(p.x, p.y, p.z));
+    const topPts = toScreen(hingedOutline(rect, zTop, hinge));
+    const hullPts = convexHull(topPts.concat(toScreen(hingedOutline(rect, zBottom, hinge))));
+    const r = Math.max(0, Math.min(rect.r, rect.w / 2, rect.d / 2));
+    const f = hingePoint(hinge, { x: rect.x + rect.w, y: rect.y + rect.d, z: zTop });
+    return {
+        top: toPath(topPts),
+        hull: toPath(hullPts),
+        frontX: proj.project(f.x, f.y, f.z).x,
+        bevelHalfWidth: Math.max(1, r * proj.unit * 0.9),
+        bounds: boundsOf(hullPts),
+    };
+}
+
+/** The map from world (x, y) on a flat plane to screen, given where three of its points land. */
+function planeMap(proj: Projector, place: (x: number, y: number) => Pt3): Affine {
+    const at = (x: number, y: number) => {
+        const p = place(x, y);
+        return proj.project(p.x, p.y, p.z);
+    };
+    return affineFrom3(at(0, 0), at(1, 0), at(0, 1));
+}
+
+/**
+ * SVG `transform` that carries anything already DRAWN flat at height z (in screen
+ * coordinates, e.g. a `flatPath` or a `faceTransform` print) onto the same plane swung on
+ * `hinge`. Exact for flat things only — a solid standing on the plane would need its own
+ * re-projection.
+ */
+export function hingedPlaneTransform(proj: Projector, z: number, hinge: Hinge): string {
+    return affineToSvg(hingedPlaneAffine(proj, z, hinge));
+}
+
+/** `hingedPlaneTransform` as an `Affine` (to compose, or to invert — see IsoFloorLabel's raised plate on a swung door). */
+export function hingedPlaneAffine(proj: Projector, z: number, hinge: Hinge): Affine {
+    const shut = planeMap(proj, (x, y) => ({ x, y, z }));
+    const swung = planeMap(proj, (x, y) => hingePoint(hinge, { x, y, z }));
+    return composeAffine(swung, invertAffine(shut));
+}
+
+// ── Walls ───────────────────────────────────────────────────────────────────────
+
+/**
+ * The map from a FLAT drawing on a slab's FRONT-LEFT wall (the vertical plane at world
+ * `y`, facing +y — the lower-left wall on screen) to the screen. The drawing's own
+ * coordinates are (world x, −world z): x runs along the wall (screen down-right, the same
+ * way a card's print runs) and y runs DOWN the wall, so text drawn in it stands upright.
+ *
+ * With a `hinge` (a platform's open trap door) the wall swings with the slab: the plane
+ * stays at world y, turned in it. Affine, so one `matrix(…)` carries every path drawn on
+ * the wall — the same trick as `hingedPlaneTransform` for the floor.
+ *
+ * Depended on by: IsoWallSlider.tsx (its slot and label print).
+ */
+export function wallAffine(proj: Projector, y: number, hinge: Hinge | null): Affine {
+    const at = (x: number, down: number) => {
+        const p = { x, y, z: -down };
+        const q = hinge ? hingePoint(hinge, p) : p;
+        return proj.project(q.x, q.y, q.z);
+    };
+    return affineFrom3(at(0, 0), at(1, 0), at(0, 1));
+}

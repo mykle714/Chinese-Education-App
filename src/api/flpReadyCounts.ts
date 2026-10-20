@@ -17,19 +17,24 @@
  * Referenced by docs/DECKS_FEATURE.md § "The card hand".
  */
 import { apiGet, withFallback } from './http';
-import type { FlpBar } from '../../server/contracts/studyMode';
+import type { FlpWorld } from '../../server/contracts/studyMode';
 
 export interface FlpReadyCounts {
     /** Ready-now counts keyed by the requested bar's utcm band (Unfamiliar/Target/Comfortable/Mastered). */
     counts: Record<string, number>;
     /** Time until the soonest Comfortable/Mastered card becomes ready, or null if none is resting. */
     reviewNextReadyMs: number | null;
+    /**
+     * Focus mode is on in this world, so `counts` cover only today's remaining focus set
+     * (docs/FOCUS_MODE.md § 4). Optional: an older server omits it.
+     */
+    focusOn?: boolean;
 }
 
-/** `bar` — the session bar the figures describe: core (fdp) or reading (Reading Center). */
-export function fetchFlpReadyCounts(bar: FlpBar = 'core'): Promise<FlpReadyCounts> {
+/** `world` — the session world the figures describe: core (fdp), reading or writing. */
+export function fetchFlpReadyCounts(world: FlpWorld = 'core'): Promise<FlpReadyCounts> {
     return withFallback(
-        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', bar === 'core' ? undefined : { params: { bar } }),
+        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', world === 'core' ? undefined : { params: { world } }),
         'Failed to load card counts'
     );
 }

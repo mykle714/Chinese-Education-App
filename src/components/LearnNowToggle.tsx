@@ -11,13 +11,13 @@ import { SPEAKER_BUTTON_SIZE } from "./SpeakerButton";
 import type { LearnNowToggleState } from "../hooks/useLearnNowToggle";
 
 /**
- * The compact "+ to Learn Now" ⇄ "Added!" toggle that sits UNDER the speaker in the eip
+ * The compact "+ to Learning" ⇄ "Added!" toggle that sits UNDER the speaker in the eip
  * entry header's vertical action stack (EipEntryHeader). Driven by `useLearnNowToggle`.
  *
- *   • Not in Learn Now → a small round "+" breathing the soft green halo
+ *   • Not in Learning → a small round "+" breathing the soft green halo
  *     (theme/lowSupplyGlow.ts, LOW_SUPPLY_GLOW_NUDGE) — the same "add more cards" nudge
  *     the fdp's Sort Cards tile wears. Static at the peak under reduced motion.
- *   • In Learn Now → a small greyed "Added!" pill. Still a button: tap = remove, no
+ *   • In Learning → a small greyed "Added!" pill. Still a button: tap = remove, no
  *     confirmation (removal demotes to 'provisional'; see the hook). No glow.
  *     While the add is in flight (`pending`) the "+" glyph becomes a small spinner.
  *   • Status unknown (still loading) or entry ineligible → renders nothing.
@@ -53,7 +53,7 @@ const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => 
     return inLibrary ? (
         <ButtonBase
             className="learn-now-toggle learn-now-toggle--added"
-            aria-label="Added to Learn Now — tap to remove"
+            aria-label="Added to Learning — tap to remove"
             onClick={(e) => { stop(e); void toggle(); }}
             onMouseDown={stop}
             onTouchStart={stop}
@@ -79,7 +79,7 @@ const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => 
     ) : (
         <IconButton
             className="learn-now-toggle learn-now-toggle--add"
-            aria-label="Add to Learn Now"
+            aria-label="Add to Learning"
             onClick={(e) => { stop(e); void toggle(); }}
             onMouseDown={stop}
             onTouchStart={stop}

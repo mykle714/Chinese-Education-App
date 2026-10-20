@@ -7,7 +7,7 @@ import { handle } from './asyncHandler.js';
  * OnDeck vocab set routes — /api/onDeck/*
  *
  * LAYER: HTTP route layer (registration only). Split out of server.ts; paths unchanged.
- * "library" in these paths is the internal name for the user-facing "Learn Now"
+ * "library" in these paths is the internal name for the user-facing "Learning"
  * bucket — backend contract, do not rename (see CLAUDE.md).
  */
 const router = Router();

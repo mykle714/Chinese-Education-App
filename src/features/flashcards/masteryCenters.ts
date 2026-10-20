@@ -1,4 +1,4 @@
-import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
+import type { MasteryGoals, MasteryWorldId } from "../../utils/masteryCompute";
 import { COLORS, type RampHue } from "../../theme/colors";
 import { MASTERY_BAR_HUES } from "../../utils/categoryColors";
 
@@ -38,24 +38,24 @@ import { MASTERY_BAR_HUES } from "../../utils/categoryColors";
  */
 
 /** The skill bars that have a Center. Core has no Center — the fdp IS its surface. */
-export type MasteryCenterBar = Exclude<MasteryBarId, "core">;
+export type MasteryCenterWorld = Exclude<MasteryWorldId, "core">;
 
-export const MASTERY_CENTER_BARS: readonly MasteryCenterBar[] = ["reading", "writing"] as const;
+export const MASTERY_CENTER_WORLDS: readonly MasteryCenterWorld[] = ["reading", "writing"] as const;
 
 /** The route each Center lives at. */
-export const MASTERY_CENTER_PATHS: Record<MasteryCenterBar, string> = {
+export const MASTERY_CENTER_PATHS: Record<MasteryCenterWorld, string> = {
     reading: "/flashcards/reading",
     writing: "/flashcards/writing",
 };
 
 /** The page title and the fdp button's label — the same words in both places. */
-export const MASTERY_CENTER_TITLES: Record<MasteryCenterBar, string> = {
+export const MASTERY_CENTER_TITLES: Record<MasteryCenterWorld, string> = {
     reading: "Reading Center",
     writing: "Writing Center",
 };
 
 /** The fdp button's (shorter) label. The page's own title carries the word "Center". */
-export const MASTERY_CENTER_BUTTON_LABELS: Record<MasteryCenterBar, string> = {
+export const MASTERY_CENTER_BUTTON_LABELS: Record<MasteryCenterWorld, string> = {
     reading: "Reading",
     writing: "Writing",
 };
@@ -66,7 +66,7 @@ export const MASTERY_CENTER_BUTTON_LABELS: Record<MasteryCenterBar, string> = {
  * tier, below), the Mastered tile in the Center's Cards sheet and every skill dot are
  * one colour by construction. Reading green, writing purple since 2026-10-02.
  */
-export const MASTERY_CENTER_HUES: Record<MasteryCenterBar, RampHue> = {
+export const MASTERY_CENTER_HUES: Record<MasteryCenterWorld, RampHue> = {
     reading: MASTERY_BAR_HUES.reading,
     writing: MASTERY_BAR_HUES.writing,
 };
@@ -76,18 +76,18 @@ export const MASTERY_CENTER_HUES: Record<MasteryCenterBar, RampHue> = {
  * per Center rather than derived from the hue, because the `Bg` tier exists for these
  * two hues only (theme/colors.ts).
  */
-export const MASTERY_CENTER_GROUNDS: Record<MasteryCenterBar, string> = {
+export const MASTERY_CENTER_GROUNDS: Record<MasteryCenterWorld, string> = {
     reading: COLORS.grnBg,
     writing: COLORS.purBg,
 };
 
 /** The Material Symbols glyph each Center is drawn with (rail tile, sheet tiles). */
-export const MASTERY_CENTER_GLYPHS: Record<MasteryCenterBar, string> = {
+export const MASTERY_CENTER_GLYPHS: Record<MasteryCenterWorld, string> = {
     reading: "menu_book",
     writing: "draw",
 };
 
 /** Which Centers this account has buttons for, in display order. */
-export function activeMasteryCenters(goals: MasteryGoals): MasteryCenterBar[] {
-    return MASTERY_CENTER_BARS.filter((bar) => goals[bar]);
+export function activeMasteryCenters(goals: MasteryGoals): MasteryCenterWorld[] {
+    return MASTERY_CENTER_WORLDS.filter((world) => goals[world]);
 }

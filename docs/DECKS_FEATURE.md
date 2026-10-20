@@ -11,7 +11,7 @@ Two things landed together here, because one made the other possible:
    own collection selector — see § 3.)
 2. **Decks** — a deck is a named set of a user's cards (`decks` / `deck_cards`,
    migration 141). Selecting one opens its collection view. The `/decks` page,
-   whose space used to be the inline Learn Now card grid, is now the deck list.
+   whose space used to be the inline Learning card grid, is now the deck list.
 
 > **Where the fdp lives.** Since 2026-10-10 the fdp (`FlashcardsDecksPage`) is the
 > **Home** footer tab at `/`: `src/pages/HomePage.tsx` → `HomePage` renders it with the
@@ -74,10 +74,10 @@ script or future path deletes a vet row.)
 
 ### Removed-from-Learn-Now cards keep their memberships
 
-Removing a card from Learn Now (the cdp delete, the dictionary eip's "Added!" toggle)
+Removing a card from Learning (the cdp delete, the dictionary eip's "Added!" toggle)
 demotes it to `'provisional'` instead of deleting it, and **leaves its `deck_cards`
 rows in place**, so a re-add puts it straight back into its decks
-(PROVISIONAL_CARDS.md § "Removing from Learn Now demotes"). Every deck read therefore
+(PROVISIONAL_CARDS.md § "Removing from Learning demotes"). Every deck read therefore
 filters on the bucket: `OnDeckVocabService.getDeckCards` and the game pools use
 `vetSortedClause()`, and `DeckSummary.cardCount` (`DeckDAL` → `CARD_COUNT`) counts only
 members whose vet row is `'library'`, probing both physical vet tables by primary key —
@@ -213,7 +213,7 @@ launch always sent, and every game still reads them back with `useLaunchCollecti
 | Collection | Launch params | Server filter (`builtinCollectionClause`) |
 |---|---|---|
 | All Cards | *(none)* | none — **All is the default pool** |
-| Learn Now | `?collection=learn-now` | `compute_core_category(...) <> 'Mastered'` |
+| Learning | `?collection=learn-now` | `compute_core_category(...) <> 'Mastered'` |
 | Mastered (core) | `?collection=mastered` | `masteredBarClause('core')` |
 | Mastered Reading | `?collection=mastered-reading` | `masteredBarClause('reading')` |
 | Mastered Writing | `?collection=mastered-writing` | `masteredBarClause('writing')` |
@@ -223,9 +223,9 @@ launch always sent, and every game still reads them back with `useLaunchCollecti
 from every sorted card — a clause for it would restate `vetPlayableClause()`.
 
 > ⚠️ **`learn-now` used to be the empty one, and that was a latent bug.** It was
-> correct while Learn Now meant "every sorted card"; once the `all` collection existed
-> the two stopped being the same set, and Learn Now is really "sorted AND not
-> core-mastered". A round launched from Learn Now was therefore including mastered
+> correct while Learning meant "every sorted card"; once the `all` collection existed
+> the two stopped being the same set, and Learning is really "sorted AND not
+> core-mastered". A round launched from Learning was therefore including mastered
 > cards its own page does not list. It now sends its id like any other narrowing
 > collection. **Expect a behaviour change**: Study-from-Learn-Now no longer serves
 > mastered cards.
@@ -328,7 +328,7 @@ deck would make the deck itself the answer key.
 | `src/features/flashcards/DecksSheets.tsx` | the two pills + modal sheets + New-deck dialog, shared by the fdp and both Centers |
 | `src/features/flashcards/useDecksPanel.ts` | **All of the panel's data, for one lens** — the count hooks, the deck fetch, the card-library fetch, the search/sort state and the tile figures. Shared verbatim by the fdp and both Centers. |
 | `src/features/flashcards/DecksPanelBody.tsx` | Body of the panel (`variant: "sheet" \| "page"`, `section: "all" \| "cards" \| "decks"`): the library duo, the Challenges / Decks shelf rows and the inline Cards grid (`LibraryDuo`, `ShelfRow`, `SectionLabel`) |
-| `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learn Now + Mastered, with their figures. A two-button **filter toggle** over the Cards grid, and the one place the sheet is not spines; see § "The lens's two CONSTANTS" |
+| `src/features/flashcards/LibraryDuo.tsx` | The panel's two library constants (`.duo`) — Learning + Mastered, with their figures. A two-button **filter toggle** over the Cards grid, and the one place the sheet is not spines; see § "The lens's two CONSTANTS" |
 | `src/features/flashcards/StudyHand.tsx` | The three study modes as a fanned hand of cards, on the page behind the sheet (`.fanw`) |
 | `src/features/flashcards/useHandSwipe.ts` | The throw gesture on the hand's front card (omnidirectional; `axis: "horizontal"` lock for the compact hand) — slop classifier, radial commit threshold, the flp's drag constants, click suppression |
 | `src/features/flashcards/SlotNumber.tsx` | The slot-machine reel a figure spins as while its count is in flight, and the landing that settles it |
@@ -386,16 +386,16 @@ The built-in list is deliberately **three ideas wide**:
 | Collection | What it holds |
 |---|---|
 | **All Cards** | every sorted card, mastered or not — the one **bar-independent** set |
-| **Learn Now** | every sorted card whose **named bar** is unfinished — one per bar |
+| **Learning** | every sorted card whose **named bar** is unfinished — one per bar |
 | **Mastered** | the cards finished in one bar — one per bar |
 
-**Learn Now is per-bar, exactly as Mastered is.** `learn-now` (unqualified) is the
+**Learning is per-bar, exactly as Mastered is.** `learn-now` (unqualified) is the
 core set and keeps its original id; `learn-now-reading` / `learn-now-writing` are the
 same idea about one skill. Each is the exact **complement** of that bar's Mastered
 collection (`unmasteredBarClause` vs `masteredBarClause`, `vetTable.ts`), so the two
 sets a surface shows always partition that bar's library. This is what lets a Mastery
 Center answer "what have I still not learned to read" — a question the single
-core-banded Learn Now could not express, because a card can be finished for
+core-banded Learning could not express, because a card can be finished for
 recognition and untouched for reading.
 
 The per-band collections (`unfamiliar` / `target` / `comfortable`) **were removed**.
@@ -407,13 +407,13 @@ chip — just not as collections. Consequence: `?collection=target` no longer re
 (it falls back to `learn-now`) and `/flashcards/collection/target` renders nothing.
 
 **One list.** `builtinCollections.ts` → `lensCollectionEntries(lens)` is what the decks
-**panel** renders — fdp (`core`) and both Centers: that ONE bar's Learn Now + Mastered, two
+**panel** renders — fdp (`core`) and both Centers: that ONE bar's Learning + Mastered, two
 entries, always — rendered by `LibraryDuo` rather than as spines.
 
 The Games hub's "Playing with …" selector used to have its own goal-driven list here
-(`builtinCollectionEntries`: All Cards, core Learn Now, one Mastered per active bar). It
+(`builtinCollectionEntries`: All Cards, core Learning, one Mastered per active bar). It
 was **deleted on 2026-10-03**: the selector now offers only **All Cards + the learner's
-decks** (custom and challenge), building the All Cards row itself. Learn Now / Mastered
+decks** (custom and challenge), building the All Cards row itself. Learning / Mastered
 remain fully playable via `?collection=` from a collection page — the hub just no longer
 lists them. See [GAMES_FEATURE.md § "Collection selector"](./GAMES_FEATURE.md).
 
@@ -453,13 +453,13 @@ anywhere** ordered their library by what they still cannot read. Splitting the s
 out leaves the fdp doing one thing and gives each skill a page that does the same for
 it. Nothing per-skill belongs on `/decks` any more — no tile, no count, no sort row.
 
-**What a lens changes** (one `MasteryBarId`, threaded into four places — everything
+**What a lens changes** (one `MasteryWorldId`, threaded into four places — everything
 else follows):
 
 | | Core (fdp) | Skill lens (a Center) |
 |---|---|---|
-| Collections | Learn Now + Mastered | that bar's Learn Now + Mastered |
-| Tile figures | `?bar=core` band counts | `?bar=<skill>` band counts |
+| Collections | Learning + Mastered | that bar's Learning + Mastered |
+| Tile figures | `?world=core` band counts | `?world=<skill>` band counts |
 | Card grid order | "Recently added" (a deck: "Date added") | that bar's **Mastery · Lowest** |
 | Sort menu | one row set per **active** bar | that ONE bar's rows |
 | Cooldown row | longest-resting of recognition/production | longest-resting of that bar's track |
@@ -485,7 +485,7 @@ they no longer decide how many bars get painted. See
 
 **The lens travels with the navigation.** A per-bar collection carries its lens in its
 own id, so those tiles need nothing added. A **deck** and a **card** are bar-agnostic
-sets, so they carry `?bar=` (`withLens` / `lensFromSearch`, `collectionRef.ts`) — the
+sets, so they carry `?world=` (`withLens` / `lensFromSearch`, `collectionRef.ts`) — the
 collection page prefers the collection's own lens and falls back to the param
 (`lensFromCollection(ref) ?? lensFromSearch(search)`), and the cdp's Mastery section
 shows that one bar and its cooldown when the param is present. Without this, tapping a
@@ -537,7 +537,7 @@ Each pill names the section its sheet renders (`DecksPanelBody`'s `section` prop
 
 | Pill | `section` | What the sheet holds |
 |---|---|---|
-| **Cards** | `"cards"` | the library duo (Learn Now / Mastered — filters on the grid below) + the Cards section: search, sort, grid |
+| **Cards** | `"cards"` | the library duo (Learning / Mastered — filters on the grid below) + the Cards section: search, sort, grid |
 | **Decks** | `"decks"` | Challenges, then the user's own Decks (with the `AddSpine`) |
 
 > **Was one pill, "Sets & Cards".** A single panel stacked all four captioned sections
@@ -813,7 +813,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    ⚠️ **"Challenge Mix" / "Review Mix" are display names only.** The `StudyModeId` values
    stay `challenge` / `review`: they are the `?mode=` query param the flp parses
    (`FlashcardsLearnPage` → `selectedMode`) and the keys of the server's `MODE_CONFIGS`.
-   Same rule as the "Learn Now" rename (CLAUDE.md § Terminology) — rename what the learner
+   Same rule as the "Learning" rename (CLAUDE.md § Terminology) — rename what the learner
    reads, never the wire. Match Speed's three difficulty modes still read "Review" and
    "Challenge" (`src/games/match-speed/constants.ts` → `MODE_CONFIGS`); they are the same
    three ideas on a different surface and were left alone.
@@ -905,7 +905,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    > session rather than dead-ending; Match Speed's `modeConfigFor` does the same
    > with an old nav-state value.
 
-2. **The lens's two CONSTANTS** — *Learn Now* and *Mastered*, as the two wide tiles of
+2. **The lens's two CONSTANTS** — *Learning* and *Mastered*, as the two wide tiles of
    `LibraryDuo` (`.duo`). **No *All Cards* tile** — those cards are the panel's last
    section instead.
 
@@ -929,7 +929,7 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    > SHELF_REDESIGN.md **D9**; it is not licence to bring tiles back anywhere else.
 
    > **The two tiles are FILTERS on the panel's own card grid, not links.** Tapping
-   > *Learn Now* narrows the Cards section below to that set and lights the tile;
+   > *Learning* narrows the Cards section below to that set and lights the tile;
    > tapping the lit tile clears back to the whole library. They are a two-button
    > toggle group over `CardsFilter` (`useDecksPanel.ts`) — `"all"` is the neutral
    > state, so there is no third "clear" control and no state to get stuck in, and
@@ -947,9 +947,9 @@ the browser pans it there too (docs/EIP_SHEET_GESTURES.md § "Gesture mode lock"
    > pair separates on two channels at once rather than asking the eye to compare two
    > near-white rectangles.
    >
-   > *The Cards caption follows the filter* — "Cards (612)" unfiltered, "Learn Now
+   > *The Cards caption follows the filter* — "Cards (612)" unfiltered, "Learning
    > (404)" while a tile is active — so the grid is never an unexplained subset, and an
-   > empty filtered set says "No cards in Learn Now yet" rather than sending a learner
+   > empty filtered set says "No cards in Learning yet" rather than sending a learner
    > who has plenty of cards off to Discover.
    >
    > *Membership is computed client-side* with `barCategory(card.typedMarkHistory,
@@ -1139,24 +1139,24 @@ The rightmost tile of the top rail (§ 1 (b)) — **"Sort Cards"**, glyph `swap_
 `blu` pastel (`SORT_TILE_HUE`). Always present; tapping it opens Sort Cards
 (`useDiscoverNavigation` → `goToSort`).
 
-**"Low" glow.** While the learner's **core Learn Now count** is under
+**"Low" glow.** While the learner's **core Learning count** is under
 `LEARN_NOW_LOW_THRESHOLD` (20 = `CARD_BASELINES.flp`, `server/contracts/wire.ts`), the tile
 breathes a soft **green halo** and carries a small green **"Low"** badge.
 
 * **Why it exists.** Provisional cards (PROVISIONAL_CARDS.md) mean a thin library never
   blocks a session — the server lends cards instead — so nothing else tells the learner
   their own supply is running out. 20 is the point where Study Mix starts being topped up.
-* **Which count.** The same figure as the Learn Now tile: Unfamiliar + Target +
+* **Which count.** The same figure as the Learning tile: Unfamiliar + Target +
   Comfortable on the core bar (`builtinCollectionCount` → `learn-now`), exposed as
   `DecksPanelState.learnNowCount`. That field is `undefined` until
   `useCategoryCounts` reports `ok` — unlike `tileCount`, a failed or in-flight fetch never
   reads as 0, so the glow cannot flash on arrival or appear after a network error. The
   decision is made in `FlashcardsDecksPage.tsx` (`learnNowLow`) and passed down.
-* **fdp only.** The Mastery Centers have no top rail; their Learn Now is per-skill, and a
+* **fdp only.** The Mastery Centers have no top rail; their Learning is per-skill, and a
   learner who has read everything has a reading problem, not a supply problem.
 * **Halo.** Green rather than the tile's blue so it stands out as an inviting "go here"
   (it was red until 2026-10-09; red read as an alarm). It is the same halo SHAPE the sort
-  page's Learn Now pill wears when the learner arrives short (SORT_CARDS_REQUIREMENTS.md
+  page's Learning pill wears when the learner arrives short (SORT_CARDS_REQUIREMENTS.md
   § 5.3a) — that one in yellow: `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE` =
   `RAMP.grn.mid`, a pure blur pulsing 5px → 14px
   over 3.6s — slowed from 1.4s on 2026-10-09 to read as a calm breath, not an alarm). On the tile it is appended to the tile's own `SHADOW.cardRest` rather than
@@ -1167,7 +1167,7 @@ breathes a soft **green halo** and carries a small green **"Low"** badge.
   app hairline, `SIZE.micro` bold `onSurface` text. It is `aria-hidden`; the tile's
   `aria-label` ("Sort Cards — card count low") carries the message.
 * **Closing the loop.** The sort page picks the learner up from here: arriving under
-  `LEARN_NOW_ENOUGH_THRESHOLD` (30) lights its Learn Now pill yellow until they reach it
+  `LEARN_NOW_ENOUGH_THRESHOLD` (30) lights its Learning pill yellow until they reach it
   (SORT_CARDS_REQUIREMENTS.md § 5.3a).
 
 History: before 2026-10-09 this was a separate round, red, pulsing "Sort More!" button in
@@ -1315,7 +1315,7 @@ visibly pop in on each settled keystroke. That is currently accepted as reading 
 itself enough to replay the entrance animation: the cascade only controls *when* a card
 is mounted, and the pop-in is a CSS animation that runs on mount. A card the filter keeps
 — one present in both sets at the same position, which is the ordinary case switching
-between **Cards** and **Learn Now**, since the top of the library is usually unmastered —
+between **Cards** and **Learning**, since the top of the library is usually unmastered —
 keeps its React identity across the switch and therefore sits still while the rows below
 it pop in. `DecksPanelBody` fixes that by keying the grid on `cardsFilter`
 (`MiniVocabCardGrid key={cardsFilter}`), so a filter press remounts every card. The key
@@ -1364,11 +1364,11 @@ same id-derived palette as `deckAccentColor` (its `.main` is the deck hue's MID 
 **challenge** deck's spine is `COLORS.orgM` regardless of id (docs/STUDY_CHALLENGE.md
 § "Where they render on `/decks`"). **All** is the one grey spine: every other
 color on the page names a set, and All is their union rather than another member, so it
-takes a neutral instead of another hue. **Learn Now** takes the gold `--yel`. ⚠️ Since
+takes a neutral instead of another hue. **Learning** takes the gold `--yel`. ⚠️ Since
 Shelf System v2 (2026-09-23) Target is ALSO yellow, so yellow means both the Target band
-(pills, cells) and Learn Now / Study Mix — an open collision tracked on `LEARN_NOW_HUE` in
+(pills, cells) and Learning / Study Mix — an open collision tracked on `LEARN_NOW_HUE` in
 `src/utils/categoryColors.ts`. It was purple until 2026-09-01; gold is the
-**Study Mix** card's own hue (`HAND_HUES.mix`), and Study Mix plays exactly the Learn Now
+**Study Mix** card's own hue (`HAND_HUES.mix`), and Study Mix plays exactly the Learning
 set, so the hand and the filter now name the same cards in the same colour.
 
 The three **Mastered** spines come from `MASTERY_BAR_COLORS` (same file), one hue per bar
@@ -1497,7 +1497,7 @@ two count hooks the page already loads — no third endpoint:
 | Tile | Source |
 |---|---|
 | All Cards | `useCategoryCounts` — the sum of the four core bands |
-| Learn Now | `useCategoryCounts` — Unfamiliar + Target + Comfortable, mirroring its own SQL (`core category <> 'Mastered'`) |
+| Learning | `useCategoryCounts` — Unfamiliar + Target + Comfortable, mirroring its own SQL (`core category <> 'Mastered'`) |
 | The Mastered tiles | `GET /api/onDeck/masteredCounts` (`useMasteredCounts`) |
 | A deck | `DeckSummary.cardCount` |
 
@@ -1507,7 +1507,7 @@ Mastered in each **bar**". Same word, orthogonal keys — one response could not
 both without being disambiguated by key name. All three counts are fetched regardless
 of goals, so toggling one on reveals a tile that already has its number.
 
-The Learn Now card grid and its search bar moved to
+The Learning card grid and its search bar moved to
 `/flashcards/collection/learn-now`.
 
 ### Add to deck (cdp + eip)
@@ -1634,7 +1634,7 @@ number the cdp prints under the bar, the flp queues on, and the mark gate enforc
   a single all-four-types number cannot answer *"what reading have I been neglecting"*,
   because a card whose recognition has rested six months would outrank the one whose
   reading track is genuinely the stalest thing on the page. So the row is now per bar,
-  like the other two (`COOLDOWN_KEY_BAR` / `COOLDOWN_KEYS`).
+  like the other two (`COOLDOWN_KEY_WORLD` / `COOLDOWN_KEYS`).
 * The key depends on the clock, so `sortVocabEntries` takes `now` — read **once per
   sort** and injected (a key that drifted mid-sort would make the comparator
   inconsistent), and injectable for the tests. The list does **not** tick: a card that
@@ -1657,7 +1657,7 @@ would leave the Center with no mastery row at all. Both gates filter on the bund
 silently slip a row past them.
 
 **The lens narrows the menu.** `sortBundles(language, goals, lens)` emits one row set
-per `activeBars(goals)` under the core lens, and **only the lens bar's** rows under a
+per `activeWorlds(goals)` under the core lens, and **only the lens bar's** rows under a
 skill lens. With a single bar in play the labels lose their qualifier — a Center's menu
 reads *Mastery*, not *Mastery (Read)*, because the page title already said which skill.
 
@@ -1670,7 +1670,7 @@ what let the orderings double without the menu doubling.
 
 | Row label | Directions → keys | Orders on |
 |---|---|---|
-| Date added | Newest → `recent` · Oldest → `oldest` | `vet.createdAt`. `recent` is **the default** for Learn Now / Mastered |
+| Date added | Newest → `recent` · Oldest → `oldest` | `vet.createdAt`. `recent` is **the default** for Learning / Mastered |
 | Added to this deck | Newest → `deckAdded` · Oldest → `deckAddedOldest` | `deck_cards.addedAt` — **deck-only**, and `deckAdded` is the **default inside a deck** |
 | Pinyin / Word | A–Z → `alphaPronunciation` · Z–A → `alphaPronunciationDesc` | tone-insensitive display pinyin; `entryKey` when there is none |
 | Definition | A–Z → `alphaDefinition` · Z–A → `alphaDefinitionDesc` | the **dd** — the definition the card face actually shows |
@@ -1678,8 +1678,8 @@ what let the orderings double without the menu doubling.
 | Mastery *(one row per bar)* | Highest → `mastery*Desc` · Lowest → `mastery*Asc` | that bar's pbh (`barProgressBarHeight`). **The default in every decks panel, and under a skill lens** (Lowest) |
 
 **The mastery and cooldown rows are per bar, and goal-gated.**
-`sortBundles` emits one of each per `activeBars(goals)` entry (or per the lens bar
-alone); `MASTERY_KEY_BAR` and `COOLDOWN_KEY_BAR` map each key back to the bar its
+`sortBundles` emits one of each per `activeWorlds(goals)` entry (or per the lens bar
+alone); `MASTERY_KEY_WORLD` and `COOLDOWN_KEY_WORLD` map each key back to the bar its
 comparator reads. A row label names its bar
 (`Mastery (Read)`) only when **more than one bar is active** *and* the bar is a
 **per-skill** one. The core bar is never named: the unqualified label *is* the core
@@ -1697,7 +1697,7 @@ the two surfaces are asked two different questions:
 | Surface | Opens on | Function |
 |---|---|---|
 | Collection page — a deck | *Added to this deck*, newest | `defaultSortKey(true, "core")` |
-| Collection page — Learn Now / Mastered / `all` | *Date added*, newest | `defaultSortKey(false, "core")` |
+| Collection page — Learning / Mastered / `all` | *Date added*, newest | `defaultSortKey(false, "core")` |
 | Collection page — anything under a skill lens | that bar's **Mastery · Lowest** | `defaultSortKey(_, lens)` |
 | **Decks panel — all three (fdp, Reading Center, Writing Center)** | the lens bar's **Mastery · Lowest** | `masteryLowestKey(lens)` |
 
@@ -1754,15 +1754,15 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Launch filter | `vetTable.ts` (`vetDeckClause`, `vetDeckOrProvisionalClause`); `OnDeckVocabService.deckPlayFilter` + its three fetchers; `OnDeckVocabController.resolveCollection`; `routes/flashcardRoutes.ts` (mark body) |
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `useDecksPanel.ts`, `DecksPanelBody.tsx`, `NewDeckDialog.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
-| §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?bar=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `src/components/mastery/MasteryWindow.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?bar=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`, `parseMasteryBar`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `bar` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
+| §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?world=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `src/components/mastery/MasteryWindow.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?world=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`, `parseMasteryWorld`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `world` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
 | §1 (b) top rail + §4 Sort Cards tile | `src/features/flashcards/DecksTopRail.tsx`; `src/theme/lowSupplyGlow.ts`; `FlashcardsDecksPage.tsx` (`learnNowLow`); `useDecksPanel.ts` (`learnNowCount`); `src/hooks/useCategoryCounts.ts` (`ok`); `server/contracts/wire.ts` (`LEARN_NOW_LOW_THRESHOLD`, `LEARN_NOW_ENOUGH_THRESHOLD`); `src/hooks/useDiscoverNavigation.ts` (`goToSort`). Sort-page half: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.3a. |
-| §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionBar`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionBar`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByBar`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
+| §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionWorld`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByWorld`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |
 | §4 Launching the flp from the hand | `src/features/flashcards/flpLaunch.ts` (`FDP_EXIT`, `FLP_ENTER`, `FLP_EXIT`, `FDP_ENTER`, `useFlpLaunch`, `useFlpEntrance`, `useFlpLeave`, `useFdpEntrance`, `peekLaunchLoop`, `clearLaunchLoop`, `preloadFlpSessions`, `handLaunchRequest`, `flpPreloadScope`, `LOOP_FRESH_MS`); `src/api/workingLoop.ts` (`fetchDistributedWorkingLoop`, `workingLoopKey`); `StudyHand.tsx` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `study-hand__card--slot-*`); `FlpStudyHand.tsx` (`onLaunch`); `FlashcardsDecksPage.tsx`; `FlashcardsLearnPage.tsx`; `useWorkingLoop.ts` (`handoff`, `dealLoop`); `src/hooks/useHideFooter.ts` |
 | §4 Why the card grid is windowed | `src/hooks/useWindowedRows.ts` (`useWindowedRows`, `computeRowWindow`, `seedWindow`, `scrollParentOf`); `src/components/MiniVocabCardGrid.tsx` (`WINDOW_MIN_ITEMS`, `WINDOW_OVERSCAN_PX`, `CASCADE_LIMIT`, the two spacers); `src/hooks/useIncrementalList.ts`; `src/components/MiniVocabCard.tsx` (`memo`, `contentVisibility`); `src/features/flashcards/useDecksPanel.ts` (`useDeferredValue` on the search term); `src/__tests__/windowedRows.test.ts` |
-| §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`barCooldownRemainingMs`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeBars`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
+| §4 Sort by | `src/utils/vocabSort.ts` + `src/__tests__/vocabSort.test.ts`; `server/contracts/cooldown.ts` (`barCooldownRemainingMs`) for the Cooldown key; `src/features/flashcards/CollectionSortControl.tsx` (the shared icon trigger + menu, both visibility gates); `src/components/SearchField.tsx` (the shared search box that hosts it via `endAction`); `CollectionViewPage.tsx` and `useDecksPanel.ts` (each holds its own key + `visibleEntries` memo); `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`, `resolveDisplayPronunciation`); `server/contracts/mastery.ts` (`barProgressBarHeight`, `activeWorlds`, `masteredAtForBar`); `database/migrations/142-add-mastered-at-to-vocabentries.sql`, `143-three-mastery-bars.sql`; `OnDeckVocabService.getDeckCards` (`deckAddedAt`) |
 
 Related docs: [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (small-deck top-up),
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) (launch params),

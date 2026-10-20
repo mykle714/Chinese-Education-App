@@ -148,7 +148,7 @@ last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per per
   disagree with the flag. It also degrades well: **Windows renders no flag glyph**
   and shows the letters instead, so the badge reads "ES ES" at worst, never as
   nothing.
-* Velocity counts only the bars **that person** pursues (`activeBars` on their own
+* Velocity counts only the bars **that person** pursues (`activeWorlds` on their own
   `readingGoal`/`writingGoal`), matching what their own Account page shows.
 * **The viewer is in the board**, marked `isCurrentUser`: name suffixed "(you)" and the
   row filled with the **org pastel**, its border kept at 1px transparent so heights stay

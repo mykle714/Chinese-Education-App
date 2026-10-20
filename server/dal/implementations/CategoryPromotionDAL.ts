@@ -3,7 +3,7 @@ import { ICategoryPromotionDAL, VelocityBucket } from '../interfaces/ICategoryPr
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { CategoryPromotion, CategoryPromotionInput, VelocityBreakdown } from '../../types/velocity.js';
 import { CATEGORY_BOUNDARIES, CATEGORY_ORDER } from '../../contracts/mastery.js';
-import type { MasteryBarId } from '../../contracts/wire.js';
+import type { MasteryWorldId } from '../../contracts/wire.js';
 import { ValidationError } from '../../types/dal.js';
 
 /**
@@ -87,7 +87,7 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
   async getVelocityByLanguage(
     userId: string,
     windowDays: number,
-    bars: MasteryBarId[] = ['core']
+    worlds: MasteryWorldId[] = ['core']
   ): Promise<Map<string, VelocityBreakdown>> {
     if (!userId) throw new ValidationError('userId is required');
 
@@ -129,7 +129,7 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
              ${boundaryColumns}
       FROM ranked
       GROUP BY language
-    `, [userId, windowDays, bars, [...CATEGORY_ORDER]]));
+    `, [userId, windowDays, worlds, [...CATEGORY_ORDER]]));
 
     const byLanguage = new Map<string, VelocityBreakdown>();
     for (const row of result.rows) {
@@ -152,7 +152,7 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
     const result = await this.run<{
       userId: string;
       language: string;
-      bar: MasteryBarId;
+      bar: MasteryWorldId;
       steps: string;
     }>(undefined, (c) => c.query(`
       SELECT "userId", language, bar, SUM("bandsClimbed") AS steps
@@ -165,7 +165,7 @@ export class CategoryPromotionDAL implements ICategoryPromotionDAL {
     return result.rows.map((row) => ({
       userId: row.userId,
       language: row.language,
-      bar: row.bar,
+      world: row.bar,
       // SUM() of a smallint arrives as a bigint string from pg.
       bandsClimbed: parseInt(row.steps, 10),
     }));

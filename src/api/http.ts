@@ -24,6 +24,7 @@
  * Callers should therefore NOT pass an Authorization header themselves, and should
  * NOT list `token` in the deps of a callback that calls these functions.
  */
+import { FOCUS_ENDED_HEADER } from '../../server/contracts/focusMode';
 import { API_BASE_URL } from '../constants';
 import { authHeader } from '../utils/authHeader';
 
@@ -111,6 +112,7 @@ async function request<T>(
     keepalive: options.keepalive,
   });
 
+  noteFocusEnded(res);
   const data = await parseBody(res);
 
   if (!res.ok) {
@@ -122,6 +124,24 @@ async function request<T>(
   }
 
   return data as T;
+}
+
+/**
+ * FOCUS MODE (docs/FOCUS_MODE.md § 4): the window event fired when a response carries
+ * `FOCUS_ENDED_HEADER` — the server switched a world's focus mode off during that request.
+ * `FocusEndedNoticeHost` listens and shows the popup on whatever page is up.
+ */
+export const FOCUS_ENDED_EVENT = 'focus-mode-ended';
+
+/**
+ * Raise FOCUS_ENDED_EVENT if `res` says focus ended. Called for every request made through
+ * this module; the few raw-`fetch` call sites that hit a focus-aware endpoint (Word Search's
+ * grid) call it themselves.
+ */
+export function noteFocusEnded(res: Response): void {
+  if (typeof window !== 'undefined' && res.headers.get(FOCUS_ENDED_HEADER)) {
+    window.dispatchEvent(new Event(FOCUS_ENDED_EVENT));
+  }
 }
 
 export const apiGet = <T>(path: string, options?: RequestOptions): Promise<T> =>

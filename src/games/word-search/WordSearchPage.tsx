@@ -25,6 +25,7 @@ import { GameCentered, GameFrame, GameTimer } from "../shared/GameFrame";
 import GameEndPopup from "../runtime/GameEndPopup";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import PersonalBestLine from "../shared/PersonalBestLine";
+import { noteFocusEnded } from "../../api/http";
 import { useWordSearchSettings } from "./useWordSearchSettings";
 import { saveGameState, loadGameState, clearGameState, type SavedWordSearchState } from "./gameStateStorage";
 import { GAME_KEY, WIN_LEVEL, GRID_QUERY, HINT_BAR_UNITS, HINT_COST, medalForTime, modeConfigFor, modeMarkTypes } from "./constants";
@@ -341,6 +342,8 @@ const WordSearchPage: React.FC = () => {
                 credentials: "include",
                 headers: authHeader(),
             });
+            // A raw fetch, so it raises the focus-mode-ended signal itself (src/api/http.ts).
+            noteFocusEnded(res);
             if (!res.ok) throw new Error("Failed to load grid");
             const payload: WordSearchResponse = await res.json();
 

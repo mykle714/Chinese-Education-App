@@ -1,6 +1,6 @@
 import type { ChallengeScoringSpec, Language, MarkType } from "../types";
 import type { RampHue } from "../theme/colors";
-import type { LazyExoticComponent, ComponentType } from "react";
+import type { LazyExoticComponent, ComponentType, ReactNode } from "react";
 
 /**
  * A single registered game. The hub menu renders one row per GameDef, and
@@ -69,6 +69,18 @@ export interface GameDef {
      */
     modes?: { mode: string; markType: MarkType }[];
     /**
+     * The track a run marks when PINYIN IS HIDDEN on a zh board, for a game whose track
+     * follows its pinyin display rather than a named mode. Bubble Match is the one such
+     * game (pinyin shown ⇒ `markType` recognition, hidden ⇒ reading — docs/GAMES_FEATURE.md
+     * § "Bubble Match: pinyin picks the track").
+     *
+     * Deliberately NOT expressed as `modes`: a challenge stores Bubble Match as
+     * `(bubble-match, mode: null)` (CHALLENGE_GAMES), and making it moded would orphan
+     * that entry. Read by `flpBreakCandidates` (src/games/flpBreak/candidates.ts), which
+     * hides pinyin on the reading flp (docs/FLP_GAME_BREAKS.md § 3).
+     */
+    noPinyinMarkType?: MarkType;
+    /**
      * Keep the game OUT of the Games hub. Its route, page and registry metadata are
      * unchanged — it is just launched from somewhere else. Speed Reading is the one
      * such game: a reading drill, launched only from the Reading Center's games
@@ -133,3 +145,32 @@ export interface GameProgress {
     state: Record<string, unknown>;
     updatedAt: string;
 }
+
+/**
+ * Who is hosting a game's Stage (docs/FLP_GAME_BREAKS.md § 6):
+ *   page      — the game's own route, inside a `GameLeafPage` (standalone play);
+ *   flpBreak  — an flp game break, inside the flp's slide-up game area.
+ */
+export type GameStageHost = "page" | "flpBreak";
+
+/**
+ * The chrome a Stage renders itself inside — injected by the host so the Stage can keep
+ * owning everything that decides WHEN the player may leave (the challenge-round confirm,
+ * ending a live run) while the host decides what leaving LOOKS like.
+ *
+ *   page host     — `GameLeafPage`: the accent ground, the down-arrow Back, `headerRight`.
+ *   flpBreak host — `GameBreakFrame` (features/flashcards): the game area's own header,
+ *                   with a Leave button top-right, and NO browser-chrome repaint.
+ *
+ * Docs: docs/FLP_GAME_BREAKS.md § 6.
+ */
+export interface GameStageFrameProps {
+    /** Header title (the game's name). */
+    title: string;
+    /** The page's Back, or the break's Leave. The Stage decides what it does. */
+    onExitRequest: () => void;
+    /** Header controls (Match Speed's pinyin chip). The flp break host ignores them. */
+    headerRight?: ReactNode;
+    children: ReactNode;
+}
+

@@ -16,14 +16,14 @@
 >   `database/migrations/143-three-mastery-bars.sql` (`compute_core_category()`;
 >   `masteredAt` → jsonb keyed by bar; `category_promotions.bar`).
 > - Contract: `server/contracts/mastery.ts` — the single definition of the bars
->   (`BAR_MARK_TYPES`, `barForMarkType`, `activeBars`, `coreProgressBarHeight`,
+>   (`WORLD_MARK_TYPES`, `worldForMarkType`, `activeWorlds`, `coreProgressBarHeight`,
 >   `barProgressBarHeight`, `barCategory`, `computeCoreCategory`, `masteryBars`,
 >   `masteredAtForBar`) plus the band arithmetic `CATEGORY_ORDER` /
 >   `categoryRank()` / `bandsClimbed()`. `server/contracts/wire.ts` holds the bar
->   identity shared with the client (`MasteryBarId`, `MASTERY_BARS`,
->   `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`).
+>   identity shared with the client (`MasteryWorldId`, `MASTERY_WORLDS`,
+>   `MASTERED_COLLECTION_IDS`, `parseMasteryWorld`, `MasteredAtByBar`).
 > - Client re-export + presentation: `src/utils/masteryCompute.ts`
->   (`BAR_LABELS`).
+>   (`WORLD_LABELS`).
 > - In-query category: `coreCategoryExpr` / `CORE_CATEGORY_SELECT` /
 >   `typeCategoryExpr` / `barCategoryExpr` / `masteredBarClause` in
 >   `server/dal/shared/vetTable.ts`, spliced into the selection queries in
@@ -124,12 +124,12 @@ Search's No-Pinyin mode makes.
 was reversed with the know merge (§ 6): the flp's two faces are now always
 `production` (English-first) and `recognition` (foreign-first), and "Show pinyin" is a
 display setting only. Reading marks come from the **dedicated reading flp** (built
-2026-10-02): `/flashcards/learn?bar=reading` (plus `&mode=review|challenge`), launched
+2026-10-02): `/flashcards/learn?world=reading` (plus `&mode=review|challenge`), launched
 from the Reading Center's card hand — the fdp's Challenge / Review / Study Mix hand
 (`FlpStudyHand`) on the reading bar. It always opens on the characters with no pinyin and no
 narration, the answer face always shows pinyin, every mark is `reading`, and the server
-bands, queues and cools that loop on the READING bar (the `bar` parameter,
-`server/contracts/studyMode.ts` → `FlpBar`, threaded through `OnDeckVocabService.ts`;
+bands, queues and cools that loop on the READING bar (the `world` parameter,
+`server/contracts/studyMode.ts` → `FlpWorld`, threaded through `OnDeckVocabService.ts`;
 the refill paces on `markedBarCategoryBefore`). See
 [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § Phase 4.
 `markTypeForSideOne` / `sideOneForCard` (`src/utils/flpFaceSteering.ts`, both now taking
@@ -176,7 +176,7 @@ to hide, so the toggle changes nothing on the card and must not swap its track.
 **These four are the _only_ emitters.** No other game or feature emits Reading or
 Writing marks — Reading comes from pinyin-off Bubble Match, Word Search No-Pinyin,
 Speed Reading and Memory Map; Writing from the Practice Writing drill, the Writing Grid
-game and the writing flp (`?bar=writing`). Since migration 170 writing marks land on each
+game and the writing flp (`?world=writing`). Since migration 170 writing marks land on each
 CHARACTER's own card and a word's writing bar is the average of its characters' — see
 [WRITING_PRACTICE_REWORK.md § 3a](./WRITING_PRACTICE_REWORK.md).
 
@@ -249,8 +249,8 @@ A card carries up to **three independent progress bars**. Each is banded by the
 | **`reading`** | reading | raw `positive(reading)`, 0–8 | `users.readingGoal` |
 | **`writing`** | writing | raw `positive(writing)`, 0–8 | `users.writingGoal` |
 
-`BAR_MARK_TYPES` (`server/contracts/mastery.ts`) is the one place this mapping
-lives; `barForMarkType()` inverts it.
+`WORLD_MARK_TYPES` (`server/contracts/mastery.ts`) is the one place this mapping
+lives; `worldForMarkType()` inverts it.
 
 > **"Active when" governs DISPLAY, not computation.** Since migration 143 every bar is
 > computed for every learner; the goal flag only decides whether a progress bar is drawn
@@ -328,11 +328,11 @@ can sit in the core-Comfortable bucket while its production track is individuall
 cooldown under a weaker per-type category, and Review will serve it on that track alone.
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:
-the Mastered collections (`masteredBarClause(bar)`), the per-bar Learn Now collections
+the Mastered collections (`masteredBarClause(bar)`), the per-bar Learning collections
 (`unmasteredBarClause(bar)`), the sort options, the bars themselves, and velocity.
 
 **Since the Mastery Centers, EVERY SURFACE carries exactly one bar.** A *lens* is a
-`MasteryBarId` a page is read through: the fdp, its collections, its decks and search
+`MasteryWorldId` a page is read through: the fdp, its collections, its decks and search
 are `core`; the Reading and Writing Centers are their own skill
 (docs/DECKS_FEATURE.md § "Mastery Centers"). The band counts, the collection
 membership, the sort keys, the mini-card strip and the cdp's Mastery section all come
@@ -376,7 +376,7 @@ three bars: only the flp and the games can fill the reading and writing ones.
 
 ### One mark moves exactly one bar
 
-Because `BAR_MARK_TYPES` partitions the four types, a single review can promote at
+Because `WORLD_MARK_TYPES` partitions the four types, a single review can promote at
 most one bar. That is what keeps the mark handler to one `masteredAt` key write and
 one `category_promotions` row per mark, with no fan-out.
 
@@ -449,7 +449,7 @@ it carries no index.
 > [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 18 and decisions **D6** / **D7**.
 
 `MasteryWindow` renders `masteryBar(entry.typedMarkHistory, track)` for ONE track,
-captioned from `BAR_LABELS` (**Know** / **Read** / **Write**).
+captioned from `WORLD_LABELS` (**Know** / **Read** / **Write**).
 
 **Why the shape changed.** pbh is not a percentage. It is a position in an **eight-mark
 window** — the last eight marks of a track are what the number is computed from, and the
@@ -484,7 +484,7 @@ ticked between them. Reading a card's state is counting, not estimating.
 **Which track is on screen — the learner's choice (D6, amended).** A `Segmented` control
 (`Know / Read / Write`, the design's `.trkseg`) sits at the end of the section's rule. It
 **defaults to the surface's lens** — `core` from the fdp / a deck / a search result,
-`reading` or `writing` for a card reached from that Mastery Center (`?bar=`,
+`reading` or `writing` for a card reached from that Mastery Center (`?world=`,
 `lensFromSearch`) — so an untouched page still reports exactly one track, the one the
 surface that opened it was asking about. Only one track is ever on screen; the learner is
 simply allowed to say which.
@@ -669,7 +669,7 @@ window, and its colour is the band.
 >   `server/contracts/wire.ts` (`FLP_MARK_SURFACE`); `server/contracts/flpReadiness.ts`
 >   (the fdp ready counts, now just the know clock).
 > - **Service:** `server/services/FlashcardMarkService.ts` → `applyMark` (both gates);
->   `server/services/OnDeckVocabService.ts` → `FLP_BAR`, `rankFlpEligible`,
+>   `server/services/OnDeckVocabService.ts` → `FLP_WORLD`, `rankFlpEligible`,
 >   `isCardGameEligible`; `server/services/cardQueueRanking.ts` (`rankCardQueue` /
 >   `rankCardQueueCooled`, keyed by `bar`).
 > - **Client:** `src/utils/flpFaceSteering.ts` (`sideOneForCard`, `markTypeForSideOne`),
@@ -702,7 +702,7 @@ A cooldown clock belongs to a **bar**, not a mark type:
 | writing (**Write**) | a correct `writing` mark | the writing band |
 
 `lastCorrectOnBar(history, bar)` is the newest correct mark across the bar's tracks
-(`BAR_MARK_TYPES`); the card is ready once `lastCorrectOnBar + window(barCategory)` has
+(`WORLD_MARK_TYPES`); the card is ready once `lastCorrectOnBar + window(barCategory)` has
 passed. Consequences:
 
 - A correct recognition mark rests **production too**, and vice versa. There is no
@@ -1450,8 +1450,8 @@ Settled since:
 - `server/contracts/mastery.ts` — **the definition of the bars**, plus
   `FLP_ONLY_CORE_PBH` / `isFlpOnlyMark` (§ 6); mirrored by
   `server/__tests__/mastery.test.ts`, which pins the TS/SQL agreement.
-- `server/contracts/wire.ts` — `MasteryBarId`, `MASTERY_BARS`,
-  `MASTERED_COLLECTION_IDS`, `parseMasteryBar`, `MasteredAtByBar`, the pinyin-off
+- `server/contracts/wire.ts` — `MasteryWorldId`, `MASTERY_WORLDS`,
+  `MASTERED_COLLECTION_IDS`, `parseMasteryWorld`, `MasteredAtByBar`, the pinyin-off
   track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
   `FLP_MARK_SURFACE` (§ 6).
 - `src/games/GamesPage.tsx` / `ReadingGamesCarousel.tsx` (the launchers that pin the
@@ -1465,7 +1465,7 @@ Settled since:
   `masteredBarClause`, `typeCategoryExpr`.
 - `server/types/index.ts` — `ReviewMark`, `FlashcardCategory`, `VocabEntry`.
 - `server/services/OnDeckVocabService.ts` (`getCategoryCounts` = core only;
-  `getMasteredCountsByBar`; `getBuiltinCollectionCards`),
+  `getMasteredCountsByWorld`; `getBuiltinCollectionCards`),
   `StarterPacksService.ts` (`estimateLevel` = core only).
 - `server/controllers/OnDeckVocabController.ts` + `server/routes/onDeckRoutes.ts` —
   `GET /api/onDeck/masteredCounts`, `GET /api/onDeck/collectionCards?collection=`.

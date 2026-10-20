@@ -4,6 +4,10 @@
 Per-card tracking of recent flashcard review marks, the input to the whole utcm mastery
 computation.
 
+> flp game breaks (a game offered every 10 cards, occupying a virtual slot in the
+> working-loop sequence; counted off `useWorkingLoop`'s `onDismissed` / `onUndone`) —
+> **phase 1 built**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
+
 > **This doc describes two eras.** Sections 1–2 record the ORIGINAL shape (migration 15):
 > a flat `markHistory` array of the last 16 marks on a single `vocabentries` table. What
 > ships today is the **typed** model — the newest `MARK_WINDOW_SIZE` (8) marks **per
@@ -66,7 +70,7 @@ markHistory?: ReviewMark[];  // Last 16 flashcard review marks
 `applyMark` deliberately does **not** pick a replacement card. Choosing the next card
 the learner sees is `OnDeckVocabService`'s job, and only one of the eight client call
 sites wants it; the route composes the two, using the `categoryBeforeMark` (core band)
-the service returns — or, for the reading flp (`bar: 'reading'`, any mode), its
+the service returns — or, for the reading flp (`world: 'reading'`, any mode), its
 `markedBarCategoryBefore` (the band of the bar the mark moved), since that loop is banded
 by the reading bar (docs/READING_WRITING_CENTERS.md § Phase 4). See "The refill is a second concern on the same URL" below.
 

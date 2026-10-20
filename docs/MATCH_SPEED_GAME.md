@@ -472,7 +472,7 @@ therefore enforced client-side at every point where a category is chosen:
    ever draw would only bloat the `exclude` list. (An *unstamped* card is still
    filed — under `mode.fallbackOrder[0]` — for the reason given below.)
 
-Nothing below `MatchSpeedPage` branches on the mode *name*: every function in
+Nothing below `MatchSpeedStage` branches on the mode *name*: every function in
 `cardBuffer.ts` takes the run's `ModeConfig` as a trailing optional argument
 defaulting to Mix, which is exactly the game's pre-modes behavior.
 
@@ -483,8 +483,10 @@ defaulting to Mix, which is exactly the game's pre-modes behavior.
   — `src/games/match-speed/constants.ts`
 - Mode-aware `rollCategory` / `takePair` / `takePairs` / `fillBuffer` /
   `topUpRequest` — `src/games/match-speed/cardBuffer.ts`
-- `modeConfigFor(location.state.mode)` and the pool/gate/`recordWin` wiring —
-  `src/games/match-speed/MatchSpeedPage.tsx`
+- `modeConfigFor(location.state.mode)` — `src/games/match-speed/MatchSpeedPage.tsx`;
+  the pool/gate/`recordWin` wiring — `src/games/match-speed/MatchSpeedStage.tsx`
+  (an flp game break passes `modeConfigFor(studyMode)` instead —
+  `src/games/flpBreak/MatchSpeedBreakStage.tsx`)
 - Hub entry — `src/games/GamesPage.tsx` (a plain single `HubMenuRow`; the mode
   strip and its `MATCH_SPEED_MODE_COLORS` palette were removed)
 - Coverage — `src/__tests__/matchSpeedCardBuffer.test.ts` (roll bands per mode,
@@ -542,7 +544,7 @@ strict (a Hydra-era fallback check), skip the cross-bucket tiers, and lend. PPE 
 mid-run because of it. Only an explicit `strictBuckets=1` (Hydra) is strict now; see
 `OnDeckVocabService.getGameVocabPool` → `substituting`.
 
-⚠️ **A top-up sends no `need`.** `MatchSpeedPage` → `fetchPool` (via `fetchGamePool`,
+⚠️ **A top-up sends no `need`.** `MatchSpeedStage` → `fetchPool` (via `fetchGamePool`,
 `src/api/gamePool.ts`) sends only the band quotas from `topUpDistribution` plus `exclude`,
 so the server treats every refill tick as a *full board* and runs `ensureBaseline` against
 `CARD_BASELINES['match-speed']` each time (`OnDeckVocabController.getGamePool`). Usually a
@@ -617,7 +619,7 @@ puzzle. Hence three layers, each covering what the one before it cannot see:
 
 | Layer | Where | Catches |
 |---|---|---|
-| `exclude` on the request | `MatchSpeedPage.fetchPool` | Everything known at request time |
+| `exclude` on the request | `MatchSpeedStage.fetchPool` | Everything known at request time |
 | Buffer dedupe | `fillBuffer` | An entry already shelved, or repeated twice inside one response |
 | Draw gate | `takePairs` (`isBlocked` + a per-batch id set) | An entry already **on the board**, and a repeat within the batch being placed this tick |
 
@@ -633,7 +635,7 @@ next `topUpRequest` asks to refill.
 
 ### Entry gate — REMOVED
 
-Match Speed has **no card-count gate**. It previously required 20 Learn Now cards
+Match Speed has **no card-count gate**. It previously required 20 Learning cards
 overall, plus (for Review/Challenge) at least one card inside the mode's own buckets. Both
 blocks are gone — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 
@@ -646,7 +648,7 @@ What happens instead:
    still deals a playable run.
 
 2. **Nothing inside the mode's buckets** → the run switches to **relaxed mode**
-   (`relaxed` in `MatchSpeedPage.tsx`): its `fallbackOrder` widens to all four buckets
+   (`relaxed` in `MatchSpeedStage.tsx`): its `fallbackOrder` widens to all four buckets
    for that run only, so the server's cross-bucket top-up actually reaches the board.
    The mode's WEIGHTS are untouched, so once the player has real on-mode cards the
    widened fallback stops being reached and the mode plays exactly as designed.
@@ -841,8 +843,8 @@ having modes at all.
 
 The most pairs matched in one 30s run (count, higher wins) is kept **per difficulty
 mode** — the mode key is the slug `mixed` / `review` / `challenge`
-(`baseModeConfig.mode` in `MatchSpeedPage`, i.e. the mode the hub launched). The
-`phase === "ended"` effect in `MatchSpeedPage` calls `recordPersonalBest(score)`;
+(`baseModeConfig.mode` in `MatchSpeedStage`, i.e. the mode the hub launched — or, in an flp game break, the session's study mode). The
+`phase === "ended"` effect in `MatchSpeedStage` calls `recordPersonalBest(score)`;
 `playAgain` calls `resetPersonalBest`. The line renders in `MatchSpeedEndPopup` under the
 accuracy row. **Not recorded:** a challenge round (dealt from the round's set, ends on
 the scoreboard) and a `relaxed` run — a Review/Challenge run that widened to every bucket
@@ -1061,7 +1063,7 @@ All class names BEM-style under `match-speed__` (`match-speed__cell`,
 ## Phase state machine
 
 ```
-loading ──► blocked            (not signed in / < 20 Learn Now cards / fetch failed)
+loading ──► blocked            (not signed in / < 20 Learning cards / fetch failed)
    │
    └─────► playing ──(30s)──► ended ──► (popup minimized) ──► cleanup
                                  ▲                               │
@@ -1080,7 +1082,12 @@ derived avoids a state pair that can disagree.
 
 ```
 src/games/match-speed/
-  MatchSpeedPage.tsx       page shell + phase machine + pool/buffer + marks
+  MatchSpeedPage.tsx       the ROUTE host: LeafPage frame, edge-swipe block, hub mode,
+                           pinyin chip, "Back to Games" (docs/FLP_GAME_BREAKS.md § 6)
+  MatchSpeedStage.tsx      the run: phase machine + pool/buffer + marks + results;
+                           hosted by the page OR an flp game break (`host`, `Frame`)
+  poolRequest.ts           matchSpeedPoolRequest — the one pool-request builder
+                           (stage fetches + the flp break's prefetch)
   MatchSpeedBoard.tsx      the 5×2 slot grid (ROWS=5 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
   MatchSpeedHeader.tsx     right-slot controls: pinyin chip + audio chip (fire badge is PageHeader's)
@@ -1139,7 +1146,8 @@ All steps complete — kept as the build order a similar game should follow.
 4. ✅ `MatchSpeedBoard.tsx` — slot arrays, tap/selection rules, refill tick, pop and
    fade animations.
 5. ✅ `MatchSpeedPage.tsx` — `LeafPage`, `useBlockEdgeSwipe(true)`, phase machine,
-   pool prefetch + buffer top-up, marks, timer.
+   pool prefetch + buffer top-up, marks, timer. (Split 2026-10-18: everything but the
+   `LeafPage` frame and the edge-swipe block now lives in `MatchSpeedStage.tsx`.)
 6. ✅ `MatchSpeedHeader.tsx` + `MatchSpeedSettingsDialog.tsx` (the latter deleted
    2026-08-28) + `MatchSpeedTimerBar.tsx` + `MatchSpeedEndPopup.tsx`; `formatTimeMs` hoisted to
    `src/utils/timeUtils.ts` (word-search importers re-pointed).
@@ -1170,11 +1178,11 @@ it reads from.
 | This doc's section | Depends on |
 |---|---|
 | Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
-| Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedPage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
-| Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedPage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
+| Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedStage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
+| Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedStage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool` (856-976), `fetchGameCandidates` (252-293), `GAME_FALLBACK_ORDER` (803) |
-| Personal best | `src/games/match-speed/MatchSpeedPage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
-| Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
+| Personal best | `src/games/match-speed/MatchSpeedStage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
+| Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx` (reads the hub's `state.mode`), `MatchSpeedStage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |

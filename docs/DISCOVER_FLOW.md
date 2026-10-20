@@ -28,7 +28,7 @@ Home (/) — decks rail "Sort Cards" tile          Memory Map empty state
     Hold Skip 2 s → skipped-cards sheet (hidden).
     ⊞ beside Skip → Quick Mark panel (QuickMarkPanel):
       bulk-triage grid at one level; swipe a card
-      ← Learn Now / → Mastered, saved per swipe.
+      ← Learning / → Mastered, saved per swipe.
       ✕ collapses back to the on-deck platform.
 ```
 
@@ -61,7 +61,7 @@ Home (/) — decks rail "Sort Cards" tile          Memory Map empty state
     `useQuickMarkGrid`), maximized over the whole frame (page header included), with the on-deck
     pack's unsorted cards pinned first. A level chip (no Auto) filters to not-yet-sorted
     discoverable words at that level; each card is swiped (axis-locked): left = Add to
-    Learn Now, right = Mastered, saved immediately, with an Undo toast. The panel's ✕
+    Learning, right = Mastered, saved immediately, with an Undo toast. The panel's ✕
     collapses it back. See [QUICK_MARK.md](./QUICK_MARK.md) and
     [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 4.8.
 

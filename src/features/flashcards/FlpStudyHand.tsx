@@ -4,7 +4,7 @@ import { Alert, Snackbar } from "@mui/material";
 import StudyHand, { type HandOrder, type StudyHandCard, type StudyModeId } from "./StudyHand";
 import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
-import type { FlpBar } from "../../../server/contracts/studyMode";
+import type { FlpWorld } from "../../../server/contracts/studyMode";
 import type { RampHue } from "../../theme/colors";
 import { handLaunchRequest } from "./flpLaunch";
 import type { WorkingLoopRequest } from "../../api/workingLoop";
@@ -20,9 +20,9 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
 // Three hosts, one component, so they cannot drift:
 //   fdp (/, the Home tab)           — bar `core`: the know flp.
 //   Reading Center (/flashcards/reading) — bar `reading`: the READING flp in the same
-//       three modes (`?bar=reading`, docs/READING_WRITING_CENTERS.md § Phase 4).
+//       three modes (`?world=reading`, docs/READING_WRITING_CENTERS.md § Phase 4).
 //   Writing Center (/flashcards/writing) — bar `writing`: the WRITING flp
-//       (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3), compact like Reading's.
+//       (`?world=writing`, docs/WRITING_PRACTICE_REWORK.md § 3), compact like Reading's.
 // Extracted from FlashcardsDecksPage on 2026-10-03 when the Reading Center adopted it.
 //
 // LAUNCH is the host's too, when it wants one: the fdp passes `onLaunch` (+ `shaking`)
@@ -58,7 +58,7 @@ const HAND_HUES: Record<StudyModeId, RampHue> = {
  * Reading Center's compact hand names the skill on every card, since its cards carry no
  * figure and the name is the only thing saying what each one starts.
  */
-const HAND_LABELS: Record<FlpBar, Record<StudyModeId, string>> = {
+const HAND_LABELS: Record<FlpWorld, Record<StudyModeId, string>> = {
     core: { challenge: "Challenge Mix", review: "Review Mix", mix: "Study Mix" },
     reading: { challenge: "Reading Challenge", review: "Reading Review", mix: "Reading Mix" },
     writing: { challenge: "Writing Challenge", review: "Writing Review", mix: "Writing Mix" },
@@ -79,11 +79,11 @@ const HAND_GLYPHS: Record<StudyModeId, string> = {
  * a refused Review tap leaves it alone. Per bar, because the Reading/Writing Centers'
  * hands are separate stacks from Home's.
  */
-const rememberedHandOrder: Partial<Record<FlpBar, HandOrder>> = {};
+const rememberedHandOrder: Partial<Record<FlpWorld, HandOrder>> = {};
 
 interface FlpStudyHandProps {
     /** Which track the sessions exercise — and so which bar the figures are read off. */
-    bar: FlpBar;
+    world: FlpWorld;
     /** `compact` (Reading Center): the old stack's look, no figures — StudyHand docblock. */
     variant?: "full" | "compact";
     className?: string;
@@ -98,7 +98,7 @@ interface FlpStudyHandProps {
     shaking?: boolean;
 }
 
-const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", className, onLaunch, shaking = false }) => {
+const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ world, variant = "full", className, onLaunch, shaking = false }) => {
     const navigate = useNavigate();
     // The mark under the big numeral is a soft introduction (docs/SOFT_INTRODUCTION.md):
     // "cards" until the learner has met the hand enough to know what the number counts,
@@ -124,9 +124,9 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
     // READINESS IS THE flp'S RULE, not this component's: `flpReadyCountsByBand`
     // (server/contracts/flpReadiness.ts) restates `rankFlpEligible`'s eligibility test for
     // the same bar, computed server-side against a narrow `{ id, typedMarkHistory }` read
-    // (`/api/onDeck/flpReadyCounts[?bar=reading]`), so the figures land long before any
+    // (`/api/onDeck/flpReadyCounts[?world=reading]`), so the figures land long before any
     // full card-library fetch and cannot claim a card the flp would not deal.
-    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts(bar);
+    const { counts: readyCounts, reviewNextReadyMs, loaded: figuresLoaded } = useFlpReadyCounts(world);
     const ready = useCallback((name: string): number => readyCounts[name] || 0, [readyCounts]);
     const challengePool = figuresLoaded ? ready("Unfamiliar") + ready("Target") : undefined;
     const reviewPool = figuresLoaded ? ready("Comfortable") + ready("Mastered") : undefined;
@@ -144,12 +144,12 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
     // number or as a colour.
     const reviewEligible = reviewPool === undefined ? undefined : reviewPool > 0;
 
-    const skill = bar === "core" ? "" : `${bar} `;
-    const labels = HAND_LABELS[bar];
+    const skill = world === "core" ? "" : `${world} `;
+    const labels = HAND_LABELS[world];
     const handCards: StudyHandCard[] = useMemo(() => [
         // ⚠️ `label` is DISPLAY TEXT ONLY. The ids stay `challenge` / `review` — they are
         // the `?mode=` query param the flp parses and the server's own `MODE_CONFIGS` keys.
-        // Same split the "Learn Now" rename made (CLAUDE.md § Terminology).
+        // Same split the "Learning" (née "Library") rename made (CLAUDE.md § Terminology).
         //
         // `zeroMessage` is what the FRONT card's corner tag says when its pool lands on 0.
         // Review's zero is an achievement (everything is resting); Challenge/Mix's is a
@@ -165,22 +165,22 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
         // Only a KNOWN-empty Review pool is refused. While the count is still in flight
         // the tap goes through: the flp does its own provisioning and gating.
         if (id === "review" && reviewEligible === false) { setMarkMoreSnackOpen(true); return; }
-        rememberedHandOrder[bar] = order;
+        rememberedHandOrder[world] = order;
         const params = new URLSearchParams();
         if (id !== "mix") params.set("mode", id);
-        if (bar !== "core") params.set("bar", bar);
+        if (world !== "core") params.set("world", world);
         const query = params.toString();
         const path = query ? `/flashcards/learn?${query}` : "/flashcards/learn";
         if (onLaunch) {
-            onLaunch(path, handLaunchRequest(id, bar));
+            onLaunch(path, handLaunchRequest(id, world));
             return;
         }
         navigate(path);
-    }, [navigate, reviewEligible, bar, onLaunch]);
+    }, [navigate, reviewEligible, world, onLaunch]);
 
     return (
         <>
-            <StudyHand className={className} cards={handCards} initialOrder={rememberedHandOrder[bar]} onStudy={handleStudy} variant={variant} shaking={shaking} figureMark={figureMark} />
+            <StudyHand className={className} cards={handCards} initialOrder={rememberedHandOrder[world]} onStudy={handleStudy} variant={variant} shaking={shaking} figureMark={figureMark} />
 
             {/* Toast: greyed Review tapped. TWO reasons the figure can be 0, and they call
                 for opposite advice — go earn some cards, or come back later — so the
@@ -200,7 +200,7 @@ const FlpStudyHand: React.FC<FlpStudyHandProps> = ({ bar, variant = "full", clas
                     onClose={() => setMarkMoreSnackOpen(false)}
                 >
                     {reviewNextReadyMs === null
-                        ? `Mark more cards in ${bar === "reading" ? "Study Mix here" : "Study Mix"} to unlock this deck.`
+                        ? `Mark more cards in ${world === "reading" ? "Study Mix here" : "Study Mix"} to unlock this deck.`
                         : `All your ${skill}review cards are resting. Next ready in ${formatCooldownRemaining(reviewNextReadyMs)}.`}
                 </Alert>
             </Snackbar>

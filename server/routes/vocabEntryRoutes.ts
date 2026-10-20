@@ -39,7 +39,7 @@ router.post('/api/vocabEntries', authenticateToken, handle(vocabEntryController.
 // skip → library, and unsorted → library). Used by the dictionary EIP "+" button.
 router.post('/api/vocabEntries/addToLibrary', authenticateToken, handle(vocabEntryController.addToLibrary, vocabEntryController));
 
-// Learn Now membership + non-destructive removal (demotes to 'provisional'). Used by the
+// Learning membership + non-destructive removal (demotes to 'provisional'). Used by the
 // dictionary cdp's add/added toggle. Literal paths — must stay above /:id.
 router.get('/api/vocabEntries/libraryStatus', authenticateToken, handle(vocabEntryController.getLibraryStatus, vocabEntryController));
 router.post('/api/vocabEntries/removeFromLibrary', authenticateToken, handle(vocabEntryController.removeFromLibrary, vocabEntryController));
@@ -68,7 +68,7 @@ router.patch('/api/vocabEntries/:id/selectedSense', authenticateToken, handle(vo
 // body: { note: string | null }. See docs/CARD_NOTES.md.
 router.patch('/api/vocabEntries/:id/note', authenticateToken, handle(vocabEntryController.updateNote, vocabEntryController));
 
-// No DELETE route: a card is never hard-deleted. Removing one from Learn Now demotes it
+// No DELETE route: a card is never hard-deleted. Removing one from Learning demotes it
 // to 'provisional' (POST /api/vocabEntries/removeFromLibrary) so its history survives.
 
 export default router;

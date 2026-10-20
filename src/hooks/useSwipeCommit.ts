@@ -26,9 +26,10 @@ import type { PointerEvent as ReactPointerEvent } from "react";
  * A `pointercancel` never commits: it means the browser (or the OS) took the gesture away.
  *
  * Used by: `src/features/flashcards/centers/ReadingSwipeGrid.tsx` (reading marks, state
- * mode) and `src/features/discover/useQuickMarkGrid.ts` (Learn Now / Mastered triage,
- * imperative `paint` mode).
- * Documented in: docs/QUICK_MARK.md § 3, docs/READING_WRITING_CENTERS.md § Phase 2.
+ * mode), `src/features/discover/useQuickMarkGrid.ts` (Learning / Mastered triage,
+ * imperative `paint` mode) and `src/features/deckTower/DeckTowerPage.tsx` (the world swipe,
+ * imperative `paint` mode, carrying the release momentum into the pan).
+ * Documented in: docs/QUICK_MARK.md § 3, docs/READING_WRITING_CENTERS.md § Phase 2, docs/DECK_TOWER.md § Worlds.
  */
 
 export type SwipeDirection = "left" | "right";
@@ -41,6 +42,11 @@ const TAP_SLOP_PX = 6;
 const FLICK_MIN_PX = 24;
 /** …moving at least this fast (px/ms) when released, in the drag's direction. */
 const FLICK_MIN_VELOCITY = 0.5;
+/**
+ * A finger held still this long (ms) before lifting has no momentum left: the release
+ * velocity handed to `onCommit` is 0, not the last move's.
+ */
+const RELEASE_STALE_MS = 60;
 
 interface Gesture {
     pointerId: number;
@@ -57,6 +63,14 @@ interface Gesture {
     axis: "x" | "y" | null;
 }
 
+/** The finger at the moment of a committed release, for a caller that carries its momentum on. */
+export interface SwipeRelease {
+    /** Horizontal travel from the press, px. */
+    dx: number;
+    /** Horizontal velocity at release, px/ms (0 if the finger had stopped). */
+    vx: number;
+}
+
 export interface SwipeCommitOptions {
     /** Lock to the horizontal axis (see header). */
     axisLock: boolean;
@@ -64,20 +78,24 @@ export interface SwipeCommitOptions {
     threshold: () => number;
     /** True while presses should be ignored (e.g. a card is mid fly-off). */
     disabled?: boolean;
-    /** Called once per committed swipe with the card's `data-swipe-id`. */
-    onCommit: (id: string, direction: SwipeDirection) => void;
+    /**
+     * Called once per committed swipe with the card's `data-swipe-id`, after the release
+     * `paint`. `release` lets a caller continue the drag's motion (Deck Tower's world pan).
+     */
+    onCommit: (id: string, direction: SwipeDirection, release: SwipeRelease) => void;
     /**
      * IMPERATIVE mode. When given, the drag never touches React state: the hook calls
      * `paint(card, dx)` at most once per animation frame while the finger moves, and
-     * `paint(card, null)` on release so the caller can drop its inline styles (the
+     * `paint(card, null, commit)` on release so the caller can drop its inline styles (the
      * card's class styles — snap-back transition, or a committed fly-off — take over).
+     * `commit` is the direction when this release commits, undefined when it springs back.
      * `activeId` / `dx` / `dragging` then stay null / 0 / false.
      *
      * Use it for a large grid: in state mode every pointermove re-renders the caller,
      * which for Quick Mark's ~100-card grid re-ran the grid's whole render per frame.
      * State mode is fine for a single dragged element (the Reading Center's open tile).
      */
-    paint?: (card: HTMLElement, dx: number | null) => void;
+    paint?: (card: HTMLElement, dx: number | null, commit?: SwipeDirection) => void;
 }
 
 export interface SwipeCommit {
@@ -118,19 +136,21 @@ export function useSwipeCommit(options: SwipeCommitOptions): SwipeCommit {
             const g = gestureRef.current;
             if (!g || g.pointerId !== e.pointerId) return;
             gestureRef.current = null;
+            // Decide the outcome first, so the release paint knows whether it commits.
+            const dx = e.clientX - g.startX;
+            const flicked = Math.abs(dx) >= FLICK_MIN_PX && Math.abs(g.vx) >= FLICK_MIN_VELOCITY && Math.sign(g.vx) === Math.sign(dx);
+            const commits = !cancelled && g.axis === "x" && (Math.abs(dx) >= optionsRef.current.threshold() || flicked);
+            const direction: SwipeDirection = dx > 0 ? "right" : "left";
             const paint = optionsRef.current.paint;
             if (paint) {
                 if (frameRef.current !== null) { cancelAnimationFrame(frameRef.current); frameRef.current = null; }
-                paint(g.el, null);
+                paint(g.el, null, commits ? direction : undefined);
             } else {
                 setDrag(null);
             }
-            if (cancelled || g.axis !== "x") return;
-            const dx = e.clientX - g.startX;
-            const flicked = Math.abs(dx) >= FLICK_MIN_PX && Math.abs(g.vx) >= FLICK_MIN_VELOCITY && Math.sign(g.vx) === Math.sign(dx);
-            if (Math.abs(dx) >= optionsRef.current.threshold() || flicked) {
-                optionsRef.current.onCommit(g.id, dx > 0 ? "right" : "left");
-            }
+            if (!commits) return;
+            const vx = e.timeStamp - g.lastT > RELEASE_STALE_MS ? 0 : g.vx;
+            optionsRef.current.onCommit(g.id, direction, { dx, vx });
         };
         return {
             onPointerDown: (e) => {

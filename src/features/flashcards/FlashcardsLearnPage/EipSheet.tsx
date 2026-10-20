@@ -49,7 +49,7 @@ interface EipSheetProps {
     // the word trail like any drill-in. Dictionary page only: a reference lookup has no
     // card to hang the rail above.
     showWordTools?: boolean;
-    // Put the Learn Now TOGGLE (glowing "+" ⇄ "Added!", LearnNowToggle) under the header
+    // Put the Learning TOGGLE (glowing "+" ⇄ "Added!", LearnNowToggle) under the header
     // speaker, tracking whichever entry tab is showing. Dictionary page only. A failed
     // add/remove raises this sheet's own error snackbar.
     showLearnNow?: boolean;
@@ -143,7 +143,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                 />
             )}
             <TooManyTabsSnackbar signal={eip.overflowSignal} />
-            {/* Learn Now failures only — a successful add/remove is shown by the toggle. */}
+            {/* Learning failures only — a successful add/remove is shown by the toggle. */}
             <Snackbar
                 className="eip-sheet__learn-now-error-snackbar"
                 open={learnNow.error !== null}

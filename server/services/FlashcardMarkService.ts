@@ -16,7 +16,7 @@ import {
   appendTypedMark,
   bandsClimbed,
   barCategory,
-  barForMarkType,
+  worldForMarkType,
   categoryForPbh,
   marksToWrite,
   positiveCount,
@@ -130,7 +130,7 @@ export interface ApplyMarkResult {
    */
   categoryBeforeMark: FlashcardCategory;
   /**
-   * The band, BEFORE the mark, of the bar THIS mark moves (`barForMarkType`). For a
+   * The band, BEFORE the mark, of the bar THIS mark moves (`worldForMarkType`). For a
    * know mark that is the core band again; for a reading mark it is the reading band.
    * The flp's READING mode paces its refill on this rather than on the core band,
    * because its queue is banded by the reading bar (docs/READING_WRITING_CENTERS.md
@@ -264,7 +264,7 @@ export class FlashcardMarkService {
             language,
             category: unchanged,
             categoryBeforeMark: unchanged,
-            markedBarCategoryBefore: barCategory(existingHistory, barForMarkType(markType)),
+            markedBarCategoryBefore: barCategory(existingHistory, worldForMarkType(markType)),
             markTimestamp: null,
             markType,
             displacedMarks: [],
@@ -275,9 +275,9 @@ export class FlashcardMarkService {
 
       // The bar this mark moves. Every mark lands in exactly one, so the crossing
       // stamp and the velocity row below are each single-bar decisions.
-      const bar = barForMarkType(markType);
+      const world = worldForMarkType(markType);
       const categoryBeforeMark: FlashcardCategory = computeCoreCategory(existingHistory);
-      const barCategoryBefore = barCategory(existingHistory, bar);
+      const barCategoryBefore = barCategory(existingHistory, world);
 
       const existingTrack: ReviewMark[] = Array.isArray(existingHistory[markType])
         ? existingHistory[markType]!
@@ -300,7 +300,7 @@ export class FlashcardMarkService {
       }
 
       const category: FlashcardCategory = computeCoreCategory(updatedHistory);
-      const barCategoryAfter = barCategory(updatedHistory, bar);
+      const barCategoryAfter = barCategory(updatedHistory, world);
 
       // MASTERY CROSSING (migrations 142 + 143): this is the ONLY moment "this bar
       // became mastered" is observable — `typedMarkHistory` is a rolling 8-mark
@@ -321,7 +321,7 @@ export class FlashcardMarkService {
       // one it must retract.
       const crossedIntoMastered = barCategoryBefore !== 'Mastered' && barCategoryAfter === 'Mastered';
       const masteredAt: MasteredAtWrite | null = crossedIntoMastered
-        ? { bar, stamp: newMark.timestamp }
+        ? { world, stamp: newMark.timestamp }
         : null;
 
       await this.vocabEntryDAL.updateMarkHistory(
@@ -343,7 +343,7 @@ export class FlashcardMarkService {
               userId,
               language,
               vocabEntryId: cardId,
-              bar,
+              bar: world,
               fromCategory: barCategoryBefore,
               toCategory: barCategoryAfter,
               bandsClimbed: climbed,
@@ -481,7 +481,7 @@ export class FlashcardMarkService {
       const bandAfter = categoryForPbh(positiveCount(updated.writing));
       await this.vocabEntryDAL.updateMarkHistory(
         userId, cardId, language, updated,
-        bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+        bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { world: 'writing', stamp: timestamp } : null,
         client
       );
       const climbed = bandsClimbed(bandBefore, bandAfter);
@@ -538,7 +538,7 @@ export class FlashcardMarkService {
       const charAfter = categoryForPbh(positiveCount(updated.writing));
       await this.vocabEntryDAL.updateMarkHistory(
         userId, row.id, 'zh', updated,
-        charBefore !== 'Mastered' && charAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+        charBefore !== 'Mastered' && charAfter === 'Mastered' ? { world: 'writing', stamp: timestamp } : null,
         client
       );
       byChar.set(d.char, { ...row, typedMarkHistory: updated });
@@ -552,7 +552,7 @@ export class FlashcardMarkService {
     const bandAfter = categoryForPbh(writingMasteryFromChars(historiesFor()));
     await this.vocabEntryDAL.updateMarkHistory(
       userId, cardId, language, wordHistory,
-      bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { bar: 'writing', stamp: timestamp } : null,
+      bandBefore !== 'Mastered' && bandAfter === 'Mastered' ? { world: 'writing', stamp: timestamp } : null,
       client
     );
 
@@ -645,15 +645,15 @@ export class FlashcardMarkService {
       // handles. A stamp from any OTHER mark is left alone, which is what makes this
       // safe when the bar was already mastered before this mark — no transition fired
       // then, so its entry cannot be pointing at it.
-      const bar = barForMarkType(markType);
-      const storedBarStamp = state.masteredAt?.[bar] ?? null;
+      const world = worldForMarkType(markType);
+      const storedBarStamp = state.masteredAt?.[world] ?? null;
       const clearMasteredAt =
         storedBarStamp !== null &&
         new Date(storedBarStamp).getTime() === new Date(markTimestamp).getTime();
 
       await this.vocabEntryDAL.updateMarkHistory(
         userId, cardId, state.language, revertedHistory,
-        clearMasteredAt ? { bar, stamp: null } : null,
+        clearMasteredAt ? { world, stamp: null } : null,
         client
       );
 

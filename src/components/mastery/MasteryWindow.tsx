@@ -11,12 +11,12 @@ import {
     masteryBar,
     barCooldownRemainingMs,
     MASTERY_READY_COLOR,
-    BAR_LABELS,
+    WORLD_LABELS,
     masteryWindowCells,
     PBH_THRESHOLDS,
     PBH_FULL,
     type MasteryBar,
-    type MasteryBarId,
+    type MasteryWorldId,
 } from "../../utils/masteryCompute";
 import type { VocabEntry } from "../../types";
 
@@ -84,7 +84,7 @@ const COOLDOWN_TICK_MS = 1_000;
 /** The three tracks, in the order the segmented control offers them. */
 const TRACK_OPTIONS = (["core", "reading", "writing"] as const).map((id) => ({
     value: id,
-    label: BAR_LABELS[id],
+    label: WORLD_LABELS[id],
 }));
 
 /**
@@ -196,7 +196,7 @@ const CooldownTimer: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number 
     now,
 }) => {
     const remainingMs = barCooldownRemainingMs(entry.typedMarkHistory, bar.id, now, entry.writingMastery);
-    const label = BAR_LABELS[bar.id];
+    const label = WORLD_LABELS[bar.id];
     return (
         <Tooltip
             title={
@@ -247,7 +247,7 @@ export interface MasteryWindowProps {
      * fdp/deck/search path, `reading`/`writing` for a card opened from that Mastery
      * Center (docs/DECKS_FEATURE.md § "Mastery Centers").
      */
-    lens?: MasteryBarId;
+    lens?: MasteryWorldId;
     /**
      * Render the Know / Read / Write track switch above the window. The default. Pass
      * false where the host already has a header of its own and only the window is
@@ -266,7 +266,7 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
     // Which track is on screen. Seeded from the lens and re-seeded if the lens itself
     // changes (a card re-opened from a different Center), but NOT keyed on the entry:
     // paging between cards should keep the track the learner chose.
-    const [track, setTrack] = useState<MasteryBarId>(lens);
+    const [track, setTrack] = useState<MasteryWorldId>(lens);
     useEffect(() => { setTrack(lens); }, [lens]);
 
     // The countdown ticks on its own so a card left open runs down to 0s without a
@@ -314,7 +314,7 @@ export const MasteryWindow: React.FC<MasteryWindowProps> = ({
                         className="mastery-window__track-label"
                         sx={{ fontSize: 14.5, fontWeight: WEIGHT.bold, letterSpacing: "-0.012em" }}
                     >
-                        {BAR_LABELS[bar.id]}
+                        {WORLD_LABELS[bar.id]}
                     </Typography>
                     <Typography
                         component="span"

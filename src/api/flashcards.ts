@@ -27,7 +27,7 @@
 import { apiPost } from './http';
 import type { MarkType, ReviewMark, VocabEntry } from '../types';
 import type { FLP_MARK_SURFACE } from '../../server/contracts/wire';
-import type { FlpBar } from '../../server/contracts/studyMode';
+import type { FlpWorld } from '../../server/contracts/studyMode';
 
 /**
  * Every surface that may record a mark. Add a case here when a new game starts
@@ -71,12 +71,12 @@ export interface MarkFlashcardRequest {
      * reading session sends `reading` so its replacement card is chosen by the reading
      * bar, the bar its queue is built on. Omitted = core.
      */
-    bar?: FlpBar;
+    world?: FlpWorld;
     /**
      * flp working-loop only, and only for a session launched from a collection
      * (docs/DECKS_FEATURE.md): keeps the REPLACEMENT card inside that collection.
      * Exactly one of these is ever set — `deckId` for a user-authored deck,
-     * `collection: 'mastered'` for the Mastered set. Learn Now sets neither,
+     * `collection: 'mastered'` for the Mastered set. Learning sets neither,
      * because it is the default pool.
      */
     deckId?: number;
@@ -156,7 +156,7 @@ export async function markFlashcard(
         type: request.type,
         excludeIds: request.excludeIds ?? [],
         mode: request.mode,
-        bar: request.bar,
+        world: request.world,
         deckId: request.deckId,
         collection: request.collection,
         surface: request.surface,

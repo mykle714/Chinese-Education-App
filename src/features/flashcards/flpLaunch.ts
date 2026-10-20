@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchDistributedWorkingLoop, workingLoopKey, type WorkingLoopRequest } from "../../api/workingLoop";
 import type { VocabEntry } from "../../types";
-import type { FlpBar } from "../../../server/contracts/studyMode";
+import type { FlpWorld } from "../../../server/contracts/studyMode";
 import type { StudyModeId } from "./StudyHand";
 
 // ── fdp ⇄ flp launch choreography ─────────────────────────────────────────────
@@ -54,15 +54,24 @@ import type { StudyModeId } from "./StudyHand";
 // Layer: feature module (src/features/flashcards). Docs: docs/DECKS_FEATURE.md
 // § "Launching the flp from the hand". Callers: FlashcardsDecksPage (`useFlpLaunch`,
 // `useFdpEntrance`), FlpStudyHand (`onLaunch`), FlashcardsLearnPage (`useFlpEntrance`,
-// `useFlpLeave`), useWorkingLoop (`peekLaunchLoop` / `clearLaunchLoop`).
+// `useFlpLeave`), useWorkingLoop (`peekLaunchLoop` / `clearLaunchLoop`), and the flp
+// game break (`playBreakAway` / `playBreakReturn` / `BREAK_AREA_MOTION` — GameBreakArea,
+// FlashcardsLearnPage; docs/FLP_GAME_BREAKS.md § 2).
 
 type Edge = "left" | "right" | "top" | "bottom";
+/**
+ * A step that does not travel: the element FADES in place (opacity) instead. Used by the
+ * flp game break for the More Info pill (docs/FLP_GAME_BREAKS.md § 2), which sits at the
+ * bottom edge the game area rises through — sliding it down would cross the game area.
+ */
+type Motion = Edge | "fade";
 
 interface ChoreographyStep {
     /** Matched inside the page root. An element claimed by an earlier step is skipped. */
     selector: string;
-    /** The frame edge the element leaves through (exit) or arrives from (entry). */
-    edge: Edge;
+    /** The frame edge the element leaves through (exit) or arrives from (entry), or
+        `fade` to change opacity in place. */
+    edge: Motion;
     delayMs: number;
     durationMs: number;
 }
@@ -135,6 +144,53 @@ const FDP_ENTER: readonly ChoreographyStep[] = [
     { selector: ".flashcards-decks__cards-pill, .flashcards-decks__decks-pill", edge: "bottom", delayMs: 0, durationMs: FDP_ENTER_MS },
 ];
 
+// ── The flp game break (docs/FLP_GAME_BREAKS.md § 2) ──
+// Root: the flp's ContentArea. The game area itself is not in these tables — it is the
+// one element that rises from the bottom, and `GameBreakArea` animates its own box.
+
+/** Into a break: More Info fades, the word tools leave through the top. */
+const BREAK_ENTER_MS = 300;
+const BREAK_AWAY: readonly ChoreographyStep[] = [
+    { selector: ".mobile-demo-more-info-pill", edge: "fade", delayMs: 0, durationMs: 220 },
+    { selector: ".word-tools-rail > *", edge: "top", delayMs: 0, durationMs: BREAK_ENTER_MS },
+];
+
+/** Back to the cards: the next card rises, the word tools drop back in, More Info
+ *  fades up last — FLP_ENTER's beat, minus the header (which never left). */
+const BREAK_RETURN: readonly ChoreographyStep[] = [
+    { selector: ".word-tools-rail > *", edge: "top", delayMs: 0, durationMs: 380 },
+    { selector: ".mobile-demo-card-slot", edge: "bottom", delayMs: 40, durationMs: 460 },
+    { selector: ".mobile-demo-more-info-pill", edge: "fade", delayMs: 260, durationMs: 320 },
+];
+
+/** Play `BREAK_AWAY` on the flp's ContentArea. Holds the end state (fill forwards). */
+export function playBreakAway(contentArea: Element): Promise<void> {
+    return playChoreography(contentArea, BREAK_AWAY, "out");
+}
+
+/**
+ * Play `BREAK_RETURN` on the flp's ContentArea. Call from a LAYOUT effect on the commit
+ * that re-shows the card stack, so the slot is already off-frame on the first painted
+ * frame (fill backwards).
+ */
+export function playBreakReturn(contentArea: Element): Promise<void> {
+    return playChoreography(contentArea, BREAK_RETURN, "in");
+}
+
+/**
+ * The game area's own motion: it FADES IN (opacity, in place — changed from a rise on
+ * 2026-10-18) and falls away through the bottom on exit. The fade waits ~half the
+ * card's fly-out (`CARD_FLY_OUT_MS`, 450) so the panel appears into the space the card
+ * is vacating rather than under it.
+ */
+export const BREAK_AREA_MOTION = {
+    enterMs: 320,
+    enterDelayMs: 200,
+    exitMs: BREAK_ENTER_MS,
+    enterEasing: "ease-out",
+    exitEasing: "cubic-bezier(0.4, 0, 1, 1)",
+} as const;
+
 function prefersReducedMotion(): boolean {
     return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
@@ -171,10 +227,23 @@ function playChoreography(root: Element, steps: readonly ChoreographyStep[], dir
         root.querySelectorAll(step.selector).forEach((el) => {
             if (claimed.has(el)) return;
             claimed.add(el);
-            const away = offsetPastEdge(el.getBoundingClientRect(), frame, step.edge);
-            const rest = "0px 0px";
+            // An `in` lands on the element's REST state, so first drop anything still
+            // holding it elsewhere — a game break's `out` holds with fill forwards until
+            // the break ends. A no-op for every other caller (nothing is held).
+            if (direction === "in") el.getAnimations().forEach((held) => held.cancel());
+            let keyframes: Keyframe[];
+            if (step.edge === "fade") {
+                // Fade to/from the element's OWN resting opacity (MoreInfoPill rests at 0.32
+                // before the flip), read after the cancel above so it is the underlying value.
+                const restOpacity = getComputedStyle(el).opacity;
+                keyframes = direction === "out" ? [{ opacity: restOpacity }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: restOpacity }];
+            } else {
+                const away = offsetPastEdge(el.getBoundingClientRect(), frame, step.edge);
+                const rest = "0px 0px";
+                keyframes = direction === "out" ? [{ translate: rest }, { translate: away }] : [{ translate: away }, { translate: rest }];
+            }
             const animation = el.animate(
-                direction === "out" ? [{ translate: rest }, { translate: away }] : [{ translate: away }, { translate: rest }],
+                keyframes,
                 {
                     duration: step.durationMs,
                     delay: step.delayMs,
@@ -220,8 +289,8 @@ function playChoreography(root: Element, steps: readonly ChoreographyStep[], dir
  * (`preloadFlpSessions`); the handoff matches on `workingLoopKey`, so
  * a request built anywhere else would silently miss the preload.
  */
-export function handLaunchRequest(id: StudyModeId, bar: FlpBar): WorkingLoopRequest {
-    return { category: null, mode: id === "mix" ? null : id, bar, collection: null };
+export function handLaunchRequest(id: StudyModeId, world: FlpWorld): WorkingLoopRequest {
+    return { category: null, mode: id === "mix" ? null : id, world, collection: null };
 }
 
 const LOOP_FRESH_MS = 5 * 60_000;

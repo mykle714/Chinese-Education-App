@@ -28,7 +28,7 @@ const CAUTIONS: { label: string; detail: string }[] = [
     {
         label: "It writes real cards and a real deck",
         detail:
-            `Accepting materialises all ${CHALLENGE_WORD_COUNT} words as Learn Now cards on BOTH accounts and creates a `
+            `Accepting adds all ${CHALLENGE_WORD_COUNT} words to Learning on BOTH accounts and creates a `
             + "\"vs <name>\" deck for each. The deck is dropped when that player finishes the test — "
             + "abandon the challenge instead and it stays on /decks.",
     },

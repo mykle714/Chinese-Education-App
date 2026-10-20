@@ -7,7 +7,7 @@ import { ICategoryPromotionDAL } from '../dal/interfaces/ICategoryPromotionDAL.j
 import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
 import { VELOCITY_WINDOW_DAYS } from '../types/velocity.js';
-import { activeBars } from '../utils/masteryCompute.js';
+import { activeWorlds } from '../utils/masteryCompute.js';
 import type {
   FriendSummary,
   FriendRequestSummary,
@@ -83,7 +83,7 @@ export class FriendsService {
    * client shows that language's flag so the comparison stays honest.
    *
    * Velocity for one person = Σ band-steps in the window over that person's OWN
-   * active bars (`activeBars` on their goal flags, migration 143) in that language.
+   * active bars (`activeWorlds` on their goal flags, migration 143) in that language.
    * `netMinutes` is the same language's net wallet, so headline and subtitle never
    * describe different tracks.
    *
@@ -117,12 +117,12 @@ export class FriendsService {
       // default everywhere else (VelocityController does the same).
       const language = profile.selectedLanguage || 'zh';
       const bars = new Set<string>(
-        activeBars({ reading: profile.readingGoal, writing: profile.writingGoal })
+        activeWorlds({ reading: profile.readingGoal, writing: profile.writingGoal })
       );
 
       const velocity = (bucketsByUser.get(profile.userId) ?? []).reduce(
         (sum, bucket) =>
-          bucket.language === language && bars.has(bucket.bar)
+          bucket.language === language && bars.has(bucket.world)
             ? sum + bucket.bandsClimbed
             : sum,
         0

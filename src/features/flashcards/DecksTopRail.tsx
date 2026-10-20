@@ -7,7 +7,7 @@ import {
     MASTERY_CENTER_GLYPHS,
     MASTERY_CENTER_HUES,
     MASTERY_CENTER_PATHS,
-    type MasteryCenterBar,
+    type MasteryCenterWorld,
 } from "./masteryCenters";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -28,9 +28,9 @@ import { lowSupplyGlowKeyframes, lowSupplyGlowPeak, LOW_SUPPLY_GLOW_NUDGE, LOW_S
 // bar. The row is right-justified, so a lone Sort tile sits on the right — the same
 // side it holds when Centers are present.
 //
-// "Cards low": while the core Learn Now count is under LEARN_NOW_LOW_THRESHOLD
+// "Cards low": while the core Learning count is under LEARN_NOW_LOW_THRESHOLD
 // (server/contracts/wire.ts; the decision lives in the host) the Sort tile breathes a
-// green halo (theme/lowSupplyGlow.ts — the same halo shape the sort page's Learn Now pill
+// green halo (theme/lowSupplyGlow.ts — the same halo shape the sort page's Learning pill
 // wears in yellow on arrival) and carries a green "Low" badge in its top-right corner,
 // so the glow says WHY.
 //
@@ -108,8 +108,8 @@ const RailTile: React.FC<RailTileProps> = ({ hue, glyph, label, className, onCli
 );
 
 interface DecksTopRailProps {
-    /** The Centers this account gets, in MASTERY_CENTER_BARS order (activeMasteryCenters). */
-    centers: MasteryCenterBar[];
+    /** The Centers this account gets, in MASTERY_CENTER_WORLDS order (activeMasteryCenters). */
+    centers: MasteryCenterWorld[];
     /** Light the Sort tile's low-supply halo + badge. */
     learnNowLow: boolean;
 }
@@ -130,14 +130,14 @@ const DecksTopRail: React.FC<DecksTopRailProps> = ({ centers, learnNowLow }) => 
         >
             {/* Mastery Centers — coloured by the SKILL's hue: reading green, writing
                 purple, the same hue the Center it opens grounds on (MASTERY_CENTER_HUES). */}
-            {centers.map((bar) => (
+            {centers.map((world) => (
                 <RailTile
-                    key={bar}
-                    hue={MASTERY_CENTER_HUES[bar]}
-                    glyph={MASTERY_CENTER_GLYPHS[bar]}
-                    label={MASTERY_CENTER_BUTTON_LABELS[bar]}
-                    className={`flashcards-decks__center-tile flashcards-decks__center-tile--${bar}`}
-                    onClick={() => slideNavigate(MASTERY_CENTER_PATHS[bar])}
+                    key={world}
+                    hue={MASTERY_CENTER_HUES[world]}
+                    glyph={MASTERY_CENTER_GLYPHS[world]}
+                    label={MASTERY_CENTER_BUTTON_LABELS[world]}
+                    className={`flashcards-decks__center-tile flashcards-decks__center-tile--${world}`}
+                    onClick={() => slideNavigate(MASTERY_CENTER_PATHS[world])}
                 />
             ))}
 

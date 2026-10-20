@@ -129,7 +129,7 @@ export interface UsageUserRow {
   signIns: number;
   /**
    * Cards the learner sorted in the window: vet rows in ANY sorted bucket ('library' =
-   * Learn Now, or 'skip'), by `createdAt`. Lent provisional rows are excluded. Wider
+   * Learning, or 'skip'), by `createdAt`. Lent provisional rows are excluded. Wider
    * than the feature table's "Cards added", which is 'library' only.
    */
   cardsSorted: number;

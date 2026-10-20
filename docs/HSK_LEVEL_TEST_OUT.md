@@ -244,8 +244,8 @@ level, enforced by the DB rather than by the service.
 
 ## 10. Referenced code (keep in sync)
 
-`server/contracts/mastery.ts` (`BAR_MARK_TYPES`, `barForMarkType`, `computeCoreCategory`,
-`PBH_BAND`) · `server/contracts/wire.ts` (`MASTERY_BARS`, `MasteredAtByBar`,
+`server/contracts/mastery.ts` (`WORLD_MARK_TYPES`, `worldForMarkType`, `computeCoreCategory`,
+`PBH_BAND`) · `server/contracts/wire.ts` (`MASTERY_WORLDS`, `MasteredAtByBar`,
 `StarterPackBucket`, `CARD_BASELINES`) · `server/dal/shared/vetTable.ts`
 (`vetTableForLanguage`, `coreCategoryExpr`, `vetSortedClause`) ·
 `server/services/VocabEntryService.ts` (`addToLibrary` — the single-card analogue of

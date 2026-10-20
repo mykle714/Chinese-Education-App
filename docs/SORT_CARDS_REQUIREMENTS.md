@@ -131,7 +131,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
   - **System fallback packs** — when no authored pack is available, the system serves
     a single word as a pack of **one**.
 - **Already-sorted cards are locked.** A card already in the user's library (Add to
-  Learn Now *or* Already Learned) appears **undraggable** with a **"sorted!"**
+  Learning *or* Already Learned) appears **undraggable** with a **"sorted!"**
   watermark, so the user still sees the context but cannot re-sort it. A locked card is
   **greyed** (grey fill + grayscale filter) but keeps the same hairline ring and raised
   shadow as a live card — it is never drawn recessed. A pack in which
@@ -285,8 +285,8 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   the learner was reading. What starts a clean trail is opening the panel on a
   **different** card — `openForRoot` reseeds whenever the root word changes — and leaving
   the page, which unmounts `useEipTabs` and drops everything.
-- **No "+ Add to Learn Now" button in the panel header.** `onAddToLibrary` is
-  deliberately not wired: on scp, adding to Learn Now *is* the drag gesture the whole
+- **No "+ Add to Learning" button in the panel header.** `onAddToLibrary` is
+  deliberately not wired: on scp, adding to Learning *is* the drag gesture the whole
   page is built around, and a second, differently-shaped way to do it inside the panel
   would compete with it. (The flp still offers it for drilled-in words.)
 - **Sheet geometry — `EipHost` no longer caps the sheet (2026-08-30).** `SheetPanel`
@@ -421,7 +421,7 @@ Each card is dragged into one of **two** destinations:
 
 | Destination | Meaning | Effect |
 | --- | --- | --- |
-| **Add to Learn Now** | "I want to learn this" — the user **does not yet know** this card. | Card enters the user's library, and counts as evidence about the user's level (they did not know this card). |
+| **Add to Learning** | "I want to learn this" — the user **does not yet know** this card. | Card enters the user's library, and counts as evidence about the user's level (they did not know this card). |
 | **Already Learned** | "I already know this." | Card is **stamped as mastered immediately**, and counts as evidence the user's level is at or above this card. |
 
 **Skip is no longer a destination** — it is a de-emphasized action (§5.1), deliberately
@@ -464,28 +464,28 @@ each end, so the user can see their collection grow as they sort:
 
 | Figure | Column | Definition | Color |
 | --- | --- | --- | --- |
-| **Learn Now** | left | library cards whose utcm category is Unfamiliar + Target + Comfortable | ink figure on a pill filled with `RAMP[LEARN_NOW_HUE].surface` — the fdp Learn Now filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`LEARN_NOW_COLORS`) |
+| **Learning** | left | library cards whose utcm category is Unfamiliar + Target + Comfortable | ink figure on a pill filled with `RAMP[LEARN_NOW_HUE].surface` — the fdp Learning filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`LEARN_NOW_COLORS`) |
 | **Mastered** | right | library cards whose utcm category is Mastered | ink figure on a pill filled with `RAMP[MASTERY_BAR_HUES.core].surface` — the fdp Mastered filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`MASTERY_BAR_COLORS.core`) |
 
 - The figures sit at **opposite ends** rather than as one cluster, so each reads as its
   own standing total instead of the pair reading as a ratio. Each figure is on the **same
-  side as its own drop bucket** below it (Add to Learn Now is the left bucket, Already
+  side as its own drop bucket** below it (Add to Learning is the left bucket, Already
   Learned the right), so a figure and the bucket that feeds it share a side.
 
-- The two figures are **disjoint** (Learn Now deliberately *excludes* Mastered) so they
+- The two figures are **disjoint** (Learning deliberately *excludes* Mastered) so they
   read as the two drop buckets and sum to the whole library. This differs from the decks
   page's `totalLibraryCards`, which is the inclusive total.
 - Each figure's pill, its drop bucket, and the fdp filter tile for the same collection
-  (`src/features/flashcards/LibraryDuo.tsx`) all use **one hue per collection**: Learn Now =
+  (`src/features/flashcards/LibraryDuo.tsx`) all use **one hue per collection**: Learning =
   `LEARN_NOW_HUE`, Mastered = `MASTERY_BAR_HUES.core` (`src/utils/categoryColors.ts`).
   These are *collection* colours, not utcm band colours — the buckets used to wear
-  `BAND_COLORS.Unfamiliar`, which painted Learn Now red here and yellow on the fdp.
+  `BAND_COLORS.Unfamiliar`, which painted Learning red here and yellow on the fdp.
 - **Bucket look.** Each bucket is one solid fill of the collection's ramp SURFACE tier,
   pressed into the page with `SHADOW.recessedDeep` — the card crater's inward top shadow
   (§4.5, `SHADOW.recessed`) scaled ~2× to the bucket's size, so a bucket reads as a well a
   card drops into. The recess only shades the top edge, so the bucket also carries the
   app's standard `1px solid COLORS.border` hairline (the `CARD_SURFACE` edge,
-  `src/theme/surfaces.ts`). The left bucket's label is just **"Learn Now"**; labels are
+  `src/theme/surfaces.ts`). The left bucket's label is just **"Learning"**; labels are
   `SIZE.bodyLg` (16px). *Code:* `SortCardsPage.tsx` → `Bucket`.
 - **Drop-target cue.** Buckets rest at **0.6 opacity** and go fully opaque while they are
   the active drop target, or while a dropped card is still falling into them; they never
@@ -529,7 +529,7 @@ each end, so the user can see their collection grow as they sort:
 - It renders only once the baseline has loaded, so no "0" flashes before the real value.
 - Position: the level bar, **not** the page header — that row already holds the
   audio-mode chip / undo / the minute-points badge. The level bar is a grid of **three
-  equal columns** (Learn Now | Difficulty dropdown §6.6 | Mastered); each element is
+  equal columns** (Learning | Difficulty dropdown §6.6 | Mastered); each element is
   centred in its column and each pill is centred over its caption, so the three pills are
   evenly distributed and none moves when a figure's digit count grows. The tallies are
   placed by explicit `gridColumn`, so the dropdown holds the middle column even before
@@ -539,16 +539,16 @@ each end, so the user can see their collection grow as they sort:
   `learnNowCount` / `masteredCount` derivations, and `adjustTally` (called from
   `handleSortCard` and `handleUndo`).
 
-### 5.3a Learn Now supply glow
+### 5.3a Learning supply glow
 
-The Learn Now tally pill tells a learner who came in **short** of cards when they have
+The Learning tally pill tells a learner who came in **short** of cards when they have
 sorted enough. The decision is made **once per visit**, from the first successfully
 loaded baseline (before any sort):
 
 | Arrived with | Pill while `learnNowCount < 30` | Pill once `learnNowCount ≥ 30` |
 | --- | --- | --- |
-| **< 30** Learn Now | yellow halo, **pulsing** | plain (halo simply drops) |
-| **≥ 30** Learn Now | plain | plain |
+| **< 30** Learning | yellow halo, **pulsing** | plain (halo simply drops) |
+| **≥ 30** Learning | plain | plain |
 
 - 30 is `LEARN_NOW_ENOUGH_THRESHOLD` (`server/contracts/wire.ts`) = the fdp's "cards low"
   threshold (`LEARN_NOW_LOW_THRESHOLD`, 20) + one 10-card sort session. A learner sent
@@ -563,10 +563,10 @@ loaded baseline (before any sort):
   `loaded`; a failed fetch leaves `counts` empty, which would otherwise read as 0 and
   pulse at a learner with a full library.
 - **Colour.** The halo is a soft `box-shadow` — pure blur, no crisp `0 0 0 Npx` ring — in the
-  ramp's **mid** tier — yellow, the Learn Now hue (`LOW_SUPPLY_GLOW_TALLY` = `RAMP.yel.mid`;
+  ramp's **mid** tier — yellow, the Learning hue (`LOW_SUPPLY_GLOW_TALLY` = `RAMP.yel.mid`;
   red until 2026-10-09), breathing 5px/1px ↔ 14px/4px. The
   saturated mark tier with a solid ring read as harsh and was softened 2026-10-09. The
-  pill's fill stays the Learn Now hue. Not the `hl*` highlighter
+  pill's fill stays the Learning hue. Not the `hl*` highlighter
   tokens — those are dark-surface-only. Reduced motion: the halo is static.
 - The pulse shares the pill's `animation` property with the gulp (§ 5.3), so the two are
   listed together rather than one replacing the other.
@@ -660,10 +660,10 @@ the user **chooses** to bring it back, in one of three ways:
 - A **SortPack counts as exactly one signal**, however many of its (up to 4) cards
   get sorted — never one signal per card.
 - The rule is deliberately **naive — no streaks, no thresholds, no counters**:
-  - **Any "Add to Learn Now" card in the pack** makes the whole pack's signal negative,
+  - **Any "Add to Learning" card in the pack** makes the whole pack's signal negative,
     even if other cards in the same pack were "Already Learned". The target drops to
     **(that pack's level) − 1**. One unknown word at the level is enough.
-  - A pack where **every** sorted card is "Already Learned" (no "Add to Learn Now" at
+  - A pack where **every** sorted card is "Already Learned" (no "Add to Learning" at
     all) is positive and raises the target to **(that level) + 1** immediately.
 - There is **no neutral pack**: any pack with at least one sorted card moves the target
   one way or the other. Only fully-skipped packs carry no signal.
@@ -796,7 +796,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
 - The sheet lists **all words the user has currently skipped** in the route's language
   (§3), newest skip first (`StarterPacksService.listSkipped`). A card that has since
   been sorted or recycled (by any path) no longer appears.
-- The removed page let a learner sort a skipped card straight into Learn Now /
+- The removed page let a learner sort a skipped card straight into Learning /
   Already Learned from a tap popup. The sheet does not: tap opens the eip, and getting a
   skipped word into a bucket means recycling it and sorting it when it comes back.
 
@@ -824,7 +824,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
 9. **Level adaptation:** a finished pack contributes exactly one signal — any "Add to
-   Learn Now" card in it drops the target to that pack's level minus 1; an all-"Already
+   Learning" card in it drops the target to that pack's level minus 1; an all-"Already
    Learned" pack raises the target to that level plus 1. There is no streak or threshold
    to accumulate: one pack, one ±1 move. A skipped (or partially skipped, signal-less)
    pack changes
@@ -847,7 +847,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     that level (no drift to adjacent levels, and pack outcomes seen while pinned don't
     feed the auto target) until switched back to Auto; the Auto entry always just reads
     "Auto" — it never displays the target level number.
-17. **Library tally:** the top-right tally shows the account's Learn Now and Mastered
+17. **Library tally:** the top-right tally shows the account's Learning and Mastered
     library counts as two disjoint figures; a drop into either bucket increments the
     matching figure immediately, Undo decrements it, and a skip changes neither.
 18. **Undo/level interaction (known simplification):** undoing a card action does not

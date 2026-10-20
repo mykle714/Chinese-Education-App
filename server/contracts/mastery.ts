@@ -12,7 +12,7 @@
  * future edit here fails loudly.
  *
  * Since migration 143 a card carries THREE independent bars (core / reading /
- * writing) rather than one goal-blended bar. Start at `activeBars` and `masteryBars`.
+ * writing) rather than one goal-blended bar. Start at `activeWorlds` and `masteryBars`.
  *
  * Contract rules (same as wire.ts): no relative VALUE imports, no enums, no Node or
  * DOM globals. The one `import type ... from './wire.js'` below is erased at compile
@@ -24,7 +24,7 @@ import type {
   FlashcardCategory,
   MarkType,
   MasteredAtByBar,
-  MasteryBarId,
+  MasteryWorldId,
   ReviewMark,
   TypedMarkHistory,
 } from './wire.js';
@@ -34,7 +34,7 @@ import type {
  * are always pursued and have no flag.
  *
  * Since migration 143 these no longer re-weight anything — they decide which BARS a
- * card shows (`activeBars`). Reading/writing marks accrue either way; the goal is
+ * card shows (`activeWorlds`). Reading/writing marks accrue either way; the goal is
  * what surfaces the bar, its collection, its sort options and its velocity.
  */
 export interface MasteryGoals {
@@ -128,7 +128,7 @@ export function positivesByType(history: TypedMarkHistory | undefined): Record<M
 // one set of benchmark lines serve all three bars.
 
 /** Which mark types feed each bar. Every MarkType appears in exactly one bar. */
-export const BAR_MARK_TYPES: Record<MasteryBarId, readonly MarkType[]> = {
+export const WORLD_MARK_TYPES: Record<MasteryWorldId, readonly MarkType[]> = {
   core: ['recognition', 'production'],
   reading: ['reading'],
   writing: ['writing'],
@@ -145,7 +145,7 @@ export const BAR_MARK_TYPES: Record<MasteryBarId, readonly MarkType[]> = {
  * changes: each call still resolves one bar and bands it on its own. Do not "optimize"
  * that into a multi-bar write.
  */
-export function barForMarkType(type: MarkType): MasteryBarId {
+export function worldForMarkType(type: MarkType): MasteryWorldId {
   if (type === 'reading') return 'reading';
   if (type === 'writing') return 'writing';
   return 'core';
@@ -159,16 +159,16 @@ export function barForMarkType(type: MarkType): MasteryBarId {
  * collections, the per-bar sort options and the velocity sum all derive from it, so
  * they cannot disagree about which bars are live.
  */
-export function activeBars(goals: MasteryGoals): MasteryBarId[] {
-  const bars: MasteryBarId[] = ['core'];
-  if (goals.reading) bars.push('reading');
-  if (goals.writing) bars.push('writing');
-  return bars;
+export function activeWorlds(goals: MasteryGoals): MasteryWorldId[] {
+  const worlds: MasteryWorldId[] = ['core'];
+  if (goals.reading) worlds.push('reading');
+  if (goals.writing) worlds.push('writing');
+  return worlds;
 }
 
 /** Whether one bar is live for these goals. `core` is always true. */
-export function isBarActive(bar: MasteryBarId, goals: MasteryGoals): boolean {
-  return bar === 'core' || (bar === 'reading' ? goals.reading : goals.writing);
+export function isWorldActive(world: MasteryWorldId, goals: MasteryGoals): boolean {
+  return world === 'core' || (world === 'reading' ? goals.reading : goals.writing);
 }
 
 /**
@@ -211,7 +211,7 @@ export const FLP_ONLY_CORE_PBH = PBH_BAND.COMFORTABLE;
  * `OnDeckVocabService.isCardGameEligible` (files the card as cooled for a game pool).
  */
 export function isFlpOnlyMark(history: TypedMarkHistory | undefined, type: MarkType): boolean {
-  return barForMarkType(type) === 'core' && coreProgressBarHeight(history) >= FLP_ONLY_CORE_PBH;
+  return worldForMarkType(type) === 'core' && coreProgressBarHeight(history) >= FLP_ONLY_CORE_PBH;
 }
 
 /**
@@ -220,7 +220,7 @@ export function isFlpOnlyMark(history: TypedMarkHistory | undefined, type: MarkT
  */
 export function barProgressBarHeight(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   /**
    * The card's computed writing mastery (`VocabEntryBase.writingMastery`, migration
    * 170). When given, it IS the writing bar's height — required for a multi-character
@@ -228,18 +228,18 @@ export function barProgressBarHeight(
    */
   writingMastery?: number | null
 ): number {
-  if (bar === 'core') return coreProgressBarHeight(history);
-  if (bar === 'writing' && typeof writingMastery === 'number') return writingMastery;
-  return positiveCount((history ?? {})[bar]);
+  if (world === 'core') return coreProgressBarHeight(history);
+  if (world === 'writing' && typeof writingMastery === 'number') return writingMastery;
+  return positiveCount((history ?? {})[world]);
 }
 
 /** Any bar's utcm band. `writingMastery` as in `barProgressBarHeight`. */
 export function barCategory(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   writingMastery?: number | null
 ): FlashcardCategory {
-  return categoryForPbh(barProgressBarHeight(history, bar, writingMastery));
+  return categoryForPbh(barProgressBarHeight(history, world, writingMastery));
 }
 
 /** Band a pbh value into a utcm category. */
@@ -361,7 +361,7 @@ export interface MasteryBarSegment {
 
 /** One rendered bar: its height on the shared pbh scale, its band, its composition. */
 export interface MasteryBar {
-  id: MasteryBarId;
+  id: MasteryWorldId;
   pbh: number;
   /** 0..1 fill of the track (pbh capped at PBH_FULL). */
   heightFraction: number;
@@ -380,10 +380,10 @@ const BAR_TYPE_ORDER: readonly MarkType[] = [
 /** Model for ONE bar, whether or not its goal is set. */
 export function masteryBar(
   history: TypedMarkHistory | undefined,
-  bar: MasteryBarId,
+  world: MasteryWorldId,
   writingMastery?: number | null
 ): MasteryBar {
-  const pbh = barProgressBarHeight(history, bar, writingMastery);
+  const pbh = barProgressBarHeight(history, world, writingMastery);
   const positives = positivesByType(history);
   // The writing bar's one segment carries the (possibly averaged) height itself.
   if (typeof writingMastery === 'number') positives.writing = writingMastery;
@@ -391,7 +391,7 @@ export function masteryBar(
   // recognition and production in the ratio of their positives, and a single-track
   // bar is one solid segment. (Before migration 143 one bar showed all four types,
   // which is precisely the conflation the three-bar split undoes.)
-  const types = BAR_TYPE_ORDER.filter((t) => BAR_MARK_TYPES[bar].includes(t));
+  const types = BAR_TYPE_ORDER.filter((t) => WORLD_MARK_TYPES[world].includes(t));
   const totalPositive = types.reduce((sum, t) => sum + positives[t], 0);
   const segments: MasteryBarSegment[] = types.map((type) => ({
     type,
@@ -399,7 +399,7 @@ export function masteryBar(
     fraction: totalPositive > 0 ? positives[type] / totalPositive : 0,
   }));
   return {
-    id: bar,
+    id: world,
     pbh,
     heightFraction: Math.min(1, pbh / PBH_FULL),
     category: categoryForPbh(pbh),
@@ -413,7 +413,7 @@ export function masteryBars(
   goals: MasteryGoals,
   writingMastery?: number | null
 ): MasteryBar[] {
-  return activeBars(goals).map((bar) => masteryBar(history, bar, writingMastery));
+  return activeWorlds(goals).map((world) => masteryBar(history, world, writingMastery));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -436,9 +436,9 @@ export function masteryBars(
  */
 export function masteredAtForBar(
   masteredAt: MasteredAtByBar | null | undefined,
-  bar: MasteryBarId
+  world: MasteryWorldId
 ): number {
-  const raw = masteredAt?.[bar];
+  const raw = masteredAt?.[world];
   if (!raw) return 0;
   const ms = new Date(raw).getTime();
   return Number.isNaN(ms) ? 0 : ms;
@@ -522,7 +522,7 @@ export function marksToWrite(track: ReviewMark[] | undefined, isCorrect: boolean
  */
 export function coreMasteredTypedMarkHistory(timestamp: string): TypedMarkHistory {
   const h: TypedMarkHistory = {};
-  for (const t of BAR_MARK_TYPES.core) {
+  for (const t of WORLD_MARK_TYPES.core) {
     h[t] = Array.from({ length: WINDOW }, () => ({ timestamp, isCorrect: true }));
   }
   return h;

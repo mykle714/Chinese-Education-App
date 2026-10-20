@@ -132,7 +132,7 @@ export class VocabEntryController {
   }
 
   /**
-   * Is a word in the user's Learn Now? (bucket 'library'; provisional/no row → false)
+   * Is a word in the user's Learning? (bucket 'library'; provisional/no row → false)
    * GET /api/vocabEntries/libraryStatus?entryKey=&language=
    * Response: { inLibrary: boolean }
    */
@@ -156,7 +156,7 @@ export class VocabEntryController {
   }
 
   /**
-   * Remove a word from Learn Now by demoting its row to 'provisional' (never a delete;
+   * Remove a word from Learning by demoting its row to 'provisional' (never a delete;
    * see VocabEntryService.removeFromLibrary).
    * POST /api/vocabEntries/removeFromLibrary
    * Body: { entryKey, language }

@@ -12,7 +12,7 @@ import { previewShowsWholeCharacter } from "../../../components/handwriting/leve
 import { modeOfLevel, writingLevelForMastery } from "../../../../server/contracts/writingLevels";
 
 /**
- * WritingUsedInBubbles — the writing flp's used-in hint bubbles (`?bar=writing`,
+ * WritingUsedInBubbles — the writing flp's used-in hint bubbles (`?world=writing`,
  * docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hint bubbles").
  *
  * Floating on the writing card's TOP EDGE, up to 2 bubbles show words that contain the card's character — the learner's own

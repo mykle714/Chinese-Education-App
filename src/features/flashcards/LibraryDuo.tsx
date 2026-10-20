@@ -16,7 +16,7 @@ import type { BuiltinCollectionEntry } from "./builtinCollections";
  * still governs decks, challenges and bands. These two are the exception the artboard
  * makes, and the reason is what the surface is for rather than a change of mind:
  *
- *   Learn Now and Mastered are the only two sets whose SIZE is the thing the learner
+ *   Learning and Mastered are the only two sets whose SIZE is the thing the learner
  *   came to read. Every other shelf answers "which set?" and encodes its count as the
  *   spine's height — a comparison between neighbours, which is exactly right for a row
  *   of six decks. These two have no neighbours to be compared against; "612" and "208"

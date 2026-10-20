@@ -14,7 +14,7 @@ import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
 import type { VocabEntry } from "../types";
 
 // The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
-// dictionary eip's "+ to Learn Now"), the showing sense's dd and the SensePicker chip.
+// dictionary eip's "+ to Learning"), the showing sense's dd and the SensePicker chip.
 //
 // Mounted only by InfoCardPanelBody (src/features/flashcards/FlashcardsLearnPage/
 // InfoCardPanelBody.tsx), and so on every eip host: the flp/scp/saved-card cdp sheet and
@@ -34,11 +34,11 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     onSpeak?: (entry: VocabEntry) => void;
     // Text currently narrated by useTTS — the speaker spins when it is this entry.
     speakingKey?: string | null;
-    // Add-only "+ to Learn Now" (discoverable entries only). Passed by the flp for a
-    // drilled-into word not yet in Learn Now (the flp drops it once added). Superseded
+    // Add-only "+ to Learning" (discoverable entries only). Passed by the flp for a
+    // drilled-into word not yet in Learning (the flp drops it once added). Superseded
     // by `learnNow` when both are given.
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learn Now TOGGLE (glowing "+" ⇄ "Added!", useLearnNowToggle) for the entry
+    // The Learning TOGGLE (glowing "+" ⇄ "Added!", useLearnNowToggle) for the entry
     // showing. Takes the slot under the speaker in place of `onAddToLibrary`. Passed by
     // the Dictionary page's eip (EipSheet) and the dictionary cdp.
     learnNow?: LearnNowToggleState;
@@ -48,7 +48,7 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     onSelectSense?: (index: number) => void;
 }
 
-// Space between the headword cpcd and the speaker / Learn Now stack. Near zero on
+// Space between the headword cpcd and the speaker / Learning stack. Near zero on
 // purpose: the stack should hug the headword so the dd gets the width (see the
 // `.mobile-demo-eic-headword-group` wrapper below).
 const HEADWORD_ACTIONS_GAP = 2;
@@ -102,9 +102,9 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         tapToCopy
                     />
                 )}
-                {/* Header actions — a VERTICAL STACK: Speaker on top, the Learn Now control
+                {/* Header actions — a VERTICAL STACK: Speaker on top, the Learning control
                     under it (2026-10-10; was a 2-column grid, Speaker · Add). Either may be
-                    absent — Speaker needs onSpeak; the Learn Now slot needs `learnNow` (the
+                    absent — Speaker needs onSpeak; the Learning slot needs `learnNow` (the
                     compact glowing "+" ⇄ "Added!" toggle, LearnNowToggle) or, failing that,
                     the flp's add-only `onAddToLibrary` on a discoverable entry.
                     The header keeps ONLY the actions that are about the ENTRY ITSELF —
@@ -146,11 +146,11 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                             <LearnNowToggle state={learnNow} />
                         ) : onAddToLibrary && entry.discoverable && (
                             // The flp eip's add-only "+" (hidden by the flp once the word is
-                            // added). Only discoverable entries can join Learn Now.
+                            // added). Only discoverable entries can join Learning.
                             <IconButton
                                 className="mobile-demo-eic-add-to-library"
                                 size="small"
-                                aria-label="Add to Learn Now"
+                                aria-label="Add to Learning"
                                 onClick={(e) => {
                                     // Match SpeakerButton's stop-propagation pattern so
                                     // taps don't bubble to flip/drag handlers in any

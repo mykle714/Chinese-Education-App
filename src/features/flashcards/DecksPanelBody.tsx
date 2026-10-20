@@ -65,7 +65,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 // sheet four captions competing to name it. So the fdp splits the body's sections
 // across two sheets, each named after the one question it answers:
 //
-//   "cards" — the library duo (Learn Now / Mastered: the two constants those cards
+//   "cards" — the library duo (Learning / Mastered: the two constants those cards
 //             are counted into) + the Cards section: search, sort, grid.
 //   "decks" — the SETS: Challenges, then the user's own Decks.
 //

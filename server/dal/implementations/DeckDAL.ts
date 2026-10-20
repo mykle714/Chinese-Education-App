@@ -18,9 +18,9 @@ const DECK_COLS = `d.id, d.language, d.name, d."editMode", d."createdAt", d."upd
  * type), and this form returns 0 for an empty deck without relying on the reader
  * to notice that COUNT of a LEFT JOIN counts the joined column, not `*`.
  *
- * Counts only members still in Learn Now (`vetSortedClause`). Removing a card from
- * Learn Now demotes it to 'provisional' but KEEPS its deck_cards rows, so a re-add
- * restores it to its decks (docs/PROVISIONAL_CARDS.md § "Removing from Learn Now
+ * Counts only members still in Learning (`vetSortedClause`). Removing a card from
+ * Learning demotes it to 'provisional' but KEEPS its deck_cards rows, so a re-add
+ * restores it to its decks (docs/PROVISIONAL_CARDS.md § "Removing from Learning
  * demotes"). The count must therefore match what OnDeckVocabService.getDeckCards
  * shows, which filters the same way. This is the one place this DAL reads the vet
  * (see IDeckDAL's SCOPE note). The vet is two physical tables sharing one id

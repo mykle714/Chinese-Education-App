@@ -4,7 +4,7 @@ import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { useMasteredCounts } from "../../hooks/useMasteredCounts";
 import { fetchDecks, createDeck, type DeckSummary } from "../../api/decks";
 import { libraryKey, loadCardLibrary, peekCardLibrary } from "./centerPrefetch";
-import type { MasteryBarId } from "../../../server/contracts/wire";
+import type { MasteryWorldId } from "../../../server/contracts/wire";
 import { isFeatureEnabled } from "../../../server/contracts/featureFlags";
 import type { VocabEntry } from "../../types";
 import type { MasteryGoals } from "../../utils/masteryCompute";
@@ -55,9 +55,9 @@ export type CardsFilter = "all" | "learn-now" | "mastered";
  * buttons); this owns the data.
  *
  * ── What a LENS changes ───────────────────────────────────────────────────────
- * One `MasteryBarId`, threaded into four places, and everything else follows:
- *   • the collection list — that bar's Learn Now and Mastered (`lensCollectionEntries`)
- *   • the tile figures — band counts read off that bar (`?bar=` on categoryCounts)
+ * One `MasteryWorldId`, threaded into four places, and everything else follows:
+ *   • the collection list — that bar's Learning and Mastered (`lensCollectionEntries`)
+ *   • the tile figures — band counts read off that bar (`?world=` on categoryCounts)
  *   • the card grid's ordering — that bar's mastery / cooldown keys (`masteryLowestKey`)
  *   • every card's strip and badge — that bar alone (DecksPanelBody passes `lens` down)
  * See docs/DECKS_FEATURE.md § "Mastery Centers" and docs/MASTERY_REWORK.md.
@@ -67,19 +67,19 @@ export type CardsFilter = "all" | "learn-now" | "mastered";
  */
 export interface DecksPanelState {
     /** The lens this panel was built for — passed straight back down to the body. */
-    lens: MasteryBarId;
+    lens: MasteryWorldId;
     /** The account's goal flags, memoized (the sort control's bundle memo keys on it). */
     goals: MasteryGoals;
     /** The account's current language — decides the sort menu's pronunciation label. */
     language: string | null | undefined;
-    /** The lens's two built-in collections (Learn Now, Mastered), in display order. */
+    /** The lens's two built-in collections (Learning, Mastered), in display order. */
     collections: BuiltinCollectionEntry[];
     /** Figure for one built-in tile; undefined while its count is still loading. */
     tileCount: (entry: BuiltinCollectionEntry) => number | undefined;
     /** Band counts of the LENS bar — also what the fdp's Review gate reads. */
     categoryCounts: Record<string, number>;
     /**
-     * The lens's Learn Now figure, or undefined until the band counts have loaded
+     * The lens's Learning figure, or undefined until the band counts have loaded
      * SUCCESSFULLY. Unlike `tileCount`, a failed or in-flight fetch never reads as 0 —
      * this drives the fdp Sort Cards tile's "card count low" glow (DecksTopRail), which must not
      * flash on page load or nag after a network error.
@@ -110,7 +110,7 @@ export interface DecksPanelState {
     visibleCards: VocabEntry[];
     /**
      * Size of the set the grid is showing BEFORE the search filter — the figure on the
-     * section caption. It follows `cardsFilter` (so an active Learn Now tile makes the
+     * section caption. It follows `cardsFilter` (so an active Learning tile makes the
      * caption name that set's size) but never the search box, because a number that
      * shrank as you typed would be reporting the search rather than the set.
      */
@@ -142,7 +142,7 @@ export interface DecksPanelState {
  *   the grid is not replaced by a spinner under a restored scroll position. Read on
  *   mount only; the hosts read the snapshot once per mount.
  */
-export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot): DecksPanelState {
+export function useDecksPanel(lens: MasteryWorldId, restore?: DecksPanelSnapshot): DecksPanelState {
     // Frozen on mount: a later render passing a different (or no) snapshot must not
     // turn a live panel back into a "restored" one or vice versa.
     const [restored] = useState(() => restore !== undefined);
@@ -164,7 +164,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         [user?.readingGoal, user?.writingGoal]
     );
 
-    // Exactly two tiles, whatever the lens: this bar's Learn Now and this bar's
+    // Exactly two tiles, whatever the lens: this bar's Learning and this bar's
     // Mastered (All Cards has no tile — the grid below IS it). Memoized so the body's
     // tile row keeps referential identity and its entrance stagger isn't restarted by
     // an unrelated render.
@@ -296,7 +296,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
     // It bands each card on THIS LENS's bar with the same `barCategory` the mini-card
     // strips and the server's collection SQL use, so the grid's membership and the
     // tile's figure are two statements of one rule rather than two implementations —
-    // "Learn Now" is exactly `category <> 'Mastered'`, which is the collection's own
+    // "Learning" is exactly `category <> 'Mastered'`, which is the collection's own
     // definition (docs/DECKS_FEATURE.md § "Which collections exist").
     const collectionCards = useMemo(() => {
         if (cardsFilter === "all") return cards;
@@ -319,7 +319,7 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
     // Every figure on a built-in tile comes from the two count hooks already loaded —
     // no extra request. The derivation itself lives beside the collection list
     // (builtinCollectionCount) so a collection's definition and its number cannot
-    // drift; feeding it the LENS's band counts is what makes a Center's Learn Now tile
+    // drift; feeding it the LENS's band counts is what makes a Center's Learning tile
     // report "not yet read" rather than "not yet known".
     const tileCount = useCallback(
         (entry: BuiltinCollectionEntry) =>
@@ -327,11 +327,11 @@ export function useDecksPanel(lens: MasteryBarId, restore?: DecksPanelSnapshot):
         [categoryCounts, masteredCounts]
     );
 
-    // Same derivation as the Learn Now tile (builtinCollectionCount), held back until
+    // Same derivation as the Learning tile (builtinCollectionCount), held back until
     // the counts are real — see `learnNowCount` on DecksPanelState.
     const learnNowCount = useMemo(
         () => categoryCountsOk
-            ? builtinCollectionCount({ kind: "learn-now", bar: lens }, categoryCounts, masteredCounts)
+            ? builtinCollectionCount({ kind: "learn-now", world: lens }, categoryCounts, masteredCounts)
             : undefined,
         [categoryCountsOk, categoryCounts, masteredCounts, lens]
     );

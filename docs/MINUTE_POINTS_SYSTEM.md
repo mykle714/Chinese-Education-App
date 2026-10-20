@@ -346,7 +346,7 @@ Code: `server/services/UserMinutePointsService.ts` → `incrementMinutePoints`,
 
 ## Related documents
 
-- [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) — **BUILT on DEV (migration 175)**: the
+- [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) — **BUILT, on PPE since 2026-10-10 (migration 175)**: the
   once-per-streak-day hp animation that re-enacts banking yesterday's minutes (flame
   drains, embers fly into the header avatar) and the AccountSheet bank banner.
 

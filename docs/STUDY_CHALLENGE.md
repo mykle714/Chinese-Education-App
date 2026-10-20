@@ -250,7 +250,7 @@ it is the page's **main verb** — on a list of friends you have no live challen
 it is the only control most rows carry — and sharing a fill with *See results* made the
 row that offers a new challenge look like the row that reports an old one. Purple
 (`COLORS.purM`) is the ramp hue this lexicon had not already spent, so the split costs no
-new colour. (Learn Now on `/decks` is yellow since 2026-09-23, so purple is no longer
+new colour. (Learning on `/decks` is yellow since 2026-09-23, so purple is no longer
 shared with it.)
 
 **Accept and decline are not competing pills in a list.** One *Incoming Challenge* pill

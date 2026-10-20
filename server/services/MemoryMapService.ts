@@ -12,7 +12,7 @@ import {
   type MemoryMapWord,
 } from '../contracts/wire.js';
 import { rankCardQueue, rankCardQueueCooled } from './cardQueueRanking.js';
-import { barForMarkType } from '../contracts/mastery.js';
+import { worldForMarkType } from '../contracts/mastery.js';
 import { planSlots, type Rng } from './memoryMapSpawn.js';
 import type { LayoutSlot } from './memoryMapLayout.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
@@ -259,13 +259,13 @@ export class MemoryMapService {
     now: number,
     tier: 'rested' | 'cooling'
   ): MemoryMapCandidateRow[] {
-    const bar = barForMarkType(MemoryMapService.MARK_TYPE);
+    const world = worldForMarkType(MemoryMapService.MARK_TYPE);
     const ordered: MemoryMapCandidateRow[] = [];
 
     for (const rung of MemoryMapService.CATEGORY_LADDER) {
       const inRung = candidates.filter((card) => card.readingCategory === rung);
-      if (tier === 'rested') ordered.push(...rankCardQueue(inRung, now, { bar }).map(({ card }) => card));
-      else ordered.push(...rankCardQueueCooled(inRung, now, { bar }));
+      if (tier === 'rested') ordered.push(...rankCardQueue(inRung, now, { world }).map(({ card }) => card));
+      else ordered.push(...rankCardQueueCooled(inRung, now, { world }));
     }
     return ordered;
   }

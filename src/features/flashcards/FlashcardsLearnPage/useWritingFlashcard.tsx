@@ -14,7 +14,7 @@ import WritingCardFace from "./WritingCardFace";
 import type { WritingFaceRenderer } from "./FlashCardSection";
 
 /**
- * useWritingFlashcard — the writing flp's per-card attempt (`?bar=writing`,
+ * useWritingFlashcard — the writing flp's per-card attempt (`?world=writing`,
  * docs/WRITING_PRACTICE_REWORK.md § 3). The card is the ordinary flp card; this hook
  * owns what is drawn ON it and the two overlays it opens.
  *

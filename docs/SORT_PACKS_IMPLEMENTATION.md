@@ -16,7 +16,7 @@ to **multi-card sort packs**, plus the new **Skipped Cards page**. It is forward
   shown in this flow. See requirements §4.5.
 - **Two pack sources:** *authored* packs (curated, stored in `sort_packs`) and
   *system fallback* packs-of-1 (built on the fly from a single fresh word).
-- **Two destinations** (Learn Now / Already Learned). **Skip** is a de-emphasized
+- **Two destinations** (Learning / Already Learned). **Skip** is a de-emphasized
   header button that defers all remaining unsorted cards in the pack.
 - A pack the user finishes or skips is **never shown again** (tracked in
   `users.seenPacks`).
@@ -258,7 +258,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 - `NodePage` + `MiniVocabCardGrid`; fetch `GET /:language/skipped`.
 - Header `rightContent`: **Recycle all** → `POST /recycle-skips`, then refetch.
-- Tap a card → **action popup** (Cancel / Mark as Already Learned / Mark as Learn Now)
+- Tap a card → **action popup** (Cancel / Mark as Already Learned / Mark as Learning)
   → `POST /sort`; on success remove from the local list. No detail-page navigation.
 
 ### 5.4 Navigation wiring

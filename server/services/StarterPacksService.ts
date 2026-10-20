@@ -28,7 +28,7 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/
  * Card source is the per-language dictionaryentries table, gated by _supplyGate:
  * `discoverable = TRUE`, for every language. Per-user
  * sort state lives in two places:
- *   - vocabentries (vet): "Add to Learn Now" / "Already Learned" rows persist what the
+ *   - vocabentries (vet): "Add to Learning" / "Already Learned" rows persist what the
  *     user did with a card; the GENERATED `category` column (from markHistory) is what
  *     `estimateLevel`'s cold-start seed reads.
  *   - discover_skips: "Skip for now" deferrals (migration 80). Deliberately separate
@@ -51,7 +51,7 @@ export class StarterPacksService {
    * when:
    *     mastered[L] >= MIN_MASTERED_TO_ADVANCE  AND  learning[L] <= LEARN_LATER_TOLERANCE
    * - MIN_MASTERED_TO_ADVANCE: master at least this many cards at L before advancing.
-   * - LEARN_LATER_TOLERANCE: how many "Add to Learn Now" (not-yet-mastered) cards a
+   * - LEARN_LATER_TOLERANCE: how many "Add to Learning" (not-yet-mastered) cards a
    *   level may carry and still clear. One stray "I'll learn this later" never strands
    *   the user; the second one settles them at L until review drains the pile.
    */
@@ -63,7 +63,7 @@ export class StarterPacksService {
     private dictionaryDAL: DictionaryDAL,
     private sortPacksDAL: SortPacksDAL,
     // Request-time lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5).
-    // Sorting a zh card into Learn Now / Already-Learned tops up its enrichment when
+    // Sorting a zh card into Learning / Already-Learned tops up its enrichment when
     // the sorter is a validator. Optional so non-DI test construction still works.
     private lazyEnrichmentService?: LazyEnrichmentService
   ) {}
@@ -553,7 +553,7 @@ export class StarterPacksService {
    *
    * Bucket effects (docs §8):
    *   - skip            → INSERT discover_skips (NO vet row → no level signal).
-   *   - library         → "Add to Learn Now": upsert vet row, empty history (Unfamiliar).
+   *   - library         → "Add to Learning": upsert vet row, empty history (Unfamiliar).
    *   - already-learned → upsert vet row + perfect 8/8 history → GENERATED category Mastered.
    */
   async sortCard(
@@ -584,7 +584,7 @@ export class StarterPacksService {
     }
 
     // library / already-learned both persist as the internal 'library' bucket
-    // (per CLAUDE.md "Learn Now" is UI text only). already-learned additionally
+    // (per CLAUDE.md "Learning" is UI text only). already-learned additionally
     // writes a perfect history so the GENERATED category resolves to Mastered.
     const actualBucket: StarterPackBucket = 'library';
     const shouldMarkMastered = bucket === 'already-learned';
@@ -668,7 +668,7 @@ export class StarterPacksService {
 
     // On-sort lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5). A skip
     // never reaches here (it returned early above), so this fires only for a real sort
-    // into Learn Now / Already-Learned. Fire-and-forget: it self-gates to validators +
+    // into Learning / Already-Learned. Fire-and-forget: it self-gates to validators +
     // incomplete zh rows and never throws, so it can't affect the sort response.
     this.lazyEnrichmentService?.triggerForWord({
       word: dictEntry.word1,

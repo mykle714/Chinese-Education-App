@@ -1,4 +1,4 @@
-import { barCategory, isBarOnCooldown, type MasteryBarId } from "../../../utils/masteryCompute";
+import { barCategory, isBarOnCooldown, type MasteryWorldId } from "../../../utils/masteryCompute";
 import { resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import { STUDY_MIX_QUOTAS } from "../../../../server/contracts/studyMix";
 import type { FlashcardCategory } from "../../../../server/contracts/wire";
@@ -97,7 +97,7 @@ function shuffleInPlace<T>(items: T[], random: () => number): void {
 
 export interface PoolOptions {
     /** The bar the grid marks — its band weights the sample and its clock gates it. */
-    bar: Extract<MasteryBarId, "reading" | "writing">;
+    world: Extract<MasteryWorldId, "reading" | "writing">;
     /** Longest word admitted, in characters. Defaults to a full row. */
     maxLength?: number;
 }
@@ -107,7 +107,7 @@ export function buildPool(
     cards: readonly VocabEntry[],
     now: number,
     random: () => number,
-    { bar, maxLength = GRID_COLUMNS }: PoolOptions
+    { world, maxLength = GRID_COLUMNS }: PoolOptions
 ): GridPool {
     const pool: GridPool = new Map();
     const longest = Math.min(maxLength, GRID_COLUMNS);
@@ -115,8 +115,8 @@ export function buildPool(
         const word = card.entryKey ?? "";
         const length = [...word].length;
         if (length < 1 || length > longest || !HAN_ONLY_RE.test(word)) continue;
-        const cooled = isBarOnCooldown(card.typedMarkHistory, bar, now, card.writingMastery);
-        const band = barCategory(card.typedMarkHistory, bar, card.writingMastery);
+        const cooled = isBarOnCooldown(card.typedMarkHistory, world, now, card.writingMastery);
+        const band = barCategory(card.typedMarkHistory, world, card.writingMastery);
         const list = pool.get(band) ?? [];
         list.push({ cardId: card.id, word, length, span: cellSpan(length), band, dd: resolveDisplayDefinition(card), entry: card, cooled });
         pool.set(band, list);

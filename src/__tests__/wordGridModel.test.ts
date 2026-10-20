@@ -36,7 +36,7 @@ describe("buildPool", () => {
             [card("学"), card("学习"), card("hola"), card("学a"), card("一二三四五六七")],
             NOW,
             seeded(1),
-            { bar: "reading" }
+            { world: "reading" }
         );
         const words = [...pool.values()].flat().map((w) => w.word).sort();
         expect(words).toEqual(["学", "学习"]);
@@ -46,7 +46,7 @@ describe("buildPool", () => {
         const justMarked = card("读", {
             typedMarkHistory: { reading: [{ timestamp: new Date(NOW - 60_000).toISOString(), isCorrect: true }] },
         });
-        const pool = buildPool([justMarked, card("写")], NOW, seeded(2), { bar: "reading" });
+        const pool = buildPool([justMarked, card("写")], NOW, seeded(2), { world: "reading" });
         const words = allPoolWords(pool);
         expect(words.filter((w) => !w.cooled).map((w) => w.word)).toEqual(["写"]);
         expect(words.filter((w) => w.cooled).map((w) => w.word)).toEqual(["读"]);
@@ -56,7 +56,7 @@ describe("buildPool", () => {
 
 describe("buildPool — writing bar", () => {
     it("caps words at the practice popup's four characters", () => {
-        const pool = buildPool([card("写"), card("图书馆"), card("一路平安"), card("中华人民共")], NOW, seeded(12), { bar: "writing", maxLength: 4 });
+        const pool = buildPool([card("写"), card("图书馆"), card("一路平安"), card("中华人民共")], NOW, seeded(12), { world: "writing", maxLength: 4 });
         expect([...pool.values()].flat().map((w) => w.word).sort()).toEqual(["一路平安", "写", "图书馆"].sort());
     });
 
@@ -64,7 +64,7 @@ describe("buildPool — writing bar", () => {
         const recent = [{ timestamp: new Date(NOW - 60_000).toISOString(), isCorrect: true }];
         const readJustNow = card("读", { typedMarkHistory: { reading: recent } });
         const wroteJustNow = card("写", { typedMarkHistory: { writing: recent } });
-        const pool = buildPool([readJustNow, wroteJustNow], NOW, seeded(13), { bar: "writing" });
+        const pool = buildPool([readJustNow, wroteJustNow], NOW, seeded(13), { world: "writing" });
         expect(allPoolWords(pool).filter((w) => !w.cooled).map((w) => w.word)).toEqual(["读"]);
     });
 });
@@ -77,13 +77,13 @@ describe("cellSpan", () => {
 
 describe("drawWord", () => {
     it("never returns a word whose tile is wider than the room", () => {
-        const pool = buildPool([card("学习"), card("一路平安"), card("人")], NOW, seeded(3), { bar: "reading" });
+        const pool = buildPool([card("学习"), card("一路平安"), card("人")], NOW, seeded(3), { world: "reading" });
         expect(drawWord(pool, 1, seeded(4))?.word).toBe("人");
         expect(drawWord(pool, 1, seeded(4))).toBeNull();
     });
 
     it("fits a 3-character word into 2 cells", () => {
-        const pool = buildPool([card("图书馆")], NOW, seeded(14), { bar: "reading" });
+        const pool = buildPool([card("图书馆")], NOW, seeded(14), { world: "reading" });
         const word = drawWord(pool, 2, seeded(15));
         expect(word?.word).toBe("图书馆");
         expect(word?.span).toBe(2);
@@ -92,7 +92,7 @@ describe("drawWord", () => {
     it("prefers markable words, falling back to cooled ones before returning null", () => {
         const recent = [{ timestamp: new Date(NOW - 60_000).toISOString(), isCorrect: true }];
         const resting = card("读", { typedMarkHistory: { reading: recent } });
-        const pool = buildPool([resting, card("写")], NOW, seeded(16), { bar: "reading" });
+        const pool = buildPool([resting, card("写")], NOW, seeded(16), { world: "reading" });
         expect(drawWord(pool, 1, seeded(17))?.word).toBe("写");
         const fallback = drawWord(pool, 1, seeded(17));
         expect(fallback?.word).toBe("读");
@@ -106,7 +106,7 @@ describe("initialLayout", () => {
         "吃饭", "喝水", "今天", "明天", "飞机场", "火车站", "好", "看", "听", "说", "读", "写"].map((w) => card(w));
 
     it("places each word at most once and never overlaps or overruns a row", () => {
-        const pool = buildPool(cards, NOW, seeded(5), { bar: "reading" });
+        const pool = buildPool(cards, NOW, seeded(5), { world: "reading" });
         const tiles = initialLayout(pool, seeded(6), keys());
         const ids = tiles.map((t) => t.cardId);
         expect(new Set(ids).size).toBe(ids.length);
@@ -119,7 +119,7 @@ describe("initialLayout", () => {
     });
 
     it("takes placed words out of the pool", () => {
-        const pool = buildPool(cards, NOW, seeded(7), { bar: "reading" });
+        const pool = buildPool(cards, NOW, seeded(7), { world: "reading" });
         const before = poolSize(pool);
         const tiles = initialLayout(pool, seeded(8), keys());
         expect(poolSize(pool)).toBe(before - tiles.length);
@@ -129,7 +129,7 @@ describe("initialLayout", () => {
 describe("replaceTile", () => {
     it("refills only the freed cells (plus adjacent gaps) and keeps every other tile in place", () => {
         const many = Array.from({ length: 60 }, (_, i) => card(String.fromCodePoint(0x4e00 + i)));
-        const pool = buildPool(many, NOW, seeded(9), { bar: "reading" });
+        const pool = buildPool(many, NOW, seeded(9), { world: "reading" });
         const nextKey = keys();
         const tiles = initialLayout(pool, seeded(10), nextKey);
         const gone = tiles[3];

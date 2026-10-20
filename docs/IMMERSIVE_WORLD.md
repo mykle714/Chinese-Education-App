@@ -3073,7 +3073,7 @@ feature where the +410 ms cost § 5.1 measured is irrelevant.
 
 **The report is also where the scene turns into vocabulary** (Q40). In the labelled
 transcript, any word can be tapped to **add it to the learner's library** — the shipped
-"Learn Now" bucket and its `/add-to-library` endpoint. There is no pre-scene vocabulary
+"Learning" bucket and its `/add-to-library` endpoint. There is no pre-scene vocabulary
 preview; acquisition happens *after* the encounter, chosen by the learner, from words they
 just heard someone say to them.
 
@@ -5965,8 +5965,8 @@ This inverts the question, and it is a better answer than any of the pre-scene o
   had consequences; now it is also the place the scene turns into vocabulary. That is the
   strongest argument yet for why iw ends in a report at all.
 - **It reuses shipped machinery.** Adding a card is the existing `library` starter-pack bucket
-  and its `/add-to-library` endpoint (see CLAUDE.md's "Learn Now" note — user-facing copy says
-  **Learn Now**, the API and identifiers stay `library`).
+  and its `/add-to-library` endpoint (see CLAUDE.md's "Learning" note — user-facing copy says
+  **Learning**, the API and identifiers stay `library`).
 
 ⚠️ **This is iw's first and only write into the vocabulary system, and it does not contradict
 Q11.** iw still writes **no marks** and touches no mastery track (§ 1a). Adding a card creates

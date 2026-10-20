@@ -1,8 +1,7 @@
 import React from "react";
-import PageHeader, { HeaderIconButton, HeaderToggleChip } from "../../../components/PageHeader";
+import PageHeader, { HeaderIconButton } from "../../../components/PageHeader";
 import AudioModeChip from "../../../components/AudioModeChip";
 import type { LastMarkUndoSnapshot } from "../types";
-import type { Language } from "../../../types";
 
 interface FlashcardsLearnHeaderProps {
     selectedCategory: string | null;
@@ -11,11 +10,6 @@ interface FlashcardsLearnHeaderProps {
     isUndoing: boolean;
     onBack: () => void;
     onUndo: () => void;
-    // Deck language. Pinyin is a Chinese-only concept, so the quick pinyin
-    // toggle is rendered only for 'zh' (Spanish has no reading line).
-    language: Language;
-    showPinyin: boolean;
-    onTogglePinyin: () => void;
     // True while the icon-layout editor is open. The editor has its own draft state, so
     // a mark-undo during it is meaningless — the button greys out. The editor's own
     // TOGGLE is no longer here (it moved onto the card's rail), but its STATE still
@@ -30,16 +24,19 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
     isUndoing,
     onBack,
     onUndo,
-    language,
-    showPinyin,
-    onTogglePinyin,
     editMode,
 }) => {
     // Control placement: this header now holds EVERY control the flp has. Its
     // settings sheet was deleted on 2026-08-28 once its last row moved out — tone
     // color went to /settings → Display (a display pref, not a study control), and
     // the progress-category chip was removed from the card back altogether. What is
-    // left is genuinely per-session — pinyin and audio mode — so it belongs here.
+    // left is genuinely per-session — undo and audio mode — so it belongs here.
+    //
+    // The `pinyin` chip was REMOVED on 2026-10-18. Pinyin on the flp is no longer a
+    // learner toggle: it is fixed by the bar. The normal flp always shows it; the
+    // reading flp (`?world=reading`) hides it on the question face and shows it on the
+    // answer face (FlashCardSection → CardFace `readingMode`). See
+    // docs/READING_WRITING_CENTERS.md.
     //
     // Audio moved here on 2026-08-28, out of the sheet, when it stopped being a flp
     // pref and became the app-wide narration setting: muting the app on entering a
@@ -68,12 +65,6 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
                 // editor has its own draft state), so grey it out and disable it there.
                 disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing || editMode}
             />
-            {/* Pinyin visibility toggle — Chinese only. */}
-            {language === "zh" && (
-                <HeaderToggleChip className="pinyin-toggle-btn" active={showPinyin} onClick={onTogglePinyin}>
-                    pinyin
-                </HeaderToggleChip>
-            )}
             {/* Narration audio mode — every language; narration is not Chinese-only. */}
             <AudioModeChip className="flashcards-learn__audio-chip" />
         </>
@@ -83,8 +74,8 @@ const FlashcardsLearnHeader: React.FC<FlashcardsLearnHeaderProps> = ({
         <PageHeader
             title={selectedCategory ? `Learn: ${selectedCategory}` : "Learn"}
             onBack={onBack}
-            // Still the busiest header in the app — up to five controls beside a title
-            // that interpolates a deck name. The Learn artboard sets 18px for this.
+            // The title interpolates a deck name beside the right-slot controls. The
+            // Learn artboard sets 18px for this.
             size="dense"
             rightContent={rightItems}
         />

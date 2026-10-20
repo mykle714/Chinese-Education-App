@@ -38,7 +38,7 @@ Parent doc: [DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Mastery Centers".
 1. Header — back arrow + "Writing Center".
 2. **Word of the day** card (phase 3).
 3. **Card hand** — `FlpStudyHand bar="writing" variant="compact"`: Writing Challenge /
-   Review / Mix, each opening the writing flp (`?bar=writing`,
+   Review / Mix, each opening the writing flp (`?world=writing`,
    [WRITING_PRACTICE_REWORK.md § 3](./WRITING_PRACTICE_REWORK.md)). zh only.
 4. **Word practice grid** (phase 5) — the same 6×6 word grid as the Reading Center's,
    read through the writing bar; tapping a word opens `PracticeWritingPopup` on it.
@@ -161,21 +161,25 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
 ### Phase 4 — flp reading bar + Reading Center card hand ✅ (2026-10-02/03, no migration)
 - [x] The flp session has two INDEPENDENT axes (`server/contracts/studyMode.ts`):
       MODE (`?mode=review|challenge`, absent = Study Mix) picks the bands; BAR
-      (`?bar=reading`, absent = core) picks the bar those bands, the queue and the cooldown
+      (`?world=reading`, absent = core) picks the bar those bands, the queue and the cooldown
       are read off. (First built as a third mode, `mode=reading`, which could not express
       Reading Review / Reading Challenge — replaced 2026-10-03.)
 - [x] Server: every flp selection helper takes the bar (`fetchFlpCandidates`,
       `rankFlpEligible`, eligible / cooled / lend tiers, `getDistributedWorkingLoop`,
-      `getNextLibraryCardWithFallback`); `?bar=` parsed by `parseFlpBar` on the working-loop
-      endpoint, the mark body (`bar`) and `GET /api/onDeck/flpReadyCounts[?bar=reading]`
+      `getNextLibraryCardWithFallback`); `?world=` parsed by `parseFlpWorld` on the working-loop
+      endpoint, the mark body (`bar`) and `GET /api/onDeck/flpReadyCounts[?world=reading]`
       (`flpReadiness.ts` functions all take the bar). A reading refill prefers the READING
       band just left (`ApplyMarkResult.markedBarCategoryBefore`). zh only.
-- [x] Client flp: `?bar=reading` → `sideOneForCard(card, bar)` always `zh`,
+- [x] Client flp: `?world=reading` → `sideOneForCard(card, bar)` always `zh`,
       `markTypeForSideOne(_, bar)` always `reading`; `FlashCardSection.readingMode` drops
-      pinyin + speaker from the question face and forces pinyin on the answer face; flp
-      autoplay narration is suppressed for the session.
+      pinyin + speaker from the question face and shows pinyin on the answer face; flp
+      autoplay narration is suppressed for the session. `readingMode` is the **only**
+      input to flp pinyin: the flp header's `pinyin` chip was removed (2026-10-18), and
+      the flp no longer reads `useFlashcardLearnSettings().showPinyin`, so the normal
+      (core / writing) flp shows pinyin on every face. That shared pref still drives the
+      games that toggle it (Match Speed, Hydra, Bubble Match, Bucket Drop) and the cdps.
 - [x] The flp's back arrow returns to the Center that launched the bar:
-      `?bar=reading` → `/flashcards/reading`, `?bar=writing` → `/flashcards/writing`, core →
+      `?world=reading` → `/flashcards/reading`, `?world=writing` → `/flashcards/writing`, core →
       `/` (the fdp, Home tab) (`FlashcardsLearnPage` → `leaveSession`).
 - [x] **`FlpStudyHand`** — the fdp's hand (figures, Review gate, "resting" toast, launch
       URL) extracted from `FlashcardsDecksPage` and shared: fdp `bar="core"`, Reading
@@ -240,7 +244,7 @@ cache on arrival rather than a spinner:
 |---|---|---|
 | fdp Centers rail | rc / wc | the fdp's panel landed the library (above) |
 | Card / deck / collection page opened from a Center's sheet → Back | rc / wc | the Back snapshot carries the cards (`backRestore.ts`) |
-| rflp / wflp (`?bar=reading` / `?bar=writing`) → back arrow | rc / wc | the launching Center's panel landed the library; `FlashcardsLearnPage` also calls `warmMasteryCenter` on mount for a reload / deep link |
+| rflp / wflp (`?world=reading` / `?world=writing`) → back arrow | rc / wc | the launching Center's panel landed the library; `FlashcardsLearnPage` also calls `warmMasteryCenter` on mount for a reload / deep link |
 | Bubble Match, Word Search, Speed Reading, Bucket Drop, Memory Map (rc carousel) / Writing Grid (wc) → Back, "Back to …" | rc / wc | the launching Center's panel landed the library |
 
 What makes the round trip work is the seed age: `LIBRARY_SEED_MAX_AGE_MS` is **60 minutes**
@@ -377,7 +381,7 @@ Code: `centerPrefetch.ts` (`LIBRARY_SEED_MAX_AGE_MS`, `warmMasteryCenter`);
 Server: `database/migrations/169-create-daily-words.sql`; `server/contracts/wordOfTheDay.ts`,
 `studyMode.ts`, `studyMix.ts`; `server/dal/implementations/DailyWordDAL.ts` (+ interface);
 `server/services/WordOfTheDayService.ts`, `anthropicClient.ts`, `OnDeckVocabService.ts`
-(`MODE_CONFIGS`, the `bar` parameter), `flpReadiness.ts`, `FlashcardMarkService.ts` (`markedBarCategoryBefore`);
+(`MODE_CONFIGS`, the `world` parameter), `flpReadiness.ts`, `FlashcardMarkService.ts` (`markedBarCategoryBefore`);
 `server/controllers/WordOfTheDayController.ts`; `server/routes/dictionaryRoutes.ts`,
 `flashcardRoutes.ts`; `server/dal/setup.ts`.
 

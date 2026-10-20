@@ -53,13 +53,13 @@ export const HOW_TO_STUDY_STEPS: readonly ChallengeHelpStep[] = [
         shot: "study-shelf.png",
         shotDescription: "flashcards shelf, the challenge deck highlighted in the Challenges row",
         title: "Open the “{deck}” deck",
-        body: "Accepting created a deck holding exactly these nine cards. Tap it, then Learn Now — the queue is only the nine, and nothing else can leak in.",
+        body: "Accepting created a deck holding exactly these nine cards. Tap it, then “Study these cards” — the queue is only the nine, and nothing else can leak in.",
     },
     {
         heading: "Drill the whole set",
         shot: "study-learn.png",
         shotDescription: "the flashcards learn page mid-session, with the deck named in the header",
-        title: "Learn Now runs the nine in order",
+        title: "The session runs the nine in order",
         body: "Every mark you make counts normally — minute points, streak and your own mastery all move. Studying the set is ordinary study; it is only the words that were chosen for you.",
     },
     {

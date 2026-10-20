@@ -5,6 +5,7 @@ import { ConfirmationProvider } from "./contexts/ConfirmationContext";
 import { ThemeContextProvider } from "./contexts/ThemeContext";
 import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
 import BeginnerKeyboardProvider from "./features/beginnerKeyboard/BeginnerKeyboardProvider";
+import FocusEndedNoticeHost from "./features/focusMode/FocusEndedNoticeHost";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { APP_ROUTES, type AppRoute } from "./routes/registry";
@@ -79,6 +80,9 @@ function App() {
               <Layout>
                 <Routes>{APP_ROUTES.map(renderRoute)}</Routes>
               </Layout>
+              {/* Focus mode's "it turned itself off" popup, on whatever page is up
+                  (docs/FOCUS_MODE.md § 4). */}
+              <FocusEndedNoticeHost />
             </BeginnerKeyboardProvider>
           </ConfirmationProvider>
         </VocabularyUpdateProvider>

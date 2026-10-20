@@ -2,9 +2,9 @@ import {
   ALL_COLLECTION_ID,
   LEARN_NOW_COLLECTION_IDS,
   MASTERED_COLLECTION_IDS,
-  learnNowCollectionBar,
-  masteredCollectionBar,
-  type MasteryBarId,
+  learnNowCollectionWorld,
+  masteredCollectionWorld,
+  type MasteryWorldId,
 } from '../../contracts/wire.js';
 import { WRITING_MAX_CHARS } from '../../contracts/writingLevels.js';
 
@@ -51,7 +51,7 @@ export const VET_PHYSICAL_TABLES = ['vocabentries_zh', 'vocabentries_es'] as con
 // playable read that uses the strict filter refuses to hand a game the very cards
 // that were just provisioned for it.
 //
-//   'library'     — the user deliberately sorted this card into Learn Now. Theirs.
+//   'library'     — the user deliberately sorted this card into Learning. Theirs.
 //   'provisional' — the server auto-granted it so a game/flp could reach its
 //                   baseline. A real row that accepts marks, but not the user's
 //                   card until they sort it.
@@ -66,7 +66,7 @@ export const VET_PHYSICAL_TABLES = ['vocabentries_zh', 'vocabentries_es'] as con
 // The alias is a caller-supplied literal, never user input.
 
 /**
- * Cards the user deliberately sorted into Learn Now. Excludes provisional cards.
+ * Cards the user deliberately sorted into Learning. Excludes provisional cards.
  * This is the DEFAULT for any read that represents the user's own vocabulary.
  */
 export function vetSortedClause(alias = 've'): string {
@@ -108,7 +108,7 @@ export function vetProvisionalClause(alias = 've'): string {
  * pool is still `vetPlayableClause() AND vetDeckClause(...)`: the deck says WHICH
  * cards the learner picked, the bucket clause says which of them the surface is
  * allowed to serve. Dropping the bucket clause because a deck filter is present
- * would let a game serve a card the user has since removed from Learn Now.
+ * would let a game serve a card the user has since removed from Learning.
  *
  * EXISTS rather than a JOIN: `deck_cards` has at most one row per (deck, card), so
  * a join could not duplicate rows today — but a semi-join states the intent, keeps
@@ -203,8 +203,8 @@ export function typeCategoryExpr(markTypeParam: string, alias = 've'): string {
  * switch maps it to one of three fixed strings — an unrecognized value cannot fall
  * through to an interpolation.
  */
-export function barCategoryExpr(bar: MasteryBarId, alias = 've'): string {
-  switch (bar) {
+export function barCategoryExpr(world: MasteryWorldId, alias = 've'): string {
+  switch (world) {
     case 'reading':
       return typeCategoryExpr(`'reading'`, alias);
     case 'writing':
@@ -244,20 +244,20 @@ export const WRITING_FLP_WORD_CLAUSE =
  * WHERE fragment for "this card is Mastered in the given bar" — the membership test
  * behind each of the three built-in Mastered collections.
  */
-export function masteredBarClause(bar: MasteryBarId, alias = 've'): string {
-  return `${barCategoryExpr(bar, alias)} = 'Mastered'`;
+export function masteredBarClause(world: MasteryWorldId, alias = 've'): string {
+  return `${barCategoryExpr(world, alias)} = 'Mastered'`;
 }
 
 /**
  * WHERE fragment for "this card is NOT yet Mastered in the given bar" — the
- * membership test behind each of the three built-in Learn Now collections.
+ * membership test behind each of the three built-in Learning collections.
  *
  * The exact complement of `masteredBarClause` in the same bar, so the two sets a
  * Center shows ("still to do" / "finished") always partition that bar's library and
  * cannot both miss a card.
  */
-export function unmasteredBarClause(bar: MasteryBarId, alias = 've'): string {
-  return `${barCategoryExpr(bar, alias)} <> 'Mastered'`;
+export function unmasteredBarClause(world: MasteryWorldId, alias = 've'): string {
+  return `${barCategoryExpr(world, alias)} <> 'Mastered'`;
 }
 
 /**
@@ -303,15 +303,15 @@ export function parseBuiltinCollectionId(
  * an `AND …` position without a conditional.
  */
 export function builtinCollectionClause(collection: BuiltinCollectionId, alias = 've'): string {
-  const masteredBar = masteredCollectionBar(collection);
-  if (masteredBar) return masteredBarClause(masteredBar, alias);
+  const masteredWorld = masteredCollectionWorld(collection);
+  if (masteredWorld) return masteredBarClause(masteredWorld, alias);
 
   // 'learn-now*' — every sorted card whose named bar is unfinished. One id per bar
   // since the Mastery Centers shipped: the core set is "what is left to know", the
   // reading set "what is left to read", and a card is routinely in one and not the
   // other. `learn-now` (unqualified) is still the core bar.
-  const learnNowBar = learnNowCollectionBar(collection);
-  if (learnNowBar) return unmasteredBarClause(learnNowBar, alias);
+  const learnNowWorld = learnNowCollectionWorld(collection);
+  if (learnNowWorld) return unmasteredBarClause(learnNowWorld, alias);
 
   // 'all' — no further narrowing beyond the caller's own SORTED/user/language clauses.
   return 'TRUE';

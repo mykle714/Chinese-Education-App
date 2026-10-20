@@ -588,14 +588,14 @@ export type TypedMarkHistory = Partial<Record<MarkType, ReviewMark[]>>;
  *   writing — the writing track alone. Active only when `users.writingGoal`.
  *
  * Each bar bands independently, so one card can be Mastered up to three times.
- * A mark belongs to exactly ONE bar (see `barForMarkType`), so a single MARK can
+ * A mark belongs to exactly ONE bar (see `worldForMarkType`), so a single MARK can
  * never move two bars at once. A single review ACTION can, where a surface emits more
  * than one typed mark for it — Word Search's No-Pinyin find writes reading and
  * production as two separate marks (docs/WORD_SEARCH_GAME.md).
  */
-export type MasteryBarId = 'core' | 'reading' | 'writing';
+export type MasteryWorldId = 'core' | 'reading' | 'writing';
 
-export const MASTERY_BARS: readonly MasteryBarId[] = ['core', 'reading', 'writing'] as const;
+export const MASTERY_WORLDS: readonly MasteryWorldId[] = ['core', 'reading', 'writing'] as const;
 
 /**
  * The `?collection=` wire value for each bar's Mastered collection — one built-in
@@ -604,7 +604,7 @@ export const MASTERY_BARS: readonly MasteryBarId[] = ['core', 'reading', 'writin
  * `core` keeps the bare `mastered` value it has always had, so every existing link,
  * bookmark and in-flight client request keeps resolving to the same set.
  */
-export const MASTERED_COLLECTION_IDS: Record<MasteryBarId, string> = {
+export const MASTERED_COLLECTION_IDS: Record<MasteryWorldId, string> = {
   core: 'mastered',
   reading: 'mastered-reading',
   writing: 'mastered-writing',
@@ -616,23 +616,23 @@ export const MASTERED_COLLECTION_IDS: Record<MasteryBarId, string> = {
  * collection name may never silently narrow a round to some other set.
  */
 /** Narrow a raw string to a bar id, or null if it names none. */
-export function parseMasteryBar(raw: string | null | undefined): MasteryBarId | null {
-  return MASTERY_BARS.includes(raw as MasteryBarId) ? (raw as MasteryBarId) : null;
+export function parseMasteryWorld(raw: string | null | undefined): MasteryWorldId | null {
+  return MASTERY_WORLDS.includes(raw as MasteryWorldId) ? (raw as MasteryWorldId) : null;
 }
 
-export function masteredCollectionBar(raw: string | null | undefined): MasteryBarId | null {
+export function masteredCollectionWorld(raw: string | null | undefined): MasteryWorldId | null {
   if (!raw) return null;
-  for (const bar of MASTERY_BARS) {
-    if (MASTERED_COLLECTION_IDS[bar] === raw) return bar;
+  for (const world of MASTERY_WORLDS) {
+    if (MASTERED_COLLECTION_IDS[world] === raw) return world;
   }
   return null;
 }
 
 /**
- * The `?collection=` wire value for each bar's Learn Now collection — the mirror
+ * The `?collection=` wire value for each bar's Learning collection — the mirror
  * image of MASTERED_COLLECTION_IDS above.
  *
- * "Learn Now" means "sorted, and not yet finished IN THIS BAR", so it is per-bar for
+ * "Learning" means "sorted, and not yet finished IN THIS BAR", so it is per-bar for
  * exactly the reason Mastered is: a card whose recognition is done but whose reading
  * has never been touched is finished for one bar and outstanding for another. The
  * Reading/Writing Centers (docs/DECKS_FEATURE.md § "Mastery Centers") list the
@@ -641,20 +641,20 @@ export function masteredCollectionBar(raw: string | null | undefined): MasteryBa
  * `core` keeps the bare `learn-now` value it has always had, so existing links and
  * bookmarks keep resolving to the same set.
  */
-export const LEARN_NOW_COLLECTION_IDS: Record<MasteryBarId, string> = {
+export const LEARN_NOW_COLLECTION_IDS: Record<MasteryWorldId, string> = {
   core: 'learn-now',
   reading: 'learn-now-reading',
   writing: 'learn-now-writing',
 };
 
 /**
- * Which bar's Learn Now collection a `?collection=` value names, or null if it names
- * none. Same null-means-unrestricted rule as `masteredCollectionBar`.
+ * Which bar's Learning collection a `?collection=` value names, or null if it names
+ * none. Same null-means-unrestricted rule as `masteredCollectionWorld`.
  */
-export function learnNowCollectionBar(raw: string | null | undefined): MasteryBarId | null {
+export function learnNowCollectionWorld(raw: string | null | undefined): MasteryWorldId | null {
   if (!raw) return null;
-  for (const bar of MASTERY_BARS) {
-    if (LEARN_NOW_COLLECTION_IDS[bar] === raw) return bar;
+  for (const world of MASTERY_WORLDS) {
+    if (LEARN_NOW_COLLECTION_IDS[world] === raw) return world;
   }
   return null;
 }
@@ -687,7 +687,7 @@ export const ALL_COLLECTION_ID = 'all';
  * wire; Postgres stores them as jsonb strings, so unlike the old column pg hands
  * back strings rather than `Date`s on both sides.
  */
-export type MasteredAtByBar = Partial<Record<MasteryBarId, string | null>>;
+export type MasteredAtByBar = Partial<Record<MasteryWorldId, string | null>>;
 
 /** How many most-recent marks each type retains (the sliding-window size). */
 export const MARK_WINDOW_SIZE = 8;
@@ -937,7 +937,7 @@ export interface WordComparisonResult {
  * they just don't map to this stored type — see `DiscoverSortBucket`.) The client
  * previously declared `'library' | 'skip'` here, which was the drift.
  *
- * Presented to users as "Learn Now"; the identifier stays `library` because it is a
+ * Presented to users as "Learning"; the identifier stays `library` because it is a
  * backend contract (CLAUDE.md § Terminology).
  *
  * 'provisional' (migration 140) is a TEMPORARY card the server auto-granted so a
@@ -994,10 +994,10 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
 };
 
 /**
- * Learn Now supply thresholds — when the app nudges a learner toward Sort Cards.
- * Both are read against the CORE Learn Now count (Unfamiliar + Target + Comfortable,
+ * Learning supply thresholds — when the app nudges a learner toward Sort Cards.
+ * Both are read against the CORE Learning count (Unfamiliar + Target + Comfortable,
  * `builtinCollectionCount` → `learn-now`), the same figure the fdp tile and the sort
- * page's Learn Now pill show.
+ * page's Learning pill show.
  *
  *   LOW    — below this the fdp's Sort Cards tile glows ("card count low"). Tied to the flp baseline
  *            because that is the point where a Study Mix session starts being topped up
@@ -1539,7 +1539,7 @@ export interface VocabEntryBase {
   /**
    * When this card was added to the DECK currently being read (`deck_cards.addedAt`,
    * migration 141). Present ONLY on rows from `OnDeckVocabService.getDeckCards` —
-   * absent on Learn Now, Mastered, game pools and dictionary lookups, because deck
+   * absent on Learning, Mastered, game pools and dictionary lookups, because deck
    * membership is a property of a (deck, card) pair rather than of the card.
    * Powers the deck-only "Recently added to this deck" sort.
    */
@@ -1590,7 +1590,7 @@ export interface VocabEntryBase {
   /** Single-char zh only: multi-char words containing this character. Computed at runtime. */
   usedIn?: UsedInItem[] | null;
   /**
-   * Writing-flp cards only (`?bar=writing`), single-char zh: up to 2 words containing this
+   * Writing-flp cards only (`?world=writing`), single-char zh: up to 2 words containing this
    * character — the learner's own saved words first (no frequency gate), then everyday
    * dictionary words (frequencyScore 4–5). Feeds the hint bubbles above the writing card —
    * docs/WRITING_PRACTICE_REWORK.md § 3b. Absent on every other bar. Computed at runtime.
@@ -1603,7 +1603,7 @@ export interface VocabEntryBase {
   hasAudio?: boolean;
   /**
    * Whether the source det row is discoverable. Carried through dictEntryAdapter so the
-   * dictionary eip can hide "+ to Learn Now" for undiscoverable lookups. Absent on real
+   * dictionary eip can hide "+ to Learning" for undiscoverable lookups. Absent on real
    * vet rows (already in the library by definition).
    */
   discoverable?: boolean;

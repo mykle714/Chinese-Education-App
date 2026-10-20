@@ -73,7 +73,7 @@ export function deleteDeck(deckId: number): Promise<void> {
 }
 
 /**
- * A deck's cards, in the same enriched shape the Learn Now and Mastered
+ * A deck's cards, in the same enriched shape the Learning and Mastered
  * collections return — which is what lets one CollectionViewPage render all three.
  */
 export function fetchDeckCards(deckId: number): Promise<VocabEntry[]> {

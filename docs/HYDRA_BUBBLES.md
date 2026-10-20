@@ -244,7 +244,7 @@ a one-token swap (teal, the hue this used to name, left the palette in v2) — *
 split the tiers across two hues again.
 
 **Drain used to stay achromatic on purpose** — being the one property no mastery
-surface could collide with, since the four bands, Learn Now's gold (purple until 2026-09-01) and the
+surface could collide with, since the four bands, Learning's gold (purple until 2026-09-01) and the
 mastered-bar hues are all chromatic. Both ladders since have given that up knowingly: the
 blue one bought ~3.7x the tier separation with it, and the current yellow keeps drain
 chromatic while at least moving it OFF the "mastered" hue the blue drain wore.

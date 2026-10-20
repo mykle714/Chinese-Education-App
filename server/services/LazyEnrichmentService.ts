@@ -19,7 +19,7 @@ import { buildIncompletePredicate } from '../scripts/backfill/shared/lib/require
  * triggers, both routed through `triggerForWord`:
  *   - on-open : a validator opens a word's card-detail page (the eip drill-in link) →
  *               DictionaryController.lookupTerm.
- *   - on-sort : a validator sorts a word into Learn Now / Already-Learned →
+ *   - on-sort : a validator sorts a word into Learning / Already-Learned →
  *               StarterPacksService.sortCard.
  * `run-lazy-enrichment.js` remains only as a MANUAL/bulk backfill CLI, not a scheduler.
  *

@@ -126,7 +126,7 @@ function DictionaryPage() {
     // the Compare tool — opens as a TAB in the eip's word trail instead of a new page,
     // and closing the sheet drops the reader straight back on their results. Only this
     // host turns on the dictionary extras: Synonyms + Related and the `Write it` ·
-    // `Compare` rail at the bottom of the definition tab, and the Learn Now toggle
+    // `Compare` rail at the bottom of the definition tab, and the Learning toggle
     // (glowing "+" ⇄ "Added!") stacked under the header's speaker.
     //
     // The cdp route still exists — the saved-card cdp's drill-in falls back to it for a

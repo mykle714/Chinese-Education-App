@@ -32,7 +32,7 @@ import { SAFE_TOP } from "../../theme/safeArea";
 // SheetPanel, it ends HEADED: a real `PageHeader` titled "Quick Mark", no back chevron,
 // with the close cluster (minute-points flame + ✕) in its right slot. It is the Quick
 // Mark bulk-triage grid: a level chip (no Auto), the swipe legend, and
-// a wall of swipeable mini cards (left = Learn Now, right = Mastered), with the pack the
+// a wall of swipeable mini cards (left = Learning, right = Mastered), with the pack the
 // learner was looking at pinned first.
 //
 // THE MORPH. Opening, the panel grows UP out of the platform: a clip-path inset that

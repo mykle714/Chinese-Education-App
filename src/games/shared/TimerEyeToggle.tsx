@@ -5,7 +5,7 @@ import { COLORS } from "../../theme/colors";
 /** The eye's square tap target. Larger than its 19px glyph on purpose. */
 const EYE_TAP_PX = 32;
 /**
- * Gap from the strip's right edge to the eye's tap target. `GameHud` and `GameTimer`
+ * Gap from the strip's LEFT edge to the eye's tap target. `GameHud` and `GameTimer`
  * both pad 15px; the glyph sits ~6.5px inside its 32px target, so 8px here lands the
  * visible glyph on that same 15px line.
  */
@@ -29,9 +29,11 @@ interface TimerEyeToggleProps {
  * the clock with `visibility` (never unmounts it) so toggling mid-run doesn't reflow
  * the board under the player's finger.
  *
- *   shown  → pinned to the strip's right edge, leaving the clock dead-centre.
- *   hidden → the eye takes the centre the clock vacated.
- * The move is an instant jump — deliberately not animated.
+ * ALWAYS pinned to the strip's LEFT edge, in both states (2026-10-18). It used to sit
+ * on the right while the clock showed and jump to the centre when it was hidden; the
+ * fixed left position means the control never moves under the thumb, and it keeps the
+ * right edge clear of an flp game break's Leave button (docs/FLP_GAME_BREAKS.md § 7).
+ * The clock stays dead-centre either way.
  */
 export default function TimerEyeToggle({ shown, onToggle, className }: TimerEyeToggleProps) {
     return (
@@ -44,7 +46,7 @@ export default function TimerEyeToggle({ shown, onToggle, className }: TimerEyeT
             sx={{
                 position: "absolute",
                 top: "50%",
-                left: shown ? `calc(100% - ${EYE_EDGE_INSET_PX + EYE_TAP_PX}px)` : `calc(50% - ${EYE_TAP_PX / 2}px)`,
+                left: EYE_EDGE_INSET_PX,
                 transform: "translateY(-50%)",
                 width: EYE_TAP_PX,
                 height: EYE_TAP_PX,

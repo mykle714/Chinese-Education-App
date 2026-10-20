@@ -29,3 +29,12 @@ export const STUDY_MIX_QUOTAS: readonly BandQuota[] = [
   { category: 'Unfamiliar', count: 2 },
   { category: 'Target', count: 5 },
 ];
+
+/**
+ * Study Mix's top-up order: when a band's quota underfills, the shortfall is borrowed
+ * from these bands, in this order (Target first). Readers: the flp Mix working loop
+ * (`OnDeckVocabService` → `DEFAULT_LOOP_CONFIG`) and focus mode's daily snapshot
+ * (`FocusModeService` → `selectFocusSet`, docs/FOCUS_MODE.md § 3), which fills its 40 the
+ * same way the loop fills its 10.
+ */
+export const STUDY_MIX_FILL_ORDER: readonly FlashcardCategory[] = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];

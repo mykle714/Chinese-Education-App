@@ -16,7 +16,7 @@ import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
 
 /**
  * WritingCardFace — the CONTENT of one face of a writing-flp card
- * (`?bar=writing`, docs/WRITING_PRACTICE_REWORK.md § 3). The card itself — surface,
+ * (`?world=writing`, docs/WRITING_PRACTICE_REWORK.md § 3). The card itself — surface,
  * stack, flip, fly-out — is the ordinary flp card (FlashCardSection's `writingFace`);
  * this fills a face edge to edge (`CardFaceSide.fill`).
  *

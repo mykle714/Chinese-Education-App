@@ -1,7 +1,7 @@
 import type { TypedMarkHistory } from './wire.js';
 import { barCategory } from './mastery.js';
 import { barCooldownRemainingMs } from './cooldown.js';
-import type { FlpBar } from './studyMode.js';
+import type { FlpWorld } from './studyMode.js';
 
 /**
  * flpReadiness — "how many of these cards could an flp session actually serve me
@@ -55,20 +55,20 @@ export interface FlpReadinessCard {
 export function flpCooldownRemainingMs(
   typedMarkHistory: TypedMarkHistory | undefined,
   now: number,
-  bar: FlpBar = 'core',
+  world: FlpWorld = 'core',
   writingMastery?: number | null
 ): number {
-  return barCooldownRemainingMs(typedMarkHistory, bar, now, writingMastery);
+  return barCooldownRemainingMs(typedMarkHistory, world, now, writingMastery);
 }
 
 /** Whether an flp session could deal this card right now. */
 export function isFlpReady(
   typedMarkHistory: TypedMarkHistory | undefined,
   now: number,
-  bar: FlpBar = 'core',
+  world: FlpWorld = 'core',
   writingMastery?: number | null
 ): boolean {
-  return flpCooldownRemainingMs(typedMarkHistory, now, bar, writingMastery) === 0;
+  return flpCooldownRemainingMs(typedMarkHistory, now, world, writingMastery) === 0;
 }
 
 /**
@@ -81,7 +81,7 @@ export function isFlpReady(
 export function flpReadyCountsByBand(
   entries: readonly FlpReadinessCard[],
   now: number,
-  bar: FlpBar = 'core'
+  world: FlpWorld = 'core'
 ): Record<string, number> {
   const counts: Record<string, number> = {
     Unfamiliar: 0,
@@ -90,8 +90,8 @@ export function flpReadyCountsByBand(
     Mastered: 0,
   };
   for (const entry of entries) {
-    if (!isFlpReady(entry.typedMarkHistory, now, bar, entry.writingMastery)) continue;
-    const band = barCategory(entry.typedMarkHistory, bar, entry.writingMastery);
+    if (!isFlpReady(entry.typedMarkHistory, now, world, entry.writingMastery)) continue;
+    const band = barCategory(entry.typedMarkHistory, world, entry.writingMastery);
     counts[band] = (counts[band] ?? 0) + 1;
   }
   return counts;
@@ -110,12 +110,12 @@ export function nextFlpReadyMs(
   entries: readonly FlpReadinessCard[],
   bands: readonly string[],
   now: number,
-  bar: FlpBar = 'core'
+  world: FlpWorld = 'core'
 ): number | null {
   let soonest = Infinity;
   for (const entry of entries) {
-    if (!bands.includes(barCategory(entry.typedMarkHistory, bar, entry.writingMastery))) continue;
-    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, bar, entry.writingMastery);
+    if (!bands.includes(barCategory(entry.typedMarkHistory, world, entry.writingMastery))) continue;
+    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, world, entry.writingMastery);
     // 0 means this card is ready, so there is nothing to count down to.
     if (remaining > 0 && remaining < soonest) soonest = remaining;
   }

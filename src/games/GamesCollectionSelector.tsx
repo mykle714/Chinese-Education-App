@@ -37,7 +37,7 @@ import { SIZE, WEIGHT } from "../theme/scale";
  * decks AND generated Study Challenge decks).
  *
  * ── Deliberately narrower than the fdp ────────────────────────────────────────
- * The only built-in offered is All Cards. Learn Now and the Mastered collections
+ * The only built-in offered is All Cards. Learning and the Mastered collections
  * (core / reading / writing) were removed from this menu on 2026-10-03: the hub's
  * choice is "everything, or one deck I made / was given", and the mastery-derived
  * sets are browsed from the fdp and the Mastery Centers instead. Their routes and
@@ -221,7 +221,7 @@ const GamesCollectionSelector: React.FC<{ className?: string }> = ({ className }
 function refsEqual(a: CollectionRef, b: CollectionRef): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === "deck" && b.kind === "deck") return a.deckId === b.deckId;
-    if (a.kind === "mastered" && b.kind === "mastered") return a.bar === b.bar;
+    if (a.kind === "mastered" && b.kind === "mastered") return a.world === b.world;
     return true;
 }
 

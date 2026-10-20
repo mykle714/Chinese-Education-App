@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { MasteryBarId } from '../../contracts/wire.js';
+import type { MasteryWorldId } from '../../contracts/wire.js';
 import { CategoryPromotion, CategoryPromotionInput, VelocityBreakdown } from '../../types/velocity.js';
 
 /**
@@ -44,7 +44,7 @@ export interface ICategoryPromotionDAL {
   getVelocityByLanguage(
     userId: string,
     windowDays: number,
-    bars?: MasteryBarId[]
+    worlds?: MasteryWorldId[]
   ): Promise<Map<string, VelocityBreakdown>>;
 
   /**
@@ -53,7 +53,7 @@ export interface ICategoryPromotionDAL {
    *
    * Deliberately NOT bar-filtered: which bars count depends on each user's own goal
    * flags (migration 143), and this returns rows for several users at once, so the
-   * caller folds the buckets against each person's `activeBars`. Feeds the friends
+   * caller folds the buckets against each person's `activeWorlds`. Feeds the friends
    * leaderboard (docs/FRIENDS_FEATURE.md § Leaderboard).
    */
   getVelocityBuckets(userIds: string[], windowDays: number): Promise<VelocityBucket[]>;
@@ -63,6 +63,6 @@ export interface ICategoryPromotionDAL {
 export interface VelocityBucket {
   userId: string;
   language: string;
-  bar: MasteryBarId;
+  world: MasteryWorldId;
   bandsClimbed: number;
 }

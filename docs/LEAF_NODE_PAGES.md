@@ -291,7 +291,7 @@ own-animation pages) are neither archetype.
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
-| `/flashcards/collection/:builtin` | `CollectionViewPage` | Node (Learn Now / Mastered / mastered-reading / mastered-writing — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)) |
+| `/flashcards/collection/:builtin` | `CollectionViewPage` | Node (Learning / Mastered / mastered-reading / mastered-writing — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)) |
 | `/flashcards/deck/:id` | `CollectionViewPage` | Node (a user-authored deck, addressed by numeric id) |
 | `/flashcards/mastered` | `MasteredRedirect` | Node (legacy path; `<Navigate replace>` to `/flashcards/collection/mastered`) |
 | `/friends` | `FriendsPage` | Node (Menu tab stays lit) |
@@ -395,7 +395,7 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   page IS the eip panel, mounted inline (see the table above), so the det's icon is not
   shown here. The panel's sense chip drives every tab (`selectedSenseIndex`, page state,
   reset on drill-in along with the tab); its speaker speaks the selected sense's reading.
-  The Learn Now toggle sits under the panel's speaker (`learnNow`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
+  The Learning toggle sits under the panel's speaker (`learnNow`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
   the **bottom of the definition tab**, under Synonyms + Related, through the panel's
   `definitionFooter` slot — there is no card for it to sit above.
   Reached from the Dictionary node, so
@@ -403,16 +403,16 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   and example-sentence segments drill into the cdp of the tapped word (the same drill-in
   the eip offers, except it navigates to a cdp instead of opening a nested eip tab).
   Every linked page is itself this read-only cdp, so read-only propagates recursively.
-  The one write affordance is the **Learn Now toggle** (discoverable entries only,
+  The one write affordance is the **Learning toggle** (discoverable entries only,
   signed-in users only), stacked **under the speaker**, left-justified with it, in the panel's entry header
   (2026-10-10; it used to sit in the page title bar). The SAME control rides in the
   Dictionary page's eip (`EipSheet` `showLearnNow`), where it tracks whichever word tab
   is showing:
-  - **Not in Learn Now** → a compact 24px **"+"** (`learn-now-toggle--add`) breathing the
+  - **Not in Learning** → a compact 24px **"+"** (`learn-now-toggle--add`) breathing the
     soft green halo from `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE`, 3.6s pulse;
     static at peak under reduced motion), the same "add cards" nudge the fdp's Sort Cards
     tile wears (DECKS_FEATURE.md § "Sort Cards tile"). Tap → `addToLibrary`.
-  - **In Learn Now** (bucket `'library'`) → a small greyed **"Added!"** pill
+  - **In Learning** (bucket `'library'`) → a small greyed **"Added!"** pill
     (`learn-now-toggle--added`: `COLORS.grey` fill, `COLORS.textFaint` text, the app's
     `COLORS.border` outline, no glow). Tap → `removeFromLibrary`, **no confirmation**:
     removal demotes the row to `'provisional'` rather than deleting it, so marks and deck

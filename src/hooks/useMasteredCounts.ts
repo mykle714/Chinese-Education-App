@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import { API_BASE_URL } from "../constants";
-import type { MasteryBarId } from "../utils/masteryCompute";
+import type { MasteryWorldId } from "../utils/masteryCompute";
 
 /**
  * How many cards the learner has mastered in EACH mastery bar (core / reading /
@@ -17,11 +17,11 @@ import type { MasteryBarId } from "../utils/masteryCompute";
  * number rather than triggering a refetch.
  */
 export function useMasteredCounts(): {
-    counts: Record<MasteryBarId, number>;
+    counts: Record<MasteryWorldId, number>;
     loaded: boolean;
 } {
     const { token, isAuthenticated } = useAuth();
-    const [counts, setCounts] = useState<Record<MasteryBarId, number>>({
+    const [counts, setCounts] = useState<Record<MasteryWorldId, number>>({
         core: 0,
         reading: 0,
         writing: 0,

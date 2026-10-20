@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Box, IconButton, Menu, Tooltip, Typography, ToggleButtonGroup, ToggleButton } from "@mui/material";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { sortBundles, sortLabel, type VocabSortKey } from "../../utils/vocabSort";
-import type { MasteryGoals, MasteryBarId } from "../../utils/masteryCompute";
+import type { MasteryGoals, MasteryWorldId } from "../../utils/masteryCompute";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
@@ -53,7 +53,7 @@ export interface CollectionSortControlProps {
      * that skill. Under a skill lens `allowPerSkillBars` is moot — the lens bar is
      * never filtered out by it.
      */
-    lens?: MasteryBarId;
+    lens?: MasteryWorldId;
     /**
      * Show the deck-only rows (currently "Date added", which reads `deckAddedAt` —
      * a field only the deck read selects). False on any collection where that field
@@ -98,7 +98,7 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
             if (bundle.deckOnly && !allowDeckOnly) return false;
             // Only meaningful under the CORE lens: a skill lens already offers exactly
             // one bar, and hiding it would leave the Center with no mastery row at all.
-            if (lens === "core" && bundle.bar && bundle.bar !== "core" && !allowPerSkillBars) return false;
+            if (lens === "core" && bundle.world && bundle.world !== "core" && !allowPerSkillBars) return false;
             return true;
         }),
         [language, goals, lens, allowDeckOnly, allowPerSkillBars]

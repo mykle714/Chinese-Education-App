@@ -64,6 +64,9 @@ import { SpeedReadingDAL } from './implementations/SpeedReadingDAL.js';
 import { SpeedReadingService } from '../services/SpeedReadingService.js';
 import { SpeedReadingController } from '../controllers/SpeedReadingController.js';
 import { MemoryMapDAL } from './implementations/MemoryMapDAL.js';
+import { FocusModeDAL } from './implementations/FocusModeDAL.js';
+import { FocusModeService } from '../services/FocusModeService.js';
+import { FocusModeController } from '../controllers/FocusModeController.js';
 import { MemoryMapService } from '../services/MemoryMapService.js';
 import { MemoryMapController } from '../controllers/MemoryMapController.js';
 import { LeaderboardService } from '../services/LeaderboardService.js';
@@ -237,8 +240,14 @@ const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 // Takes deckService as well: its game/flp endpoints accept an optional `?deck=`
 // restriction and must authorize that id before assembling a round.
+// Focus mode (docs/FOCUS_MODE.md): a per-world daily cap of 40 cards. Its own DAL; the
+// service is shared by its controller and by onDeckVocabController + flashcardRoutes,
+// which narrow every unrestricted flp/game round to the day's set.
+const focusModeDAL = new FocusModeDAL();
+const focusModeService = new FocusModeService(focusModeDAL);
+const focusModeController = new FocusModeController(focusModeService);
 const onDeckVocabController = new OnDeckVocabController(
-  onDeckVocabService, provisionalCardService, deckService, studyChallengeService
+  onDeckVocabService, provisionalCardService, deckService, studyChallengeService, focusModeService
 );
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
@@ -322,6 +331,8 @@ const immersiveWorldService = new ImmersiveWorldService(
 const immersiveWorldRuntimeController = new ImmersiveWorldRuntimeController(immersiveWorldService);
 
 export {
+  focusModeService,
+  focusModeController,
   userDAL,
   refreshTokenDAL,
   vocabEntryDAL,

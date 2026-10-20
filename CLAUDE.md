@@ -50,16 +50,20 @@ deip = dictionary eip
 si = soft introduction
 
 
-## Terminology: "Learn Now" cards
+## Terminology: "Learning" cards (and "Learn Now")
 
-The `'library'` starter-pack bucket is presented to users as **"Learn Now"** cards
-(renamed from "Library"). This rename is **front-end visible text only** — all
-internal identifiers keep the `library` name: the `StarterPackBucket` value
-`'library'`, API endpoint paths (`/add-to-library`, `/non-mastered-library-cards`,
-etc.), variable names (`onAddToLibrary`, `totalLibraryCards`), CSS class names
+The `'library'` starter-pack bucket AND the `learn-now` built-in collection are
+presented to users as **"Learning"** (renamed from "Learn Now" 2026-10-20, which was
+itself renamed from "Library"). This is **front-end visible text only** — internal
+identifiers keep `library` / `learn-now`: the `StarterPackBucket` value `'library'`,
+API endpoint paths (`/add-to-library`, `/non-mastered-library-cards`, etc.), variable
+names (`onAddToLibrary`, `totalLibraryCards`), CSS class names
 (`flashcards-decks__library-*`), and the `'already-in-library'` API status are all
-unchanged because they are backend contracts. When adding new user-facing copy for
-this bucket, write "Learn Now"; when touching code/API, keep "library".
+unchanged because they are backend contracts. New user-facing copy for this
+bucket/collection says "Learning"; code/API keeps `library` / `learn-now`.
+
+**"Learn Now"** now means the learner's OFF-COOLDOWN cards (all four utcm bands), used
+only by the Deck Tower's tower deck ([docs/DECK_TOWER.md](./docs/DECK_TOWER.md)).
 
 ## Night Market Coordinate System
 → Moved to the Coordinate System section of [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md) — asset coordinates are always isometric grid units (isoX, isoY); assets live in `src/assets/` (not `public/assets/`).

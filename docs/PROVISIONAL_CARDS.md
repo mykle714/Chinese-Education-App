@@ -9,7 +9,7 @@
 > **No game and no flashcards learn page may ever refuse to start because the learner
 > does not have enough cards.**
 
-This is a hard rule, not a goal. Every surface that used to say *"You need 20 Learn Now
+This is a hard rule, not a goal. Every surface that used to say *"You need 20 Learning
 cards to play — you have 3"* now says nothing at all: the server quietly **lends** the
 learner the cards they are missing and the round starts.
 
@@ -30,6 +30,12 @@ must clear — and they live in exactly one place:
 
 The only entry conditions that remain anywhere are the ones no amount of lending can
 fix: **being signed out**, and **Word Search being Chinese-only**.
+
+**One deliberate exception: focus mode** ([FOCUS_MODE.md](./FOCUS_MODE.md) § 4). A world the
+learner has put in focus mode serves only that day's remaining focus cards, below the
+baseline if need be, and never lends: the focused round rides the collection slot
+(`CollectionFilter` `{ kind: 'focus' }`), so every lend tier's `!collection` gate skips it.
+From a menu, a game the set cannot fill is refused with a popup; in the flp, a break skips it.
 
 ---
 
@@ -638,7 +644,7 @@ has nothing on-mode however many cards we lend them.
 
 Rather than block Review for everyone who hasn't got a card comfortable yet, a run with
 nothing on-mode **widens its fallback order** to all four buckets for that run only
-(`relaxed` in `MatchSpeedPage.tsx`). The mode's weights are untouched, so once real
+(`relaxed` in `MatchSpeedStage.tsx`). The mode's weights are untouched, so once real
 on-mode cards exist it plays exactly as designed.
 
 ### The same asymmetry on flp
@@ -776,12 +782,12 @@ earned in a game. It now branches, atomically, in one CTE:
 
 "Has marks" is *any* `typedMarkHistory` track being non-empty.
 
-### Removing from Learn Now demotes (dictionary eip toggle + vet cdp delete)
+### Removing from Learning demotes (dictionary eip toggle + vet cdp delete)
 
 Both the dictionary eip's "Added!" toggle (`LearnNowToggle` + `useLearnNowToggle`, on the
 Dictionary page's eip and the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
-confirmation) remove a word from Learn Now by setting a `'library'` row's bucket to `'provisional'` —
+confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
 its history and deck memberships; `vetSortedClause()` reads stop seeing it, and a re-add
 via `addToLibrary` promotes it back in place. Because it is now an ordinary held

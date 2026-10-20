@@ -1,7 +1,7 @@
 // Shared color tokens for a card's progress category (FlashcardCategory) and the
 // built-in collections. One source for MiniVocabCard, the cdp's MasteryWindow, the
 // Account bucket spines and the fdp collection tiles.
-import type { MasteryBarId } from "../../server/contracts/wire";
+import type { MasteryWorldId } from "../../server/contracts/wire";
 import { COLORS, RAMP, type RampHue } from "../theme/colors";
 // ⚠️ SHELF SYSTEM v2 (docs/SHELF_REDESIGN.md § A1b). Two things moved here:
 //   1. TARGET IS YELLOW. Artboard 18 paints the Target band pill `--yelK` and its cells
@@ -97,16 +97,16 @@ export const BAND_COLORS: Record<string, { main: string; accent: string }> = {
 };
 
 /**
- * "Learn Now" — the cards still being learned. A COLLECTION, not a band, drawn on the
- * fdp's LibraryDuo as a SURFACE card (artboard 2: "Surface: … Learn Now").
+ * "Learning" — the cards still being learned. A COLLECTION, not a band, drawn on the
+ * fdp's LibraryDuo as a SURFACE card (artboard 2: "Surface: … Learning").
  *
  * Gold `--yel`, the hue the fdp's Study Mix card carries — Study Mix draws from exactly
  * this set of cards, so the two share a colour on purpose (2026-09-01).
  *
  * ⚠️ OPEN COLLISION (v2): Target is ALSO yellow now. The design resolves it by drawing
- * Learn Now purple (artboard 2's duo is `--pur`); the user kept Learn Now yellow on
+ * Learning purple (artboard 2's duo is `--pur`); the user kept Learning yellow on
  * 2026-09-23 and moved Target to yellow, so yellow means both "Target band" (pills,
- * cells) and "Learn Now / Study Mix" (fdp cards). Tracked in docs/SHELF_REDESIGN.md
+ * cells) and "Learning / Study Mix" (fdp cards). Tracked in docs/SHELF_REDESIGN.md
  * § A1b; switching is this one constant.
  *
  * The HUE is exported, not only the pair, because a collection tile needs more than
@@ -130,20 +130,20 @@ export const LEARN_NOW_COLORS = { main: RAMP[LEARN_NOW_HUE].surface, accent: RAM
  * band tile sits beside the Mastered tile, so the collision is latent (as reading's red
  * vs Unfamiliar was before it).
  */
-export const MASTERY_BAR_HUES: Record<MasteryBarId, RampHue> = {
+export const MASTERY_BAR_HUES: Record<MasteryWorldId, RampHue> = {
     core: "blu",
     reading: "grn",
     writing: "pur",
 };
 
 /** The Mastered section is a SURFACE (artboard 2: "Surface: … Mastered section"). */
-export const MASTERY_BAR_COLORS: Record<MasteryBarId, { main: string; accent: string }> =
+export const MASTERY_BAR_COLORS: Record<MasteryWorldId, { main: string; accent: string }> =
     Object.fromEntries(
-        (Object.keys(MASTERY_BAR_HUES) as MasteryBarId[]).map((bar) => {
-            const hue = RAMP[MASTERY_BAR_HUES[bar]];
-            return [bar, { main: hue.surface, accent: hue.tint }];
+        (Object.keys(MASTERY_BAR_HUES) as MasteryWorldId[]).map((world) => {
+            const hue = RAMP[MASTERY_BAR_HUES[world]];
+            return [world, { main: hue.surface, accent: hue.tint }];
         })
-    ) as Record<MasteryBarId, { main: string; accent: string }>;
+    ) as Record<MasteryWorldId, { main: string; accent: string }>;
 
 /** Maps a card's progress category to its SURFACE colour, falling back to grey. */
 export const getCategoryColor = (category?: string): string =>

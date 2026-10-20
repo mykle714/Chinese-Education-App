@@ -19,7 +19,7 @@ import type { VocabEntry } from "../../types";
 
 // ── What this page is now ─────────────────────────────────────────────────────
 //
-// /decks used to BE the Learn Now card grid: it fetched every non-mastered library
+// /decks used to BE the Learning card grid: it fetched every non-mastered library
 // card and rendered them inline, with a search bar and a link row to the separate
 // Mastered page. Those cards moved to CollectionViewPage
 // (/flashcards/collection/learn-now), and the space they used became the DECK LIST
@@ -34,7 +34,7 @@ import type { VocabEntry } from "../../types";
 //                    artboards 2 / 2b). Always reachable without moving anything.
 //   SHEETS (front) — TWO modal pull-up panels, raised by the two pills sitting side
 //                    by side above the footer (see "The two pills" below):
-//                      Cards — the library duo (Learn Now / Mastered) over the whole
+//                      Cards — the library duo (Learning / Mastered) over the whole
 //                              card library as a searchable, sortable grid;
 //                      Decks — the SETS: Challenges and the user's own Decks.
 //                    Neither is on screen at rest. Both are the same component
@@ -279,7 +279,7 @@ const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraAc
                         }}
                     >
                         {/* The top rail — Center tiles + the Sort Cards tile, which
-                            glows while core Learn Now is low (DecksTopRail). */}
+                            glows while core Learning is low (DecksTopRail). */}
                         <DecksTopRail centers={centers} learnNowLow={learnNowLow} />
 
                         {/* The card hand — Challenge / Review / Study Mix on the CORE bar.
@@ -287,7 +287,7 @@ const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraAc
                             the Reading Center (which mounts it on the reading bar). */}
                         <FlpStudyHand
                             className="flashcards-decks__study-hand"
-                            bar="core"
+                            world="core"
                             onLaunch={flpLaunch.launch}
                             shaking={flpLaunch.phase === "loading"}
                         />

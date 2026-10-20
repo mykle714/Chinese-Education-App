@@ -9,7 +9,7 @@ import { resolveCardColor } from "../utils/cardColor";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import type { VocabEntry } from "../types";
-import { masteryBar, type MasteryBarId } from "../utils/masteryCompute";
+import { masteryBar, type MasteryWorldId } from "../utils/masteryCompute";
 import { SHADOW } from "../theme/shadows";
 import { MINI_CARD_RING } from "./miniCardFace";
 
@@ -47,7 +47,7 @@ interface MiniVocabCardProps {
      * and writing progress onto pages that were not asking about them — the whole
      * reason the Centers exist. One surface, one question, one bar.
      */
-    lens?: MasteryBarId;
+    lens?: MasteryWorldId;
     // When set, the card plays the shared `cardPopIn` animation on mount, delayed
     // by this many ms. Callers (e.g. the /decks card previews) pass `index * step`
     // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere

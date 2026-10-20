@@ -4,7 +4,7 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
 import { resolveWriteLanguage } from '../utils/languageParam.js';
 import { VELOCITY_WINDOW_DAYS, VelocityResponse, emptyVelocityBreakdown } from '../types/velocity.js';
-import { activeBars } from '../utils/masteryCompute.js';
+import { activeWorlds } from '../utils/masteryCompute.js';
 
 /**
  * Velocity HTTP layer.
@@ -37,7 +37,7 @@ export class VelocityController {
       const byLanguageMap = await this.categoryPromotionDAL.getVelocityByLanguage(
         userId,
         VELOCITY_WINDOW_DAYS,
-        activeBars({
+        activeWorlds({
           reading: user?.readingGoal === true,
           writing: user?.writingGoal === true,
         })

@@ -94,7 +94,7 @@ export class VocabEntryService {
    *  - no row → INSERT with starterPackBucket='library' (an empty `typedMarkHistory`
    *    bands every bar at 'Unfamiliar', so no mastery state is written here)
    *  - row already in library → no-op
-   *  - row with any other bucket ('provisional' — lent, or removed from Learn Now —
+   *  - row with any other bucket ('provisional' — lent, or removed from Learning —
    *    or a stray NULL) → promoted to 'library' in place, marks kept (status='added').
    *    ('skip' rows no longer occur in vet — skips live in discover_skips since
    *    migration 80.)
@@ -130,14 +130,14 @@ export class VocabEntryService {
       return { status: 'already-in-library', vocabEntryId: existing.id };
     }
 
-    // Any non-library row — a provisional card (lent, or removed from Learn Now) or a
+    // Any non-library row — a provisional card (lent, or removed from Learning) or a
     // stray NULL bucket — is promoted in place, keeping its marks.
     await this.vocabEntryDAL.promoteRowToLibrary(existing.id, language);
     return { status: 'added', vocabEntryId: existing.id };
   }
 
   /**
-   * Is this word in the user's Learn Now (bucket 'library')? A 'provisional' (lent or
+   * Is this word in the user's Learning (bucket 'library')? A 'provisional' (lent or
    * removed) row and no row at all both read as "not in". Drives the dictionary cdp's
    * add/added toggle. Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
    */
@@ -151,11 +151,11 @@ export class VocabEntryService {
   }
 
   /**
-   * Remove a word from Learn Now WITHOUT deleting it: the row is demoted to
+   * Remove a word from Learning WITHOUT deleting it: the row is demoted to
    * 'provisional', so its marks, decks and progress survive and addToLibrary's
    * non-library branch promotes it back in place. Because nothing is lost, the client
    * asks for no confirmation. Backs both the dictionary cdp's "Added" toggle and the
-   * vet cdp's delete button — the only way a card leaves Learn Now (there is no hard
+   * vet cdp's delete button — the only way a card leaves Learning (there is no hard
    * delete endpoint).
    * Docs: docs/PROVISIONAL_CARDS.md, docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
    */

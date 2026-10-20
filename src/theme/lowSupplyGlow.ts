@@ -3,17 +3,17 @@ import { RAMP } from "./colors";
 
 /**
  * The "low supply" glow — a soft halo that breathes around a control while the
- * learner's core Learn Now count is short. ONE shape (size, blur, tempo) shared by the
+ * learner's core Learning count is short. ONE shape (size, blur, tempo) shared by the
  * nudge and its follow-through; each site picks its own hue:
  *
  *   • the fdp's Sort Cards tile (DecksTopRail.tsx), lit under LEARN_NOW_LOW_THRESHOLD —
  *     GREEN (`LOW_SUPPLY_GLOW_NUDGE`): an inviting "go here", not a warning;
- *   • the sort page's Learn Now tally pill (SortCardsPage.tsx → SortTallyValue), lit
+ *   • the sort page's Learning tally pill (SortCardsPage.tsx → SortTallyValue), lit
  *     while a learner who arrived short is still under LEARN_NOW_ENOUGH_THRESHOLD —
- *     YELLOW (`LOW_SUPPLY_GLOW_TALLY`), the Learn Now hue, so it reads as "fill this one";
- *   • the compact "+ to Learn Now" under the eip header's speaker (LearnNowToggle.tsx — the
+ *     YELLOW (`LOW_SUPPLY_GLOW_TALLY`), the Learning hue, so it reads as "fill this one";
+ *   • the compact "+ to Learning" under the eip header's speaker (LearnNowToggle.tsx — the
  *     Dictionary page's eip and the dictionary cdp), lit whenever it shows (only for a word
- *     not yet in Learn Now) — GREEN (`LOW_SUPPLY_GLOW_NUDGE`), the same "add cards" nudge.
+ *     not yet in Learning) — GREEN (`LOW_SUPPLY_GLOW_NUDGE`), the same "add cards" nudge.
  *
  * Kept SOFT on purpose: a pure blur with no crisp ring (a `0 0 0 Npx` ring read as a
  * hard outline), in the ramp's MID tier rather than the saturated mark — the
@@ -31,7 +31,7 @@ import { RAMP } from "./colors";
 export const LOW_SUPPLY_GLOW_PULSE_MS = 3600;
 /** The fdp Sort Cards tile's halo (and its "Low" badge fill). */
 export const LOW_SUPPLY_GLOW_NUDGE = RAMP.grn.mid;
-/** The sort page's Learn Now tally pill halo. */
+/** The sort page's Learning tally pill halo. */
 export const LOW_SUPPLY_GLOW_TALLY = RAMP.yel.mid;
 
 const withBase = (halo: string, base?: string) => (base ? `${base}, ${halo}` : halo);

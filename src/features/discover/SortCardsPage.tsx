@@ -483,7 +483,7 @@ const CommonalityScoreValue = styled(Typography)({
 
 // One end of the running library tally: how many cards the account holds in each of the
 // two destinations the user is dragging into. The two figures sit at OPPOSITE ends of
-// the level bar (Learn Now left, Mastered right) with the difficulty dropdown between
+// the level bar (Learning left, Mastered right) with the difficulty dropdown between
 // them, rather than as one cluster, so each reads as its own standing total instead of
 // the pair reading as a ratio.
 // Deliberately NOT in the NodePage header — that row is already full (audio chip /
@@ -508,7 +508,7 @@ const SortTallyColumn = styled(Box, {
 }));
 
 // The number, painted as a small pill in the SAME hue as its fdp filter tile
-// (features/flashcards/LibraryDuo.tsx): Learn Now = LEARN_NOW_HUE's surface, Mastered =
+// (features/flashcards/LibraryDuo.tsx): Learning = LEARN_NOW_HUE's surface, Mastered =
 // the core bar's MASTERY_BAR_HUES surface. Like the tile, the fill carries the colour and
 // the figure stays ink on a hairline border — the ramp surfaces are pastel, so tinting
 // the TEXT itself would be unreadable on paper. Taking the hue KEY (not a hex) means a
@@ -540,13 +540,13 @@ const tallyGulpKeyframes = keyframes`
     100% { transform: scale(1, 1); }
 `;
 
-// The Learn Now pill's low-supply glow (§ 5.3a): a yellow halo that breathes while a
+// The Learning pill's low-supply glow (§ 5.3a): a yellow halo that breathes while a
 // learner who ARRIVED under LEARN_NOW_ENOUGH_THRESHOLD is still under it. Reaching the
 // threshold simply drops the halo (the pill returns to plain — no "done" styling), and
 // an Undo back under it brings the glow back. Arriving at or above it, the pill is plain
 // for the whole visit. The halo's shape is shared with the fdp's Sort Cards tile
 // (theme/lowSupplyGlow.ts), which wears it in green. The
-// pill's own FILL stays the Learn Now hue; only the halo carries the signal.
+// pill's own FILL stays the Learning hue; only the halo carries the signal.
 const tallyLowGlowKeyframes = lowSupplyGlowKeyframes(LOW_SUPPLY_GLOW_TALLY);
 
 const SortTallyValue = styled(Typography, {
@@ -1099,13 +1099,13 @@ const SortCardsPage: React.FC = () => {
 
     const buckets = useMemo<BucketZone[]>(() => [
         // Coloured as the COLLECTION each bucket feeds, exactly as the fdp's filter tiles
-        // (LibraryDuo) paint those collections: LEARN_NOW_COLORS for Learn Now and the
+        // (LibraryDuo) paint those collections: LEARN_NOW_COLORS for Learning and the
         // core bar's MASTERY_BAR_COLORS for Mastered (the SURFACE tier). The
         // level-bar tally above uses the same hues, so a bucket, its running count and
         // the fdp tile it fills are one colour. (Previously the band pair —
-        // BAND_COLORS.Unfamiliar / .Mastered — which made Learn Now red here but yellow
+        // BAND_COLORS.Unfamiliar / .Mastered — which made Learning red here but yellow
         // on the fdp.)
-        { id: "library", label: "Learn Now", mainColor: LEARN_NOW_COLORS.main },
+        { id: "library", label: "Learning", mainColor: LEARN_NOW_COLORS.main },
         { id: "already-learned", label: "Already Learned", mainColor: MASTERY_BAR_COLORS.core.main },
     ], []);
 
@@ -1226,7 +1226,7 @@ const SortCardsPage: React.FC = () => {
     // Both drop targets persist as starterPackBucket = 'library' (see
     // StarterPacksService.sortCard) — what separates them is that "Already Learned"
     // also writes a perfect 8/8 typed history, which resolves the row's utcm category
-    // to Mastered. So "Learn Now" here means the still-being-learned part of the
+    // to Mastered. So "Learning" here means the still-being-learned part of the
     // library (everything except Mastered), not the library total the decks page shows.
     const learnNowCount = useMemo(
         () =>
@@ -1238,7 +1238,7 @@ const SortCardsPage: React.FC = () => {
     );
     const masteredCount = (categoryCounts["Mastered"] ?? 0) + tallyDelta.mastered;
 
-    // Did the learner ARRIVE short of Learn Now cards? Decided once, from the first
+    // Did the learner ARRIVE short of Learning cards? Decided once, from the first
     // successfully-loaded baseline (before any sort's delta), and never re-decided this
     // visit — so a learner who arrives with plenty never sees the glow, and one who
     // arrives short keeps seeing it (red until they reach the threshold) as they sort. null until the
@@ -1620,7 +1620,7 @@ const SortCardsPage: React.FC = () => {
     // then decide (from the ref) whether that completed the pack.
     // A completing pack contributes exactly ONE adaptive-leveling signal, derived from
     // every bucket sorted into it this session (docs §6). The rule is deliberately naive
-    // — no streaks, no thresholds: ANY "Add to Learn Now" card means the level was too
+    // — no streaks, no thresholds: ANY "Add to Learning" card means the level was too
     // hard (target − 1), and a pack sorted entirely as "Already Learned" means it was too
     // easy (target + 1). Anchored on the completing pack's OWN level (not the running
     // auto target), since the target may already have drifted from an earlier in-flight
@@ -2053,7 +2053,7 @@ const SortCardsPage: React.FC = () => {
         >
             <Box
                 className="sort-cards__level-bar"
-                // Three EQUAL columns (Learn Now | Difficulty | Mastered), each element
+                // Three EQUAL columns (Learning | Difficulty | Mastered), each element
                 // centred in its own column, so the three pills are evenly distributed
                 // across the bar and none shifts when a tally's digit count grows.
                 sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", justifyItems: "center", alignItems: "center", minHeight: 40, px: 2, py: 0.5 }}
@@ -2122,7 +2122,7 @@ const SortCardsPage: React.FC = () => {
                             >
                                 {learnNowCount}
                             </SortTallyValue>
-                            <SortTallyLabel className="sort-cards__tally-label">Learn Now</SortTallyLabel>
+                            <SortTallyLabel className="sort-cards__tally-label">Learning</SortTallyLabel>
                         </SortTallyColumn>
                         <SortTallyColumn
                             className="sort-cards__tally sort-cards__tally--mastered"

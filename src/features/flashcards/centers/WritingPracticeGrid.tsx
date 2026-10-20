@@ -49,7 +49,7 @@ const WritingPracticeGrid: React.FC<WritingPracticeGridProps> = ({ cards, langua
     useEffect(() => {
         if (built.current || cards.length === 0 || language !== "zh") return;
         built.current = true;
-        const pool = buildPool(cards, Date.now(), Math.random, { bar: "writing", maxLength: WRITING_MAX_CHARS });
+        const pool = buildPool(cards, Date.now(), Math.random, { world: "writing", maxLength: WRITING_MAX_CHARS });
         const layout = initialLayout(pool, Math.random, nextKey);
         setTiles(layout);
     }, [cards, language, nextKey]);

@@ -6,11 +6,11 @@
  * Three ideas, and deliberately no more:
  *
  *   All Cards   — every sorted card, mastered or not
- *   Learn Now   — the ones still being learned (sorted, that bar not Mastered)
+ *   Learning   — the ones still being learned (sorted, that bar not Mastered)
  *   Mastered    — the ones finished in that bar
  *
  * ── One list, for the lens-scoped surfaces ────────────────────────────────────
- *   `lensCollectionEntries(lens)` — ONE bar's two sets (Learn Now, Mastered).
+ *   `lensCollectionEntries(lens)` — ONE bar's two sets (Learning, Mastered).
  *       What a LENS-SCOPED surface renders: the fdp (core) and the two Mastery
  *       Centers (reading / writing). Always two tiles.
  *
@@ -23,7 +23,7 @@
  * membership changes under you on every mark. See the note in server/contracts/wire.ts.
  *
  * ── Where Mastered sits ───────────────────────────────────────────────────────
- * Every lens's Mastered tile is a Collections entry beside its Learn Now — a lens
+ * Every lens's Mastered tile is a Collections entry beside its Learning — a lens
  * shows one bar, so there is no separate Mastered section.
  *
  * ⚠️ `lensCollectionEntries` has no **All Cards** entry, because every panel lists
@@ -42,7 +42,7 @@
  *   src/features/flashcards/useDecksPanel.ts         (the lens's entry list)
  * See docs/DECKS_FEATURE.md § "Which collections exist" and docs/GAMES_FEATURE.md.
  */
-import type { MasteryBarId } from '../../utils/masteryCompute';
+import type { MasteryWorldId } from '../../utils/masteryCompute';
 import {
     LEARN_NOW_COLORS, LEARN_NOW_HUE, MASTERY_BAR_COLORS, MASTERY_BAR_HUES,
 } from '../../utils/categoryColors';
@@ -68,7 +68,7 @@ export interface BuiltinCollectionEntry {
 }
 
 /**
- * The built-in collections ONE LENS offers, in display order: that bar's Learn Now and
+ * The built-in collections ONE LENS offers, in display order: that bar's Learning and
  * that bar's Mastered — two tiles, whichever bar it is.
  *
  * This is the list the decks PANEL renders on all three of its hosts: the fdp (lens
@@ -85,9 +85,9 @@ export interface BuiltinCollectionEntry {
  * offers it as a playable set. Do not "fix" this by adding it back —
  * see docs/DECKS_FEATURE.md § "Which collections exist".
  */
-export function lensCollectionEntries(lens: MasteryBarId): BuiltinCollectionEntry[] {
-    const learnNow: CollectionRef = { kind: 'learn-now', bar: lens };
-    const mastered: CollectionRef = { kind: 'mastered', bar: lens };
+export function lensCollectionEntries(lens: MasteryWorldId): BuiltinCollectionEntry[] {
+    const learnNow: CollectionRef = { kind: 'learn-now', world: lens };
+    const mastered: CollectionRef = { kind: 'mastered', world: lens };
     return [
         {
             key: `learn-now-${lens}`,
@@ -122,7 +122,7 @@ export function lensCollectionEntries(lens: MasteryBarId): BuiltinCollectionEntr
 export function builtinCollectionCount(
     ref: CollectionRef,
     categoryCounts: Record<string, number>,
-    masteredCounts: Record<MasteryBarId, number>
+    masteredCounts: Record<MasteryWorldId, number>
 ): number | undefined {
     const band = (name: string) => categoryCounts[name] || 0;
     const unmastered = band('Unfamiliar') + band('Target') + band('Comfortable');
@@ -133,7 +133,7 @@ export function builtinCollectionCount(
         case 'learn-now':
             return unmastered;
         case 'mastered':
-            return masteredCounts[ref.bar];
+            return masteredCounts[ref.world];
         case 'deck':
             return undefined;
     }

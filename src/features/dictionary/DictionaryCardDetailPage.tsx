@@ -31,7 +31,7 @@ import { useCompareSheet } from "../../components/CompareSheet";
 // own), with the word-tools rail at the bottom of the definition tab. The page itself
 // does not scroll.
 //
-// Read-only means: NO edit toolbar / delete. The only write affordance is the "+ / Added!" Learn Now toggle (in the panel header, under the speaker) for discoverable entries (the word-tools
+// Read-only means: NO edit toolbar / delete. The only write affordance is the "+ / Added!" Learning toggle (in the panel header, under the speaker) for discoverable entries (the word-tools
 // rail's Practice Writing drill records no mark here — there is no vet row to mark).
 //
 // Drill-ins: breakdown/used-in rows and example-sentence segments open the cdp of
@@ -129,7 +129,7 @@ const DictionaryCardDetailPage: React.FC = () => {
     // exists to avoid). See docs/WORD_COMPARE_FEATURE.md.
     const { openCompare, compareSheet } = useCompareSheet();
 
-    // Learn Now toggle — the only write action on this read-only page, for discoverable
+    // Learning toggle — the only write action on this read-only page, for discoverable
     // entries. Lives in the panel header under the speaker (LearnNowToggle), the same
     // control the Dictionary page's eip shows; state + rules in useLearnNowToggle.
     const learnNow = useLearnNowToggle(entry, userLanguage);
@@ -180,7 +180,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             saved-card cdp. Every drill-in (breakdown row, used-in row,
                             example segment) navigates to that word's dictionary cdp rather
                             than opening a nested eip tab, so browsing stays read-only.
-                            The Learn Now toggle rides under the header speaker (learnNow).
+                            The Learning toggle rides under the header speaker (learnNow).
                             No headerDragBind — there is no sheet to resize. */}
                         <InfoCardPanelBody
                             currentEntry={entry}

@@ -160,7 +160,7 @@ migration 130, renamed by 145. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STRE
 | userId | uuid | NO | — | FK → `users(id)` CASCADE — the card's owner |
 | entryKey | text | NO | — | The headword; joins to `dictionaryentries_*.word1` |
 | language | varchar(10) | NO | `'zh'` / `'es'` | Redundant with the table but kept so the shared read path can union |
-| starterPackBucket | varchar(20) | NO | — | `'library'` (shown as **Learn Now**), `'provisional'` (lent — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)), etc. |
+| starterPackBucket | varchar(20) | NO | — | `'library'` (shown as **Learning**), `'provisional'` (lent — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)), etc. |
 | createdAt | timestamp | YES | `now()` | When the card entered the library |
 | typedMarkHistory | jsonb | NO | `'{}'` | The four typed mark tracks (Recognition / Production / Reading / Writing) that drive utcm — see [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | masteredAt | jsonb | YES | — | Per-bar mastery timestamps (migration 142) |
@@ -233,7 +233,7 @@ HSK levels, and the UI re-adds an HSK badge from them.
 - `GET /api/vocabEntries/search` - Search the user's cards
 - `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID
 - `POST /api/vocabEntries` - Create a new vocabulary entry
-- `POST /api/vocabEntries/addToLibrary` - Add a discoverable det word as a Learn Now card
+- `POST /api/vocabEntries/addToLibrary` - Add a discoverable det word as a Learning card
 - `POST /api/vocabEntries/import` - CSV import (multipart)
 - `POST /api/vocabEntries/byTokens` - Bulk lookup by headword tokens
 - `PUT /api/vocabEntries/:id` - Update a vocabulary entry

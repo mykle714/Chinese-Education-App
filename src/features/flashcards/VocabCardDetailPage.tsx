@@ -77,7 +77,7 @@ const VocabCardDetailPage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
     // The mastery LENS this card was opened under (docs/DECKS_FEATURE.md § "Mastery
-    // Centers"). `?bar=reading` means the learner came from the Reading Center, so the
+    // Centers"). `?world=reading` means the learner came from the Reading Center, so the
     // Mastery section below shows the reading bar alone; absent it reads `core` and the
     // section shows recognition + production alone. Exactly one bar either way — this
     // page answers the question the surface that opened it was asking.
@@ -319,12 +319,12 @@ const VocabCardDetailPage: React.FC = () => {
         return () => clearWritingDraft();
     }, []);
 
-    // "Delete" removes the card from Learn Now WITHOUT deleting it: the server demotes the
+    // "Delete" removes the card from Learning WITHOUT deleting it: the server demotes the
     // row to 'provisional', so its review history and deck memberships survive and
     // re-adding it (e.g. the dictionary cdp's "+") promotes it back in place. Nothing is
     // lost, so there is no confirmation dialog. Returns to the decks page, where every
     // list read (vetSortedClause) no longer shows the card.
-    // Docs: docs/PROVISIONAL_CARDS.md § "Removing from Learn Now demotes".
+    // Docs: docs/PROVISIONAL_CARDS.md § "Removing from Learning demotes".
     const handleDelete = async () => {
         if (!entry) return;
         try {

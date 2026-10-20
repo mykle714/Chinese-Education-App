@@ -40,7 +40,7 @@
  * Server counterpart: `CollectionFilter` in server/services/OnDeckVocabService.ts
  * and `resolveCollection` in server/controllers/OnDeckVocabController.ts. The wire
  * VALUES themselves are shared rather than mirrored — `MASTERED_COLLECTION_IDS` and
- * `masteredCollectionBar` live in server/contracts/wire.ts, so the two sides cannot
+ * `masteredCollectionWorld` live in server/contracts/wire.ts, so the two sides cannot
  * drift on the spelling of `mastered-reading`. See docs/DECKS_FEATURE.md.
  */
 import { RAMP, type RampHue } from "../../theme/colors";
@@ -48,10 +48,10 @@ import {
     ALL_COLLECTION_ID,
     LEARN_NOW_COLLECTION_IDS,
     MASTERED_COLLECTION_IDS,
-    learnNowCollectionBar,
-    masteredCollectionBar,
-    parseMasteryBar,
-    type MasteryBarId,
+    learnNowCollectionWorld,
+    masteredCollectionWorld,
+    parseMasteryWorld,
+    type MasteryWorldId,
 } from '../../../server/contracts/wire';
 import {
     BUILTIN_COLLECTION_IDS,
@@ -62,8 +62,8 @@ import {
 /** Which set of cards a page is showing / a round is drawn from. */
 export type CollectionRef =
     | { kind: 'all' }
-    | { kind: 'learn-now'; bar: MasteryBarId }
-    | { kind: 'mastered'; bar: MasteryBarId }
+    | { kind: 'learn-now'; world: MasteryWorldId }
+    | { kind: 'mastered'; world: MasteryWorldId }
     | { kind: 'deck'; deckId: number; name?: string };
 
 /**
@@ -88,12 +88,12 @@ export function parseBuiltinCollection(raw: string | undefined): BuiltinCollecti
 
 /** The CollectionRef a built-in id names. */
 export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
-    const masteredBar = masteredCollectionBar(id);
-    if (masteredBar) return { kind: 'mastered', bar: masteredBar };
+    const masteredWorld = masteredCollectionWorld(id);
+    if (masteredWorld) return { kind: 'mastered', world: masteredWorld };
     if (id === ALL_COLLECTION_ID) return { kind: 'all' };
-    // Anything else is a Learn Now id; an unrecognized one falls back to the core set,
+    // Anything else is a Learning id; an unrecognized one falls back to the core set,
     // which is the same "widest sensible answer" rule the server's parser follows.
-    return { kind: 'learn-now', bar: learnNowCollectionBar(id) ?? 'core' };
+    return { kind: 'learn-now', world: learnNowCollectionWorld(id) ?? 'core' };
 }
 
 /**
@@ -111,7 +111,7 @@ export function builtinCollectionRef(id: BuiltinCollection): CollectionRef {
  * names the longest one on the tile, which is exactly backwards for the set that
  * needs no qualifier.
  */
-const MASTERED_TITLES: Record<MasteryBarId, string> = {
+const MASTERED_TITLES: Record<MasteryWorldId, string> = {
     core: 'Mastered',
     reading: 'Mastered Reading',
     writing: 'Mastered Writing',
@@ -123,16 +123,17 @@ export function collectionTitle(ref: CollectionRef): string {
         case 'all':
             return 'All Cards';
         case 'learn-now':
-            // "Learn Now" is the user-facing name of the `library` bucket (CLAUDE.md
-            // § Terminology) — the internal identifier stays `library` everywhere.
+            // "Learning" is the user-facing name of the `library` bucket and this
+            // `learn-now` collection (CLAUDE.md § Terminology) — the internal
+            // identifiers stay `library` / `learn-now` everywhere.
             //
-            // All three bars share the ONE title: a Learn Now set is only ever shown
+            // All three bars share the ONE title: a Learning set is only ever shown
             // on the surface that is already about its bar (the fdp for core, a
             // Mastery Center for reading/writing), so the page's own name supplies
             // the qualifier and the tile would only repeat it.
-            return 'Learn Now';
+            return 'Learning';
         case 'mastered':
-            return MASTERED_TITLES[ref.bar];
+            return MASTERED_TITLES[ref.world];
         case 'deck':
             return ref.name ?? 'Deck';
     }
@@ -144,9 +145,9 @@ export function builtinCollectionId(ref: CollectionRef): BuiltinCollection | nul
         case 'all':
             return ALL_COLLECTION_ID;
         case 'learn-now':
-            return LEARN_NOW_COLLECTION_IDS[ref.bar];
+            return LEARN_NOW_COLLECTION_IDS[ref.world];
         case 'mastered':
-            return MASTERED_COLLECTION_IDS[ref.bar];
+            return MASTERED_COLLECTION_IDS[ref.world];
         case 'deck':
             return null;
     }
@@ -159,7 +160,7 @@ export function collectionPath(ref: CollectionRef): string {
 }
 
 /**
- * The `?bar=` LENS param (docs/DECKS_FEATURE.md § "Mastery Centers").
+ * The `?world=` LENS param (docs/DECKS_FEATURE.md § "Mastery Centers").
  *
  * A lens is not a collection: it does not change WHICH cards a page shows, only which
  * mastery bar that page reads them through. So it rides as its own param rather than
@@ -173,12 +174,12 @@ export function collectionPath(ref: CollectionRef): string {
  * opened from inside a Center.
  *
  * `core` is the default everywhere, so it is never written into a URL: a link with no
- * `?bar=` means the ordinary account-wide view, exactly as it did before Centers.
+ * `?world=` means the ordinary account-wide view, exactly as it did before Centers.
  */
-export const LENS_PARAM = 'bar';
+export const LENS_PARAM = 'world';
 
 /** Append the lens param to a path, unless it is the default (`core`). */
-export function withLens(path: string, lens: MasteryBarId): string {
+export function withLens(path: string, lens: MasteryWorldId): string {
     if (lens === 'core') return path;
     const [base, existing] = path.split('?');
     const search = new URLSearchParams(existing ?? '');
@@ -187,19 +188,19 @@ export function withLens(path: string, lens: MasteryBarId): string {
 }
 
 /** Read a lens off a URL's search params. Anything unrecognized means `core`. */
-export function lensFromSearch(search: URLSearchParams): MasteryBarId {
-    return parseMasteryBar(search.get(LENS_PARAM)) ?? 'core';
+export function lensFromSearch(search: URLSearchParams): MasteryWorldId {
+    return parseMasteryWorld(search.get(LENS_PARAM)) ?? 'core';
 }
 
 /**
  * The lens a COLLECTION implies on its own — a per-bar built-in set is always read
- * through its own bar, so `/flashcards/collection/mastered-reading` needs no `?bar=`.
+ * through its own bar, so `/flashcards/collection/mastered-reading` needs no `?world=`.
  * Returns null when the set implies nothing (All Cards, a deck), leaving the URL's
- * `?bar=` (or `core`) to decide.
+ * `?world=` (or `core`) to decide.
  */
-export function lensFromCollection(ref: CollectionRef | null): MasteryBarId | null {
+export function lensFromCollection(ref: CollectionRef | null): MasteryWorldId | null {
     if (!ref) return null;
-    if (ref.kind === 'learn-now' || ref.kind === 'mastered') return ref.bar;
+    if (ref.kind === 'learn-now' || ref.kind === 'mastered') return ref.world;
     return null;
 }
 
@@ -211,7 +212,7 @@ export function lensFromCollection(ref: CollectionRef | null): MasteryBarId | nu
  * for it would restate the query's own `vetPlayableClause()`.
  *
  * `learn-now` used to return nothing for that same reason, and that stopped being
- * true when `all` arrived: Learn Now is "sorted AND not core-mastered", which is a
+ * true when `all` arrived: Learning is "sorted AND not core-mastered", which is a
  * real narrowing, and a round launched from it was quietly including mastered cards
  * the page does not list. It now sends its id like any other narrowing collection.
  */

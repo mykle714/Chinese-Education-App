@@ -424,16 +424,16 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     //   stamp: string  → jsonb_set with create_if_missing, so the OTHER bars' crossings
     //                    are merged rather than replaced, and COALESCE seeds a null column
     //   stamp: null    → drop just this bar's key (undo retracting its own crossing)
-    // `bar` is a MasteryBarId union value, never client input, but it still travels as a
+    // `bar` is a MasteryWorldId union value, never client input, but it still travels as a
     // bound parameter rather than being spliced into the SQL.
     const params: any[] = [JSON.stringify(history), cardId, userId];
     let masteredAtSet = '';
     if (masteredAt && masteredAt.stamp !== null) {
       masteredAtSet = `, "masteredAt" = jsonb_set(COALESCE("masteredAt", '{}'::jsonb), $4::text[], to_jsonb($5::text), true)`;
-      params.push(`{${masteredAt.bar}}`, masteredAt.stamp);
+      params.push(`{${masteredAt.world}}`, masteredAt.stamp);
     } else if (masteredAt) {
       masteredAtSet = `, "masteredAt" = "masteredAt" - $4::text`;
-      params.push(masteredAt.bar);
+      params.push(masteredAt.world);
     }
 
     const sql = `

@@ -187,7 +187,7 @@ Returns all library cards (`starterPackBucket = 'library'`).
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/collectionCards`
-Returns the cards of one collection (Learn Now, a Mastered bar, or a deck), selected by
+Returns the cards of one collection (Learning, a Mastered bar, or a deck), selected by
 query param. This replaced the separate `masteredLibraryCards` /
 `non-mastered-library-cards` endpoints when collections were generalized — see
 [DECKS_FEATURE.md](./DECKS_FEATURE.md).

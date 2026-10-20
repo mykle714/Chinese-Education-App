@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
@@ -12,12 +12,12 @@ import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { FC_FONT } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
-import { useFlpEntrance, useFlpLeave } from "../flpLaunch";
+import { useFlpEntrance, useFlpLeave, playBreakReturn } from "../flpLaunch";
 import { warmMasteryCenter } from "../centerPrefetch";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
 import { useWorkingLoop, type CardDragControls, type StudyMode } from "./useWorkingLoop";
-import { parseStudyMode, parseFlpBar } from "../../../../server/contracts/studyMode";
+import { parseStudyMode, parseFlpWorld } from "../../../../server/contracts/studyMode";
 import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
 import { useToolbarInset } from "../../../cardIcons/editor/useToolbarInset";
 import { useCardSlotPadding } from "./useCardSlotPadding";
@@ -28,6 +28,8 @@ import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
+import { useGameBreak } from "./gameBreak/useGameBreak";
+import GameBreakArea from "./gameBreak/GameBreakArea";
 import { useWritingFlashcard } from "./useWritingFlashcard";
 import WritingUsedInBubbles, { WritingUsedInBand } from "./WritingUsedInBubbles";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
@@ -70,12 +72,12 @@ const FlashcardsLearnPage: React.FC = () => {
     // BAR — `reading` for the READING flp, launched from the Reading Center's study hand in
     // any of the three modes (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only front,
     // no narration before the flip, every mark a reading mark (flpFaceSteering).
-    const flpBar = parseFlpBar(searchParams.get('bar'));
-    const readingMode = flpBar === 'reading';
+    const flpWorld = parseFlpWorld(searchParams.get('world'));
+    const readingMode = flpWorld === 'reading';
     // `writing` — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the same card,
     // with its faces drawn by useWritingFlashcard (FlashCardSection's `writingFace`), and
     // marks are per character.
-    const writingMode = flpBar === 'writing';
+    const writingMode = flpWorld === 'writing';
     // The collection this session was launched from, for the empty-state copy below.
     // useWorkingLoop reads the same hook for its fetches; it is a pure derivation of
     // this page's own URL, so calling it twice cannot disagree.
@@ -89,16 +91,19 @@ const FlashcardsLearnPage: React.FC = () => {
     // and comes back empty on purpose. "Resting" is the honest word for that — the
     // learner has these cards, they just aren't due. See docs/PROVISIONAL_CARDS.md.
     const emptyMessage: string | undefined =
-        selectedMode === 'review' ? `No more ${flpBar === 'core' ? '' : `${flpBar} `}review cards remaining.`
-        : selectedMode === 'challenge' ? `No more ${flpBar === 'core' ? '' : `${flpBar} `}challenge cards remaining.`
+        selectedMode === 'review' ? `No more ${flpWorld === 'core' ? '' : `${flpWorld} `}review cards remaining.`
+        : selectedMode === 'challenge' ? `No more ${flpWorld === 'core' ? '' : `${flpWorld} `}challenge cards remaining.`
         : readingMode ? 'Every card is resting for reading. Check back later!'
         : writingMode ? 'Every card is resting for writing. Check back later!'
         : launchCollection?.kind === 'deck' ? 'Every card in this deck is resting. Check back later!'
         : launchCollection?.kind === 'mastered' ? 'Your mastered cards are all resting. Check back later!'
         : undefined;
 
-    const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
-    const { showPinyin, showPinyinColor } = learnSettings;
+    // Only tone colour is read from the shared learn settings. The shared `showPinyin`
+    // pref is deliberately NOT read here: flp pinyin is fixed by the bar (normal flp
+    // always shows it; the reading flp hides it on the question face) — see
+    // FlashCardSection's `readingMode`.
+    const { settings: { showPinyinColor } } = useFlashcardLearnSettings();
 
     const tts = useTTS();
 
@@ -111,6 +116,14 @@ const FlashcardsLearnPage: React.FC = () => {
         resetCard: () => {},
         restoreFlipped: () => {},
         resetDragPosition: () => {},
+    });
+
+    // Same latest-ref bridge for the game break's counter (docs/FLP_GAME_BREAKS.md § 1):
+    // useGameBreak needs the loop useWorkingLoop returns, and useWorkingLoop reports each
+    // dismiss / undo to it — so it is re-pointed after useGameBreak runs, below.
+    const breakCountersRef = useRef<{ dismissed: () => void; undone: () => void }>({
+        dismissed: () => {},
+        undone: () => {},
     });
 
     // Working-loop domain: fetch, card-stack state machine, mark/undo, side-one
@@ -133,7 +146,16 @@ const FlashcardsLearnPage: React.FC = () => {
         handleUndoLastMark,
         provisionalSeen,
         provisionalReviewed,
-    } = useWorkingLoop({ token, selectedCategory, mode: selectedMode, bar: flpBar, prefetch: tts.prefetch, cardDragRef });
+    } = useWorkingLoop({
+        token,
+        selectedCategory,
+        mode: selectedMode,
+        world: flpWorld,
+        prefetch: tts.prefetch,
+        cardDragRef,
+        onDismissed: () => breakCountersRef.current.dismissed(),
+        onUndone: () => breakCountersRef.current.undone(),
+    });
 
     const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
 
@@ -157,7 +179,7 @@ const FlashcardsLearnPage: React.FC = () => {
     // Keep the bridge ref pointing at the live drag controls every render.
     cardDragRef.current = { resetCard, restoreFlipped, resetDragPosition };
 
-    // Writing flp (`?bar=writing`): the same card, drawn with the writing face. The
+    // Writing flp (`?world=writing`): the same card, drawn with the writing face. The
     // learner never swipes — a tap on the front submits (or wiggles the card while a cell
     // is still empty), and a tap on its back sends it off.
     // See useWritingFlashcard and docs/WRITING_PRACTICE_REWORK.md § 3.
@@ -234,6 +256,22 @@ const FlashcardsLearnPage: React.FC = () => {
         pushAdvHistory,
     } = useCardIconEditor({ currentEntry, nextEntry });
 
+    // ── Game breaks (docs/FLP_GAME_BREAKS.md) ────────────────────────────────
+    // Every BREAK_INTERVAL cards the stack holds an empty slot instead of a card, and the
+    // dismiss of the card before it raises the game area. Not while the card editor is
+    // open: the editor locks the card, and a break would land on top of an unsaved draft.
+    const gameBreak = useGameBreak({
+        world: flpWorld,
+        language: (user?.selectedLanguage ?? "zh") as Language,
+        studyMode: selectedMode,
+        collection: launchCollection,
+        workingLoop,
+        disabled: editMode,
+    });
+    breakCountersRef.current = { dismissed: gameBreak.noteDismissed, undone: gameBreak.noteUndone };
+    // The game itself is up (or falling away): undo would edit a card the learner can't see.
+    const breakLocksUndo = gameBreak.phase === "playing" || gameBreak.phase === "leaving";
+
     // ── Leaving the session ──────────────────────────────────────────────────
     // flp accumulates lent cards for the whole session (the working loop refills as
     // the learner goes), so the offer to keep them can only be made on the way OUT.
@@ -251,8 +289,8 @@ const FlashcardsLearnPage: React.FC = () => {
     const userId = user?.id;
     const userLanguage = user?.selectedLanguage;
     useEffect(() => {
-        if (flpBar !== 'core' && userId !== undefined) warmMasteryCenter(userId, userLanguage);
-    }, [flpBar, userId, userLanguage]);
+        if (flpWorld !== 'core' && userId !== undefined) warmMasteryCenter(userId, userLanguage);
+    }, [flpWorld, userId, userLanguage]);
 
     /** Perform the real exit, closing the offer first if it is up. */
     // The ContentArea — the anchor for the fdp ⇄ flp choreography (its parent holds the
@@ -269,10 +307,10 @@ const FlashcardsLearnPage: React.FC = () => {
         // The reading and writing flps are launched from their Center's study hand, so
         // back returns there, plainly (the Centers are not choreographed); the core flp
         // returns to the fdp through the reverse of the hand's launch.
-        if (flpBar === 'reading') { navigate('/flashcards/reading'); return; }
-        if (flpBar === 'writing') { navigate('/flashcards/writing'); return; }
+        if (flpWorld === 'reading') { navigate('/flashcards/reading'); return; }
+        if (flpWorld === 'writing') { navigate('/flashcards/writing'); return; }
         leaveToDecks(() => navigate('/'));
-    }, [editMode, exitEdit, navigate, flpBar, leaveToDecks]);
+    }, [editMode, exitEdit, navigate, flpWorld, leaveToDecks]);
 
     /**
      * Back arrow. In edit mode it first cancels the edit (discarding the draft,
@@ -412,7 +450,7 @@ const FlashcardsLearnPage: React.FC = () => {
         setIsEicOpen(false);
     }, []);
 
-    // "+ Add to Learn Now" from the EIP header 2×2 action grid. The primary card
+    // "+ Add to Learning" from the EIP header 2×2 action grid. The primary card
     // is already in the library, but drilled-in words (breakdown chars / example
     // segments opened as entry tabs) may not be — InfoCardPanelBody gates the
     // button on `entry.discoverable`. Language comes from the entry itself so a
@@ -429,10 +467,10 @@ const FlashcardsLearnPage: React.FC = () => {
     const libraryKeyOf = (entry: VocabEntry) => `${entry.language}:${entry.entryKey}`;
     const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
         try {
-            // 'library' is the internal/API name for what the UI calls "Learn Now"
+            // 'library' is the internal/API name for what the UI calls "Learning"
             // (see CLAUDE.md § Terminology) — the endpoint path stays as-is.
             const data = await addToLibrary(entry.entryKey, entry.language);
-            setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learn Now' : 'Added to Learn Now');
+            setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learning' : 'Added to Learning');
             // Either status means the word is now in the library — hide its Add button.
             setAddedLibraryKeys((prev) => {
                 const next = new Set(prev);
@@ -441,7 +479,7 @@ const FlashcardsLearnPage: React.FC = () => {
             });
         } catch (err) {
             console.error('Failed to add to library:', err);
-            setAddToLibSnack('Failed to add to Learn Now');
+            setAddToLibSnack('Failed to add to Learning');
         }
         // No `token` dep: apiPost reads the header at call time (CLAUDE.md ⛔ rule).
     }, []);
@@ -531,6 +569,14 @@ const FlashcardsLearnPage: React.FC = () => {
     // for every other way in. Called above the early returns (rules of hooks).
     useFlpEntrance(contentAreaRef, !loading && !error);
 
+    // A break just ended (played or skipped): the next card rises back in with the word
+    // tools and More Info. A LAYOUT effect, on the commit that re-shows the stack, so the
+    // slot is already below the frame on the first painted frame (flpLaunch.ts).
+    useLayoutEffect(() => {
+        if (gameBreak.returnNonce === 0 || !contentAreaRef.current) return;
+        void playBreakReturn(contentAreaRef.current);
+    }, [gameBreak.returnNonce]);
+
     // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
     if (loading) {
@@ -601,16 +647,15 @@ const FlashcardsLearnPage: React.FC = () => {
             />
             <FlashcardsLearnHeader
                 selectedCategory={selectedCategory}
-                lastMarkUndoSnapshot={lastMarkUndoSnapshot}
+                // Undo stays live on the title card (it cancels the break and brings the
+                // last card back); it is locked once the game is playing.
+                lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
                 isAnimating={isAnimating}
                 isUndoing={isUndoing}
                 // In edit mode the back arrow first cancels the edit (discarding the
                 // draft, unpausing minute points), then performs the normal back nav.
                 onBack={handleBack}
                 onUndo={handleUndoLastMark}
-                language={(user?.selectedLanguage ?? "zh") as Language}
-                showPinyin={showPinyin}
-                onTogglePinyin={() => updateLearnSettings({ showPinyin: !showPinyin })}
                 editMode={editMode}
             />
             <ContentArea
@@ -740,7 +785,10 @@ const FlashcardsLearnPage: React.FC = () => {
                     slotRef={cardSlotRef}
                     pad={cardSlotPad}
                     currentEntry={editingCurrentEntry}
-                    nextEntry={displayNextEntry}
+                    // Nothing peeks behind the last card before a break, nor shows during
+                    // one — the break holds that position in the sequence.
+                    nextEntry={gameBreak.stackHold ? null : displayNextEntry}
+                    gameBreak={gameBreak.stackHold}
                     activeFrontSlot={activeFrontSlot}
                     flyOut={flyOut}
                     cardRef={cardRef}
@@ -750,7 +798,6 @@ const FlashcardsLearnPage: React.FC = () => {
                     isAnimating={isAnimating}
                     selectedCategory={selectedCategory}
                     emptyMessage={emptyMessage}
-                    showPinyin={showPinyin}
                     showPinyinColor={showPinyinColor}
                     readingMode={readingMode}
                     sideOneLanguage={currentSideOneLanguage}
@@ -798,7 +845,8 @@ const FlashcardsLearnPage: React.FC = () => {
                             foreignNode={editingCurrentEntry ? (
                                 <ChineseBlock
                                     entry={editingCurrentEntry}
-                                    showPinyin={showPinyin}
+                                    // Previews the answer face, which always shows pinyin.
+                                    showPinyin
                                     showPinyinColor={showPinyinColor}
                                     onSpeak={tts.speak}
                                     speakingKey={tts.speakingKey}
@@ -967,8 +1015,13 @@ const FlashcardsLearnPage: React.FC = () => {
                         />
                     );
                 })()}
+                {/* THE GAME BREAK — over the whole ContentArea, under the flp header, which
+                    stays (its Back still leaves the session). docs/FLP_GAME_BREAKS.md § 2. */}
+                {gameBreak.phase !== "cards" && (
+                    <GameBreakArea gameBreak={gameBreak} contentAreaRef={contentAreaRef} />
+                )}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
-                {/* "+ Add to Learn Now" result toast from the EIP header action grid.
+                {/* "+ Add to Learning" result toast from the EIP header action grid.
                     Neutral severity — "already in library" is an informational outcome,
                     not an error. */}
                 <Snackbar
@@ -979,7 +1032,7 @@ const FlashcardsLearnPage: React.FC = () => {
                     sx={{ zIndex: 2000 }}
                 >
                     <Alert
-                        severity={addToLibSnack === 'Failed to add to Learn Now' ? "error" : "success"}
+                        severity={addToLibSnack === 'Failed to add to Learning' ? "error" : "success"}
                         variant="filled"
                         onClose={() => setAddToLibSnack(null)}
                         sx={{ fontFamily: FC_FONT }}

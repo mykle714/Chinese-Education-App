@@ -249,7 +249,7 @@ const BubbleMatchPage: React.FC = () => {
             // Bubble Match baseline with temporary cards, so `sufficient` can only be
             // false when the dictionary itself ran dry — and even then a short board
             // plays fine (BubbleStage sizes itself off the pool length). The old
-            // "you need 20 Learn Now cards" block is gone for good; see
+            // "you need 20 Learning cards" block is gone for good; see
             // docs/PROVISIONAL_CARDS.md § Nothing blocks on card count.
 
             // Warm the TTS cache so in-game autoplay is instant (mirrors flp). Skipped

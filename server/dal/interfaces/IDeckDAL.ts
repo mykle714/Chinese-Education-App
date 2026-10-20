@@ -13,7 +13,7 @@ import type { DeckSummary } from '../../types/decks.js';
  * questions (`listDeckCardIds`, `listDeckIdsForCard`).
  *
  * ONE EXCEPTION: `cardCount` probes the vet by primary key for the member's
- * `starterPackBucket`, so a card removed from Learn Now (demoted to 'provisional',
+ * `starterPackBucket`, so a card removed from Learning (demoted to 'provisional',
  * memberships kept) stops counting. See DeckDAL's CARD_COUNT.
  *
  * NO POLICY HERE. "Is this deck yours", "is that a supported language", "does a

@@ -128,8 +128,8 @@ describe('queueArrivalAt', () => {
 });
 
 describe('rankCardQueue', () => {
-  const rank = (cards: any[], bar: 'core' | 'reading' = 'reading') =>
-    rankCardQueue(cards, NOW, { bar }).map((r) => r.card.id);
+  const rank = (cards: any[], world: 'core' | 'reading' = 'reading') =>
+    rankCardQueue(cards, NOW, { world }).map((r) => r.card.id);
 
   it('drops cards that are still cooling down', () => {
     const cards = [
@@ -195,7 +195,7 @@ describe('rankCardQueue', () => {
  * of minting words the learner never chose — and this is what orders them.
  */
 describe('rankCardQueueCooled', () => {
-  const flp = { bar: 'core' as const };
+  const flp = { world: 'core' as const };
   /** Core pbh 3 (Target, 12 h window), newest correct mark `agoMs` ago. */
   const target = (agoMs: number) => history({ recognition: [3, agoMs] });
 
@@ -241,7 +241,7 @@ describe('rankCardQueueCooled', () => {
       id: 1,
       typedMarkHistory: history({ reading: [3, MINUTE], recognition: [3, 2 * DAY] }),
     };
-    expect(rankCardQueueCooled([card], NOW, { bar: 'reading' }).map((c) => c.id)).toEqual([1]);
+    expect(rankCardQueueCooled([card], NOW, { world: 'reading' }).map((c) => c.id)).toEqual([1]);
     expect(rankCardQueueCooled([card], NOW, flp)).toEqual([]);
   });
 });

@@ -7,7 +7,7 @@ shadows. Code: `src/features/deckTower/iso/`. Import from its barrel,
 
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). Its only
 user so far is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
-(`floating`), `IsoCardStack`, `IsoFloorLabel`, `IsoPawn`, `IsoBird`, `IsoCloud` and `IsoWind`. **`IsoCarpet` currently has no user** (the
+(`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoBird`, `IsoCloud` and `IsoWind`. **`IsoCarpet` currently has no user** (the
 Deck Tower dropped its carpet on 2026-10-17); it is kept as part of the kit.
 
 **Location.** The kit sits under `features/deckTower/` because the Deck Tower is its only
@@ -40,12 +40,14 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Primitive | `IsoSolid.tsx` → `IsoSolid` | Paints one prism in three-tone shading. Takes ready-made geometry, so it needs no context |
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
-| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong` | The pawn's wander and startle, and depth-sorting a moving object among obstacles |
+| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
+| Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What birds, clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useBirdFlights.ts` → `useBirdFlights`, `BirdFlight`, `BirdSky` | Schedules the birds crossing the sky: speed, timing, wingbeat |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoFloorLabel.tsx`, `IsoPawn.tsx`, `IsoBird.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoWallSlider.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoBird.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowTone` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS` | The bob |
@@ -63,12 +65,25 @@ World +x runs down-right, +y down-left and +z up. Screen coordinates are
 - **`flatPath`.** A rounded rect lying flat at height z. Used for floors, decals and
   shadows.
 - **`faceTransform`.** Maps flat world-unit drawing onto a top face, so printed text lies
-  on it.
+  on it. `faceAffine` is the same map as an `Affine`, for composing.
 - **`frontContour`.** The visible front half of an outline. It is used for the card
   stack's seams.
 - **`insetRect` and `translateRect`.** Helpers that shrink, grow or slide a rect.
 - **`insideRoundedRect`.** Point-in-rounded-rect, corner arcs included. With `insetRect(rect, R)` it
   tests whether a circle of radius R fits in `rect`.
+- **Affine maps** (`Affine`, `affineFrom3`, `invertAffine`, `composeAffine`, `affineToSvg`).
+  A flat thing that tilts out of the XY plane is still flat, and the projection is affine,
+  so a tilted plane is redrawn with one SVG `matrix(…)` instead of re-projecting its paths.
+- **Hinges** (`Hinge`, `hingePoint`, `hingedOutline`, `hingedPrism`, `hingedPlaneTransform`,
+  `hingedPlaneAffine`). A door swinging about a world-y edge. A positive angle sends the +x
+  side down. `hingedPrism` is `prism` for the swung solid. `hingedPlaneTransform` carries
+  anything already drawn flat at height z onto the swung plane. It is exact for flat things
+  only. `hingedPlaneAffine` is the same map as an `Affine`, so it can be composed or
+  inverted. Used by `IsoPlatform`'s `hingeAngle` and IsoFloorLabel's raised plate.
+- **`wallAffine(proj, y, hinge)`.** The map from a flat drawing on a slab's front-left wall
+  (the vertical plane at world y, facing +y) to the screen. Drawing coordinates are
+  (world x, −world z), so text drawn in it stands upright and runs along +x. With a hinge it
+  swings with the slab. Used by `IsoWallSlider`.
 
 ## The scene
 
@@ -111,6 +126,10 @@ from what it falls on.
   `IsoCloud` are the only standing exceptions.
 - **Draw order.** Each object draws its shadow first, then itself, so it covers the hidden
   part of its own shadow.
+- **Tilted casters.** A caster that is not level (the platform swung open on its hinge)
+  passes `IsoShadow` a `solid` (its world vertices) instead of a footprint. Each vertex
+  slides by the same rule for its own height, and the shadow is the hull of where they
+  land. With every vertex at one height this is the footprint case.
 
 | Caster | Footprint | `casterZ` | Receiver |
 |---|---|---|---|
@@ -133,19 +152,39 @@ allow `BOB_HEIGHT` of headroom.
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, children }`. A slab whose top, the floor, is at
-z = 0 and which extends down to −thickness.
+`{ rect, thickness, ground, floating?, hingeAngle?, decals?, fittings?, children, tone?, bodyClassName?, bodyStyle? }`. A slab whose top,
+the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
+from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
+`ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
 
 It draws, in order:
 
 1. Its shadow on `ground`.
 2. The slab, with its top in the lighter rim tone.
 3. The floor, inset by `RIM_WIDTH`, leaving a thin bevel line. `RIM_WIDTH` is exported so a
-   scene can keep walkers (and their shadows) off the bevel — the Deck Tower's `PAWN_ROAM` is
-   `insetRect(PLATFORM, RIM_WIDTH)`.
-4. `children`: the carpets and objects on the floor.
+   scene can keep walkers (and their shadows) off the bevel — the Deck Tower's `TowerPlatformLayout.roam` (towerPlatforms.ts) is
+   `insetRect(platform, RIM_WIDTH)`.
+4. `decals`: flat things printed on the floor (floor labels).
+5. `fittings`: things mounted on the slab's walls (`IsoWallSlider`). They sit below the
+   floor on screen, so nothing standing on the floor is ever behind them. They get the open
+   hinge through `IsoDeckHingeContext`, as raised decals do, so they swing with their wall.
+6. `children`: the carpets and objects on the floor.
 
-With `floating`, steps 2–4 go through `IsoLevitate`.
+With `floating`, steps 2–6 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
+the group holding steps 2–6, so a scene can move the whole loaded slab on top of the bob
+(the Deck Tower's landing sink, [DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch).
+
+**Trap door.** `hingeAngle` (radians, 0 = shut) swings the slab open on its back-left
+top edge (`hingedPrism`).
+
+- **Floor and decals** swing with the slab through one `hingedPlaneTransform`. A decal with
+  height (a raised `IsoFloorLabel`) is not flat, so the open hinge is also handed to the
+  decals through `IsoDeckHingeContext` (`sceneContext.ts`), null while shut.
+- **Shade.** A veil of the tone's right-wall colour (`ISO.platform.right` for gold) darkens the top as it turns to face the way
+  the right walls do, up to `SWING_SHADE_MAX` (0.7).
+- **Shadow.** The ground shadow comes from `IsoShadow`'s `solid` form.
+- **Children do not swing.** They stand on the door, so making them fall is the scene's
+  job. See [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Trap door.
 
 ### IsoCarpet
 
@@ -167,7 +206,7 @@ The head is the low-y edge, because printed text runs along +x.
 
 ### IsoCardStack
 
-`{ rect, count, surface, progress?, label?, bandColor? }`. A deck of N cards (`bandColor` passes through to the top card). It is drawn as one body
+`{ rect, count, surface, progress?, label?, bandColor?, figure? }`. A deck of N cards (`bandColor` passes through to the top card). It is drawn as one body
 solid plus a full `IsoCard` on top, not as N solids, because a deck can run to hundreds of
 cards. Seams (`frontContour`) suggest the individual cards. `cardStackMetrics` sets the
 proportions:
@@ -183,21 +222,157 @@ proportions:
   sits where the top card meets the body; a base seam within a quarter card of it is
   dropped, so the arriving card never shows a doubled line.
 
-`progress` (0 → 1) grows the body upward and counts up the printed figure.
+`progress` (0 → 1) grows the body upward and counts up the printed figure. `figure`
+overrides the printed figure (shown as-is): a stack dropping onto another names the total
+it makes.
+
+`count` 0 draws nothing: the floor under it carries an `IsoCardImprint` (below).
+
+### IsoCardImprint
+
+`{ rect, surface }`. The imprint a card stack leaves on its floor, printed "0" / "cards". A
+floor decal (like `IsoFloorLabel`): the card rect flat at the floor's height (`flatPath`),
+in the floor's tone one shadow step down, its print one step darker again (`shadowTone`
+twice). It is NOT a shadow — nothing casts it — so it does not slide along the light and is
+not drawn with `IsoShadow`; it sits exactly under the bottom card. It uses a card face's
+figure-over-caption layout, but the caption is 1.3 units (a card face's is 0.5), because
+here it is the whole message.
+
+The caller draws it under the stack whenever the deck's count is known, not only for an
+empty deck (the Deck Tower hides it only while the count loads): the stack
+covers it, and anything that clears the floor (a collapse to 0, the trap door's fall, an
+empty deck) reveals it already in place. Code: `IsoCardImprint.tsx` → `IsoCardImprint`;
+used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`).
+
+### IsoCardRuns
+
+`{ rect, surface, plan, label?, bandColor?, figure }`. A card stack COLLAPSING: it plays one
+`CardCollapsePlan` (`cardCollapse.ts` → `planCardCollapse(cards, ghostCount)`) from mount,
+then stands exactly as an `IsoCardStack` of `plan.remaining` cards, so the caller swaps one in
+at `plan.durationMs`. Key it per plan: remounting restarts it.
+
+- **The plan.** `ghostCount` random cards are ghosts, grouped into chunks of at most
+  `GHOST_CHUNK_MAX` (3) consecutive cards; each chunk starts fading at a random time in the
+  first `GHOST_SPREAD_MS` (900 ms) and takes `GHOST_FADE_MS` (420). The kept cards form
+  RUNS. After a `GHOST_HOLD_MS` (160) beat with the gaps open, every run falls at once,
+  each by the ghosts beneath it, under `COLLAPSE_GRAVITY` (140 units/s²); a run with more
+  gaps under it lands later, so the landings ripple up. Each gives a `LAND_HOP` (0.08 units,
+  `LAND_HOP_MS` 160) hop as it lands. The top card (the lid with the print) is never a
+  ghost while any card is kept; it rides down on the top run.
+- **Drawing.** One solid per run and per ghost chunk, bottom to top, sharing ONE wall
+  gradient (every piece has the same footprint, so their front corners line up). Seams as
+  in `IsoCardStack`, plus one at each piece's own base above the floor.
+- **Floor shadow.** Cast by the bottom card. When that card is a ghost the shadow fades with
+  its chunk (the runs above are left floating) and comes back as the lowest run lands:
+  `shadowLandTiming(landAt)` fades it in over `SHADOW_LAND_MS` (120) starting on the impact,
+  never before. A floor-height shadow lies almost wholly under the stack (only its contact
+  sliver shows), so drawn any earlier it is just a dark patch over the floor's "0 cards"
+  imprint. When nothing is kept it stays gone. The Deck Tower's drop onto an empty floor uses the same timing.
+- **Ghost wireframes.** A ghost goes in two stages. Under each chunk's solid sits a light
+  wireframe (`ISO.ghostWire` at `WIRE_OPACITY` 0.6): every card's full outline, back edges
+  included, plus the chunk's silhouette. It does not lift with the ghost, so as the solid
+  fades its outline stays standing in the gap. It holds `GHOST_WIRE_HOLD_MS` (260), then
+  fades over `GHOST_WIRE_FADE_MS` (220) at the chunk's own `wireFadeDelayMs`, so the
+  wireframes go in the order the chunks were picked. `fallStartMs` waits for the last one
+  (plus the `GHOST_HOLD_MS` beat).
+- **All CSS.** Ghost fade (with a `GHOST_LIFT` 0.25-unit rise), the fall (each run drawn
+  where it lands, starting translated up by its drop on `cubic-bezier(1/3, 0, 2/3, 1/3)`,
+  which is exactly y = x², free fall from rest) and the hop are CSS animations timed by
+  the plan, so a several-hundred-card stack never re-renders while it collapses. Only the
+  top card's `figure` changes: the caller counts it down with `cardsShowingAt(plan, ms)`
+  (a chunk stops counting halfway through its fade).
+
+Depended on by the Deck Tower's Mix → Review switch.
 
 ### IsoFloorLabel
 
-`{ rect, surface, text, fontSize?, bandColor?, shaded? }`. A name plate printed flat on a floor: a
+`{ rect, surface, text, fontSize?, bandColor?, shaded?, raised? }`. A name plate printed flat on a floor: a
 rounded rect (`bandColor`, default `ISO.cardBand`) with ink text, the same treatment as a
-card's head band, mapped onto the surface with `flatPath` + `faceTransform`. Text runs
-along +x. Like a carpet it is part of its surface: zero height, no shadow, and pawns walk
-over it (it is not a `PawnRoam` obstacle). Draw it before anything standing on the floor,
+card's head band. Plate and text are drawn in world units inside one `faceTransform` at the
+plate's top. Text runs along +x. By default (`raised` 0) it is part of its surface like a carpet: zero height,
+no shadow, and pawns walk over it (it is not a `PawnRoam` obstacle).
+
+`raised` (0 → 1, briefly above 1 on a spring overshoot) stands the plate up as a thin slab
+of `RAISED_HEIGHT` (0.25 units, ~5 px at the Deck Tower's scale) so it reads as a button:
+an `IsoSolid` whose walls are the band shaded by the platform's own steps (`plateMaterial`:
+`shadeHex` 0.07 / 0.15 — the same flagged wall-tone divergence as the rest of the palette),
+plus an `IsoShadow` contact shadow whose opacity follows `raised`, so it fades as the plate
+sinks flush. It stays a floor decal at this height: pawns still walk over it.
+
+On an open trap door (`IsoDeckHingeContext` non-null) the platform's flat decal transform
+would squash the raised slab's walls into the door's plane. A raised plate there cancels
+that transform (`invertAffine` of the door's `hingedPlaneAffine` at the hinge height) and
+draws itself swung for real: walls by `hingedPrism`, its face by the door's
+`hingedPlaneAffine` at the face height composed with `faceAffine`. Its contact shadow is flat,
+so it stays under the platform's transform. The Deck Tower's door opens to at most 86° (its
+bounce swings back toward shut, never past), well short of the 3π/4 at which it would turn edge-on, so the inverse always exists. Draw it before anything standing on the floor,
 outside any depth sort. `shaded` draws it as it looks in shadow (plate and print each through
-`shadowTone`); pass that copy to a pawn's `decals` so the pawn's shadow darkens it.
+`shadowTone`, walls included); pass that copy, at the same `raised`, to a pawn's `decals` so
+the pawn's shadow darkens it. The shaded copy draws no contact shadow — the pawn's shadow
+already darkens that floor to the same tone.
+
+### IsoLever
+
+*Code: `src/features/deckTower/iso/IsoLever.tsx`, `iso/leverGeometry.ts` (`leverFootprint`,
+`LEVER_HOLE`). Used by the Deck Tower's focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5).*
+
+A floor lever standing in a square hatch. A cream base box (`ISO.leverBase`, card stock's
+tones) with a dark pivot slot on its top, a short, thick ink stick pivoting there in the world
+x–z plane, and a plain red ball (`ISO.leverKnob` = `redMk`, flat, no outline or highlight). The
+hatch is two trapdoor flaps hinged on the hole's two x edges plus a **lift**, a floor-coloured
+slab (`surface.color` with shaded sides) filling the hole that the lever stands on. Risen, the
+lift is flush and drawn as just its top, unclipped, slightly larger than the hole, in the
+floor's colour: the floor under a standing lever is unbroken, with no seam.
+
+Driven by three numbers the caller animates: `pull` (0 = leaning back toward −x, 1 = pulled
+toward the viewer, may overshoot), `sink` (0 = risen, lift flush; 1 = sunk below the floor;
+clamped to [0, 1], so the lift never rises proud of the floor) and `hatch` (0 = flaps shut
+flush, reading as a seamed floor tile; 1 = hanging open). Below-floor parts are hidden by
+clips: the lift always, and the lever while `sink > 0`, by the hole's opening swept up the
+screen; the flaps by the opening itself (a hanging near flap is hidden under the floor's front
+edge). Standing, the lever is unclipped, because the leaning ball overhangs the hole's column;
+the stick stands upright from a third of the way down so a sinking or rising ball stays inside
+the column. Its footprint is an obstacle among the standing things.
+
+⚠️ `ISO.leverBase.right` is derived with `shadeHex`, the same flagged divergence as the card
+stock's right wall.
+
+### IsoWallSlider
+
+`{ layout, wallTone, position, label, labelColor, dimmed?, hitPad? }`. A two-position slide
+switch on a slab's front-left wall with a name plate beside it. `layout`
+(`WallSliderLayout`: `wallY`, `z`, `slotX`, `slotW`, `labelX`, `labelW`) places it along the
+wall. A wall fitting: pass it to `IsoPlatform`'s `fittings`.
+
+- **Slot.** A groove printed through `wallAffine`, `shadeHex(wallTone, 0.12)` (the wall's
+  left tone a step darker — derived, like every wall tone ⚠️).
+- **Knob.** A cream (`ISO.card`) box standing 0.42 units out of the wall: an ordinary
+  `prism` whose footprint runs from the wall along +y, so it gets the three-tone shading.
+  `position` 0 is the slot's start (low x, upper-left), 1 its end. It is drawn at the start
+  and slid by a CSS `transform` along the wall's own x direction with a short springy
+  transition; on a swinging door the transition is dropped, because the slide vector turns
+  with the wall and a transition would lag it.
+- **Label.** A flat plate printed on the wall in `labelColor` shaded one left-wall step
+  (`shadeHex` 0.07, since it faces the way the left walls do), with ink text. `dimmed`
+  greys it out (`ISO.inertPlate` / `ISO.inertInk`): the switch is not in use.
+
+Purely visual. The caller wraps it in its own button; the transparent `iso-wall-slider__hit`
+path (padded by `hitPad`, 0.35) gives that wrapper a big enough target, since the wall is
+only ~25 px tall on a phone.
+
+### IsoSmokePuff
+
+`{ rect, z, side, delayMs? }`. The dust where something heavy lands: `PUFF_COUNT` (14) round
+white (`ISO.smoke`) puffs spaced evenly by arc length round the lander's footprint at height
+`z`, each swelling, drifting `PUFF_REACH` out and `PUFF_RISE` up, and fading over `PUFF_MS`
+(700). Drawn twice — `side="behind"` before the lander (the footprint's back half) and
+`side="front"` after it. Flat discs with no walls: a puff is gone in under a second and the
+cartoon wants soft round shapes. CSS-animated from mount after `delayMs`, so mount it ahead
+of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, onDepthRankChange?, decals? }`. A featureless ink
+`{ at, surface, startled?, roam?, startledBy?, alarmed?, onDepthRankChange?, decals?, entrance?, steps? }`. A featureless ink
 worker: a pill body and a ball head in screen space, standing at a projected world point.
 Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
@@ -215,6 +390,19 @@ the body about its feet), plus `decalShade` / `decalClip` / `decalAnchor` for th
 projected floor delta is the same as redrawing it there. React state changes only when
 an emote fires or the depth rank changes, so a walking pawn does not re-render the page.
 Under `prefers-reduced-motion` nothing runs and the pawn stands at `at`.
+
+**Entrance.** With `entrance: { animation, startAt }` (a `PawnEntranceCue`, read once on
+mount), the pawn ARRIVES instead of standing there from the start.
+
+- **Hidden until `startAt`.** `travel` is set to `visibility: hidden`, and it is hidden
+  from the first paint.
+- **Plays the timeline.** It runs the `PawnEntrance` (`pawnEntrances.ts`), writing
+  `hop`, `pose` and the shadow from each frame.
+- **Then idle.** It takes the idle wander's opening pause.
+- **Startles are dropped** mid-entrance.
+- **Timed by landing.** Entrances are scheduled by their landing: start at
+  `entranceStartFor(entrance, landAt)`. Remount the pawn (new key) to play another.
+  See [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances.
 
 **Idle: wander.** With `roam` (`PawnRoam { area, obstacles }`) it loops through pause →
 walk → land:
@@ -236,7 +424,25 @@ walk → land:
 - **Land.** On arrival it keeps stepping in place until its feet touch down, so it never
   drops out of mid-air.
 
-**Startle.** When `startled` turns true, from wherever it is:
+**Steps.** `steps` (`PawnStep[]`, `{ rect, height }`) are raised floor regions it walks
+ONTO, not around — e.g. a raised `IsoFloorLabel` at its current `raised · RAISED_HEIGHT`.
+While the foot centre is inside one (`usePawnMotion.ts` → `stepUnder`, rounded corners
+honoured; the highest wins on overlap), the `travel` slide is projected at that height, so
+body, shadow and the shaded-decal clip all sit on the step's top face (the decal anchor still
+undoes the whole slide, so the decals stay put). Crossing an edge eases the lift over
+`STEP_MS` (a quick hop up or down); on the same step the lift tracks the live height exactly,
+so a pawn on a pressed plate sinks with it and rides its spring back up. Heights are read
+from a latest-value ref, so passing a fresh array every render does not restart the loop.
+Known gap: a pawn standing on the floor just BEHIND a raised step is still drawn over it
+(steps are decals, outside the depth sort), so the step never hides its feet.
+
+**Alarm.** When `alarmed` turns true, only the startle's `!` bubble pops (emote
+`leanSign: 0`, so it sits straight over the head). The motion loop is untouched: no lean,
+no leap. The Deck Tower uses it on the pawn falling through the trap door.
+
+**Startle.** When `startled` turns true, from wherever it is (a pawn that MOUNTS with
+`startled` already true does not startle — only a change it watches counts;
+`usePawnMotion` seeds `wasStartled` with the mount value):
 
 1. **Look up.** The body snaps into a lean back (`LOOK_UP_LEAN_DEG` over `LEAN_MS`),
    which on a faceless pawn reads as looking up. It leans away from `startledBy` on
@@ -257,9 +463,14 @@ walk → land:
    over `RECOVER_MS`, and goes back to wandering.
 
 **Depth sorting.** A wandering pawn can be in front of or behind the things it walks
-around. `depthRankAmong(point, rects)` counts the rects the point stands in front of: an
-iso object is nearer the viewer than a box when it is past the box's far edge on +x or
-+y. `roam.obstacles` are given back-to-front, the pawn reports its rank through
+around. An iso object is nearer the viewer than a box when it is past the box's far edge
+on +x or +y. `roam.obstacles` are given back-to-front, and `depthRankAmong(point, rects)`
+returns the index of the FIRST rect the point stands behind (`rects.length` when it is in
+front of all of them). It is deliberately not a count of the rects it is in front of: a
+fixed back-to-front list is not a total order for every point (a pawn on the Deck Tower's
+back-left is behind the tower yet in front of the back-right lever, and a count of 1 drew it
+over the tower). Any slot respecting the rects it is behind is right, since the ones it is
+"wrongly" behind don't overlap it on screen. The pawn reports the slot through
 `onDepthRankChange` when it changes, and the caller renders the pawn after that many
 obstacles. Children must be keyed, so the reorder moves the pawn's DOM node instead of
 remounting it and losing its motion state.
@@ -418,20 +629,23 @@ The base colours are all `COLORS` tokens:
 | Role | `ISO` key | Token |
 |---|---|---|
 | Sky | `sky` | `bluMk` |
-| Platform | `platform` | `gld` |
+| Platform | `platform` | `gld` (any other hue through `platformTone(base)`, which applies the same wall / rim shading) |
 | Card top | `card.top` | `cardFace` |
 | Card walls and face panel | `card.left`, `cardPanel` | `cardBeige` |
 | Card head band, floor label plate (default; callers may pass `bandColor`) | `cardBand` | `bluMk` |
 | Cloud top | `cloud.top` | `white` |
 | Wind strokes | `wind` | `white` (at 0.7 opacity, `IsoWind` → `WIND_OPACITY`) |
-| Space (Deck Tower backdrop above the sky) | `space` | derived: `shadeHex(bluMk, 0.55)` ⚠️ |
+| Space (Deck Tower backdrop above the sky) | `space` | derived: `spaceOver(bluMk)` = `shadeHex(bluMk, 0.55)` ⚠️; the Deck Tower's worlds all share this one |
 | Stars | `star` | `white` |
+| Smoke puffs | `smoke` | `white` |
+| Ghost wireframes (IsoCardRuns) | `ghostWire` | `white` (at 0.6 stroke opacity, `IsoCardRuns` → `WIRE_OPACITY`) |
+| A control not in use (IsoWallSlider `dimmed`) | `inertPlate`, `inertInk` | `grey`, `greyA` (`RAMP.grey`'s surface and mark) |
 | Ink | `ink` | `onSurface` |
 
 ⚠️ **Divergence from the colour framework.** The darker tones are derived at runtime with
 `shadeHex` (an HSL lightness step), because the framework has no darker tier for these
-hues. That covers `space` (the sky's hue taken down to deep navy, since the framework has no
-dark blue), the wall tones (cloud walls included, shaded off `white`), the rim, the carpet, the card seams and every shadow
+hues. That covers `space` (the sky's hue taken down to night, `spaceOver` — deep navy for
+blue; every Deck Tower world shares it), the wall tones (of every `platformTone`) (cloud walls included, shaded off `white`), the rim, the carpet, the card seams and every shadow
 (`shadowTone`). If the style spreads beyond the Deck Tower, promote them to tokens in
 `src/theme/colors.ts`.
 

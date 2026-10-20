@@ -22,6 +22,24 @@ There are two types of definitions stored per vocab entry.
 
 ---
 
+## Worlds and bars
+
+A **world** is one of the three mastery tracks a card is studied on: `core` (the
+Main world: recognition + production), `reading` (the Reading Center) and `writing`
+(the Writing Center). Type: `MasteryWorldId` in `server/contracts/wire.ts`; the list is
+`MASTERY_WORLDS`; a mark's world is `worldForMarkType` (`server/contracts/mastery.ts`).
+The Deck Tower draws each world as its own platform (docs/DECK_TOWER.md § Worlds).
+
+A **bar** is the progress bar a card has **in** a world: its pbh, its utcm band, its
+cooldown clock. So "the reading bar" means the card's bar in the reading world. Code
+that names the world itself says `world` (`?world=`, `FlpWorld`, `activeWorlds`); code
+about the bar's own figures keeps `bar` (`barProgressBarHeight`, `barCategoryExpr`,
+`isBarOnCooldown`, `MASTERY_BAR_HUES`, the `MasteryBar` components).
+
+Exception: the `category_promotions.bar` column (migration 143) and the TS types that
+mirror its rows (`CategoryPromotion.bar`, `CategoryPromotionInput.bar` in
+`server/types/velocity.ts`) still say `bar` for a world id.
+
 ## FLP Card Data Sources
 
 The FLP console logs the following on every card change (see `FlashcardsLearnPage.tsx`):

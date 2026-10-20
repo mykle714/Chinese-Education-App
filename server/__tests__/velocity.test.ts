@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bandsClimbed,
   barCategory,
-  barForMarkType,
+  worldForMarkType,
   categoryRank,
   CATEGORY_BOUNDARIES,
   CATEGORY_ORDER,
@@ -22,7 +22,7 @@ import type { ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
  * can cross two boundaries at once. See the last test.
  *
  * Since migration 143 a promotion is measured on the bar the MARK belongs to, not on
- * a single whole-card band — the mark handler pairs `barForMarkType` with
+ * a single whole-card band — the mark handler pairs `worldForMarkType` with
  * `barCategory` either side of the write.
  */
 
@@ -69,10 +69,10 @@ describe('bandsClimbed', () => {
 function stepsFor(
   before: TypedMarkHistory,
   after: TypedMarkHistory,
-  markType: Parameters<typeof barForMarkType>[0]
+  markType: Parameters<typeof worldForMarkType>[0]
 ): number {
-  const bar = barForMarkType(markType);
-  return bandsClimbed(barCategory(before, bar), barCategory(after, bar));
+  const world = worldForMarkType(markType);
+  return bandsClimbed(barCategory(before, world), barCategory(after, world));
 }
 
 describe('velocity at the mark boundary', () => {

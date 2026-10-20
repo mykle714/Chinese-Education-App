@@ -34,9 +34,15 @@ interface IsoCardStackProps {
     label?: string;
     /** The top card's head band fill (IsoCard's `bandColor`). */
     bandColor?: string;
+    /**
+     * The figure printed on the top card, when it is not this stack's own count — a stack
+     * dropping onto another names the total it makes (docs/DECK_TOWER.md § "Mix / Review
+     * switch"). Shown as-is, not counted up by `progress`.
+     */
+    figure?: number;
 }
 
-const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progress = 1, label, bandColor }) => {
+const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progress = 1, label, bandColor, figure }) => {
     const proj = useIsoProjector();
     const metrics = useMemo(() => cardStackMetrics(count), [count]);
     const baseZ = surface.z;
@@ -65,7 +71,7 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
     }, [proj, rect, bodyHeight, baseZ]);
 
     if (count <= 0) return null;
-    const shown = Math.round(count * progress);
+    const shown = figure ?? Math.round(count * progress);
 
     return (
         <g className="iso-card-stack">

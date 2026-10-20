@@ -37,7 +37,7 @@ import { SHADOW } from "../../theme/shadows";
  * It renders three things that used to exist only as the /flashcards/mastered
  * page and as an inline block on /decks:
  *
- *   /flashcards/collection/learn-now  — the sorted Learn Now deck
+ *   /flashcards/collection/learn-now  — the sorted Learning deck
  *   /flashcards/collection/mastered   — the Mastered cards (this route replaces
  *                                       the old MasteredCardsPage)
  *   /flashcards/deck/:id              — one user-authored deck
@@ -127,7 +127,7 @@ const CollectionViewPage: React.FC = () => {
     //   1. the COLLECTION itself — `learn-now-reading` / `mastered-writing` and friends
     //      are per-bar sets, so they carry their lens in their own id and can never be
     //      shown through a bar they do not belong to;
-    //   2. failing that, the URL's `?bar=` — how a bar-agnostic set (a deck, All Cards)
+    //   2. failing that, the URL's `?world=` — how a bar-agnostic set (a deck, All Cards)
     //      remembers that it was opened from inside a Center.
     //
     // Absent both, `core`: the ordinary view, exactly as this page behaved before the
@@ -475,7 +475,7 @@ const CollectionViewPage: React.FC = () => {
                         is genuinely true — deleting a deck drops membership rows only
                         (migration 141 / DeckDAL.deleteDeck). */}
                     <Typography sx={{ fontSize: SIZE.body, fontFamily: FONTS.sans }}>
-                        Your cards are not deleted — only this deck. They stay in Learn Now
+                        Your cards are not deleted — only this deck. They stay in Learning
                         with all of their progress.
                     </Typography>
                 </DialogContent>

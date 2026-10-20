@@ -194,7 +194,7 @@ export class DeckService {
   }
 
   /**
-   * A deck's cards as fully-enriched entries, in the same shape the Learn Now and
+   * A deck's cards as fully-enriched entries, in the same shape the Learning and
    * Mastered collections return, so one client component renders all three.
    *
    * The deck's OWN language is used for the read, not the caller's currently

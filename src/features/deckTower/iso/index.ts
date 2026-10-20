@@ -18,9 +18,23 @@ export { default as IsoPlatform, RIM_WIDTH } from "./IsoPlatform";
 export { default as IsoCarpet } from "./IsoCarpet";
 export { default as IsoCard } from "./IsoCard";
 export { default as IsoCardStack } from "./IsoCardStack";
-export { default as IsoFloorLabel } from "./IsoFloorLabel";
+export { default as IsoCardImprint } from "./IsoCardImprint";
+export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
+export { default as IsoLever } from "./IsoLever";
+export { leverFootprint, LEVER_HOLE } from "./leverGeometry";
+export { default as IsoWallSlider, type WallSliderLayout } from "./IsoWallSlider";
+export { default as IsoCardRuns } from "./IsoCardRuns";
+export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";
-export { depthRankAmong, type PawnRoam } from "./usePawnMotion";
+export { depthRankAmong, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
+export {
+    PAWN_ENTRANCES,
+    FALL_FROM_SKY,
+    pickPawnEntrance,
+    entranceStartFor,
+    type PawnEntrance,
+    type PawnEntranceFrame,
+} from "./pawnEntrances";
 export { default as IsoBird } from "./IsoBird";
 export { useBirdFlights, type BirdFlight, type BirdSide, type BirdSky } from "./useBirdFlights";
 export { default as IsoCloud } from "./IsoCloud";
@@ -31,7 +45,8 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 
 // Rules + math
 export * from "./geometry";
-export { ISO, mixHex, shadeHex, type Material } from "./palette";
+export { ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
 export { shadowFootprint, shadowTone, type IsoSurface } from "./light";
 export { BOB_HEIGHT, BOB_PERIOD_MS } from "./levitation";
 export { cardStackMetrics, CARD_THICKNESS, type CardStackMetrics } from "./cardStackMetrics";
+export { planCardCollapse, cardsShowingAt, fallMsFor, shadowLandTiming, type CardCollapsePlan, type CollapseRun, type GhostChunk } from "./cardCollapse";

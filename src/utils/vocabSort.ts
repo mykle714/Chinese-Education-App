@@ -2,11 +2,11 @@ import type { VocabEntry } from "../types";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "./definitionUtils";
 import { tonedToNumberedPinyin } from "./textUtils";
 import {
-  activeBars,
+  activeWorlds,
   barProgressBarHeight,
   barCooldownRemainingMs,
-  BAR_LABELS,
-  type MasteryBarId,
+  WORLD_LABELS,
+  type MasteryWorldId,
   type MasteryGoals,
 } from "./masteryCompute";
 
@@ -15,7 +15,7 @@ import {
  * (docs/DECKS_FEATURE.md § "Sort by").
  *
  * ── Why the client and not the server ─────────────────────────────────────────
- * The three collection reads (Learn Now / Mastered / one deck) each return the WHOLE
+ * The three collection reads (Learning / Mastered / one deck) each return the WHOLE
  * collection in a single response — there is no pagination to respect — and every
  * key below is computable from fields already on the returned rows. Pushing an
  * `orderBy` parameter into three endpoints would buy a network round trip per sort
@@ -88,7 +88,7 @@ export type VocabSortKey =
  * Drives both the comparator and the goal-gating, so the two cannot disagree about
  * which ordering belongs to which goal.
  */
-const MASTERY_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
+const MASTERY_KEY_WORLD: Partial<Record<VocabSortKey, MasteryWorldId>> = {
   masteryAsc: "core",
   masteryDesc: "core",
   masteryReadingAsc: "reading",
@@ -106,7 +106,7 @@ const MASTERY_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
  * is about — a card whose recognition has been resting for months tells a learner
  * nothing about when they last read it.
  */
-const COOLDOWN_KEY_BAR: Partial<Record<VocabSortKey, MasteryBarId>> = {
+const COOLDOWN_KEY_WORLD: Partial<Record<VocabSortKey, MasteryWorldId>> = {
   cooldownReady: "core",
   cooldownLongest: "core",
   cooldownReadyReading: "reading",
@@ -145,13 +145,13 @@ const DATE_KEYS: readonly VocabSortKey[] = [
 ];
 
 /** Per-bar key lookups, so a bar's four keys are named in exactly one place. */
-const MASTERY_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey }> = {
+const MASTERY_KEYS: Record<MasteryWorldId, { asc: VocabSortKey; desc: VocabSortKey }> = {
   core: { asc: "masteryAsc", desc: "masteryDesc" },
   reading: { asc: "masteryReadingAsc", desc: "masteryReadingDesc" },
   writing: { asc: "masteryWritingAsc", desc: "masteryWritingDesc" },
 };
 
-const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKey }> = {
+const COOLDOWN_KEYS: Record<MasteryWorldId, { asc: VocabSortKey; desc: VocabSortKey }> = {
   core: { asc: "cooldownReady", desc: "cooldownLongest" },
   reading: { asc: "cooldownReadyReading", desc: "cooldownLongestReading" },
   writing: { asc: "cooldownReadyWriting", desc: "cooldownLongestWriting" },
@@ -171,7 +171,7 @@ const COOLDOWN_KEYS: Record<MasteryBarId, { asc: VocabSortKey; desc: VocabSortKe
  *
  * ⚠️ The DECKS PANEL does not use this — see `masteryLowestKey`.
  */
-export const defaultSortKey = (isDeck: boolean, lens: MasteryBarId = "core"): VocabSortKey =>
+export const defaultSortKey = (isDeck: boolean, lens: MasteryWorldId = "core"): VocabSortKey =>
   lens !== "core" ? MASTERY_KEYS[lens].asc : isDeck ? "deckAdded" : "recent";
 
 /**
@@ -186,12 +186,12 @@ export const defaultSortKey = (isDeck: boolean, lens: MasteryBarId = "core"): Vo
  * rather than a third behaviour, so ALL THREE panels open on the same question.
  *
  * Deliberately NOT folded into `defaultSortKey`: the collection page still wants a
- * collection to open in its natural order (a deck by when you filled it, Learn Now and
+ * collection to open in its natural order (a deck by when you filled it, Learning and
  * Mastered by card age). The two surfaces genuinely differ, so they call different
  * functions rather than sharing one with a flag.
  */
-export const masteryLowestKey = (bar: MasteryBarId = "core"): VocabSortKey =>
-  MASTERY_KEYS[bar].asc;
+export const masteryLowestKey = (world: MasteryWorldId = "core"): VocabSortKey =>
+  MASTERY_KEYS[world].asc;
 
 /** One end of a bundle: the ordering itself, captioned by its direction alone. */
 interface SortDirection {
@@ -213,7 +213,7 @@ export interface SortBundle {
   /** The dimension, direction-neutral ("Pinyin", "Mastery", "Cooldown"). */
   label: string;
   directions: SortDirection[];
-  /** Deck-only rows are hidden on Learn Now / Mastered, where the key is absent. */
+  /** Deck-only rows are hidden on Learning / Mastered, where the key is absent. */
   deckOnly?: boolean;
   /**
    * The mastery bar this row reads, when it reads one. Lets a surface drop the
@@ -221,7 +221,7 @@ export interface SortBundle {
    * sheet's Cards section does exactly that, keeping its menu to the orderings that
    * apply to every card. Absent = the row is bar-independent.
    */
-  bar?: MasteryBarId;
+  world?: MasteryWorldId;
 }
 
 /**
@@ -239,14 +239,14 @@ export const sortBundles = (
   // goals. A skill lens is a Mastery Center, where the menu offers that ONE bar and
   // nothing else — the page is about that skill, and a core-mastery row inside it
   // would order the list by the question the learner just navigated away from.
-  lens: MasteryBarId = "core"
+  lens: MasteryWorldId = "core"
 ): SortBundle[] => {
   // Reading/writing rows appear ONLY when that goal is set — the same gate that decides
-  // whether the bar is drawn at all (`activeBars`). Offering "Mastery (Write)" to a
+  // whether the bar is drawn at all (`activeWorlds`). Offering "Mastery (Write)" to a
   // learner with no writing bar would sort by a number they cannot see anywhere.
   // Under a skill lens the account has that goal by construction (the Center's button
   // is gated on it), so the lens bar is simply the whole list.
-  const bars = lens === "core" ? activeBars(goals) : [lens];
+  const worlds = lens === "core" ? activeWorlds(goals) : [lens];
   // Two conditions, both required, before a row label names its bar:
   //   • there is more than one bar to tell apart (a lone bar needs no qualifier — a
   //     Center's menu reads "Mastery", because the page title already said the skill);
@@ -255,29 +255,29 @@ export const sortBundles = (
   //     "Mastery (Write)" and never "Mastery (Know)". The fdp's Cards section is why —
   //     it offers the core rows ALONE (`allowPerSkillBars={false}`), so a "(Know)"
   //     suffix there named a distinction the menu was not drawing.
-  const qualify = (base: string, bar: MasteryBarId): string =>
-    bars.length > 1 && bar !== "core" ? `${base} (${BAR_LABELS[bar]})` : base;
+  const qualify = (base: string, world: MasteryWorldId): string =>
+    worlds.length > 1 && world !== "core" ? `${base} (${WORLD_LABELS[world]})` : base;
 
-  const masteryRow = (bar: MasteryBarId): SortBundle => ({
-    id: `mastery:${bar}`,
-    label: qualify("Mastery", bar),
-    bar,
+  const masteryRow = (world: MasteryWorldId): SortBundle => ({
+    id: `mastery:${world}`,
+    label: qualify("Mastery", world),
+    world,
     directions: [
-      { key: MASTERY_KEYS[bar].desc, label: "Highest" },
-      { key: MASTERY_KEYS[bar].asc, label: "Lowest" },
+      { key: MASTERY_KEYS[world].desc, label: "Highest" },
+      { key: MASTERY_KEYS[world].asc, label: "Lowest" },
     ],
   });
 
   // Cooldown is bar-scoped like the other two since the Centers shipped: the key is
   // the longest-resting track WITHIN the bar (see `cooldownKey`), so "what have I been
   // neglecting" is answered about the skill the surface is about.
-  const cooldownRow = (bar: MasteryBarId): SortBundle => ({
-    id: `cooldown:${bar}`,
-    label: qualify("Cooldown", bar),
-    bar,
+  const cooldownRow = (world: MasteryWorldId): SortBundle => ({
+    id: `cooldown:${world}`,
+    label: qualify("Cooldown", world),
+    world,
     directions: [
-      { key: COOLDOWN_KEYS[bar].asc, label: "Shortest" },
-      { key: COOLDOWN_KEYS[bar].desc, label: "Longest" },
+      { key: COOLDOWN_KEYS[world].asc, label: "Shortest" },
+      { key: COOLDOWN_KEYS[world].desc, label: "Longest" },
     ],
   });
 
@@ -315,8 +315,8 @@ export const sortBundles = (
         { key: "alphaDefinitionDesc", label: "Z–A" },
       ],
     },
-    ...bars.map(cooldownRow),
-    ...bars.map(masteryRow),
+    ...worlds.map(cooldownRow),
+    ...worlds.map(masteryRow),
   ];
 };
 
@@ -333,7 +333,7 @@ export const sortLabel = (
   key: VocabSortKey,
   language: string | null | undefined,
   goals: MasteryGoals,
-  lens: MasteryBarId = "core"
+  lens: MasteryWorldId = "core"
 ): string => {
   for (const bundle of sortBundles(language, goals, lens)) {
     const direction = bundle.directions.find((d) => d.key === key);
@@ -406,8 +406,8 @@ const pronunciationKey = (entry: VocabEntry): string => {
  * never-studied card is genuinely ready and belongs at the TOP of "Shortest", not
  * sunk to the bottom with the dateless cards.
  */
-const cooldownKey = (entry: VocabEntry, bar: MasteryBarId, now: number): number =>
-  barCooldownRemainingMs(entry.typedMarkHistory, bar, now, entry.writingMastery);
+const cooldownKey = (entry: VocabEntry, world: MasteryWorldId, now: number): number =>
+  barCooldownRemainingMs(entry.typedMarkHistory, world, now, entry.writingMastery);
 
 /** Alphabetical key for the dd — the definition the card face actually renders. */
 const definitionKey = (entry: VocabEntry): string =>
@@ -438,8 +438,8 @@ export function sortVocabEntries(
   const isAlpha = key === "alphaPronunciation" || key === "alphaPronunciationDesc"
     || key === "alphaDefinition" || key === "alphaDefinitionDesc";
   const isPronunciation = key === "alphaPronunciation" || key === "alphaPronunciationDesc";
-  const cooldownBar = COOLDOWN_KEY_BAR[key];
-  const heightBar = MASTERY_KEY_BAR[key];
+  const cooldownWorld = COOLDOWN_KEY_WORLD[key];
+  const heightWorld = MASTERY_KEY_WORLD[key];
   const ascending = ASCENDING_KEYS.includes(key);
   const reversedAlpha = REVERSED_ALPHA_KEYS.includes(key);
   const isDate = DATE_KEYS.includes(key);
@@ -449,8 +449,8 @@ export function sortVocabEntries(
     index,
     text: !isAlpha ? "" : isPronunciation ? pronunciationKey(entry) : definitionKey(entry),
     num:
-      heightBar ? barProgressBarHeight(entry.typedMarkHistory, heightBar, entry.writingMastery)
-        : cooldownBar ? cooldownKey(entry, cooldownBar, now)
+      heightWorld ? barProgressBarHeight(entry.typedMarkHistory, heightWorld, entry.writingMastery)
+        : cooldownWorld ? cooldownKey(entry, cooldownWorld, now)
           : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
             : timeOrZero(entry.createdAt),
   }));

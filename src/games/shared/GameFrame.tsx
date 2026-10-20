@@ -6,6 +6,8 @@ import { FONTS } from "../../theme/fonts";
 import { SIZE, TRACKING } from "../../theme/scale";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 import TimerEyeToggle from "./TimerEyeToggle";
+import { useGameFrameExit, type GameFrameExit } from "./gameFrameExit";
+import Icon from "../../components/Icon";
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -59,6 +61,9 @@ export interface GameFrameProps {
  */
 export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => {
     const hue = useGameSurfaceHue();
+    // A host-provided exit (an flp game break's Leave — gameFrameExit.ts). Null on a
+    // game's own route, where the page header's Back is the way out.
+    const exit = useGameFrameExit();
     return (
     <Box
         className={className ? `game-frame ${className}` : "game-frame"}
@@ -84,9 +89,55 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
         ]}
     >
         {children}
+        {exit && <GameFrameExitButton label={exit.label} onExit={exit.onExit} />}
     </Box>
     );
 };
+
+/**
+ * The host's exit control, pinned to the panel's top-right corner — vertically centred
+ * on the TOP STRIP (a `GameTimer` / `GameHud` is 12px padding + a 1.2 × `SIZE.bodyLg`
+ * line ≈ 43px tall). That right edge is kept free by every strip since the timer eye
+ * moved to the left (docs/FLP_GAME_BREAKS.md § 7).
+ *
+ * ⚠️ A strip that puts its OWN content at the right edge collides with this: a HUD's
+ * last label (pinned right by `space-between`) and `GameTimer`'s `trailing` slot
+ * (Writing Grid's phase label). Such a game must make room before it is offered as an
+ * flp break.
+ *
+ * Above any in-panel overlay (Match Speed's countdown scrim is zIndex 5), so the
+ * player can always leave. Ink on white with the `--line2` outline (CLAUDE.md
+ * § "Buttons & cards").
+ */
+const GameFrameExitButton: React.FC<GameFrameExit> = ({ label, onExit }) => (
+    <Box
+        component="button"
+        type="button"
+        className="game-frame__exit"
+        onClick={onExit}
+        sx={{
+            position: "absolute",
+            top: "9px",
+            right: "10px",
+            zIndex: 6,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            padding: "5px 9px",
+            borderRadius: "999px",
+            border: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.white,
+            color: COLORS.onSurface,
+            fontFamily: FONTS.mono,
+            fontSize: SIZE.caption,
+            lineHeight: 1,
+            cursor: "pointer",
+        }}
+    >
+        <Icon name="logout" size={13} color={COLORS.onSurface} />
+        {label}
+    </Box>
+);
 
 export interface GameHudProps {
     /** Typically two or three `GameHudLabel`s. Spread apart, first left, last right. */
@@ -279,12 +330,16 @@ export interface GameTimerProps {
     valueShown?: boolean;
     onToggleValueShown?: () => void;
     /**
-     * Optional content pinned to the strip's TOP-LEFT corner — a short fact that belongs
+     * Optional content pinned to the strip's TOP-RIGHT corner — a short fact that belongs
      * with the clock (Writing Grid's "Phase 1" / "Phase 2"). Absolutely positioned, like
-     * the eye on the right, so it never pushes the clock off centre or makes the strip
+     * the eye on the LEFT, so it never pushes the clock off centre or makes the strip
      * taller. Keep it to a word or two: it shares the row with the centred numerals.
+     *
+     * Was `leading` (top-left) until the eye moved to the left edge on 2026-10-18 — the
+     * right edge is kept clear of the eye so an flp game break's Leave button, top-right
+     * of the game area, is never next to it (docs/FLP_GAME_BREAKS.md § 7).
      */
-    leading?: React.ReactNode;
+    trailing?: React.ReactNode;
     className?: string;
 }
 
@@ -310,7 +365,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     pulse = false,
     valueShown = true,
     onToggleValueShown,
-    leading,
+    trailing,
     className,
 }) => {
     const hue = useGameSurfaceHue();
@@ -357,14 +412,14 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         >
             {value}
         </Box>
-        {leading && (
+        {trailing && (
             <Box
-                className="game-timer__leading"
-                // Top-left corner: the strip's own top padding (12px) and the same 15px side
-                // inset the HUD's facts use, so it lines up with a HUD label's left edge.
-                sx={{ position: "absolute", top: "12px", left: "15px", lineHeight: 1.2 }}
+                className="game-timer__trailing"
+                // Top-right corner: the strip's own top padding (12px) and the same 15px side
+                // inset the HUD's facts use, so it lines up with a HUD label's right edge.
+                sx={{ position: "absolute", top: "12px", right: "15px", lineHeight: 1.2 }}
             >
-                {leading}
+                {trailing}
             </Box>
         )}
         {onToggleValueShown && (

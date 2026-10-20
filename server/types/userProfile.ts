@@ -13,7 +13,7 @@
  *   server/controllers/UserProfileController.ts
  *   src/api/userProfile.ts                   (client mirror — keep the two in step)
  */
-import type { MasteryBarId } from '../contracts/wire.js';
+import type { MasteryWorldId } from '../contracts/wire.js';
 
 /**
  * The viewer's relationship to the profiled account. Drives which single friend-action
@@ -88,7 +88,7 @@ export interface ProfileLanguageStats {
  * a language they are not learning, and drawing an empty panel for it would misreport
  * a focused learner as a dabbler.
  *
- * `velocityWindowDays` and `activeBars` sit OUTSIDE the array because they are
+ * `velocityWindowDays` and `activeWorlds` sit OUTSIDE the array because they are
  * account-wide: the window is a constant, and the reading/writing goals are per-account
  * opt-ins (`users.readingGoal` / `writingGoal`), not per-language ones.
  */
@@ -96,7 +96,7 @@ export interface ProfileStats {
   /** The velocity window's length, so the client can label it without hard-coding 7. */
   velocityWindowDays: number;
   /** Which mastery bars their goals make active — the badges' source of truth. */
-  activeBars: MasteryBarId[];
+  activeWorlds: MasteryWorldId[];
   /** Selected language first, then the rest by `netMinutes` desc. Never empty. */
   languages: ProfileLanguageStats[];
 }

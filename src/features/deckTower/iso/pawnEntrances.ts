@@ -12,7 +12,10 @@
  * draws one at random.
  *
  * Depended on by: usePawnMotion.ts (plays the frames), IsoPawn.tsx (`entrance` prop),
- * src/features/deckTower/useDeckSwap.ts (picks one and schedules it).
+ * src/features/deckTower/useDeckSwap.ts (picks one and schedules it), and the Deck Tower's
+ * floor fixtures (the focus lever, the Mix / Review switch), which borrow the incoming pawn's
+ * entrance with a later start to land just after it (DeckTowerPage → `fixtureArgs`,
+ * usePopUpMotion.ts `skyEntrance`, IsoLever.tsx `air`; docs/FOCUS_MODE.md § 5).
  */
 
 /** The pawn's pose at one instant of an entrance. Lengths in world units. */

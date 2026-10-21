@@ -10,16 +10,18 @@ import {
     IsoPawn,
     IsoPlatform,
     IsoSmokePuff,
-    IsoWallSlider,
+    IsoModeSwitch,
     RAISED_HEIGHT,
     depthRankAmong,
     flatPath,
     frontContour,
     insetRect,
     leverFootprint,
+    modeSwitchFootprint,
     IsoShadow,
     shadowLandTiming,
     toOpenPath,
+    type PawnEntranceFrame,
     type PawnStep,
 } from "./iso";
 import { useIsoProjector } from "./iso/sceneContext";
@@ -28,7 +30,12 @@ import type { TowerWorld } from "./towerWorlds";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
 import { TOWER_MODES, type TowerModeId } from "./towerModes";
-import { IMPACT_MS, type ModeSwitchCollapse, type ModeSwitchDrop } from "./useStudyModeSwitch";
+import { IMPACT_MS, type TowerDrop } from "./towerResizes";
+import type { TowerCollapse } from "./useTowerResize";
+
+/** The switch's two positions, [flip 0, flip 1]: the name it shows and its paddle's colour in each. */
+const SWITCH_LABELS = [TOWER_MODES.mix.label, TOWER_MODES.review.label] as const;
+const SWITCH_COLORS = [TOWER_MODES.mix.band, TOWER_MODES.review.band] as const;
 
 /**
  * DeckTowerPlatform — the Deck Tower's floating platform with everything on it: its
@@ -48,17 +55,17 @@ import { IMPACT_MS, type ModeSwitchCollapse, type ModeSwitchDrop } from "./useSt
  *             the floor plate (part of the floor, slightly raised as a push button —
  *             usePlatePress.ts — so it swings with the trap door; pawns step up onto it,
  *             IsoPawn `steps`, and sink with it when it is pressed);
- *   fittings  the Mix / Review switch on the front-left wall (IsoWallSlider; it swings
- *             with the trap door too);
- *   children  `behind` (sky travellers on the tower's back sides) → the stack and the
- *             pawns, each pawn slotted in front of every obstacle before the first one it
- *             stands behind (`depthRankAmong`)
+ *   children  `behind` (sky travellers on the tower's back sides) → the stack, the focus
+ *             lever and the Mix / Review switch (obstacles 0–2), and the pawns, each pawn
+ *             slotted in front of every obstacle before the first one it stands behind
+ *             (`depthRankAmong`)
  *             → `front`.
  *
- * The stack's layer is one of (docs/DECK_TOWER.md § "Mix / Review switch"):
+ * The stack's layer is one of (docs/DECK_TOWER.md § "Tower resizes" — towerResizes.ts is
+ * the library; each of its animations has a branch here):
  *   - the settled tower (IsoCardStack);
- *   - a Mix → Review COLLAPSE (IsoCardRuns), cards ghosting out and the rest settling;
- *   - the Review tower with a Review → Mix DROP on top: the Unfamiliar + Target tower
+ *   - a GHOST COLLAPSE shrink (IsoCardRuns), cards ghosting out and the rest settling;
+ *   - the standing tower with a SKY DROP grow on top: a tower of the new cards
  *     falling onto it (CSS free fall), with the landing's smoke ring around the join
  *     (IsoSmokePuff, its back half under the drop and its front half over it) and the
  *     whole loaded platform sinking under the blow (`PLATFORM_SINK_CSS`).
@@ -82,7 +89,7 @@ const PLATFORM_SINK_CSS = `
 const FREE_FALL = "cubic-bezier(0.333, 0, 0.667, 0.333)";
 
 /** A drop onto the bare floor: its shadow fades in from the impact (cardCollapse.ts → `shadowLandTiming`). */
-function dropShadowStyle(drop: ModeSwitchDrop): React.CSSProperties {
+function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
     const t = shadowLandTiming(drop.fallMs);
     return { animation: `deck-tower-drop-shadow-in ${t.durationMs.toFixed(0)}ms ease-out ${t.delayMs.toFixed(0)}ms both` };
 }
@@ -107,16 +114,16 @@ interface DeckTowerPlatformProps {
     hingeAngle: number;
     /**
      * The tower, or null while this platform has none. `collapse` replaces it with a
-     * Mix → Review collapse; `drop` stands a Review → Mix drop on top of it, whose top card
-     * names `dropFigure` (the Mix total it makes).
+     * ghost-collapse shrink; `drop` stands a sky-drop grow on top of it, whose top card
+     * names `dropFigure` (the total it makes).
      */
     stack: {
         count: number;
         progress: number;
         label: string;
         bandColor: string;
-        collapse?: ModeSwitchCollapse | null;
-        drop?: ModeSwitchDrop | null;
+        collapse?: TowerCollapse | null;
+        drop?: TowerDrop | null;
         dropFigure?: number;
     } | null;
     /**
@@ -143,25 +150,34 @@ interface DeckTowerPlatformProps {
         /** Taps are ignored (a swap is running): no pointer cursor, and it will not press. */
         busy: boolean;
     };
-    /** The Mix / Review switch on the front-left wall. */
+    /**
+     * The Mix / Review switch along the floor's right edge (IsoModeSwitch): its animated
+     * numbers (useModeSwitchMotion) and its tap. Like the lever, it stands only while the
+     * Learn Now deck is up; fully sunk with its hatch shut it draws nothing and takes no taps.
+     */
     modeSwitch: {
         mode: TowerModeId;
-        /** Not in use (the Mastered deck is up): greyed out, and taps are ignored. */
-        dimmed: boolean;
-        /** Taps are ignored for now (a switch, swap or pan is running, or the tower is still building). */
+        flip: number;
+        sink: number;
+        hatch: number;
+        /** A sky-fall entrance (usePopUpMotion `skyFall`): "waiting" draws nothing yet. */
+        skyFall: PawnEntranceFrame | "waiting" | null;
+        /** Taps are ignored for now (a switch, swap or pan is running, the tower is still building, or Mastered is up). */
         busy: boolean;
         ariaLabel: string;
         onTap: () => void;
     };
     /**
-     * The focus lever in the back-right corner (IsoLever, docs/FOCUS_MODE.md § 5): its
+     * The focus lever in the floor's left corner (IsoLever, docs/FOCUS_MODE.md § 5): its
      * animated numbers (useLeverMotion) and its tap. Fully sunk with its hatch shut, it
-     * draws as a seamed floor tile and takes no taps.
+     * draws nothing — the floor is flush — and takes no taps.
      */
     lever: {
         pull: number;
         sink: number;
         hatch: number;
+        /** A sky-fall entrance (useLeverMotion `skyFall`): "waiting" draws nothing yet. */
+        skyFall: PawnEntranceFrame | "waiting" | null;
         ariaLabel: string;
         onTap: () => void;
         /** Taps are ignored (a popup is up, a swap is running, or it is sinking). */
@@ -275,7 +291,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // motion state lives on) — and the fall wrapper is part of the keyed element, so
     // starting to fall does not remount it either.
     const layers: React.ReactElement[] = [];
-    // A Review → Mix drop lands on the Review tower's top (the floor when it has none).
+    // A sky drop lands on the standing tower's top (the floor when it has none).
     const drop = stack?.drop ?? null;
     const landingZ = drop ? floor.z + drop.baseCards * CARD_THICKNESS : 0;
     if (stack) {
@@ -355,8 +371,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // The stack's slot is held even when there is no tower, so each layer's index stays
     // the index of its obstacle in `layout.roam.obstacles` (the pawn splices in by rank).
     if (!stack) layers.push(<g key="stack" />);
-    // The lever: obstacle 1, in front of the tower's right-hand face.
-    const leverTappable = !lever.busy && lever.sink < 0.05;
+    // The lever: obstacle 1, in front of the tower's front-left face.
+    const leverTappable = !lever.busy && lever.sink < 0.05 && lever.skyFall === null;
     const onLeverKey = (e: React.KeyboardEvent<SVGGElement>) => {
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
@@ -374,12 +390,74 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             onKeyDown={onLeverKey}
             style={{ cursor: leverTappable ? "pointer" : "default", outline: "none" }}
         >
-            <IsoLever at={layout.leverAt} surface={floor} pull={lever.pull} sink={lever.sink} hatch={lever.hatch} />
+            {/* It falls with the old tower when a trap-door swap leaves Learn Now; arriving,
+                it drops in from the sky instead, and must not ride the old tower's fall
+                (DeckTowerPage → `leverArgs`). */}
+            {lever.skyFall !== "waiting" && (
+                <g {...fallSx(stackFalling && lever.skyFall === null)}>
+                    <IsoLever
+                        at={layout.leverAt}
+                        surface={floor}
+                        pull={lever.pull}
+                        sink={lever.sink}
+                        hatch={lever.hatch}
+                        air={lever.skyFall ?? undefined}
+                        knob={world.leverKnob}
+                    />
+                </g>
+            )}
             {/* A generous tap target over the standing lever (the stick is only a few px wide). */}
             {leverTappable && (
                 <path
                     className="deck-tower-page__lever-hit"
                     d={flatPath(proj, insetRect(leverFootprint(layout.leverAt), -0.6), floor.z + 1.2)}
+                    fill="transparent"
+                />
+            )}
+        </g>
+    );
+
+    // The Mix / Review switch: obstacle 2, in front of the tower's back-right face. A tap (or
+    // Enter / Space) flips it; like the lever, only while it stands still on its lift.
+    const switchTappable = !modeSwitch.busy && modeSwitch.sink < 0.05 && modeSwitch.skyFall === null;
+    const onSwitchKey = (e: React.KeyboardEvent<SVGGElement>) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        if (switchTappable) modeSwitch.onTap();
+    };
+    layers.push(
+        <g
+            key="mode-switch"
+            className="deck-tower-page__mode-switch"
+            role="switch"
+            aria-checked={modeSwitch.mode === "review"}
+            aria-label={modeSwitch.ariaLabel}
+            aria-hidden={modeSwitch.sink >= 0.999}
+            tabIndex={switchTappable ? 0 : -1}
+            onClick={() => switchTappable && modeSwitch.onTap()}
+            onKeyDown={onSwitchKey}
+            style={{ cursor: switchTappable ? "pointer" : "default", outline: "none" }}
+        >
+            {/* It falls with the old tower like the lever, and drops in from the sky arriving. */}
+            {modeSwitch.skyFall !== "waiting" && (
+                <g {...fallSx(stackFalling && modeSwitch.skyFall === null)}>
+                    <IsoModeSwitch
+                        at={layout.modeSwitchAt}
+                        surface={floor}
+                        flip={modeSwitch.flip}
+                        labels={SWITCH_LABELS}
+                        colors={SWITCH_COLORS}
+                        sink={modeSwitch.sink}
+                        hatch={modeSwitch.hatch}
+                        air={modeSwitch.skyFall ?? undefined}
+                    />
+                </g>
+            )}
+            {/* A generous tap target over the standing switch (anywhere on it flips it). */}
+            {switchTappable && (
+                <path
+                    className="deck-tower-page__mode-switch-hit"
+                    d={flatPath(proj, insetRect(modeSwitchFootprint(layout.modeSwitchAt), -0.4), floor.z + 0.5)}
                     fill="transparent"
                 />
             )}
@@ -392,37 +470,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         .map((p) => ({ p, rank: Math.min(layers.length, pawnDepthRanks[p.key] ?? fallbackRank) }))
         .sort((a, b) => b.rank - a.rank);
     for (const { p, rank } of placed) layers.splice(rank, 0, renderPawn(p));
-
-    // The Mix / Review switch: a tap (or Enter / Space) flips it. A plain click handler is
-    // enough — unlike the plate it has no press travel to show; the knob slides instead.
-    const switchActive = !modeSwitch.dimmed && !modeSwitch.busy;
-    const onSwitchKey = (e: React.KeyboardEvent<SVGGElement>) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        if (switchActive) modeSwitch.onTap();
-    };
-    const switchFitting = (
-        <g
-            className="deck-tower-page__mode-switch"
-            role="switch"
-            aria-checked={modeSwitch.mode === "review"}
-            aria-disabled={modeSwitch.dimmed}
-            aria-label={modeSwitch.ariaLabel}
-            tabIndex={modeSwitch.dimmed ? -1 : 0}
-            onClick={() => switchActive && modeSwitch.onTap()}
-            onKeyDown={onSwitchKey}
-            style={{ cursor: switchActive ? "pointer" : "default", outline: "none" }}
-        >
-            <IsoWallSlider
-                layout={layout.modeSwitch}
-                wallTone={world.platform.material.left}
-                position={modeSwitch.mode === "review" ? 1 : 0}
-                label={TOWER_MODES[modeSwitch.mode].label}
-                labelColor={TOWER_MODES[modeSwitch.mode].band}
-                dimmed={modeSwitch.dimmed}
-            />
-        </g>
-    );
 
     // A landing drop sinks the platform and everything on it, on top of its bob.
     const sinkStyle = drop
@@ -448,7 +495,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                         {plateButton}
                     </>
                 }
-                fittings={switchFitting}
                 bodyStyle={sinkStyle}
             >
                 {behind}

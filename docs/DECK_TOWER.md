@@ -4,9 +4,10 @@
 right now, in all four utcm bands — as a stack of flashcards standing on an isometric platform, in the
 art style of Nintendo/Paladin's *Good Job!*. It is the footer's **Deck** tab, which took
 Discover's slot on 2026-10-17. Tapping the floor plate switches the tower to the
-**Mastered** deck and back. A slide switch on the platform's front-left wall flips the
+**Mastered** deck and back. A floor switch beside the tower (shown only on Learn Now) flips the
 Learn Now tower between **Mix** (all four bands) and **Review** (Comfortable + Mastered),
-with the Unfamiliar + Target cards ghosting out or dropping back in (§ Mix / Review switch). When the account has the reading or
+with the Unfamiliar + Target cards ghosting out or dropping back in (§ Mix / Review switch). That
+animation, and the focus lever's, come from one library of tower shrinks and grows (§ Tower resizes). When the account has the reading or
 writing goal on, a **world** for each lies beside the main one — swipe left or right to
 dash there (§ Worlds).
 
@@ -18,7 +19,7 @@ the plate button, the deck-transition registry (trap door) and the pawn-entrance
 (fall from the sky), all timed to the new pawn's landing.
 
 Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each platform's
-back-right floor corner (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
+left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
 `TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learn Now
 deck once the world holds 100 off-cooldown cards (or focus is on), and switches the world to a
 daily cap of 40. While focus is on, the world's ready counts — and so its Learn Now tower —
@@ -50,7 +51,9 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 | Page | `src/features/deckTower/SpaceBackdrop.tsx` → `SpaceBackdrop`, `SpaceBand` | The screen-space sky behind the scene, in the world's colour, which darkens into starry space as a tall tower is climbed (§ Sky → space) |
 | Framework | `src/features/deckTower/iso/` | Every object, shadow and colour (see [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md)) |
 | Page logic | `src/features/deckTower/useDeckSwap.ts`, `deckTransitions.ts`, `towerDecks.ts` | The deck switch (see [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)) |
-| Page logic | `src/features/deckTower/useStudyModeSwitch.ts` → `useStudyModeSwitch`, `IMPACT_MS`; `towerModes.ts` → `TOWER_MODES`, `MIX_ONLY_BANDS`, `bandTotal` | The Mix / Review switch: each world's mode and the clock of a switch (§ Mix / Review switch) |
+| Page logic | `src/features/deckTower/towerModes.ts` → `TOWER_MODES`, `bandTotal`, `otherTowerMode`; `DeckTowerPage` → `modes`, `onModeTap` | The Mix / Review switch: each world's mode (§ Mix / Review switch) |
+| Page logic | `src/features/deckTower/towerResizes.ts` → `TOWER_SHRINKS`, `TOWER_GROWS`, `GHOST_COLLAPSE`, `SKY_DROP`, `IMPACT_MS`; `useTowerResize.ts` → `useTowerResize`; `DeckTowerPage` → `startResize`, `resolveRecount` | The library of in-place tower shrinks and grows, and the per-world player both the switch and the focus lever use (§ Tower resizes) |
+| Page logic | `src/features/deckTower/usePopUpMotion.ts` → `usePopUpMotion`, `useTween`; `useModeSwitchMotion.ts` → `useModeSwitchMotion` | The floor fixtures' rise / sink / sky-fall tweens (shared by the focus lever's `useLeverMotion` and the switch), and the switch's `flip` (§ Mix / Review switch) |
 | Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learn Now** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule — the study hand's figures), in the bands of that world's mode (`TOWER_MODES[mode].bands` summed by `bandTotal`: all four in Mix, Comfortable + Mastered in Review); **Mastered** = the bar's whole Mastered total, cooling or not. So the Learn Now tower is not the fdp's Learning tile (which counts cooling cards and leaves out Mastered). Until 2026-10-20 Learn Now was U+T+C only (no off-cooldown Mastered), through `builtinCollectionCount({ kind: "learn-now" })`. Fetched once on open: a card coming off cooldown while the page is up does not grow the tower. The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes) |
 
 ## The scene
@@ -65,13 +68,13 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `GROUND_Z` (`towerPlatforms.ts`), `TowerWorld.ground` | The sky's plane, 1.6 below the slab's underside, which receives the platform's shadow (its colour is the world's sky) |
 | `FLOOR_Z` (`towerPlatforms.ts`), `TowerWorld.floor` | The platform's top (z = 0). The stack and the pawns stand on it (its colour is the world's platform top) |
 | `TowerPlatformLayout.card` | A portrait 4.8×6.6 (`CARD_W` × `CARD_D`) footprint, centred on the platform |
-| `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `plateStep`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it is past the back-right lever), so it walks behind the tower rather than over it |
+| `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `plateStep`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it was past the lever, then at the back-right corner), so it walks behind the tower rather than over it |
 | `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does arriving in a world whose tower already stands at 50+ (the remounted pawn was not watching it grow) |
 | `BIRD_BAND_CARDS`, `BIRDS_AIRBORNE_MAX` | Birds (`IsoBird`, `useBirdFlights`) fly along the tower's four sides at the height of cards 100–150 (card k's underside is (k − 1) · `CARD_THICKNESS` up). One is in the air at a time (`BIRDS_AIRBORNE_MAX`): a bird crosses, then 1.5–6.5 s of empty sky, then the next. They take wing when the build-up puts the 100th card on the tower, so a deck under 100 never has birds. A deck short of 150 lowers the band's top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they circle the tower and not empty sky. Back-side birds are drawn before the stack (it hides them) and front-side birds after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob, which is lost in their own bounce |
 | `CLOUD_BAND_CARDS`, `CLOUDS_IN_SKY_MAX` | Clouds (`IsoCloud`, `useCloudDrifts`) drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 250–300. Up to 3 are in the sky at once, with 4–14 s gaps between drifts. They switch on when the build-up puts the 250th card on the tower: each slot's first cloud fades in partway across the screen, so the band is never empty at first. A deck under 250 never has clouds; a deck short of 300 lowers the band's top the same way as the birds' (`skyBand`). Back-side clouds are drawn first (before the back-side birds) and front-side clouds last. They are ~57 units above the birds, so the two never overlap. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still |
 | `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the build-up puts the 350th card on the tower, so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the birds' (`skyBand`). Back-side gusts are drawn first, front-side gusts after the front birds. Under reduced motion there is no wind |
 | `SPACE_BAND_CARDS` | 450–650. Over this height band the sky darkens into space and stars fade in (§ Sky → space) |
-| `TowerPlatformLayout.modeSwitch` | The Mix / Review switch (`IsoWallSlider`) on the platform's front-left wall, centred along it: a 2.0-unit slot and a 3.1-unit label plate, 0.35 apart, on the wall's mid-height (§ Mix / Review switch) |
+| `TowerPlatformLayout.modeSwitchAt` | The Mix / Review switch's hatch centre (`IsoModeSwitch`, x 9.95, y 1.9 — the floor's right corner on screen, beside the tower; its 1.6 × 2.7 hatch, long along y, is `roam`'s third obstacle) (§ Mix / Review switch) |
 | `TowerPlatformLayout.labelPlate`, `.labelPlateHit` | The deck's floor plate in front of the stack, and its enlarged tap target. Tapping it switches the world's deck |
 | `TOWER_DECKS` (`towerDecks.ts`) | Each deck's name (on the top card and the plate) and its band, the same in every world: `RAMP[LEARN_NOW_HUE].mid` (`yelM`) for Learn Now, `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for Mastered. The `mid` tier, because the fdp card's pale `surface` washes out on the cream card face |
 | `FALL_CLEARANCE` | Extra world units a falling tower drops past the screen's bottom edge (the scene memo's `fallDistance`) |
@@ -153,11 +156,11 @@ far taller than the screen. The page never zooms out to fit it:
 `towerWorlds.ts`, `useWorldPan.ts`, `SpeedLines.tsx`, `WorldIndicator.tsx`,
 `DeckTowerPage.tsx`.
 
-| World | Id (`MasteryWorldId`) | Title | Sky | Platform | Shown when |
-|---|---|---|---|---|---|
-| Main | `core` | Flashcards | `bluMk` | `gld` | Always |
-| Reading | `reading` | Reading Flashcards | `limMk` | `pnk` | `users.readingGoal` |
-| Writing | `writing` | Writing Flashcards | `redMk` | `bluMk` | `users.writingGoal` |
+| World | Id (`MasteryWorldId`) | Title | Sky | Platform | Lever knob | Shown when |
+|---|---|---|---|---|---|---|
+| Main | `core` | Flashcards | `bluMk` | `gld` | `redMk` | Always |
+| Reading | `reading` | Reading Flashcards | `limMk` | `pnk` | `purMk` | `users.readingGoal` |
+| Writing | `writing` | Writing Flashcards | `redMk` | `bluMk` | `grnMk` | `users.writingGoal` |
 
 Side by side, left to right (`WORLD_ORDER`): **reading ← main → writing**. One world is on
 screen at a time: the same platform and layout (`TOWER_LAYOUT`) in that world's colours.
@@ -235,64 +238,125 @@ by the swipeable worlds.)
 
 ## Mix / Review switch
 
-`towerModes.ts`, `useStudyModeSwitch.ts`, `DeckTowerPlatform.tsx`, `DeckTowerPage.tsx`
-(`onModeTap`, the camera effect, `keepClimbFor`), drawn with `IsoWallSlider`,
+`towerModes.ts`, `DeckTowerPlatform.tsx`, `DeckTowerPage.tsx`
+(`modes`, `onModeTap`, `fixtureArgs`), `useModeSwitchMotion.ts`, `usePopUpMotion.ts`, drawn with `IsoModeSwitch`,
 `IsoCardRuns` and `IsoSmokePuff` ([ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md)).
 
-A slide switch pokes out of every world's platform on its front-left wall (under the floor
-plate), with a label plate beside it naming the mode: **MIX** (knob at the slot's near,
-upper-left end; `RAMP.yel.mid`) or **REVIEW** (far end; `RAMP.blu.mid`) — the flp study
-hand's hues for the same modes. The modes are the flp's own
-(`server/contracts/studyMode.ts`): Mix = all four utcm bands, Review = Comfortable +
-Mastered, both counting off-cooldown cards only.
+A small light switch (`IsoModeSwitch`) — a solid grey block with one V-shaped rocker paddle — stands
+in its own hatch at every world's platform's right corner on screen, beside the tower
+(`TOWER_LAYOUT.modeSwitchAt`). The paddle shows **only the current mode's name** (MIX or
+REVIEW), folded across the V's two faces, and is painted in that mode's hue (`RAMP.yel.mid` for Mix, `RAMP.blu.mid` for Review
+— the flp study hand's hues for the same modes); a tap rocks it to the other end, the name
+fading out and the other one in as it passes level (`SWITCH_LABELS` / `SWITCH_COLORS` in
+DeckTowerPlatform.tsx). The modes are the flp's own (`server/contracts/studyMode.ts`): Mix =
+all four utcm bands, Review = Comfortable + Mastered, both counting off-cooldown cards only
+(ISO_ART_FRAMEWORK.md § IsoModeSwitch).
 
-- **Only on Learn Now.** While the Mastered deck is up (the plate's `titleDeck`), the
-  label greys out (`ISO.inertPlate` / `inertInk`) and taps are ignored; the Mastered tower
-  is always the whole Mastered total. The mode is kept, so swapping back to Learn Now
-  builds the tower in it.
-- **Per world, for the visit.** One `useStudyModeSwitch` per world, held by the page, so a
-  world keeps its mode across world swipes. Not persisted: a page open starts in Mix.
-- **When it takes a tap.** The tower settled (build-up at 1), counts loaded, and no swap,
-  pan or other switch running. While a switch runs, the plate, swipes and arrows are off.
-- **Instant** under reduced motion, or when nothing moves (no off-cooldown U+T cards, or
-  no cards): the mode and the count just change.
+- **Only on Learn Now — a floor fixture, like the lever.** It stands while the Learn Now deck
+  is up and the world's counts are in, and is not there at all on the Mastered deck: it
+  sinks into its hatch, or, on a trap-door swap leaving Learn Now, falls away with the old
+  tower and is put away unanimated; arriving at Learn Now it drops in from the sky after the
+  pawn. The visibility rules are the lever's own (`DeckTowerPage` → `fixtureArgs`, shared by
+  `leverArgs` and `switchArgs`); the motion is `useModeSwitchMotion` (one per world), which
+  is `usePopUpMotion` — shared with `useLeverMotion` — plus a springy `flip` between the two
+  positions.
+- **Staggered sky landings.** A swap arriving at Learn Now drops the pawn, the lever and the
+  switch from the sky, and their landings are spread across `SKY_LANDING_SPREAD_MS` (1000 ms)
+  instead of hitting one beat: the pawn lands on the trap door's slam, then the two fixtures
+  land evenly spaced after it (+500 ms, +1000 ms). Their order (`SKY_FIXTURES`, lever first)
+  is reversed when the incoming pawn's key is odd, so it varies per swap but holds within one.
+  Each fixture reuses the pawn's `FALL_FROM_SKY` cue with `startAt` shifted later, so every fall
+  plays in full; a fixture still waiting to fall draws nothing and takes no taps, even after the
+  swap has ended (`DeckTowerPage` → `fixtureArgs`; `usePopUpMotion` reads the cue once, when
+  the fixture turns visible). Its hatch is the pawns' third obstacle; the pawn can walk the strip between
+  the tower and the right edge up to it, but not past it. The mode is kept while it is away, so swapping back
+  to Learn Now builds the tower in it.
+- **Per world, for the visit.** The page holds each world's mode (`modes`), so a world
+  keeps its mode across world swipes. Not persisted: a page open starts in Mix.
+- **When it takes a tap.** Counts loaded, and no swap, pan or tower resize running (or
+  held). A tower still building up takes it too: `onModeTap` starts the resize from the
+  cards standing so far (`count × progress`), the resize holds the tower there, and since a
+  resized tower no longer animates its build-up (`everResized`) the growth stops at the tap
+  and the shrink or drop carries it to the new count.
+- **The tower's change is a resize.** The mode (switch, label) cuts over at the tap; the
+  tower then **shrinks** (Mix → Review) or **grows** (Review → Mix) in place, from the
+  library in § Tower resizes. Instant under reduced motion, or when the two modes' counts
+  are equal.
 
-**Mix → Review (collapse).** `planCardCollapse(mixCards, U+T)` picks the U+T count's worth
+## Tower resizes
+
+`towerResizes.ts` (the library), `useTowerResize.ts` (the player), `DeckTowerPage.tsx`
+(`startResize`, `resolveRecount`, the camera effect, `keepClimbFor`), `DeckTowerPlatform.tsx`
+(draws them), `useFocusLever.tsx` (`onRecount`), `src/hooks/useFlpReadyCounts.ts` (`version`).
+
+Every action that changes a standing tower's height in place plays an animation from one
+library: a **shrink** from `TOWER_SHRINKS`, a **grow** from `TOWER_GROWS`, picked at random
+(`pickTowerShrink` / `pickTowerGrow`, the shape of the deck swaps' `DECK_TRANSITIONS`). Each
+list has one entry today. Callers:
+
+| Action | Shrink | Grow |
+|---|---|---|
+| Mix / Review switch | Mix → Review | Review → Mix |
+| Focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5) | focus on (the pile → today's set, ≤ 40) | focus off (today's set → the pile) |
+
+- **Planning and playing.** The page plans a resize (`startResize(fromCards, toCards)`): it
+  sets `keepClimbFor` to the frame it will refit to, and for a grow that `usesCamera` it
+  plans the camera move and how far above the landing the sky starts. The library entry
+  turns that into a `TowerResizePlan` (`kind` names the animation). One `useTowerResize`
+  per world plays it, and DeckTowerPlatform draws it by `kind`. A new animation is an entry
+  in a list, a `kind`, a branch in the player's clock and a branch in the renderer.
+- **The old height holds.** While a resize plays, the settled tower stands at `fromCards`
+  (`heldCards`), and the scene is fitted to the taller of the two heights, so the build-up
+  never sees the count change mid-animation. At the end the new count takes over. After
+  the first resize on main, a count change there no longer grows the tower from nothing
+  (`useBuildProgress`'s `animate`, read off `everResized`), since the resize animated it.
+- **Busy.** While one plays (or holds), the plate, the switch, the lever, swipes and arrows
+  are off.
+- **The focus lever's hold.** The lever's new figure comes from the server some time after
+  the popup's Yes. Just before the re-read, `useFocusLever` calls `onRecount`, and the page
+  `hold`s the tower at the height it stands at, tagged with the counts' fetch `version`
+  (`useFlpReadyCounts`, bumped whenever a fetch settles — success or failure). When the
+  version moves (`resolveRecount`), the held tower shrinks or grows to the re-read figure.
+  An unchanged figure (or a failed re-read) plays nothing; a world no longer on screen, or
+  no longer on Learn Now, just lets the hold go.
+- **Instant** under reduced motion, or when the counts do not change: the count just changes.
+
+**Shrink: ghost collapse (`GHOST_COLLAPSE`).** `planCardCollapse(fromCards, fromCards − toCards)` picks the
+cards that go at random (`IsoCardRuns`): they ghost out a few at a time over about `planCardCollapse(mixCards, U+T)` picks the U+T count's worth
 of the tower's cards at random (`IsoCardRuns`): they ghost out a few at a time over about
 a second, each leaving a light wireframe of its cards behind that holds a beat and then
-fades too (in the same order), while the top card's figure counts down to the Review
+fades too (in the same order), while the top card's figure counts down to the new
 total. Once the last wireframe has gone the gaps hold open a beat, then every floating run
 drops into place under gravity, the lower ones landing first. If the bottom card is one of
 the ghosts, the tower's floor shadow fades with it and darkens back in as the lowest run
-lands on the floor, from the impact (it stays gone when every card ghosts). The scene stays fitted to the Mix tower until the collapse ends, then refits to the
-Review tower keeping the altitude (`keepClimbFor`), so the camera does not jump.
+lands on the floor, from the impact (it stays gone when every card ghosts). The scene stays fitted to the taller tower until the collapse ends, then refits to the
+shorter one keeping the altitude (`keepClimbFor`), so the camera does not jump.
 
-**Review → Mix (drop).** At the tap the page plans against the Mix frame it is about to
+**Grow: sky drop (`SKY_DROP`).** The page plans against the taller frame it is about to
 refit to (`fitScene`, pure):
 
 1. **Camera** (`CAMERA_BASE_MS` 260 + 0.5 ms/px, ≤ `CAMERA_MAX_MS` 900; 0 if already
-   there): the scene refits to the Mix frame keeping the altitude, then the scroller eases
-   so the landing point — the Review tower's top — sits `LANDING_ON_SCREEN` (62%) down the
+   there): the scene refits to the taller frame keeping the altitude, then the scroller eases
+   so the landing point — the standing tower's top — sits `LANDING_ON_SCREEN` (62%) down the
    screen. Written straight to `scrollTop` and marked as the page's own (`placedScrollTop`).
-2. **Drop:** a tower of the U+T cards (`IsoCardStack` with its top card printing the Mix
+2. **Drop:** a tower of the new cards (`IsoCardStack` with its top card printing the new
    total, `figure`) falls from with its underside `DROP_CLEARANCE` (1 unit) above the
    screen's top edge — at least `DROP_MIN_LIFT` (8) above the landing — under
-   `DROP_GRAVITY` (130 units/s²), as a CSS free fall. A seam is drawn under its bottom card,
-   where it meets the Review tower's top card. When the Review tower had no cards it lands
+   `SKY_DROP_GRAVITY` (130 units/s²), as a CSS free fall. A seam is drawn under its bottom card,
+   where it meets the standing tower's top card. When the standing tower had no cards it lands
    on the bare floor instead: its floor shadow is drawn there, still, and fades in from the
    impact (`shadowLandTiming`) — not before, or it would cover the "0 cards" imprint while
    the tower is still in the air.
 3. **Impact** (`IMPACT_MS` 760): the whole loaded platform sinks `IMPACT_SINK` (0.55
    units) and springs back past rest before settling (on top of its bob), and a ring of
    smoke puffs bursts round the join — the back half under the dropped tower, the front half
-   over it. The tower counts as the Mix total from this frame (`dropLanded`, timed from
+   over it. The tower counts as the new total from this frame (`dropLanded`, timed from
    the frame the drop mounted, since its CSS fall starts on that paint), so a total crossing
    `STARTLE_AT_CARDS` startles the pawn on the impact, and a band the tower now reaches
    (birds, clouds, wind) switches on with it.
 
-At the end the two stacks are replaced by one `IsoCardStack` of the Mix count, which draws
-the same picture. After the first switch on main, a count change there no longer grows the
-tower from nothing (`useBuildProgress`'s `animate`), since the switch animated it.
+At the end the two stacks are replaced by one `IsoCardStack` of the new count, which draws
+the same picture.
 
 ## Sky → space
 

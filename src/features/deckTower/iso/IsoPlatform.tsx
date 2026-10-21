@@ -19,23 +19,21 @@ import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
  *   3. the top again, inset by `RIM_WIDTH`, in the true floor tone — leaving the rim as a
  *      thin light bevel line round the edge;
  *   4. `decals` — flat things printed on the floor (floor labels), which belong to it;
- *   5. `fittings` — things mounted on the slab's WALLS (IsoWallSlider). They sit below the
- *      floor on screen, so nothing standing on the floor can be behind them;
- *   6. `children` — whatever stands on the floor (carpets, then the objects on them).
+ *   5. `children` — whatever stands on the floor (carpets, then the objects on them).
  *
- * With `floating`, steps 2–6 go through IsoLevitate: the slab and everything on it bob
+ * With `floating`, steps 2–5 go through IsoLevitate: the slab and everything on it bob
  * together, and the shadow breathes in step. `bodyClassName` / `bodyStyle` reach the group
- * that holds steps 2–6, so a scene can animate the whole loaded slab on top of the bob — the
+ * that holds steps 2–5, so a scene can animate the whole loaded slab on top of the bob — the
  * Deck Tower sinks it briefly when a tower lands on it (docs/DECK_TOWER.md § "Mix / Review
  * switch").
  *
  * `hingeAngle` swings the slab open like a TRAP DOOR on its back-left top edge (the
  * upper-left edge on screen; geometry.ts → `Hinge`). Steps 3–4 swing with it — they are
  * flat, so one `hingedPlaneTransform` carries them — and a veil of the right-wall tone
- * shades the top as it turns to face the same way the right walls do. A decal with height
+ * shades the top as it turns to face the same way the right walls do, and the ground shadow
+ * fades out before the door can swing down through the ground it falls on. A decal with height
  * (a raised IsoFloorLabel) is not flat, so the open hinge is also handed down
- * (`IsoDeckHingeContext`) for it to draw itself on the door properly; `fittings` get the
- * same context, to swing with their wall. `children` do NOT
+ * (`IsoDeckHingeContext`) for it to draw itself on the door properly. `children` do NOT
  * swing: they stand ON the door, so it is the scene's job to make them fall
  * (docs/DECK_TOWER_TRANSITIONS.md § "Trap door").
  */
@@ -51,8 +49,6 @@ interface IsoPlatformProps {
     hingeAngle?: number;
     /** Flat things printed on the floor. They swing with the slab when it opens. */
     decals?: React.ReactNode;
-    /** Things mounted on the slab's walls. They read `IsoDeckHingeContext` to swing with it. */
-    fittings?: React.ReactNode;
     /** Things standing on the floor; they ride along when it floats. */
     children?: React.ReactNode;
     /** Extra class / style on the group holding the slab and everything on it (e.g. a landing sink). */
@@ -70,18 +66,33 @@ export const RIM_WIDTH = 0.16;
 /** How far the swung top's veil goes toward the right-wall tone, at π/2 (see the veil below). */
 const SWING_SHADE_MAX = 0.7;
 
-const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, fittings, children, tone = DEFAULT_TONE, bodyClassName, bodyStyle }) => {
+const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone = DEFAULT_TONE, bodyClassName, bodyStyle }) => {
     const proj = useIsoProjector();
     const open = hingeAngle > 1e-4;
     const hinge: Hinge = useMemo(() => ({ x: rect.x, z: 0, angle: hingeAngle }), [rect.x, hingeAngle]);
     const slab = useMemo(() => hingedPrism(proj, rect, -thickness, 0, hinge), [proj, rect, thickness, hinge]);
 
-    const shadow = open ? (
-        <IsoShadow
-            solid={[...hingedOutline(rect, 0, hinge), ...hingedOutline(rect, -thickness, hinge)]}
-            receiver={ground}
-            className="iso-platform__shadow"
-        />
+    // The ground is only a few units below the underside, and a door swinging open hangs far
+    // deeper than that — it would plunge through the very surface its shadow is painted on.
+    // So the shadow fades as the door's lowest point descends toward the ground, gone by the
+    // time it would touch: it reads as the door leaving its shadow behind rather than falling
+    // into a floor. Closing brings it back in the same way.
+    const swungShadow = useMemo(() => {
+        if (!open) return null;
+        const solid = [...hingedOutline(rect, 0, hinge), ...hingedOutline(rect, -thickness, hinge)];
+        const lowestZ = Math.min(...solid.map((p) => p.z));
+        const gap = -thickness - ground.z;
+        const drop = -thickness - lowestZ;
+        const opacity = gap > 0 ? Math.min(1, Math.max(0, 1 - drop / gap)) : 0;
+        return { solid, opacity };
+    }, [open, rect, thickness, hinge, ground.z]);
+
+    const shadow = swungShadow ? (
+        swungShadow.opacity > 0 ? (
+            <g className="iso-platform__shadow-fade" opacity={swungShadow.opacity}>
+                <IsoShadow solid={swungShadow.solid} receiver={ground} className="iso-platform__shadow" />
+            </g>
+        ) : null
     ) : (
         <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} className="iso-platform__shadow" />
     );
@@ -107,7 +118,6 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
                     />
                 )}
             </IsoSolid>
-            {fittings && <IsoDeckHingeContext.Provider value={open ? hinge : null}>{fittings}</IsoDeckHingeContext.Provider>}
             {children}
         </g>
     );

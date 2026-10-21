@@ -4,6 +4,7 @@ import { FOCUS_LEVER_THRESHOLD } from "../../../server/contracts/focusMode";
 import type { MasteryWorldId } from "../../../server/contracts/wire";
 import FocusDialog, { type FocusDialogContent } from "../focusMode/FocusDialog";
 import { FOCUS_WORLD_NAMES } from "../focusMode/focusWorldNames";
+import type { PawnEntranceCue } from "./iso";
 import { TOWER_MODES, bandTotal } from "./towerModes";
 import { useLeverMotion, type LeverMotion } from "./useLeverMotion";
 
@@ -24,6 +25,8 @@ import { useLeverMotion, type LeverMotion } from "./useLeverMotion";
  *              the threshold it then recedes into the platform and the hatch shuts.
  *
  * After a flip the world's ready counts are re-read, so the tower stands the new figure.
+ * `onRecount` fires just before that re-read: the page holds the tower at its height and,
+ * once the new figure lands, shrinks or grows it there (docs/DECK_TOWER.md § "Tower resizes").
  */
 
 interface ReadyCountsLike {
@@ -43,6 +46,9 @@ export function useFocusLever({
     ready,
     learnNowShown,
     busy,
+    hideInstantly = false,
+    skyEntrance,
+    onRecount,
 }: {
     world: MasteryWorldId;
     ready: ReadyCountsLike;
@@ -50,6 +56,12 @@ export function useFocusLever({
     learnNowShown: boolean;
     /** A swap, pan or mode switch is running: taps are ignored. */
     busy: boolean;
+    /** Show / hide without animating (the lever just fell away with a trap-door swap; useLeverMotion `instant`). */
+    hideInstantly?: boolean;
+    /** Arrive by falling from the sky on this cue (a deck swap's incoming pawn's; useLeverMotion `skyEntrance`). */
+    skyEntrance?: PawnEntranceCue;
+    /** Focus has just flipped and the counts are about to be re-read (DeckTowerPage → `useTowerResize` `hold`). */
+    onRecount?: () => void;
 }): FocusLever {
     const [dialog, setDialog] = useState<"turn-on" | "turn-off" | null>(null);
     const [saving, setSaving] = useState(false);
@@ -70,7 +82,7 @@ export function useFocusLever({
     // full pile is under the threshold, sinks it.
     const visible = ready.loaded && learnNowShown && (focusOn || confirmedOn !== null || readyTotal >= FOCUS_LEVER_THRESHOLD);
     // Held pulled while its own popup is up, as well as while focus is on.
-    const motion = useLeverMotion({ visible, pulled: focusOn || dialog !== null });
+    const motion = useLeverMotion({ visible, pulled: focusOn || dialog !== null, instant: hideInstantly, skyEntrance });
 
     const onTap = () => {
         if (busy || saving || dialog) return;
@@ -84,6 +96,7 @@ export function useFocusLever({
         try {
             await setFocusMode(world, turnOn);
             setConfirmedOn(turnOn);
+            onRecount?.();
             ready.reload();
         } catch (err) {
             console.error("Focus mode switch failed:", err);

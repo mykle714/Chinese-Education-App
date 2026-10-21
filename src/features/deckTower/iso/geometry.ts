@@ -384,26 +384,3 @@ export function hingedPlaneAffine(proj: Projector, z: number, hinge: Hinge): Aff
     const swung = planeMap(proj, (x, y) => hingePoint(hinge, { x, y, z }));
     return composeAffine(swung, invertAffine(shut));
 }
-
-// ── Walls ───────────────────────────────────────────────────────────────────────
-
-/**
- * The map from a FLAT drawing on a slab's FRONT-LEFT wall (the vertical plane at world
- * `y`, facing +y — the lower-left wall on screen) to the screen. The drawing's own
- * coordinates are (world x, −world z): x runs along the wall (screen down-right, the same
- * way a card's print runs) and y runs DOWN the wall, so text drawn in it stands upright.
- *
- * With a `hinge` (a platform's open trap door) the wall swings with the slab: the plane
- * stays at world y, turned in it. Affine, so one `matrix(…)` carries every path drawn on
- * the wall — the same trick as `hingedPlaneTransform` for the floor.
- *
- * Depended on by: IsoWallSlider.tsx (its slot and label print).
- */
-export function wallAffine(proj: Projector, y: number, hinge: Hinge | null): Affine {
-    const at = (x: number, down: number) => {
-        const p = { x, y, z: -down };
-        const q = hinge ? hingePoint(hinge, p) : p;
-        return proj.project(q.x, q.y, q.z);
-    };
-    return affineFrom3(at(0, 0), at(1, 0), at(0, 1));
-}

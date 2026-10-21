@@ -17,8 +17,8 @@ import { CARD_THICKNESS } from "./cardStackMetrics";
  * The top card is never a ghost while any card is kept — it is the deck's lid, and rides
  * down on the topmost run. Only when every card goes does it fade too.
  *
- * Depended on by: IsoCardRuns.tsx (draws a plan), src/features/deckTower/useStudyModeSwitch.ts
- * (makes one and times the switch by it).
+ * Depended on by: IsoCardRuns.tsx (draws a plan), src/features/deckTower/towerResizes.ts
+ * → `GHOST_COLLAPSE` (makes one), useTowerResize.ts (times the shrink by it).
  */
 
 /** Ghosts start fading at random over this many ms… */
@@ -81,7 +81,7 @@ export interface CardCollapsePlan {
  * almost entirely under the stack (only its contact sliver shows), so while the stack is
  * still in the air it would just be a dark card-sized patch over the floor's "0 cards"
  * imprint. Shared by IsoCardRuns (a collapse whose bottom card ghosted) and the Deck
- * Tower's Review → Mix drop onto an empty floor.
+ * Tower's sky-drop grow onto an empty floor (towerResizes.ts → `SKY_DROP`).
  */
 export const SHADOW_LAND_MS = 120;
 export function shadowLandTiming(landAtMs: number): { delayMs: number; durationMs: number } {

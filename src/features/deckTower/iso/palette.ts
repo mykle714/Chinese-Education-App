@@ -170,19 +170,19 @@ export const ISO = {
     smoke: COLORS.white,
 
     /**
-     * A control that is NOT IN USE (IsoWallSlider `dimmed`): `RAMP.grey`'s inert surface
-     * for its plate and its mark grey for the print.
-     */
-    inertPlate: COLORS.grey,
-    inertInk: COLORS.greyA,
-
-    /**
      * The focus lever (IsoLever): a cream base like card stock, an ink stick like the
      * pawns' silhouettes, and a red ball — Good Job's switch-knob red, `redMk` (the red
      * ramp's mark tier).
      */
     leverBase: { top: COLORS.cardFace, left: COLORS.cardBeige, right: shadeHex(COLORS.cardBeige, 0.07) } as Material,
     leverKnob: COLORS.redMk,
+
+    /**
+     * The Mix / Review switch's body (IsoModeSwitch): the framework's mid grey (`greyA`, the
+     * grey rung's mark) so both band paddles — Mix's light yellow especially — stand off it,
+     * with walls shaded off it like the clouds' (the same flagged `shadeHex` divergence).
+     */
+    switchBase: material(COLORS.greyA, 0.08, 0.16),
 
     /** Characters and printed text: pure ink silhouettes. */
     ink: COLORS.onSurface,

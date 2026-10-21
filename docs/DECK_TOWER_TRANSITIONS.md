@@ -228,7 +228,11 @@ Sample durations from t = 0: a short tower (fall 12 u) is ready at about 1.4 s, 
   the world's platform right-wall tone (`PlatformTone.material.right`; gold's is `ISO.platform.right`) darkens it, up to `SWING_SHADE_MAX` (0.7) at π/2. The veil stops
   short of 1 so it shades the print instead of erasing it.
 - **Shadow.** The ground shadow is `IsoShadow`'s `solid` form: every rotated vertex slides
-  along the light for its own height, and the shadow is the hull of where they land.
+  along the light for its own height, and the shadow is the hull of where they land. The
+  ground is only 1.6 units under the slab (`GROUND_Z`), so a door hanging at 86° would
+  plunge through it: the shadow fades out as the door's lowest point nears the ground
+  (`IsoPlatform` → `swungShadow`; gone by ~8° open on the default platform) and fades back
+  in on the close — the slam's 3° rebound dims it briefly.
 - **Clipping.** Hanging at 86°, the door reaches below the scene's bottom edge, so the
   scroller clips its lower part at the footer bar.
 

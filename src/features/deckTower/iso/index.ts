@@ -21,8 +21,15 @@ export { default as IsoCardStack } from "./IsoCardStack";
 export { default as IsoCardImprint } from "./IsoCardImprint";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
-export { leverFootprint, LEVER_HOLE } from "./leverGeometry";
-export { default as IsoWallSlider, type WallSliderLayout } from "./IsoWallSlider";
+export { default as IsoHatch } from "./IsoHatch";
+export { default as IsoModeSwitch } from "./IsoModeSwitch";
+export {
+    hatchFootprint,
+    leverFootprint,
+    modeSwitchFootprint,
+    LEVER_HOLE,
+    MODE_SWITCH_HOLE,
+} from "./hatchGeometry";
 export { default as IsoCardRuns } from "./IsoCardRuns";
 export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";

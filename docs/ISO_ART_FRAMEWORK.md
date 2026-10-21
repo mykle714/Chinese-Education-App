@@ -46,7 +46,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `useBirdFlights.ts` → `useBirdFlights`, `BirdFlight`, `BirdSky` | Schedules the birds crossing the sky: speed, timing, wingbeat |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoWallSlider.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoBird.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoBird.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowTone` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
@@ -80,10 +80,6 @@ World +x runs down-right, +y down-left and +z up. Screen coordinates are
   anything already drawn flat at height z onto the swung plane. It is exact for flat things
   only. `hingedPlaneAffine` is the same map as an `Affine`, so it can be composed or
   inverted. Used by `IsoPlatform`'s `hingeAngle` and IsoFloorLabel's raised plate.
-- **`wallAffine(proj, y, hinge)`.** The map from a flat drawing on a slab's front-left wall
-  (the vertical plane at world y, facing +y) to the screen. Drawing coordinates are
-  (world x, −world z), so text drawn in it stands upright and runs along +x. With a hinge it
-  swings with the slab. Used by `IsoWallSlider`.
 
 ## The scene
 
@@ -152,7 +148,7 @@ allow `BOB_HEIGHT` of headroom.
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, hingeAngle?, decals?, fittings?, children, tone?, bodyClassName?, bodyStyle? }`. A slab whose top,
+`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle? }`. A slab whose top,
 the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
 from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
 `ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
@@ -165,14 +161,11 @@ It draws, in order:
    scene can keep walkers (and their shadows) off the bevel — the Deck Tower's `TowerPlatformLayout.roam` (towerPlatforms.ts) is
    `insetRect(platform, RIM_WIDTH)`.
 4. `decals`: flat things printed on the floor (floor labels).
-5. `fittings`: things mounted on the slab's walls (`IsoWallSlider`). They sit below the
-   floor on screen, so nothing standing on the floor is ever behind them. They get the open
-   hinge through `IsoDeckHingeContext`, as raised decals do, so they swing with their wall.
-6. `children`: the carpets and objects on the floor.
+5. `children`: the carpets and objects on the floor.
 
 With `floating`, steps 2–6 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
 the group holding steps 2–6, so a scene can move the whole loaded slab on top of the bob
-(the Deck Tower's landing sink, [DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch).
+(the Deck Tower's landing sink, [DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
 
 **Trap door.** `hingeAngle` (radians, 0 = shut) swings the slab open on its back-left
 top edge (`hingedPrism`).
@@ -182,7 +175,10 @@ top edge (`hingedPrism`).
   decals through `IsoDeckHingeContext` (`sceneContext.ts`), null while shut.
 - **Shade.** A veil of the tone's right-wall colour (`ISO.platform.right` for gold) darkens the top as it turns to face the way
   the right walls do, up to `SWING_SHADE_MAX` (0.7).
-- **Shadow.** The ground shadow comes from `IsoShadow`'s `solid` form.
+- **Shadow.** The ground shadow comes from `IsoShadow`'s `solid` form. It fades as the door's
+  lowest point descends toward the `ground` (opacity `1 − drop / gap`, where `gap` is the
+  underside-to-ground distance), gone before the door would pass through the surface its
+  shadow is painted on, and fades back in as the door shuts.
 - **Children do not swing.** They stand on the door, so making them fall is the scene's
   job. See [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Trap door.
 
@@ -311,54 +307,94 @@ outside any depth sort. `shaded` draws it as it looks in shadow (plate and print
 the pawn's shadow darkens it. The shaded copy draws no contact shadow — the pawn's shadow
 already darkens that floor to the same tone.
 
+### IsoHatch
+
+*Code: `src/features/deckTower/iso/IsoHatch.tsx`, `iso/hatchGeometry.ts` (`hatchFootprint`).
+Used by `IsoLever` and `IsoModeSwitch`; animated by the Deck Tower's `usePopUpMotion`.*
+
+`{ at, w, d?, surface, sink, hatch, sinkDepth, shadowFootprint, air?, className?, children }`.
+A rectangular (`w` across x by `d` along y; square when `d` is omitted) trapdoor in a floor that a fixture rises out of and sinks back into. It draws the
+hatch and frames the fixture; the fixture's body is `children(standZ)`, drawn standing at
+world z `standZ` (the lift's top). The hatch is two trapdoor flaps hinged on the hole's two x
+edges plus a **lift**, a floor-coloured slab (`surface.color` with shaded sides) filling the
+hole that the fixture stands on. Risen, the lift is flush and drawn as just its top, unclipped,
+slightly larger than the hole, in the floor's colour: the floor under a standing fixture is
+unbroken, with no seam.
+
+`sink` (0 = risen, lift flush; 1 = sunk `sinkDepth` below the floor; clamped to [0, 1], so the
+lift never rises proud of the floor) and `hatch` (0 = flaps shut flush; 1 = hanging open). At
+exactly `hatch = 0` the flaps are not drawn at all, so a sunk, shut fixture leaves the floor
+unbroken with no outline; the flaps (and their seams) exist only while they swing, including a
+shut's spring overshoot below 0. An optional `air` (a `PawnEntranceFrame`, pawnEntrances.ts)
+poses a standing fixture mid-entrance: the body is lifted `hop` units and scaled `sx`/`sy`
+about its feet, and its shadow (`shadowFootprint`) stays under the landing spot, scaled by
+`shadowScale` and faded by `shadowOpacity`. No part of the hatch (hole, flaps, lift top) is
+drawn while `air` is set, because the floor under it may still be moving; the Deck Tower drops
+its fixtures in on `FALL_FROM_SKY` ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5). Below-floor parts
+are hidden by clips: the lift always, and the fixture while `sink > 0`, by the hole's opening
+swept up the screen; the flaps by the opening itself (a hanging near flap is hidden under the
+floor's front edge). Standing, the fixture is unclipped, so one that overhangs the hole's
+column must pull itself in while it passes through (IsoLever stands its stick upright).
+Scenes may target `iso-hatch__hole`, `__flap`, `__lift-top` and `__shadow` (the Deck Tower
+hides them on a fixture falling away with its floor).
+
 ### IsoLever
 
-*Code: `src/features/deckTower/iso/IsoLever.tsx`, `iso/leverGeometry.ts` (`leverFootprint`,
+*Code: `src/features/deckTower/iso/IsoLever.tsx`, `iso/hatchGeometry.ts` (`leverFootprint`,
 `LEVER_HOLE`). Used by the Deck Tower's focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5).*
 
-A floor lever standing in a square hatch. A cream base box (`ISO.leverBase`, card stock's
-tones) with a dark pivot slot on its top, a short, thick ink stick pivoting there in the world
-x–z plane, and a plain red ball (`ISO.leverKnob` = `redMk`, flat, no outline or highlight). The
-hatch is two trapdoor flaps hinged on the hole's two x edges plus a **lift**, a floor-coloured
-slab (`surface.color` with shaded sides) filling the hole that the lever stands on. Risen, the
-lift is flush and drawn as just its top, unclipped, slightly larger than the hole, in the
-floor's colour: the floor under a standing lever is unbroken, with no seam.
-
-Driven by three numbers the caller animates: `pull` (0 = leaning back toward −x, 1 = pulled
-toward the viewer, may overshoot), `sink` (0 = risen, lift flush; 1 = sunk below the floor;
-clamped to [0, 1], so the lift never rises proud of the floor) and `hatch` (0 = flaps shut
-flush, reading as a seamed floor tile; 1 = hanging open). Below-floor parts are hidden by
-clips: the lift always, and the lever while `sink > 0`, by the hole's opening swept up the
-screen; the flaps by the opening itself (a hanging near flap is hidden under the floor's front
-edge). Standing, the lever is unclipped, because the leaning ball overhangs the hole's column;
-the stick stands upright from a third of the way down so a sinking or rising ball stays inside
-the column. Its footprint is an obstacle among the standing things.
+`{ at, surface, pull, sink, hatch, air? }`. A floor lever standing in an `IsoHatch` (1.0-unit
+opening). A cream base box (`ISO.leverBase`, card stock's tones) with a dark pivot slot on its
+top, a short, thick ink stick pivoting there in the world x–z plane, and a plain red ball
+(`ISO.leverKnob` = `redMk` by default, flat, no outline or highlight; the optional `knob` prop recolours it — the Deck Tower's writing world passes `grnMk` (off its red sky) and reading `purMk` (off its lime sky), `towerWorlds.ts` → `TowerWorld.leverKnob`). `pull` is 0 leaning back toward −x
+and 1 pulled toward the viewer (may overshoot); `sink`, `hatch` and `air` are the hatch's.
+Standing, the leaning ball overhangs the hole's column, so the stick stands upright from a
+third of the way down and a sinking or rising ball stays inside the clip. Its footprint is an
+obstacle among the standing things.
 
 ⚠️ `ISO.leverBase.right` is derived with `shadeHex`, the same flagged divergence as the card
 stock's right wall.
 
-### IsoWallSlider
+### IsoModeSwitch
 
-`{ layout, wallTone, position, label, labelColor, dimmed?, hitPad? }`. A two-position slide
-switch on a slab's front-left wall with a name plate beside it. `layout`
-(`WallSliderLayout`: `wallY`, `z`, `slotX`, `slotW`, `labelX`, `labelW`) places it along the
-wall. A wall fitting: pass it to `IsoPlatform`'s `fittings`.
+*Code: `src/features/deckTower/iso/IsoModeSwitch.tsx`, `iso/hatchGeometry.ts`
+(`MODE_SWITCH_HOLE`, `modeSwitchFootprint`). Used by the Deck Tower's Mix / Review switch
+([DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch).*
 
-- **Slot.** A groove printed through `wallAffine`, `shadeHex(wallTone, 0.12)` (the wall's
-  left tone a step darker — derived, like every wall tone ⚠️).
-- **Knob.** A cream (`ISO.card`) box standing 0.42 units out of the wall: an ordinary
-  `prism` whose footprint runs from the wall along +y, so it gets the three-tone shading.
-  `position` 0 is the slot's start (low x, upper-left), 1 its end. It is drawn at the start
-  and slid by a CSS `transform` along the wall's own x direction with a short springy
-  transition; on a swinging door the transition is dropped, because the slide vector turns
-  with the wall and a transition would lag it.
-- **Label.** A flat plate printed on the wall in `labelColor` shaded one left-wall step
-  (`shadeHex` 0.07, since it faces the way the left walls do), with ink text. `dimmed`
-  greys it out (`ISO.inertPlate` / `ISO.inertInk`): the switch is not in use.
+`{ at, surface, flip, labels, colors, sink, hatch, air? }`. A two-position light switch
+standing in an `IsoHatch` (`MODE_SWITCH_HOLE`, 1.6 × 2.7, long along world y) — it rises,
+sinks and drops in from the sky exactly like `IsoLever`.
 
-Purely visual. The caller wraps it in its own button; the transparent `iso-wall-slider__hit`
-path (padded by `hitPad`, 0.35) gives that wrapper a big enough target, since the wall is
-only ~25 px tall on a phone.
+- **Shape.** A solid grey body (`ISO.switchBase` — `greyA`, so the light yellow Mix paddle
+  stands off it; `BODY_H` 0.5) with one solid V-shaped paddle (`PADDLE_W` 0.95 × `PADDLE_L`
+  2.0) seated in it, sharing its centre. The body is the paddle's plan plus an even `RIM`
+  (0.2) all round, and a dark slot (`SLOT_GAP` 0.05 wider than the paddle, `shadeHex` 0.4 off
+  the body's grey — a flagged divergence like the wall tones) is printed on its top under the
+  paddle. The paddle has a flat underside sunk `PADDLE_SKIRT` (0.5) into the body — deeper
+  than its raised end lifts, so no gap ever shows under it — and a top of two faces meeting
+  in a valley, the crease (a line along world x at `at`; `CREASE_T` 0.2 thick there), each
+  face rising `V_ANGLE` (0.116 rad, ≈6.7°) toward its end. It rocks on the crease by the same
+  `V_ANGLE`, raised `CREASE_LIFT` so the pressed end just meets the body: the pressed half's
+  face lies level, the raised half's stands at 2·`V_ANGLE`. `flip` 0 presses the +y end
+  (screen lower left), 1 the −y end (upper right); it is a spring and may overshoot.
+- **Drawing.** The body is a prism. The V is not convex, so the paddle is drawn as its two
+  convex halves, each like a prism (`halfGeometry`), the far (−y) half first. Each half's
+  wall edges are cut in the world where they cross the body's top, and its silhouette is the
+  hull of its top face and those cut points — so the walls end exactly at the body's top
+  and the skirt inside the body is never drawn. (A screen-space clip to the body's outline
+  would not do: the buried skirt projects down onto the body's top face, inside that
+  outline, and the paddle looked slid forward off its seat.)
+- **Colour.** The paddle takes `colors[nearer]` — the band of the position `flip` is nearer
+  — in the platform's wall steps (`shadeHex` 0.07 / 0.15, the same flagged wall-tone
+  divergence as the rest of the palette).
+- **Label.** Only `labels[nearer]` is printed, centred on the crease and folded over both
+  faces of the V: it is printed once per face through the affine map onto that face
+  (`facePlane`, measured along the surface from the crease so the two prints meet at the
+  fold), each clipped to its own side. Reads along −y (screen left → right). Its ink fades
+  to 0 as the paddle passes level, where the label and colour swap. `LABEL_FONT` 0.4 fits
+  "REVIEW" across the two faces.
+
+Its footprint is an obstacle among the standing things.
 
 ### IsoSmokePuff
 
@@ -467,9 +503,9 @@ around. An iso object is nearer the viewer than a box when it is past the box's 
 on +x or +y. `roam.obstacles` are given back-to-front, and `depthRankAmong(point, rects)`
 returns the index of the FIRST rect the point stands behind (`rects.length` when it is in
 front of all of them). It is deliberately not a count of the rects it is in front of: a
-fixed back-to-front list is not a total order for every point (a pawn on the Deck Tower's
-back-left is behind the tower yet in front of the back-right lever, and a count of 1 drew it
-over the tower). Any slot respecting the rects it is behind is right, since the ones it is
+fixed back-to-front list is not a total order for every point (with the Deck Tower's lever at
+the floor's back-right corner, where it once stood, a pawn on the tower's back-left was behind
+the tower yet in front of the lever, and a count of 1 drew it over the tower). Any slot respecting the rects it is behind is right, since the ones it is
 "wrongly" behind don't overlap it on screen. The pawn reports the slot through
 `onDepthRankChange` when it changes, and the caller renders the pawn after that many
 obstacles. Children must be keyed, so the reorder moves the pawn's DOM node instead of
@@ -639,7 +675,6 @@ The base colours are all `COLORS` tokens:
 | Stars | `star` | `white` |
 | Smoke puffs | `smoke` | `white` |
 | Ghost wireframes (IsoCardRuns) | `ghostWire` | `white` (at 0.6 stroke opacity, `IsoCardRuns` → `WIRE_OPACITY`) |
-| A control not in use (IsoWallSlider `dimmed`) | `inertPlate`, `inertInk` | `grey`, `greyA` (`RAMP.grey`'s surface and mark) |
 | Ink | `ink` | `onSurface` |
 
 ⚠️ **Divergence from the colour framework.** The darker tones are derived at runtime with

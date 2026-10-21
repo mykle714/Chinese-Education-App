@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import MobileTabScreen from "../../components/MobileTabScreen";
 import { FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
@@ -29,6 +29,7 @@ import {
 import { useAuth } from "../../AuthContext";
 import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { useFocusLever, type FocusLever } from "./useFocusLever";
+import { useModeSwitchMotion, type ModeSwitchMotion } from "./useModeSwitchMotion";
 import { useMasteredCounts } from "../../hooks/useMasteredCounts";
 import { useSwipeCommit, type SwipeDirection } from "../../hooks/useSwipeCommit";
 import { builtinCollectionCount } from "../flashcards/builtinCollections";
@@ -41,8 +42,9 @@ import CardSplat from "./CardSplat";
 import DeckTowerPlatform, { type PlateFace } from "./DeckTowerPlatform";
 import { useDeckSwap } from "./useDeckSwap";
 import { useBuildProgress } from "./useBuildProgress";
-import { useStudyModeSwitch } from "./useStudyModeSwitch";
-import { MIX_ONLY_BANDS, TOWER_MODES, bandTotal, otherTowerMode, type TowerModeId } from "./towerModes";
+import { useTowerResize } from "./useTowerResize";
+import { pickTowerGrow, pickTowerShrink } from "./towerResizes";
+import { TOWER_MODES, bandTotal, otherTowerMode, type TowerModeId } from "./towerModes";
 import { useWorldPan, type PanCarry } from "./useWorldPan";
 import { CARD_D, CARD_W, FLOOR_Z, PLATFORM_THICKNESS, TOWER_LAYOUT } from "./towerPlatforms";
 import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
@@ -58,9 +60,11 @@ import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
  * the bands of the world's Mix / Review mode, and Mastered is the bar's whole Mastered total
  * (`useMasteredCounts`).
  *
- * Every world also has a Mix / Review switch on its platform wall (useStudyModeSwitch.ts):
- * Review ghosts the Unfamiliar + Target cards out of the tower and lets the rest settle;
- * Mix drops them back on from the sky (docs/DECK_TOWER.md § "Mix / Review switch").
+ * Every world also has a Mix / Review switch and a focus lever standing on its floor. Both
+ * change the tower's height in place, and every such change plays an animation from the
+ * tower-resize library (towerResizes.ts, played by one useTowerResize per world): a shrink
+ * (Mix → Review, focus on) or a grow (Review → Mix, focus off) — docs/DECK_TOWER.md
+ * § "Tower resizes".
  *
  * Up to three WORLDS (towerWorlds.ts), side by side: reading ← main (core) → writing, the
  * skill ones only while the account has that goal on (`users.readingGoal` /
@@ -96,6 +100,17 @@ const LAYOUT = TOWER_LAYOUT;
 const FALL_CLEARANCE = 1;
 
 /**
+ * A deck swap arriving at Learn Now drops several things from the sky (the pawn, the
+ * focus lever, the Mix / Review switch). Their landings are staggered across this many
+ * ms rather than all hitting one beat: the pawn lands on the trap door's slam, and the
+ * floor fixtures follow, spaced evenly up to this long after it (`fixtureArgs`).
+ */
+const SKY_LANDING_SPREAD_MS = 1000;
+/** The floor fixtures that fall in after the pawn, in their default landing order (a swap may reverse it). */
+const SKY_FIXTURES = ["lever", "switch"] as const;
+type SkyFixture = (typeof SKY_FIXTURES)[number];
+
+/**
  * Gap between the platform's shadow and the scene's bottom edge (= the footer bar's top),
  * in world units.
  */
@@ -109,9 +124,10 @@ const BOTTOM_MARGIN = 0.4;
 const TOP_HEADROOM = 9;
 
 /**
- * The Mix / Review switch's Review → Mix drop (docs/DECK_TOWER.md § "Mix / Review switch").
- * The camera scrolls so the landing (the Review tower's top) sits this far down the
- * screen, leaving sky above it for the drop to fall through…
+ * A tower grow's camera move (docs/DECK_TOWER.md § "Tower resizes"; a grow with
+ * `usesCamera`, e.g. the sky drop). The camera scrolls so the landing (the standing
+ * tower's top) sits this far down the screen, leaving sky above it for the drop to fall
+ * through…
  */
 const LANDING_ON_SCREEN = 0.62;
 /** …taking CAMERA_BASE_MS + CAMERA_MS_PER_PX per px scrolled, capped at CAMERA_MAX_MS. */
@@ -283,23 +299,28 @@ const DeckTowerPage: React.FC = () => {
     };
     const mastered = useMasteredCounts();
 
-    // Each world's Mix / Review switch (docs/DECK_TOWER.md § "Mix / Review switch"). Page
-    // state, so a world keeps its mode across world swipes for the visit.
-    const modes: Record<TowerWorldId, ReturnType<typeof useStudyModeSwitch>> = {
-        core: useStudyModeSwitch(),
-        reading: useStudyModeSwitch(),
-        writing: useStudyModeSwitch(),
+    // Each world's Mix / Review mode (docs/DECK_TOWER.md § "Mix / Review switch"). Page
+    // state, so a world keeps its mode across world swipes for the visit (not persisted:
+    // every page open starts in Mix). It cuts over at the tap; the tower's resize holds the
+    // old height until its animation ends.
+    const [modes, setModes] = useState<Record<TowerWorldId, TowerModeId>>({ core: "mix", reading: "mix", writing: "mix" });
+    // Each world's tower resizes (docs/DECK_TOWER.md § "Tower resizes"): the Mix / Review
+    // switch's and the focus lever's shrinks and grows.
+    const resizes: Record<TowerWorldId, ReturnType<typeof useTowerResize>> = {
+        core: useTowerResize(),
+        reading: useTowerResize(),
+        writing: useTowerResize(),
     };
 
     // A world's two decks, read through its own bar: Learn Now = that bar's OFF-COOLDOWN
     // cards (the flp's own readiness rule, so the tower never shows a card the flp would not
-    // deal), in the bands of the world's settled mode — all four in Mix, Comfortable +
+    // deal), in the bands of the world's mode — all four in Mix, Comfortable +
     // Mastered in Review (towerModes.ts). Mastered = that bar's whole Mastered total,
     // cooling or not. Undefined until loaded, so no tower builds from a placeholder 0.
     const learnNowCount = (worldId: TowerWorldId, mode: TowerModeId): number | undefined =>
         readyCounts[worldId].loaded ? bandTotal(readyCounts[worldId].counts, TOWER_MODES[mode].bands) : undefined;
     const deckCountsFor = (worldId: TowerWorldId): Record<TowerDeckId, number | undefined> => ({
-        "learn-now": learnNowCount(worldId, modes[worldId].towerMode),
+        "learn-now": learnNowCount(worldId, modes[worldId]),
         // The 'mastered' kind reads only `mastered.counts`; the band counts argument is unused.
         mastered: mastered.loaded ? builtinCollectionCount({ kind: "mastered", world: worldId }, readyCounts[worldId].counts, mastered.counts) ?? 0 : undefined,
     });
@@ -325,20 +346,26 @@ const DeckTowerPage: React.FC = () => {
     };
     const swap = swaps[worldId];
     // The deck each tower is fitted to — the old one until it has fallen clear, then the new.
+    // While a resize plays (or holds), the Learn Now tower keeps the height it had at the
+    // tap, so the build-up never sees the count change mid-animation.
+    const towerCountFor = (id: TowerWorldId): number | undefined => {
+        const held = resizes[id].heldCards;
+        return held !== null && swaps[id].towerDeck === "learn-now" ? held : deckCountsFor(id)[swaps[id].towerDeck];
+    };
     const towerCounts: Record<TowerWorldId, number | undefined> = {
-        core: deckCountsFor("core")[swaps.core.towerDeck],
-        reading: deckCountsFor("reading")[swaps.reading.towerDeck],
-        writing: deckCountsFor("writing")[swaps.writing.towerDeck],
+        core: towerCountFor("core"),
+        reading: towerCountFor("reading"),
+        writing: towerCountFor("writing"),
     };
     // A tower may grow once its counts are in and its swap's platform is not empty.
     const mayGrow = (id: TowerWorldId) => towerCounts[id] !== undefined && swaps[id].towerOnStage;
     // Every world keeps its tower built, on screen or not, so arriving shows it standing.
     // The main one builds up on page load; a skill world's appears at full height (no
     // build-up) and only grows after a deck swap there (`animate` = mid-swap). Once main's
-    // Mix / Review switch has been used, a count change there no longer grows the tower
-    // from nothing either: the switch animated the change itself.
+    // tower has been resized (the Mix / Review switch, the focus lever), a count change there
+    // no longer grows the tower from nothing either: the resize animated the change itself.
     const progress: Record<TowerWorldId, number> = {
-        core: useBuildProgress(mayGrow("core"), towerCounts.core ?? 0, swaps.core.busy || !modes.core.everSwitched),
+        core: useBuildProgress(mayGrow("core"), towerCounts.core ?? 0, swaps.core.busy || !resizes.core.everResized),
         reading: useBuildProgress(mayGrow("reading"), towerCounts.reading ?? 0, swaps.reading.busy),
         writing: useBuildProgress(mayGrow("writing"), towerCounts.writing ?? 0, swaps.writing.busy),
     };
@@ -348,15 +375,15 @@ const DeckTowerPage: React.FC = () => {
     const stackDrawn = swap.outgoing !== null || swap.towerOnStage;
     const stackProgress = swap.outgoing?.frozenProgress ?? progress[worldId];
     const towerCount = towerCounts[worldId] ?? 0;
-    // This world's Mix / Review switch. While one plays, the scene is fitted to the MIX
-    // tower (the taller): a collapse starts from it, and a drop needs its sky to fall through.
-    const modeSwitch = modes[worldId];
-    const mixCount = learnNowCount(worldId, "mix") ?? 0;
-    // Cards standing on the tower. A Review → Mix drop counts from its IMPACT (not the
-    // switch's end, IMPACT_MS later), so a Mix total crossing STARTLE_AT_CARDS startles the
-    // pawn as the tower lands.
-    const cardsOnTower = !stackDrawn ? 0 : modeSwitch.dropLanded ? mixCount : Math.round(towerCount * stackProgress);
-    const fitCount = modeSwitch.busy ? mixCount : towerCount;
+    // This world's mode and tower resize. While a resize plays, the scene is fitted to the
+    // TALLER of its two heights: a shrink starts from it, and a grow needs its sky to fall
+    // through.
+    const mode = modes[worldId];
+    const resize = resizes[worldId];
+    // Cards standing on the tower. A sky drop counts from its IMPACT (not the resize's end,
+    // IMPACT_MS later), so a total crossing STARTLE_AT_CARDS startles the pawn as it lands.
+    const cardsOnTower = !stackDrawn ? 0 : resize.dropLanded && resize.toCards !== null ? resize.toCards : Math.round(towerCount * stackProgress);
+    const fitCount = resize.toCards !== null ? Math.max(towerCount, resize.toCards) : towerCount;
 
     const proj = useMemo(() => makeProjector(UNIT), []);
 
@@ -429,8 +456,8 @@ const DeckTowerPage: React.FC = () => {
         placedScrollTop.current = null;
         climb.current = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     };
-    // A Mix / Review switch's refit (to the Mix frame as a drop starts, to the Review frame
-    // as a collapse ends) keeps the altitude instead, like an arrival: the camera stays on
+    // A tower resize's refit (to the taller frame as a grow starts, to the shorter one as a
+    // shrink ends) keeps the altitude instead, like an arrival: the camera stays on
     // what the learner is watching. It names the viewBox it expects, so a switch that ends
     // up not refitting cannot leak the exception onto a later refit.
     const keepClimbFor = useRef<string | null>(null);
@@ -461,79 +488,174 @@ const DeckTowerPage: React.FC = () => {
         return c["learn-now"] !== undefined && c.mastered !== undefined;
     };
     const onPlateTap = () => {
-        if (swap.busy || pan.busy || modeSwitch.busy || !countsLoaded(worldId)) return;
+        if (swap.busy || pan.busy || resize.busy || !countsLoaded(worldId)) return;
         keepClimbFor.current = null;
         const el = scrollerRef.current;
         if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
         swap.toggle({ fallDistance: scene.fallDistance, progress: progress[worldId], cards: cardsOnTower });
     };
 
-    // ── The Mix / Review switch (the world's platform wall) ──────────────────────
-    // Only on the Learn Now deck, with the tower settled and nothing else moving.
+    // ── The Mix / Review switch (a floor fixture, like the lever) ────────────────
+    // Only on the Learn Now deck, with nothing else moving. A tower still BUILDING UP takes
+    // the tap too: the resize starts from the cards already standing (`onModeTap`).
     const onLearnNow = swap.titleDeck === "learn-now" && swap.towerDeck === "learn-now";
-    const modeSwitchBusy = modeSwitch.busy || swap.busy || pan.busy || !countsLoaded(worldId) || progress[worldId] < 1;
+    const modeSwitchBusy = resize.busy || swap.busy || pan.busy || !countsLoaded(worldId);
 
     // ── The focus lever (docs/FOCUS_MODE.md § 5) ─────────────────────────────────
     // One per world, like the counts and the swaps, so each world's lever keeps its own
     // state across world swipes. Only the world on screen's lever is drawn; every world's
     // popup is mounted (at most one is ever open).
-    const leverArgs = (id: TowerWorldId) => ({
-        world: id,
-        ready: readyCounts[id],
-        learnNowShown: swaps[id].titleDeck === "learn-now" && swaps[id].towerDeck === "learn-now",
-        busy: swaps[id].busy || pan.busy || modes[id].busy,
-    });
+    //
+    // The lever never moves on an open trap door — its hatch would hang in mid-air beside
+    // the swung slab. Leaving Learn Now, it stays standing and falls away with the old
+    // tower (DeckTowerPlatform wraps it in the tower's fall), then is put away sunk and
+    // shut, unanimated, once cleared. Arriving at Learn Now, it never comes up through
+    // the hatch: it FALLS FROM THE SKY on the incoming pawn's own entrance animation,
+    // landing a staggered beat after the pawn (useLeverMotion `skyEntrance`). The cue
+    // exists from transition t = 0, so the lever is shown from then — hidden until its
+    // fall starts.
+    //
+    // The Mix / Review switch is a floor fixture too, and follows the same rules: it stands
+    // only on Learn Now, falls away with the old tower and drops in from the sky after the
+    // pawn (`fixtureArgs`, shared by both).
+    //
+    // STAGGER. The pawn lands on the door's slam; the fixtures land after it, spaced evenly
+    // up to SKY_LANDING_SPREAD_MS later, so the arrivals read as one-two-three thuds rather
+    // than a single one. Which fixture comes first flips with the incoming pawn's key
+    // (new per swap), so the order varies from swap to swap but holds steady within one.
+    // The cue is only shifted later, never earlier: each fall still plays its whole
+    // timeline, and a fixture still waiting draws nothing and takes no taps
+    // (DeckTowerPlatform `leverTappable` / `switchTappable`), even once the swap is over.
+    const fixtureArgs = (id: TowerWorldId, fixture: SkyFixture) => {
+        const s = swaps[id];
+        const incoming = s.busy && s.titleDeck === "learn-now" ? s.pawns.find((p) => !p.outgoing) : undefined;
+        const pawnCue = incoming?.entrance;
+        const order = incoming && incoming.key % 2 === 1 ? [...SKY_FIXTURES].reverse() : SKY_FIXTURES;
+        const landsAfterPawnMs = ((order.indexOf(fixture) + 1) * SKY_LANDING_SPREAD_MS) / SKY_FIXTURES.length;
+        const skyEntrance = pawnCue && { ...pawnCue, startAt: pawnCue.startAt + landsAfterPawnMs };
+        const learnNowShown = s.busy
+            ? (s.outgoing !== null && s.towerDeck === "learn-now") || pawnCue !== undefined
+            : s.titleDeck === "learn-now" && s.towerDeck === "learn-now";
+        return { learnNowShown, hideInstantly: s.busy, skyEntrance };
+    };
+    const leverArgs = (id: TowerWorldId) => {
+        const fixture = fixtureArgs(id, "lever");
+        return {
+            world: id,
+            ready: readyCounts[id],
+            learnNowShown: fixture.learnNowShown,
+            busy: swaps[id].busy || pan.busy || resizes[id].busy,
+            hideInstantly: fixture.hideInstantly,
+            skyEntrance: fixture.skyEntrance,
+            // Hold the tower where it stands until the flipped counts land (`resolveRecount`).
+            onRecount: () => {
+                if (swaps[id].towerDeck === "learn-now") resizes[id].hold(towerCounts[id] ?? 0, readyCounts[id].version);
+            },
+        };
+    };
     const focusLevers: Record<TowerWorldId, FocusLever> = {
         core: useFocusLever(leverArgs("core")),
         reading: useFocusLever(leverArgs("reading")),
         writing: useFocusLever(leverArgs("writing")),
     };
-    // Where a Review → Mix drop's camera move ends (scrollTop), set at the tap.
+    // The switch rises once the world's counts are in (its first tap needs them anyway).
+    const switchArgs = (id: TowerWorldId) => {
+        const fixture = fixtureArgs(id, "switch");
+        return {
+            visible: fixture.learnNowShown && countsLoaded(id),
+            mode: modes[id],
+            instant: fixture.hideInstantly,
+            skyEntrance: fixture.skyEntrance,
+        };
+    };
+    const switchMotions: Record<TowerWorldId, ModeSwitchMotion> = {
+        core: useModeSwitchMotion(switchArgs("core")),
+        reading: useModeSwitchMotion(switchArgs("reading")),
+        writing: useModeSwitchMotion(switchArgs("writing")),
+    };
+    // ── Tower resizes (docs/DECK_TOWER.md § "Tower resizes") ─────────────────────
+    // Plans the world on screen's tower going from `fromCards` to `toCards` with an
+    // animation picked from the library, and plays it. Shared by the Mix / Review switch
+    // and the focus lever.
+    // Where a grow's camera move ends (scrollTop), set as it is planned.
     const cameraTarget = useRef(0);
-    const onModeTap = () => {
-        if (!onLearnNow || modeSwitchBusy) return;
-        const counts = readyCounts[worldId].counts;
-        const mixCards = bandTotal(counts, TOWER_MODES.mix.bands);
-        const mixOnlyCards = bandTotal(counts, MIX_ONLY_BANDS);
-        const reviewCards = mixCards - mixOnlyCards;
-        const to = otherTowerMode(modeSwitch.mode);
-        // The frame the switch refits to keeps the altitude (see `keepClimbFor`).
-        const toScene = fitScene(proj, to === "mix" ? mixCards : reviewCards, skyCardsFor(to === "mix" ? mixCards : reviewCards));
+    const startResize = (fromCards: number, toCards: number) => {
+        // The frame the resize refits to keeps the altitude (see `keepClimbFor`).
+        const toScene = fitScene(proj, toCards, skyCardsFor(toCards));
         keepClimbFor.current = toScene.viewBox !== scene.viewBox ? toScene.viewBox : null;
-        const el = scrollerRef.current;
-        if (to === "review" || !el) {
-            modeSwitch.toggle({ mixCards, mixOnlyCards });
+        if (toCards <= fromCards) {
+            resize.play(pickTowerShrink().plan({ fromCards, toCards }));
             return;
         }
-        // Review → Mix, planned against the MIX frame it is about to refit to. The svg is
-        // pinned to the scroller's bottom and as wide as it, so its scale is fixed and its
-        // top sits `svgTop` px down the scroll content (0 once it overflows).
+        const grow = pickTowerGrow();
+        const el = scrollerRef.current;
+        if (!grow.usesCamera || !el) {
+            resize.play(grow.plan({ fromCards, toCards, skyAbove: DROP_MIN_LIFT, cameraMs: 0 }));
+            return;
+        }
+        // Planned against the TALLER frame it is about to refit to. The svg is pinned to the
+        // scroller's bottom and as wide as it, so its scale is fixed and its top sits `svgTop`
+        // px down the scroll content (0 once it overflows).
         const scale = el.clientWidth / toScene.width;
         const svgH = toScene.height * scale;
         const svgTop = Math.max(0, el.clientHeight - svgH);
         const maxScroll = Math.max(0, svgH - el.clientHeight);
-        // The camera: the landing (the Review tower's top) LANDING_ON_SCREEN down the screen.
-        const landingZ = FLOOR_Z + reviewCards * CARD_THICKNESS;
+        // The camera: the landing (the standing tower's top) LANDING_ON_SCREEN down the screen.
+        const landingZ = FLOOR_Z + fromCards * CARD_THICKNESS;
         const landingPx = svgTop + (toScene.axisYAtZ(landingZ) - toScene.minY) * scale;
         const target = Math.min(maxScroll, Math.max(0, landingPx - el.clientHeight * LANDING_ON_SCREEN));
         const from = Math.min(maxScroll, Math.max(0, maxScroll - climb.current)); // where the kept altitude puts it
         const travel = Math.abs(target - from);
         cameraTarget.current = target;
-        // The drop starts with its underside just over the screen's top edge (at the camera's
-        // end), so the whole tower falls in from out of sight.
+        // The new cards start with their underside just over the screen's top edge (at the
+        // camera's end), so the whole drop falls in from out of sight.
         const screenTopY = toScene.minY + (target - svgTop) / scale;
         const screenTopZ = (toScene.axisYAtZ(FLOOR_Z) - screenTopY) / UNIT;
-        modeSwitch.toggle({
-            mixCards,
-            mixOnlyCards,
-            dropLift: Math.max(DROP_MIN_LIFT, screenTopZ + DROP_CLEARANCE - landingZ),
-            cameraMs: travel < 2 ? 0 : Math.min(CAMERA_MAX_MS, CAMERA_BASE_MS + travel * CAMERA_MS_PER_PX),
-        });
+        resize.play(
+            grow.plan({
+                fromCards,
+                toCards,
+                skyAbove: Math.max(DROP_MIN_LIFT, screenTopZ + DROP_CLEARANCE - landingZ),
+                cameraMs: travel < 2 ? 0 : Math.min(CAMERA_MAX_MS, CAMERA_BASE_MS + travel * CAMERA_MS_PER_PX),
+            })
+        );
     };
-    // The camera move itself: scrollTop eased to the landing, written straight to the DOM
+    // The Mix / Review switch: the mode cuts over at the tap, and the tower shrinks (to
+    // Review) or grows (to Mix) from the height it stands at. Mid build-up that is the cards
+    // standing so far, not the full count: the resize holds the tower there (`heldCards`)
+    // and, once resized, the build-up no longer animates (`everResized`), so the tower stops
+    // growing at the tap and the shrink or drop carries it to the new count. (Tapped early,
+    // even Mix → Review can GROW: a drop, when Review's count is above the cards standing.)
+    const onModeTap = () => {
+        if (!onLearnNow || modeSwitchBusy) return;
+        const to = otherTowerMode(mode);
+        const fromCards = Math.round((learnNowCount(worldId, mode) ?? 0) * progress[worldId]);
+        const toCards = learnNowCount(worldId, to) ?? 0;
+        setModes((m) => ({ ...m, [worldId]: to }));
+        startResize(fromCards, toCards);
+    };
+    // The focus lever's re-read landing (its counts' fetch `version` moving past the one its
+    // hold was taken at): the held tower shrinks (focus on) or grows (focus off) to the new
+    // figure. Off screen, or no longer on Learn Now, the hold is just let go. Through a ref,
+    // so the effect below only re-runs when a version moves.
+    const resolveRecount = useRef<(id: TowerWorldId) => void>(() => {});
+    resolveRecount.current = (id) => {
+        const r = resizes[id];
+        if (r.holdVersion === null || r.holdVersion === readyCounts[id].version) return;
+        const toCards = learnNowCount(id, modes[id]);
+        if (id !== worldId || toCards === undefined || swaps[id].towerDeck !== "learn-now") {
+            r.release();
+            return;
+        }
+        startResize(r.heldCards ?? 0, toCards);
+    };
+    useEffect(() => {
+        for (const id of WORLD_ORDER) resolveRecount.current(id);
+    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version]);
+    // A grow's camera move itself: scrollTop eased to the landing, written straight to the DOM
     // (marked as the page's own, so `climb` ignores it) and recorded as the new altitude.
-    const cameraKey = modeSwitch.camera?.key;
-    const cameraMs = modeSwitch.camera?.durationMs ?? 0;
+    const cameraKey = resize.camera?.key;
+    const cameraMs = resize.camera?.durationMs ?? 0;
     useEffect(() => {
         const el = scrollerRef.current;
         if (cameraKey === undefined || !el) return;
@@ -564,7 +686,7 @@ const DeckTowerPage: React.FC = () => {
 
     // ── Moving between worlds ────────────────────────────────────────────────────
     // Not while this world's deck swap runs: its fall is measured for the scene on screen.
-    const panBlocked = pan.busy || swap.busy || modeSwitch.busy;
+    const panBlocked = pan.busy || swap.busy || resize.busy;
     const goTo = (to: TowerWorldId | undefined, carry?: PanCarry) => {
         if (to && !panBlocked) pan.go(to, carry);
     };
@@ -708,7 +830,14 @@ const DeckTowerPage: React.FC = () => {
                     <style>{`
                         .deck-tower-page__falling .iso-card-stack__shadow,
                         .deck-tower-page__falling .iso-pawn__shadow,
-                        .deck-tower-page__falling .iso-pawn__decal-anchor { opacity: 0; transition: opacity 120ms ease-out; }
+                        .deck-tower-page__falling .iso-pawn__decal-anchor,
+                        .deck-tower-page__falling .iso-hatch__shadow { opacity: 0; transition: opacity 120ms ease-out; }
+                        /* A falling floor fixture (the lever, the Mix / Review switch) leaves its
+                           hatch behind: the lift top, hole and flaps belong to the swung-away
+                           floor, so only the fixture itself drops. */
+                        .deck-tower-page__falling .iso-hatch__lift-top,
+                        .deck-tower-page__falling .iso-hatch__hole,
+                        .deck-tower-page__falling .iso-hatch__flap { display: none; }
                     `}</style>
                     <IsoScene
                         proj={proj}
@@ -739,9 +868,9 @@ const DeckTowerPage: React.FC = () => {
                                           progress: stackProgress,
                                           label: TOWER_DECKS[swap.towerDeck].label,
                                           bandColor: TOWER_DECKS[swap.towerDeck].band,
-                                          collapse: modeSwitch.collapse,
-                                          drop: modeSwitch.drop,
-                                          dropFigure: mixCount,
+                                          collapse: resize.collapse,
+                                          drop: resize.drop,
+                                          dropFigure: resize.toCards ?? undefined,
                                       }
                                     : null
                             }
@@ -756,16 +885,13 @@ const DeckTowerPage: React.FC = () => {
                                 face: faceFor(swap.titleDeck),
                                 ariaLabel: `Show ${TOWER_DECKS[otherTowerDeck(swap.titleDeck)].title}`,
                                 onTap: onPlateTap,
-                                busy: swap.busy || pan.busy || modeSwitch.busy,
+                                busy: swap.busy || pan.busy || resize.busy,
                             }}
                             modeSwitch={{
-                                mode: modeSwitch.mode,
-                                dimmed: swap.titleDeck !== "learn-now",
-                                busy: modeSwitchBusy,
-                                ariaLabel:
-                                    swap.titleDeck !== "learn-now"
-                                        ? "Mix or Review: only for the Learn Now deck"
-                                        : `Showing ${modeSwitch.mode === "mix" ? "Mix" : "Review"} cards. Switch to ${modeSwitch.mode === "mix" ? "Review" : "Mix"}`,
+                                ...switchMotions[worldId],
+                                mode,
+                                busy: modeSwitchBusy || !onLearnNow,
+                                ariaLabel: `Showing ${mode === "mix" ? "Mix" : "Review"} cards. Switch to ${mode === "mix" ? "Review" : "Mix"}`,
                                 onTap: onModeTap,
                             }}
                             lever={focusLevers[worldId].lever}

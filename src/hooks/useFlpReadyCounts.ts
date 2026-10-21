@@ -13,12 +13,16 @@ import type { FlpWorld } from "../../server/contracts/studyMode";
  */
 export function useFlpReadyCounts(
     world: FlpWorld = "core"
-): FlpReadyCounts & { loaded: boolean; focusOn: boolean; reload: () => void } {
+): FlpReadyCounts & { loaded: boolean; focusOn: boolean; reload: () => void; version: number } {
     const { isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [reviewNextReadyMs, setReviewNextReadyMs] = useState<number | null>(null);
     const [focusOn, setFocusOn] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    // Bumped each time a fetch SETTLES (success or failure), so a caller waiting on a
+    // `reload` can tell its re-read has landed even when the figures came back unchanged
+    // (the Deck Tower's focus lever: DeckTowerPage → `resolveRecount`).
+    const [version, setVersion] = useState(0);
     // Bumped by `reload` (the Deck Tower after its focus lever flips) to re-fetch.
     const [reloadKey, setReloadKey] = useState(0);
     const reload = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -37,7 +41,10 @@ export function useFlpReadyCounts(
             } catch (err) {
                 console.error("Error fetching flp-ready counts:", err);
             } finally {
-                if (!cancelled) setLoaded(true);
+                if (!cancelled) {
+                    setLoaded(true);
+                    setVersion((v) => v + 1);
+                }
             }
         })();
 
@@ -46,5 +53,5 @@ export function useFlpReadyCounts(
     // refresh".
     }, [isAuthenticated, world, reloadKey]);
 
-    return { counts, reviewNextReadyMs, focusOn, loaded, reload };
+    return { counts, reviewNextReadyMs, focusOn, loaded, reload, version };
 }

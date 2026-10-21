@@ -128,9 +128,10 @@ function insideGrown(p: Pt2, rect: WorldRect, by: number): boolean {
  * toward the viewer).
  *
  * Why not simply count the rects it is in front of: a fixed back-to-front list is not a
- * total order for every point. On the Deck Tower a pawn on the tower's back-left side is
- * BEHIND the tower (obstacle 0) yet IN FRONT of the lever (obstacle 1, at the back-right
- * corner) — the count says 1 and drew the pawn over the tower. Those two never overlap
+ * total order for every point. With the Deck Tower's lever at the floor's back-right
+ * corner (where it once stood), a pawn on the tower's back-left side was BEHIND the tower
+ * (obstacle 0) yet IN FRONT of the lever (obstacle 1) — the count said 1 and drew the pawn
+ * over the tower. Those two never overlap
  * on screen, so any slot that respects the rects the pawn is behind is correct; taking
  * the first one errs toward hiding the pawn rather than drawing it over a tower.
  */

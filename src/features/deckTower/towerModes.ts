@@ -4,9 +4,9 @@ import { RAMP } from "../../theme/colors";
  * towerModes.ts — the two positions of the Deck Tower's Mix / Review switch
  * (docs/DECK_TOWER.md § "Mix / Review switch").
  *
- * Layer: page constants (feature module `src/features/deckTower`). The switch is mounted on
- * each world's platform wall and only acts on its LEARN NOW deck (the off-cooldown cards);
- * on the Mastered deck it is dimmed. Its bands are the flp's own study modes
+ * Layer: page constants (feature module `src/features/deckTower`). The switch is a floor
+ * fixture on each world's platform (IsoModeSwitch) and only acts on its LEARN NOW deck (the
+ * off-cooldown cards); while the Mastered deck is up it is sunk out of sight. Its bands are the flp's own study modes
  * (server/contracts/studyMode.ts): Mix = all four utcm bands, Review = Comfortable +
  * Mastered.
  */
@@ -25,9 +25,6 @@ export const TOWER_MODES: Record<TowerModeId, TowerMode> = {
     mix: { label: "MIX", band: RAMP.yel.mid, bands: ["Unfamiliar", "Target", "Comfortable", "Mastered"] },
     review: { label: "REVIEW", band: RAMP.blu.mid, bands: ["Comfortable", "Mastered"] },
 };
-
-/** The bands a switch from Review to Mix brings back (and Mix to Review ghosts out): Unfamiliar + Target. */
-export const MIX_ONLY_BANDS: readonly string[] = ["Unfamiliar", "Target"];
 
 export function otherTowerMode(id: TowerModeId): TowerModeId {
     return id === "mix" ? "review" : "mix";

@@ -1,4 +1,4 @@
-import { RIM_WIDTH, insetRect, leverFootprint, type PawnRoam, type WallSliderLayout, type WorldRect } from "./iso";
+import { RIM_WIDTH, insetRect, leverFootprint, modeSwitchFootprint, type PawnRoam, type WorldRect } from "./iso";
 
 /**
  * towerPlatforms.ts — the Deck Tower's platform and the layout of everything on it
@@ -41,32 +41,27 @@ const CARD: WorldRect = {
 const LABEL_PLATE: WorldRect = { x: CARD.x, y: CARD.y + CARD_D + 0.5, w: CARD_W, d: 1.1, r: 0.25 };
 
 /**
- * The Mix / Review switch (IsoWallSlider), on the platform's FRONT-LEFT wall (its yMax
- * face — the lower-left wall on screen, under the floor plate): a slot and a label plate
- * side by side, centred along the wall and on its height. The knob's slot comes first
- * (upper-left), so Mix is the knob's near end and Review its far end
- * (docs/DECK_TOWER.md § "Mix / Review switch").
+ * The Mix / Review switch (IsoModeSwitch): a small light-switch block in its own hatch at the
+ * floor's RIGHT corner on screen (high x, low y), beside the tower's back-right face. It
+ * shows only the current mode's name, on its paddle. Like the lever it stands only while the
+ * Learn Now deck is up (docs/DECK_TOWER.md § "Mix / Review switch").
+ *
+ * Its 1.6 × 2.7 hatch spans x 9.15 – 10.75 and y 0.55 – 3.25: inside the rim (0.16 – 10.84)
+ * and the floor's rounded corner, and clear of the pawn's start (y 7.5). It overlaps the
+ * tower only along y 2.2 – 3.25, so the pawn still walks the strip between the tower and the
+ * right edge as far as the switch; it cannot squeeze past the switch's ends (the gaps, grown
+ * by the pawn's 0.6, close), so it reaches the back of the tower round the other side.
  */
-const SWITCH_SLOT_W = 2.0;
-const SWITCH_GAP = 0.35;
-const SWITCH_LABEL_W = 3.1;
-const SWITCH_X = PLATFORM.x + (PLATFORM.w - (SWITCH_SLOT_W + SWITCH_GAP + SWITCH_LABEL_W)) / 2;
-const MODE_SWITCH: WallSliderLayout = {
-    wallY: PLATFORM.y + PLATFORM.d,
-    z: -PLATFORM_THICKNESS / 2,
-    slotX: SWITCH_X,
-    slotW: SWITCH_SLOT_W,
-    labelX: SWITCH_X + SWITCH_SLOT_W + SWITCH_GAP,
-    labelW: SWITCH_LABEL_W,
-};
+const MODE_SWITCH_AT = { x: 9.95, y: 1.9 };
 
 /**
- * The focus lever's hatch centre (IsoLever, docs/FOCUS_MODE.md § 5): the back-right corner
- * of the floor, beside the tower. Far enough off the tower's back-right corner (~1.5 units
- * diagonally) that the pawn — 1.2 units wide with its clearance — can still walk round the
- * tower past it.
+ * The focus lever's hatch centre (IsoLever, docs/FOCUS_MODE.md § 5): the LEFT corner of the
+ * floor on screen (low x, high y — the platform's back-right corner mirrored across the
+ * screen), beside the near end of the floor plate. Far enough off the tower's front-left
+ * corner (~1.5 units diagonally) that the pawn — 1.2 units wide with its clearance — can
+ * still walk round the tower past it.
  */
-const LEVER_AT = { x: 9.85, y: 1.2 };
+const LEVER_AT = { x: 1.2, y: 9.85 };
 
 /** Where the pawn starts, front-right of the tower. From there it wanders (`roam`). */
 const PAWN_AT = { x: 9.55, y: 7.5 };
@@ -78,8 +73,8 @@ export interface TowerPlatformLayout {
     labelPlate: WorldRect;
     /** The plate's tap target: the plate grown on every side (the print is only ~18 px deep on a phone). */
     labelPlateHit: WorldRect;
-    /** The Mix / Review switch on the front-left wall. */
-    modeSwitch: WallSliderLayout;
+    /** The Mix / Review switch's hatch centre (the crease of its V). Its hatch is an obstacle in `roam`. */
+    modeSwitchAt: { x: number; y: number };
     /** The focus lever's hatch centre. Its hatch is an obstacle in `roam`. */
     leverAt: { x: number; y: number };
     pawnAt: { x: number; y: number };
@@ -96,10 +91,11 @@ export const TOWER_LAYOUT: TowerPlatformLayout = {
     card: CARD,
     labelPlate: LABEL_PLATE,
     labelPlateHit: insetRect(LABEL_PLATE, -0.5),
-    modeSwitch: MODE_SWITCH,
+    modeSwitchAt: MODE_SWITCH_AT,
     leverAt: LEVER_AT,
     pawnAt: PAWN_AT,
-    // Back to front: the tower, then the lever's hatch (in front of the tower's
-    // right-hand face, so it draws after the stack).
-    roam: { area: insetRect(PLATFORM, RIM_WIDTH), obstacles: [CARD, leverFootprint(LEVER_AT)] },
+    // Back to front: the tower, then the lever's hatch (wholly in front of the tower's
+    // front-left face) and the switch's (wholly in front of its back-right face), so both
+    // draw after the stack. The two hatches never overlap on screen, so their order is free.
+    roam: { area: insetRect(PLATFORM, RIM_WIDTH), obstacles: [CARD, leverFootprint(LEVER_AT), modeSwitchFootprint(MODE_SWITCH_AT)] },
 };

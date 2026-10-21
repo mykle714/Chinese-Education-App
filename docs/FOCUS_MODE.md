@@ -102,10 +102,10 @@ Search's raw fetch calls it itself).
 
 | Piece | File | Role |
 |---|---|---|
-| Lever art | `src/features/deckTower/iso/IsoLever.tsx`, `iso/leverGeometry.ts` | cream base, short thick ink stick, plain red ball, on a lift in a two-flap hatch (ISO_ART_FRAMEWORK.md § IsoLever) |
-| Lever motion | `src/features/deckTower/useLeverMotion.ts` | `pull` / `sink` / `hatch` tweens |
-| Lever logic | `src/features/deckTower/useFocusLever.tsx` | when it shows, taps, its popups; one per world in `DeckTowerPage` |
-| Placement | `towerPlatforms.ts` → `leverAt` (9.85, 1.2) | back-right floor corner; its hatch is a pawn obstacle drawn after the stack |
+| Lever art | `src/features/deckTower/iso/IsoLever.tsx`, `iso/IsoHatch.tsx`, `iso/hatchGeometry.ts` | cream base, short thick ink stick, plain red ball (green `grnMk` in the writing world against its red sky, purple `purMk` in reading against its lime — `towerWorlds.ts` → `leverKnob`), on a lift in a two-flap hatch (ISO_ART_FRAMEWORK.md § IsoHatch, § IsoLever) |
+| Lever motion | `src/features/deckTower/useLeverMotion.ts`, `usePopUpMotion.ts` | `pull` tween; `sink` / `hatch` / sky fall from `usePopUpMotion` (shared with the Mix / Review switch) |
+| Lever logic | `src/features/deckTower/useFocusLever.tsx` | when it shows, taps, its popups; one per world in `DeckTowerPage`. `onRecount` fires just before a flip's re-read, so the page holds the tower and resizes it when the new figure lands (`useTowerResize`, DECK_TOWER.md § Tower resizes) |
+| Placement | `towerPlatforms.ts` → `leverAt` (1.2, 9.85) | the floor's left corner on screen (low x, high y), beside the floor plate's near end; its hatch is a pawn obstacle drawn after the stack |
 | Popups | `src/features/focusMode/FocusDialog.tsx` | turn-on / turn-off / ended / game-blocked |
 | Auto-off popup | `src/features/focusMode/FocusEndedNoticeHost.tsx` (mounted in `App.tsx`) | checks `GET /api/focus` on sign-in and on every `focus-mode-ended` event; dismiss acknowledges |
 | Games menu | `src/features/focusMode/FocusGameGuard.tsx`, wrapping every game route in `src/routes/registry.ts` | refuses a launch with the game-blocked popup, then returns to the menu |
@@ -115,10 +115,31 @@ Search's raw fetch calls it itself).
 
 * **Appears** (on the Learn Now deck only): the hatch's flaps swing down, then the lever rises
   on its lift, which stops flush with the floor. The floor under a standing lever is solid, with no seam.
+  Sunk and shut, the hatch is not drawn at all: the corner is plain, flush floor, and the flaps
+  appear only while they swing (`IsoLever` → `flapsShown`).
+* **Deck swaps** (the trap door, [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)): the
+  lever never animates on an open door. Leaving Learn Now, a standing lever stays up and falls
+  off the screen with the old tower (`DeckTowerPlatform` wraps it in `fallSx`; its hatch, lift
+  top and shadow are hidden while it falls). Once the old tower clears it is put away sunk and
+  shut with no animation (`useLeverMotion` `instant`). Arriving at Learn Now, it does not come up
+  through the hatch: it **falls from the sky** on the incoming pawn's entrance animation
+  (`FALL_FROM_SKY`, the same height, gravity, stretch, landing squash and growing shadow),
+  its cue shifted later so it lands a staggered beat after the pawn (which lands on the trap
+  door's slam): the lever and the Mix / Review switch land after it, spread evenly across
+  `SKY_LANDING_SPREAD_MS` (1 s), in an order that flips from swap to swap
+  ([DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch). It is mounted from transition t = 0
+  and draws nothing until its fall starts (`useLeverMotion` → `skyFall` `"waiting"`), and it
+  falls already standing (sink 0, hatch 1, the hatch hidden under its flush lift), so after
+  landing it is in the ordinary standing state. The hatch rise remains the entrance for
+  every in-place appearance (crossing the threshold, focus switched off). The rule lives in
+  `DeckTowerPage` → `leverArgs`.
 * **Tap while off** → it pulls toward the viewer and "Turn on focus mode?" opens. *No* → it
   springs back. *Yes* → focus goes on and the lever **stays pulled**; the tower re-reads its
-  counts and stands at most 40.
-* **Tap while on** → "Turn off focus mode?". *Yes* → it springs back. If the full pile still
+  counts and **shrinks** to today's set (at most 40) with a shrink from the tower-resize
+  library — today, the ghost collapse ([DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
+* **Tap while on** → "Turn off focus mode?". *Yes* → it springs back and, once the full counts
+  are re-read, the tower **grows** back to the pile with a grow from the same library — today,
+  the sky drop. If the full pile still
   holds 100+ cards that is all — the lever stays. Only if it is under 100 does the lever then
   recede into the platform and the flaps swing up to shut the hole. (While focus is on the
   counts are narrowed to today's set, so `useFocusLever` holds the lever up until the re-read

@@ -26,9 +26,12 @@ interface IsoCardProps {
     thickness: number;
     /** Big figure printed in the middle of the face. */
     figure?: string;
-    /** Small caps label printed in the head band. */
+    /**
+     * Small caps label printed in the head band. The band exists only to house it: with
+     * no label the face has no band and the figure centres on the whole panel.
+     */
     label?: string;
-    /** The head band's fill. Defaults to `ISO.cardBand`. */
+    /** The head band's fill (only drawn with a `label`). Defaults to `ISO.cardBand`. */
     bandColor?: string;
     /** Small caption printed under the figure. */
     caption?: string;
@@ -47,12 +50,15 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
     const band: WorldRect = { x: rect.x + FACE_PAD, y: rect.y + FACE_PAD, w: rect.w - 2 * FACE_PAD, d: BAND_DEPTH, r: BAND_RADIUS };
     const panel = insetRect(rect, FACE_PAD);
     const cx = rect.x + rect.w / 2;
-    const bodyMidY = band.y + band.d + (panel.y + panel.d - (band.y + band.d)) / 2;
+    // The figure + caption centre on the panel below the band, or on the whole panel
+    // when there is no band.
+    const bodyTop = label ? band.y + band.d : panel.y;
+    const bodyMidY = bodyTop + (panel.y + panel.d - bodyTop) / 2;
 
     return (
         <IsoSolid geometry={geometry} material={ISO.card} className="iso-card">
             <path className="iso-card__panel" d={flatPath(proj, panel, faceZ)} fill={ISO.cardPanel} />
-            <path className="iso-card__band" d={flatPath(proj, band, faceZ)} fill={bandColor} />
+            {label && <path className="iso-card__band" d={flatPath(proj, band, faceZ)} fill={bandColor} />}
             {/* Flat print on the face — drawn in world units, mapped onto the top. */}
             <g className="iso-card__print" transform={faceTransform(proj, faceZ)} fill={ISO.ink} fontFamily={FONTS.sans}>
                 {label && (
@@ -73,7 +79,7 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                     <text
                         className="iso-card__figure"
                         x={cx}
-                        y={bodyMidY - (caption ? 0.35 : 0)}
+                        y={bodyMidY - (caption ? 0.45 : 0)}
                         fontSize={2.1}
                         fontWeight={WEIGHT.bold}
                         textAnchor="middle"
@@ -86,8 +92,8 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                     <text
                         className="iso-card__caption"
                         x={cx}
-                        y={bodyMidY + 1.25}
-                        fontSize={0.5}
+                        y={bodyMidY + 1.4}
+                        fontSize={0.8}
                         fontWeight={WEIGHT.semibold}
                         textAnchor="middle"
                         dominantBaseline="central"

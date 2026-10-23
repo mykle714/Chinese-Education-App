@@ -373,7 +373,7 @@ export type BreakdownMap = Record<
  *                       nothing dropped or repeated across pages. See `HINT_HEAD_PER_BUCKET`.
  *
  * Implemented by `DictionaryDAL.searchByWord1`; see docs/DICTIONARY_AI_FALLBACK_SEARCH.md for
- * the stage-2/AI fallbacks that sit behind both rankings unchanged.
+ * the spaceless-pinyin clause and the AI fallback that sit behind both rankings unchanged.
  */
 export type DictionarySearchRanking = 'relevance' | 'english-first';
 
@@ -1653,7 +1653,7 @@ export interface DiscoverCard {
 }
 
 /**
- * A sort pack: the on-deck unit of the discover sort flow — up to 3 cards to sort
+ * A sort pack: the on-deck unit of the discover sort flow — up to 4 cards to sort
  * (docs/SORT_CARDS_REQUIREMENTS.md §4.5). Authored packs come from `sort_packs`;
  * system fallback packs-of-1 are built on the fly.
  */
@@ -1662,6 +1662,7 @@ export interface SortPack {
   packKey: string;
   /** sort_packs.id for authored packs; null for fallback packs-of-1. */
   packId: number | null;
+  /** Authored: derived MAX(det.difficulty) over the cards (migration 177). Fallback: the card's level. */
   level: number;
   cards: DiscoverCard[];
 }

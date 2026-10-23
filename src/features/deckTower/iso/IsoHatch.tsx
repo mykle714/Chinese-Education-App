@@ -12,7 +12,7 @@ import { useIsoProjector } from "./sceneContext";
  * IsoHatch — a rectangular trapdoor in a floor that a fixture rises out of and sinks back into
  * (docs/ISO_ART_FRAMEWORK.md § "IsoHatch"). It draws the hatch and frames the fixture; the
  * fixture's own body is the caller's `children`. Used by IsoLever (the focus lever) and
- * IsoModeSwitch (the Mix / Review switch).
+ * IsoModeSwitch (a mode switch; currently unused).
  *
  * Two trapdoor flaps hinged on the hole's two x edges, and a LIFT — a floor-coloured slab
  * filling the hole that the fixture stands on. Risen, the lift's top is flush with the

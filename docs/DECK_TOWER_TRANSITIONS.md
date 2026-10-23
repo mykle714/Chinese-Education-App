@@ -29,9 +29,9 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 | Page logic | `src/features/deckTower/useDeckSwap.ts` → `useDeckSwap`, `swapView`, `PLATE_SETTLE_MS` | Owns which deck is up and the clock of a running swap. It draws nothing. It returns a `DeckSwapView` (pure `swapView(plan, now)`) |
 | Page logic | `src/features/deckTower/deckTransitions.ts` → `DeckTransition`, `TRAP_DOOR`, `DECK_TRANSITIONS`, `pickDeckTransition` | Pure timelines that clear the old tower |
 | Page view | `src/features/deckTower/CardSplat.tsx` → `CardSplat`, `SPLAT_MAX_MS` | The optional card splat at the bottom edge, driven by the swap clock |
-| Page constants | `src/features/deckTower/towerDecks.ts` → `TOWER_DECKS`, `TowerDeckId`, `otherTowerDeck` | The two decks' title, plate label and band colour (the same in every world) |
+| Page constants | `src/features/deckTower/towerDecks.ts` → `TOWER_DECKS`, `TowerDeckId`, `otherTowerDeck` | The two decks' title, plate label, plate colour (`band`), the same in every world |
 | Framework | `src/features/deckTower/iso/pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | Pure timelines of how a pawn arrives |
-| Framework | `iso/usePawnMotion.ts` (`entrance` mode, `alarmed`), `iso/IsoPawn.tsx` (`entrance`, `alarmed` props) | Plays an entrance, then hands the pawn to its idle wander; pops the falling pawn's "!" |
+| Framework | `iso/usePawnMotion.ts` (`entrance` mode, `floorDrop`), `iso/IsoPawn.tsx` (`entrance`, `floorDrop` props) | Plays an entrance, then hands the pawn to its idle wander; drops the old pawn through the trap door on its own and pops its "!" |
 | Framework | `iso/IsoPlatform.tsx` (`hingeAngle`, `decals`), `iso/geometry.ts` → `Hinge`, `hingePoint`, `hingedOutline`, `hingedPrism`, `hingedPlaneTransform` | The trap door |
 | Page logic | `src/features/deckTower/usePlatePress.ts` → `usePlatePress` | The plate's push-button press: held flush, fires on release, pops back up with the new face |
 | Framework | `iso/IsoFloorLabel.tsx` (`raised`, `RAISED_HEIGHT`) | The raised plate |
@@ -41,14 +41,14 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 
 `TOWER_DECKS` (`towerDecks.ts`):
 
-| Id | Title | Plate / band label | Band | Count |
+| Id | Title | Plate label | Band (plate) | Count |
 |---|---|---|---|---|
-| `learn-now` | Learn Now | LEARN NOW | `RAMP[LEARN_NOW_HUE].mid` (yellow) in every world | `bandTotal` over the READY counts (`useFlpReadyCounts(bar)`): off-cooldown cards in the bands of the world's Mix / Review mode — all four in Mix, Comfortable + Mastered in Review ([DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch) |
-| `mastered` | Mastered | MASTERED | `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) — blue in every world | `builtinCollectionCount({ kind: "mastered", bar }, …)`: `useMasteredCounts().counts[bar]` |
+| `learn-now` | Learn Now | LEARN NOW | `RAMP[LEARN_NOW_HUE].mid` (`yelM`) in every world | `bandTotal` over the READY counts (`useFlpReadyCounts(bar)`): off-cooldown cards in all four utcm bands (`TOWER_MODES.mix.bands`, [DECK_TOWER.md](./DECK_TOWER.md) § Study mode) |
+| `mastered` | Mastered | MASTERED | `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for both — blue in every world | `builtinCollectionCount({ kind: "mastered", bar }, …)`: `useMasteredCounts().counts[bar]` |
 
 `bar` is the world's id (`core` / `reading` / `writing`, towerWorlds.ts). Learn Now
-is the ready cards of the mode's bands, by the flp's readiness rule — in Mix the study
-hand's Mix figure — NOT the fdp's Learning tile, which counts cooling cards and leaves out
+is the ready cards of all four bands, by the flp's readiness rule — the study hand's Mix
+figure — NOT the fdp's Learning tile, which counts cooling cards and leaves out
 Mastered. Mastered matches the Mastered tile. A band is the deck's fdp hue at the `mid` tier, because the pale
 `surface` tier washes out on the cream card face.
 
@@ -78,7 +78,7 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
     viewBox. The scroll re-snaps to the bottom.
   - Between the two beats, `towerOnStage` is false. No stack is drawn, `cardsOnTower` is
     0, and `useBuildProgress` resets to 0.
-  - `readyMs`: the build-up starts for the new count. The birds, clouds, wind, sky → space
+  - `readyMs`: the build-up starts for the new count. The clouds, wind, sky → space
     and the 50-card startle all replay off the new build-up.
 - **Landing is the sync point.** The new pawn's entrance is scheduled backwards from
   `readyMs` (`entranceStartFor(entrance, readyAt) = readyAt − entrance.landMs`). Any pair
@@ -120,15 +120,28 @@ its plate can be tapped.
 `DeckSwapView.pawns` lists every pawn to draw. Normally that is one pawn. Mid-swap it is
 the outgoing pawn (until `clearedMs`) plus the incoming one (from t = 0).
 
-- **Fall wrapper.** `DeckTowerPlatform` wraps each pawn in its own keyed fall wrapper (`fallSx`), so
-  a pawn that starts falling is not remounted.
+- **Fall wrapper.** `DeckTowerPlatform` wraps each pawn in its own keyed wrapper, so a pawn
+  that starts falling is not remounted. Unlike the tower's, the outgoing pawn's wrapper takes
+  only the `deck-tower-page__falling` class (its shadow fades), NOT the drop's translate: the
+  pawn follows the drop itself (next bullet).
 - **Depth slots.** Each pawn reports its depth slot under its own key (`pawnDepthRanks`).
 - **Startle.** The incoming pawn can only be startled once the old tower is gone. The
   motion loop also drops a startle that arrives mid-entrance.
-- **Alarm.** From t = 0 (the door drops) the outgoing pawn is `alarmed` (`SwapPawn.alarmed`
-  → `IsoPawn` `alarmed`): its white "!" bubble pops as it falls. That is the startle's
-  bubble alone, with no lean or leap (`usePawnMotion` → the `alarmed` rising-edge effect,
-  emote `leanSign: 0`). It keeps walking in mid-air, as before.
+- **The pawn falls on its own.** `DeckTowerPlatform` hands the outgoing pawn the door's drop in
+  world units (`IsoPawn` `floorDrop` = `dropPx / proj.unit`). With nothing to stand on, the
+  pawn's feet run in free flight (`usePawnMotion.ts` → FLOOR DROP): a pawn the plate has just
+  LAUNCHED (the release that started this swap: it peaks about its own height up ~209 ms
+  later, and `PLATE_SETTLE_MS` is never shorter than that) is already coming back down when
+  the door opens — ~1.4 units up at today's timings. Its height then blends over
+  `FALL_BLEND_MS` (350 ms) from its own free fall (pawn gravity, 110) into where it would be
+  standing on the falling door (`lift − floorDrop`; NOT measured from where its fall began,
+  or it would trail the door by its launch height and still be on screen when unmounted). So
+  it falls out of the air instead of being yanked down with the door, merges into the door's
+  curve with no reversal, and is off-screen by `clearedMs`, even for the shortest (12-unit,
+  ~0.41 s) fall. A pawn standing on the floor does the same from rest. A pawn mid edge hop falls from wherever the hop's arc had it.
+- **Alarm.** Its white "!" bubble pops the moment its own fall starts (not at t = 0 — a
+  launched pawn notices on the way down). That is the startle's bubble alone, with no lean or
+  leap (emote `leanSign: 0`). It keeps walking in mid-air, legs still.
 
 ## The plate
 
@@ -164,13 +177,21 @@ the same frame.
 
 The plate then has `PLATE_SETTLE_MS` (300 ms) — during which it pops back up — before the
 transition starts, so the new label reads as settled before the door drops out from under it.
+It is `max(PLATE_POP_SETTLE_MS, PLATE_LAUNCH_APEX_MS)`: never shorter than a launched pawn's
+time to apex (`usePawnMotion.ts` → `PLATE_LAUNCH_APEX_MS`, ~209 ms), so the door never opens
+under a pawn still on its way up. At today's pawn gravity the 300 ms settle is the longer.
 
 - **Always a floor decal.** The plate never leaves the floor, so it is drawn among the
   platform's floor decals throughout and swings with the trap door.
 - **The pawn's shaded copy** (`decals`) shows the same face as the plate.
-- **A pawn on the plate rides it.** The plate is also the pawn's step (`DeckTowerPlatform` →
-  `plateStep`, `IsoPawn` `steps`) at its live `raised · RAISED_HEIGHT`, so a pawn standing on
-  it sinks as it is pressed and bounces with its spring back up.
+- **A pawn on the plate is thrown by it.** The plate is also the pawn's step (`DeckTowerPlatform` →
+  `plateStep`, `IsoPawn` `steps`) at its live `raised · RAISED_HEIGHT`. The pawn's feet run
+  under gravity (`usePawnMotion.ts` → feet physics, docs/ISO_ART_FRAMEWORK.md § "IsoPawn"):
+  pressing the plate drops it out from under the pawn, which FALLS onto it a moment later;
+  releasing it LAUNCHES the pawn into the air off the plate's spring, landing in a couple of
+  shrinking bounces — and since the release also starts the swap, the door opens under it
+  as it comes back down and it drops from the air (§ "Pawns during a swap"). Walking onto or
+  off the plate is a standing hop with a crouch before and a recovery after (the edge hop).
 
 ## Deck transitions
 

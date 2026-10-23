@@ -1,5 +1,5 @@
 /**
- * Spaceless-pinyin segmentation for the dictionary search's stage-2 + stage-3 fallbacks
+ * Spaceless-pinyin segmentation for the dictionary search's spaceless-pinyin clause
  * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md).
  *
  * `segmentPinyin` tiles a spaceless (or messily-spaced) pinyin string such as "jianshen" or
@@ -15,8 +15,9 @@
  * ["ni3","hao3"]) — see `stripToneMarks`; the mark sits on a vowel in the middle of its
  * syllable, so it can't simply be rewritten as a digit in place ("ha3o" would tile as
  * ["ha3","o"]). Instead the marks are stripped to plain letters before tiling and re-attached
- * to whichever token ended up containing the marked position. `isAllPinyin` gates whether the
- * search UI offers the "AI" synthetic-entry button.
+ * to whichever token ended up containing the marked position. Consumed by
+ * `buildSpacelessPinyinPattern` (server/dal/implementations/DictionaryDAL.ts), which runs it per
+ * whitespace token inside the primary `searchByWord1` query.
  */
 
 // Canonical atonal Hanyu Pinyin syllabary (~410 syllables). ü is written `v` to match how the
@@ -199,7 +200,8 @@ export function segmentPinyin(input: string): string[][] {
 
 /**
  * True iff `input` is entirely pinyin-formatted (tile-able into valid syllables, tone digits
- * allowed). Gates the dictionary search's "AI" synthetic-entry button.
+ * allowed). It used to gate the dictionary search's "AI" synthetic-entry button; that gate was
+ * dropped and nothing outside its unit test calls this any more (candidate for deletion).
  */
 export function isAllPinyin(input: string): boolean {
   return segmentPinyin(input).length > 0;

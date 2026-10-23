@@ -10,7 +10,8 @@ import { SortPackRow } from '../../types/sortPacks.js';
  */
 export interface ISortPacksDAL {
   /**
-   * Authored packs at EXACTLY `level`, in curation order (packOrder, then id). Excludes
+   * Authored packs whose DERIVED level (MAX det.difficulty over entryIds, migration 177)
+   * is EXACTLY `level`, in curation order (packOrder, then id). Excludes
    * packs in `excludePackIds` (seen + ones the client already holds). Level drift is
    * driven by the service (it calls this per level), so level is honored strictly
    * before the authored-packs-first rule. Does NOT filter all-cards-already-sorted
@@ -22,10 +23,4 @@ export interface ISortPacksDAL {
     excludePackIds: number[],
     limit: number
   ): Promise<SortPackRow[]>;
-
-  /**
-   * Every authored pack for a language, in curation order (level, packOrder). Used by
-   * the build/deploy validation test and authoring tooling — not the hot serve path.
-   */
-  listByLanguage(language: string): Promise<SortPackRow[]>;
 }

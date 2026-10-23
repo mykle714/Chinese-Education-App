@@ -32,8 +32,9 @@ import { WEIGHT } from "../../../theme/scale";
  * Behaviour (usePawnMotion): with `roam`, it wanders the floor around the obstacles with
  * a bouncing walk, stepping up onto any `steps` it crosses. When `startled` turns true it leans back to look up at `startledBy`,
  * leaps away from it, a white "!" bubble pops over its head, it stares up for a few
- * seconds, straightens up, and goes back to wandering. When `alarmed` turns true only the
- * bubble pops (no lean, no leap). With `entrance` it first ARRIVES
+ * seconds, straightens up, and goes back to wandering. With `floorDrop` above 0 the floor is
+ * falling away under it: it falls on its own (finishing a launch from the plate first) and
+ * pops the bubble as it starts to (no lean, no leap). With `entrance` it first ARRIVES
  * (pawnEntrances.ts — e.g. dropping out of the sky), timed so it lands at a given moment.
  */
 interface IsoPawnProps {
@@ -47,8 +48,12 @@ interface IsoPawnProps {
     roam?: PawnRoam;
     /** What startles it: it leaps away from this footprint and looks up at it. */
     startledBy?: WorldRect;
-    /** Pops the "!" bubble each time this turns true, with no lean or leap (usePawnMotion `alarmed`). */
-    alarmed?: boolean;
+    /**
+     * World units the floor under it has dropped (0 = in place): it falls on its own and pops
+     * its "!" bubble (usePawnMotion `floorDrop`). Do NOT also translate its wrapper by the
+     * drop — the pawn is already following it.
+     */
+    floorDrop?: number;
     /**
      * Called when the pawn's draw position among `roam.obstacles` changes: its slot in their
      * back-to-front order (`depthRankAmong`). The caller renders it after that many of them.
@@ -106,11 +111,11 @@ const PAWN_CSS = `
 }
 `;
 
-const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, alarmed, onDepthRankChange, decals, entrance, steps }) => {
+const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, floorDrop, onDepthRankChange, decals, entrance, steps }) => {
     const proj = useIsoProjector();
     // `url(#…)` needs a plain id; React's useId wraps its ids in colons.
     const decalClipId = `iso-pawn-decal-clip-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    const { refs, emote } = usePawnMotion({ proj, at, startled, roam, startledBy, onDepthRankChange, entrance, alarmed, steps });
+    const { refs, emote } = usePawnMotion({ proj, at, startled, roam, startledBy, onDepthRankChange, entrance, floorDrop, steps });
     // The id of the last emote whose one-shot has finished. A finished bubble must be
     // UNMOUNTED, not just left at its keyframes' final opacity 0: the page reorders the
     // pawn among its siblings as it walks behind / in front of the tower, React does that

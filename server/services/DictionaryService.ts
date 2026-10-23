@@ -221,7 +221,7 @@ export class DictionaryService {
     // total, and therefore the AI-fallback decision below are identical either way.
     const result = await this.dictionaryDAL.searchByWord1(trimmedTerm, language, limit, offset, rankBy);
 
-    // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): only when stages 1–2
+    // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): only when stage 1
     // found nothing. Surface either a cached AI answer (auto-shown orange card) or the flag that
     // tells the client to offer the "AI" button. Qualification is language-aware (pinyin/English →
     // Chinese, English/Spanish → Spanish) — see qualifiesForAiFallback.

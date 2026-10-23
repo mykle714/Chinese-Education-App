@@ -15,10 +15,10 @@
  */
 import type { FlashcardCategory, MasteryWorldId, CardBaselineSurface } from './wire.js';
 import { CARD_BASELINES } from './wire.js';
-import { STUDY_MIX_QUOTAS, type BandQuota } from './studyMix.js';
+import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER, type BandQuota } from './studyMix.js';
 
 /** The most cards a focused world serves in one streak day. */
-export const FOCUS_DAILY_CARDS = 40;
+export const FOCUS_DAILY_CARDS = 25;
 
 /**
  * Off-cooldown cards (all four utcm bands) a world must hold before its lever appears.
@@ -28,14 +28,26 @@ export const FOCUS_DAILY_CARDS = 40;
 export const FOCUS_LEVER_THRESHOLD = 100;
 
 /**
- * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 40, i.e.
- * 4 Mastered / 8 Comfortable / 8 Unfamiliar / 20 Target. Derived, never restated, so the
- * snapshot keeps the flp's proportions if the Mix shape ever changes.
+ * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 25, i.e.
+ * 2 Mastered / 5 Comfortable / 5 Unfamiliar / 13 Target. 25 is not a multiple of 10, so
+ * each band's scaled share is floored and the slots that leaves over go one each to the
+ * bands in STUDY_MIX_FILL_ORDER (Target first) — the same order a short band's shortfall
+ * is borrowed in. Derived, never restated, so the snapshot keeps the flp's proportions if
+ * the Mix shape or the cap ever changes; the quotas always sum to FOCUS_DAILY_CARDS.
  */
-export const FOCUS_QUOTAS: readonly BandQuota[] = STUDY_MIX_QUOTAS.map((quota) => ({
-  category: quota.category as FlashcardCategory,
-  count: quota.count * (FOCUS_DAILY_CARDS / 10),
-}));
+export const FOCUS_QUOTAS: readonly BandQuota[] = (() => {
+  const mixSize = STUDY_MIX_QUOTAS.reduce((sum, quota) => sum + quota.count, 0);
+  const quotas = STUDY_MIX_QUOTAS.map((quota) => ({
+    category: quota.category as FlashcardCategory,
+    count: Math.floor((quota.count * FOCUS_DAILY_CARDS) / mixSize),
+  }));
+  let leftover = FOCUS_DAILY_CARDS - quotas.reduce((sum, quota) => sum + quota.count, 0);
+  for (let i = 0; leftover > 0; i = (i + 1) % STUDY_MIX_FILL_ORDER.length, leftover -= 1) {
+    const quota = quotas.find((q) => q.category === STUDY_MIX_FILL_ORDER[i]);
+    if (quota) quota.count += 1;
+  }
+  return quotas;
+})();
 
 /**
  * Response header the server sets on any request during which it turned a world's focus

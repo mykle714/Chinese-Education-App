@@ -31,20 +31,20 @@ Migrations live in `database/migrations/` (run by `database/deploy/migrate.sh`; 
 `/migrate` skill). `93-create-sort-packs-and-seen-packs.sql` created the table;
 `95-drop-sort-packs-sentence-columns.sql` later dropped the authored-sentence columns
 (§below); `96-add-entry-words-to-sort-packs.sql` added the derived `entryWords` column
-(§below). Current shape:
+(§below); `177-derive-sort-pack-level.sql` dropped the authored `level` column (§below).
+Current shape:
 
 ```sql
--- Authored sort packs (reference data; delivered via SEED MIGRATIONS — see §2.1.
--- NOT movable by any data-sync skill: PPE->dev covers det/icons8/pct/validations only).
+-- Authored sort packs (reference data; hand-authored on PPE and pulled to dev by
+-- /data-ppe-to-dev — see §2.1. Seed migration 131 is legacy.)
 CREATE TABLE sort_packs (
   id                SERIAL PRIMARY KEY,
   language          VARCHAR   NOT NULL,            -- 'zh' | 'es'
-  level             SMALLINT  NOT NULL,            -- 1..6 (matches det.difficulty, mig 92)
-  "packOrder"       INTEGER   NOT NULL,            -- curation key within (language, level)
+  "packOrder"       INTEGER   NOT NULL,            -- language-wide curation key, applied within the DERIVED level
   "entryIds"        INTEGER[] NOT NULL,            -- up to 4 det ids (the cards; no DB constraint — the cap lives in validate-sort-packs.ts)
   "entryWords"      TEXT[]    NOT NULL             -- denormalized word1s, trigger-maintained (mig 96)
 );
-CREATE INDEX sort_packs_lang_level_order ON sort_packs(language, level, "packOrder");
+CREATE INDEX sort_packs_lang_order ON sort_packs(language, "packOrder");  -- mig 177
 
 -- Per-user record of packs already finished/skipped (authored pack ids; globally
 -- unique since sort_packs is one table). Un-scoped int[] is unambiguous across langs.
@@ -52,6 +52,20 @@ ALTER TABLE users ADD COLUMN "seenPacks" INTEGER[] NOT NULL DEFAULT '{}';
 ```
 
 `discover_skips` (migration 80) is reused unchanged.
+
+**Level is derived, never authored (migration 177).** A pack's level is the difficulty
+of its hardest card: `MAX(det.difficulty)` over `"entryIds"`, computed at read time by
+`server/dal/implementations/SortPacksDAL.ts` → `_packsWithLevelSql` (a correlated
+subquery against the per-language det table). Until 177 it was a hand-authored
+`level SMALLINT` column; deriving it means authors only pick cards and a `packOrder`,
+and a pack follows its cards automatically when a word's `difficulty` is re-assessed
+(`backfill-hsk-level.js`, the validator Difficulty chip). Consequences:
+- One higher-level card lifts the whole pack — `{春天(1), 夏天(2), 秋天(2), 冬天(2)}` is
+  an L2 pack. To keep a pack at a lower level, swap the card, don't override the level.
+- `MAX` ignores NULL difficulty; a pack whose cards are **all** unlevelled derives NULL
+  and is never served. `validate-sort-packs.ts` flags both cases.
+- `packOrder` is language-wide: within a level, packs are served in `packOrder` order,
+  so it orders packs across levels as well as within them. Keep it sparse.
 
 **`entryIds` design note:** an `INTEGER[]` of det ids (not a join table) keeps a pack a
 single row and preserves card order. `entryIds` stays the real key rather than switching
@@ -93,11 +107,13 @@ by construction. Two rules follow, both built into the skill:
 The table dump also carries `sort_packs_id_seq`'s value, so dev's sequence tracks
 PPE's (which is deliberately left past withdrawn ids — see § 2.2).
 
-**Authoring a new pack** (e.g. filling the level 3/4 gap), on PPE:
+**Authoring a new pack** (e.g. filling the level 3 gap), on PPE:
 
-1. `INSERT` the row, resolving `"entryIds"` from `word1` in the same statement. Let
-   the sequence assign `id` (never reuse a freed id — § 2.2). Don't write
-   `"entryWords"`; the trigger derives it.
+1. `INSERT` the row (`language`, `"packOrder"`, `"entryIds"`), resolving `"entryIds"`
+   from `word1` in the same statement. Let the sequence assign `id` (never reuse a
+   freed id — § 2.2). Don't write `"entryWords"` (the trigger derives it) and there is
+   no level to write (derived — § 2). Every card must be **discoverable** — a word
+   that isn't goes through `/mark-discoverable` first.
 2. Run the validator and check it reports no violations. On PPE it must run inside the
    backend container, from the compiled build (a host `npx tsx` run cannot reach the
    loopback-only DB, and the container ships only `dist/`):
@@ -125,12 +141,14 @@ Verification, on either box:
 
 ```bash
 docker exec cow-postgres psql -U cow_user -d cow_db \
-  -c "SELECT language, level, count(*) FROM sort_packs GROUP BY 1,2 ORDER BY 1,2;"
+  -c "SELECT p.language, (SELECT MAX(d.difficulty) FROM dictionaryentries_zh d WHERE d.id = ANY(p.\"entryIds\")) AS level, count(*) FROM sort_packs p GROUP BY 1,2 ORDER BY 1,2;"
 ```
 
-Expected on PPE (2026-09-28): `zh` → **20 packs at level 1, 2 at level 2, and nothing
-else** (22 total). Levels 3 and 4 are legitimately empty (none authored yet); levels 5
-and 6 are empty **by decision** — see below. After a pull, dev must match exactly.
+(The query hard-codes the zh det table; there are no es packs yet.)
+
+Expected on PPE (2026-10-22, derived levels): `zh` → **13 packs at level 1, 7 at level 2,
+2 at level 3, 3 at level 4, and nothing else** (25 total). Levels 5 and 6 are empty **by
+decision** — see below. After a pull, dev must match exactly.
 
 ### 2.2 Levels 5 and 6 have no authored packs
 
@@ -152,8 +170,9 @@ Consequences to know:
   off det ids, not pack ids. The withdrawal also stripped the deleted ids out of
   `users."seenPacks"`, which has no FK — orphaned ids are inert today but would
   wrongly suppress a future pack that reused the id.
-- **Freed pack ids (45–78) must never be reused.** `sort_packs_id_seq` was deliberately
-  left at 78 rather than rewound; a pack id is user-visible state via `seenPacks`.
+- **Freed pack ids (27, 45–78) must never be reused.** `sort_packs_id_seq` was deliberately
+  left at 78 rather than rewound (27 — the single-card `{可以}` pack — was withdrawn
+  2026-10-22 for the same reason: a pack of 1 is no different from a system fallback); a pack id is user-visible state via `seenPacks`.
 - Before re-authoring anything at these levels, settle the genre question — a
   `packType` column (`'thematic' | 'compositional'`) is the proposed fix, not yet built.
 
@@ -169,8 +188,8 @@ internal helper for fallback-card selection). Algorithm:
    WITHIN each level, serve authored packs THEN fallback singles before drifting to the
    next level. So a level-2 user exhausts ALL level-2 supply (packs **and** singles)
    before seeing any level-1/level-3 card.
-   - **Authored packs at a level** via `SortPacksDAL.fetchPacksAtLevel(language, lvl,
-     excludePackIds, …)` — **served in `packOrder`, the DAL's order, never re-sorted by
+   - **Authored packs at a level** (derived level — § 2) via
+     `SortPacksDAL.fetchPacksAtLevel(language, lvl, excludePackIds, …)` — **served in `packOrder`, the DAL's order, never re-sorted by
      the service** (curation order is authoritative; see requirements §6.4) — excluding `seenPacks` + client-held
      packs and dropping any pack whose `entryIds` are **all** already sorted. Each
      returned pack's cards are hydrated + tagged `sorted` (vet row → locked "sorted!") /
@@ -278,10 +297,11 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
   group up to 4 `entryIds` per pack, no sentence to write (§2). See
   [DISCOVER_BEGINNER_CURATION.md](./DISCOVER_BEGINNER_CURATION.md) §4–5.
 - **Build/deploy test (required):** `server/scripts/validate-sort-packs.ts`. For every
-  `sort_packs` row it asserts structural validity (1–4 `entryIds`, `MAX_CARDS_PER_PACK`, level in 1..6, every
-  `entryId` exists in the per-language det table). Enforced at build time, not runtime.
-- Get `sort_packs` onto PPE via a **seed migration** (§2.1) — there is no data-sync
-  skill that moves it, and none that moves anything dev → PPE.
+  `sort_packs` row it asserts structural validity (1–4 `entryIds`, `MAX_CARDS_PER_PACK`, every
+  `entryId` exists in the per-language det table, `entryWords` in sync, every card has a
+  `difficulty` so the derived level is real). Enforced at build time, not runtime.
+- Author `sort_packs` directly on PPE and pull it to dev with `/data-ppe-to-dev`
+  (§2.1). Seed migration 131 is legacy; no more seed migrations are written.
 
 ## 7. Suggested sequencing
 

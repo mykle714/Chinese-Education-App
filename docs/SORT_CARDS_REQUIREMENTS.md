@@ -686,7 +686,8 @@ the user **chooses** to bring it back, in one of three ways:
   single-card packs** for the remaining un-sorted, un-skipped words at that level
   (§4.5). The two groups order by **different authorities**, and this is deliberate:
   - **Authored packs: curation order (`sort_packs."packOrder"`, ascending).**
-    `packOrder` is a human teaching sequence — packs at a level are written to build
+    `packOrder` is a human teaching sequence (applied within each pack's derived level
+    = its hardest card's difficulty, migration 177) — packs at a level are written to build
     on one another — so nothing derived may reorder them. Applied once, in
     `SortPacksDAL.fetchPacksAtLevel`'s `ORDER BY`; `getNextPacks` consumes that order
     as-is and does **not** re-sort.

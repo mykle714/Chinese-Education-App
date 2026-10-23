@@ -33,7 +33,7 @@ export {
 export { default as IsoCardRuns } from "./IsoCardRuns";
 export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";
-export { depthRankAmong, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
+export { depthRankAmong, PLATE_LAUNCH_APEX_MS, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
 export {
     PAWN_ENTRANCES,
     FALL_FROM_SKY,
@@ -42,8 +42,6 @@ export {
     type PawnEntrance,
     type PawnEntranceFrame,
 } from "./pawnEntrances";
-export { default as IsoBird } from "./IsoBird";
-export { useBirdFlights, type BirdFlight, type BirdSide, type BirdSky } from "./useBirdFlights";
 export { default as IsoCloud } from "./IsoCloud";
 export { useCloudDrifts, sortCloudsBackToFront, type CloudDrift, type CloudPuff, type CloudSky } from "./useCloudDrifts";
 export { default as IsoWind } from "./IsoWind";
@@ -52,7 +50,7 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 
 // Rules + math
 export * from "./geometry";
-export { ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
+export { bandMaterial, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
 export { shadowFootprint, shadowTone, type IsoSurface } from "./light";
 export { BOB_HEIGHT, BOB_PERIOD_MS } from "./levitation";
 export { cardStackMetrics, CARD_THICKNESS, type CardStackMetrics } from "./cardStackMetrics";

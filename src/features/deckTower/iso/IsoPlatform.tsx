@@ -24,8 +24,8 @@ import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
  * With `floating`, steps 2–5 go through IsoLevitate: the slab and everything on it bob
  * together, and the shadow breathes in step. `bodyClassName` / `bodyStyle` reach the group
  * that holds steps 2–5, so a scene can animate the whole loaded slab on top of the bob — the
- * Deck Tower sinks it briefly when a tower lands on it (docs/DECK_TOWER.md § "Mix / Review
- * switch").
+ * Deck Tower sinks it briefly when a tower lands on it (docs/DECK_TOWER.md § "Tower
+ * resizes").
  *
  * `hingeAngle` swings the slab open like a TRAP DOOR on its back-left top edge (the
  * upper-left edge on screen; geometry.ts → `Hinge`). Steps 3–4 swing with it — they are

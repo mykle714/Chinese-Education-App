@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
 import IsoShadow from "./IsoShadow";
 import IsoCard from "./IsoCard";
-import { CARD_THICKNESS, cardStackMetrics } from "./cardStackMetrics";
+import { CARD_THICKNESS, cardStackMetrics, isDrawnSeam } from "./cardStackMetrics";
 import { frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
 import { ISO } from "./palette";
@@ -16,7 +16,7 @@ import { useIsoProjector } from "./sceneContext";
  * solids: a deck can run to several hundred cards, and drawing each as two filled paths
  * would cost hundreds of nodes for walls nobody can tell apart. The individual cards are
  * suggested instead by SEAMS — the front contour of the footprint stroked under every
- * card. Cards keep one fixed thickness (cardStackMetrics.ts), so a big deck grows tall
+ * other card (`SEAM_EVERY`), plus one under the top card. Cards keep one fixed thickness (cardStackMetrics.ts), so a big deck grows tall
  * rather than thin.
  */
 interface IsoCardStackProps {
@@ -36,8 +36,8 @@ interface IsoCardStackProps {
     bandColor?: string;
     /**
      * The figure printed on the top card, when it is not this stack's own count — a stack
-     * dropping onto another names the total it makes (docs/DECK_TOWER.md § "Mix / Review
-     * switch"). Shown as-is, not counted up by `progress`.
+     * dropping onto another names the total it makes (docs/DECK_TOWER.md § "Tower
+     * resizes"). Shown as-is, not counted up by `progress`.
      */
     figure?: number;
 }
@@ -53,22 +53,23 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
         [proj, rect, bodyHeight, baseZ]
     );
 
-    // Seams are anchored to the BASE, one every CARD_THICKNESS, so during the build-up
-    // the placed cards stay where they are and new ones land on top (the body grows
-    // upward; nothing rides up). One extra seam always sits at the top card's underside —
-    // without it the top card merges with the card below and reads as one thick card.
-    // A base-anchored seam within a quarter card of that one is dropped, so the
-    // topmost, still-arriving card never shows a doubled line. The base itself (z = 0)
-    // gets no seam: that edge is where the stack meets its surface.
+    // Seams sit on a fixed grid of every other card (cardStackMetrics.ts → `isDrawnSeam`,
+    // phased by the SETTLED count so the top card's seam lands on it), so during the
+    // build-up the placed seams stay where they are and new ones appear as the body grows upward. One extra seam
+    // always sits at the top card's underside — without it the top card merges with the
+    // body and reads as one thick card. A base-anchored seam within a quarter card of that one is
+    // dropped, so the topmost, still-arriving card never shows a doubled line. The base
+    // itself (z = 0) gets no seam: that edge is where the stack meets its surface. All
+    // seams are ONE path (subpaths), so the cost does not grow with the deck.
     const seams = useMemo(() => {
+        if (bodyHeight <= 0.001) return null;
         const out: string[] = [];
-        if (bodyHeight <= 0.001) return out;
-        for (let z = CARD_THICKNESS; z < bodyHeight - CARD_THICKNESS * 0.25; z += CARD_THICKNESS) {
-            out.push(toOpenPath(frontContour(proj, rect, baseZ + z)));
+        for (let k = 1; k * CARD_THICKNESS < bodyHeight - CARD_THICKNESS * 0.25; k++) {
+            if (isDrawnSeam(k, count)) out.push(toOpenPath(frontContour(proj, rect, baseZ + k * CARD_THICKNESS)));
         }
         out.push(toOpenPath(frontContour(proj, rect, baseZ + bodyHeight)));
-        return out;
-    }, [proj, rect, bodyHeight, baseZ]);
+        return out.join(" ");
+    }, [proj, rect, bodyHeight, baseZ, count]);
 
     if (count <= 0) return null;
     const shown = figure ?? Math.round(count * progress);
@@ -78,17 +79,16 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
             <IsoShadow footprint={rect} casterZ={baseZ} receiver={surface} className="iso-card-stack__shadow" />
             {body && (
                 <IsoSolid geometry={body} material={ISO.card} className="iso-card-stack__body">
-                    {seams.map((d, i) => (
+                    {seams && (
                         <path
-                            key={i}
-                            className="iso-card-stack__seam"
-                            d={d}
+                            className="iso-card-stack__seams"
+                            d={seams}
                             fill="none"
                             stroke={ISO.cardSeam}
                             strokeWidth={1}
                             strokeLinecap="round"
                         />
-                    ))}
+                    )}
                 </IsoSolid>
             )}
             <IsoCard

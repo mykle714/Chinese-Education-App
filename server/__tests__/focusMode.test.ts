@@ -53,7 +53,7 @@ describe('the band fixtures', () => {
 });
 
 describe('selectFocusSet', () => {
-  it('fills the Study Mix quotas scaled to 40 when every band has supply', () => {
+  it('fills the Study Mix quotas scaled to 25 when every band has supply', () => {
     const cards = [...many('Unfamiliar', 30), ...many('Target', 30), ...many('Comfortable', 30), ...many('Mastered', 30)];
     const { ids, offCooldownTotal } = selectFocusSet(cards, NOW, 'core');
     expect(offCooldownTotal).toBe(120);
@@ -66,7 +66,7 @@ describe('selectFocusSet', () => {
   });
 
   it('borrows a short band\'s shortfall from the others', () => {
-    // No Mastered or Comfortable at all: their 12 slots go to Target, then Unfamiliar.
+    // No Mastered or Comfortable at all: their 7 slots go to Target, then Unfamiliar.
     const cards = [...many('Unfamiliar', 30), ...many('Target', 30)];
     const { ids } = selectFocusSet(cards, NOW, 'core');
     expect(ids).toHaveLength(FOCUS_DAILY_CARDS);
@@ -164,7 +164,7 @@ describe('FocusModeService.resolveWorld', () => {
     expect(dal.snapshots.get('core')?.streakDate).toBe('2026-10-21');
   });
 
-  it('switches focus off and queues the popup when fewer than 40 cards are off cooldown', async () => {
+  it('switches focus off and queues the popup when fewer than 25 cards are off cooldown', async () => {
     const { service, dal } = setup(many('Target', FOCUS_DAILY_CARDS - 1));
     expect(await service.resolveWorld('u', 'zh', 'core')).toEqual({ active: false, ended: true });
     expect(dal.state.focusWorlds).toEqual([]);

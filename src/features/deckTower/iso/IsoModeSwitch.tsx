@@ -24,10 +24,10 @@ import { WEIGHT } from "../../../theme/scale";
 
 /**
  * IsoModeSwitch — a two-position light switch standing in a floor hatch
- * (docs/ISO_ART_FRAMEWORK.md § "IsoModeSwitch"). The Deck Tower's Mix / Review switch: it
- * rises out of the floor while the Learn Now deck is up and sinks away (or falls with the
- * trap door) otherwise, exactly like the focus lever — the hatch, the lift, the clip and the
- * mid-entrance `air` pose are IsoHatch's.
+ * (docs/ISO_ART_FRAMEWORK.md § "IsoModeSwitch"). CURRENTLY UNUSED: it was the Deck Tower's
+ * Mix / Review switch until that was dropped (2026-10-22), and is kept in the kit. It rises
+ * out of the floor and sinks away (or falls with a trap door) exactly like the focus lever —
+ * the hatch, the lift, the clip and the mid-entrance `air` pose are IsoHatch's.
  *
  * A solid grey BODY (the switch's plate, as a block) with one solid rocker PADDLE seated in
  * it, both long along world y and sharing a centre. The body is the paddle's plan plus an

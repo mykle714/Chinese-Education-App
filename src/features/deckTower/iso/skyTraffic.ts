@@ -6,10 +6,10 @@ import type { Projector, WorldRect } from "./geometry";
  * of a tower, and the slot scheduler that keeps 0..N of them crossing the sky
  * (docs/ISO_ART_FRAMEWORK.md § "Sky traffic").
  *
- * Extracted from useBirdFlights when clouds arrived (2026-10-17): birds and clouds cross
- * the sky the same way and differ only in what crosses, how fast, and how often.
+ * Clouds and wind cross the sky the same way and differ only in what crosses, how fast,
+ * and how often.
  *
- * Depended on by: useBirdFlights.ts, useCloudDrifts.ts, useWindGusts.ts.
+ * Depended on by: useCloudDrifts.ts, useWindGusts.ts.
  */
 
 export type Pt2 = { x: number; y: number };
@@ -52,7 +52,7 @@ export const rand = (min: number, max: number) => min + Math.random() * (max - m
  * grid's 2:1 slope.
  *
  * `depth` is the traveller's extent ACROSS the path, from its origin toward +x/+y (0 for
- * a bird, the footprint's short side for a cloud). The origin is pushed out by it on the
+ * a flat traveller like a gust, the footprint's short side for a cloud). The origin is pushed out by it on the
  * back sides, so the whole footprint stays `gap` clear of the tower on every side — which
  * is what keeps the front/behind draw order correct.
  */

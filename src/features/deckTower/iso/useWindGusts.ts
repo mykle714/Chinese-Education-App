@@ -10,19 +10,19 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * wave — straight runs keep the kit's faceted, polygon look), the main one ending in a
  * spiral curl. It lives in ONE vertical plane parallel to one of the four sides
  * of `sky.around` (the side comes from skyTraffic's `planSidePath`, so the front/behind
- * draw rule is the birds' and clouds'). Each strand is authored in that plane's local
+ * draw rule is the clouds'). Each strand is authored in that plane's local
  * coordinates — `s` along the gust's direction of travel, `h` straight up — so the curl
  * projects as an iso-correct ellipse on an invisible wall beside the tower, not as a flat
  * screen-space sticker.
  *
- * Unlike a bird or a cloud, a gust does not cross the whole screen. It appears mid-sky,
+ * Unlike a cloud, a gust does not cross the whole screen. It appears mid-sky,
  * draws itself on head-first and erases tail-first (IsoWind), all on a short stretch of
  * the side path chosen to lie fully on screen. Its baseline height is read from one shared
  * wandering altitude (skyTraffic.ts → createAltitudeWander), so overlapping gusts blow at
  * close heights.
  *
  * Under prefers-reduced-motion there is no wind at all: a gust is nothing BUT motion, and
- * a frozen half-drawn streak would read as a glitch (the same call as the birds).
+ * a frozen half-drawn streak would read as a glitch.
  *
  * Referenced by: docs/ISO_ART_FRAMEWORK.md § "IsoWind" + § "Sky traffic",
  * docs/DECK_TOWER.md § "The scene".

@@ -10,14 +10,12 @@ import {
     IsoPawn,
     IsoPlatform,
     IsoSmokePuff,
-    IsoModeSwitch,
     RAISED_HEIGHT,
     depthRankAmong,
     flatPath,
     frontContour,
     insetRect,
     leverFootprint,
-    modeSwitchFootprint,
     IsoShadow,
     shadowLandTiming,
     toOpenPath,
@@ -29,13 +27,8 @@ import { PLATFORM_THICKNESS, TOWER_LAYOUT as layout } from "./towerPlatforms";
 import type { TowerWorld } from "./towerWorlds";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
-import { TOWER_MODES, type TowerModeId } from "./towerModes";
 import { IMPACT_MS, type TowerDrop } from "./towerResizes";
 import type { TowerCollapse } from "./useTowerResize";
-
-/** The switch's two positions, [flip 0, flip 1]: the name it shows and its paddle's colour in each. */
-const SWITCH_LABELS = [TOWER_MODES.mix.label, TOWER_MODES.review.label] as const;
-const SWITCH_COLORS = [TOWER_MODES.mix.band, TOWER_MODES.review.band] as const;
 
 /**
  * DeckTowerPlatform — the Deck Tower's floating platform with everything on it: its
@@ -55,8 +48,8 @@ const SWITCH_COLORS = [TOWER_MODES.mix.band, TOWER_MODES.review.band] as const;
  *             the floor plate (part of the floor, slightly raised as a push button —
  *             usePlatePress.ts — so it swings with the trap door; pawns step up onto it,
  *             IsoPawn `steps`, and sink with it when it is pressed);
- *   children  `behind` (sky travellers on the tower's back sides) → the stack, the focus
- *             lever and the Mix / Review switch (obstacles 0–2), and the pawns, each pawn
+ *   children  `behind` (sky travellers on the tower's back sides) → the stack and the
+ *             focus lever (obstacles 0–1), and the pawns, each pawn
  *             slotted in front of every obstacle before the first one it stands behind
  *             (`depthRankAmong`)
  *             → `front`.
@@ -120,11 +113,15 @@ interface DeckTowerPlatformProps {
     stack: {
         count: number;
         progress: number;
-        label: string;
-        bandColor: string;
         collapse?: TowerCollapse | null;
         drop?: TowerDrop | null;
         dropFigure?: number;
+        /**
+         * Tapping the tower starts studying it (DeckTowerPage `onStackTap` → the world's
+         * flp). Undefined while it may not be tapped — not Learn Now, or a swap / pan /
+         * resize is running: no pointer cursor, not focusable.
+         */
+        onTap?: () => void;
     } | null;
     /**
      * Draw the cards' imprint (IsoCardImprint) under the stack. False while the deck's count
@@ -149,23 +146,6 @@ interface DeckTowerPlatformProps {
         onTap: () => void;
         /** Taps are ignored (a swap is running): no pointer cursor, and it will not press. */
         busy: boolean;
-    };
-    /**
-     * The Mix / Review switch along the floor's right edge (IsoModeSwitch): its animated
-     * numbers (useModeSwitchMotion) and its tap. Like the lever, it stands only while the
-     * Learn Now deck is up; fully sunk with its hatch shut it draws nothing and takes no taps.
-     */
-    modeSwitch: {
-        mode: TowerModeId;
-        flip: number;
-        sink: number;
-        hatch: number;
-        /** A sky-fall entrance (usePopUpMotion `skyFall`): "waiting" draws nothing yet. */
-        skyFall: PawnEntranceFrame | "waiting" | null;
-        /** Taps are ignored for now (a switch, swap or pan is running, the tower is still building, or Mastered is up). */
-        busy: boolean;
-        ariaLabel: string;
-        onTap: () => void;
     };
     /**
      * The focus lever in the floor's left corner (IsoLever, docs/FOCUS_MODE.md § 5): its
@@ -200,7 +180,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     cardsOnTower,
     swapOutgoing,
     plate,
-    modeSwitch,
     lever,
     behind,
     front,
@@ -222,7 +201,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         });
 
     // Things falling with the old tower: dropped straight down the screen, with their floor
-    // shadows faded out (DeckTowerPage's `.deck-tower-page__falling` rule).
+    // shadows faded out (DeckTowerPage's `.deck-tower-page__falling` rule). Pawns take only
+    // the class (their shadow fade): they follow the drop themselves (IsoPawn `floorDrop`).
     const fallSx = (falling: boolean) =>
         falling && dropPx > 0
             ? { className: "deck-tower-page__falling", transform: `translate(0 ${dropPx.toFixed(2)})` }
@@ -268,13 +248,15 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const plateStep: PawnStep[] = [{ rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT }];
 
     const renderPawn = (p: SwapPawn) => (
-        <g key={`pawn-${p.key}`} {...fallSx(p.outgoing)}>
+        <g key={`pawn-${p.key}`} className={p.outgoing && dropPx > 0 ? "deck-tower-page__falling" : "deck-tower-page__standing"}>
             <IsoPawn
                 at={layout.pawnAt}
                 surface={floor}
                 roam={layout.roam}
                 startledBy={layout.card}
-                alarmed={p.alarmed}
+                // The trap door's drop, in world units: the old pawn falls with it on its own,
+                // out of the air if the plate just launched it.
+                floorDrop={p.outgoing ? dropPx / proj.unit : 0}
                 onDepthRankChange={reportRank(p.key)}
                 // The incoming pawn is only startled by the NEW tower: never while the old
                 // one is still on screen (it is in the air then anyway).
@@ -296,15 +278,26 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const landingZ = drop ? floor.z + drop.baseCards * CARD_THICKNESS : 0;
     if (stack) {
         layers.push(
-            <g key="stack" {...fallSx(stackFalling)}>
+            <g
+                key="stack"
+                {...fallSx(stackFalling)}
+                role={stack.onTap ? "button" : undefined}
+                aria-label={stack.onTap ? "Start studying" : undefined}
+                tabIndex={stack.onTap ? 0 : undefined}
+                onClick={stack.onTap}
+                onKeyDown={(e) => {
+                    if (!stack.onTap || (e.key !== "Enter" && e.key !== " ")) return;
+                    e.preventDefault();
+                    stack.onTap();
+                }}
+                style={{ cursor: stack.onTap ? "pointer" : undefined, outline: "none" }}
+            >
                 {stack.collapse ? (
                     <IsoCardRuns
                         key={`collapse-${stack.collapse.key}`}
                         rect={layout.card}
                         surface={floor}
                         plan={stack.collapse.plan}
-                        label={stack.label}
-                        bandColor={stack.bandColor}
                         figure={stack.collapse.figure}
                     />
                 ) : (
@@ -313,8 +306,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                         count={stack.count}
                         surface={floor}
                         progress={stack.progress}
-                        label={stack.label}
-                        bandColor={stack.bandColor}
                     />
                 )}
                 {drop && (
@@ -344,8 +335,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                                 rect={layout.card}
                                 count={drop.cards}
                                 surface={{ z: landingZ, color: ISO.card.top }}
-                                label={stack.label}
-                                bandColor={stack.bandColor}
                                 figure={stack.dropFigure}
                             />
                             {/* The seam under its bottom card: IsoCardStack draws none at its own
@@ -411,53 +400,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 <path
                     className="deck-tower-page__lever-hit"
                     d={flatPath(proj, insetRect(leverFootprint(layout.leverAt), -0.6), floor.z + 1.2)}
-                    fill="transparent"
-                />
-            )}
-        </g>
-    );
-
-    // The Mix / Review switch: obstacle 2, in front of the tower's back-right face. A tap (or
-    // Enter / Space) flips it; like the lever, only while it stands still on its lift.
-    const switchTappable = !modeSwitch.busy && modeSwitch.sink < 0.05 && modeSwitch.skyFall === null;
-    const onSwitchKey = (e: React.KeyboardEvent<SVGGElement>) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        if (switchTappable) modeSwitch.onTap();
-    };
-    layers.push(
-        <g
-            key="mode-switch"
-            className="deck-tower-page__mode-switch"
-            role="switch"
-            aria-checked={modeSwitch.mode === "review"}
-            aria-label={modeSwitch.ariaLabel}
-            aria-hidden={modeSwitch.sink >= 0.999}
-            tabIndex={switchTappable ? 0 : -1}
-            onClick={() => switchTappable && modeSwitch.onTap()}
-            onKeyDown={onSwitchKey}
-            style={{ cursor: switchTappable ? "pointer" : "default", outline: "none" }}
-        >
-            {/* It falls with the old tower like the lever, and drops in from the sky arriving. */}
-            {modeSwitch.skyFall !== "waiting" && (
-                <g {...fallSx(stackFalling && modeSwitch.skyFall === null)}>
-                    <IsoModeSwitch
-                        at={layout.modeSwitchAt}
-                        surface={floor}
-                        flip={modeSwitch.flip}
-                        labels={SWITCH_LABELS}
-                        colors={SWITCH_COLORS}
-                        sink={modeSwitch.sink}
-                        hatch={modeSwitch.hatch}
-                        air={modeSwitch.skyFall ?? undefined}
-                    />
-                </g>
-            )}
-            {/* A generous tap target over the standing switch (anywhere on it flips it). */}
-            {switchTappable && (
-                <path
-                    className="deck-tower-page__mode-switch-hit"
-                    d={flatPath(proj, insetRect(modeSwitchFootprint(layout.modeSwitchAt), -0.4), floor.z + 0.5)}
                     fill="transparent"
                 />
             )}

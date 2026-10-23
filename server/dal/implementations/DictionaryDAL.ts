@@ -225,7 +225,7 @@ function buildNumberedPinyinPattern(searchTerm: string): string | null {
 /**
  * Build the numberedPinyin regex from an array of already-separated syllable tokens (each a base
  * optionally suffixed with a tone digit 0–5). Shared by the direct numbered-pinyin path (via
- * buildNumberedPinyinPattern, `requireDigit = true`) and the stage-2 spaceless-segmentation path
+ * buildNumberedPinyinPattern, `requireDigit = true`) and the spaceless-pinyin clause
  * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md), which passes tilings from `segmentPinyin` with
  * `requireDigit = false` — those tokens are already confirmed valid pinyin, so an all-any-tone
  * (digit-free) query is legitimate rather than an ambiguous English phrase.
@@ -256,6 +256,53 @@ function buildTokenPinyinPattern(tokens: string[], requireDigit: boolean): strin
 
   if (requireDigit && !hasExplicitDigit) return null;
   return `^${tokenPatterns.join('\\s+')}`;
+}
+
+// Cap on the syllable tilings `buildSpacelessPinyinPattern` folds into one regex. Mirrors
+// `segmentPinyin`'s own MAX_TILINGS; real queries produce one to a handful.
+const MAX_SPACELESS_TILINGS = 50;
+
+/**
+ * The spaceless-pinyin clause (docs/DICTIONARY_AI_FALLBACK_SEARCH.md § "Spaceless pinyin"):
+ * tile each whitespace-separated token of the term into pinyin syllables (`segmentPinyin` —
+ * every valid tiling, tone digits and tone marks accepted) and return ONE `^`-anchored
+ * numberedPinyin regex that alternates over every tiling, e.g. "qingtian" →
+ * `^(?:qing[1-4]?\y\s+tian[1-4]?\y)`, "xian" → `^(?:xian[1-4]?\y|xi[1-4]?\y\s+an[1-4]?\y)`.
+ *
+ * Tiling is per token so a space the learner typed stays a syllable boundary: "xi an" tiles
+ * only as xi|an, never as the single syllable xian. The token tilings are crossed (capped).
+ *
+ * Folded into the primary WHERE, not run as a zero-result fallback (that is what it used to be,
+ * and it was a bug): "qingtian" matched three CC-CEDICT glosses mentioning "Qingtian county",
+ * so the primary search was non-empty, the fallback never ran, and 晴天 qíng tiān was missing.
+ *
+ * No tone digit is required (unlike `buildNumberedPinyinPattern`): the tokens are already
+ * confirmed pinyin, and the English gloss search still runs alongside, so an English word that
+ * happens to tile ("change" → chang|e) adds pinyin rows without hiding English ones.
+ *
+ * Returns null when any token fails to tile (the term is not pinyin).
+ */
+function buildSpacelessPinyinPattern(searchTerm: string): string | null {
+  const tokens = searchTerm.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let tilings: string[][] = [[]];
+  for (const token of tokens) {
+    const tokenTilings = segmentPinyin(token);
+    if (tokenTilings.length === 0) return null;
+    tilings = tilings
+      .flatMap(prefix => tokenTilings.map(tiling => [...prefix, ...tiling]))
+      .slice(0, MAX_SPACELESS_TILINGS);
+  }
+
+  // Each tiling's pattern is `^`-anchored; strip that so one anchor heads the alternation.
+  const bodies = [...new Set(
+    tilings
+      .map(tiling => buildTokenPinyinPattern(tiling, false))
+      .filter((p): p is string => p !== null)
+      .map(p => p.replace(/^\^/, ''))
+  )];
+  return bodies.length > 0 ? `^(?:${bodies.join('|')})` : null;
 }
 
 /**
@@ -552,6 +599,10 @@ export class DictionaryDAL implements IDictionaryDAL {
     // word1/pronunciation/definitions search) if any token isn't syllable-shaped.
     const numberedPinyinPattern = isZh ? buildNumberedPinyinPattern(searchTerm) : null;
 
+    // The same numberedPinyin match for a term typed WITHOUT syllable spaces ("qingtian",
+    // "jian4shen1", "nǐhǎo"), which neither regex above can see — see buildSpacelessPinyinPattern.
+    const spacelessPinyinPattern = isZh ? buildSpacelessPinyinPattern(searchTerm) : null;
+
     // $1 language and $2 word1-prefix pattern are used for every language. The pronunciation params
     // ($3 accent-agnostic prefix regex, $4 the 'g'-exclusion) and the numbered-pinyin clause are
     // Chinese-only — the es det has NULL pronunciation/numberedPinyin, and `NOT (NULL ~ x)` would
@@ -582,6 +633,14 @@ export class DictionaryDAL implements IDictionaryDAL {
         paramIdx += 1;
         numberedPinyinClause += `\n          OR "searchReadings" ~* $${paramIdx}`;
         params.push(anyReadingPattern(numberedPinyinPattern));
+      }
+      if (spacelessPinyinPattern) {
+        paramIdx += 1;
+        numberedPinyinClause += `\n          OR "numberedPinyin" ~* $${paramIdx}`;
+        params.push(spacelessPinyinPattern);
+        paramIdx += 1;
+        numberedPinyinClause += `\n          OR "searchReadings" ~* $${paramIdx}`;
+        params.push(anyReadingPattern(spacelessPinyinPattern));
       }
     }
 
@@ -741,12 +800,21 @@ export class DictionaryDAL implements IDictionaryDAL {
         if (defaultReadingPattern) {
           primaryWordParts.push(`${DEFAULT_READING_SQL} ~ ${nextRankParam(`${defaultReadingPattern}$`)}`);
         }
+        // A spaceless term ("qingtian") is ONE syllable to parsePinyinQuery, so it needs its
+        // tilings to count as a complete main reading (晴天 qing2 tian1) too.
+        if (spacelessPinyinPattern) {
+          primaryWordParts.push(`${DEFAULT_READING_SQL} ~ ${nextRankParam(`${spacelessPinyinPattern}$`)}`);
+        }
         completeWordParts.push(`pronunciation ~ ${nextRankParam(`${regexPattern}$`)}`);
         // Any of the heteronym's other readings, matched whole ("hang" IS 行's háng).
         completeWordParts.push(`"searchReadings" ~ ${nextRankParam(`${anyReadingPattern(regexPattern)}($|\\|)`)}`);
         if (numberedPinyinPattern) {
           completeWordParts.push(`"numberedPinyin" ~* ${nextRankParam(`${numberedPinyinPattern}$`)}`);
           completeWordParts.push(`"searchReadings" ~* ${nextRankParam(`${anyReadingPattern(numberedPinyinPattern)}($|\\|)`)}`);
+        }
+        if (spacelessPinyinPattern) {
+          completeWordParts.push(`"numberedPinyin" ~* ${nextRankParam(`${spacelessPinyinPattern}$`)}`);
+          completeWordParts.push(`"searchReadings" ~* ${nextRankParam(`${anyReadingPattern(spacelessPinyinPattern)}($|\\|)`)}`);
         }
       }
 
@@ -860,87 +928,9 @@ export class DictionaryDAL implements IDictionaryDAL {
 
     console.log(`[DICTIONARY-DAL] ✅ Found ${entriesResult.recordset.length}/${total} matches in ${queryTime.toFixed(2)}ms`);
 
-    // Stage 2 — spaceless-pinyin fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Only when the
-    // primary search found nothing: segment the (possibly space-free) term into pinyin syllables,
-    // enumerate every valid tiling, and match each re-spaced form against numberedPinyin. This lets
-    // "jianshen"/"jian4shen1" resolve even though the direct numbered-pinyin path (which needs
-    // spaces + a digit) matched nothing. Chinese-only (es has no pinyin).
-    if (isZh && total === 0) {
-      const tilings = segmentPinyin(searchTerm);
-      if (tilings.length > 0) {
-        // Build one pattern per tiling; tokens are already valid pinyin so digits aren't required.
-        const patterns = [...new Set(
-          tilings
-            .map(tokens => buildTokenPinyinPattern(tokens, false))
-            .filter((p): p is string => p !== null)
-        )];
-        if (patterns.length > 0) {
-          return this.searchByNumberedPinyinPatterns(patterns, language, limit, offset);
-        }
-      }
-    }
-
     return {
       entries: entriesResult.recordset.map(row => this.mapRowToEntity(row)),
       total: total
-    };
-  }
-
-  /**
-   * Stage-2 helper (docs/DICTIONARY_AI_FALLBACK_SEARCH.md): match numberedPinyin against any of a
-   * set of regex patterns (one per spaceless-segmentation tiling), OR-ed together. Same
-   * count+paginate shape as searchByWord1's primary query, ordered shortest-word-first.
-   */
-  private async searchByNumberedPinyinPatterns(
-    patterns: string[],
-    language: string,
-    limit: number,
-    offset: number
-  ): Promise<{ entries: DictionaryEntry[], total: number }> {
-    // $1 = language, $2..$(n+1) = patterns, $(n+2)..$(2n+1) = the same patterns re-anchored for
-    // "searchReadings" (a heteronym's other readings, migration 165), then LIMIT/OFFSET.
-    const n = patterns.length;
-    const orClause = [
-      ...patterns.map((_, i) => `"numberedPinyin" ~* $${i + 2}`),
-      ...patterns.map((_, i) => `"searchReadings" ~* $${i + 2 + n}`),
-    ].join('\n          OR ');
-    const baseParams: any[] = [language, ...patterns, ...patterns.map(anyReadingPattern)];
-    const limitPlaceholder = `$${baseParams.length + 1}`;
-    const offsetPlaceholder = `$${baseParams.length + 2}`;
-
-    // Resolved per language like every other query here. This used to read
-    // `this.tableName` — BaseDAL's constructor argument, permanently
-    // 'dictionaryentries_zh' — so a Spanish search would have scanned the Chinese
-    // table for `language = 'es'` and always returned nothing.
-    const table = dictTableForLanguage(language as Language);
-
-    const countResult = await this.dbManager.executeQuery<any>(async (client) => {
-      return await client.query(`
-        SELECT COUNT(*) as count
-        FROM ${table}
-        WHERE language = $1 AND (
-          ${orClause}
-        )
-      `, baseParams);
-    });
-
-    const entriesResult = await this.dbManager.executeQuery<any>(async (client) => {
-      return await client.query(`
-        SELECT ${DICTIONARY_COLUMNS}
-        FROM ${table}
-        WHERE language = $1 AND (
-          ${orClause}
-        )
-        ORDER BY ${RELEVANCE_ORDER_BY}
-        LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
-      `, [...baseParams, limit, offset]);
-    });
-
-    const total = parseInt(countResult.recordset[0].count, 10);
-    console.log(`[DICTIONARY-DAL] 🈶 Spaceless-pinyin fallback matched ${entriesResult.recordset.length}/${total}`);
-    return {
-      entries: entriesResult.recordset.map(row => this.mapRowToEntity(row)),
-      total,
     };
   }
 

@@ -5,7 +5,10 @@
  * LAYER: reference-data integrity check (read-only). Run on PPE after authoring a pack
  * (PPE is the source of truth for sort_packs; dev receives it via /data-ppe-to-dev —
  * docs/SORT_PACKS_IMPLEMENTATION.md § 2.1), or in CI. Flags structural problems: empty/oversized packs, non-existent
- * entryIds, level out of 1..6.
+ * entryIds, entryWords drift, and cards with no det.difficulty. A pack's level is
+ * DERIVED (MAX det.difficulty over its cards, migration 177 — mirrors
+ * SortPacksDAL → _packsWithLevelSql), so an unlevelled card silently lowers its pack
+ * and an all-unlevelled pack is never served; both are violations here.
  *
  * Usage (dev, from server/):  npx tsx scripts/validate-sort-packs.ts
  * Usage (PPE):  docker exec cow-backend node dist/scripts/validate-sort-packs.js
@@ -23,7 +26,6 @@ const MAX_CARDS_PER_PACK = 4;
 interface PackRow {
   id: number;
   language: string;
-  level: number;
   packOrder: number;
   entryIds: number[];
   entryWords: string[];
@@ -35,13 +37,13 @@ async function main(): Promise<void> {
 
   try {
     const { rows: packs } = await client.query<PackRow>(
-      `SELECT id, language, level, "packOrder", "entryIds", "entryWords"
-       FROM sort_packs ORDER BY language, level, "packOrder", id`
+      `SELECT id, language, "packOrder", "entryIds", "entryWords"
+       FROM sort_packs ORDER BY language, "packOrder", id`
     );
     console.log(`Validating ${packs.length} sort pack(s)…`);
 
     for (const pack of packs) {
-      const where = `pack ${pack.id} (${pack.language} L${pack.level} #${pack.packOrder})`;
+      let where = `pack ${pack.id} (${pack.language} #${pack.packOrder})`;
 
       // Structural checks.
       if (!pack.entryIds || pack.entryIds.length === 0) {
@@ -51,17 +53,26 @@ async function main(): Promise<void> {
       if (pack.entryIds.length > MAX_CARDS_PER_PACK) {
         violations.push(`${where}: ${pack.entryIds.length} cards (max ${MAX_CARDS_PER_PACK})`);
       }
-      if (pack.level < 1 || pack.level > 6) {
-        violations.push(`${where}: level ${pack.level} out of range 1..6`);
-      }
 
       // Load the referenced cards' headwords from the per-language det table.
       const det = dictTableForLanguage(pack.language);
-      const { rows: cards } = await client.query<{ id: number; word1: string }>(
-        `SELECT id, word1 FROM ${det} WHERE id = ANY($1::int[])`,
+      const { rows: cards } = await client.query<{ id: number; word1: string; difficulty: number | null }>(
+        `SELECT id, word1, difficulty FROM ${det} WHERE id = ANY($1::int[])`,
         [pack.entryIds]
       );
       const byId = new Map(cards.map((c) => [c.id, c.word1]));
+
+      // Derived level = the hardest card's difficulty (same rule as the serve path).
+      const levels = cards.map((c) => c.difficulty).filter((d): d is number => d !== null);
+      where = `pack ${pack.id} (${pack.language} L${levels.length ? Math.max(...levels) : '?'} #${pack.packOrder})`;
+      if (levels.length === 0) {
+        violations.push(`${where}: no card has a det.difficulty — the pack has no level and is never served`);
+      }
+      for (const c of cards) {
+        if (c.difficulty === null) {
+          violations.push(`${where}: card ${c.id} (${c.word1}) has no det.difficulty — it is ignored when deriving the pack's level`);
+        }
+      }
 
       for (const id of pack.entryIds) {
         if (!byId.has(id)) {

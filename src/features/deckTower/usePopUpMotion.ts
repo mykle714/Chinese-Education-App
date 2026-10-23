@@ -4,7 +4,7 @@ import { prefersReducedMotion, type PawnEntranceCue, type PawnEntranceFrame } fr
 /**
  * usePopUpMotion — the animated numbers of a fixture that rises out of a floor hatch and
  * sinks back into it (IsoHatch's `sink`, `hatch` and `air`): the focus lever
- * (useLeverMotion) and the Mix / Review switch (DeckTowerPage → `useModeSwitchMotion`).
+ * (useLeverMotion).
  * Layer: page logic; it draws nothing (docs/DECK_TOWER.md § "Floor fixtures").
  *
  *   visible false → true : the hatch's flaps swing down open, THEN the fixture rises out on

@@ -7,7 +7,7 @@ shadows. Code: `src/features/deckTower/iso/`. Import from its barrel,
 
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). Its only
 user so far is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
-(`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoBird`, `IsoCloud` and `IsoWind`. **`IsoCarpet` currently has no user** (the
+(`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`. **`IsoCarpet` currently has no user** (the
 Deck Tower dropped its carpet on 2026-10-17); it is kept as part of the kit.
 
 **Location.** The kit sits under `features/deckTower/` because the Deck Tower is its only
@@ -21,8 +21,8 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 ## Rules of the style
 
 1. **Everything is an extruded rounded rect** in the world XY plane, pushed up along z.
-   The exceptions are the ink figures: the pawn's body (a screen-space pill, which reads
-   the same from every angle) and the bird (a screen-space silhouette). A cloud is a
+   The exception is the ink figure: the pawn's body (a screen-space pill, which reads
+   the same from every angle). A cloud is a
    cluster of rounded rects (pills), so it follows the rule. Wind (`IsoWind`) is not a
    solid at all: it is flat round-capped strokes, the kit's one stroke-only object.
 2. **Three flat tones per material:** a lit TOP, a mid LEFT wall and a dark RIGHT wall.
@@ -42,17 +42,16 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
 | Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
-| Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What birds, clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
-| Behaviour | `useBirdFlights.ts` → `useBirdFlights`, `BirdFlight`, `BirdSky` | Schedules the birds crossing the sky: speed, timing, wingbeat |
+| Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoBird.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowTone` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS` | The bob |
 | Math | `geometry.ts` | Projection and shape math (below) |
-| Math | `cardStackMetrics.ts` → `cardStackMetrics` | Card thickness and seam spacing for a stack of N |
+| Math | `cardStackMetrics.ts` → `cardStackMetrics` | Card thickness, stack height for N, and the seam-spacing rule (`SEAM_EVERY`, `isDrawnSeam`) |
 
 ## Geometry
 
@@ -117,9 +116,9 @@ from what it falls on.
   shade is a saturation-boosted orange, which as a translucent overlay needs ~80% opacity and
   would repaint the decal.
 - **Parts cast no shadow.** `IsoCard` used as a stack's top card is a part; the stack casts.
-- **Birds and clouds cast no shadow.** They fly 40+ (birds) and 90+ (clouds) units up,
-  where the rule would throw the shadow far off the platform into empty sky. `IsoBird` and
-  `IsoCloud` are the only standing exceptions.
+- **Clouds and wind cast no shadow.** They sit 90+ units up, where the rule would throw
+  the shadow far off the platform into empty sky. `IsoCloud` and `IsoWind` are the only
+  standing exceptions.
 - **Draw order.** Each object draws its shadow first, then itself, so it covers the hidden
   part of its own shadow.
 - **Tilted casters.** A caster that is not level (the platform swung open on its hinge)
@@ -194,9 +193,9 @@ the surface `{ z: surface.z + thickness, color: ISO.carpet.top }`.
 `cardBeige` walls. The face carries:
 
 - an inset beige panel;
-- a head band carrying a small-caps label (`bandColor`, default `ISO.cardBand` blue);
+- a head band housing a small-caps `label` (`bandColor`, default `ISO.cardBand` blue) — drawn ONLY when a `label` is passed; without one the face has no band and the figure + caption centre on the whole panel (the Deck Tower passes neither);
 - a big centred figure;
-- a caption.
+- a caption (0.8 units).
 
 The head is the low-y edge, because printed text runs along +x.
 
@@ -204,19 +203,31 @@ The head is the low-y edge, because printed text runs along +x.
 
 `{ rect, count, surface, progress?, label?, bandColor?, figure? }`. A deck of N cards (`bandColor` passes through to the top card). It is drawn as one body
 solid plus a full `IsoCard` on top, not as N solids, because a deck can run to hundreds of
-cards. Seams (`frontContour`) suggest the individual cards. `cardStackMetrics` sets the
+cards. Seams (`frontContour`) under every other card suggest the individual cards. `cardStackMetrics` sets the
 proportions:
 
-- **Fixed thickness.** Every card is `CARD_THICKNESS` (0.38 world units, about 6px on a
-  phone), whatever the deck size, with a seam under each, so the height *is* the deck
-  size. A 500-card stack is about 190 units tall and runs far off screen; the caller frames that by scrolling,
+- **Fixed thickness.** Every card is `CARD_THICKNESS` (0.12 world units, about 2px on a
+  phone; on 2026-10-22 halved from 0.38 to 0.19, halved again to 0.095, doubled back to 0.19, then cut ~25% to 0.12), whatever the deck size, so the height *is* the deck
+  size. A 500-card stack is about 60 units tall and runs far off screen; the caller frames that by scrolling,
   not by fitting the stack (see [DECK_TOWER.md](./DECK_TOWER.md) § The scene). Until
   2026-10-17 the stack was capped at 11 units and its cards thinned to fit, which made
   big decks all look the same height.
-- **Seam anchoring.** Seams are anchored to the base, one per `CARD_THICKNESS`, so as the
-  body grows the placed cards stay put and new cards land on top. One extra seam always
-  sits where the top card meets the body; a base seam within a quarter card of it is
-  dropped, so the arriving card never shows a doubled line.
+- **Every-other-card seams.** A seam sits under every `SEAM_EVERY`-th card (2, counted
+  down from the top card: `isDrawnSeam`), not under every card. At `CARD_THICKNESS` per-card
+  seams would be ~2px apart: a 1px line under each would cover half the wall and shimmer as
+  the platform bobs. Every other card puts them ~4px apart. (Every card was used briefly at 0.19 units. A ruler
+  with one seam every 10 cards was tried and rejected on 2026-10-22: the wall read as
+  blocks.) All of a stack's seams are drawn as ONE path, so the cost does not grow with the
+  deck.
+- **Seam anchoring.** The grid is fixed in world z and phased by the SETTLED count: a seam
+  is drawn with `cardsBelow` cards under it when `(count − 1 − cardsBelow)` is a multiple of
+  `SEAM_EVERY`. So as the body grows the placed seams stay put and new ones appear on top,
+  and the seam where the top card meets the body (always drawn, so the top card reads as a
+  separate card) lands ON the grid. Phasing from the base instead put an even deck's last
+  grid seam one card under it (40 cards → 38 and 39), a doubled line at the tower's top. A
+  grid seam within a quarter card of the moving top seam is dropped during the build-up, so
+  the arriving card never shows a doubled line. The top card's own upper edge gets no seam.
+  `IsoCardRuns` phases by `plan.remaining`, so its landed runs match the settled stack.
 
 `progress` (0 → 1) grows the body upward and counts up the printed figure. `figure`
 overrides the printed figure (shown as-is): a stack dropping onto another names the total
@@ -231,7 +242,7 @@ floor decal (like `IsoFloorLabel`): the card rect flat at the floor's height (`f
 in the floor's tone one shadow step down, its print one step darker again (`shadowTone`
 twice). It is NOT a shadow — nothing casts it — so it does not slide along the light and is
 not drawn with `IsoShadow`; it sits exactly under the bottom card. It uses a card face's
-figure-over-caption layout, but the caption is 1.3 units (a card face's is 0.5), because
+figure-over-caption layout, but the caption is 1.3 units (a card face's is 0.8), because
 here it is the whole message.
 
 The caller draws it under the stack whenever the deck's count is known, not only for an
@@ -257,7 +268,9 @@ at `plan.durationMs`. Key it per plan: remounting restarts it.
   ghost while any card is kept; it rides down on the top run.
 - **Drawing.** One solid per run and per ghost chunk, bottom to top, sharing ONE wall
   gradient (every piece has the same footprint, so their front corners line up). Seams as
-  in `IsoCardStack`, plus one at each piece's own base above the floor.
+  in `IsoCardStack` (counted from the floor, so they match the settled stack once the runs
+  land), plus one at each piece's own base above the floor and one under the lid; one seam
+  path per piece.
 - **Floor shadow.** Cast by the bottom card. When that card is a ghost the shadow fades with
   its chunk (the runs above are left floating) and comes back as the lowest run lands:
   `shadowLandTiming(landAt)` fades it in over `SHADOW_LAND_MS` (120) starting on the impact,
@@ -265,8 +278,9 @@ at `plan.durationMs`. Key it per plan: remounting restarts it.
   sliver shows), so drawn any earlier it is just a dark patch over the floor's "0 cards"
   imprint. When nothing is kept it stays gone. The Deck Tower's drop onto an empty floor uses the same timing.
 - **Ghost wireframes.** A ghost goes in two stages. Under each chunk's solid sits a light
-  wireframe (`ISO.ghostWire` at `WIRE_OPACITY` 0.6): every card's full outline, back edges
-  included, plus the chunk's silhouette. It does not lift with the ghost, so as the solid
+  wireframe (`ISO.ghostWire` at `WIRE_OPACITY` 0.6): the chunk's top and bottom outlines and
+  one at each drawn seam inside it (every other card, not every card — at `CARD_THICKNESS` those would merge
+  into a white slab), back edges included, plus the chunk's silhouette. It does not lift with the ghost, so as the solid
   fades its outline stays standing in the gap. It holds `GHOST_WIRE_HOLD_MS` (260), then
   fades over `GHOST_WIRE_FADE_MS` (220) at the chunk's own `wireFadeDelayMs`, so the
   wireframes go in the order the chunks were picked. `fallStartMs` waits for the last one
@@ -278,7 +292,8 @@ at `plan.durationMs`. Key it per plan: remounting restarts it.
   top card's `figure` changes: the caller counts it down with `cardsShowingAt(plan, ms)`
   (a chunk stops counting halfway through its fade).
 
-Depended on by the Deck Tower's Mix → Review switch.
+Depended on by the Deck Tower's tower shrinks (the focus lever's focus-on,
+[DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
 
 ### IsoFloorLabel
 
@@ -290,7 +305,7 @@ no shadow, and pawns walk over it (it is not a `PawnRoam` obstacle).
 
 `raised` (0 → 1, briefly above 1 on a spring overshoot) stands the plate up as a thin slab
 of `RAISED_HEIGHT` (0.25 units, ~5 px at the Deck Tower's scale) so it reads as a button:
-an `IsoSolid` whose walls are the band shaded by the platform's own steps (`plateMaterial`:
+an `IsoSolid` whose walls are the band shaded by the platform's own steps (`plateMaterial`, built on palette.ts → `bandMaterial`:
 `shadeHex` 0.07 / 0.15 — the same flagged wall-tone divergence as the rest of the palette),
 plus an `IsoShadow` contact shadow whose opacity follows `raised`, so it fades as the plate
 sinks flush. It stays a floor decal at this height: pawns still walk over it.
@@ -358,8 +373,9 @@ stock's right wall.
 ### IsoModeSwitch
 
 *Code: `src/features/deckTower/iso/IsoModeSwitch.tsx`, `iso/hatchGeometry.ts`
-(`MODE_SWITCH_HOLE`, `modeSwitchFootprint`). Used by the Deck Tower's Mix / Review switch
-([DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch).*
+(`MODE_SWITCH_HOLE`, `modeSwitchFootprint`). **Currently unused**: it was the Deck Tower's Mix / Review
+switch until that was dropped on 2026-10-22, and is kept in the kit
+([DECK_TOWER.md](./DECK_TOWER.md) § Study mode).*
 
 `{ at, surface, flip, labels, colors, sink, hatch, air? }`. A two-position light switch
 standing in an `IsoHatch` (`MODE_SWITCH_HOLE`, 1.6 × 2.7, long along world y) — it rises,
@@ -408,7 +424,7 @@ of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, alarmed?, onDepthRankChange?, decals?, entrance?, steps? }`. A featureless ink
+`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps? }`. A featureless ink
 worker: a pill body and a ball head in screen space, standing at a projected world point.
 Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
@@ -465,16 +481,66 @@ ONTO, not around — e.g. a raised `IsoFloorLabel` at its current `raised · RAI
 While the foot centre is inside one (`usePawnMotion.ts` → `stepUnder`, rounded corners
 honoured; the highest wins on overlap), the `travel` slide is projected at that height, so
 body, shadow and the shaded-decal clip all sit on the step's top face (the decal anchor still
-undoes the whole slide, so the decals stay put). Crossing an edge eases the lift over
-`STEP_MS` (a quick hop up or down); on the same step the lift tracks the live height exactly,
-so a pawn on a pressed plate sinks with it and rides its spring back up. Heights are read
-from a latest-value ref, so passing a fresh array every render does not restart the loop.
-Known gap: a pawn standing on the floor just BEHIND a raised step is still drawn over it
-(steps are decals, outside the depth sort), so the step never hides its feet.
+undoes the whole slide, so the decals stay put). On the same step the lift tracks the live
+height exactly, so a pawn on a pressed plate sinks with it and rides its spring back up.
+- **Edge hop.** A walk HOPS on and off a step, from a standstill, rather than ramping
+  (`usePawnMotion.ts` → the `edgeHop` mode, `EdgeHopMode`). Each frame the walk looks `HOP_LEAD`
+  ahead (about the body's half width, clamped to the walk's end so a walk that stops short
+  never hops); when that point is over a surface whose height differs from the current lift
+  by at least `HOP_MIN_RISE`, it stops there and hops in three phases:
+  1. **Prepare** (`HOP_PREP_MS`) — the walk's bounce and waddle die out over `HOP_STOP_MS`
+     (feet down, upright), then it crouches to `HOP_CROUCH`, deepest at take-off.
+  2. **Air** (`HOP_MS`) — it covers up to `2 · HOP_LEAD` (less if the walk ends sooner or the
+     far side of a narrow step would be overshot) in a `HOP_ARC` parabola, stretched like the
+     startle leap. `lift` (body + shadow) glides from the take-off height to the landing
+     surface's live height; the arc rides on top in `hop` (body only — the shadow shrinks).
+  3. **Recover** (`HOP_RECOVER_MS`) — on touch-down the landing surface is committed, a
+     `HOP_LAND_SQUASH` squash eases out over `HOP_SQUASH_MS`, and it stands the rest of the
+     beat before walking on to the same target from feet-down (or pausing, if the hop carried
+     it to the walk's end).
+  A plate pressed flush (rise under `HOP_MIN_RISE`) is walked over without a hop.
+- **Fallback ease.** Any other edge crossing — a startle leap landing on the step, an entrance,
+  a hop cut short by a startle (the startle effect hands the lift over mid-glide) — eases the
+  lift over `STEP_MS` instead.
+- **Feet physics.** On top of `lift` (the surface, carrying the shadow) the feet have their own
+  height and vertical speed (`feetZ`, `feetV`) under `GRAVITY` — the pawn's own cartoon
+  gravity, 110 u/s², shared with its sky-fall entrance (`pawnEntrances.ts` → `PAWN_GRAVITY`;
+  the scene's falling towers use 130–140) — so the pawn reacts to its step
+  moving under it (the Deck Tower plate being pressed and released, docs/DECK_TOWER_TRANSITIONS.md
+  § "The plate button"):
+  - **Pressed** — the plate's ease-out sink drops away faster than gravity can follow at
+    first, so the pawn FALLS onto it (~67 ms for the full 0.25-unit press) instead of
+    snapping down with it, landing in a small bounce.
+  - **Released** — a step that sank under the feet (`launchArmed`) and then rises into them
+    launches them at `PLATE_LAUNCH_SPEED` (derived from `PLATE_LAUNCH_APEX` = 2.4 units, the
+    pawn's own full height): they ride the plate up (no gravity while it is still pushing
+    faster than that — in practice they leave it at once, the launch being ~23 u/s), peak
+    `PLATE_LAUNCH_APEX_MS` (~209 ms) after the release, and — when the floor is still there —
+    land in shrinking bounces (`BOUNCE_RESTITUTION`: ~0.5 then ~0.1 units, settling under
+    `BOUNCE_MIN_SPEED`). The Deck Tower's swap holds its trap door at least
+    `PLATE_LAUNCH_APEX_MS`, so in practice the floor drops away while the pawn is coming back
+    down (**Floor drop** below). On a quick tap the plate rises while the pawn is still
+    falling; the launch fires when they meet.
+  - Each impact squashes (`IMPACT_SQUASH_PER_SPEED`, capped at `IMPACT_SQUASH_MAX`, over
+    `IMPACT_MS`). While airborne this way the pawn does not step-bounce, waddle, start a walk or
+    start an edge hop; the flight is added to a startle's arc. An entrance or an edge hop places
+    the body itself, so during those the feet simply stand on the surface.
 
-**Alarm.** When `alarmed` turns true, only the startle's `!` bubble pops (emote
-`leanSign: 0`, so it sits straight over the head). The motion loop is untouched: no lean,
-no leap. The Deck Tower uses it on the pawn falling through the trap door.
+Heights are read from a latest-value ref, so passing a fresh array every render does not
+restart the loop. Known gap: a pawn standing on the floor just BEHIND a raised step is still
+drawn over it (steps are decals, outside the depth sort), so the step never hides its feet.
+
+**Floor drop.** `floorDrop` (world units, read live from a latest-value ref) is how far the
+pawn's floor itself has fallen away — the Deck Tower's trap door. Above 0 the pawn has no
+surface and falls ON ITS OWN, so its wrapper must NOT also be translated by the drop
+(`usePawnMotion.ts` → FLOOR DROP, the `fall` state): its feet fly free under `GRAVITY`; once
+they are no longer rising (a plate launch reaches its apex first) the fall starts, its `!`
+bubble pops (the startle's bubble alone: emote `leanSign: 0`, no lean, no leap), and its
+height blends over `FALL_BLEND_MS` from that free fall into `lift − floorDrop` (where it would
+be standing on the falling floor — a launched pawn catches up rather than trailing by its
+launch height), so it falls out of the air and then keeps pace with the floor. Mid edge hop
+it falls from where the arc had it (walking on, legs still); mid entrance it ignores the drop. Below its surface
+the shadow does not grow (`air` is clamped at 0) — the page fades it out instead.
 
 **Startle.** When `startled` turns true, from wherever it is (a pawn that MOUNTS with
 `startled` already true does not startle — only a change it watches counts;
@@ -511,41 +577,6 @@ the tower yet in front of the lever, and a count of 1 drew it over the tower). A
 obstacles. Children must be keyed, so the reorder moves the pawn's DOM node instead of
 remounting it and losing its motion state.
 
-### IsoBird
-
-`{ flight }` (a `BirdFlight` from `useBirdFlights`). A bird in the pawn's ink style.
-
-**Shape.** An oval body, a ball head, a stub tail and two wings, drawn in screen space
-at the projected start of the flight. It faces its screen direction of travel (mirrored
-when flying left) and tips `TILT_FRACTION` of the way along the path's 2:1 slope.
-
-**Motion.** Its own requestAnimationFrame loop writes three transforms through refs:
-
-- **travel** slides it along the flight line at a constant speed;
-- **bounce** lifts it `FLAP_BOUNCE` on each downstroke (highest with the wings down),
-  plus a slow `DRIFT` undulation;
-- **wings** flap by scaling about the shoulder from spread up (1) through flat to swept
-  down (`WING_DOWN`, −0.7). The flip through zero reads as the wings swinging past the
-  body.
-
-It has no shadow (§ Light and shadows). It is mounted per flight (keyed on `flight.id`)
-and unmounted when the flight ends, so it never resets.
-
-**Scheduling: `useBirdFlights({ proj, active, sky, maxAirborne })`.** `BirdSky` is a
-`SkyRegion` (§ Sky traffic), and paths and slots come from there.
-
-- **Slots.** `maxAirborne` slots (default 3). Waits are 1.5–6.5 s, and first flights are
-  staggered by slot (`FIRST_WAIT_MS`).
-- **Paths.** 0.7–2.6 units out from `around`, `OFFSCREEN_MARGIN` 2 past each screen edge.
-  Speed (3.2–4.6 units/s) and wingbeat (2.6–3.6 Hz, random phase) are picked per flight.
-- **Height.** Read from the birds' altitude wander (§ Sky traffic), `ALTITUDE_WANDER`
-  `{ knotMs: 6000, maxStep: 0.2 }`.
-- **No sorting among birds.** They are the same flat ink, so their overlap order is
-  invisible.
-- **Reduced motion.** Under `prefers-reduced-motion` no birds fly. A bird frozen in
-  mid-air would read as a glitch.
-- **Memoize `sky`.** A new object restarts every slot.
-
 ### IsoCloud
 
 `{ drift }` (a `CloudDrift` from `useCloudDrifts`). A cloud drifting past the tower.
@@ -559,7 +590,7 @@ scaled 0.8–1.25, and sorted back-to-front by view depth: the 2:1 projection's 
 (1, 1, 1), so a puff is nearer the larger the x + y + z of its centre.
 
 **Motion.** Drawn once at its starting position and slid by its own requestAnimationFrame
-loop (the projection is affine, as for the bird). It fades in over `FADE_MS` (1.6 s). No
+loop (the projection is affine, so a projected world delta moves the drawing exactly). It fades in over `FADE_MS` (1.6 s). No
 bob or wobble: a cloud only drifts.
 
 **Scheduling: `useCloudDrifts({ proj, active, sky, maxInSky })`.** `CloudSky` is a
@@ -576,7 +607,7 @@ bob or wobble: a cloud only drifts.
 - **Openers.** A slot's first drift starts 15–75% of the way across (`startT`) and fades
   in, so the band has sky in it the moment clouds switch on instead of staying empty
   while one drifts in from the edge.
-- **Sorting among clouds.** Unlike birds, overlapping clouds show their order.
+- **Sorting among clouds.** Overlapping clouds show their order.
   `sortCloudsBackToFront` orders them by the view depth of their path's midpoint.
   ⚠️ This is approximate: two clouds on perpendicular sides swap true order as they move,
   which a static sort cannot follow.
@@ -611,7 +642,7 @@ a dot. The whole gust also slides `drift` (1.2–2.2 units) along its travel. No
 `SkyRegion` whose `band` is the range of gust **baselines**.
 
 - **Slots.** `maxGusts` slots (default 2). Waits between gusts are 1–4 s.
-- **Paths.** Unlike birds and clouds, a gust does not cross the screen. `planSidePath`
+- **Paths.** Unlike a cloud, a gust does not cross the screen. `planSidePath`
   runs with a negative margin (`SCREEN_INSET`, 1 unit inside each edge). The gust is then
   placed at a random point on that path where its whole extent fits (back side strand →
   curl's forward bulge + drift), so it plays fully on screen. The plane is 1–3.5 units out
@@ -626,13 +657,13 @@ a dot. The whole gust also slides `drift` (1.2–2.2 units) along its travel. No
 
 ### Sky traffic
 
-`skyTraffic.ts` is the part birds, clouds and wind share.
+`skyTraffic.ts` is the part clouds and wind share.
 
 - **`planSidePath(proj, region, gap, margin, depth = 0)`.** A straight path parallel to one
   of the four sides of `region.around`, `gap` units out, along a world axis, so on screen
   it crosses at the grid's 2:1 slope. It runs from `margin` units past one edge of
   `region.screenSpan` to `margin` past the other. `depth` is the traveller's extent across
-  the path from its origin toward +x/+y (0 for a bird). On the back sides the origin is
+  the path from its origin toward +x/+y (0 for a flat gust). On the back sides the origin is
   pushed out by it, so the whole footprint stays `gap` clear.
 - **Draw order.** `side` is `"front"` for the +x and +y sides (the walls a viewer sees),
   so the caller draws the traveller after the tower. It is `"behind"` for the other two,
@@ -645,7 +676,7 @@ a dot. The whole gust also slides `drift` (1.2–2.2 units) along its travel. No
   slot's opener. React state changes only when a crossing starts or ends. `plan` and the
   wait functions are effect dependencies, so callers memoize them.
 - **`createAltitudeWander({ knotMs, maxStep })` / `useAltitudeWander(config)`.** Where a
-  traveller's height comes from. Each traveller type (birds, clouds, wind) owns ONE
+  traveller's height comes from. Each traveller type (clouds, wind) owns ONE
   wander, and every spawn reads `sample(band)` from it instead of picking its own random
   z. The wander is a bounded random walk on 0–1 of the band: a new waypoint every
   `knotMs`, at most `maxStep` from the last (reflected at 0 and 1), cosine-eased in

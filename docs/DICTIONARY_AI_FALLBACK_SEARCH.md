@@ -11,7 +11,7 @@
 > - **es** — a query in **English** (→ Spanish translation) or **Spanish** (a headword missing from
 >   `dictionaryentries_es`).
 >
-> The spaceless-/synthetic-**pinyin** machinery (stage 2, `isAllPinyin`, `segmentPinyin`) is still
+> The spaceless-/synthetic-**pinyin** machinery (`segmentPinyin`, `buildSpacelessPinyinPattern`) is
 > Chinese-only — it is meaningless for `es`. See [Per-language search routing](#per-language-search-routing)
 > for the `searchByWord1` table/column fix that made `es` search return real rows at all.
 
@@ -25,8 +25,8 @@ Today `searchByWord1` matches `word1` / `pronunciation` / `definitions` / number
 2. A learner who types a *real* pinyin word that simply isn't in `dictionaryentries_zh`
    (rare/colloquial/new) gets nothing, with no recourse.
 
-This feature adds a **three-stage fallback chain** on top of the existing search, plus an
-AI-synthesized entry (behind an explicit button) cached in a new table.
+This feature adds **spaceless-pinyin matching to the normal search** and a **two-stage chain**
+behind it: an AI-synthesized entry (behind an explicit button) cached in a new table.
 
 ## The fallback chain
 
@@ -34,27 +34,25 @@ Given a search term, results are resolved in this order; the first stage that yi
 
 ```
 1. Normal search        word1 ILIKE / pronunciation ~ / definitions ~* / numbered-pinyin (spaced)
+   │                     / spaceless pinyin (every syllable tiling of the term, see below) — one
+   │                     query, one ranking. Real det rows, rendered normally.
    │  (0 rows)
-2. Spaceless pinyin      segment the term into pinyin syllables (tone digits OR tone marks) — enumerate
-   │                     ALL valid tilings, not just one — and re-run the numbered-pinyin match on
-   │                     each re-spaced form. Real det rows, rendered normally.
-   │  (0 rows)
-3. AI cache lookup       exact-match the term against ai_dictionary_cache (see below).
+2. AI cache lookup       exact-match the term against ai_dictionary_cache (see below).
    │                     · non-empty hit  → render the orange synthetic card (unclickable)
    │                     · empty hit, fresh (<3 mo) → aiNoMatch: show the "couldn't find a match"
    │                                                   note (no button — the AI already checked)
    │                     · empty hit, stale (>3 mo) → treat as a miss (offer the AI button again)
-   │                     · miss           → if the term is valid pinyin, offer the "AI" button
+   │                     · miss           → if the query qualifies (§ Trigger), offer the "AI" button
    └─ AI button tap →    POST /api/dictionary/aiEntry → Sonnet → write cache → render orange card
                          (a network/server failure surfaces `aiError` — the button stays for retry)
 ```
 
-Stages 1–2 return **real `dictionaryentries_zh` rows**. Stage 3 is the only one that produces a
+Stage 1 returns **real `dictionaryentries_zh` rows**. Stage 2 is the only one that produces a
 **synthetic, unclickable** entry.
 
-## Stage 2 — spaceless pinyin segmentation
+## Spaceless pinyin (part of stage 1)
 
-A new server util **`server/utils/pinyinSegment.ts`**:
+Server util **`server/utils/pinyinSegment.ts`**:
 
 - `segmentPinyin(input: string): string[][]` — enumerate **all valid tilings** of the input over a
   canonical **toneless pinyin syllable inventory** (the ~410 legal Mandarin syllables) via a
@@ -77,14 +75,31 @@ A new server util **`server/utils/pinyinSegment.ts`**:
     so we return both parses and search each. (This is the pinyin analogue of the `xi'an` vs `xian`
     apostrophe ambiguity, resolved here by trying every branch.)
 - `isAllPinyin(input: string): boolean` — true iff `segmentPinyin` returns at least one tiling;
-  this is the **gate** for offering the "AI" button (stage 3), computed server-side and returned to
-  the client (so the syllable inventory isn't duplicated on the front end).
+  it used to gate the "AI" button, but that gate was dropped (see below) and **nothing outside
+  its unit test calls it any more**.
 
-`searchByWord1` calls `segmentPinyin` only when stage 1 produced 0 rows; for **each** returned
-tiling it rebuilds a space-separated term and reuses the **existing** `buildNumberedPinyinPattern`
-path (OR-ing the tilings' patterns together, deduping rows) — no new SQL shape.
+**How the search uses it.** `buildSpacelessPinyinPattern` (`server/dal/implementations/DictionaryDAL.ts`)
+tiles **each whitespace-separated token** of the term, crosses the token tilings (capped at
+`MAX_SPACELESS_TILINGS`), turns each tiling into a numbered-pinyin regex via
+`buildTokenPinyinPattern(tokens, false)` (no tone digit required — the tokens are confirmed pinyin),
+and alternates them into ONE `^(?:…|…)` regex. `searchByWord1` ORs it into the primary `WHERE`
+against `numberedPinyin` and (re-anchored by `anyReadingPattern`) `searchReadings`, and adds its
+`$`-anchored form to the ranking's complete-reading tests, so a spaceless term that spells a word's
+whole default reading (`qingtian` → 晴天 qíng tiān) lands in bucket 1 like a spaced one would
+(see [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) § "The shared
+bucket ladder").
 
-## Stage 3 — AI synthetic entry
+- **Per token, not whitespace-stripped:** a space the learner typed stays a syllable boundary —
+  `xi an` tiles only as `xi|an` (锡安), never as `xian` (先).
+- **Why it is in stage 1, not a zero-result fallback.** It used to run only when stage 1 returned
+  0 rows. That missed any spaceless pinyin whose romanization appears in some CC-CEDICT gloss:
+  `qingtian` matched 3 rows by gloss ("Qingtian county in Lishui…", "Bao Qingtian…"), so the
+  fallback never ran and 晴天 was unreachable. Proper-noun romanizations make this common.
+- **English words that tile** (`change` → `chang|e`, `you`, `long`) now also pull in their pinyin
+  rows. The ranking keeps a complete English gloss (bucket 0) above them, so the English answer
+  still leads (decided 2026-10-22: complete English stays above complete pinyin).
+
+## Stage 2 — AI synthetic entry
 
 ### Trigger (decided: explicit "AI" pill button)
 
@@ -93,7 +108,7 @@ on tap) whenever the cache has no usable row (miss, or stale-empty) **and** the 
 qualification is language-aware (`DictionaryService.qualifiesForAiFallback` for the `/search` path,
 `resolveChineseAiFallback` for the `/segment` path):
 
-- **`/search` path** (non-CJK input) — stages 1–2 returned 0 rows and the trimmed query is **≥2
+- **`/search` path** (non-CJK input) — stage 1 returned 0 rows and the trimmed query is **≥2
   chars** in a supported language. **No** pinyin gate any more (previously `isAllPinyin`): any
   Latin query qualifies, because the query may be English rather than pinyin. Per language:
   - **zh** — pinyin (`jianshen`) **or** an English word/phrase (`serendipity`) → one Chinese word.
@@ -230,7 +245,7 @@ Spanish rows at all** — two bugs in `DictionaryDAL.searchByWord1`, both fixed 
 2. **Pronunciation filter dropped every es row.** The clause `AND NOT (pronunciation ~ $4)` (a
    zh pinyin quirk excluding `...g` runs) evaluates to `NOT NULL` = **excluded** for Spanish rows
    (pronunciation is NULL for all `es`). The pronunciation match (`pronunciation ~ $3`), the
-   `numberedPinyin` clause, this exclusion, and the stage-2 spaceless-pinyin fallback are now all
+   `numberedPinyin` clause, this exclusion, and the spaceless-pinyin clause are now all
    gated behind `isZh` — `es` matches on **`word1` prefix + first-definition** only.
 
 Also, the shared `DICTIONARY_COLUMNS` SELECT list references `definitionClusters`, a **Chinese-only**
@@ -265,7 +280,7 @@ CREATE TABLE ai_dictionary_cache (
   rows / separate AI calls. Simple and exact; no normalization surprises. (Trade-off: lower hit
   rate across spacing variants — noted in Open questions.)
 
-The table is queried on **every** dictionary search (stage 3 lookup), so the `UNIQUE (queryKey,
+The table is queried on **every** dictionary search (stage 2 lookup), so the `UNIQUE (queryKey,
 language)` index also serves the read path.
 
 ## API key config (decided: dedicated env var)
@@ -311,7 +326,7 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Error | `server/types/dal.ts` | `RateLimitError` (HTTP 429, `code: 'ERR_RATE_LIMIT'`) |
 | Util | `server/utils/pinyinSegment.ts` (**new**) | `segmentPinyin`, `isAllPinyin` (syllable inventory + max-munch), `stripToneMarks`/`applyTones` (tone-mark input) |
 | Util | `server/utils/streakDate.ts` | `resolveTimezone`, `streakDateOf` — reused to bound the daily limit to the local streak-day |
-| DAL | `server/dal/implementations/DictionaryDAL.ts` | **per-language table/column routing in `searchByWord1`** (`dictTableForLanguage`, `dictionaryColumns`, `isZh`-gated pinyin/pronunciation clauses); stage-2 segmentation fallback (zh-only); `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
+| DAL | `server/dal/implementations/DictionaryDAL.ts` | **per-language table/column routing in `searchByWord1`** (`dictTableForLanguage`, `dictionaryColumns`, `isZh`-gated pinyin/pronunciation clauses); `buildSpacelessPinyinPattern` spaceless-pinyin clause in stage 1 (zh-only); `getAiCacheEntry`, `upsertAiCacheEntry`; return `canAskAi`; `getAiUsageCount`, `incrementAiUsage` (daily limit) |
 | DAL iface | `server/dal/interfaces/IDictionaryDAL.ts` | new method signatures (incl. `getAiUsageCount`/`incrementAiUsage`) |
 | Service | `server/services/DictionaryService.ts` | `qualifiesForAiFallback(term, language)` (`/search` button gate — ≥2-char non-CJK zh/es); `buildAiSystemPrompt(language)` (per-language zh/es prompt); `generateAiEntry(term, language, userId, usageDate)` (dedicated Sonnet client + prompt caching + `web_search` tool w/ pause_turn loop + validation; accepts pinyin / Chinese / English for zh, English / Spanish for es; **daily-limit gate + increment**); `resolveAiCache` + `resolveChineseAiFallback` (staleness check) |
 | Controller | `server/controllers/DictionaryController.ts` | `aiEntry` handler (computes `usageDate` from `tz`; maps `RateLimitError` → 429); thread `canAskAi`/`aiEntry` through both `search` (pinyin) and `segmentSearch` (Chinese no-complete-match) |

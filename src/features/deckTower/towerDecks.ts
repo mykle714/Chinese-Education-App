@@ -7,21 +7,21 @@ import { RAMP } from "../../theme/colors";
  *
  * Layer: page constants (feature module `src/features/deckTower`). Each platform's floor
  * plate toggles THAT platform between the two; the counts come from DeckTowerPage, each
- * platform reading the deck through its own bar (Learn Now = off-cooldown cards in the
- * bands of the world's Mix / Review mode, towerModes.ts; Mastered = the bar's Mastered total).
+ * platform reading the deck through its own bar (Learn Now = off-cooldown cards in all four
+ * utcm bands, towerModes.ts; Mastered = the bar's Mastered total).
  */
 export type TowerDeckId = "learn-now" | "mastered";
 
 export interface TowerDeck {
     /** The page title (the header-voice headline). */
     title: string;
-    /** Printed on the floor plate and the top card's head band. */
+    /** Printed on the floor plate. */
     label: string;
     /**
-     * The plate's and head band's fill, the same in every world: the deck's fdp hue at
-     * its `mid` tier (the pale `surface` tier the fdp card uses washes out on the cream
-     * card face). Mastered stays the core bar's blue even in the reading / writing worlds,
-     * so the deck reads as one thing wherever the learner is.
+     * The floor plate's fill (and the CardSplat flyers' strip), the same in every world: the
+     * deck's fdp hue at its `mid` tier (the pale `surface` tier the fdp card uses washes out).
+     * Mastered stays the core bar's blue even in the reading / writing worlds, so the deck
+     * reads as one thing wherever the learner is.
      */
     band: string;
 }

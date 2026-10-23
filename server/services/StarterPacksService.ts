@@ -915,7 +915,7 @@ export class StarterPacksService {
 
   // ===========================================================================
   // Sort packs (docs/SORT_PACKS_IMPLEMENTATION.md §3). The on-deck unit becomes a
-  // SortPack (up to 3 cards, no sentence). Authored packs come from sort_packs; system
+  // SortPack (up to 4 cards, no sentence). Authored packs come from sort_packs; system
   // fallback packs-of-1 are built on the fly from a single fresh word.
   // ===========================================================================
 

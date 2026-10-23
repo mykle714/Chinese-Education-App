@@ -1,4 +1,4 @@
-# Focus Mode — a daily cap of 40 cards per world
+# Focus Mode — a daily cap of 25 cards per world
 
 **Status:** built on dev (2026-10-20), **not on PPE**. Migration 176 (expand-only; ships with a
 plain `/deploy`).
@@ -15,7 +15,7 @@ When a learner's pile of off-cooldown cards in one **world** (Main / Reading / W
 docs/CONSTRUCTS.md § "Worlds and bars") has grown overwhelming, a lever appears on that
 world's Deck Tower platform. Pulling it turns on **focus mode** for that world:
 
-* each streak day (04:00 local) the world serves **at most 40 cards**, a set pinned the first
+* each streak day (04:00 local) the world serves **at most 25 cards**, a set pinned the first
   time the day's cards are needed;
 * a card leaves the set for the rest of the day once it is **marked correct**. A wrong mark
   leaves it in play, so a missed card can be retried.
@@ -23,8 +23,8 @@ world's Deck Tower platform. Pulling it turns on **focus mode** for that world:
 | Rule | Value | Code |
 |---|---|---|
 | Lever appears | the world has **100** off-cooldown cards across **all four** utcm bands (U+T+C+M), or focus is already on | `FOCUS_LEVER_THRESHOLD`, `useFocusLever` |
-| Daily cap | **40** | `FOCUS_DAILY_CARDS` |
-| Auto-off | the day's snapshot finds **fewer than 40** off-cooldown cards | `FocusModeService.resolveWorld` |
+| Daily cap | **25** | `FOCUS_DAILY_CARDS` |
+| Auto-off | the day's snapshot finds **fewer than 25** off-cooldown cards | `FocusModeService.resolveWorld` |
 | Scope | per **(user, language, world)** | `user_languages."focusWorlds"` |
 
 **Why 100 counts all four bands:** U+T+C+M is what the learner sees as assigned to them, the
@@ -41,7 +41,7 @@ pile the feature exists to keep from overwhelming them.
 | `focus_daily_snapshots` | ONE row per (user, language, world): `streakDate` + `vetIds int[]`, overwritten by the first request of each new streak day |
 
 The snapshot is **pinned** because a live recompute would let a new card in every time one was
-marked out, and the 40 would never run out. `vetIds` has no FK (vet ids span two physical
+marked out, and the 25 would never run out. `vetIds` has no FK (vet ids span two physical
 tables); a deleted card simply stops matching.
 
 The notice is a column, not a response field, because a snapshot (and so an auto-off) can be
@@ -49,18 +49,20 @@ taken by a background request no page is watching: Home's flp preload (`preloadF
 
 *Code: `server/dal/interfaces/IFocusModeDAL.ts`, `server/dal/implementations/FocusModeDAL.ts`.*
 
-## 3. Picking the daily 40
+## 3. Picking the daily 25
 
-`FocusModeService` → `selectFocusSet` — the flp working loop's own logic, scaled from 10 to 40:
+`FocusModeService` → `selectFocusSet` — the flp working loop's own logic, scaled from 10 to 25:
 
 1. The world's sorted cards (writing world: 1–4-character Han words, the writing flp's rule),
    off cooldown on that world's bar, ranked as a queue, longest-waiting first (`rankCardQueue`).
-2. Band quotas: Study Mix's 1-2-2-5 ×4 → **4 Mastered / 8 Comfortable / 8 Unfamiliar /
-   20 Target** (`FOCUS_QUOTAS`, derived from `STUDY_MIX_QUOTAS`).
+2. Band quotas: Study Mix's 1-2-2-5 ×2.5 → **2 Mastered / 5 Comfortable / 5 Unfamiliar /
+   13 Target** (`FOCUS_QUOTAS`, derived from `STUDY_MIX_QUOTAS`). Each scaled share is
+   floored and the leftover slot(s) go to bands in `STUDY_MIX_FILL_ORDER` (Target first),
+   so the quotas always sum to `FOCUS_DAILY_CARDS`.
 3. A short band's shortfall is borrowed in Mix's fill order, Target → Comfortable → Unfamiliar →
    Mastered (`STUDY_MIX_FILL_ORDER`, shared with the flp's `DEFAULT_LOOP_CONFIG`).
 
-No cooling cards and no lent cards: if fewer than 40 cards are off cooldown, focus switches
+No cooling cards and no lent cards: if fewer than 25 cards are off cooldown, focus switches
 itself off (§ 1) instead.
 
 **When:** lazily, by whichever focus-aware request comes first on a new streak day (§ 4) —
@@ -103,7 +105,7 @@ Search's raw fetch calls it itself).
 | Piece | File | Role |
 |---|---|---|
 | Lever art | `src/features/deckTower/iso/IsoLever.tsx`, `iso/IsoHatch.tsx`, `iso/hatchGeometry.ts` | cream base, short thick ink stick, plain red ball (green `grnMk` in the writing world against its red sky, purple `purMk` in reading against its lime — `towerWorlds.ts` → `leverKnob`), on a lift in a two-flap hatch (ISO_ART_FRAMEWORK.md § IsoHatch, § IsoLever) |
-| Lever motion | `src/features/deckTower/useLeverMotion.ts`, `usePopUpMotion.ts` | `pull` tween; `sink` / `hatch` / sky fall from `usePopUpMotion` (shared with the Mix / Review switch) |
+| Lever motion | `src/features/deckTower/useLeverMotion.ts`, `usePopUpMotion.ts` | `pull` tween; `sink` / `hatch` / sky fall from `usePopUpMotion` |
 | Lever logic | `src/features/deckTower/useFocusLever.tsx` | when it shows, taps, its popups; one per world in `DeckTowerPage`. `onRecount` fires just before a flip's re-read, so the page holds the tower and resizes it when the new figure lands (`useTowerResize`, DECK_TOWER.md § Tower resizes) |
 | Placement | `towerPlatforms.ts` → `leverAt` (1.2, 9.85) | the floor's left corner on screen (low x, high y), beside the floor plate's near end; its hatch is a pawn obstacle drawn after the stack |
 | Popups | `src/features/focusMode/FocusDialog.tsx` | turn-on / turn-off / ended / game-blocked |
@@ -124,10 +126,9 @@ Search's raw fetch calls it itself).
   shut with no animation (`useLeverMotion` `instant`). Arriving at Learn Now, it does not come up
   through the hatch: it **falls from the sky** on the incoming pawn's entrance animation
   (`FALL_FROM_SKY`, the same height, gravity, stretch, landing squash and growing shadow),
-  its cue shifted later so it lands a staggered beat after the pawn (which lands on the trap
-  door's slam): the lever and the Mix / Review switch land after it, spread evenly across
-  `SKY_LANDING_SPREAD_MS` (1 s), in an order that flips from swap to swap
-  ([DECK_TOWER.md](./DECK_TOWER.md) § Mix / Review switch). It is mounted from transition t = 0
+  its cue shifted `LEVER_LANDS_AFTER_PAWN_MS` (500 ms) later so it lands a beat after the pawn
+  (which lands on the trap door's slam) ([DECK_TOWER.md](./DECK_TOWER.md) § Floor fixtures).
+  It is mounted from transition t = 0
   and draws nothing until its fall starts (`useLeverMotion` → `skyFall` `"waiting"`), and it
   falls already standing (sink 0, hatch 1, the hatch hidden under its flush lift), so after
   landing it is in the ordinary standing state. The hatch rise remains the entrance for
@@ -135,7 +136,7 @@ Search's raw fetch calls it itself).
   `DeckTowerPage` → `leverArgs`.
 * **Tap while off** → it pulls toward the viewer and "Turn on focus mode?" opens. *No* → it
   springs back. *Yes* → focus goes on and the lever **stays pulled**; the tower re-reads its
-  counts and **shrinks** to today's set (at most 40) with a shrink from the tower-resize
+  counts and **shrinks** to today's set (at most 25) with a shrink from the tower-resize
   library — today, the ghost collapse ([DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
 * **Tap while on** → "Turn off focus mode?". *Yes* → it springs back and, once the full counts
   are re-read, the tower **grows** back to the pile with a grow from the same library — today,
@@ -160,7 +161,7 @@ or 1 for a game with none (Hydra Bubbles, Memory Map, Writing Grid).
 
 The language is always the account's selected one. Turning a world back on clears its owed
 notice. Turning focus off does **not** delete the day's snapshot, so switching off and on again
-the same day returns the same 40 rather than a fresh batch.
+the same day returns the same 25 rather than a fresh batch.
 
 *Code: `server/controllers/FocusModeController.ts`, `server/routes/focusModeRoutes.ts`,
 `src/api/focusMode.ts`. Tests: `server/__tests__/focusMode.test.ts`.*

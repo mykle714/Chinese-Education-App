@@ -6,10 +6,9 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * useCloudDrifts — schedules the clouds drifting past a tall tower
  * (docs/ISO_ART_FRAMEWORK.md § "IsoCloud").
  *
- * A cloud drifts like a bird flies (skyTraffic.ts): in a straight line parallel to one of
+ * A cloud drifts (skyTraffic.ts) in a straight line parallel to one of
  * the four sides of `sky.around`, from off one screen
- * edge to off the other. It is just far slower (a minute or more per crossing), bigger,
- * and drawn behind or in front of the tower by the same side rule. Its height is read
+ * edge to off the other. It is slow (a minute or more per crossing) and drawn behind or in front of the tower by the same side rule. Its height is read
  * from one shared wandering altitude (skyTraffic.ts → createAltitudeWander), so clouds
  * in the sky together sit at close heights rather than at very different ones that
  * perspective then stacks into the same patch of screen.
@@ -18,8 +17,8 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * clouds switch on the band already has sky in it, rather than staying empty for the
  * half-minute a cloud takes to drift in from the edge. Later clouds enter from off screen.
  *
- * Under prefers-reduced-motion the clouds still show — a still cloud reads as a cloud,
- * unlike a frozen bird — but nothing is scheduled: one cloud per slot, parked where its
+ * Under prefers-reduced-motion the clouds still show — a still cloud reads as a cloud —
+ * but nothing is scheduled: one cloud per slot, parked where its
  * opening drift would have started, never moving.
  *
  * Referenced by: docs/ISO_ART_FRAMEWORK.md § "IsoCloud", docs/DECK_TOWER.md § "The scene".
@@ -82,7 +81,7 @@ const SCALE_MAX = 1.25;
 /** How far out from the tower's side the cloud's near edge drifts, in world units. */
 const GAP_MIN = 1.5;
 const GAP_MAX = 4.5;
-/** Drift speed, world units per second. Birds fly at 3.2–4.6; clouds take a minute+. */
+/** Drift speed, world units per second. Clouds take a minute+ per crossing. */
 const SPEED_MIN = 0.4;
 const SPEED_MAX = 0.8;
 /** Extra world units past each screen edge, beyond the cloud's own extent. */

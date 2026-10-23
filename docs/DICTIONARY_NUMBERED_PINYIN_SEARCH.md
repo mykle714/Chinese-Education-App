@@ -43,7 +43,7 @@ word1/pronunciation/definitions search) if:
 
 `GET /api/dictionary/search` accepts an optional `rankBy`
 (`DictionarySearchRanking`, `server/contracts/wire.ts`). It changes **only the `ORDER BY`** —
-the `WHERE` group, the `total`, and therefore the stage-2/AI fallback decisions are identical
+the `WHERE` group, the `total`, and therefore the AI fallback decision are identical
 either way, so it can never surface or hide a row that the other ranking would not.
 
 > ⚠️ **`rankBy` no longer selects between two orderings.** Since 2026-09-09 every surface shares
@@ -104,6 +104,12 @@ The term is turned into a numbered regex by `parsePinyinQuery` + `pinyinQueryTok
 numbered, tone-marked **and** toneless syllables (toneless = any tone) and needs no tone digit,
 because it only orders rows that the `WHERE` already admitted, so it cannot hijack an English
 search.
+
+A **spaceless** term (`qingtian`) is one syllable to `parsePinyinQuery`, so the complete-reading
+tests also take `buildSpacelessPinyinPattern`'s every-tiling regex, `$`-anchored, against the default
+reading (bucket 1) and against `numberedPinyin` / `searchReadings` (bucket 2) — 晴天 qing2 tian1 is
+a complete main-reading match for `qingtian`. See
+[DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md) § "Spaceless pinyin".
 
 The interleaved head (below) samples buckets 1 and 2 as **one head group**, so its shape stays
 `0,0,1,1,2,2,3,3`; main readings fill that group's two slots first.

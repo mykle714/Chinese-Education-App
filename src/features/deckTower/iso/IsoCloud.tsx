@@ -15,12 +15,12 @@ import type { CloudDrift } from "./useCloudDrifts";
  * it reads as a chunky toy cloud rather than a flat sticker. The puffs come pre-sorted
  * back-to-front (useCloudDrifts → orientPuffs), so the painter's order is just theirs.
  *
- * Like IsoBird it is drawn ONCE at its starting position and slid by its own
+ * It is drawn ONCE at its starting position and slid by its own
  * requestAnimationFrame loop: the projection is affine, so translating by a projected
  * world delta moves the drawing exactly as redrawing it there would. It also fades in
  * over FADE_MS, which matters for a slot's opener — it appears partway across the screen.
  *
- * No shadow, like the bird: at 90+ world units up the light rule would throw it far off
+ * No shadow: at 90+ world units up the light rule would throw it far off
  * the platform into empty sky.
  *
  * Under prefers-reduced-motion it is drawn fully opaque where it starts and never moves.

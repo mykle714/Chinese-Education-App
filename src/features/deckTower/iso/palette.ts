@@ -93,6 +93,15 @@ const material = (base: string, left: number, right: number): Material => ({
     right: shadeHex(base, right),
 });
 
+/**
+ * A solid painted in one band colour (a floor label plate): the band
+ * on top, its walls stepped down like the platform's (the flagged `shadeHex` divergence).
+ * Docs: docs/ISO_ART_FRAMEWORK.md § "IsoFloorLabel".
+ */
+export function bandMaterial(band: string): Material {
+    return material(band, 0.07, 0.15);
+}
+
 /** A floating platform's colours: its three-tone slab and the light bevel round its top edge. */
 export interface PlatformTone {
     material: Material;
@@ -178,7 +187,7 @@ export const ISO = {
     leverKnob: COLORS.redMk,
 
     /**
-     * The Mix / Review switch's body (IsoModeSwitch): the framework's mid grey (`greyA`, the
+     * The mode switch's body (IsoModeSwitch — currently unused): the framework's mid grey (`greyA`, the
      * grey rung's mark) so both band paddles — Mix's light yellow especially — stand off it,
      * with walls shaded off it like the clouds' (the same flagged `shadeHex` divergence).
      */

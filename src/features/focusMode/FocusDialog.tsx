@@ -11,7 +11,7 @@ import { FOCUS_WORLD_NAMES } from "./focusWorldNames";
  *
  *   turn-on       the lever was pulled while focus is off: what focus mode does + confirm.
  *   turn-off      the lever was tapped while focus is on: confirm switching it off.
- *   ended         the server switched focus off by itself (the pile is back under 40).
+ *   ended         the server switched focus off by itself (the pile is back under FOCUS_DAILY_CARDS).
  *   game-blocked  a game was tapped in a focused world with too few of today's cards left.
  *
  * Same MUI Dialog treatment as the app's other confirms (NewGameConfirmDialog).

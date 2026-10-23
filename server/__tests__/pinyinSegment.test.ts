@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { segmentPinyin, isAllPinyin } from '../utils/pinyinSegment.js';
 
 /**
- * Spaceless-pinyin segmentation for the dictionary search's stage-2 fallback
- * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md § "Stage 2").
+ * Spaceless-pinyin segmentation for the dictionary search's spaceless-pinyin clause
+ * (docs/DICTIONARY_AI_FALLBACK_SEARCH.md § "Spaceless pinyin").
  *
  * These tests exist because every failure here is SILENT: a term that fails to tile
  * just falls through to "0 results", which looks like a missing dictionary entry

@@ -11,15 +11,15 @@ import type { WindGust } from "./useWindGusts";
  * Each strand is projected from the gust's vertical plane (useWindGusts) into ONE open
  * path, drawn as a flat round-capped stroke in `ISO.wind` at WIND_OPACITY. No fill, no
  * three-tone shading: a gust is air, not a solid, so it is the kit's one stroke-only
- * object (the bird's thin strokes only round its silhouette's corners).
+ * object.
  *
  * Its own requestAnimationFrame loop plays each strand as a moving visible window along
  * the path — the head draws on, then the tail follows and erases it — using
  * `pathLength = 1` so the dash maths is in fractions of the strand. The whole gust also
- * slides `drift` world units along its travel (a projected world delta, as for the bird
- * and the cloud).
+ * slides `drift` world units along its travel (a projected world delta, as for the
+ * cloud).
  *
- * No shadow, like the bird and the cloud. Mounted per gust (keyed on `gust.id`) and
+ * No shadow, like the cloud. Mounted per gust (keyed on `gust.id`) and
  * unmounted when its time is up, so it never resets.
  */
 interface IsoWindProps {

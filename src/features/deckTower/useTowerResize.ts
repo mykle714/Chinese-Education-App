@@ -8,8 +8,7 @@ import { IMPACT_MS, type TowerDrop, type TowerResizePlan } from "./towerResizes"
  *
  * Layer: page logic (feature module `src/features/deckTower`). DeckTowerPage runs one per
  * world and plans each resize there (it owns the counts and the camera); this hook owns the
- * clock of the one in progress and draws nothing. Callers: the Mix / Review switch and the
- * focus lever.
+ * clock of the one in progress and draws nothing. Caller: the focus lever.
  *
  *   ghost-collapse  one clock, 0 → collapse.durationMs; the top card counts down as the
  *                   ghosts go.

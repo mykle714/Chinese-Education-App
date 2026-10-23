@@ -6,8 +6,7 @@ import type { PawnEntranceCue } from "./iso";
  * docs/DECK_TOWER.md § "Focus lever"). Layer: page logic; it draws nothing — IsoLever
  * takes `pull`, `sink`, `hatch` and `skyFall`.
  *
- * Rising, sinking and falling from the sky are usePopUpMotion's (shared with the Mix /
- * Review switch). On top of that:
+ * Rising, sinking and falling from the sky are usePopUpMotion's. On top of that:
  *
  *   pulled : the stick tips toward the viewer (it holds there while focus is on, or while
  *            the popup it opened is up); released, it springs back past rest and settles.

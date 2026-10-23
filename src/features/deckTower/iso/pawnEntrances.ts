@@ -13,8 +13,8 @@
  *
  * Depended on by: usePawnMotion.ts (plays the frames), IsoPawn.tsx (`entrance` prop),
  * src/features/deckTower/useDeckSwap.ts (picks one and schedules it), and the Deck Tower's
- * floor fixtures (the focus lever, the Mix / Review switch), which borrow the incoming pawn's
- * entrance with a later start to land just after it (DeckTowerPage → `fixtureArgs`,
+ * floor fixture (the focus lever), which borrows the incoming pawn's entrance with a later
+ * start to land just after it (DeckTowerPage → `leverArgs`,
  * usePopUpMotion.ts `skyEntrance`, IsoLever.tsx `air`; docs/FOCUS_MODE.md § 5).
  */
 
@@ -46,8 +46,13 @@ const easeOutSq = (u: number) => (1 - u) * (1 - u);
 
 /** Where the fall starts: high enough to be off the top of a phone screen over the platform. */
 const SKY_FALL_HEIGHT = 55;
-/** Cartoon gravity, world units / s². (A pawn is ~2 units tall, so real gravity would crawl.) */
-const SKY_FALL_GRAVITY = 110;
+/**
+ * The pawn's cartoon gravity, world units / s². (A pawn is ~2 units tall, so real gravity
+ * would crawl.) Shared: the pawn's feet physics in usePawnMotion (the plate's press, launch
+ * and bounces, and its fall through the trap door) use the same pull.
+ */
+export const PAWN_GRAVITY = 110;
+const SKY_FALL_GRAVITY = PAWN_GRAVITY;
 const SKY_FALL_LAND_MS = Math.sqrt((2 * SKY_FALL_HEIGHT) / SKY_FALL_GRAVITY) * 1000;
 /** The landing squash, then back to its normal shape. Harder than a startle's landing: it fell a long way. */
 const SKY_FALL_SQUASH_MS = 260;

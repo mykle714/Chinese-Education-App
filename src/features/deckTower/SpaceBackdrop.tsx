@@ -23,7 +23,7 @@ import { ISO, mixHex } from "./iso";
  *
  * ⚡ Scroll handling writes the styles directly to the DOM (rAF-throttled), NOT through
  * React state. A state update per scroll frame would re-render the whole scene (tower,
- * pawn, birds, clouds) at 60 fps for a colour change.
+ * pawn, clouds, wind) at 60 fps for a colour change.
  *
  * It sits BESIDE the scroller with the same box (top of the screen → footer bar) and the
  * same z-index, but earlier in the DOM, so the scroller (and the svg in it) paints over

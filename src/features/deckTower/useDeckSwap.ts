@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { entranceStartFor, pickPawnEntrance, prefersReducedMotion, type PawnEntrance, type PawnEntranceCue } from "./iso";
+import { entranceStartFor, pickPawnEntrance, PLATE_LAUNCH_APEX_MS, prefersReducedMotion, type PawnEntrance, type PawnEntranceCue } from "./iso";
 import { pickDeckTransition, type DeckTransitionContext, type DeckTransitionPlan } from "./deckTransitions";
 import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
 
@@ -36,18 +36,26 @@ import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
 /**
  * A beat between the tap and the door dropping: the plate has already snapped to the new
  * deck's face (a hard cut, no animation) and pops back up (usePlatePress) in this beat.
+ * Never shorter than a pawn standing on the plate takes to reach the top of the launch
+ * that pop gives it (usePawnMotion → PLATE_LAUNCH_APEX_MS, ~209 ms), so the floor drops
+ * out from under the pawn only once it has peaked, and it falls from the air
+ * (docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). At today's pawn gravity the
+ * plate's own 300 ms settle is the longer of the two.
  */
-export const PLATE_SETTLE_MS = 300;
+const PLATE_POP_SETTLE_MS = 300;
+export const PLATE_SETTLE_MS = Math.max(PLATE_POP_SETTLE_MS, PLATE_LAUNCH_APEX_MS);
 /** Ms from the tap to transition t = 0. */
 const TRANSITION_START_MS = PLATE_SETTLE_MS;
 
 export interface SwapPawn {
     /** React key; a new pawn per swap, so its entrance plays on mount. */
     key: number;
-    /** It belongs to the outgoing deck and is falling with the old tower. */
+    /**
+     * It belongs to the outgoing deck and falls with the old tower. It falls ON ITS OWN
+     * (IsoPawn `floorDrop`), not in the tower's fall wrapper: a pawn the plate just launched
+     * finishes its flight before dropping.
+     */
     outgoing: boolean;
-    /** The floor has dropped out from under it: it pops a "!" (IsoPawn `alarmed`). */
-    alarmed?: boolean;
     entrance?: PawnEntranceCue;
 }
 
@@ -107,7 +115,7 @@ function swapView(plan: SwapPlan, now: number): DeckSwapView {
     const cleared = t >= clearedMs;
 
     const pawns: SwapPawn[] = [];
-    if (!cleared) pawns.push({ key: plan.outgoingPawnKey, outgoing: true, alarmed: t >= 0 });
+    if (!cleared) pawns.push({ key: plan.outgoingPawnKey, outgoing: true });
     // The incoming pawn mounts when the transition starts and stays hidden until its
     // entrance's own start — mounting it at the start rather than on its cue keeps the
     // mount (and its first paint) away from the landing beat.

@@ -15,7 +15,7 @@ import {
     type WorldRect,
 } from "./geometry";
 import { shadowTone, type IsoSurface } from "./light";
-import { ISO, shadeHex, type Material } from "./palette";
+import { bandMaterial, ISO, type Material } from "./palette";
 import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
@@ -54,10 +54,10 @@ import { WEIGHT } from "../../../theme/scale";
 /** World height of a fully raised plate (`raised` = 1): ~5 px at the Deck Tower's scale. */
 export const RAISED_HEIGHT = 0.25;
 
-/** A plate's wall tones, from its band (the same steps as the platform's walls). */
+/** A plate's wall tones, from its band (palette.ts → `bandMaterial`), each a shadow step down when shaded. */
 const plateMaterial = (band: string, shaded: boolean): Material => {
-    const tone = (c: string) => (shaded ? shadowTone(c) : c);
-    return { top: tone(band), left: tone(shadeHex(band, 0.07)), right: tone(shadeHex(band, 0.15)) };
+    const m = bandMaterial(band);
+    return shaded ? { top: shadowTone(m.top), left: shadowTone(m.left), right: shadowTone(m.right) } : m;
 };
 interface IsoFloorLabelProps {
     rect: WorldRect;

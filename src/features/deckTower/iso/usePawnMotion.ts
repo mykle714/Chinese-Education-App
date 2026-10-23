@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./geometry";
 import { shadowSlide } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
-import type { PawnEntrance } from "./pawnEntrances";
+import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
 
 /**
  * usePawnMotion — the IsoPawn's behaviour (docs/ISO_ART_FRAMEWORK.md § "IsoPawn").
@@ -36,9 +36,36 @@ import type { PawnEntrance } from "./pawnEntrances";
  *
  * STEPS: `steps` are raised regions of the floor the pawn walks ONTO, not around (the Deck
  * Tower's push-button plate). While its foot centre is over one, the whole pawn — body,
- * shadow and the shadow's clip on the shaded decals — rides that step's height (`lift`),
- * easing up or down over STEP_MS as it crosses an edge. Heights are read live every
- * frame, so a pawn standing on the plate sinks with it when the plate is pressed.
+ * shadow and the shadow's clip on the shaded decals — rides that step's height (`lift`).
+ * Heights are read live every frame, so a pawn standing on the plate sinks with it when
+ * the plate is pressed.
+ *   A WALK that is about to cross a step edge HOPS it (the `edgeHop` mode): the walk looks
+ *   HOP_LEAD ahead, and when that point is on a surface whose height differs by at least
+ *   HOP_MIN_RISE it stops there and hops from a standstill —
+ *
+ *     walk ──▶ edgeHop: crouch (HOP_PREP_MS) ▶ air (HOP_MS) ▶ recover (HOP_RECOVER_MS) ──▶ walk
+ *
+ *   settling its feet and squashing down in preparation, arcing over the edge stretched,
+ *   then landing in a squash and standing a beat before walking on. Anything else that
+ *   carries the feet over an edge (a startle leap, an entrance, a hop cut short by a
+ *   startle) falls back to the plain STEP_MS ease.
+ *   FEET PHYSICS: on top of `lift` (the surface, which carries the shadow) the feet have
+ *   their own height and vertical speed under GRAVITY. A surface dropping out from under
+ *   them (the plate pressed) leaves the pawn to FALL onto it rather than snap down with it.
+ *   A step that sank under the pawn and then rises again (the plate released) LAUNCHES it
+ *   (PLATE_LAUNCH_SPEED): it rides the plate up until the plate's spring slows below that
+ *   speed, flies off, and lands in a couple of shrinking bounces (BOUNCE_RESTITUTION) with
+ *   a squash on each impact. While airborne this way it doesn't walk, waddle or set off.
+ *
+ * FLOOR DROP: `floorDrop` > 0 means the floor itself is falling away (the Deck Tower's trap
+ * door, docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). The pawn has no surface
+ * then, and falls on its own: a launch still in flight carries on to its apex first, and
+ * from there (or at once, for a pawn standing on the floor) its height blends over
+ * FALL_BLEND_MS from its own GRAVITY fall into the floor's — the height it would
+ * have standing on the falling floor, so a launched pawn CATCHES UP rather than trailing
+ * by its launch height. It drops out of the air, then keeps pace with the tower and is
+ * gone when the tower is. Its "!"
+ * bubble pops as that fall starts.
  *
  * Under prefers-reduced-motion nothing runs: the pawn stands at `at` and the startle is
  * skipped.
@@ -70,7 +97,11 @@ export interface PawnStep {
     height: number;
 }
 
-/** Ms the feet take to go up (or down) a step's edge — a quick hop, not a ramp. */
+/**
+ * Ms the lift takes to settle onto a new surface when the feet crossed its edge WITHOUT an
+ * edge hop (a startle leap landing on the plate, a corner clipped mid-hop). Short: it only
+ * has to hide the height change.
+ */
 const STEP_MS = 90;
 
 /** World units the pawn's foot circle occupies, and its clearance from obstacles. */
@@ -96,6 +127,72 @@ const OPENING_PAUSE_MAX_MS = 6000;
 const WALK_MIN = 1.2;
 const WALK_MAX = 5.5;
 const PICK_TRIES = 16;
+
+/** Edge hop (see the header's STEPS). Times in ms, distances and heights in world units. */
+/** Standing at the edge before take-off: the feet settle, then it crouches. */
+const HOP_PREP_MS = 260;
+/** How quickly the walk's bounce and waddle die out once it stops at the edge. */
+const HOP_STOP_MS = 90;
+/** How deep the crouch squashes (0.14 = 14% shorter) by take-off. */
+const HOP_CROUCH = 0.14;
+/** In the air. */
+const HOP_MS = 320;
+/** The arc's height above the straight line from the take-off surface to the landing one. */
+const HOP_ARC = 0.4;
+/** Standing after touch-down before walking on; the landing squash eases out over the first HOP_SQUASH_MS. */
+const HOP_RECOVER_MS = 380;
+const HOP_SQUASH_MS = 200;
+const HOP_LAND_SQUASH = 0.16;
+/**
+ * How far before an edge the pawn stops to hop (and, doubled, how far the hop carries it):
+ * about the body's half width, so it stops with its front at the edge and lands as far past.
+ */
+const HOP_LEAD = 0.4;
+const HOP_PREP_END = HOP_PREP_MS;
+const HOP_AIR_END = HOP_PREP_MS + HOP_MS;
+const HOP_END = HOP_AIR_END + HOP_RECOVER_MS;
+
+/** Feet physics (see the header's STEPS). World units per second (squared). */
+/**
+ * Pulls the feet down onto their surface: the pawn's own cartoon gravity, the same as its
+ * sky-fall entrance (pawnEntrances.ts → PAWN_GRAVITY). A 0.25-unit plate press takes ~67 ms
+ * to fall — the plate's ease-out sink drops away faster at first, so the feet lift off it
+ * for a moment and land with a small bounce.
+ */
+const GRAVITY = PAWN_GRAVITY;
+/**
+ * How high a released plate throws the pawn: its feet clear the plate by about the pawn's
+ * own full height (IsoPawn's body + head ≈ 2.4 units). The launch speed follows from it.
+ */
+const PLATE_LAUNCH_APEX = 2.4;
+const PLATE_LAUNCH_SPEED = Math.sqrt(2 * GRAVITY * PLATE_LAUNCH_APEX);
+/**
+ * Ms from a plate release to the launched pawn's apex (~209). The Deck Tower holds its trap
+ * door shut at least this long after a release (useDeckSwap → PLATE_SETTLE_MS), so the floor
+ * never drops out from under the pawn before it has peaked: it falls from the air.
+ */
+export const PLATE_LAUNCH_APEX_MS = (PLATE_LAUNCH_SPEED / GRAVITY) * 1000;
+/** Fraction of the landing speed a bounce keeps — 0.45 gives two visible bounces after a launch (~0.5, then ~0.1 units). */
+const BOUNCE_RESTITUTION = 0.45;
+/** Landing slower than this settles instead of bouncing again. */
+const BOUNCE_MIN_SPEED = 1.7;
+/** The squash on each impact: depth per unit of landing speed (capped), and how long it eases out. */
+const IMPACT_SQUASH_PER_SPEED = 0.007;
+const IMPACT_SQUASH_MAX = 0.16;
+const IMPACT_MS = 130;
+/** Below this the feet count as on their surface. */
+const FEET_EPS = 1e-4;
+/**
+ * With the floor dropping away: how long the pawn's height takes to blend from its own
+ * GRAVITY fall into the floor's. The two pulls are close (the trap door's is 140, raised
+ * for tall towers so they clear in time), but the pawn starts from wherever its launch has
+ * it while the floor starts from rest, so the blend keeps the pawn in step with the floor —
+ * and gone when the floor's fall ends and the pawn is unmounted (the shortest, a 12-unit
+ * fall, takes ~0.41 s plus its 50 ms delay).
+ */
+const FALL_BLEND_MS = 350;
+/** A height change smaller than this (a plate pressed flush) is stepped over, not hopped. */
+const HOP_MIN_RISE = 0.05;
 
 /** Startle. */
 export const LOOK_UP_LEAN_DEG = 10;
@@ -233,7 +330,29 @@ type Mode =
     | { kind: "walk"; target: Pt2 }
     | { kind: "land" }
     | { kind: "startle"; t0: number; from: Pt2; to: Pt2; leanSign: 1 | -1 }
-    | { kind: "entrance"; t0: number; anim: PawnEntrance };
+    | { kind: "entrance"; t0: number; anim: PawnEntrance }
+    | EdgeHopMode;
+
+/**
+ * A hop over a step edge, from a standstill (see the header's STEPS). `from` → `to` is the
+ * ground the arc covers; `toIdx` the step it lands on (-1 = the bare floor); `resume` the
+ * walk target to carry on to afterwards. `fromBounce` / `fromLean` are where the walk's
+ * bounce and waddle had the body when it stopped, so they die out instead of snapping.
+ * `fromLift` is the lift at take-off; `landed` is set on touch-down, when the landing
+ * surface is committed.
+ */
+interface EdgeHopMode {
+    kind: "edgeHop";
+    t0: number;
+    from: Pt2;
+    to: Pt2;
+    toIdx: number;
+    resume: Pt2;
+    fromBounce: number;
+    fromLean: number;
+    fromLift: number;
+    landed: boolean;
+}
 
 export interface PawnMotionRefs {
     /** Slides the whole pawn (shadow included) across the floor. */
@@ -275,15 +394,15 @@ export function usePawnMotion(opts: {
     /** Read once, on mount: the pawn arrives this way instead of standing there from the start. */
     entrance?: PawnEntranceCue;
     /**
-     * Pops the "!" bubble each time this turns true, WITHOUT the startle's lean and leap —
-     * for a shock the pawn can't react to with its feet (the floor dropping out from under
-     * it: docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap").
+     * World units the floor under the pawn has dropped (0 = in place) — the trap door
+     * falling away (see the header's FLOOR DROP). Read live. Once it is above 0 the pawn
+     * falls on its own and pops its "!" bubble as it starts to.
      */
-    alarmed?: boolean;
+    floorDrop?: number;
     /** Raised floor the pawn steps up onto (see the header's STEPS). Read live: may be a new array each render. */
     steps?: PawnStep[];
 }): { refs: PawnMotionRefs; emote: PawnEmote | null } {
-    const { proj, at, startled, roam, startledBy, onDepthRankChange, alarmed = false } = opts;
+    const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
     // pinned in a ref and a later prop change never replays it.
     const entranceCue = useRef(opts.entrance);
@@ -312,10 +431,25 @@ export function usePawnMotion(opts: {
         rank: -1,
         // Step-up state: which step the feet were on last frame, the current lift (world
         // units), and the edge-crossing ease in progress (lift it started from, start time).
+        // `stepIdx` is the surface the pawn stands on — or, mid edge hop, is hopping onto.
         stepIdx: -1,
         lift: 0,
         liftFrom: 0,
         liftT0: -Infinity,
+        // Feet physics: the feet's absolute height (≥ lift) and vertical speed; whether the
+        // step under them has sunk since they stood on it (a press — so its next rise is a
+        // release that launches them), the step and height seen last frame, and the latest
+        // impact's squash (start time, depth).
+        feetZ: 0,
+        feetV: 0,
+        launchArmed: false,
+        prevStepIdx: -1,
+        prevStepH: 0,
+        impactT0: -Infinity,
+        impactDepth: 0,
+        // With the floor dropping away (FLOOR DROP): when the pawn's own fall started —
+        // null until then.
+        fall: null as { t0: number } | null,
     });
     // The latest callback, so a new inline function from the page doesn't restart the loop.
     const onRank = useRef(onDepthRankChange);
@@ -323,6 +457,9 @@ export function usePawnMotion(opts: {
     // Latest steps (their heights animate while the plate is pressed), read by the loop.
     const stepsRef = useRef(opts.steps ?? []);
     stepsRef.current = opts.steps ?? [];
+    // Latest floor drop (animates every frame of a swap), read by the loop.
+    const floorDropRef = useRef(opts.floorDrop ?? 0);
+    floorDropRef.current = opts.floorDrop ?? 0;
     const reduced = prefersReducedMotion();
 
     // Rising edge of `startled` → switch to the startle timeline from wherever the feet are.
@@ -337,6 +474,11 @@ export function usePawnMotion(opts: {
         if (!rose || reduced) return;
         const s = state.current;
         if (s.mode.kind === "entrance") return;
+        // Cut a hop short: ease the lift from wherever the arc had it (see the step code).
+        if (s.mode.kind === "edgeHop") {
+            s.liftFrom = s.lift;
+            s.liftT0 = performance.now();
+        }
         // Lean AWAY from the source on screen: a pawn to the tower's right tips its top
         // further right as it cranes up at it.
         const pawnSx = proj.project(s.pos.x, s.pos.y, 0).x;
@@ -345,15 +487,6 @@ export function usePawnMotion(opts: {
         s.mode = { kind: "startle", t0: performance.now(), from: { ...s.pos }, to: leapLanding(s.pos, startledBy, roam), leanSign };
         setEmote((e) => ({ id: (e?.id ?? 0) + 1, leanSign }));
     }, [startled, reduced, proj, startledBy, roam]);
-
-    // Rising edge of `alarmed` → just the bubble. The motion loop is left alone.
-    const wasAlarmed = useRef(false);
-    useEffect(() => {
-        const rose = alarmed && !wasAlarmed.current;
-        wasAlarmed.current = alarmed;
-        if (!rose || reduced) return;
-        setEmote((e) => ({ id: (e?.id ?? 0) + 1, leanSign: 0 }));
-    }, [alarmed, reduced]);
 
     useEffect(() => {
         if (reduced) return;
@@ -368,6 +501,8 @@ export function usePawnMotion(opts: {
         s.mode = cue ? { kind: "entrance", t0: cue.startAt, anim: cue.animation } : openingPause(performance.now());
         let frame = 0;
         let last = performance.now();
+        // The feet are off their surface, or still moving (launched, mid-bounce).
+        const feetAirborne = () => s.feetV !== 0 || s.feetZ > s.lift + FEET_EPS;
 
         const tick = (now: number) => {
             const dt = Math.min(0.05, (now - last) / 1000);
@@ -396,7 +531,8 @@ export function usePawnMotion(opts: {
                     shadowOverride = { scale: f.shadowScale, opacity: f.shadowOpacity };
                 }
             } else if (m.kind === "pause") {
-                if (now >= m.until) {
+                // Never set off mid-air (thrown up by the plate): wait for the feet.
+                if (now >= m.until && !feetAirborne()) {
                     const target = roam ? pickTarget(s.pos, roam) : null;
                     s.mode = target ? { kind: "walk", target } : { kind: "pause", until: now + PAUSE_MIN_MS };
                 }
@@ -412,6 +548,37 @@ export function usePawnMotion(opts: {
                     } else {
                         s.pos = { x: s.pos.x + (dx / dist) * stride, y: s.pos.y + (dy / dist) * stride };
                     }
+                    // Edge hop: look HOP_LEAD ahead along the walk (never past its end, so a
+                    // walk that stops short of an edge never hops it). A surface of a
+                    // different height there means the edge is within reach: stop here and
+                    // hop it from a standstill.
+                    const rest = dist - stride;
+                    const steps = stepsRef.current;
+                    if (rest > 1e-6 && !feetAirborne()) {
+                        const dir = { x: dx / dist, y: dy / dist };
+                        const along = (d: number) => ({ x: s.pos.x + dir.x * d, y: s.pos.y + dir.y * d });
+                        const lead = Math.min(HOP_LEAD, rest);
+                        const aheadIdx = stepUnder(along(lead), steps);
+                        const aheadH = aheadIdx >= 0 ? steps[aheadIdx].height : 0;
+                        if (aheadIdx !== s.stepIdx && Math.abs(aheadH - s.lift) >= HOP_MIN_RISE) {
+                            // Land as far past the edge as it stopped short of it — but never
+                            // past the walk's end, nor off the far side of a narrow step.
+                            let to = along(Math.min(2 * HOP_LEAD, rest));
+                            if (stepUnder(to, steps) !== aheadIdx) to = along(lead);
+                            s.mode = {
+                                kind: "edgeHop",
+                                t0: now,
+                                from: { ...s.pos },
+                                to,
+                                toIdx: aheadIdx,
+                                resume: m.target,
+                                fromBounce: STEP_HOP * Math.abs(Math.sin(s.stepPhase)),
+                                fromLean: WADDLE_DEG * Math.sin(s.stepPhase),
+                                fromLift: s.lift,
+                                landed: false,
+                            };
+                        }
+                    }
                 }
                 // One bounce per step: |sin| touches down every π. On arrival keep stepping
                 // in place until the feet are down, so the pawn never drops out of mid-air.
@@ -423,6 +590,43 @@ export function usePawnMotion(opts: {
                 } else {
                     hop = STEP_HOP * Math.abs(Math.sin(s.stepPhase));
                     lean = WADDLE_DEG * Math.sin(s.stepPhase);
+                }
+                // Just stopped to hop: this frame still shows the walk's pose; the hop's
+                // timeline (below, next frame on) eases it out from here.
+            } else if (m.kind === "edgeHop") {
+                const t = now - m.t0;
+                if (t < HOP_PREP_END) {
+                    // Prepare: the walk's bounce and waddle die out (feet down, upright),
+                    // then it crouches, deepest at take-off.
+                    const stop = 1 - easeOut(clamp01(t / HOP_STOP_MS));
+                    hop = m.fromBounce * stop;
+                    lean = m.fromLean * stop;
+                    const d = HOP_CROUCH * easeInOut(t / HOP_PREP_MS);
+                    sx = 1 + 0.75 * d;
+                    sy = 1 - d;
+                } else if (t < HOP_AIR_END) {
+                    // In the air: across the edge in a parabola, stretched like the startle
+                    // leap. (`lift` glides between the two surfaces in the step code below.)
+                    const u = (t - HOP_PREP_END) / HOP_MS;
+                    s.pos = { x: m.from.x + (m.to.x - m.from.x) * u, y: m.from.y + (m.to.y - m.from.y) * u };
+                    hop = 4 * HOP_ARC * u * (1 - u);
+                    const e = 0.07 * Math.sin(Math.PI * u);
+                    sx = 1 - 0.7 * e;
+                    sy = 1 + e;
+                } else if (t < HOP_END) {
+                    // Recover: squash on touch-down, ease out of it, then stand a beat.
+                    s.pos = { ...m.to };
+                    const d = HOP_LAND_SQUASH * (1 - easeOut(clamp01((t - HOP_AIR_END) / HOP_SQUASH_MS)));
+                    sx = 1 + 0.75 * d;
+                    sy = 1 - d;
+                } else {
+                    // Walk on from feet-down — or, if the hop carried it to the walk's end, pause.
+                    s.pos = { ...m.to };
+                    s.stepPhase = 0;
+                    const atEnd = Math.hypot(m.resume.x - s.pos.x, m.resume.y - s.pos.y) < 1e-6;
+                    s.mode = atEnd
+                        ? { kind: "pause", until: now + PAUSE_MIN_MS + Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS) }
+                        : { kind: "walk", target: m.resume };
                 }
             } else {
                 const t = now - m.t0;
@@ -449,19 +653,151 @@ export function usePawnMotion(opts: {
                 if (t >= STARTLE_END) s.mode = { kind: "pause", until: now + PAUSE_MIN_MS };
             }
 
-            // Step up / down. On the same step as last frame the feet track its live height
-            // exactly (so they sink with a pressed plate); crossing an edge starts a short
-            // ease from wherever the lift was to the new surface's height.
+            // Step up / down.
             const steps = stepsRef.current;
-            const idx = stepUnder(s.pos, steps);
-            const targetLift = idx >= 0 ? steps[idx].height : 0;
-            if (idx !== s.stepIdx) {
-                s.stepIdx = idx;
-                s.liftFrom = s.lift;
-                s.liftT0 = now;
+            const heightOf = (i: number) => (i >= 0 && steps[i] ? steps[i].height : 0);
+            // An edge hop owns the lift while it is in the air: the surface under the body
+            // (`lift`, which carries the shadow too) glides from the take-off height to the
+            // landing surface's LIVE height, with the arc riding on top in `hop` — so only
+            // the body leaves the ground and the shadow shrinks beneath it. On touch-down,
+            // once, the landing surface is committed with no ease pending, so the code below
+            // tracks its live height from there. (A startle cutting the hop short hands the
+            // lift to that code's ease — see the startle effect.)
+            const hm = s.mode.kind === "edgeHop" ? s.mode : null;
+            const hopT = hm ? now - hm.t0 : 0;
+            const airborne = hm !== null && hopT >= HOP_PREP_END && hopT < HOP_AIR_END;
+            if (hm && airborne) {
+                s.lift = hm.fromLift + (heightOf(hm.toIdx) - hm.fromLift) * easeInOut((hopT - HOP_PREP_END) / HOP_MS);
+            } else if (hm && hopT >= HOP_AIR_END && !hm.landed) {
+                hm.landed = true;
+                s.stepIdx = hm.toIdx;
+                s.lift = s.liftFrom = heightOf(hm.toIdx);
+                s.liftT0 = -Infinity;
             }
-            const stepU = clamp01((now - s.liftT0) / STEP_MS);
-            s.lift = s.liftFrom + (targetLift - s.liftFrom) * easeOut(stepU);
+            if (!airborne) {
+                // On the same surface as last frame the feet track its live height exactly
+                // (so they sink with a pressed plate). Crossing an edge with no hop (a
+                // startle leap, a corner clipped while landing, a rise under HOP_MIN_RISE)
+                // starts a short ease from wherever the lift was to the new surface's height.
+                const idx = stepUnder(s.pos, steps);
+                if (idx !== s.stepIdx) {
+                    s.stepIdx = idx;
+                    s.liftFrom = s.lift;
+                    s.liftT0 = now;
+                }
+                const stepU = clamp01((now - s.liftT0) / STEP_MS);
+                s.lift = s.liftFrom + (heightOf(idx) - s.liftFrom) * easeOut(stepU);
+            }
+
+            // Feet physics (see the header's STEPS). Only where the motion has feet on the
+            // ground to begin with: an entrance or an edge hop places the body itself, so
+            // there the feet just stand on the surface.
+            const floorDrop = floorDropRef.current;
+            if (floorDrop <= 0 && s.fall) {
+                // The floor came back (not something a swap does today): stand on it again.
+                s.fall = null;
+                s.feetZ = s.lift;
+                s.feetV = 0;
+            }
+            if (floorDrop > 0 && s.mode.kind === "edgeHop") {
+                // The floor went mid edge hop: drop the hop from where its arc has the body,
+                // and fall from there (walking on, legs still, toward the same target).
+                s.feetZ = s.lift + hop;
+                s.feetV = 0;
+                s.mode = { kind: "walk", target: s.mode.resume };
+                hop = 0;
+                sx = sy = 1;
+            }
+            if (floorDrop > 0 && s.mode.kind !== "entrance") {
+                // FLOOR DROP (see the header): nothing to stand on. Free flight under GRAVITY;
+                // once it is no longer rising, the fall starts ("!") and the height blends
+                // into where it would be standing on the falling floor (`lift − floorDrop`).
+                // Not measured from where the fall began: a launched pawn would then trail
+                // the floor by its whole launch height and still be on screen when the swap
+                // unmounts it (the drop only clears the screen by FALL_CLEARANCE).
+                s.launchArmed = false;
+                if (!s.fall && s.feetV <= 0) {
+                    s.fall = { t0: now };
+                    setEmote((e) => ({ id: (e?.id ?? 0) + 1, leanSign: 0 }));
+                }
+                s.feetV -= GRAVITY * dt;
+                s.feetZ += s.feetV * dt;
+                let z = s.feetZ;
+                if (s.fall) {
+                    const w = easeInOut(clamp01((now - s.fall.t0) / FALL_BLEND_MS));
+                    z += (s.lift - floorDrop - z) * w;
+                }
+                const fly = z - s.lift;
+                if (s.mode.kind === "walk" || s.mode.kind === "land") {
+                    hop = fly;
+                    lean = 0;
+                    s.stepPhase = 0;
+                } else {
+                    hop += fly;
+                }
+            } else if (s.mode.kind === "entrance" || s.mode.kind === "edgeHop") {
+                s.feetZ = s.lift;
+                s.feetV = 0;
+                s.launchArmed = false;
+            } else {
+                // Press / release: read off the LIVE height of the step the feet stand on.
+                const stepH = heightOf(s.stepIdx);
+                // Touching = the (risen) surface has reached the feet. Not "standing": on a
+                // quick tap the plate springs back up while the pawn is still falling onto it,
+                // and the launch fires when the two meet.
+                const touching = s.feetZ <= s.lift + FEET_EPS;
+                if (s.stepIdx >= 0 && s.stepIdx === s.prevStepIdx) {
+                    const dh = stepH - s.prevStepH;
+                    if (dh < -FEET_EPS) s.launchArmed = true;
+                    else if (dh > FEET_EPS && s.launchArmed && touching) {
+                        s.launchArmed = false;
+                        s.feetV = PLATE_LAUNCH_SPEED;
+                    }
+                } else {
+                    s.launchArmed = false;
+                }
+                s.prevStepIdx = s.stepIdx;
+                s.prevStepH = stepH;
+
+                if (s.feetV === 0 && s.feetZ <= s.lift + FEET_EPS) {
+                    // On the surface: ride it (a rising surface just carries the feet up).
+                    s.feetZ = s.lift;
+                } else {
+                    // While the rising plate is still pushing the feet up faster than their
+                    // launch speed, they ride it (no gravity yet); once it slows they fly off.
+                    const pushed = s.feetZ <= s.lift && s.feetV > 0;
+                    if (!pushed) s.feetV -= GRAVITY * dt;
+                    s.feetZ += s.feetV * dt;
+                    if (s.feetZ <= s.lift) {
+                        s.feetZ = s.lift;
+                        if (s.feetV < 0) {
+                            // Impact: squash, then bounce back up or settle.
+                            const speed = -s.feetV;
+                            s.impactT0 = now;
+                            s.impactDepth = Math.min(IMPACT_SQUASH_MAX, IMPACT_SQUASH_PER_SPEED * speed);
+                            s.feetV = speed > BOUNCE_MIN_SPEED ? speed * BOUNCE_RESTITUTION : 0;
+                        }
+                    }
+                }
+                const fly = s.feetZ - s.lift;
+                if (fly > FEET_EPS) {
+                    if (s.mode.kind === "walk" || s.mode.kind === "land") {
+                        // Thrown up mid-walk: legs still in the air — no step bounce or waddle,
+                        // and the step cycle restarts from feet-down when it lands.
+                        hop = fly;
+                        lean = 0;
+                        s.stepPhase = 0;
+                    } else {
+                        hop += fly;
+                    }
+                }
+                const impactU = (now - s.impactT0) / IMPACT_MS;
+                if (impactU < 1) {
+                    const d = s.impactDepth * (1 - impactU) ** 2;
+                    sx *= 1 + 0.75 * d;
+                    sy *= 1 - d;
+                }
+            }
 
             // Apply. CSS px on SVG elements are user units, so these are scene units.
             const home = proj.project(at.x, at.y, 0);
@@ -477,7 +813,8 @@ export function usePawnMotion(opts: {
             if (refs.hop.current) refs.hop.current.style.transform = `translateY(${-hop * u0}px)`;
             if (refs.pose.current) refs.pose.current.style.transform = `rotate(${lean}deg) scale(${sx}, ${sy})`;
             if (refs.shadow.current) {
-                const air = Math.min(1, hop / LEAP_HOP_HEIGHT);
+                // Clamped at 0: falling BELOW its surface (FLOOR DROP) doesn't grow the shadow.
+                const air = clamp01(hop / LEAP_HOP_HEIGHT);
                 const shadowScale = shadowOverride ? shadowOverride.scale : 1 - 0.25 * air;
                 const shadowOpacity = shadowOverride ? shadowOverride.opacity : 1 - 0.4 * air;
                 refs.shadow.current.style.transform = `scale(${shadowScale})`;

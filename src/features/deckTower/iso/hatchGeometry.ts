@@ -2,8 +2,8 @@ import type { WorldRect } from "./geometry";
 
 /**
  * hatchGeometry.ts — the footprints of the floor hatches things rise out of (IsoHatch,
- * docs/ISO_ART_FRAMEWORK.md § "IsoHatch"): the focus lever's and the Mix / Review
- * switch's. Its own module so the component files export only components (fast refresh),
+ * docs/ISO_ART_FRAMEWORK.md § "IsoHatch"): the focus lever's and the mode switch's
+ * (IsoModeSwitch, currently unused). Its own module so the component files export only components (fast refresh),
  * and so layouts (towerPlatforms.ts) can use a footprint as a pawn obstacle without
  * importing a component.
  */
@@ -12,7 +12,7 @@ import type { WorldRect } from "./geometry";
 export const LEVER_HOLE = 1.0;
 
 /**
- * The Mix / Review switch's opening: `w` across (x) by `d` along (y). Its body
+ * The mode switch's opening: `w` across (x) by `d` along (y). Its body
  * (IsoModeSwitch) is a 1.3 × 2.4 light-switch block, long along y; the opening leaves a 0.15
  * margin round it.
  */
@@ -28,7 +28,7 @@ export function leverFootprint(at: { x: number; y: number }): WorldRect {
     return hatchFootprint(at, LEVER_HOLE);
 }
 
-/** The Mix / Review switch's hatch. */
+/** The mode switch's hatch. */
 export function modeSwitchFootprint(at: { x: number; y: number }): WorldRect {
     return hatchFootprint(at, MODE_SWITCH_HOLE.w, MODE_SWITCH_HOLE.d);
 }

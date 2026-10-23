@@ -7,8 +7,7 @@ import { fallMsFor, planCardCollapse, type CardCollapsePlan } from "./iso";
  * Layer: page logic (feature module `src/features/deckTower`). Every action that makes a
  * tower SHORTER plays one of `TOWER_SHRINKS`, and every action that makes one TALLER plays
  * one of `TOWER_GROWS` — picked by `pickTowerShrink` / `pickTowerGrow`, the same shape as
- * the deck swaps' `DECK_TRANSITIONS` (deckTransitions.ts). Today's callers:
- *   - the Mix / Review switch (Mix → Review shrinks, Review → Mix grows);
+ * the deck swaps' `DECK_TRANSITIONS` (deckTransitions.ts). Today's caller:
  *   - the focus lever (focus on shrinks to today's set, focus off grows back to the pile).
  *
  * An animation here only PLANS: given the card counts (and, for a grow, where the sky is),

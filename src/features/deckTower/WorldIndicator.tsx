@@ -8,18 +8,20 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import { ISO, prefersReducedMotion } from "./iso";
 
 /**
- * WorldIndicator — the floating arrow at the Deck Tower's left or right edge that says
- * another world lies that way, with the world's name beside it on the inner side
- * ("‹ Reading", "Writing ›") (docs/DECK_TOWER.md § "Worlds").
+ * WorldIndicator — the floating arrow in the Deck Tower's bottom-left or bottom-right
+ * corner that says another world lies that way, with the world's name beside it on the
+ * inner side ("‹ Reading", "Writing ›") (docs/DECK_TOWER.md § "Worlds"). It sits just
+ * above the footer bar, out of the tower's way.
  *
  * Layer: page-private component (feature module `src/features/deckTower`). The swipe is
  * the main way across; the arrow is the hint, and a tap on it does the same (the desktop
  * path, and an accessible one).
  *
  * Drawn straight on the sky in white (`ISO.white`, the page title's ink), with no box:
- * the arrow drifts gently outward and back ("floating"), still under reduced motion. The
- * two edges' arrows float IN STEP — both out, then both in — however far apart they
- * mounted (`floatPhaseDelay`). ⚠️
+ * the arrow and its name drift gently outward and back together ("floating" — the float
+ * rides an inner wrapper, so the tap target itself stays put), still under reduced
+ * motion. The two edges' indicators float IN STEP — both out, then both in — however far
+ * apart they mounted (`floatPhaseDelay`). ⚠️
  * Being boxless, it is an exception to the app-wide outline rule for tappable things
  * (CLAUDE.md § Buttons & cards) — it reads as part of the scene, like the title.
  *
@@ -28,7 +30,9 @@ import { ISO, prefersReducedMotion } from "./iso";
 
 /** How far (px) the arrow drifts outward at the top of its float. */
 const FLOAT_PX = 4;
-const FLOAT_MS = 1800;
+const FLOAT_MS = 2800;
+/** Gap (px) between the indicator and the top of the footer bar. */
+const FOOTER_GAP_PX = 12;
 
 /**
  * A negative `animation-delay` that puts this mount's float on a shared page clock:
@@ -54,22 +58,17 @@ interface WorldIndicatorProps {
     onTap: () => void;
     /** Hidden (a pan or deck swap is running). */
     hidden: boolean;
+    /** CSS length the stage's bottom edge is held off the screen bottom by (the footer's
+     *  height), as on SpaceBackdrop / SpeedLines; the indicator sits FOOTER_GAP_PX above it. */
+    bottom: string;
 }
 
-const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidden }) => {
+const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidden, bottom }) => {
     const isLeft = side === "left";
     const Arrow = isLeft ? ChevronLeftIcon : ChevronRightIcon;
     // Read once per mount: the delay only has to align the cycle's START.
     const [phaseDelay] = useState(floatPhaseDelay);
-    const arrow = (
-        <Arrow
-            className="deck-tower-page__world-indicator-arrow"
-            sx={{
-                fontSize: 32,
-                animation: prefersReducedMotion() ? undefined : `${isLeft ? floatLeft : floatRight} ${FLOAT_MS}ms ease-in-out ${phaseDelay} infinite`,
-            }}
-        />
-    );
+    const arrow = <Arrow className="deck-tower-page__world-indicator-arrow" sx={{ fontSize: 32 }} />;
     return (
         <ButtonBase
             className={`deck-tower-page__world-indicator deck-tower-page__world-indicator--${side}`}
@@ -80,11 +79,8 @@ const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidd
             sx={{
                 position: "absolute",
                 zIndex: 2,
-                top: "50%",
+                bottom: `calc(${bottom} + ${FOOTER_GAP_PX}px)`,
                 [side]: 2,
-                transform: "translateY(-50%)",
-                display: "flex",
-                alignItems: "center",
                 // The arrow hugs the screen edge; the name sits on its inner side.
                 [isLeft ? "pr" : "pl"]: "8px",
                 py: "8px",
@@ -93,22 +89,33 @@ const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidd
                 transition: "opacity 160ms ease-out",
             }}
         >
-            {isLeft && arrow}
-            <Box component="span" className="deck-tower-page__world-indicator-label">
-                <Typography
-                    component="span"
-                    sx={{
-                        display: "block",
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.body,
-                        fontWeight: WEIGHT.semibold,
-                        lineHeight: 1,
-                    }}
-                >
-                    {name}
-                </Typography>
+            {/* Arrow + name float as one unit; the button around them stays still. */}
+            <Box
+                component="span"
+                className="deck-tower-page__world-indicator-float"
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    animation: prefersReducedMotion() ? undefined : `${isLeft ? floatLeft : floatRight} ${FLOAT_MS}ms ease-in-out ${phaseDelay} infinite`,
+                }}
+            >
+                {isLeft && arrow}
+                <Box component="span" className="deck-tower-page__world-indicator-label">
+                    <Typography
+                        component="span"
+                        sx={{
+                            display: "block",
+                            fontFamily: FONTS.sans,
+                            fontSize: SIZE.body,
+                            fontWeight: WEIGHT.semibold,
+                            lineHeight: 1,
+                        }}
+                    >
+                        {name}
+                    </Typography>
+                </Box>
+                {!isLeft && arrow}
             </Box>
-            {!isLeft && arrow}
         </ButtonBase>
     );
 };

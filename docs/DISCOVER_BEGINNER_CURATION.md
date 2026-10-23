@@ -131,7 +131,8 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
 2. Group words into **authored packs**: up to 4 cards each. No sentence is authored —
    just group cards that make sense to sort together (by `id` / `word1`).
 3. Insert the packs into **PPE's** `sort_packs` (one row per pack), assigning
-   `packOrder` to control the beginner sequence within each level. PPE is the source
+   `packOrder` to control the beginner sequence (the pack's level is derived from its
+   hardest card — never authored; migration 177). PPE is the source
    of truth for this table; don't author on dev.
 4. Run the validator on PPE (`docker exec cow-backend node dist/scripts/validate-sort-packs.js`), then `/data-ppe-to-dev` to bring the packs down
    to dev (see `docs/SORT_PACKS_IMPLEMENTATION.md` §2.1).
@@ -141,15 +142,14 @@ Exported files live in `discover-beginner-csv/` (gitignored working area):
 ## 5. Mechanism: authored `sort_packs`
 
 The curation unit is a **sort pack**, stored per-language. A pack is just references to
-up-to-3 cards — no authored sentence (dropped in migration 95; see history note below):
+up-to-4 cards — no authored sentence (dropped in migration 95; see history note below):
 
 ```sql
 -- current shape (see SORT_PACKS_IMPLEMENTATION.md §2 for the migrations)
 CREATE TABLE sort_packs (
   id               SERIAL PRIMARY KEY,
   language         VARCHAR  NOT NULL,            -- 'zh' | 'es'
-  level            SMALLINT NOT NULL,            -- 1..6, the pack's difficulty band
-  "packOrder"      INTEGER  NOT NULL,            -- curation sort key within a level
+  "packOrder"      INTEGER  NOT NULL,            -- language-wide curation sort key
   "entryIds"       INTEGER[] NOT NULL            -- up to 4 det ids, the draggable cards
 );
 ```
@@ -163,6 +163,8 @@ CREATE TABLE sort_packs (
   cards are *all* already sorted is skipped at serve time.
 - **`packOrder`** — recommend sparse numbering (10, 20, 30…) so packs can be inserted
   later without renumbering.
+- **No `level` column.** A pack's level is `MAX(det.difficulty)` over its `entryIds`,
+  derived at read time (migration 177; SORT_PACKS_IMPLEMENTATION.md § 2).
 
 **Serving** (see [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §6.3):
 at the user's level, authored packs are served first (by `packOrder`), then system
@@ -170,8 +172,9 @@ fallback packs-of-1 built on the fly from any remaining un-packed, un-skipped wo
 Level drift is nearest-first.
 
 **Build/deploy validation test (required):** `server/scripts/validate-sort-packs.ts`.
-For every `sort_packs` row it asserts structural validity: 1–4 `entryIds`, level in
-1..6, and every `entryId` exists in the per-language det table.
+For every `sort_packs` row it asserts structural validity: 1–4 `entryIds`, every
+`entryId` exists in the per-language det table, and every card has a `difficulty` (the
+pack's level is derived from them).
 
 ---
 

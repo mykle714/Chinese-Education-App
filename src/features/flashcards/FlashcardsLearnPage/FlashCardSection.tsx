@@ -8,12 +8,63 @@ import {
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_TRANSITION,
     CARD_FLY_OUT_MS,
-    CARD_FLIP_TRANSITION,
     CARD_FLIP_MS,
+    TOWER_CARD_FLIP_MS,
+    cardFlipTransition,
     FC_FONT,
+    FLP_CARD_ASPECT,
+    FLP_CARD_CORNER_RATIO,
+    FLP_CARD_STOCK_INSET_RATIO,
+    FLP_CARD_PANEL_RADIUS_RATIO,
 } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { CARD_SURFACE } from "../../../theme/surfaces";
+import { SHADOW } from "../../../theme/shadows";
+
+/**
+ * The flp card's corner radius, set as `--card-radius` on the card frame so the faces, the
+ * wrappers, the drag wash and every clip layer inside (all read `CARD_SURFACE` /
+ * `CARD_SURFACE_CLIP_RADIUS`, theme/surfaces.ts) round to the Deck Tower card's corner.
+ * Proportional to the card's width, because the tower's camera lays its top card over this
+ * one at whatever size the slot gives it. The width is expressed in the slot's container
+ * units (DraggableCardContainer is the `size` container): the frame fills the slot's
+ * width when width-bound, and height × aspect when height-bound — `min` picks whichever.
+ * A custom property's `cq` units resolve where it is USED, which is still that container
+ * (nothing in between declares one).
+ */
+const flpCardWidthCss = `min(100cqw, 100cqh * ${FLP_CARD_ASPECT.width} / ${FLP_CARD_ASPECT.height})`;
+const flpCardRadiusCss = `calc(${flpCardWidthCss} * ${FLP_CARD_CORNER_RATIO})`;
+
+/**
+ * The Deck Tower's card stock (`towerStack` only): the cream rim's width and the beige
+ * panel's corner, as custom properties on the card frame for CardFaceSide `towerStock` to
+ * read. Same container-unit width as `flpCardRadiusCss`, so the rim scales with the card
+ * exactly as the tower's IsoCard rim does (docs/TOWER_STYLE_SHIFT.md § "Card stock").
+ */
+const TOWER_STOCK_VARS = {
+    "--card-stock-inset": `calc(${flpCardWidthCss} * ${FLP_CARD_STOCK_INSET_RATIO})`,
+    "--card-panel-radius": `calc(${flpCardWidthCss} * ${FLP_CARD_PANEL_RADIUS_RATIO})`,
+} as const;
+
+/**
+ * The card's TOP BAND — where the hint labels (← Incorrect / Correct →, Tap to flip;
+ * styled.ts `SwipeHintLabel` / `FlipHintLabel`) sit, in the card's top corners — and the
+ * inset of the card's own top chrome (CardOpsRail's `•••`, the CardNote strip), which sits
+ * just below it so the corners stay the labels'. On the Deck Tower the band is the stock's
+ * cream rim; the plain flp has no rim, so it is a fixed row. Read by CardOpsRail.tsx and
+ * CardNote.tsx through `--card-chrome-inset` (they fall back to their old 11 / 10 px where
+ * no frame sets it — the cdp).
+ */
+const CARD_CHROME_GAP_PX = 6;
+const PLAIN_HINT_BAND_PX = 30;
+const TOWER_TOP_BAND_VARS = {
+    "--card-hint-band": "var(--card-stock-inset)",
+    "--card-chrome-inset": `calc(var(--card-stock-inset) + ${CARD_CHROME_GAP_PX}px)`,
+} as const;
+const PLAIN_TOP_BAND_VARS = {
+    "--card-hint-band": `${PLAIN_HINT_BAND_PX}px`,
+    "--card-chrome-inset": `${PLAIN_HINT_BAND_PX + CARD_CHROME_GAP_PX}px`,
+} as const;
 import type { VocabEntry, SideOneLanguage } from "../types";
 import { isAdvancedLayout } from "../../../cardIcons/cardIconLayout";
 import { SpeakerButton } from "../../../components/SpeakerButton";
@@ -135,6 +186,32 @@ interface FlashCardSectionProps {
      *            the card promoted under the fly-out never shows behind the game area.
      */
     gameBreak?: "due" | "active" | null;
+    /**
+     * The card stack IS the Deck Tower's top card (docs/DECK_TOWER.md § "Studying the
+     * tower"): the flp is laid over the tower, the card covering the tower's top face.
+     *   - The next card waits flush under the current one (no peek scale / dim): it is
+     *     the tower's next card down, already in place.
+     *   - An INCORRECT swipe does not throw the card away — it goes back into the deck:
+     *     the card flies fully off the left of the screen, then slides back in from
+     *     off-screen under the new top card until it is hidden (`towerTuck`). A correct swipe flies off as usual.
+     *   - No card casts a drop shadow (FlashCard `towerStock`): they lie flush on the deck.
+     *   - Both faces are the tower's card stock — cream rim around a beige panel, no
+     *     hairline (CardFaceSide `towerStock`), the same stock as the tower's IsoCards.
+     *   - The flip lifts the card off the deck and sets it back down (FLIP_LIFT_SCALE) —
+     *     unless the platform is hidden (`platformHidden`).
+     */
+    towerStack?: boolean;
+    /**
+     * The Deck Tower's platform is faded out under the cards (FlpTowerHost `platformHidden`):
+     * there is no deck to lift off, so the flip does not lift.
+     */
+    platformHidden?: boolean;
+    /** Hide every card (the tower is busy under them — its sky drop), fading out and back in. */
+    cardsHidden?: boolean;
+    /** Hide every card at once, no fade: the Deck Tower's count card lies over them (FlpTowerHost `cardsCovered`). */
+    cardsCovered?: boolean;
+    /** The card's own box (the aspect-ratio wrapper) — the Deck Tower aims its camera at it. */
+    cardFrameRef?: React.Ref<HTMLDivElement>;
 }
 
 export type WritingFaceRenderer = (entry: VocabEntry, side: "front" | "back", role: "front" | "peek" | "flying") => React.ReactNode;
@@ -148,6 +225,32 @@ const DEFAULT_CARD_SLOT_PADDING = cardSlotPadding(0);
 const FLY_OUT_X = 900;
 // Rotation (deg) applied when the card flies off — more dramatic than the gentle drag tilt.
 const FLY_OUT_ROTATION = 30;
+
+/**
+ * The Deck Tower's "back into the deck" for an incorrect swipe (`towerStack`): from
+ * where the finger let go (`--tuck-from`), the card flies FULLY off the left of the
+ * screen (accelerating, like a throw), drops UNDER the new top card while it is out of
+ * sight (z-index is animatable, and steps — so the swap is never seen), then slides back
+ * in from off-screen, flat but a touch smaller (TOWER_TUCK_DEPTH_SCALE — it travels a
+ * plane BELOW the top card, so it reads as further from the eye), decelerating into place
+ * under the top card, which hides it. The scale steps while the card is off-screen, so
+ * the change is never seen. When the fly-out ends the slot becomes the back card and
+ * snaps to full size — still hidden under the top card. One CARD_FLY_OUT_MS long, like
+ * every fly-out, so the loop's timing holds.
+ *
+ * -160% of the card's own width clears the screen edge from the centred tower card,
+ * including the corner the -9deg tilt swings outward. Per-keyframe timing functions
+ * (each applies to the segment that STARTS at its keyframe): ease-in out, ease-out back.
+ */
+const TOWER_TUCK_OFFSCREEN = "translate(-160%, 2%) rotate(-9deg)";
+// How small the returning card is — one deck-depth back from the top card's plane.
+const TOWER_TUCK_DEPTH_SCALE = 0.9;
+const TOWER_TUCK_KEYFRAMES = {
+    "0%": { transform: "var(--tuck-from)", zIndex: 3, animationTimingFunction: "cubic-bezier(0.5, 0, 0.9, 0.6)" },
+    "38%": { transform: `${TOWER_TUCK_OFFSCREEN} scale(1)`, zIndex: 3 },
+    "40%": { transform: `${TOWER_TUCK_OFFSCREEN} scale(${TOWER_TUCK_DEPTH_SCALE})`, zIndex: 0, animationTimingFunction: "cubic-bezier(0.15, 0.7, 0.3, 1)" },
+    "100%": { transform: `translate(0%, 0%) rotate(0deg) scale(${TOWER_TUCK_DEPTH_SCALE})`, zIndex: 0 },
+};
 
 /**
  * Writing flp's throw — the card is sent off by the SYSTEM (a tap or a swipe attempt on
@@ -189,6 +292,61 @@ const writingThrowKeyframes = (sign: 1 | -1) => ({
         transform: `translate(${sign * FLY_OUT_X}px, 40px) rotate(${sign * FLY_OUT_ROTATION}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
     },
 });
+
+/**
+ * The Deck Tower's flip lift (`towerStack`, CardFace `flipLift`): a card turned over off
+ * the top of a deck has to come up off it to clear its edge, so while it rotates it also
+ * rises toward the camera — which looks straight down at the tower, so "up" reads as
+ * GROWING — and casts a shadow on the deck under it, then sets back down flush.
+ *
+ * Played on the `scale` property, not `transform`: `transform` carries the rotateY and its
+ * LINEAR transition, whose 90° must land exactly at the time-midpoint (cardFlipTransition),
+ * so the lift composes with it instead of re-timing it. Same length as the tower's flip
+ * (TOWER_CARD_FLIP_MS, slower than the plain flp's so the lift has time to read). The peak
+ * sits just before edge-on: it comes up fast (ease-out), and sets down more slowly
+ * (ease-in-out), landing as the face does.
+ *
+ * The shadow is a separate element that does NOT rotate (a shadow on the turning card would
+ * squash with it): it stays on the deck, the card's own box, and fades in and out with the
+ * lift. `SHADOW.lifted` — the same shadow the tower's count card has when it is held up
+ * (TowerCoverCard).
+ * Docs: docs/DECK_TOWER.md § "Studying the tower".
+ */
+const FLIP_LIFT_SCALE = 1.08;
+const FLIP_LIFT_PEAK_PCT = 40;
+const FLIP_LIFT_RISE_EASE = "cubic-bezier(0.2, 0.8, 0.3, 1)";
+const FLIP_LIFT_SET_DOWN_EASE = "cubic-bezier(0.45, 0, 0.55, 1)";
+const FLIP_LIFT_KEYFRAMES = {
+    "0%": { scale: "1", animationTimingFunction: FLIP_LIFT_RISE_EASE },
+    [`${FLIP_LIFT_PEAK_PCT}%`]: { scale: `${FLIP_LIFT_SCALE}`, animationTimingFunction: FLIP_LIFT_SET_DOWN_EASE },
+    "100%": { scale: "1" },
+};
+const FLIP_LIFT_SHADOW_KEYFRAMES = {
+    "0%": { opacity: 0, animationTimingFunction: FLIP_LIFT_RISE_EASE },
+    [`${FLIP_LIFT_PEAK_PCT}%`]: { opacity: 1, animationTimingFunction: FLIP_LIFT_SET_DOWN_EASE },
+    "100%": { opacity: 0 },
+};
+const flipLiftSx = {
+    animation: `flipLift ${TOWER_CARD_FLIP_MS}ms both`,
+    "@keyframes flipLift": FLIP_LIFT_KEYFRAMES,
+};
+
+/** The deck-side shadow under a lifting card (see FLIP_LIFT_SCALE). */
+const FlipLiftShadow: React.FC = () => (
+    <Box
+        aria-hidden
+        className="mobile-demo-flashcard-flip-lift-shadow"
+        sx={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: CARD_SURFACE.borderRadius,
+            boxShadow: SHADOW.lifted,
+            pointerEvents: "none",
+            animation: `flipLiftShadow ${TOWER_CARD_FLIP_MS}ms both`,
+            "@keyframes flipLiftShadow": FLIP_LIFT_SHADOW_KEYFRAMES,
+        }}
+    />
+);
 
 /** Renders the card face (Side 1 + Side 2 + drag overlay) for a given entry.
  *  Side 1 shows only one language (determined by sideOneLanguage).
@@ -237,9 +395,27 @@ const CardFace: React.FC<{
     // The writing flp's face content for this card (FlashCardSectionProps.writingFace),
     // already bound to the card's role. Absent on every other bar.
     writingFace?: (side: "front" | "back") => React.ReactNode;
-}> = ({ entry, isFlipped, isAnimating, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace }) => {
+    // The card IS one of the Deck Tower's cards (FlashCardSection `towerStack`):
+    //   - no drop shadow: it lies flush on the deck, as the tower's own top card does;
+    //   - the tower's slower lifting flip (TOWER_CARD_FLIP_MS);
+    //   - both faces in the tower's card stock — cream rim, beige panel, no hairline
+    //     (CardFaceSide `towerStock`; docs/TOWER_STYLE_SHIFT.md § "Card stock").
+    towerStock?: boolean;
+    // Lift the card off the deck while it flips (FLIP_LIFT_SCALE): the Deck Tower's front
+    // card, for exactly the flip's window (FlashCardSection `flipInProgress`).
+    flipLift?: boolean;
+}> = ({ entry, isFlipped, isAnimating, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace, towerStock = false, flipLift = false }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    // The card being HELD (front + flying-out) is lifted off the one behind it; the card
+    // behind rests. Same two-tier reading as the Decks page's hand.
+    const cardShadow = towerStock ? "none" : isProminent ? fc.cardShadow : CARD_SURFACE.boxShadow;
+    // LINEAR flip (not the fly-out's ease) so 90° lands exactly at the time-midpoint,
+    // matching the away-face visibility hide in CardFaceSide.
+    // The tower's lifting flip runs longer (TOWER_CARD_FLIP_MS); the faces' away-hide is
+    // timed off the same number.
+    const flipMs = towerStock ? TOWER_CARD_FLIP_MS : CARD_FLIP_MS;
+    const cardTransition = isAnimating ? 'none' : cardFlipTransition(flipMs);
 
     // Which definitionClusters sense EnglishBlock currently displays (index into its
     // frequency-sorted list). Lives here — not inside EnglishBlock — so Side 1 (English
@@ -295,29 +471,35 @@ const CardFace: React.FC<{
     // no room for them and its front is a prompt, not a word.
     if (writingFace) {
         return (
+            <>
+            {flipLift && <FlipLiftShadow />}
             <Card
                 className="mobile-demo-flashcard mobile-demo-flashcard--writing"
                 sx={{
                     backgroundColor: 'transparent',
                     background: 'none',
                     borderRadius: CARD_SURFACE.borderRadius,
-                    boxShadow: isProminent ? fc.cardShadow : CARD_SURFACE.boxShadow,
+                    boxShadow: cardShadow,
                     cursor: "pointer",
                     position: "absolute",
                     inset: 0,
                     transformStyle: "preserve-3d",
                     transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
-                    transition: isAnimating ? 'none' : CARD_FLIP_TRANSITION,
+                    transition: cardTransition,
                     overflow: 'visible',
+                    ...(flipLift ? flipLiftSx : {}),
                 }}
             >
-                <CardFaceSide rotated={false} contentGap={1} showIcon={false} inert={isFlipped} contentHidden={contentHidden} fill={writingFace("front")} />
-                <CardFaceSide rotated contentGap={1} showIcon={false} inert={!isFlipped} contentHidden={contentHidden} fill={writingFace("back")} />
+                <CardFaceSide rotated={false} contentGap={1} showIcon={false} inert={isFlipped} contentHidden={contentHidden} flipMs={flipMs} towerStock={towerStock} fill={writingFace("front")} />
+                <CardFaceSide rotated contentGap={1} showIcon={false} inert={!isFlipped} contentHidden={contentHidden} flipMs={flipMs} towerStock={towerStock} fill={writingFace("back")} />
             </Card>
+            </>
         );
     }
 
     return (
+        <>
+        {flipLift && <FlipLiftShadow />}
         <Card
             className="mobile-demo-flashcard"
             sx={{
@@ -329,18 +511,15 @@ const CardFace: React.FC<{
                 // FACE (CardFaceSide), not here: this wrapper is transparent and carries the
                 // 3D flip, so a border on it would stay put while the faces rotate.
                 borderRadius: CARD_SURFACE.borderRadius,
-                // The card being HELD (front + flying-out) is lifted off the one behind it;
-                // the card behind rests. Same two-tier reading as the Decks page's hand.
-                boxShadow: isProminent ? fc.cardShadow : CARD_SURFACE.boxShadow,
+                boxShadow: cardShadow,
                 cursor: "pointer",
                 position: "absolute",
                 inset: 0,
                 transformStyle: "preserve-3d",
                 transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
-                // LINEAR flip (not the fly-out's ease) so 90° lands exactly at the
-                // time-midpoint, matching the away-face visibility hide in CardFaceSide.
-                transition: isAnimating ? 'none' : CARD_FLIP_TRANSITION,
+                transition: cardTransition,
                 overflow: 'visible',
+                ...(flipLift ? flipLiftSx : {}),
             }}
         >
             {/* Side 1 — shows only one language, chosen randomly per card. The icon
@@ -362,6 +541,8 @@ const CardFace: React.FC<{
                 // buttons on the back). Side 1 faces away whenever the card is flipped.
                 inert={isFlipped}
                 contentHidden={contentHidden}
+                flipMs={flipMs}
+                towerStock={towerStock}
             >
                 {sideOneLanguage === 'zh'
                     // Reading mode: the pinyin and the speaker would both hand over the
@@ -428,6 +609,8 @@ const CardFace: React.FC<{
                 // Side 2 faces away when the card is showing its front.
                 inert={!isFlipped}
                 contentHidden={contentHidden}
+                flipMs={flipMs}
+                towerStock={towerStock}
             />
 
             {/* Drag overlay — shown on the front card and the card currently flying off */}
@@ -443,6 +626,7 @@ const CardFace: React.FC<{
                 }} />
             )}
         </Card>
+        </>
     );
 };
 
@@ -481,6 +665,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     writingFace,
     onCardClick,
     gameBreak = null,
+    towerStack = false,
+    cardsHidden = false,
+    cardsCovered = false,
+    platformHidden = false,
+    cardFrameRef,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -504,9 +693,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
             return;
         }
         setFlipInProgress(true);
-        const timer = window.setTimeout(() => setFlipInProgress(false), CARD_FLIP_MS);
+        const timer = window.setTimeout(() => setFlipInProgress(false), towerStack ? TOWER_CARD_FLIP_MS : CARD_FLIP_MS);
         return () => window.clearTimeout(timer);
-    }, [isFlipped]);
+    }, [isFlipped, towerStack]);
 
     // Each slot gets its entry: the front slot shows currentEntry, back slot shows nextEntry.
     const slotEntries: [VocabEntry | null, VocabEntry | null] =
@@ -549,32 +738,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 width: "100%",
             }}
         >
-            {/* Swipe-direction tutorial labels — sit above the card in the
-                container's top padding. Outside DraggableCardContainer so the
-                3D perspective / card transforms don't affect them. */}
-            <SwipeHintLabel
-                className="mobile-demo-swipe-hint-incorrect"
-                visible={showSwipeHint}
-                side="left"
-            >
-                ← Incorrect
-            </SwipeHintLabel>
-            <SwipeHintLabel
-                className="mobile-demo-swipe-hint-correct"
-                visible={showSwipeHint}
-                side="right"
-            >
-                Correct →
-            </SwipeHintLabel>
-            {/* "Tap to flip" hint — shown when user tries to swipe before flipping.
-                Guarded on !isFlipped so the label disappears the moment the user
-                flips, even before the parent resets the flag on next card. */}
-            <FlipHintLabel
-                className="mobile-demo-flip-hint"
-                visible={showTapToFlipHint && !isFlipped}
-            >
-                Tap to flip
-            </FlipHintLabel>
             {/* Fills the slot. DraggableCardContainer has definite px dimensions because
                 it is absolutely positioned — this is what makes height:100% on
                 CardAspectWrapper resolve correctly (flex-grown heights are not definite). */}
@@ -582,15 +745,33 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                 {/* CardAspectWrapper: fills the larger of the two axes while preserving
                     aspect-ratio. Default = height-bound (container is wider than card ratio).
                     The @container rule flips to width-bound when the container is narrower
-                    than 295/426, so the card never overflows either axis. */}
+                    than FLP_CARD_ASPECT, so the card never overflows either axis. */}
                 <Box
+                    ref={cardFrameRef}
+                    className="mobile-demo-card-frame"
                     sx={{
-                        aspectRatio: "295 / 426",
+                        aspectRatio: `${FLP_CARD_ASPECT.width} / ${FLP_CARD_ASPECT.height}`,
                         height: "100%",
                         width: "auto",
                         position: "relative",
                         flexShrink: 0,
-                        "@container (max-aspect-ratio: 295/426)": {
+                        // The Deck Tower card's corner, for everything inside the frame.
+                        "--card-radius": flpCardRadiusCss,
+                        // The tower's card stock: rim + panel geometry for the faces.
+                        ...(towerStack && TOWER_STOCK_VARS),
+                        // The top band the hint labels sit in, and the card chrome below it.
+                        ...(towerStack ? TOWER_TOP_BAND_VARS : PLAIN_TOP_BAND_VARS),
+                        opacity: cardsHidden ? 0 : 1,
+                        transition: "opacity 200ms ease-out",
+                        // Covered: still laid out (the tower measures this box), just not drawn —
+                        // clipped away to nothing, at once. Not `visibility: hidden`: CardFace sets
+                        // `visibility: visible` on its facing side (the flip's mid-point hide), which
+                        // overrides an inherited hidden, so the face showed through during the dive.
+                        // Not opacity either: the 200ms fade above would play on the swap.
+                        clipPath: cardsCovered ? "inset(50%)" : undefined,
+                        // Hidden cards take no swipes or taps either.
+                        pointerEvents: cardsHidden || cardsCovered ? "none" : undefined,
+                        [`@container (max-aspect-ratio: ${FLP_CARD_ASPECT.width}/${FLP_CARD_ASPECT.height})`]: {
                             width: "100%",
                             height: "auto",
                         },
@@ -617,7 +798,15 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 let transition: string;
                                 let opacity: number;
 
-                                if (isThisSlotFlyingOut) {
+                                // Deck Tower, incorrect: back into the deck (TOWER_TUCK_KEYFRAMES) —
+                                // the keyframes own transform and z-index for the whole fly-out.
+                                const towerTuck = towerStack && isThisSlotFlyingOut && flyOut!.direction === 'left';
+
+                                if (towerTuck) {
+                                    transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${dragPosition.x * 0.05}deg)`;
+                                    transition = 'none';
+                                    opacity = 1;
+                                } else if (isThisSlotFlyingOut) {
                                     const targetX = flyOut!.direction === 'right' ? FLY_OUT_X : -FLY_OUT_X;
                                     const targetRotation = flyOut!.direction === 'right' ? FLY_OUT_ROTATION : -FLY_OUT_ROTATION;
                                     transform = `translate(${targetX}px, 0px) rotate(${targetRotation}deg)`;
@@ -637,6 +826,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${rotation}deg)`;
                                     transition = isDragging ? 'none' : CARD_FLY_OUT_TRANSITION;
                                     opacity = 1 - Math.abs(dragPosition.x) / 400;
+                                } else if (towerStack) {
+                                    // Deck Tower: the back card is the tower's next card, flush
+                                    // under the front one (no peek depth).
+                                    transform = 'none';
+                                    transition = 'none';
+                                    opacity = 1;
                                 } else {
                                     // Back card: slight scale-down for depth; transition:none so it snaps
                                     // back to center instantly (while hidden) after being the fly-out slot.
@@ -691,7 +886,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                     "100%": { transform: "translate(0px, 0px) rotate(0deg) scale(1)", opacity: 1 },
                                                 },
                                             } : {}),
-                                            ...(writingFace && isThisSlotFlyingOut ? {
+                                            ...(towerTuck ? {
+                                                "--tuck-from": transform,
+                                                animation: `towerTuck ${CARD_FLY_OUT_MS}ms linear forwards`,
+                                                "@keyframes towerTuck": TOWER_TUCK_KEYFRAMES,
+                                            } : writingFace && isThisSlotFlyingOut ? {
                                                 animation: `writingThrow${flyOut!.direction === 'right' ? 'Right' : 'Left'} ${CARD_FLY_OUT_MS}ms forwards`,
                                                 "@keyframes writingThrowRight": writingThrowKeyframes(1),
                                                 "@keyframes writingThrowLeft": writingThrowKeyframes(-1),
@@ -748,6 +947,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 onSaveNote={isFront ? onSaveNote : undefined}
                                                 onCancelNote={isFront ? onCancelNote : undefined}
                                                 writingFace={writingFace ? (side) => writingFace(entry, side, writingRole) : undefined}
+                                                towerStock={towerStack}
+                                                // Deck Tower: the front card lifts off the deck as it turns over
+                                                // (not with the platform hidden: no deck under it).
+                                                flipLift={towerStack && !platformHidden && isFront && flipInProgress}
                                             />
                                         )}
                                     </Box>
@@ -789,6 +992,32 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                             </CardContent>
                         </Card>
                     )}
+                    {/* Swipe-direction tutorial labels — in the card's top corners, centred in its
+                        top band (`--card-hint-band`; styled.ts). Children of the FRAME, not of a
+                        card, so the cards' 3D flip / drag transforms don't carry them. */}
+                    <SwipeHintLabel
+                        className="mobile-demo-swipe-hint-incorrect"
+                        visible={showSwipeHint}
+                        side="left"
+                    >
+                        ← Incorrect
+                    </SwipeHintLabel>
+                    <SwipeHintLabel
+                        className="mobile-demo-swipe-hint-correct"
+                        visible={showSwipeHint}
+                        side="right"
+                    >
+                        Correct →
+                    </SwipeHintLabel>
+                    {/* "Tap to flip" hint — shown when user tries to swipe before flipping.
+                        Guarded on !isFlipped so the label disappears the moment the user
+                        flips, even before the parent resets the flag on next card. */}
+                    <FlipHintLabel
+                        className="mobile-demo-flip-hint"
+                        visible={showTapToFlipHint && !isFlipped}
+                    >
+                        Tap to flip
+                    </FlipHintLabel>
                 </Box>
             </DraggableCardContainer>
         </Box>

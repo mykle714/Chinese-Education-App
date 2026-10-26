@@ -54,8 +54,8 @@ const CAUTIONS: { label: string; detail: string }[] = [
             "It is spent per REQUEST, so it covers your own calls only: issuing, accepting, playing "
             + "your rounds. It is not attached to the challenge, so the other player's accept and "
             + "their own three rounds are judged against the real calendar unless they are also on a "
-            + "validator account with this switched on in their own browser. A two-sided test "
-            + "therefore needs two validator accounts and two switches — otherwise they are told the "
+            + "feature-tester account with this switched on in their own browser. A two-sided test "
+            + "therefore needs two feature-tester accounts and two switches — otherwise they are told the "
             + "time to accept has passed, or that their test window is not open.",
     },
     {

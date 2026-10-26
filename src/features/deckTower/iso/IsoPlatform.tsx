@@ -4,8 +4,8 @@ import IsoShadow from "./IsoShadow";
 import IsoLevitate from "./IsoLevitate";
 import { flatPath, hingedOutline, hingedPlaneTransform, hingedPrism, insetRect, type Hinge, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
-import { ISO, type PlatformTone } from "./palette";
-import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
+import type { PlatformTone } from "./palette";
+import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoPlatform — the slab a scene's objects stand on (docs/ISO_ART_FRAMEWORK.md
@@ -19,13 +19,17 @@ import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
  *   3. the top again, inset by `RIM_WIDTH`, in the true floor tone — leaving the rim as a
  *      thin light bevel line round the edge;
  *   4. `decals` — flat things printed on the floor (floor labels), which belong to it;
- *   5. `children` — whatever stands on the floor (carpets, then the objects on them).
+ *   5. `children` — whatever stands on the floor (carpets, then the objects on them);
+ *   6. `overlay` — drawn over everything, and left out of `fadeStyle` (below).
  *
- * With `floating`, steps 2–5 go through IsoLevitate: the slab and everything on it bob
+ * With `floating`, steps 2–6 go through IsoLevitate: the slab and everything on it bob
  * together, and the shadow breathes in step. `bodyClassName` / `bodyStyle` reach the group
- * that holds steps 2–5, so a scene can animate the whole loaded slab on top of the bob — the
+ * that holds steps 2–6, so a scene can animate the whole loaded slab on top of the bob — the
  * Deck Tower sinks it briefly when a tower lands on it (docs/DECK_TOWER.md § "Tower
- * resizes").
+ * resizes"). `fadeStyle` fades steps 1–5 but NOT the overlay: a group's opacity cannot be
+ * undone by a child, so what must stay opaque through a fade is drawn after the faded group
+ * instead (the Deck Tower keeps its deck: docs/DECK_TOWER.md § "Hiding the
+ * platform").
  *
  * `hingeAngle` swings the slab open like a TRAP DOOR on its back-left top edge (the
  * upper-left edge on screen; geometry.ts → `Hinge`). Steps 3–4 swing with it — they are
@@ -56,9 +60,13 @@ interface IsoPlatformProps {
     bodyStyle?: React.CSSProperties;
     /** The slab's colours (`platformTone`). Defaults to the gold `ISO.platform`. */
     tone?: PlatformTone;
+    /** Freeze a `floating` platform's bob where it is (IsoLevitate `paused`). */
+    bobPaused?: boolean;
+    /** Style for a fade of the shadow, the slab and `children` — not `overlay` (e.g. `{ opacity }`). */
+    fadeStyle?: React.CSSProperties;
+    /** Drawn last, over `children`: rides the bob and `bodyStyle`, but not `fadeStyle`. */
+    overlay?: React.ReactNode;
 }
-
-const DEFAULT_TONE: PlatformTone = { material: ISO.platform, rim: ISO.platformRim };
 
 /** World-unit width of the light bevel line round the top edge. Exported so a scene can keep things off it (towerPlatforms.ts → each layout's `roam`). */
 export const RIM_WIDTH = 0.16;
@@ -66,8 +74,10 @@ export const RIM_WIDTH = 0.16;
 /** How far the swung top's veil goes toward the right-wall tone, at π/2 (see the veil below). */
 const SWING_SHADE_MAX = 0.7;
 
-const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone = DEFAULT_TONE, bodyClassName, bodyStyle }) => {
+const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone, bodyClassName, bodyStyle, bobPaused = false, fadeStyle, overlay }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
+    const slabTone = tone ?? { material: palette.platform, rim: palette.platformRim };
     const open = hingeAngle > 1e-4;
     const hinge: Hinge = useMemo(() => ({ x: rect.x, z: 0, angle: hingeAngle }), [rect.x, hingeAngle]);
     const slab = useMemo(() => hingedPrism(proj, rect, -thickness, 0, hinge), [proj, rect, thickness, hinge]);
@@ -87,43 +97,52 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
         return { solid, opacity };
     }, [open, rect, thickness, hinge, ground.z]);
 
-    const shadow = swungShadow ? (
-        swungShadow.opacity > 0 ? (
-            <g className="iso-platform__shadow-fade" opacity={swungShadow.opacity}>
-                <IsoShadow solid={swungShadow.solid} receiver={ground} className="iso-platform__shadow" />
-            </g>
-        ) : null
-    ) : (
-        <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} className="iso-platform__shadow" />
+    const shadow = (
+        <g className="iso-platform__fade" style={fadeStyle}>
+            {swungShadow ? (
+                swungShadow.opacity > 0 ? (
+                    <g className="iso-platform__shadow-fade" opacity={swungShadow.opacity}>
+                        <IsoShadow solid={swungShadow.solid} receiver={ground} className="iso-platform__shadow" />
+                    </g>
+                ) : null
+            ) : (
+                <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} className="iso-platform__shadow" />
+            )}
+        </g>
     );
     const body = (
         <g className={bodyClassName ? `iso-platform ${bodyClassName}` : "iso-platform"} style={bodyStyle}>
-            <IsoSolid geometry={slab} material={{ ...tone.material, top: tone.rim }} className="iso-platform__slab">
-                <g className="iso-platform__deck" transform={open ? hingedPlaneTransform(proj, 0, hinge) : undefined}>
-                    <path className="iso-platform__floor" d={flatPath(proj, insetRect(rect, RIM_WIDTH), 0)} fill={tone.material.top} />
-                    <IsoDeckHingeContext.Provider value={open ? hinge : null}>{decals}</IsoDeckHingeContext.Provider>
-                </g>
-                {/* The swung top turns toward +x — the way the RIGHT walls face — so it
-                    darkens toward their tone: at π/2 it faces exactly as they do. A veil over
-                    floor and decals alike keeps the print shaded with the floor it is on; it
-                    stops at SWING_SHADE_MAX rather than 1, because a full veil would erase
-                    the print instead of shading it. */}
-                {open && (
-                    <path
-                        className="iso-platform__swing-shade"
-                        d={slab.top}
-                        fill={tone.material.right}
-                        opacity={SWING_SHADE_MAX * Math.min(1, Math.max(0, Math.sin(hingeAngle)))}
-                        pointerEvents="none"
-                    />
-                )}
-            </IsoSolid>
-            {children}
+            <g className="iso-platform__fade" style={fadeStyle}>
+                <IsoSolid geometry={slab} material={{ ...slabTone.material, top: slabTone.rim }} className="iso-platform__slab">
+                    <g className="iso-platform__deck" transform={open ? hingedPlaneTransform(proj, 0, hinge) : undefined}>
+                        <path className="iso-platform__floor" d={flatPath(proj, insetRect(rect, RIM_WIDTH), 0)} fill={slabTone.material.top} />
+                        <IsoDeckHingeContext.Provider value={open ? hinge : null}>{decals}</IsoDeckHingeContext.Provider>
+                    </g>
+                    {/* The swung top turns toward +x — the way the RIGHT walls face — so it
+                        darkens toward their tone: at π/2 it faces exactly as they do. A veil over
+                        floor and decals alike keeps the print shaded with the floor it is on; it
+                        stops at SWING_SHADE_MAX rather than 1, because a full veil would erase
+                        the print instead of shading it. */}
+                    {open && (
+                        <path
+                            className="iso-platform__swing-shade"
+                            d={slab.top}
+                            fill={slabTone.material.right}
+                            opacity={SWING_SHADE_MAX * Math.min(1, Math.max(0, Math.sin(hingeAngle)))}
+                            pointerEvents="none"
+                        />
+                    )}
+                </IsoSolid>
+                {children}
+            </g>
+            {overlay}
         </g>
     );
 
     return floating ? (
-        <IsoLevitate shadow={shadow}>{body}</IsoLevitate>
+        <IsoLevitate shadow={shadow} paused={bobPaused}>
+            {body}
+        </IsoLevitate>
     ) : (
         <>
             {shadow}

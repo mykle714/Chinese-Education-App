@@ -15,6 +15,7 @@
  */
 import { useState } from "react";
 import { Badge, Button, Typography } from "@mui/material";
+import type { SxProps, Theme } from "@mui/material/styles";
 // Writing practice uses the pencil; the flp icon-layout "edit" uses the brush
 // (the two were swapped per design).
 import EditIcon from "@mui/icons-material/Edit";
@@ -48,6 +49,11 @@ interface PracticeWritingButtonProps {
    *               pills on that rail cannot drift apart.
    */
   appearance?: "labeled" | "rail";
+  /**
+   * Layered over WORD_TOOL_PILL_SX on the `rail` appearance — a host restyling the whole
+   * rail (WordToolsRail `pillSx`, e.g. the Deck Tower's plate buttons). Ignored by `labeled`.
+   */
+  railSx?: SxProps<Theme>;
 }
 
 export default function PracticeWritingButton({
@@ -57,6 +63,7 @@ export default function PracticeWritingButton({
   variant = "outlined",
   size = "small",
   appearance = "labeled",
+  railSx,
 }: PracticeWritingButtonProps) {
   const [open, setOpen] = useState(false);
   // The trigger that opened the popup — its single-char panel grows out of it.
@@ -117,7 +124,7 @@ export default function PracticeWritingButton({
         onClick={openPopup}
         onMouseDown={stop}
         onTouchStart={stop}
-        sx={WORD_TOOL_PILL_SX}
+        sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(railSx) ? railSx : [railSx])]}
       >
         <Icon name="draw" size={17} />
         Write it

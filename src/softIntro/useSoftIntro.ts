@@ -22,7 +22,7 @@ import {
  * shown (e.g. a compact variant without the element): no visit is recorded there, so it
  * cannot graduate the si for a surface the learner never actually saw.
  *
- * Validator accounts can force every si on screen into one state from the header toggle
+ * Feature-tester accounts (users.isFeatureTester, migration 178) can force every si on screen into one state from the header toggle
  * (`SoftIntroToggle`); that override is LIVE (re-renders immediately) because its whole
  * point is comparing the two styles side by side.
  */
@@ -35,5 +35,5 @@ export function useSoftIntro(id: SoftIntroId, { enabled = true }: { enabled?: bo
         if (enabled) recordSoftIntroVisit(id);
     }, [id, enabled]);
 
-    return user?.isValidator && override !== "auto" ? override : natural;
+    return user?.isFeatureTester && override !== "auto" ? override : natural;
 }

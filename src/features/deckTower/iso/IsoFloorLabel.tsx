@@ -15,8 +15,8 @@ import {
     type WorldRect,
 } from "./geometry";
 import { shadowTone, type IsoSurface } from "./light";
-import { bandMaterial, ISO, type Material } from "./palette";
-import { IsoDeckHingeContext, useIsoProjector } from "./sceneContext";
+import { bandMaterial, type Material } from "./palette";
+import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 
@@ -81,12 +81,14 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
     rect,
     surface,
     text,
-    fontSize = 0.55,
-    bandColor = ISO.cardBand,
+    fontSize = 0.58,
+    bandColor,
     shaded = false,
     raised = 0,
 }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
+    const bandFill = bandColor ?? palette.cardBand;
     const plate = useMemo(() => toPath(roundedRectWorld(rect)), [rect]);
     const height = Math.max(0, raised) * RAISED_HEIGHT;
     const faceZ = surface.z + height;
@@ -94,9 +96,11 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
     // door needs the true swung geometry (see the header).
     const hinge = useContext(IsoDeckHingeContext);
     const swung = hinge !== null && height > 0 ? hinge : null;
+    // Measured around the plate's centre (exact there under a perspective camera).
+    const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.d / 2 };
     const transform = swung
-        ? affineToSvg(composeAffine(hingedPlaneAffine(proj, faceZ, swung), faceAffine(proj, faceZ)))
-        : faceTransform(proj, faceZ);
+        ? affineToSvg(composeAffine(hingedPlaneAffine(proj, faceZ, swung), faceAffine(proj, faceZ, centre)))
+        : faceTransform(proj, faceZ, centre);
     const slab = useMemo(
         () => (height <= 0 ? null : swung ? hingedPrism(proj, rect, surface.z, faceZ, swung) : prism(proj, rect, surface.z, faceZ)),
         [height, swung, proj, rect, surface.z, faceZ]
@@ -114,19 +118,19 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                 </g>
             )}
             <g className="iso-floor-label__body" transform={unswing}>
-                {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandColor, shaded)} />}
-                <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.sans}>
-                    <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandColor) : bandColor} />
+                {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded)} />}
+                <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.cjk}>
+                    <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandFill) : bandFill} />
                     <text
                         className="iso-floor-label__text"
                         x={rect.x + rect.w / 2}
                         y={rect.y + rect.d / 2}
                         fontSize={fontSize}
                         fontWeight={WEIGHT.bold}
-                        letterSpacing={0.08}
+                        letterSpacing={0.06}
                         textAnchor="middle"
                         dominantBaseline="central"
-                        fill={shaded ? shadowTone(ISO.ink) : ISO.ink}
+                        fill={shaded ? shadowTone(palette.ink) : palette.ink}
                     >
                         {text}
                     </text>

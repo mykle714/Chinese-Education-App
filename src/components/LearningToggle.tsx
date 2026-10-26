@@ -8,11 +8,11 @@ import {
     LOW_SUPPLY_GLOW_PULSE_MS,
 } from "../theme/lowSupplyGlow";
 import { SPEAKER_BUTTON_SIZE } from "./SpeakerButton";
-import type { LearnNowToggleState } from "../hooks/useLearnNowToggle";
+import type { LearningToggleState } from "../hooks/useLearningToggle";
 
 /**
  * The compact "+ to Learning" ⇄ "Added!" toggle that sits UNDER the speaker in the eip
- * entry header's vertical action stack (EipEntryHeader). Driven by `useLearnNowToggle`.
+ * entry header's vertical action stack (EipEntryHeader). Driven by `useLearningToggle`.
  *
  *   • Not in Learning → a small round "+" breathing the soft green halo
  *     (theme/lowSupplyGlow.ts, LOW_SUPPLY_GLOW_NUDGE) — the same "add more cards" nudge
@@ -46,13 +46,13 @@ const ADD_INSET = (SPEAKER_BUTTON_SIZE - TOGGLE_HEIGHT) / 2;
 
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
-const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => {
+const LearningToggle: React.FC<{ state: LearningToggleState }> = ({ state }) => {
     const { available, inLibrary, pending, toggle } = state;
     if (!available || inLibrary === undefined) return null;
 
     return inLibrary ? (
         <ButtonBase
-            className="learn-now-toggle learn-now-toggle--added"
+            className="learning-toggle learning-toggle--added"
             aria-label="Added to Learning — tap to remove"
             onClick={(e) => { stop(e); void toggle(); }}
             onMouseDown={stop}
@@ -78,7 +78,7 @@ const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => 
         </ButtonBase>
     ) : (
         <IconButton
-            className="learn-now-toggle learn-now-toggle--add"
+            className="learning-toggle learning-toggle--add"
             aria-label="Add to Learning"
             onClick={(e) => { stop(e); void toggle(); }}
             onMouseDown={stop}
@@ -104,7 +104,7 @@ const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => 
                 pending, and MUI greys a disabled IconButton's inherited color. */}
             {pending ? (
                 <CircularProgress
-                    className="learn-now-toggle__spinner"
+                    className="learning-toggle__spinner"
                     size={14}
                     thickness={5}
                     sx={{ color: COLORS.onSurface }}
@@ -116,4 +116,4 @@ const LearnNowToggle: React.FC<{ state: LearnNowToggleState }> = ({ state }) => 
     );
 };
 
-export default LearnNowToggle;
+export default LearningToggle;

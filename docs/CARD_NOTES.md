@@ -42,9 +42,15 @@ face's own content grows **downward** — the english block sits centred-to-low 
 definition can run to three lines — so a bottom strip overlapped the definition exactly
 when the note was also long, i.e. whenever both were most worth reading. The top band is
 the one strip of the face nothing else claims. It stops short of the `•••` dot
-(`CARD_OPS_DOT_GUTTER` = 49px in `CardNote.tsx`, covering the dot's `right: 11` + its 30px
-puck + a gap), so the note and the card-ops control share the edge rather than overlap.
-The editor uses the same berth, so a note is typed at the width it is displayed at.
+(`CARD_OPS_DOT_GUTTER` in `CardNote.tsx` = the dot's right inset + its 30px puck + an 8px
+gap — 49px on the cdp), so the note and the card-ops control share the edge rather than
+overlap. The editor uses the same berth, so a note is typed at the width it is displayed at.
+
+On the flp both the note and the `•••` sit just BELOW the card's top band
+(`constants.ts` → `cardChromeInsetCss`, the `--card-chrome-inset` the flp's card frame sets;
+`CARD_NOTE_INSET_CSS`, CardOpsRail `CARD_OPS_INSET_CSS`), because the flp's swipe-hint labels
+take the band's corners (docs/DECK_TOWER.md § "Studying the tower" → "Hint labels in the
+card's corners"). Where no frame sets it (the cdp) they keep 10px / 11px.
 
 ### Why delete left the rail
 

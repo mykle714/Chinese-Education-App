@@ -115,15 +115,15 @@ Search's raw fetch calls it itself).
 
 **The lever's life:**
 
-* **Appears** (on the Learn Now deck only): the hatch's flaps swing down, then the lever rises
+* **Appears** (on the Learning deck only): the hatch's flaps swing down, then the lever rises
   on its lift, which stops flush with the floor. The floor under a standing lever is solid, with no seam.
   Sunk and shut, the hatch is not drawn at all: the corner is plain, flush floor, and the flaps
   appear only while they swing (`IsoLever` → `flapsShown`).
 * **Deck swaps** (the trap door, [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)): the
-  lever never animates on an open door. Leaving Learn Now, a standing lever stays up and falls
+  lever never animates on an open door. Leaving Learning, a standing lever stays up and falls
   off the screen with the old tower (`DeckTowerPlatform` wraps it in `fallSx`; its hatch, lift
   top and shadow are hidden while it falls). Once the old tower clears it is put away sunk and
-  shut with no animation (`useLeverMotion` `instant`). Arriving at Learn Now, it does not come up
+  shut with no animation (`useLeverMotion` `instant`). Arriving at Learning, it does not come up
   through the hatch: it **falls from the sky** on the incoming pawn's entrance animation
   (`FALL_FROM_SKY`, the same height, gravity, stretch, landing squash and growing shadow),
   its cue shifted `LEVER_LANDS_AFTER_PAWN_MS` (500 ms) later so it lands a beat after the pawn

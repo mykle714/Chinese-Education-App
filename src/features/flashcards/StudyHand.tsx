@@ -368,7 +368,7 @@ function useCrampedFigure(handRef: React.RefObject<HTMLDivElement | null>, enabl
         const observer = new ResizeObserver(measure);
         observer.observe(hand);
         return () => observer.disconnect();
-    // `figureMark` too: the validator si toggle swaps label ↔ hairline live, which
+    // `figureMark` too: the feature-tester si toggle swaps label ↔ hairline live, which
     // changes the figure's height without resizing the hand.
     }, [handRef, enabled, figureMark]);
     return enabled && cramped;

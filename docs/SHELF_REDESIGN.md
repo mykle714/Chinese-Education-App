@@ -153,7 +153,7 @@ both clean.
   `white`) and the shelf/overlay tones (`wood`, `scrim`, `modalScrim`, `zoneUpRow`,
   `zoneDownRow`).
 - `src/utils/categoryColors.ts` — `CATEGORY_COLORS`, `BAND_COLORS`,
-  `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS` re-pointed at the ramp. Names and shapes
+  `LEARNING_COLORS`, `MASTERY_BAR_COLORS` re-pointed at the ramp. Names and shapes
   unchanged.
 - `src/utils/masteryCompute.ts` — `MARK_TYPE_COLORS` **left on its original four
   saturated hexes** (see D2b) and `MASTERY_READY_COLOR` added for the design's
@@ -412,7 +412,7 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    `INCORRECT_LABEL` in `src/features/flashcards/constants.ts` take the Mark tier
    (`grnMk` / `redMk`), the same colors as the drag wash.
 3. **Target is yellow** (`BAND_HUES.Target = "yel"`), per artboard 18 ("Target yellow").
-   ⚠️ **Open collision:** Learning / Study Mix are also yellow (`LEARN_NOW_HUE`). The
+   ⚠️ **Open collision:** Learning / Study Mix are also yellow (`LEARNING_HUE`). The
    design avoids it by drawing Learning purple; the user kept Learning yellow. One
    constant to change if it reads badly on device.
 4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` and
@@ -680,8 +680,13 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   seconds survive in the badge's `title`. **The glyph was enlarged 50% (15px → 22.5px,
   `FLAME_SIZE_PX`) in the same change**: at 15px the ink band is ~13px tall, so one second
   is a fifth of a pixel and the creep is invisible. The size is what makes the animation
-  readable. The count stays at 11px, so the flame rather than the number is now the thing
-  the eye lands on — which matches what it reports.
+  readable. The count stayed at 11px, so the flame rather than the number was the thing
+  the eye lands on — which matches what it reports. **The count went to 14px
+  (`FIRE_COUNT_FONT_SIZE` = `SIZE.body`) on 2026-10-26** — at 11px it was too hard to
+  read, notably over the Deck Tower's sky. It also went **medium**
+  (`FIRE_COUNT_INK` = `WEIGHT.medium`). Bold plus a hairline self-outline — the Deck Tower
+  card count's treatment (`IsoCard` → `iso-card__figure`) — and then semibold were tried
+  first and both read as too heavy.
 - **The fill is a STUDY-SURFACE treatment only, since 2026-08-28.** Off-study pages —
   every hub, the cdp, the deck/collection browsers — now draw a single **solid
   `fireActive` flame** beside the count: no 24% ghost, no clipped fill layer, no pulse.
@@ -1668,7 +1673,7 @@ role-gated ones, inside `MobileTabScreen`, with a `TipBox` header and
 Friends / Compare Words are `.lo` tiles. Friends carries a badge count. Tip box
 stays below the grid.
 
-**Watch out.** The role-gated rows (`user.isValidator` → Tester Dashboard,
+**Watch out.** The role-gated rows (`user.isFeatureTester || user.isAdmin` → Tester Dashboard,
 `user.isTemplateAuthor` → Template Editor + Sandbox) are **not drawn**. They append
 as further `.lo` tiles — the mosaic must not assume a fixed tile count.
 
@@ -1864,7 +1869,9 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 
 > **Superseded surface (2026-10-09):** `/account` is no longer a route. Dictionary took
 > its footer slot, and the same body now renders as `AccountSheet`, a maximizable
-> `SheetPanel` raised from the Home header avatar. The gear moved out to the Home header.
+> `SheetPanel` raised from the Home header avatar — and, since 2026-10-24, from the Deck
+> Tower's header avatar too (`src/features/deckTower/DeckTowerAvatar.tsx`,
+> docs/DECK_TOWER.md § Layers). The gear moved out to the Home header.
 > The artboard notes below still describe the body's contents.
 > **Off-artboard addition (2026-10-10):** a `StatCard` minute bank (`BankBanner`) sits
 > directly under the profile row. See [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 6.
@@ -3048,7 +3055,7 @@ white-on-pastel. Added `COLORS.dangerInk` / `successInk` / `infoInk` / `warnInk`
 
 ### D2a · Where the pastels apply — and where they do not
 The pastel ramp owns **fills**: band spines, bento tiles, deck tiles, band chips,
-category badges. `CATEGORY_COLORS` / `BAND_COLORS` / `LEARN_NOW_COLORS` /
+category badges. `CATEGORY_COLORS` / `BAND_COLORS` / `LEARNING_COLORS` /
 `MASTERY_BAR_COLORS` are all pastel pairs, keeping their names and shapes so every
 consumer compiles:
 
@@ -3275,10 +3282,17 @@ places would double the shadow.
 reading the hand already has, and the reason `CARD_SURFACE` carries the RESTING elevation
 only.
 
-**Radius fanout.** 15px is the face's outer curve; everything that clips content to the
-card uses `CARD_SURFACE_RADIUS - 1` so nothing shows a sliver of square corner outside the
-hairline — the face's inner clip box, `CardIconLayer`, and the fie's two canvas layers
-(`CardIconCanvas`). Surfaces that are NOT cards keep their own radii: the hand's cards stay
+**Radius fanout.** The face's outer curve is `CARD_SURFACE_RADIUS_CSS` —
+`var(--card-radius, 15px)`, which `CARD_SURFACE.borderRadius` carries; everything that clips
+content to the card uses `CARD_SURFACE_CLIP_RADIUS` (that minus 1px) so nothing shows a
+sliver of square corner outside the hairline — the face's inner clip box, `CardIconLayer`,
+and the fie's two canvas layers (`CardIconCanvas`).
+
+**The flp card is the one override (2026-10-25).** Its card frame (`FlashCardSection` →
+`flpCardRadiusCss`) sets `--card-radius` to `FLP_CARD_CORNER_RATIO` (0.09375) × the card's
+width, so its corners match the Deck Tower's card, which the study camera lays exactly over
+it (docs/DECK_TOWER.md § "Studying the tower"); ≈ 28px at the nominal 295px width. Every
+other card (cdp hero, Decks rail tiles, IW intro card) sets no variable and keeps 15px. Surfaces that are NOT cards keep their own radii: the hand's cards stay
 22px (twice the size), the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
 
 ### D13 · Elevation is the design's shadow system, and it lives in one token file

@@ -1,7 +1,7 @@
 import { RAMP } from "../../theme/colors";
 
 /**
- * towerModes.ts — the study mode the Deck Tower's Learn Now deck stands in
+ * towerModes.ts — the study mode the Deck Tower's Learning deck stands in
  * (docs/DECK_TOWER.md § "Decks and modes").
  *
  * Layer: page constants (feature module `src/features/deckTower`). Only one mode today:
@@ -11,7 +11,7 @@ import { RAMP } from "../../theme/colors";
  * 2026-10-22. The record is kept keyed by mode so a mode toggle can come back: `label` and
  * `band` are what such a switch would print and paint.
  *
- * Depended on by: DeckTowerPage.tsx (`learnNowCount`), useFocusLever.tsx (`readyTotal`).
+ * Depended on by: DeckTowerPage.tsx (`learningCount`), useFocusLever.tsx (`readyTotal`).
  */
 export type TowerModeId = "mix";
 
@@ -20,7 +20,7 @@ export interface TowerMode {
     label: string;
     /** The mode's band: the flp study hand's hue for the same mode (FlpStudyHand.tsx → HAND_HUES), at its `mid` tier. */
     band: string;
-    /** The bands of off-cooldown cards the Learn Now tower stands in this mode. */
+    /** The bands of off-cooldown cards the Learning tower stands in this mode. */
     bands: readonly string[];
 }
 

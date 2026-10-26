@@ -25,7 +25,7 @@ const FEATURE_LABELS: Record<UsageFeatureRow['key'], string> = {
  * LAYER: service. Owns the two decisions the DAL must not make:
  *   1. THE GATE — only `users.isAdmin` (migration 168) may read cross-user usage. This
  *      is a real security boundary, unlike the tester dashboard's client-side
- *      isValidator redirect, because every number here is about OTHER accounts.
+ *      isFeatureTester/isAdmin redirect, because every number here is about OTHER accounts.
  *   2. THE WINDOW — the caller picks from the closed `USAGE_WINDOWS` set; `0` means
  *      "since the first signup". The window is resolved to inclusive dates here.
  *

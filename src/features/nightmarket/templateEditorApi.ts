@@ -12,7 +12,7 @@ export type { TemplateDefinitionPayload };
 
 /**
  * Client API for the Night Market template editor
- * (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md). Validator-gated server-side.
+ * (docs/NIGHT_MARKET_TEMPLATE_EDITOR.md). Template-author-gated server-side (users.isTemplateAuthor).
  */
 
 /**
@@ -176,7 +176,7 @@ export async function loadTemplate(name: string, version = 0): Promise<LoadedTem
 
 /**
  * Ask the server for a free default name ("template{index}", index = first free positive
- * integer) to pre-fill a fresh template in the Properties popup. Validator-gated server-side.
+ * integer) to pre-fill a fresh template in the Properties popup. Template-author-gated server-side.
  */
 export async function suggestTemplateName(): Promise<string> {
   const data = await withFallback(

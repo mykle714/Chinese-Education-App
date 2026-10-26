@@ -1,10 +1,10 @@
 import React, { useId, useMemo } from "react";
 import IsoShadow from "./IsoShadow";
 import IsoSolid from "./IsoSolid";
-import { convexHull, flatPath, insetRect, prism, projectOutline, roundedRectWorld, toPath, type WorldRect } from "./geometry";
-import { hatchFootprint } from "./hatchGeometry";
+import { flatPath, insetRect, prism, toPath, type WorldRect } from "./geometry";
+import { hatchFootprint, openingSweepPath } from "./hatchGeometry";
 import type { IsoSurface } from "./light";
-import { mixHex, shadeHex } from "./palette";
+import { floorSlabMaterial, holeTone, mixHex, shadeHex, type Material } from "./palette";
 import type { PawnEntranceFrame } from "./pawnEntrances";
 import { useIsoProjector } from "./sceneContext";
 
@@ -38,7 +38,7 @@ import { useIsoProjector } from "./sceneContext";
  * on plain floor.
  *
  * The parts of the fixture below the floor are hidden by a clip: the hole's opening swept
- * straight up the screen. Anything under the floor projects BELOW the opening's outline
+ * straight up the screen (hatchGeometry.ts → `openingSweepPath`). Anything under the floor projects BELOW the opening's outline
  * (world −z is screen +y), so it is cut off, while what is seen through the open hole and
  * everything standing above the floor stays visible. The clip applies only while the
  * fixture is partly sunk — standing, a fixture may overhang the hole's column (the lever's
@@ -62,6 +62,8 @@ interface IsoHatchProps {
     d?: number;
     /** The floor it is set in. */
     surface: IsoSurface;
+    /** The body under the floor (palette.ts → `insideMaterial`): the hole and the lift's walls take its tones. */
+    inside?: Material;
     sink: number;
     hatch: number;
     /** How far the fixture's feet drop at sink 1: enough to take its whole height out of sight. */
@@ -76,7 +78,7 @@ interface IsoHatchProps {
     children: (standZ: number) => React.ReactNode;
 }
 
-const IsoHatch: React.FC<IsoHatchProps> = ({ at, w, d = w, surface, sink, hatch, sinkDepth, shadowFootprint, air, className, children }) => {
+const IsoHatch: React.FC<IsoHatchProps> = ({ at, w, d = w, surface, inside, sink, hatch, sinkDepth, shadowFootprint, air, className, children }) => {
     const proj = useIsoProjector();
     const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
     const clipId = `iso-hatch-clip-${uid}`;
@@ -85,16 +87,13 @@ const IsoHatch: React.FC<IsoHatchProps> = ({ at, w, d = w, surface, sink, hatch,
     const hole = useMemo(() => hatchFootprint(at, w, d), [at, w, d]);
 
     // The opening swept up the screen: the visible region for the sinking fixture.
-    const sweep = useMemo(() => {
-        const outline = projectOutline(proj, roundedRectWorld(hole), floorZ);
-        return toPath(convexHull([...outline, ...outline.map((p) => ({ x: p.x, y: p.y - 4000 }))]));
-    }, [proj, hole, floorZ]);
+    const sweep = useMemo(() => openingSweepPath(proj, hole, floorZ), [proj, hole, floorZ]);
 
     // The lift's top is flush with the floor at sink 0 — the fixture stands on solid floor.
     const drop = Math.min(1, Math.max(0, sink)) * (sinkDepth + LIFT_THICKNESS);
     const liftTop = floorZ - drop;
     const liftGeometry = prism(proj, hole, liftTop - LIFT_THICKNESS, liftTop);
-    const liftMaterial = { top: surface.color, left: shadeHex(surface.color, 0.1), right: shadeHex(surface.color, 0.18) };
+    const liftMaterial = floorSlabMaterial(surface.color, inside);
 
     // A flap hinged on the hole's x edge `hingeX`, its free edge reaching `dir` (±1) toward
     // the middle. Swung by `angle` from flat (0) to hanging (π/2).
@@ -115,7 +114,7 @@ const IsoHatch: React.FC<IsoHatchProps> = ({ at, w, d = w, surface, sink, hatch,
     // Flat, a flap is the floor; hanging, it turns its underside to the light — darker.
     const flapFill = mixHex(surface.color, shadeHex(surface.color, 0.22), Math.sin(flapAngle));
     const seam = shadeHex(surface.color, 0.12);
-    const holeFill = shadeHex(surface.color, 0.4);
+    const holeFill = holeTone(surface.color, inside);
     const standing = sink < 0.02;
     // Flaps resting shut are just floor: draw them only while the hatch is (or springs) open.
     // Mid-entrance (`air`), no part of the hatch is drawn: the floor it sits in may still be

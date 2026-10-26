@@ -46,7 +46,7 @@ deliberate: this repo has no config service, and a pair of env vars (`X` + `VITE
 read as live-flippable when the client half still requires a rebuild.
 
 A flag is **not** a permission check — per-user gating is `users.isValidator` /
-`users.isTemplateAuthor` — and **not** a data rollback.
+`users.isFeatureTester` / `users.isTemplateAuthor` / `users.isAdmin` — and **not** a data rollback.
 
 Referenced by: `server/contracts/featureFlags.ts` (the file's own header points back here).
 

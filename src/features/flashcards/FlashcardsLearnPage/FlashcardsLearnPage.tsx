@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
@@ -10,7 +10,7 @@ import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
 import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
-import { FC_FONT } from "../constants";
+import { CARD_FLIP_MS, FC_FONT, TOWER_CARD_FLIP_MS } from "../constants";
 import { useLaunchCollection } from "../useLaunchCollection";
 import { useFlpEntrance, useFlpLeave, playBreakReturn } from "../flpLaunch";
 import { warmMasteryCenter } from "../centerPrefetch";
@@ -22,6 +22,9 @@ import { useCardIconEditor } from "../../../cardIcons/editor/useCardIconEditor";
 import { useToolbarInset } from "../../../cardIcons/editor/useToolbarInset";
 import { useCardSlotPadding } from "./useCardSlotPadding";
 import FlashcardsLearnHeader from "./FlashcardsLearnHeader";
+import TowerStudyHeader from "./TowerStudyHeader";
+import type { FlpTowerHost } from "./flpTowerHost";
+import { towerPlateSx, TOWER_RAIL_PILL_SIZE_SX, TOWER_RAIL_SX } from "./towerPlate";
 import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
@@ -53,8 +56,28 @@ import { useTTS } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { VocabEntry, SideOneLanguage } from "../types";
 
-const FlashcardsLearnPage: React.FC = () => {
-    usePageTitle("Learn");
+/**
+ * Tower session: the content area's bare layout boxes — a tap on one is a tap off the card,
+ * which is Back (`handleTowerOffCardTap`). The content area itself, FlashCardSection's card
+ * slot, and the slot's padded container around the card frame.
+ */
+const TOWER_OFF_CARD_SELECTOR = ".mobile-demo-content, .mobile-demo-card-slot, .mobile-demo-draggable-container";
+/** A press that travels further than this is a drag, not a tap. */
+const TOWER_OFF_CARD_SLOP_PX = 10;
+
+interface FlashcardsLearnPageProps {
+    /**
+     * Run inside the Deck Tower, laid over its scene, instead of on the `/flashcards/learn`
+     * route (FlpTowerHost; docs/DECK_TOWER.md § "Studying the tower"). Absent on the route.
+     */
+    tower?: FlpTowerHost;
+}
+
+const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
+    // A tower session is part of the Deck Tower page, whose tab title it leaves alone.
+    usePageTitle(tower ? null : "Learn");
+    // Mounted under the tower but not being studied (FlpTowerHost `parked`).
+    const parked = tower?.parked ?? false;
     const navigate = useNavigate();
     const { token, user } = useAuth();
     // The arrival notice for lent cards. Shown once per session: it opens as soon as
@@ -64,15 +87,16 @@ const FlashcardsLearnPage: React.FC = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     const [searchParams] = useSearchParams();
-    const selectedCategory: string | null = searchParams.get('category');
+    // A tower session ignores the URL (it is `/deck-tower`'s): its bar is the host's, in Mix.
+    const selectedCategory: string | null = tower ? null : searchParams.get('category');
     // Two independent axes (server/contracts/studyMode.ts). MODE — Review/Challenge, or
     // null for Study Mix; an unrecognized value falls back to null, so a stale bookmark of
     // the old ?mode=easy / ?mode=hard links opens a Study session rather than dead-ending.
-    const selectedMode: StudyMode | null = parseStudyMode(searchParams.get('mode')) ?? null;
+    const selectedMode: StudyMode | null = tower ? null : parseStudyMode(searchParams.get('mode')) ?? null;
     // BAR — `reading` for the READING flp, launched from the Reading Center's study hand in
     // any of the three modes (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only front,
     // no narration before the flip, every mark a reading mark (flpFaceSteering).
-    const flpWorld = parseFlpWorld(searchParams.get('world'));
+    const flpWorld = tower ? tower.world : parseFlpWorld(searchParams.get('world'));
     const readingMode = flpWorld === 'reading';
     // `writing` — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the same card,
     // with its faces drawn by useWritingFlashcard (FlashCardSection's `writingFace`), and
@@ -144,6 +168,7 @@ const FlashcardsLearnPage: React.FC = () => {
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
+        clearUndo,
         provisionalSeen,
         provisionalReviewed,
     } = useWorkingLoop({
@@ -154,10 +179,23 @@ const FlashcardsLearnPage: React.FC = () => {
         prefetch: tts.prefetch,
         cardDragRef,
         onDismissed: () => breakCountersRef.current.dismissed(),
-        onUndone: () => breakCountersRef.current.undone(),
+        onUndone: (wasCorrect) => {
+            breakCountersRef.current.undone();
+            tower?.onUndone(wasCorrect);
+        },
+        onMarked: tower?.onMarked,
     });
 
-    const noticeOpen = !noticeDismissed && provisionalSeen.length > 0;
+    // A tower session tells its host what the deal holds: the tower spawns more cards when
+    // it runs out while the loop still has some, and climbs out when the loop runs dry.
+    const onTowerLoopChange = tower?.onLoopChange;
+    const hasCard = currentEntry !== null;
+    useEffect(() => {
+        onTowerLoopChange?.({ size: workingLoop.length, loading, hasCard });
+    }, [onTowerLoopChange, workingLoop.length, loading, hasCard]);
+
+    // Not over the tower while parked: the notice waits for the visit.
+    const noticeOpen = !noticeDismissed && provisionalSeen.length > 0 && !parked;
 
     // Drag/flip logic. Depends on the working loop's isAnimating + currentIndex,
     // and feeds dismisses back into it via handleCardDismiss.
@@ -174,7 +212,7 @@ const FlashcardsLearnPage: React.FC = () => {
         showTapToFlipHint,
         shakeNonce,
         handlers,
-    } = useCardDrag(isAnimating, handleCardDismiss, currentIndex);
+    } = useCardDrag(isAnimating, handleCardDismiss, currentIndex, tower ? TOWER_CARD_FLIP_MS : CARD_FLIP_MS);
 
     // Keep the bridge ref pointing at the live drag controls every render.
     cardDragRef.current = { resetCard, restoreFlipped, resetDragPosition };
@@ -304,13 +342,16 @@ const FlashcardsLearnPage: React.FC = () => {
     const leaveSession = useCallback(() => {
         setExitOfferOpen(false);
         if (editMode) exitEdit();
+        // Inside the Deck Tower the session never leaves the page: the tower flies its
+        // camera back out (docs/DECK_TOWER.md § "Studying the tower").
+        if (tower) { tower.onExit(); return; }
         // The reading and writing flps are launched from their Center's study hand, so
         // back returns there, plainly (the Centers are not choreographed); the core flp
         // returns to the fdp through the reverse of the hand's launch.
         if (flpWorld === 'reading') { navigate('/flashcards/reading'); return; }
         if (flpWorld === 'writing') { navigate('/flashcards/writing'); return; }
         leaveToDecks(() => navigate('/'));
-    }, [editMode, exitEdit, navigate, flpWorld, leaveToDecks]);
+    }, [editMode, exitEdit, navigate, flpWorld, leaveToDecks, tower]);
 
     /**
      * Back arrow. In edit mode it first cancels the edit (discarding the draft,
@@ -328,6 +369,35 @@ const FlashcardsLearnPage: React.FC = () => {
         }
         leaveSession();
     }, [provisionalReviewed.length, exitOfferShown, leaveSession]);
+
+    // ── Tower session: a tap off the card is Back ─────────────────────────────
+    // Over the Deck Tower the card lies on the tower's top, with the sky all round it, so
+    // tapping the sky beside it reads as "put the deck down" — the same as the back arrow
+    // (docs/DECK_TOWER.md § "Studying the tower"). Only a TAP on bare space counts:
+    //   - the press must start AND end on one of the content area's empty layout boxes
+    //     (TOWER_OFF_CARD_SELECTOR), so the card, the word tools, More Info and any control
+    //     never count — a whitelist, so a new control added later is safe by default;
+    //   - it must not travel (a swipe that starts on the card and ends off it fires its
+    //     click on a shared ancestor, which is one of those boxes);
+    //   - the target must be a DOM descendant: React events bubble through portals, so a
+    //     tap on a portaled sheet's backdrop would otherwise land here.
+    // Off during an icon edit (its own off-canvas tap deselects) and during a game break.
+    const towerOffCardPress = useRef<{ x: number; y: number } | null>(null);
+    const towerOffCardLive = tower !== undefined && !parked && !editMode && gameBreak.phase === "cards";
+    const isTowerOffCardTarget = (e: React.SyntheticEvent): boolean => {
+        const el = e.target as HTMLElement;
+        return e.currentTarget.contains(el) && el.matches(TOWER_OFF_CARD_SELECTOR);
+    };
+    const noteTowerOffCardPress = (e: React.PointerEvent) => {
+        towerOffCardPress.current = towerOffCardLive && isTowerOffCardTarget(e) ? { x: e.clientX, y: e.clientY } : null;
+    };
+    const handleTowerOffCardTap = (e: React.MouseEvent) => {
+        const press = towerOffCardPress.current;
+        towerOffCardPress.current = null;
+        if (!press || !towerOffCardLive || !isTowerOffCardTarget(e)) return;
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > TOWER_OFF_CARD_SLOP_PX) return;
+        handleBack();
+    };
 
     // ── Advanced-toolbar reservation ──────────────────────────────────────────
     // The three-row advanced toolbar is an absolute overlay, so it takes no flow height. These
@@ -392,7 +462,9 @@ const FlashcardsLearnPage: React.FC = () => {
         // A reading session is SILENT: narrating the word would hand the learner the
         // pronunciation the card is asking them to read (same rule as a reading Bubble
         // Match run). The answer face's speaker still plays on a tap.
-        if (!chineseVisible || !currentEntry || readingMode) return;
+        // Parked under the tower: nobody is looking at the card yet. It is narrated when the
+        // visit starts (`parked` is a dep).
+        if (!chineseVisible || !currentEntry || readingMode || parked) return;
         // autoSpeak is a no-op when autoplay is off, so the setting is enforced
         // in one place rather than re-checked at every narration site.
         tts.autoSpeak(currentEntry);
@@ -406,7 +478,7 @@ const FlashcardsLearnPage: React.FC = () => {
         // tts.autoSpeak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chineseVisible, currentEntry?.id]);
+    }, [chineseVisible, currentEntry?.id, parked]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -449,6 +521,37 @@ const FlashcardsLearnPage: React.FC = () => {
     const closeEip = useCallback(() => {
         setIsEicOpen(false);
     }, []);
+
+    // ── Tower session: a visit ends (parked again) ───────────────────────────
+    // The working loop is KEPT for the next tap on the tower — that is the point of parking
+    // (docs/DECK_TOWER.md § "Studying the tower" → "Parked sessions") — but what belongs to the visit is not:
+    //   - undo: the tower's height was reconciled at the climb-out, so undoing last visit's
+    //     mark would put a card back on a tower that already counted it;
+    //   - the sort offer: it may be raised again on the next visit's way out;
+    //   - the game-break counter: each visit counts its own BREAK_INTERVAL;
+    //   - the eip sheet: the next visit opens on the card, not on last visit's panel;
+    //   - the card's flip: a card flipped but not yet marked goes back to Side 1, so a
+    //     visit never opens on a revealed answer. `resetCard` (useCardDrag) is the same
+    //     per-card reset a new card gets; the layer is already hidden (opacity 0) once
+    //     parked, so the flip back is never seen. The writing card's "flip" is its
+    //     graded submit, so its attempt is wiped too (useWritingFlashcard → resetAttempt)
+    //     or Side 1 would come back showing last visit's graded ink.
+    // Only the false → true edge: a session that MOUNTS parked has nothing to clear.
+    const wasParked = useRef(parked);
+    useEffect(() => {
+        if (parked && !wasParked.current) {
+            resetCard();
+            writing.resetAttempt();
+            clearUndo();
+            setExitOfferShown(false);
+            setExitOfferOpen(false);
+            gameBreak.reset();
+            closeEip();
+        }
+        wasParked.current = parked;
+    // `gameBreak.reset` changes with the break's phase; only the edge matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [parked]);
 
     // "+ Add to Learning" from the EIP header 2×2 action grid. The primary card
     // is already in the library, but drilled-in words (breakdown chars / example
@@ -537,6 +640,15 @@ const FlashcardsLearnPage: React.FC = () => {
         persistNote(currentEntry, note);
     }, [currentEntry, persistNote]);
 
+    // The tower session's plate skin for the word-tools pills (undefined on the route).
+    // Memoised on the host's tones so the rail's sx is stable between renders.
+    const plateTones = tower?.plateTones;
+    // Sized down for the tower (TOWER_RAIL_PILL_SIZE_SX); the routed flp keeps full-size pills.
+    const towerPlatePillSx = useMemo(
+        () => (plateTones ? { ...towerPlateSx(plateTones), ...TOWER_RAIL_PILL_SIZE_SX } : undefined),
+        [plateTones],
+    );
+
     // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
     // own, so it opens Compare AS AN EIP TAB beside the word — the one surface that does
     // not use the compare SHEET (both cdps do, having no strip to put a tab in).
@@ -589,7 +701,8 @@ const FlashcardsLearnPage: React.FC = () => {
                     justifyContent: "center",
                     width: isMobile ? "100vw" : "100%",
                     height: "100vh",
-                    backgroundColor: theme.palette.flashcard.background,
+                    // Over the Deck Tower the sky shows through.
+                    backgroundColor: tower ? "transparent" : theme.palette.flashcard.background,
                 }}
             >
                 <DelayedCircularProgress />
@@ -607,7 +720,8 @@ const FlashcardsLearnPage: React.FC = () => {
                     justifyContent: "center",
                     width: isMobile ? "100vw" : "100%",
                     height: "100vh",
-                    backgroundColor: theme.palette.flashcard.background,
+                    // Over the Deck Tower the sky shows through.
+                    backgroundColor: tower ? "transparent" : theme.palette.flashcard.background,
                 }}
             >
                 <Typography color="error">{error}</Typography>
@@ -645,19 +759,34 @@ const FlashcardsLearnPage: React.FC = () => {
                 // editor down first exactly as leaving normally would.
                 onNavigate={() => { if (editMode) exitEdit(); }}
             />
-            <FlashcardsLearnHeader
-                selectedCategory={selectedCategory}
-                // Undo stays live on the title card (it cancels the break and brings the
-                // last card back); it is locked once the game is playing.
-                lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
-                isAnimating={isAnimating}
-                isUndoing={isUndoing}
-                // In edit mode the back arrow first cancels the edit (discarding the
-                // draft, unpausing minute points), then performs the normal back nav.
-                onBack={handleBack}
-                onUndo={handleUndoLastMark}
-                editMode={editMode}
-            />
+            {tower ? (
+                // Parked: the Deck Tower's own header is up (one PageHeader at a time).
+                !parked && <TowerStudyHeader
+                    title={tower.title}
+                    lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
+                    isAnimating={isAnimating}
+                    isUndoing={isUndoing}
+                    onBack={handleBack}
+                    onUndo={handleUndoLastMark}
+                    editMode={editMode}
+                    platformHidden={tower.platformHidden}
+                    onPlatformHiddenChange={tower.onPlatformHiddenChange}
+                />
+            ) : (
+                <FlashcardsLearnHeader
+                    selectedCategory={selectedCategory}
+                    // Undo stays live on the title card (it cancels the break and brings the
+                    // last card back); it is locked once the game is playing.
+                    lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
+                    isAnimating={isAnimating}
+                    isUndoing={isUndoing}
+                    // In edit mode the back arrow first cancels the edit (discarding the
+                    // draft, unpausing minute points), then performs the normal back nav.
+                    onBack={handleBack}
+                    onUndo={handleUndoLastMark}
+                    editMode={editMode}
+                />
+            )}
             <ContentArea
                 ref={contentAreaRef}
                 className="mobile-demo-content"
@@ -679,6 +808,7 @@ const FlashcardsLearnPage: React.FC = () => {
                 // onClick runs (turning align / shift into no-ops). So also exempt presses
                 // inside any open dropdown via its own portaled class.
                 onPointerDown={(e) => {
+                    noteTowerOffCardPress(e);
                     if (!(editMode && advMode) || (selectedIcon === null && selectedText === null)) return;
                     const el = e.target as HTMLElement;
                     if (
@@ -689,6 +819,7 @@ const FlashcardsLearnPage: React.FC = () => {
                         selectTarget(null);
                     }
                 }}
+                onClick={handleTowerOffCardTap}
             >
                 {/* Floating edit toolbar — overlays the top of the content area while
                     editing so it does NOT push the card down (docs/CARD_ICON_LAYOUT.md).
@@ -771,7 +902,14 @@ const FlashcardsLearnPage: React.FC = () => {
                         className="mobile-demo-word-tools"
                         entry={displayCurrentEntry}
                         onCompare={handleCompare}
-                        sx={{ marginTop: "18px", paddingLeft: "18px", paddingRight: "18px" }}
+                        sx={{
+                            marginTop: "18px", paddingLeft: "18px", paddingRight: "18px",
+                            // Tower only: the pills are a fixed-width centred pair (towerPlate.ts).
+                            ...(towerPlatePillSx ? TOWER_RAIL_SX : {}),
+                        }}
+                        // Over the Deck Tower the pills are the tower's floor-plate push
+                        // buttons (towerPlate.ts); the routed flp keeps the white pills.
+                        pillSx={towerPlatePillSx}
                     />
                 )}
                 {/* USED-IN HINT BUBBLES, part 1 — the spacer that keeps room above the
@@ -783,6 +921,12 @@ const FlashcardsLearnPage: React.FC = () => {
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
                     slotRef={cardSlotRef}
+                    // Inside the Deck Tower the stack is the tower's top card (FlpTowerHost).
+                    towerStack={tower !== undefined}
+                    cardsHidden={tower?.cardsHidden ?? false}
+                    cardsCovered={tower?.cardsCovered ?? false}
+                    platformHidden={tower?.platformHidden ?? false}
+                    cardFrameRef={tower?.cardFrameRef}
                     pad={cardSlotPad}
                     currentEntry={editingCurrentEntry}
                     // Nothing peeks behind the last card before a break, nor shows during
@@ -922,6 +1066,7 @@ const FlashcardsLearnPage: React.FC = () => {
                         isFlipped={isFlipped}
                         isDisabled={editMode}
                         hintActive={isFlipped && !eicHintConsumed && !editMode}
+                        plate={tower?.plateTones}
                         onClick={handleMoreInfoClick}
                         aria-disabled={editMode}
                         aria-label="Open extra info"

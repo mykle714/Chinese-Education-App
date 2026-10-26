@@ -219,6 +219,21 @@ third list arrived. Both failure directions are **silent** — a study page that
 and a menu that farms points look the same on screen — so the rule is unit-tested rather than
 resolved inline in a 450-line hook.
 
+### Study surfaces on other routes (2026-10-24)
+
+`src/minutePoints/studySurface.ts` → `useClaimStudySurface`, `useIsStudySurfaceClaimed`;
+read by `useMinutePoints` (`isEligiblePage` = the path rule **or** a claimed surface).
+
+The Deck Tower studies a tower IN PLACE: its flp session is laid over the tower scene on
+`/deck-tower`, with no route change ([DECK_TOWER.md](./DECK_TOWER.md) § "Studying the
+tower"). `/deck-tower` itself is a menu and must not earn, so the page CLAIMS the study
+surface while a session has its camera down, and a claimed surface counts exactly like an
+eligible path: the first interaction starts the clock, the idle timeout stops it, and
+releasing the claim saves and deactivates as leaving a study route does. A counter, so two
+claimants (or a StrictMode double-mount) cannot release each other's claim. The
+one-PageHeader rule still holds: the tower page unmounts its own header while the session's
+is up.
+
 ### The immersive world earns, but its list and its editor do not (2026-09-07)
 
 Holding a conversation with an NPC in the target language is as study-shaped as anything in the

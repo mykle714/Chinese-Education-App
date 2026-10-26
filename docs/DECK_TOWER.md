@@ -1,13 +1,15 @@
 # Deck Tower (experimental)
 
-`/deck-tower` draws the learner's **Learn Now** deck — every card that is off cooldown
+`/deck-tower` draws the learner's **Learning** deck — every card that is off cooldown
 right now, in all four utcm bands — as a stack of flashcards standing on an isometric platform, in the
 art style of Nintendo/Paladin's *Good Job!*. It is the footer's **Deck** tab, which took
 Discover's slot on 2026-10-17. Tapping the floor plate switches the tower to the
 **Mastered** deck and back. The focus lever's shrink and grow come from one library of
 tower shrinks and grows (§ Tower resizes). When the account has the reading or
 writing goal on, a **world** for each lies beside the main one — swipe left or right to
-dash there (§ Worlds).
+dash there (§ Worlds). Tapping a Learning tower **studies it in place**: the camera dives
+onto the top card and the flp is laid over it, without leaving the page (§ Studying the
+tower).
 
 The drawing comes from the iso art framework,
 [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md). This doc covers only the page.
@@ -18,9 +20,9 @@ the plate button, the deck-transition registry (trap door) and the pawn-entrance
 
 Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each platform's
 left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
-`TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learn Now
+`TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learning
 deck once the world holds 100 off-cooldown cards (or focus is on), and switches the world to a
-daily cap of 25 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learn Now tower —
+daily cap of 25 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learning tower —
 cover only today's remaining focus set.
 
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
@@ -29,31 +31,42 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 
 - Built on dev. It is front-end only: no new endpoint, table or migration.
 - The route row is in `src/routes/routeMeta.ts` (`/deck-tower`: `access: "any"`,
-  `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`). The component is in
-  `src/routes/registry.ts`. The tab is the `deck` row of `TABS` in
+  `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`, `footerStyle: "slab"`). The
+  component is in `src/routes/registry.ts`. The tab is the `deck` row of `TABS` in
   `src/components/MobileFooter.tsx`.
-- The page renders in a non-scrolling `MobileTabScreen` (title "Deck") and ends with a
-  `FooterSpacer`, so the scene shrinks to fit above the footer bar.
+- The page renders in a non-scrolling `MobileTabScreen` (title "Deck"). It is the only
+  route that wears the floating **slab** footer instead of the flat bar (§ Footer); the
+  scene stands above the slab and the sky runs on under it.
 
 ## Layers
 
 | Layer | File | Role |
 |---|---|---|
-| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Picks the shown worlds, reads their counts, fits the viewBox to the world on screen (`scene` memo), runs one build-up per world, handles the world swipe and the scroll height shared across worlds, and shows the title block, inside `MobileTabScreen` |
+| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Picks the shown worlds, reads their counts, fits the viewBox to the world on screen (`scene` memo), runs one build-up per world, handles the world swipe and the scroll height shared across worlds, inside `MobileTabScreen` — whose header carries the world title (`title`, white via `headerTitleColor`) and is lifted above the scroller (`wrapHeader`) so its controls are tappable |
 | Page view | `src/features/deckTower/DeckTowerPlatform.tsx` → `DeckTowerPlatform`, `STARTLE_AT_CARDS` | The platform in one world's colours, with its tower, pawn(s) (depth-sorted, `pawnDepthRanks`), floor plate |
 | Page constants | `src/features/deckTower/towerPlatforms.ts` → `TOWER_LAYOUT`, `TowerPlatformLayout`, `FLOOR_Z`, `GROUND_Z` | The platform and the layout on it (the same in every world) |
 | Page constants | `src/features/deckTower/towerWorlds.ts` → `TOWER_WORLDS`, `WORLD_ORDER`, `TowerWorld` | The worlds: name, sky, space, platform tone, floor and ground surfaces (§ Worlds) |
 | Page logic | `src/features/deckTower/useWorldPan.ts` → `useWorldPan`, `WorldPanView` | The camera dash between worlds: which world is drawn, the scene's slide, speed-line strength, the blending palette (§ Worlds → The pan) |
 | Page | `src/features/deckTower/SpeedLines.tsx` → `SpeedLines`; `src/features/deckTower/WorldIndicator.tsx` → `WorldIndicator` | The dash's streaks; the floating bottom-corner arrows naming the neighbouring worlds |
 | Page logic | `src/features/deckTower/useBuildProgress.ts` → `useBuildProgress`, `buildTimeline` | A tower's build-up, 0 → 1 (or straight to 1 when `animate` is false) |
+| Page | `src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar` (skin: `src/components/HeaderAvatarButton.tsx` → `HeaderAvatarButton`, `sizePx` 40 + `restShadow` `SHADOW.float`) | The learner's profile picture in the header's far-right corner (`headerTrailingActions`, right of the minute-points flame); a tap raises the `AccountSheet` (`src/pages/AccountSheet.tsx`), as Home's header avatar does |
+| Page logic | `src/features/deckTower/timeOfDay.ts` → `timeOfDayAt`, `towerLight`, `litWorld`, `phaseSky`, `PHASE_SKY`, `PHASE_LIGHT`, `PHASE_STARS`; `iso/wash.ts` → `washColorMatrix` and `DeckTowerPage` → `studyWashMatrix` (the wash on the flp session); `sunTimes.ts` → `deviceLocation`, `sunDay`; `tzCoordinates.ts` → `TZ_COORDINATES` (generated by `scripts/generate-tz-coordinates.mjs`); `useTimeOfDay.ts` → `useTimeOfDay`, `TimeOfDayOverride` | The time of day: dawn / day / sunset / night blended around the learner's real sunrise and sunset, each world's sky at that hour, and the wash over everything drawn on it (§ Time of day) |
+| Page | `src/features/deckTower/TimeOfDayToggle.tsx` → `TimeOfDayToggle` | The feature-tester chip row under the header that pins a phase (§ Time of day → "Tester toggle") |
 | Page | `src/features/deckTower/SpaceBackdrop.tsx` → `SpaceBackdrop`, `SpaceBand` | The screen-space sky behind the scene, in the world's colour, which darkens into starry space as a tall tower is climbed (§ Sky → space) |
-| Page | `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`; `DeckTowerPage` → `startable`, `onStackTap`, `hintFit`, `TAP_HINT_FIT_CARDS` | The white "Tap to Start" + arrow painted on the sky, and the Learn Now stack's tap into the flp (§ Tap to Start) |
+| Page | `src/features/deckTower/ShootingStars.tsx` → `ShootingStars` | Night's occasional meteor bursts, inside SpaceBackdrop (§ Time of day → "Shooting stars") |
+| Page | `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`; `DeckTowerPage` → `startable`, `onStackTap`, `hintFit`, `TAP_HINT_FIT_CARDS` | The white "Tap to Start" + arrow painted on the sky, and the Learning stack's tap, which starts a study (§ Tap to Start) |
+| Page logic | `src/features/deckTower/useTowerStudy.ts` → `useTowerStudy`, `StudyDrop`, `slideCover`, `sessions` / `TowerStudySession` (the parked sessions), `PARKED_LOOP_FRESH_MS`; `towerCamera.ts` → `studyCameraView`, `easeDive`, `STUDY_CAMERA_HEIGHT`; `DeckTowerPage` → `onStackTap`, `climbedOut`, `sceneProj`, `StudySession` | Studying the tower in place: each visited world's flp session kept mounted (parked), the dive onto the top card, the count card sliding off and back on, the camera while studying, a spawn's sky drop, the climb back out and the reconcile (§ Studying the tower) |
+| Page view | `src/features/deckTower/TowerCoverCard.tsx` → `TowerCoverCard`, `TowerCover` | The count card as its own layer over the session while it slides off the deck and back on (§ Studying the tower → "The count card") |
+| Feature contract | `src/features/flashcards/FlashcardsLearnPage/flpTowerHost.ts` → `FlpTowerHost`; `FlashcardsLearnPage` `tower` prop; `TowerStudyHeader.tsx`; `FlashCardSection` `towerStack` | The flp running inside the tower page (§ Studying the tower → "The session") |
+| Page logic | `src/features/deckTower/studyPlatformStore.ts` → `useStudyPlatformHidden`; `useTowerStudy` → `platformOpacity` / `platformFadeEased`; `DeckTowerPlatform` `fadeOpacity` / `fadeEased` / `keepDeck` (IsoPlatform `fadeStyle` / `overlay`); `TowerStudyHeader` `platformHidden` | The study header's per-device "hide the platform" toggle (§ Studying the tower → "Hiding the platform") |
+| Page logic | `src/features/deckTower/towerHeightStore.ts` → `readTowerHeight`, `writeTowerHeight`; `DeckTowerPage` → `openedAtHeightFor`, `coreSettledCount` | Main's Learning tower opening at the height it last stood at (§ Opening at the last height) |
 | Framework | `src/features/deckTower/iso/` | Every object, shadow and colour (see [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md)) |
 | Page logic | `src/features/deckTower/useDeckSwap.ts`, `deckTransitions.ts`, `towerDecks.ts` | The deck switch (see [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)) |
-| Page logic | `src/features/deckTower/towerModes.ts` → `TOWER_MODES`, `bandTotal`; `DeckTowerPage` → `learnNowCount` | The Learn Now deck's study mode — Mix only (§ Study mode) |
+| Page logic | `src/features/deckTower/towerModes.ts` → `TOWER_MODES`, `bandTotal`; `DeckTowerPage` → `learningCount` | The Learning deck's study mode — Mix only (§ Study mode) |
 | Page logic | `src/features/deckTower/towerResizes.ts` → `TOWER_SHRINKS`, `TOWER_GROWS`, `GHOST_COLLAPSE`, `SKY_DROP`, `IMPACT_MS`; `useTowerResize.ts` → `useTowerResize`; `DeckTowerPage` → `startResize`, `resolveRecount` | The library of in-place tower shrinks and grows, and the per-world player the focus lever uses (§ Tower resizes) |
 | Page logic | `src/features/deckTower/usePopUpMotion.ts` → `usePopUpMotion`, `useTween` | The floor fixture's rise / sink / sky-fall tweens (the focus lever's `useLeverMotion` builds on it) (§ Floor fixtures) |
-| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learn Now** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule — the study hand's figures), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. So the Learn Now tower is not the fdp's Learning tile (which counts cooling cards and leaves out Mastered). Until 2026-10-20 Learn Now was U+T+C only (no off-cooldown Mastered), through `builtinCollectionCount({ kind: "learn-now" })`. Fetched once on open: a card coming off cooldown while the page is up does not grow the tower. The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes) |
+| Page logic | `src/features/deckTower/usePlateRecess.ts` → `usePlateRecess`, `RECESS_DEPTH`; `DeckTowerPage` → `fixturesStowed`; `DeckTowerPlatform` → `plateDecal`, `plateStep` | The plate receding into the platform for a study dive and the floor filling its hole, reversed on the climb (§ Studying the tower → "The floor fixtures") |
+| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learning** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule — the study hand's figures), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. Both are called **Learning**, but the COUNTS differ: the tower's Learning deck is off-cooldown cards in all four bands, while the fdp's Learning tile counts cooling cards too and leaves out Mastered (`builtinCollectionCount({ kind: "learn-now" })`). Until 2026-10-20 the tower deck was U+T+C only (no off-cooldown Mastered), through `builtinCollectionCount({ kind: "learn-now" })`. Fetched once on open: a card coming off cooldown while the page is up does not grow the tower. The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes) |
 
 ## The scene
 
@@ -66,24 +79,25 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `PLATFORM`, `PLATFORM_THICKNESS` (`towerPlatforms.ts`) | The platform: an 11×11 slab, corner radius 0.9, 1.5 thick, `floating` (a slow bob, see [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § Levitation). The same in every world |
 | `GROUND_Z` (`towerPlatforms.ts`), `TowerWorld.ground` | The sky's plane, 1.6 below the slab's underside, which receives the platform's shadow (its colour is the world's sky) |
 | `FLOOR_Z` (`towerPlatforms.ts`), `TowerWorld.floor` | The platform's top (z = 0). The stack and the pawns stand on it (its colour is the world's platform top) |
-| `TowerPlatformLayout.card` | A portrait 4.8×6.6 (`CARD_W` × `CARD_D`) footprint, centred on the platform |
+| `TowerPlatformLayout.card` | A portrait 4.8 × ~6.93 (`CARD_W` × `CARD_D`) footprint, centred on the platform. `CARD_D` is derived from the flp card's proportions (`FLP_CARD_ASPECT`, 295 : 426, `src/features/flashcards/constants.ts`) because the study camera lands the top card exactly on the flp card (§ Studying the tower); it was 6.6 until 2026-10-24. Its corner radius, `CARD_W × FLP_CARD_CORNER_RATIO` (= 0.45), is shared with the flp card the same way — the flp sets it as a width-proportional `--card-radius` (`FlashCardSection` → `flpCardRadiusCss`; docs/SHELF_REDESIGN.md D14) |
 | `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `plateStep`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it was past the lever, then at the back-right corner), so it walks behind the tower rather than over it |
 | `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does arriving in a world whose tower already stands at 50+ (the remounted pawn was not watching it grow) |
 | `CLOUD_BAND_CARDS`, `CLOUDS_IN_SKY_MAX` | Clouds (`IsoCloud`, `useCloudDrifts`) drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 250–300 (card k's underside is (k − 1) · `CARD_THICKNESS` up). Up to 3 are in the sky at once, with 4–14 s gaps between drifts. They switch on when the build-up puts the 250th card on the tower: each slot's first cloud fades in partway across the screen, so the band is never empty at first. A deck under 250 never has clouds; a deck short of 300 lowers the band's top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still |
 | `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the build-up puts the 350th card on the tower, so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the clouds' (`skyBand`). Back-side gusts are drawn after the back-side clouds, front-side gusts before the front-side clouds. Under reduced motion there is no wind |
 | `SPACE_BAND_CARDS` | 450–650. Over this height band the sky darkens into space and stars fade in (§ Sky → space) |
 | `TowerPlatformLayout.labelPlate`, `.labelPlateHit` | The deck's floor plate in front of the stack, and its enlarged tap target. Tapping it switches the world's deck |
-| `TOWER_DECKS` (`towerDecks.ts`) | Each deck's name (on the plate) and its `band` (the plate's fill), the same in every world: `RAMP[LEARN_NOW_HUE].mid` (`yelM`) for Learn Now, `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for Mastered — the `mid` tier, because the fdp card's pale `surface` washes out. The cards themselves are plain card stock in both decks |
+| `TOWER_DECKS` (`towerDecks.ts`) | Each deck's name (on the plate) and its `band` (the plate's fill), the same in every world: `RAMP[LEARNING_HUE].mid` (`yelM`) for Learning, `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for Mastered — the `mid` tier, because the fdp card's pale `surface` washes out. The cards themselves are plain card stock in both decks |
 | `FALL_CLEARANCE` | Extra world units a falling tower drops past the screen's bottom edge (the scene memo's `fallDistance`) |
 
 There is no carpet: the page does not use `IsoCarpet`.
 
-The stack's `count` is the shown deck's figure on that world's bar (Learn Now on open).
+The stack's `count` is the shown deck's figure on that world's bar (Learning on open).
 The clouds, wind and sky → space follow the tower of the world on screen; none
 start while the camera dashes between worlds (the ones already out finish crossing). The deck's name
-(`TOWER_DECKS[…].label`) is printed once, on the label plate (the top card's face has
-no head band — just the count and "cards" — since the plate already names the deck; every card,
-the top one included, is plain card stock), an `IsoFloorLabel` on the floor in front of the stack (as wide as the card,
+(`TOWER_DECKS[…].label`) is printed twice: across the top card's coloured head band
+(`TOWER_DECKS[…].band`, DeckTowerPlatform `stack.label` / `stack.bandColor`, carried by the
+study cover card too — TowerCoverCard `deck`; restored 2026-10-24 after a short stretch as
+bare card stock), and on the label plate, an `IsoFloorLabel` on the floor in front of the stack (as wide as the card,
 between its front-left face and the platform edge), raised slightly off the floor as a push
 button (`IsoFloorLabel` `raised`; [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)
 § "The plate button"). It is part of the floor: it is passed
@@ -115,7 +129,9 @@ far taller than the screen. The page never zooms out to fit it:
   count is still loading (that reads as 0): `DeckTowerPlatform` `showImprint`, set by
   `DeckTowerPage` from `towerCounts`. Code: `DeckTowerPlatform.tsx` →
   `DeckTowerPlatform` (`decals`).
-- **Build-up pace.** `buildTimeline` (driven by `useBuildProgress`) has two phases:
+- **Build-up pace.** (Since 2026-10-24 no tower builds up on page load — main opens at its
+  last height instead, § Opening at the last height — so a build-up now only plays when a
+  deck swap grows a tower.) `buildTimeline` (driven by `useBuildProgress`) has two phases:
   - **Cruise:** a steady `BUILD_CARDS_PER_SECOND` (40), so every deck rises at the same
     speed and the duration scales with the deck.
   - **Settle:** the last `BUILD_DECEL_CARDS` (60) cards decelerate on a power-
@@ -127,8 +143,14 @@ far taller than the screen. The page never zooms out to fit it:
   581 cards take about 17.5 s. The build-up is skipped under `prefers-reduced-motion`.
 - **Scrolling.** The svg sits in `deck-tower-page__scroller`, the page's one vertical
   scroll surface (`touch-action: pan-y`). It runs from the **top of the screen**, over
-  the header, to the footer bar's top (`FOOTER_TOTAL_HEIGHT`), so a tall tower climbs
-  over the header and off the top of the screen. This works because the stage is
+  the header, to the screen's **bottom** edge, so a tall tower climbs over the header and
+  off the top of the screen. Its last `SLAB_FOOTER_TOTAL_HEIGHT` (the slab footer's
+  footprint, § Footer) are a spacer under the footer (`deck-tower-page__footer-spacer`, measured into px as `footerPx` /
+  `footerSpacerPx`, since the height is a `calc` with the safe area), clipped off with
+  `clip-path` — the same picture as a scroller ending at the footer's top, which it did
+  until 2026-10-24, but a study can open that band up as the footer slides away (the
+  clip's inset follows the dive, `footerBand`). Scroll maths that means "what the learner
+  sees" uses the view above the spacer (`startResize` → `viewH`). This works because the stage is
   deliberately *unpositioned*: the scroller's containing block is `MobileTabScreen`'s
   full-screen `ScreenRoot`, which also lets it escape the clipping of the
   overflow-hidden (but unpositioned) `ScrollArea`. The cost: the header's controls (the
@@ -139,26 +161,81 @@ far taller than the screen. The page never zooms out to fit it:
   container cannot reach.) The page opens scrolled to the bottom. A refit within a world
   (its count arriving, a deck swap) re-snaps to the bottom; arriving in another world
   keeps the height of the world left (§ Worlds → "Scroll height").
-- **Title.** The title block (the world on screen's `TowerWorld.title`: "Flashcards",
-  "Reading Flashcards" or "Writing Flashcards"; until 2026-10-19 it named the deck, and
-  the count subtitle was removed 2026-10-17) uses the app's header-title type (`pageHeaderTitleTypeSx("hub")` from
-  `src/components/PageHeader.tsx` — semibold `FONTS.sans`), enlarged to 40px, in white. It stays
-  in normal flow under the header, raised above the scroller
-  (`z-index: 2`, `pointer-events: none`, so drags on it still scroll). A tall tower
-  scrolls up behind it.
+- **Title.** The page header's own title is the world on screen's `TowerWorld.title`
+  ("Flashcards", "Reading Flashcards" or "Writing Flashcards"; until 2026-10-19 it named
+  the deck, and the count subtitle was removed 2026-10-17), at the standard hub size
+  (24px) in white (`ISO.white`, through `MobileTabScreen` `headerTitleColor` →
+  `PageHeader` `titleColor`) so it reads on the sky and on space. Until 2026-10-24 it was
+  a separate 40px title block under a dark "Deck" header. The header is lifted above the
+  scroller (`wrapHeader`, `z-index: 2` over the scroller's 1), so the flame and the
+  profile picture (`DeckTowerAvatar`) are tappable; the trade-off is that a drag starting
+  on the header strip does not scroll the tower. A tall tower scrolls up behind it.
 - **Shadow.** It is fitted (above), because the scroller clips at the footer bar and an
   unfitted shadow is cut off there.
+
+## Footer
+
+The page wears the **slab** footer, the floating nav bar from the Tower Style design
+(`.sx-flp .ft`, frames T1–T4), instead of the app-wide flat bar. Every other footer route
+keeps the bar.
+
+- **Opt-in per route.** The `/deck-tower` row in `src/routes/routeMeta.ts` carries
+  `footerStyle: "slab"`; `routeFooterStyle` defaults every other row to `"bar"`.
+  `FooterPresenter` passes it to `MobileFooter` as `variant`. Between two footer routes
+  of different styles the swap is **instant** (tabs have no page slide, so it lands with
+  the page); leaving for a footerless route, the slab slides out as a slab (the
+  presenter remembers the last style, as it does the last tab), by
+  `SLAB_FOOTER_HIDDEN_OFFSET` — its footprint plus its cast shadow.
+- **Shape** (`SlabFooter` in `src/components/MobileFooter.tsx`). A slab 64px tall, 16px in
+  from each side and `SLAB_FOOTER_BOTTOM` (`max(26px, safe-area inset)`) off the bottom,
+  radius 22, a 4-column grid with 6px padding. It does not bob (the design's `lev`
+  float was left out on purpose).
+- **Flashcard colours.** It is cut from the same stock as the tower's cards (`ISO.card`):
+  `COLORS.cardFace` top, standing on a 6px lip in `COLORS.cardWall` (the card's shaded
+  right wall — the token was added for this and `ISO.card.right` / `ISO.leverBase.right`
+  now read it). The active tab is a keycap set into it (`SlabFooterItem`):
+  `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 3px inset
+  `cardWall` lip. Tabs are a filled Material Symbol (`home`, `apps`, `stacks`,
+  `translate`; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
+  `onSurface` active. The bar stays text-only.
+- **Lit by the wash** (since 2026-10-25; until then the slab was treated as chrome and left
+  unlit). Being card stock, the slab dims with the scene at night: the page writes
+  `url(#<study wash filter>)` — the same `washColorMatrix` filter the flp session uses — to
+  `--footer-slab-filter` with `setFooterSlabFilter` (`src/components/footerCastShadow.ts`),
+  cleared by day and on unmount. The slab is two layers so the light misses the cast
+  shadow: `SlabFooter` (outer) carries position + the cast shadow and is never filtered
+  (the shadow lies on the sky, and the sky is never washed); `SlabFooterFace` (inner)
+  carries the card colours, lip, tabs and the filter.
+- **Cast shadow.** A solid `10px 16px` shadow on the sky, down-right like the scene's iso
+  shadows, in the sky darkened one iso step (`shadeHex(sky, 0.1)`). The sky changes every
+  scroll frame as a tall tower climbs into space, and the footer is rendered outside the
+  page, so the colour travels as a CSS custom property on the document root
+  (`--footer-slab-cast-shadow`): `SpaceBackdrop`'s `apply` writes it with
+  `setFooterCastShadow` (`src/components/footerCastShadow.ts`) and clears it on unmount.
+  Unset, the slab casts nothing.
+- **Layout around it.** `SLAB_FOOTER_TOTAL_HEIGHT` (screen edge → slab top; the cast shadow
+  is excluded and may fall over the scene) is the scroller's bottom spacer, its
+  `footerBand` clip, and the `WorldIndicator`s' floor. The backdrop and `SpeedLines` run
+  to the screen's bottom. A study still hides the footer with `useHideFooter` and opens
+  the band with the dive, unchanged.
+
+Code: `src/components/MobileFooter.tsx` → `SlabFooter`, `SlabFooterFace`, `SlabFooterItem`,
+`SLAB_FOOTER_*`; `src/components/footerCastShadow.ts`; `src/components/FooterPresenter.tsx`
+→ `HIDDEN_OFFSET`, `lastStyle`; `src/routes/routeMeta.ts` → `footerStyle`,
+`routeFooterStyle`; `src/features/deckTower/SpaceBackdrop.tsx` → `apply`;
+`src/features/deckTower/DeckTowerPage.tsx` → `footerBand`; `src/theme/colors.ts` →
+`cardWall`.
 
 ## Worlds
 
 `towerWorlds.ts`, `useWorldPan.ts`, `SpeedLines.tsx`, `WorldIndicator.tsx`,
 `DeckTowerPage.tsx`.
 
-| World | Id (`MasteryWorldId`) | Title | Sky | Platform | Lever knob | Shown when |
+| World | Id (`MasteryWorldId`) | Title | Sky (day) | Platform | Lever knob | Shown when |
 |---|---|---|---|---|---|---|
 | Main | `core` | Flashcards | `bluMk` | `gld` | `redMk` | Always |
-| Reading | `reading` | Reading Flashcards | `limMk` | `pnk` | `purMk` | `users.readingGoal` |
-| Writing | `writing` | Writing Flashcards | `redMk` | `bluMk` | `grnMk` | `users.writingGoal` |
+| Reading | `reading` | Reading Flashcards | `grnSky` | `pnk` | `redMk` | `users.readingGoal` |
+| Writing | `writing` | Writing Flashcards | `pnkSky` | `bluMk` | `redMk` | `users.writingGoal` |
 
 Side by side, left to right (`WORLD_ORDER`): **reading ← main → writing**. One world is on
 screen at a time: the same platform and layout (`TOWER_LAYOUT`) in that world's colours.
@@ -166,11 +243,11 @@ The goals are the same gate the fdp's Centers rail uses; a world whose goal is o
 skipped, and if it goes off while it is on screen the page falls back to main.
 
 - **Colours.** Each world has its own sky and platform hue (table above, all from the
-  framework); they are NOT the bars' `MASTERY_BAR_HUES` (writing's sky is red, not its
-  bar's purple). Reading's `limMk` and `pnk` are single-tier tokens added for this page
-  (`colors.ts` § "Lime and pink"), outside the design's ramp. Space is ONE night for every world (`SPACE` = `spaceOver(bluMk)`, main's sky taken down to
+  framework — the DAY look; dawn, sunset and night derive from it, § Time of day); they are NOT the bars' `MASTERY_BAR_HUES` (writing's sky is powder pink, not its
+  bar's purple). Reading's `grnSky` and `pnk` and writing's `pnkSky` are single-tier tokens added for this page
+  (`colors.ts` § "Sky green and pinks"), outside the design's ramp. Space is ONE night for every world (`SPACE` = `spaceOver(bluMk)`, main's sky taken down to
   night): each sky fades into the same starfield. `platformTone` gives a platform the gold platform's shading. No platform is yellow (it
-  would hide the `yelM` LEARN NOW plate). The decks' plates are the same in every world —
+  would hide the `yelM` LEARNING plate). The decks' plates are the same in every world —
   Mastered is always blue (`bluM`) — so writing's blue platform carries it one tier
   lighter than the slab.
 - **Getting there.** A horizontal swipe on the scene (`useSwipeCommit` on the scroller,
@@ -181,15 +258,15 @@ skipped, and if it goes off while it is on screen the page falls back to main.
   world) on the svg's CSS `translate`, separate from the pan's `transform`, and springs
   back if it does not commit. The edge indicators (`WorldIndicator`) name the
   neighbours: a white arrow in the screen's bottom-left / bottom-right corner (just above
-  the footer bar, `FOOTER_GAP_PX`) with the world's name beside it on the inner side
+  the slab footer's top, `SLAB_FOOTER_TOTAL_HEIGHT` + `FOOTER_GAP_PX`) with the world's name beside it on the inner side
   ("‹ Reading", "Writing ›"), arrow and name floating gently outward together (the
   float rides an inner wrapper, so the tap target stays put; the two indicators float in
   step on a shared clock, `floatPhaseDelay`), drawn straight on the sky
   with no box — an exception to the
   app's outline rule for tappable things. A tap does the same as the swipe. Swipe and arrows are off (arrows hidden) while a pan or this world's deck
   swap runs.
-- **The pan** (`useWorldPan`, ~1.3 s; instant under reduced motion):
-  1. `OUT_MS` (300): the scene whips off the far side (ease-in) as the speed lines gather.
+- **The pan** (`useWorldPan`, ~0.8 s; instant under reduced motion):
+  1. `OUT_MS` (260): the scene whips off the far side (ease-in) as the speed lines gather.
      A swipe carries straight into this (`PanCarry`): the release hands over the scene's
      dragged offset and the finger's release speed (`useSwipeCommit`'s `SwipeRelease`, both
      × `DRAG_FOLLOW`), and the scene leaves from there at that speed, still accelerating
@@ -197,20 +274,19 @@ skipped, and if it goes off while it is on screen the page falls back to main.
      drag's `translate` is dropped the same frame the pan's `transform` takes the offset
      over; only a release that does not move to a world springs back. A finger that stopped
      before lifting (`RELEASE_STALE_MS`, 60 ms) carries no speed, only its offset.
-  2. `CRUISE_MS` (560): empty sky racing past (`SpeedLines` at full strength: 16 flat white
+  2. `CRUISE_MS` (260): empty sky racing past (`SpeedLines` at full strength: 16 flat white
      streaks racing opposite to the camera) while the sky blends into the new world's
      colour (sky and space both, smoothstep). The drawn world switches at the start of this
      phase, while no scene is on screen.
-  3. `IN_MS` (440): the new world's scene slides in from the near side (ease-out) and the
+  3. `IN_MS` (300): the new world's scene slides in from the near side (ease-out) and the
      streaks die away.
   The camera travels toward the destination, so going right (main → writing) the scene
-  leaves to the left. The title block rides with it: it slides on the same
-  `sceneShiftX` and follows a held swipe on the same `translate` (`titleBlockRef`), so
-  the old world's title whips off and the new one's slides in. The plate does not press during a pan.
+  leaves to the left. The header title does NOT ride with it: it stays put and its text
+  swaps when the drawn world switches (phase 2, while no scene is on screen). The plate does not press during a pan.
 - **Arriving.** The platform is keyed by world, so it mounts fresh with its pawn standing.
-  Every world's tower is kept built whether on screen or not: main's builds up on page
-  load (`useBuildProgress`), and a skill world's goes straight to full height
-  (`animate` false) — it only grows after a deck swap there.
+  Every world's tower is kept built whether on screen or not, at full height
+  (`useBuildProgress` `animate` false) — it only grows after a deck swap there. Main's
+  tower opens at its last height (§ Opening at the last height); the skill worlds' do not.
 - **Scroll height.** One altitude shared by all worlds: the camera pans sideways, so
   arriving opens at the height the learner last scrolled to (`climb`, px above the
   bottom; the svg's height differs per world, so a `scrollTop` would not carry over). A
@@ -220,7 +296,7 @@ skipped, and if it goes off while it is on screen the page falls back to main.
   it to the platform. Not persisted: a page open starts at the bottom.
 - **Its own deck.** Every world has its own plate, deck and swap (one `useDeckSwap` per
   world, [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § "Several worlds"):
-  reading flips between reading Learn Now (off cooldown) and reading Mastered, writing
+  reading flips between reading Learning (off cooldown) and reading Mastered, writing
   likewise. The deck shown is named on the plate and the top card; the page title names
   the world (`TowerWorld.title`), switching mid-pan while no scene is on screen.
 - **Sky travellers everywhere.** Clouds, wind and space appear in every world, at the
@@ -240,15 +316,15 @@ by the swipeable worlds.)
 
 ## Study mode
 
-`towerModes.ts` (`TOWER_MODES`, `bandTotal`), `DeckTowerPage.tsx` (`learnNowCount`).
+`towerModes.ts` (`TOWER_MODES`, `bandTotal`), `DeckTowerPage.tsx` (`learningCount`).
 
-The Learn Now tower always stands in **Mix**: all four utcm bands, off-cooldown cards only
+The Learning tower always stands in **Mix**: all four utcm bands, off-cooldown cards only
 (the flp's own Study Mix, `server/contracts/studyMode.ts`). `TOWER_MODES` is still keyed by
 mode, with the `label` and `band` a switch would print and paint, so a mode toggle can come
 back without reshaping the data.
 
 Until 2026-10-22 a **Mix / Review switch** (`IsoModeSwitch`, in its own hatch at the floor's
-right corner on screen) flipped each world's Learn Now tower to Review (Comfortable +
+right corner on screen) flipped each world's Learning tower to Review (Comfortable +
 Mastered), shrinking or growing it through § Tower resizes. It was dropped; the component
 stays in the iso kit, unused (ISO_ART_FRAMEWORK.md § IsoModeSwitch), and the floor corner it
 stood in is open floor the pawn may roam.
@@ -259,16 +335,19 @@ stood in is open floor the pawn may roam.
 `DeckTowerPlatform.tsx` (`fallSx`, `leverTappable`).
 
 The focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5) is the platform's one floor fixture:
-it stands in a hatch, only while the Learn Now deck is up, and its rise / sink / sky-fall
+it stands in a hatch, only while the Learning deck is up, and its rise / sink / sky-fall
 tweens are `usePopUpMotion`'s.
 
-- **Leaving Learn Now** on a trap-door swap, it falls away with the old tower and is put away
+- **Leaving Learning** on a trap-door swap, it falls away with the old tower and is put away
   sunk and shut, unanimated.
-- **Arriving at Learn Now**, it drops in from the sky on the incoming pawn's `FALL_FROM_SKY`
+- **Arriving at Learning**, it drops in from the sky on the incoming pawn's `FALL_FROM_SKY`
   cue, shifted `LEVER_LANDS_AFTER_PAWN_MS` (500 ms) later, so the pawn lands on the trap
   door's slam and the lever a beat after it. The cue is only shifted later, so the whole fall
   plays; a lever still waiting to fall draws nothing and takes no taps, even after the swap
   has ended.
+- **While the tower is studied** it is stowed — it recedes and its hatch shuts as the camera
+  dives, and rises back on the climb (`useFocusLever` `stowed`) — along with the floor plate
+  (§ Studying the tower → "The floor fixtures").
 
 ## Tower resizes
 
@@ -277,13 +356,16 @@ tweens are `usePopUpMotion`'s.
 (draws them), `useFocusLever.tsx` (`onRecount`), `src/hooks/useFlpReadyCounts.ts` (`version`).
 
 Every action that changes a standing tower's height in place plays an animation from one
-library: a **shrink** from `TOWER_SHRINKS`, a **grow** from `TOWER_GROWS`, picked at random
+library (a study's own spawn reuses the sky drop's plan but re-draws it for the study
+camera, § Studying the tower): a **shrink** from `TOWER_SHRINKS`, a **grow** from `TOWER_GROWS`, picked at random
 (`pickTowerShrink` / `pickTowerGrow`, the shape of the deck swaps' `DECK_TRANSITIONS`). Each
 list has one entry today. Callers:
 
 | Action | Shrink | Grow |
 |---|---|---|
 | Focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5) | focus on (the pile → today's set, ≤ 25) | focus off (today's set → the pile) |
+| Climbing out of a study (§ Studying the tower) | the session's tally was high (a correct mark dropped on cooldown) | cards came back off cooldown mid-session |
+| Opening the page, main only (§ Opening at the last height) | cards went on cooldown since the last visit | cards came off cooldown since the last visit |
 
 - **Planning and playing.** The page plans a resize (`startResize(fromCards, toCards)`): it
   sets `keepClimbFor` to the frame it will refit to, and for a grow that `usesCamera` it
@@ -304,7 +386,7 @@ list has one entry today. Callers:
   (`useFlpReadyCounts`, bumped whenever a fetch settles — success or failure). When the
   version moves (`resolveRecount`), the held tower shrinks or grows to the re-read figure.
   An unchanged figure (or a failed re-read) plays nothing; a world no longer on screen, or
-  no longer on Learn Now, just lets the hold go.
+  no longer on Learning, just lets the hold go.
 - **Instant** under reduced motion, or when the counts do not change: the count just changes.
 
 **Shrink: ghost collapse (`GHOST_COLLAPSE`).** `planCardCollapse(fromCards, fromCards − toCards)` picks the
@@ -344,19 +426,104 @@ refit to (`fitScene`, pure):
 At the end the two stacks are replaced by one `IsoCardStack` of the new count, which draws
 the same picture.
 
+## Time of day
+
+`timeOfDay.ts`, `sunTimes.ts`, `tzCoordinates.ts`, `useTimeOfDay.ts`, `TimeOfDayToggle.tsx`,
+`DeckTowerPage.tsx`; the wash itself is the iso framework's
+([ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § "Ambient wash").
+
+Every world follows the learner's clock through four phases. Day is each world's own sky
+token (the Worlds table); dawn, sunset and night are derived from it, so every world keeps
+a tint of its own hue at every hour.
+
+- **Where and when.** The location is the device's IANA timezone (`Intl`) looked up in
+  `TZ_COORDINATES` (each zone's principal city, legacy aliases included); a zone missing
+  from it falls back to longitude = UTC offset × 15° at latitude 35°N (`deviceLocation`).
+  No permission prompt, no server call. A wide zone collapses to one city — accepted.
+  `sunDay` computes that day's sunrise and sunset (NOAA sunrise equation, ±a few minutes).
+- **Keyframes** (`timeOfDayAt`), `TWILIGHT_MS` (1 h) either side of each event:
+  night until sunrise − 1 h → **dawn** at sunrise → day from sunrise + 1 h; day until
+  sunset − 1 h → **sunset** at sunset → night from sunset + 1 h. Between two keyframes of
+  different phases the look blends linearly (yesterday's, today's and tomorrow's keyframes
+  are all built, so a night is always bracketed). A day too short for an hour of plain
+  day meets dawn and sunset at midday; a polar day / night holds day / night.
+- **Sampling** (`useTimeOfDay`). Once a minute and on `visibilitychange` → visible; a sample
+  with the same look (blend within 0.005) keeps the old `TowerLight`, so nothing re-renders.
+- **Skies** (`phaseSky`, `PHASE_SKY`). The day token in OKLCH, its hue turned part-way
+  toward the phase's hue along the shortest arc, at the phase's lightness and chroma:
+
+  | Phase | Turn toward | L | C | Main (bluMk) | Reading (grnSky) | Writing (pnkSky) |
+  |---|---|---|---|---|---|---|
+  | Dawn | hue 20, 80% | 0.80 | 0.12 | `#F99DC6` rose | `#FEA57A` peach | `#EAC2EA` lilac ² |
+  | Day | — | token | token | `#59BFFF` | `#78E292` | `#F7C6D0` powder pink |
+  | Sunset | hue 55, 90% | 0.72 | 0.17 | `#FB7851` coral orange | `#EC6D3B` vermilion ¹ | `#F67F2F` orange |
+  | Night | hue 270, 35% | 0.34 | 0.08 | `#113A5F` | `#004443` | `#4F274A` plum |
+
+  ¹ Reading overrides the sunset recipe (`TowerWorld.skyRecipes`: hue 35, 95%, L 0.68) — the
+  shared one gives `#EC8900`, too close to writing's orange. Dawn and sunset both turn most of
+  the way: a weak turn only looks natural near the target hue (at 30% toward pink, green's
+  dawn stopped on the yellow side of the wheel — olive).
+
+  ² Writing overrides the dawn recipe (hue 300, 60%, L 0.86, C 0.07). Its powder-pink day sky
+  is already lighter (L 0.87) and softer than the shared dawn's L 0.80 / C 0.12, so the shared
+  recipe gave `#FF9DA2` — a dawn darker and hotter than the day it leads into. The override
+  keeps day's lightness and turns cool, clear of main's rose and reading's peach.
+
+  Night stays lighter than `SPACE` (L ≈ 0.25), so climbing a tall tower at night still
+  deepens into space. ⚠️ Derived colours, outside the colour framework (like `spaceOver`).
+- **The wash** (`PHASE_LIGHT`, `towerLight` → `wash`). Everything drawn ON the sky is lit:
+  platform, floor, cards, plates, pawns, lever, clouds, wind, smoke, and the page's own
+  white ink — the header title (`headerTitleColor`), the world arrows (`WorldIndicator`
+  `color`), the speed lines (`SpeedLines` `color`) and Tap to Start — and the slab footer's face
+  (§ Footer → "Lit by the wash"). Dawn casts 12% toward
+  `pnk`; sunset 16% toward `orgMk` and dims 4%; night 14% toward `bluMk` and dims 4%, the same as sunset (cut from 22% on 2026-10-25 — it read too dark)
+  (OKLCH lightness). Day is the identity. The sky is never washed — it is the light. The
+  page hands the wash to `IsoScene` (`wash`), to `TowerCoverCard` (which must match the
+  scene's top card), and lights each world with `litWorld` (sky, ground plane, platform
+  tone, floor, lever ball). The flp session (§ Studying the tower) is HTML, so its study
+  layer takes the same wash as an SVG colour-matrix filter (`DeckTowerPage` →
+  `studyWashMatrix`, iso `washColorMatrix`, ISO_ART_FRAMEWORK.md § Ambient wash → "DOM
+  content"): its card, ink, tone colours, header and plate buttons (`STUDY_PLATE_TONES`)
+  are all lit, so the card the count card uncovers matches it. What the flp portals to
+  `<body>` (the eip sheet, its dialogs, popovers) is outside the layer and is not washed.
+- **Stars** (`PHASE_STARS` → `SpaceBackdrop` `groundStars`): 0.55 opacity from the ground at
+  night, 0.08 at dawn; the climb's own fade-in wins wherever it is stronger.
+- **Shooting stars** (`towerLight` → `shootingStars` → `SpaceBackdrop` → `ShootingStars`).
+  While night's share of the blend is ≥ 50%, a burst of 1–3 meteors fires every
+  15 s ± 40% (`BURST_MEAN_MS`, `BURST_JITTER`); the first burst also waits one interval.
+  A burst's meteors are 180–650 ms apart and share one heading (18–38° below horizontal,
+  down-left or down-right, re-picked per burst), spawning in the backdrop's upper half.
+  Each is a flat `ISO.star` streak — round head, tapering 55%-opacity tail polygon, no
+  gradient — that travels 150–260 px over 0.75–1.1 s while fading in and out (one CSS
+  keyframe on CSS variables), then removes itself. Screen space, behind the scene svg, so
+  the tower occludes it. Skipped while the tab is hidden and under
+  `prefers-reduced-motion`; leaving night drops any meteor mid-flight. State lives in
+  `ShootingStars`, so a burst re-renders only that layer.
+- **A pan** blends between the two worlds as they look now (`useWorldPan`'s `paletteOf`).
+- **Tester toggle.** Accounts with `users."isFeatureTester"` (migration 178) get a chip row
+  under the header — Auto · Dawn · Day · Sunset · Night (`TimeOfDayToggle`, frosted chips,
+  the chosen one solid ink). A phase pins that look; Auto follows the clock. Stored per
+  device (`localStorage` `deckTower.timeOfDayOverride`) and read only for feature testers,
+  so a stale key on a shared device never changes a learner's sky. It rides the header
+  layer, so it fades and unmounts with the header during a study.
+
 ## Sky → space
 
 On a tall tower the sky turns into space as the learner scrolls up.
 
-- **Backdrop.** `SpaceBackdrop` is an absolutely positioned box with the scroller's box
-  (top of the screen → footer bar) and z-index (1). It comes before the scroller in the
+- **Backdrop.** `SpaceBackdrop` is an absolutely positioned box from the top of the
+  screen to the screen's **bottom** edge (`bottom={0}`) — the slab footer floats, so sky
+  shows beside and below it (§ Footer) — at the scroller's z-index (1). It comes before the scroller in the
   DOM, so the svg paints over it. It is drawn in screen space and is not part of the iso
   framework. `MobileTabScreen`'s `surfaceColor` follows the same palette's sky, but the
-  backdrop covers it everywhere above the footer.
+  backdrop covers it everywhere. Each repaint also hands the slab footer its cast-shadow
+  colour (`setFooterCastShadow`, § Footer). `SpeedLines` likewise runs to the screen's
+  bottom (`bottom={0}`), behind the slab.
 - **Altitude, not time.** The scene memo gives it `spaceBand`: the viewBox y's of cards
   `SPACE_BAND_CARDS.from` and `.to` on the tower's axis. On each scroll it maps the
-  middle of the visible scroller to a viewBox y and gets `t` (0 below the band, 1 above
-  it).
+  middle of the visible scroller (above the footer spacer, `scrollerBottomInset`) to a
+  viewBox y and gets `t` (0 below the band, 1 above it). While the tower is studied the
+  page hands it the camera's altitude instead (`altitudeY`, § Studying the tower).
   - It measures the scene through the scroller's direct `<svg>` child
     (`:scope > svg`), not its first child — the scroller also holds the page's
     falling-shadow `<style>`.
@@ -365,6 +532,8 @@ On a tall tower the sky turns into space as the learner scrolls up.
     each change repaints at once, without waiting for a scroll.
   - The stars fade in on `smoothstep(0.35, 1, t)` (`STARS_FADE_FROM`), so they never
     show on a light sky.
+  - At night the stars already show faintly from the ground (`groundStars`, § Time of day);
+    the fade-in only takes over once it is stronger.
   - Scrolling back down brings the sky back. A tower whose top stays below the band
     never sees space. One just short of it can show a slight darkening at its top,
     because the screen's middle sits in the `TOP_HEADROOM` sky above the top card.
@@ -378,17 +547,19 @@ On a tall tower the sky turns into space as the learner scrolls up.
 
 ## Tap to Start
 
-Tapping the **Learn Now** tower opens that world's flp in Mix — `/flashcards/learn`
-(core) or `/flashcards/learn?world=<reading|writing>`, the same path `FlpStudyHand`'s Mix
-card builds. A white "Tap to Start" with a thick, filled arrow is painted on the sky,
-pointing down at the tower.
+Tapping the **Learning** tower studies that world's Learning deck in Mix, in place
+(§ Studying the tower) — the same deal `FlpStudyHand`'s Mix card opens
+(`handLaunchRequest("mix", world)`). Until 2026-10-24 it navigated to `/flashcards/learn`
+(`?world=` for the skill worlds); that route still exists, unchanged, and is to be retired
+once the in-place study is settled ([DEFERRED_WORK.md](./DEFERRED_WORK.md)). A white
+"Tap to Start" with a thick, filled arrow is painted on the sky, pointing down at the tower.
 
 Code: `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`;
 `DeckTowerPage.tsx` → `startable`, `onStackTap`, `hintFit`, `TAP_HINT_FIT_CARDS`, `fitScene`
 (`minX`, `width`, `towerTopY`); `DeckTowerPlatform.tsx` → `stack.onTap`.
 
-- **When.** `startable`: the plate and the tower both show Learn Now, no swap is running,
-  the count has loaded and is above 0. The tap is also refused mid-pan and mid-resize, and
+- **When.** `startable`: the plate and the tower both show Learning, no swap or study is
+  running, the count has loaded and is above 0. The tap is also refused mid-pan and mid-resize, and
   after a drag (`worldSwipe.wasDrag()`), so the click that ends a world swipe or a scroll
   does not start a session. The Mastered tower never starts a session and never shows
   the hint. The hint fades (220 ms) rather than cutting.
@@ -405,9 +576,315 @@ Code: `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`;
   words stand above the svg's top edge and still paint (the scene svg is
   `overflow: visible`). It ignores pointer events: the tap belongs to the stack.
 
+## Studying the tower
+
+`useTowerStudy.ts` (the state machine and its clocks), `towerCamera.ts` (the camera's two
+ends), `iso/camera.ts` (`makeCameraProjector`, ISO_ART_FRAMEWORK.md § The camera),
+`DeckTowerPage.tsx` (`onStackTap`, `sceneProj`, `climbedOut`, `StudySession`, the fades),
+`TowerCoverCard.tsx` (the count card's slide),
+`DeckTowerPlatform.tsx` (`studyDrop`, `bobPaused`, `stack.printOpacity`, `plate.stowed`),
+`usePlateRecess.ts`, `useFocusLever.tsx` (`stowed`),
+`src/features/flashcards/FlashcardsLearnPage/flpTowerHost.ts` (`FlpTowerHost`),
+`src/features/flashcards/FlashcardsLearnPage/towerPlate.ts` (`towerPlateSx`, `towerPlatePressSx`),
+`src/minutePoints/studySurface.ts`, `TowerStudyHeader.tsx`,
+`studyPlatformStore.ts` (`useStudyPlatformHidden`; § "Hiding the platform" below).
+
+A tap on a Learning tower (core, reading or writing — the same code for every world)
+does not navigate. The camera dives onto the tower's top card — the count card, "N
+cards", as it stands — which then slides off the deck by itself to uncover the flp
+session's first card lying exactly where it was, and the learner studies the tower down.
+It is meant to read as using the deck: take the top card off, work through the cards
+under it. The session is page state: no route, no URL.
+
+```
+idle ──tap──▶ preparing ──(deal in + card measured)──▶ diving ──▶ uncovering ──▶ studying
+  ▲                                                                                │ back / dry
+  └──────────────────────────── climbing ◀──────────── covering ◀──────────────────┘
+```
+
+- **Parked sessions** (`useTowerStudy` → `sessions`, `visitedWorld`, `PARKED_LOOP_FRESH_MS`;
+  `FlpTowerHost.parked`; DeckTowerPage's `deck-tower-page__study-layer--parked`). Each
+  world's flp session MOUNTS the first time the learner visits that world — on page open
+  for the world on screen — and stays mounted for the page's life, dealt and hidden under
+  the tower: leaving the world does not unmount it, so panning back and forth fetches
+  nothing, and a tap dives straight onto a session already laid out. A parked layer is
+  laid out (so its card measures) but drawn as `opacity: 0` + `clip-path: inset(50%)`,
+  which hides every child whatever its own `visibility` and takes no hits. Its host is a
+  fixed object per world (`parkedHostFor`), so the memoised session never re-renders for
+  the tower's frames; every session reports through its own world's handles
+  (`handlesFor`), and only the studied one's reports move the tower. While parked the flp
+  draws no header (one PageHeader at a time), leaves the tab title alone
+  (`usePageTitle(null)`), holds the lent-cards notice and narrates nothing — the first card
+  is narrated when the visit starts. A climb-out PARKS the session again with its working
+  loop kept; what belonged to the visit is reset on that edge (FlashcardsLearnPage's
+  parking effect): undo is cleared (the tower was reconciled, so undoing would put back a
+  card already counted), the sort offer is re-armed, the game-break counter starts over
+  (`useGameBreak` → `reset`), the eip closes, and a card flipped but not yet marked is
+  turned back to Side 1 (`useCardDrag` → `resetCard`; a writing card's graded attempt is
+  wiped too, `useWritingFlashcard` → `resetAttempt`) — a visit never opens flipped. The lent words reviewed stay on the
+  offer's list across visits. A session whose deal is older than `PARKED_LOOP_FRESH_MS`
+  (5 min, from mount or its last climb-out) is RE-DEALT on its next tap: its layer is
+  re-keyed, so it remounts and fetches afresh while the tap waits in `preparing`.
+- **Preparing.** The world's parked session is un-parked — still invisible
+  (`sessionOpacity` 0, no pointer events) — and its card's box measured at once (it is
+  already laid out); the camera must know where it is flying to. If the session's deal is
+  still loading (a fresh visit, or a re-deal) the tap waits for its `onLoopChange`. The box is
+  measured into the scene's viewBox units (`toSceneFrame`), re-measured two frames on (the
+  flp settles its card slot over its first frames) and on every resize. The platform's
+  bob is frozen (IsoLevitate `paused`) and its frozen offset read back
+  (`frozenBobOffsetPx`) so the camera aims at where the tower really stands. After
+  `PREPARE_TIMEOUT_MS` (5 s) without a card it dives onto a fallback frame.
+- **The dive** (`DIVE_MS` 1250, `easeDive` cubic in-out). The scene's projector becomes
+  the study camera (`sceneProj` = `makeCameraProjector(study.view)`): at e = 0 it is
+  exactly the page's fixed dimetric view, whatever the scroll, so nothing jumps; at e = 1
+  it looks straight down on the top face, **head-on** — the camera over the card's
+  centre, `STUDY_CAMERA_HEIGHT` (14 units) above it, so everything under the top card
+  recedes behind it and only the platform shows around it — with the face filling the
+  measured card box. `studyCameraView` blends yaw, pitch and the z foreshortening
+  linearly, the scale geometrically and the perspective in by e². Every framing number
+  (the viewBox, the hint, the sky bands) stays in the fixed view (`proj`); the scene's fit
+  is frozen at the tapped tower's count (`fitCards`) and the scroller locked, so the svg
+  never moves under the camera. On `e`: the tower header, title and avatar fade out by
+  `TOWER_UI_GONE_AT` (0.4), clouds and wind by `SKY_TRAFFIC_GONE_AT` (0.3) (their
+  drifts are planned in the fixed view; none start while a study is up), and the session's
+  header and buttons fade in from `SESSION_FADE_FROM` (0.6). The session's CARDS do not
+  fade: they are hidden under the count card (`FlpTowerHost.cardsCovered`, a
+  `clip-path: inset(50%)` on FlashCardSection's card frame that keeps the box measurable —
+  not `visibility: hidden`, which CardFace's facing side overrides with its own `visible`), and the top card keeps its print
+  all the way down. The footer slides away from the tap
+  (`useHideFooter`), and the scroller's footer band opens with the dive (`footerBand`).
+- **The floor fixtures** (`DeckTowerPage` → `fixturesStowed`: from the dive's start — not
+  while preparing — through `covering`; not for a dive made with the platform hidden,
+  `stowSkipped`, until the platform is brought back mid-session, when they snap stowed —
+  § "Hiding the platform"). The studied world's floor is cleared on a clock,
+  not on `e`, `FIXTURE_STOW_DELAY_MS` (150 ms) after the dive starts — the camera visibly
+  under way first — so it plays while the floor is still in view. The holes are lined with
+  the world's own platform wall tones (IsoFloorRecess / IsoHatch `inside` =
+  `world.platform.material`):
+  - **The plate** (`usePlateRecess`, drawn by `IsoFloorRecess` in `DeckTowerPlatform` →
+    `plateDecal`) recedes into the platform, leaving a plate-shaped hole: its top sinks from
+    the raised rest to `RECESS_DEPTH` (0.6 units) below the floor (380 ms, ease-in), the empty
+    hole holds 120 ms, then the plug is swapped for a block of floor at the same depth, which
+    rises flush (460 ms, ease-out, no overshoot) — about 960 ms, so with the delay it ends
+    ~1110 ms in, inside `DIVE_MS`. Stowed and
+    settled, nothing is drawn: the floor is unbroken. A pawn standing on the plate rides it
+    down into the hole (the plug's top is its step, `plateStep`; it is clipped to the opening
+    while its feet are under the floor, IsoPawn `opening`) and comes back up with the floor,
+    launched off the rise like off a released press. A pawn walking up to the open hole hops
+    down into it. While the recess moves the plate is no button and draws no shaded copy for
+    the pawn's shadow.
+  - **The focus lever** (`useFocusLever` `stowed`) recedes into its hatch and the flaps shut —
+    its ordinary `usePopUpMotion` hide.
+  - **The climb** (`climbing`) reverses both, the same 150 ms after the climb starts (so the
+    plate settles ~60 ms after `CLIMB_MS` ends; it is no button until it does): the floor plug sinks, the hole holds, the plate
+    rises back with the push button's spring (`easeOutBack`); the lever's flaps open and it
+    rises. A back tap mid-dive retargets whatever is moving.
+- **The count card** (`uncovering`, `TowerCoverCard`). Once the camera is down, the top
+  card is handed to a layer of its own OVER the session — the session's cards are DOM over
+  the scene svg, so a card drawn in the scene could only pass under them. The layer draws
+  the same IsoCard (the tower's footprint, one card thick, its face at the tower top, the
+  same print) in a small svg through the camera's on-the-card view (`studyCameraView` at
+  e = 1, with no bob), laid on the session's card frame on screen: at e = 1 the face lands
+  on exactly that box, so the hand-over is invisible. In the same commit the scene's top
+  card loses its print (`towerPrintShown` → `stack.printOpacity` 0) and the session's
+  cards are uncovered under it. They cast no drop shadow on the tower (`FlashCardSection`
+  `towerStack` → FlashCard `towerStock`): they lie flush on the deck like the scene's top
+  card, so nothing appears around the card's border when it is uncovered. The card rests `COVER_LIFT_DELAY_MS` (160), then slides
+  off to the right, turning as it goes (`COVER_LIFT_MS` 520, ease-in), and the phase
+  becomes `studying`. Its `SHADOW.lifted` drop shadow is not there at the hand-over (the
+  scene's top card casts none, so it would snap a halo on): it grows in from the start of
+  the rest (`COVER_SHADOW_IN_MS` 500). On the way out (`covering`) it slides back on from
+  the right (`COVER_RETURN_MS` 420, ease-out) printed with the session's tally, its shadow
+  shrinking to nothing as it lands, and the scene's top card takes over as the climb starts. A tower that has run
+  out has no top card, so it climbs straight out; a back tap mid-dive climbs straight out
+  too (the count card never came off). `cameraDown` (uncovering, studying, covering) is
+  when the session owns the screen.
+- **Studying.** The session takes input once the count card is off. The tower page's own
+  header is UNMOUNTED while the camera is down (`wrapHeader` returns null on
+  `cameraDown`): the session's header
+  (`TowerStudyHeader`) is the page's one PageHeader, so only one minute-points tick runs.
+  The page claims the study surface (`useClaimStudySurface`), so it earns minute points
+  like `/flashcards/learn` does ([MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)),
+  and blocks the edge swipe (`useBlockEdgeSwipe`). The pawn keeps wandering: its motion
+  reads the camera through a ref, and its body is a projected 3D capsule + ball, so from
+  the straight-down camera it reads as a pawn seen from above — a round head with the body
+  peeking out — rather than a flat pill (ISO_ART_FRAMEWORK.md § IsoPawn → "View").
+
+  | Event (`FlpTowerHost`) | Tower | Camera |
+  |---|---|---|
+  | Correct swipe (`onMarked(true)`, at the swipe) | −1 card | follows the top down once the flown card has cleared the screen: waits `CARD_DROP_DELAY_MS` (= the whole fly-out, `CARD_FLY_OUT_MS` 450), then `CARD_DROP_MS` 240 ease-out — short so the one-card zoom reads as a punch. The target is read when the wait ends, so an undo or another swipe inside it lands on the tower as it stands |
+  | Incorrect swipe | unchanged — the flp flies the card fully off-screen left, then slides it back in under the new top card (FlashCardSection `towerStack`, `TOWER_TUCK_KEYFRAMES`) | stays |
+  | Undo of a correct mark (`onUndone(true)`) | +1 card | rises, `UNDO_RISE_MS` 380 |
+  | Tower reaches 0 while the session still deals (`onLoopChange` → `hasCard`) | the session's cards (the working loop's size) spawn in — § "The spawn" | rides the landing |
+  | Session runs dry (loaded, no card) | — | climbs out after `DRY_CLIMB_DELAY_MS` (700) |
+
+  **The flip lifts.** Turning the top card over does not happen flat on the deck: for the
+  flip's length the card rises toward the straight-down camera (grows to
+  `FLIP_LIFT_SCALE` 1.08, peaking at 40%, ease-out up and ease-in-out down) and a
+  `SHADOW.lifted` shadow fades in and out on the deck under it, then it sets back down
+  flush (`FlashCardSection.tsx` → `FLIP_LIFT_KEYFRAMES`, `FlipLiftShadow`, CardFace
+  `flipLift`, driven by `towerStack && !platformHidden && isFront && flipInProgress` — no
+  lift with the platform hidden, § "Hiding the platform"). The lift animates the
+  `scale` property, so the rotateY's linear `transform` transition — whose edge-on must land
+  at the time-midpoint for the away-face hide — is untouched; the shadow is its own
+  non-rotating element so it stays on the deck rather than turning with the card. The
+  tower's flip is also slower than the plain flp's — `TOWER_CARD_FLIP_MS` (350) vs
+  `CARD_FLIP_MS` (250), `src/features/flashcards/constants.ts` — so the lift has time to
+  read; everything timed off the flip takes that duration as `flipMs` (the rotation's
+  `cardFlipTransition`, CardFaceSide's away-face hide, `useCardDrag`'s flip lockout,
+  FlashCardSection's `flipInProgress` window). Only the tower flips this way; the plain
+  flp still flips in place at 250 ms.
+
+  The tower's count is the page's local tally: a correct mark comes off at the swipe, even
+  one the server later drops on cooldown. The climb-out reconcile corrects it.
+- **The spawn.** The sky drop (§ Tower resizes → `SKY_DROP`), re-drawn for this camera:
+  its plan and timing are the library's (`SKY_DROP.plan` → `fallMs`, the free-fall
+  curve, `IMPACT_MS`), but seen from straight above a fall is not a slide down the screen
+  — it is the stack shrinking away from the viewer — so the falling stack is re-projected
+  every frame at its world height (`StudyDrop.baseZ`, from `SPAWN_LIFT_SHARE` (0.85) of
+  the camera's height, so it starts swelling past the screen's edges), the smoke ring
+  bursts on landing (IsoSmokePuff, at the floor), and the platform's sink is a bump of the
+  camera's height (`impactSink`, the `deck-tower-platform-sink` keyframes as a function).
+  The cards are hidden (`cardsHidden`) until the impact is over.
+- **Hiding the platform** (`studyPlatformStore.ts` → `useStudyPlatformHidden`, owned by
+  `DeckTowerPage`; `TowerStudyHeader`'s eye button, `tower-study-header__platform-toggle`,
+  via `FlpTowerHost.platformHidden` / `onPlatformHiddenChange`). A per-device setting
+  (localStorage `deckTower.studyPlatformHidden`, off by default) for studying on the bare
+  sky. On, the studied world's platform — the slab, the pawns, the plate, the lever, but
+  NOT the deck — fades out ON THE DIVE and back in on the climb, on the dive's eased position
+  (`useTowerStudy` → `platformOpacity` = 1 − `e`, 0 while the camera is down;
+  `DeckTowerPlatform` `fadeOpacity`, through IsoPlatform `fadeStyle`). The deck stays: for
+  the whole visit with the toggle on (`keepDeck`) the tower's element is moved out of the
+  depth-sorted layers (its slot held by an empty `<g>`) into IsoPlatform's unfaded
+  `overlay`, riding the bob and the sink — only its floor shadow takes the fade
+  (`.deck-tower-page__kept-deck` rule, `--platform-fade`). So the camera still lands on the
+  count card, it still slides off (`uncovering`) and back on (`covering`), and the
+  session's own fade-in and fade-out (`sessionOpacity`) stay hidden under it as usual.
+  While kept, the deck is painted over everything on the platform, pawns in front of it
+  included — they are fading or gone then. Flipping the
+  toggle while the camera is down fades the platform over `PLATFORM_FADE_MS` 360
+  (`platformFadeEased`, a CSS transition only then — on the dive and climb the opacity is
+  per frame already). The floor fixtures do not stow on a hidden dive (the toggle is read
+  once per dive, `stowSkipped`, so flipping it mid-session never plays a recess) — they
+  fade out with the platform. But a hidden platform that comes BACK while the camera is
+  down (the toggle turned off mid-session) returns as if the dive had stowed them: the
+  plate already sunk and floored over, the lever already down with its hatch shut. They
+  are put away the instant the fade-in starts, while the platform is still invisible —
+  no recess, no `FIXTURE_STOW_DELAY_MS` (`DeckTowerPage` → `stowSnapped` / `snapFixtures`,
+  a layout effect; `usePlateRecess` `instant`, DeckTowerPlatform `plate.stowInstantly`;
+  `useFocusLever` `hideInstantly`) — and the climb brings them back the usual way. The latch
+  is cleared on the next dive. While it is on the camera stops following the tower: no correct-mark drop (the
+  zoom), no undo rise and no spawn sky drop — the count still changes (`setCards`), so the
+  climb-out reconcile is unaffected — and the flip does not lift (FlashCardSection
+  `platformHidden`). The camera is snapped back onto the tower's real top when the platform
+  returns: turning the toggle off mid-session (an effect on `platformHidden`) or leaving
+  (`climbOut`'s own settle). The sky's altitude follows the camera, so it also stays put
+  while the platform is hidden.
+- **Hint labels in the card's corners** (`FlashCardSection.tsx` → `TOWER_TOP_BAND_VARS` /
+  `PLAIN_TOP_BAND_VARS`; `FlashcardsLearnPage/styled.ts` → `SwipeHintLabel` /
+  `FlipHintLabel`; `src/features/flashcards/constants.ts` → `cardChromeInsetCss`). The flp's
+  hint labels (← Incorrect / Correct →, Tap to flip) are children of the card FRAME, in the
+  card's top-left / top-right corners (Tap to flip centred), vertically centred in the card's
+  top band (`--card-hint-band`) and in from the side by the card's corner radius. On the
+  tower the band is the stock's cream rim (`--card-stock-inset`); the plain flp has no rim, so
+  it is a fixed 30px row. They used to sit above the card in the slot, where on the tower they
+  landed on the platform's floor and its light top-edge bevel with no contrast. The card's
+  own top chrome — CardOpsRail's `•••` and the CardNote strip — sits just below the band
+  (`--card-chrome-inset` = band + 6px), so the corners are the labels'; surfaces whose frame
+  sets neither (the cdp) keep the chrome's old 11 / 10 px.
+- **The climb** (back arrow, a tap off the card, the sort offer's "Leave anyway", or a dry session). A tap off the card is Back: a press that starts and ends, without travelling, on the session's bare space round the card — `FlashcardsLearnPage` → `handleTowerOffCardTap`, matched against `TOWER_OFF_CARD_SELECTOR` (a whitelist of the content area's empty layout boxes, so the card and every control are excluded); off during an icon edit and a game break. Like the back arrow it goes through `handleBack`, so the sort offer still gets its turn. The dive
+  in reverse (`CLIMB_MS` 1050; a climb that cuts a dive short flies back from where it
+  had got to), after the count card is back on (`covering`, above). The tower header
+  remounts and fades back in, the session's header and buttons fade out and
+  unmounts at the end, the footer returns. Then `climbedOut` HOLDS the tower at the
+  session's count and re-reads the bar's counts (`useFlpReadyCounts.reload`); when they
+  land, `resolveRecount` plays a ghost collapse or a sky drop to the real figure — the
+  focus lever's path (§ Tower resizes). Every world reconciles. The refit from the frozen
+  session frame keeps the altitude (`keepClimbFor`).
+- **The backdrop** follows the camera's altitude (`studyAltitudeY`: from the view's
+  middle at the tap to the tower top's axis y, on `e`), on the same `SPACE_BAND_CARDS`
+  band as the scroll: studying down a tall tower brings the sky back from space, card by
+  card.
+- **The session.** It is `FlashcardsLearnPage` itself, lazily loaded (the
+  `/flashcards/learn` chunk) and memoised (`StudySession`), with a `tower` host
+  (`FlpTowerHost`): the host's world in Mix (the URL is ignored), `onExit` instead of a
+  navigation, transparent backgrounds, `TowerStudyHeader` (the flp header's back, undo
+  and narration controls, plus the tower's own platform toggle, in the tower's white-on-sky PageHeader style, titled
+  "Learning" / "Reading: Learning" / "Writing: Learning", `studyTitleFor`), and the
+  card stack as the tower's top card (`towerStack`: the next card waits flush under the
+  current one; an incorrect swipe is tucked back into the deck). The routed flp is
+  unchanged — and it is now LEGACY: this tower-hosted session is the app's one flp going
+  forward (decided 2026-10-26; DEFERRED_WORK.md #25), so new flp work targets the
+  `tower` path first.
+- **The card stock** (`CardFaceSide` `towerStock`, `src/features/flashcards/card/CardFace.tsx`;
+  `FlashCardSection.tsx` → `TOWER_STOCK_VARS`, FlashCard `towerStock`;
+  `src/features/flashcards/constants.ts` → `FLP_CARD_STOCK_INSET_RATIO`,
+  `FLP_CARD_PANEL_RADIUS_RATIO`). Both faces of every
+  session card are the tower's IsoCard stock: a cream rim (`COLORS.cardFace`) around a beige
+  printed panel (`COLORS.cardBeige`), inset `FLP_CARD_STOCK_INSET_RATIO` of the card's width
+  on every side (= IsoCard `FACE_PAD` / `CARD_W`), the panel's corner
+  `FLP_CARD_PANEL_RADIUS_RATIO` (= IsoCard `PANEL_RADIUS` / `CARD_W`). No hairline and no drop shadow — the tower's cards have neither. A custom
+  `cardColor` (advanced layout) fills the panel, not the rim, and icons are clipped to the
+  panel (`--card-icon-clip`, CARD_ICON_LAYOUT.md § "Where the clip lives"). Fixed tokens,
+  not the theme's `flashCard`: the page's study wash filter lights them like the scene.
+  See TOWER_STYLE_SHIFT.md § "Card stock".
+- **The buttons.** The session's page buttons — the word-tools rail's `Write it` and
+  `Compare` and the `More Info` pill — are the tower's floor-plate push button redrawn in
+  HTML (`src/features/flashcards/FlashcardsLearnPage/towerPlate.ts` → `towerPlateSx`):
+  a WHITE plate (`FlpTowerHost.plateTones` = `bandMaterial(COLORS.white)`,
+  `useTowerStudy.ts` → `STUDY_PLATE_TONES`: white face, walls stepped down to light greys), seen from the
+  straight-down camera as a face over one wall (`PLATE_WALL_PX` 5 ≈ `RAISED_HEIGHT`) with a
+  `SHADOW.chip` contact shadow and the plate's print (ink, bold, upper-case, tracked). A
+  press slides the face down flush (80 ms ease-out) and it springs back (220 ms overshoot) —
+  `usePlatePress`'s timings, done in CSS `:active` rather than the hook, and without its
+  wait-to-bottom-out before firing. No `COLORS.border` outline, like the scene's plate.
+  Wired through `WordToolsRail` `pillSx` (→ `PracticeWritingButton` `railSx`) and
+  `MoreInfoPill` `plate` (`styled.ts`). The rail's two plates are also sized down from the
+  shared pill (`towerPlate.ts` → `TOWER_RAIL_PILL_SIZE_SX`: 7 px vertical padding, 11 px type,
+  15 px glyph) and narrowed to a fixed-width centred pair (`TOWER_RAIL_PILL_WIDTH` 104 px each,
+  with `TOWER_RAIL_SX` pinning `Write it`'s Badge root); `More Info` keeps its size. The routed flp keeps its white full-size pills.
+- **The audio chip.** The study header's narration chip (`TowerStudyHeader` →
+  `AudioModeChip`) is NOT a plate: it passes `tone="bare"` with white `ink`
+  (`HeaderCycleChip` — no fill), so its glyph and label are plain white in every audio
+  mode; the label carries the state. A 1px white pill outline (`TowerStudyHeader` →
+  `AUDIO_OUTLINE_SX`) bundles the pair into one button — white rather than
+  `COLORS.border`, which is a paper hairline and goes muddy on the sky. Type 12 px and
+  glyph 15 px (`AUDIO_TEXT_PX` / `AUDIO_ICON_PX`); the label is centred in a box sized to
+  the longest label in its real face (`fitLabels` — the tower's font trial re-faces it, so
+  the mono `ch` width would be wrong). It was a grey floor plate until 2026-10-26, stripped
+  because a filled chip drew the eye off the card. Everywhere else the chip stays blue.
+- **Reduced motion** is not handled yet: the dive, the climb and the spawn always play
+  ([DEFERRED_WORK.md](./DEFERRED_WORK.md)).
+
+## Opening at the last height
+
+`towerHeightStore.ts` (`readTowerHeight`, `writeTowerHeight`), `DeckTowerPage.tsx`
+(`openedAtHeightFor`, `coreSettledCount`, `resolveRecount`).
+
+The main world's **Learning** tower opens at the height it last stood at on this device,
+then animates to today's figure: a learner who left with 10 cards, and had 5 come off
+cooldown overnight, opens on 10 and watches 5 drop in (a sky drop); cards that went on
+cooldown elsewhere (games mark cards too) ghost out (a ghost collapse).
+
+- **How.** On arrival (once per account + language, before the bar's counts land) the
+  stored height is `hold`-ed on main's `useTowerResize` against the counts' fetch
+  `version`; when the fetch settles, `resolveRecount` plays the shrink or grow — the same
+  path as the focus lever and the climb-out. An equal figure plays nothing. Nothing
+  stored (a first visit, another device, cleared storage): the tower simply stands at its
+  height.
+- **Stored** in localStorage under `deckTower.towerHeight:<user>:<language>:core:learn-now`
+  whenever main's Learning tower is SETTLED (not mid-resize, mid-swap or loading), and
+  card by card through a study of it.
+- **Main only.** The reading and writing worlds are visited far less, so their towers
+  would have grown a lot between visits: a big drop on nearly every visit is
+  demoralising. They open at their real height, as before. The Mastered deck is not
+  stored either.
+- **No build-up.** This replaced main's build-up on page load (2026-10-24).
+
 ## Palette notes
 
-The white page title on the worlds' `Mk` skies breaks v2's "colour never carries text" rule. That
+The white page title on the worlds' `Mk` skies breaks v2's "colour never carries text" rule
+(at dawn, sunset and night it is that white under the time-of-day wash, § Time of day). That
 copies the reference art's white logo on blue. Over space (`spaceOver(sky)`) it reads
 as normal light-on-dark. For the framework's colour divergence, see
 [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § Palette.

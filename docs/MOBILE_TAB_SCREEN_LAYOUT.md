@@ -211,7 +211,11 @@ bare 74/90 numbers are the design's geometry, not the on-screen one. Both fall b
 the bare numbers where there is no inset. See
 [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS status bar.
 
-**The flat bar is the only footer style** — there is no pill or in-flow variant.
+**The flat bar is the app-wide footer style** — there is no pill or in-flow variant.
+The one exception is the Deck Tower's floating **slab**, opted into by its route row
+(`footerStyle: "slab"`) and drawn by the same `MobileFooter` (`variant`), with its own
+`SLAB_FOOTER_*` geometry — see [DECK_TOWER.md](./DECK_TOWER.md) § Footer. The constants
+below describe the bar only.
 `MobileFooter` always renders the bar and anchors it to the nearest positioned
 ancestor, the phone frame (`MobileDemoFrame`'s `FrameRoot`, `position: relative`).
 

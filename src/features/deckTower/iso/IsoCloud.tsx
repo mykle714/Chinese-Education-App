@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import IsoSolid from "./IsoSolid";
 import { prism } from "./geometry";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { prefersReducedMotion } from "./skyTraffic";
 import type { CloudDrift } from "./useCloudDrifts";
 
@@ -36,6 +35,7 @@ const FADE_MS = 1600;
 
 const IsoCloud: React.FC<IsoCloudProps> = ({ drift }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const groupRef = useRef<SVGGElement>(null);
     const reduced = prefersReducedMotion();
 
@@ -79,7 +79,7 @@ const IsoCloud: React.FC<IsoCloudProps> = ({ drift }) => {
     return (
         <g className="iso-cloud" ref={groupRef} style={{ opacity: reduced ? 1 : 0 }}>
             {puffs.map((geometry, i) => (
-                <IsoSolid key={i} geometry={geometry} material={ISO.cloud} className="iso-cloud__puff" />
+                <IsoSolid key={i} geometry={geometry} material={palette.cloud} className="iso-cloud__puff" />
             ))}
         </g>
     );

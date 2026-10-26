@@ -104,7 +104,7 @@ returns to the Writing Center, scrolled to the belt and parked on the notebook's
       each other and stay nearest their own stroke.
 - **Counter** — in the header's right slot, left of the change-word button, drawn in the
   minute-points flame's shape (`FireCount`): one big filled `edit_note` glyph
-  (`FIRE_GLYPH_SIZE_PX`) beside a mono 11px count, in ink2 (`COLORS.iconColor`) — the
+  (`FIRE_GLYPH_SIZE_PX`) beside a mono count at `FIRE_COUNT_FONT_SIZE` (14px) in `FIRE_COUNT_INK` (medium), in ink2 (`COLORS.iconColor`) — the
   orange stays the flame's (`WritingNotebookPage` → `NotebookHeaderCount`). Hidden until a
   word is chosen and its count has loaded. See [Counter](#counter).
 - A failed cell save rolls the cell back and shows one status line under the bar.

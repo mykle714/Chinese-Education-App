@@ -49,4 +49,6 @@ export interface LastMarkUndoSnapshot {
     currentIndex: number;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
+    /** Whether the undone mark was CORRECT (a right swipe) — the Deck Tower regrows a card only for those. */
+    isCorrect: boolean;
 }

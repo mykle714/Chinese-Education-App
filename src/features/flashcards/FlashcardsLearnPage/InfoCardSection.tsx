@@ -1,7 +1,7 @@
 import { useRef, useEffect, forwardRef } from "react";
 import { Box } from "@mui/material";
 import SheetPanel, { type SheetPanelHandle } from "../../../components/sheet/SheetPanel";
-import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
+import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
@@ -37,7 +37,7 @@ interface InfoCardSectionProps {
     onAddToLibrary?: (entry: VocabEntry) => void;
     // The Learning TOGGLE under the header speaker (supersedes onAddToLibrary). Today:
     // the Dictionary page's eip, via EipSheet. See EipEntryHeader.
-    learnNow?: LearnNowToggleState;
+    learning?: LearningToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
     // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown
     // content — the Compare tab has no entry/breakdown/sub-tab of its own.
@@ -147,7 +147,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeakSentence,
     speakingKey,
     onAddToLibrary,
-    learnNow,
+    learning,
     compareTab,
     onSetCompareSlot,
     onCompareResult,
@@ -271,7 +271,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         onSpeakSentence={onSpeakSentence}
                         speakingKey={speakingKey}
                         onAddToLibrary={onAddToLibrary}
-                        learnNow={learnNow}
+                        learning={learning}
                         selectedSenseIndex={selectedSenseIndex}
                         onSelectSense={onSelectSense}
                         showSynonymsRelated={showSynonymsRelated}

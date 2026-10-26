@@ -742,8 +742,17 @@ export interface UserProfile {
   selectedLanguage?: Language;
   /** Whether the user appears on the public leaderboard. */
   isPublic?: boolean;
-  /** May download/validate dictionary entries (migration 104, docs/DATA_VALIDATION_SYSTEM.md). */
+  /**
+   * May download/validate dictionary entries (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
+   * DATA VALIDATION only — feature-testing tools ride `isFeatureTester`.
+   */
   isValidator?: boolean;
+  /**
+   * May use feature-testing tools — Study Challenge "Allow anytime", soft-intro override,
+   * banking always-play, the tester dashboard, the arena manual tick (migration 178).
+   * Distinct from isValidator, isTemplateAuthor and isAdmin.
+   */
+  isFeatureTester?: boolean;
   /** May author Night Market templates (migration 115). Distinct from isValidator. */
   isTemplateAuthor?: boolean;
   /**

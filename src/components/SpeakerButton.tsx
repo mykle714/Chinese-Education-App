@@ -13,7 +13,7 @@ interface SpeakerButtonProps {
 
 /**
  * The speaker's hit-target size, in px — pinned explicitly (not left to MUI's
- * `size="small"` padding + rem-based icon) because LearnNowToggle centers its "+"
+ * `size="small"` padding + rem-based icon) because LearningToggle centers its "+"
  * under the speaker using this number. It used to hard-code 32 while the real
  * button rendered at 30, leaving the "+" 1px off the speaker's axis.
  */

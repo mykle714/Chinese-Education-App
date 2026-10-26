@@ -2,8 +2,7 @@ import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
 import { prism, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoCarpet — a zone marked on a floor, the way Good Job zones a room with flat areas
@@ -23,8 +22,9 @@ interface IsoCarpetProps {
 
 const IsoCarpet: React.FC<IsoCarpetProps> = ({ rect, surface, thickness = 0.07 }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const geometry = useMemo(() => prism(proj, rect, surface.z, surface.z + thickness), [proj, rect, surface.z, thickness]);
-    return <IsoSolid geometry={geometry} material={ISO.carpet} className="iso-carpet" />;
+    return <IsoSolid geometry={geometry} material={palette.carpet} className="iso-carpet" />;
 };
 
 export default IsoCarpet;

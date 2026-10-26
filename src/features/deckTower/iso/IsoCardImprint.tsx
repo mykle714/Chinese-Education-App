@@ -38,7 +38,7 @@ const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface }) => {
             <path className="iso-card-imprint__outline" d={flatPath(proj, rect, surface.z)} fill={imprintTone} />
             {/* Same figure-over-caption layout as a card face (IsoCard), but the caption is
                 far larger: here it is the whole message, not a footnote under the figure. */}
-            <g className="iso-card-imprint__print" transform={faceTransform(proj, surface.z)} fill={printTone} fontFamily={FONTS.sans}>
+            <g className="iso-card-imprint__print" transform={faceTransform(proj, surface.z, { x: cx, y: cy })} fill={printTone} fontFamily={FONTS.cjk}>
                 <text
                     className="iso-card-imprint__figure"
                     x={cx}

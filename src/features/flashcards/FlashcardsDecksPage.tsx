@@ -118,7 +118,7 @@ const HAND_LAUNCH_REQUESTS = (["mix", "challenge", "review"] as const).map((id) 
 /**
  * Header controls supplied by the route wrapper. The fdp is the Home tab (`/`) as of
  * 2026-10-10, and `src/pages/HomePage.tsx` passes the account header through these —
- * the validator always-play toggle, the Settings gear and the profile picture. They
+ * the feature-tester always-play + si toggles, the Settings gear and the profile picture. They
  * arrive as props rather than being built here because the account controls belong to
  * no feature (AccountSheet lives in `src/pages/`), and `features/` must not import
  * `pages/` (docs/FRONTEND_LAYERING.md § Dependency direction).
@@ -161,9 +161,9 @@ const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraAc
     // The pills + sheets layer — read only for its state at the moment of leaving.
     const sheetsRef = useRef<DecksSheetsHandle | null>(null);
     // Lights the Sort Cards tile's "card count low" halo + badge (DecksTopRail).
-    // `learnNowCount` is undefined until the counts load successfully, so the glow never
+    // `learningCount` is undefined until the counts load successfully, so the glow never
     // flashes on arrival or appears after a failed fetch.
-    const learnNowLow = panel.learnNowCount !== undefined && panel.learnNowCount < LEARN_NOW_LOW_THRESHOLD;
+    const learningLow = panel.learningCount !== undefined && panel.learningCount < LEARN_NOW_LOW_THRESHOLD;
 
     // ── Launching the flp from the hand (flpLaunch.ts) ───────────────────────
     // Start on a hand card loads the session HERE — the hand shakes (`loading`) — then
@@ -280,7 +280,7 @@ const FlashcardsDecksPage: React.FC<FlashcardsDecksPageProps> = ({ headerExtraAc
                     >
                         {/* The top rail — Center tiles + the Sort Cards tile, which
                             glows while core Learning is low (DecksTopRail). */}
-                        <DecksTopRail centers={centers} learnNowLow={learnNowLow} />
+                        <DecksTopRail centers={centers} learningLow={learningLow} />
 
                         {/* The card hand — Challenge / Review / Study Mix on the CORE bar.
                             Figures, Review gate and toast live in FlpStudyHand, shared with

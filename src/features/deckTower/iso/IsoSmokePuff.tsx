@@ -1,7 +1,6 @@
 import React, { useMemo } from "react";
 import { roundedRectWorld, type WorldRect } from "./geometry";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoSmokePuff — the burst of dust where something heavy lands (docs/ISO_ART_FRAMEWORK.md
@@ -72,6 +71,7 @@ function perimeterSamples(outline: { x: number; y: number }[], count: number): {
 
 const IsoSmokePuff: React.FC<IsoSmokePuffProps> = ({ rect, z, side, delayMs = 0 }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const puffs = useMemo(() => {
         const outline = perimeterSamples(roundedRectWorld(rect), PUFF_COUNT);
         const cx = rect.x + rect.w / 2;
@@ -93,7 +93,7 @@ const IsoSmokePuff: React.FC<IsoSmokePuffProps> = ({ rect, z, side, delayMs = 0 
             out.push({
                 x: from.x,
                 y: from.y,
-                r: (PUFF_R_MIN + Math.abs(wobble) * (PUFF_R_MAX - PUFF_R_MIN)) * proj.unit,
+                r: (PUFF_R_MIN + Math.abs(wobble) * (PUFF_R_MAX - PUFF_R_MIN)) * proj.scaleAt(p.x, p.y, z),
                 dx: to.x - from.x,
                 dy: to.y - from.y,
                 delay: delayMs + Math.abs(wobble) * 60,
@@ -112,7 +112,7 @@ const IsoSmokePuff: React.FC<IsoSmokePuffProps> = ({ rect, z, side, delayMs = 0 
                     cx={p.x}
                     cy={p.y}
                     r={p.r}
-                    fill={ISO.smoke}
+                    fill={palette.smoke}
                     style={
                         {
                             "--puff-dx": `${p.dx.toFixed(2)}px`,

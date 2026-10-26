@@ -125,8 +125,11 @@ export class ArenaController {
    * without this endpoint the entire feature is untestable locally: arenas would
    * never form on a dev machine and the board would be permanently empty.
    *
-   * Gated to validators, who are the closest thing to an admin role this app
-   * has. It is idempotent — formation checks arenaExistsForBucket and resolution
+   * Gated to feature testers (users."isFeatureTester", migration 178) via
+   * ArenaService.canManuallyTick — a DB read, because `req.user` is the decoded JWT
+   * ({ userId, email }) and never carries grant flags. (It used to read
+   * `req.user.isValidator`, which was always undefined, so the lever 403'd for
+   * everyone.) It is idempotent — formation checks arenaExistsForBucket and resolution
    * guards on `resolvedAt IS NULL` — so a double tap is harmless.
    *
    * A non-zero `stranded` in the response means opted-in members whose week has
@@ -138,7 +141,7 @@ export class ArenaController {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      if (!(req as any).user?.isValidator) {
+      if (!(await this.arenaService.canManuallyTick(userId))) {
         res.status(403).json({ error: 'Not permitted' });
         return;
       }

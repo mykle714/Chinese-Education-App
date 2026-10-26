@@ -48,22 +48,31 @@ wg = writing games
 coaw = classification of all words
 deip = dictionary eip
 si = soft introduction
+rww = reading/writing world
+td = tower deck
 
 
-## Terminology: "Learning" cards (and "Learn Now")
+## Terminology: "Learning" cards
 
-The `'library'` starter-pack bucket AND the `learn-now` built-in collection are
-presented to users as **"Learning"** (renamed from "Learn Now" 2026-10-20, which was
-itself renamed from "Library"). This is **front-end visible text only** — internal
-identifiers keep `library` / `learn-now`: the `StarterPackBucket` value `'library'`,
-API endpoint paths (`/add-to-library`, `/non-mastered-library-cards`, etc.), variable
-names (`onAddToLibrary`, `totalLibraryCards`), CSS class names
-(`flashcards-decks__library-*`), and the `'already-in-library'` API status are all
-unchanged because they are backend contracts. New user-facing copy for this
-bucket/collection says "Learning"; code/API keeps `library` / `learn-now`.
+**"Learning"** is the one word for cards still being learned — in UI copy, comments,
+docs, client-side names, and when discussing the app. It replaced "Learn Now"
+(consolidated 2026-10-26), which itself replaced "Library". Two different COUNTS share
+the name; say which one when it matters:
 
-**"Learn Now"** now means the learner's OFF-COOLDOWN cards (all four utcm bands), used
-only by the Deck Tower's tower deck ([docs/DECK_TOWER.md](./docs/DECK_TOWER.md)).
+| Where | What it counts | Read by |
+|---|---|---|
+| fdp Learning tile, the `learn-now` built-in collection, the `'library'` starter-pack bucket | every non-mastered card (U+T+C), cooling or not | `builtinCollectionCount({ kind: "learn-now" })` |
+| The Deck Tower's Learning deck (tower deck) | OFF-COOLDOWN cards in all four utcm bands (Mastered included) | `useFlpReadyCounts` + `bandTotal(…, TOWER_MODES.mix.bands)` — [docs/DECK_TOWER.md](./docs/DECK_TOWER.md) |
+
+**Backend contracts keep the old ids** and must not be renamed: the `'learn-now'` /
+`'learn-now-<bar>'` collection ids (wire values, also in URLs), `TowerDeckId`'s
+`"learn-now"`, the server-owned `server/contracts/wire.ts` names
+(`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`, `LEARN_NOW_LOW_THRESHOLD`,
+`LEARN_NOW_ENOUGH_THRESHOLD`), the `StarterPackBucket` value `'library'`, API paths
+(`/add-to-library`, `/non-mastered-library-cards`, …), and the `'already-in-library'`
+status. Client-side names use `learning` (`LEARNING_HUE`, `LearningToggle`,
+`useLearningToggle`, `learningCount`, `.learning-toggle`); some older `library` client
+names (`onAddToLibrary`, `totalLibraryCards`, `flashcards-decks__library-*`) remain.
 
 ## Night Market Coordinate System
 → Moved to the Coordinate System section of [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md) — asset coordinates are always isometric grid units (isoX, isoY); assets live in `src/assets/` (not `public/assets/`).

@@ -199,9 +199,9 @@ Constraints:
   component (`minutePointsFirePulse` in `MinutePointsFireBadge`). The banking keyframes
   follow that convention unless we decide to start one.
 
-## 8. Validator "always play" toggle (test tool)
+## 8. Feature-tester "always play" toggle (test tool)
 
-Validator accounts (`users.isValidator`) get a toggle in the hp header: `repeat` when off,
+Feature-tester accounts (`users.isFeatureTester`, migration 178; `isValidator` before) get a toggle in the hp header: `repeat` when off,
 `repeat_on` when on. It sits in the header's `extraActions`, to the left of the flame and
 off the embers' path.
 
@@ -213,7 +213,7 @@ POSTs `bankingSeen`, so after turning the toggle off, today counts as seen.
 - **Storage:** localStorage key `dailyBanking.alwaysPlay`, per device, with every access
   wrapped in try/catch. It has no server state because nothing about it needs to follow
   the account.
-- **Gate:** the provider honors the flag only when `user.isValidator`, so a stale key on a
+- **Gate:** the provider honors the flag only when `user.isFeatureTester`, so a stale key on a
   shared device cannot change a learner's experience.
 - **Still needs yesterday > 0.** With an empty yesterday there is nothing to drain, so
   nothing plays even with the toggle on (Q11a).

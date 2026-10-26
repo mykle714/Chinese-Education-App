@@ -41,7 +41,8 @@ import type { VocabEntry } from "../types";
  * with the card's edges reads as belonging to the card without being on it.
  *
  * Referenced by docs/SHELF_REDESIGN.md (artboards 18–25),
- * docs/PRACTICE_WRITING.md and docs/WORD_COMPARE_FEATURE.md ("Entry points").
+ * docs/PRACTICE_WRITING.md, docs/WORD_COMPARE_FEATURE.md ("Entry points") and
+ * docs/DECK_TOWER.md § "Studying the tower" → "The buttons" (`pillSx`).
  */
 
 export interface WordToolsRailProps {
@@ -53,9 +54,15 @@ export interface WordToolsRailProps {
     onCompare?: (entry: VocabEntry) => void;
     className?: string;
     sx?: SxProps<Theme>;
+    /**
+     * Layered over WORD_TOOL_PILL_SX on BOTH pills, so a host can restyle the rail's
+     * buttons without the two drifting apart — the Deck Tower session's plate buttons
+     * (src/features/flashcards/FlashcardsLearnPage/towerPlate.ts).
+     */
+    pillSx?: SxProps<Theme>;
 }
 
-export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, className, sx }) => {
+export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, className, sx, pillSx }) => {
     // Re-checked here purely to decide whether the CONTAINER is worth rendering;
     // PracticeWritingButton owns the real gate and returns null on its own.
     const writingEligible = entry.language === "zh" && [...entry.entryKey].length <= 4;
@@ -93,6 +100,7 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                 // writing mark rather than posting one against card 0.
                 vocabEntryId={entry.id || undefined}
                 appearance="rail"
+                railSx={pillSx}
             />
             {onCompare && (
                 <Typography
@@ -102,7 +110,7 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     onClick={(e) => { stop(e); onCompare(entry); }}
                     onMouseDown={stop}
                     onTouchStart={stop}
-                    sx={WORD_TOOL_PILL_SX}
+                    sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(pillSx) ? pillSx : [pillSx])]}
                 >
                     <Icon name="compare_arrows" size={17} />
                     Compare

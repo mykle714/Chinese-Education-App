@@ -3,16 +3,22 @@ import { Box } from "@mui/material";
 import Icon from "../../../components/Icon";
 import { COLORS } from "../../../theme/colors";
 import { SIZE, WEIGHT, LEADING } from "../../../theme/scale";
-import { FC_FONT } from "../constants";
+import { FC_FONT, cardChromeInsetCss } from "../constants";
 import { CARD_NOTE_MAX_LENGTH } from "../../../types";
 import type { VocabEntry } from "../types";
 
 /**
- * Right-hand berth reserved for the `•••` card-ops dot (`CardOpsRail`: `top/right: 11`,
- * a 30px puck). The note strip stops here so the two never overlap — this is the "spans
- * the area to the left of the triple dot menu" rule, as one number.
+ * Right-hand berth reserved for the `•••` card-ops dot (`CardOpsRail`: `top/right` at the
+ * card-chrome inset — 11px off the flp — and a 30px puck, + 8px clear). The note strip stops
+ * here so the two never overlap — this is the "spans the area to the left of the triple dot
+ * menu" rule, as one number.
  */
-const CARD_OPS_DOT_GUTTER = 49;
+const CARD_OPS_DOT_GUTTER = `calc(${cardChromeInsetCss(11)} + 38px)`;
+/**
+ * The strip's top/left inset: below the flp card's top band, where the flp's hint labels
+ * take the corners (`cardChromeInsetCss`); 10px elsewhere.
+ */
+const CARD_NOTE_INSET_CSS = cardChromeInsetCss(10);
 
 /**
  * `CardNote` — the learner's own note about ONE card (vet.note, migration 155), pinned to
@@ -119,10 +125,10 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
                 className={className ? `card-note ${className}` : "card-note"}
                 sx={{
                     position: "absolute",
-                    left: 10,
+                    left: CARD_NOTE_INSET_CSS,
                     // Stops short of the `•••`; the note owns the rest of the top edge.
                     right: CARD_OPS_DOT_GUTTER,
-                    top: 10,
+                    top: CARD_NOTE_INSET_CSS,
                     zIndex: 2,
                     // COMPLETELY INERT in read mode. The note is a label, not a control:
                     // every gesture that starts on it — a tap to flip, a swipe to mark —
@@ -216,11 +222,11 @@ export const CardNote: React.FC<CardNoteProps> = ({ entry, editing = false, onSa
             onClick={stop}
             sx={{
                 position: "absolute",
-                left: 10,
+                left: CARD_NOTE_INSET_CSS,
                 // Same berth as read mode: the editor must occupy the strip the note will
                 // occupy, or the learner types it at a width it is never displayed at.
                 right: CARD_OPS_DOT_GUTTER,
-                top: 10,
+                top: CARD_NOTE_INSET_CSS,
                 zIndex: 5,
                 borderRadius: "10px",
                 backgroundColor: "rgba(255,255,255,0.97)",

@@ -10,7 +10,7 @@ import { prefersReducedMotion, type PawnEntranceCue, type PawnEntranceFrame } fr
  *   visible false → true : the hatch's flaps swing down open, THEN the fixture rises out on
  *                          its lift, which stops flush with the floor.
  *                          OR, with a `skyEntrance` cue at that moment (a deck swap
- *                          arriving at Learn Now), it FALLS FROM THE SKY on the pawn's own
+ *                          arriving at Learning), it FALLS FROM THE SKY on the pawn's own
  *                          entrance timeline (pawnEntrances.ts → `FALL_FROM_SKY`), its
  *                          start shifted so it lands a staggered beat after the pawn
  *                          (DeckTowerPage → `fixtureArgs`). It falls already standing (sink 0,

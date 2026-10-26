@@ -161,8 +161,11 @@ interface MobileTabScreenProps {
     // Extra header actions rendered flush-right in the header.
     headerExtraActions?: ReactNode;
     // Rendered to the RIGHT of the minute-points flame (PageHeader `trailingContent`).
-    // Only Home uses it, for the Settings gear and the profile-picture button.
+    // Home uses it for the Settings gear and the profile-picture button; the Deck Tower
+    // for its profile picture.
     headerTrailingActions?: ReactNode;
+    // Header title ink, forwarded to PageHeader's `titleColor`. Deck Tower only.
+    headerTitleColor?: string;
     // Title scale override, forwarded to PageHeader. Pass "dense" when
     // `headerExtraActions` carries three or more controls — the title drops to 18px
     // so it stops colliding with them. See PageHeader's SIZE_SPEC.
@@ -214,6 +217,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     arrowDirection = "down",
     headerExtraActions,
     headerTrailingActions,
+    headerTitleColor,
     headerSize,
     surfaceColor = COLORS.background,
     contentSx,
@@ -247,6 +251,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
                         size={headerSize}
                         extraActions={headerExtraActions}
                         trailingActions={headerTrailingActions}
+                        titleColor={headerTitleColor}
                     />
                 );
                 return wrapHeader ? wrapHeader(header) : header;

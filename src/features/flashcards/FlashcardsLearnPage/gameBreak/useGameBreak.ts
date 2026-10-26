@@ -58,6 +58,8 @@ export interface UseGameBreakReturn {
     beginLeave: () => void;
     /** The exit animation finished: the stack comes back, the counter starts over. */
     finishLeave: () => void;
+    /** Counter back to 0, no break in progress (a Deck Tower visit ended). */
+    reset: () => void;
 }
 
 /**
@@ -236,6 +238,20 @@ export function useGameBreak(args: {
         setReturnNonce((n) => n + 1);
     }, [planned]);
 
+    /**
+     * Start the counter over with no break in progress — a Deck Tower visit ended and the
+     * session was parked (FlpTowerHost `parked`), so the next visit counts its own
+     * BREAK_INTERVAL. A break left mid-way is dropped; the return choreography still
+     * plays (unseen, the session is hidden) so the word tools are back for the next visit.
+     */
+    const reset = useCallback(() => {
+        setPlayRequested(false);
+        setPlanned(null);
+        setCardsSinceBreak(0);
+        if (phase !== "cards") setReturnNonce((n) => n + 1);
+        setPhase("cards");
+    }, [phase]);
+
     const stackHold: "due" | "active" | null = phase !== "cards" ? "active" : due ? "due" : null;
 
     return {
@@ -251,5 +267,6 @@ export function useGameBreak(args: {
         play,
         beginLeave,
         finishLeave,
+        reset,
     };
 }

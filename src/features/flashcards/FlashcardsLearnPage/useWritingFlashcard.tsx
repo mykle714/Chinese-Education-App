@@ -91,14 +91,22 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     // nonce does not replay the wiggle on the newly promoted front card.
     const [shakeNonce, setShakeNonce] = useState(0);
 
-    // A new front card starts a clean attempt (a dismiss, an undo-free refill, a refetch).
-    const entryId = entry?.id ?? null;
-    useEffect(() => {
+    // Wipes the front card's attempt back to blank cells. Run on every card change, and
+    // exposed for the page when the SAME card must start over — a Deck Tower visit ending
+    // (FlpTowerHost `parked`) turns a graded-but-unmarked card back to its front, and the
+    // next visit must not open on last visit's graded ink.
+    const resetAttempt = () => {
         setAttempt(blankAttempt(entry));
         setChecking(false);
         setEditing(null);
         setInspecting(null);
         setShakeNonce(0);
+    };
+
+    // A new front card starts a clean attempt (a dismiss, an undo-free refill, a refetch).
+    const entryId = entry?.id ?? null;
+    useEffect(() => {
+        resetAttempt();
         // Keyed on the id: the page's entry object can change identity every render.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [entryId]);
@@ -304,5 +312,5 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         </>
     ) : null;
 
-    return { renderFace, handleCardClick, swipeHandlers, shakeNonce, overlays };
+    return { renderFace, handleCardClick, swipeHandlers, shakeNonce, overlays, resetAttempt };
 }

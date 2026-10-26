@@ -1,11 +1,11 @@
 import React from "react";
-import { ISO } from "./iso";
+import { useIsoPalette } from "./iso";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 
 /**
  * TapToStartHint — "Tap to Start" painted on the Deck Tower's sky, with a thick arrow
- * pointing down at the Learn Now tower (docs/DECK_TOWER.md § "Tap to Start").
+ * pointing down at the Learning tower (docs/DECK_TOWER.md § "Tap to Start").
  *
  * Layer: page-private component (feature module `src/features/deckTower`). Flat white
  * paint, not an iso object — but drawn INSIDE the scene's svg (IsoScene), in its viewBox
@@ -22,7 +22,7 @@ import { WEIGHT } from "../../theme/scale";
  * ignores pointer events: the tap is the STACK's (DeckTowerPlatform `stack.onTap`),
  * never the hint's.
  *
- * Depends on: iso/palette.ts (`ISO.white`), theme/fonts + theme/scale.
+ * Depends on: iso (`useIsoPalette().white`), theme/fonts + theme/scale.
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start".
  */
 
@@ -43,11 +43,13 @@ interface TapToStartHintProps {
     centreX: number;
     /** viewBox y of the fit tower's top — the arrow points here. */
     tipY: number;
-    /** Shown (fades in/out — Learn Now only, and not mid-swap). */
+    /** Shown (fades in/out — Learning only, and not mid-swap). */
     visible: boolean;
 }
 
 const TapToStartHint: React.FC<TapToStartHintProps> = ({ centreX, tipY, visible }) => {
+    // White under the scene's time-of-day wash, like everything else painted on the sky.
+    const palette = useIsoPalette();
     // Stacked upward from the tip: head, shaft, gap, words.
     const tip = tipY - TIP_GAP;
     const headBase = tip - HEAD_LENGTH;
@@ -75,9 +77,9 @@ const TapToStartHint: React.FC<TapToStartHintProps> = ({ centreX, tipY, visible 
                 x={centreX}
                 y={baseline}
                 textAnchor="middle"
-                fill={ISO.white}
-                fontFamily={FONTS.sans}
-                fontWeight={WEIGHT.semibold}
+                fill={palette.white}
+                fontFamily={FONTS.cjk}
+                fontWeight={WEIGHT.bold}
                 fontSize={FONT_SIZE}
             >
                 Tap to Start
@@ -86,8 +88,8 @@ const TapToStartHint: React.FC<TapToStartHintProps> = ({ centreX, tipY, visible 
             <path
                 className="deck-tower-page__tap-hint-arrow"
                 d={arrow}
-                fill={ISO.white}
-                stroke={ISO.white}
+                fill={palette.white}
+                stroke={palette.white}
                 strokeWidth={3}
                 strokeLinejoin="round"
             />

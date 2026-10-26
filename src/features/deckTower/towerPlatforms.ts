@@ -1,4 +1,5 @@
 import { RIM_WIDTH, insetRect, leverFootprint, type PawnRoam, type WorldRect } from "./iso";
+import { FLP_CARD_ASPECT, FLP_CARD_CORNER_RATIO } from "../flashcards/constants";
 
 /**
  * towerPlatforms.ts — the Deck Tower's platform and the layout of everything on it
@@ -19,15 +20,22 @@ export const FLOOR_Z = 0;
 /** The sky's ground plane, below the platform — it receives the platform's shadow. */
 export const GROUND_Z = -PLATFORM_THICKNESS - 1.6;
 
-/** The card footprint — portrait, long side along world y. Centred on the platform. */
+/**
+ * The card footprint — portrait, long side along world y. Centred on the platform.
+ * Its proportions are the flp card's (`FLP_CARD_ASPECT`, the card FlashCardSection draws):
+ * the study camera lands the tower's top card exactly on the flp card laid over it
+ * (docs/DECK_TOWER.md § "Studying the tower"), so the two must be one shape — corners
+ * included (`FLP_CARD_CORNER_RATIO`, 0.45 at this width). Deepened from 6.6 (2026-10-24)
+ * to match.
+ */
 export const CARD_W = 4.8;
-export const CARD_D = 6.6;
+export const CARD_D = (CARD_W * FLP_CARD_ASPECT.height) / FLP_CARD_ASPECT.width;
 const CARD: WorldRect = {
     x: PLATFORM.x + (PLATFORM.w - CARD_W) / 2,
     y: PLATFORM.y + (PLATFORM.d - CARD_D) / 2,
     w: CARD_W,
     d: CARD_D,
-    r: 0.45,
+    r: CARD_W * FLP_CARD_CORNER_RATIO,
 };
 
 /**
@@ -49,8 +57,12 @@ const LABEL_PLATE: WorldRect = { x: CARD.x, y: CARD.y + CARD_D + 0.5, w: CARD_W,
  */
 const LEVER_AT = { x: 1.2, y: 9.85 };
 
-/** Where the pawn starts, front-right of the tower. From there it wanders (`roam`). */
-const PAWN_AT = { x: 9.55, y: 7.5 };
+/**
+ * Where the pawn starts, front-right of the tower. From there it wanders (`roam`). x sits
+ * ~1.2 units off the tower's right face (CARD x + w = 7.9) — nudged in from 9.55
+ * (2026-10-25); the walkable minimum is PAWN_FOOT_RADIUS + OBSTACLE_CLEARANCE off it.
+ */
+const PAWN_AT = { x: 9.1, y: 7.5 };
 
 export interface TowerPlatformLayout {
     platform: WorldRect;

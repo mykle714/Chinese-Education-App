@@ -6,6 +6,10 @@ import { CARD_OPS_CELL_SX, CARD_OPS_CELL_LABEL_SX } from "../cardOpsCell";
 import { COLORS } from "../../../theme/colors";
 import type { VocabEntry } from "../types";
 import { SHADOW } from "../../../theme/shadows";
+import { cardChromeInsetCss } from "../constants";
+
+/** The rail's top/right inset: below the flp card's top band (`cardChromeInsetCss`), 11px elsewhere. */
+const CARD_OPS_INSET_CSS = cardChromeInsetCss(11);
 
 /**
  * `CardOpsRail` — the design's `.cdot` / `.crail` (artboard 21): everything that
@@ -107,8 +111,8 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
                 onTouchEnd={stop}
                 sx={{
                     position: "absolute",
-                    top: 11,
-                    right: 11,
+                    top: CARD_OPS_INSET_CSS,
+                    right: CARD_OPS_INSET_CSS,
                     zIndex: 3,
                     display: "flex",
                     border: "none",
@@ -134,8 +138,8 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
             onTouchEnd={stop}
             sx={{
                 position: "absolute",
-                top: 11,
-                right: 11,
+                top: CARD_OPS_INSET_CSS,
+                right: CARD_OPS_INSET_CSS,
                 zIndex: 4,
                 display: "flex",
                 alignItems: "stretch",

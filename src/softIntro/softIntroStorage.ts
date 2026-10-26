@@ -73,7 +73,7 @@ function writeRecord(id: SoftIntroId, record: SoftIntroRecord): void {
 }
 
 /**
- * The si's NATURAL state for a mount starting now (ignoring any validator override).
+ * The si's NATURAL state for a mount starting now (ignoring any feature-tester override).
  * Graduates — and stamps `graduatedAt` — if the thresholds were met by EARLIER visits;
  * that is safe because nothing has been drawn yet for this mount. The visit this mount
  * represents is recorded separately, by `recordSoftIntroVisit`, after the first paint.
@@ -92,11 +92,11 @@ export function recordSoftIntroVisit(id: SoftIntroId, now: number = Date.now()):
     if (next !== record) writeRecord(id, next);
 }
 
-// ── Validator override ───────────────────────────────────────────────────────
+// ── Feature-tester override ──────────────────────────────────────────────────
 
 /**
- * The validator viewing override, app-wide (every si at once). `auto` = each si shows
- * the learner's real state. It is honoured only for `users.isValidator` accounts (the
+ * The feature-tester viewing override, app-wide (every si at once). `auto` = each si shows
+ * the learner's real state. It is honoured only for `users.isFeatureTester` accounts (migration 178) (the
  * hook checks), so a stale key on a shared device cannot change a learner's experience.
  * Forcing a state NEVER touches the records above.
  */

@@ -104,7 +104,7 @@ disagree.
 **Feedback while dragging — colour only, no overlay or label.** The card follows the
 finger with a slight tilt, and its own fill blends (`color-mix`) toward the colour of the
 **collection it joins**, reaching it in full at the commit distance: left = Learning
-gold (`LEARN_NOW_COLORS.main`), right = the core bar's Mastered blue
+gold (`LEARNING_COLORS.main`), right = the core bar's Mastered blue
 (`MASTERY_BAR_COLORS.core.main`) — the same surfaces the fdp draws those collections
 with (`src/utils/categoryColors.ts`). Release past `QUICK_MARK_COMMIT_PX` (60px, about
 two-thirds of the 92px card) or flick it, and it flies off (`CARD_FLY_OUT_MS`, fading)

@@ -2,7 +2,7 @@ import React from "react";
 import { Box } from "@mui/material";
 import type { IconLayoutItem } from "../types";
 import { iconImageUrl, iconItemStyle } from "./cardIconLayout";
-import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
+import { CARD_SURFACE_CLIP_RADIUS } from "../theme/surfaces";
 
 /**
  * CardIconLayer — read-only renderer for a saved custom icon arrangement on a
@@ -29,7 +29,11 @@ const CardIconLayer: React.FC<{ layout: IconLayoutItem[] }> = ({ layout }) => {
                 overflow: "hidden",
                 // Clipped to the same curve as the card face's inner clip box
                 // (CardFaceSide) — one pixel inside the face hairline.
-                borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
+                borderRadius: CARD_SURFACE_CLIP_RADIUS,
+                // A face can narrow the clip further: the Deck Tower's card stock cuts icons
+                // at its printed panel (CardFaceSide `towerStock` sets `--card-icon-clip`).
+                // Unset everywhere else → `none`, the card-edge clip above alone.
+                clipPath: "var(--card-icon-clip, none)",
                 pointerEvents: "none",
             }}
         >

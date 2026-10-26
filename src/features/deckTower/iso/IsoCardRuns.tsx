@@ -5,8 +5,7 @@ import { CARD_THICKNESS, isDrawnSeam } from "./cardStackMetrics";
 import { GHOST_FADE_MS, GHOST_WIRE_FADE_MS, LAND_HOP, LAND_HOP_MS, shadowLandTiming, type CardCollapsePlan } from "./cardCollapse";
 import { flatPath, frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoCardRuns — a card stack COLLAPSING: some of its cards ghost out, and the rest drop
@@ -63,6 +62,7 @@ const RUNS_CSS = `
 
 const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, bandColor, figure }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const gradientId = `iso-card-runs-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
     const baseZ = surface.z;
     const t = CARD_THICKNESS;
@@ -88,9 +88,9 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
             return (
                 <>
                     {geometry && <path className="iso-card-runs__walls" d={geometry.hull} fill={`url(#${gradientId})`} />}
-                    {geometry && <path className="iso-card-runs__top" d={geometry.top} fill={ISO.card.top} />}
+                    {geometry && <path className="iso-card-runs__top" d={geometry.top} fill={palette.card.top} />}
                     {seams.length > 0 && (
-                        <path className="iso-card-runs__seams" d={seams.join(" ")} fill="none" stroke={ISO.cardSeam} strokeWidth={1} strokeLinecap="round" />
+                        <path className="iso-card-runs__seams" d={seams.join(" ")} fill="none" stroke={palette.cardSeam} strokeWidth={1} strokeLinecap="round" />
                     )}
                 </>
             );
@@ -150,7 +150,7 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                 body: solid(landZ, r.count, r.hasLid),
             };
         });
-    }, [proj, rect, baseZ, t, plan, gradientId]);
+    }, [proj, rect, baseZ, t, plan, gradientId, palette.card.top, palette.cardSeam]);
 
     const front = prism(proj, rect, baseZ, baseZ + t);
     // The floor shadow is cast by the BOTTOM card. When that card is a ghost the shadow
@@ -183,8 +183,8 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                     x2={front.frontX + front.bevelHalfWidth}
                     y2={0}
                 >
-                    <stop offset="0" stopColor={ISO.card.left} />
-                    <stop offset="1" stopColor={ISO.card.right} />
+                    <stop offset="0" stopColor={palette.card.left} />
+                    <stop offset="1" stopColor={palette.card.right} />
                 </linearGradient>
             </defs>
             <g className="iso-card-runs__shadow" style={shadowStyle}>
@@ -199,7 +199,7 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                             <path
                                 d={p.wire}
                                 fill="none"
-                                stroke={ISO.ghostWire}
+                                stroke={palette.ghostWire}
                                 strokeOpacity={WIRE_OPACITY}
                                 strokeWidth={1}
                                 strokeLinejoin="round"

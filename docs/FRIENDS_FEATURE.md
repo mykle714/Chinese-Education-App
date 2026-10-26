@@ -79,10 +79,10 @@ Study Challenges: awaiting your response, accepted and waiting for Friday, open 
 recently finished.
 
 ⚠️ **One control on this page is not part of the friend model at all:** the
-validator-only **"Allow anytime"** switch, which lifts Study Challenge's calendar gates
+feature-tester-only **"Allow anytime"** switch, which lifts Study Challenge's calendar gates
 for testing ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). It is rendered here
-because this is where the weekly rules are felt, but it is gated on `users.isValidator`
-and is invisible to everybody else.
+because this is where the weekly rules are felt, but it is gated on `users.isFeatureTester`
+(migration 178) and is invisible to everybody else.
 
 **Why it hangs off `/friends` rather than sitting on the Menu hub:** a challenge is a
 thing you have *with a person*. Every entry point to it is a friend, unfriending ends it,

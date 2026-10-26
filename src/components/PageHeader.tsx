@@ -1,7 +1,7 @@
 import React from "react";
 import { COLORS } from "../theme/colors";
 import { Box, Typography } from "@mui/material";
-import { styled } from "@mui/material/styles";
+import { styled, type SxProps, type Theme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
 import { CYCLE_CHIP_FONT_PX, cycleChipFontPx } from "./cycleChipSizing";
@@ -75,12 +75,9 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
 
 /**
  * The header title's type style at a given size — face, weight, size, tracking and
- * leading, but NOT colour (the header sets ink; a page drawing its own title over a
- * coloured ground sets its own). Shared so a page-owned title can use the app's header
- * voice without copying the numbers. Depended on by: PageHeader (below) and
- * src/features/deckTower/DeckTowerPage.tsx (its floating "Learn Now" title).
+ * leading, but NOT colour (that is `titleColor`, below). Depended on by: PageHeader.
  */
-export const pageHeaderTitleTypeSx = (size: PageHeaderSize) => ({
+const pageHeaderTitleTypeSx = (size: PageHeaderSize) => ({
     fontFamily: FONTS.sans,
     fontSize: SIZE_SPEC[size].titleSize,
     fontWeight: WEIGHT.semibold,
@@ -170,9 +167,16 @@ interface PageHeaderProps {
     showFlame?: boolean;
     // Rendered to the RIGHT of the flame — the one thing allowed past it. Exists for
     // Home's Settings gear + profile-picture button (HeaderAvatarButton), which
-    // the user asked to sit in the far corner, gear beside the avatar. Every other page leaves this
+    // the user asked to sit in the far corner, gear beside the avatar — and for the Deck
+    // Tower's profile picture (DeckTowerAvatar). Every other page leaves this
     // unset, so the flame keeps its fixed corner everywhere else; see the right slot.
     trailingContent?: React.ReactNode;
+    // Title ink — and the back arrow's, when set. Defaults to `COLORS.onSurface` (the
+    // arrow to `COLORS.iconColor`). Only for a header drawn over a ground the default ink
+    // cannot read on — today the Deck Tower, whose sky darkens into space as a tower is
+    // climbed, and its study header over that sky (white, `ISO.white`;
+    // docs/DECK_TOWER.md § Layers, § "Studying the tower").
+    titleColor?: string;
 }
 
 const PageHeader: React.FC<PageHeaderProps> = ({
@@ -185,6 +189,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     safeAreaTop = true,
     showFlame = true,
     trailingContent,
+    titleColor,
 }) => {
     const navigate = useNavigate();
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
@@ -195,7 +200,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
             className="page-header__title"
             sx={{
                 ...pageHeaderTitleTypeSx(resolvedSize),
-                color: COLORS.onSurface,
+                color: titleColor ?? COLORS.onSurface,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -218,6 +223,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                         className="page-header__back-icon"
                         name={arrowDirection === "left" ? "arrow_back" : "keyboard_arrow_down"}
                         size={arrowDirection === "left" ? 21 : 22}
+                        color={titleColor}
                     />
                     {titleNode}
                 </BackGroup>
@@ -455,6 +461,21 @@ const CYCLE_CHIP_ICON_ALLOWANCE_PX = CYCLE_CHIP_ICON_PX + CYCLE_CHIP_ICON_GAP_PX
  * outline rule, by design call 2026-10-06). The inactive state is grey in both
  * tones. The blu tone also tags the chip `page-header__toggle--blu`, which is what
  * gameSurfaceSx reads to leave it blue rather than re-inking it on a game ground.
+ * `"bare"` drops the chip entirely — no fill, no padding, no corners — leaving the glyph
+ * and label as floating text in `ink` in EVERY state, so the label alone carries the
+ * state. A surface that still wants the pair read as ONE control draws its own outline
+ * through `sx` (the Deck Tower study header does). For a surface where a filled chip draws too much attention (the Deck Tower study
+ * header over the sky, 2026-10-26).
+ *
+ * `sx` is layered LAST, over the chip's own skin.
+ *
+ * `fitLabels` is the width rule for a chip whose `sx` changes its FONT. `widthCh` is
+ * measured in `ch` of the mono face, so it is only right while the chip stays mono; a
+ * restyled chip instead stacks EVERY label invisibly in the label box (one grid cell),
+ * which sizes the box to the longest label in whatever face, size and case the chip is
+ * actually set in — still a constant width across states, with no measurement to keep in
+ * sync. The label then inherits the chip's own size (the mono shrink rule, which exists
+ * to keep the mono chip narrow, does not apply). `iconPx` resizes the pinned glyph.
  *
  * Built for the audio-mode chip (mute / passthrough / media) — see
  * src/components/AudioModeChip.tsx and docs/AUDIO_PLAYBACK.md.
@@ -483,20 +504,35 @@ export const HeaderCycleChip: React.FC<{
      * string, or when a caller genuinely needs a size the rule would not choose.
      */
     fontPx?: number;
-    /** Active-state skin: solid ink (default) or mid blue. See the block comment. */
-    tone?: "ink" | "blu";
+    /** Active-state skin: solid ink (default), mid blue, or bare text. See the block comment. */
+    tone?: "ink" | "blu" | "bare";
+    /** The `bare` tone's text + glyph colour (default `COLORS.onSurface`); ignored otherwise. */
+    ink?: string;
     onClick?: () => void;
     className?: string;
-}> = ({ children, active, widthCh, icon, ariaLabel, fontPx, tone = "ink", onClick, className }) => {
+    /** Layered over the chip's own sx (see the block comment). */
+    sx?: SxProps<Theme>;
+    /**
+     * Every state's label: size the chip to the longest one in its ACTUAL font instead
+     * of by `widthCh` (see the block comment). For a chip whose `sx` changes its font.
+     */
+    fitLabels?: readonly string[];
+    /** The pinned glyph's size, px (default CYCLE_CHIP_ICON_PX). */
+    iconPx?: number;
+}> = ({ children, active, widthCh, icon, ariaLabel, fontPx, tone = "ink", onClick, className, sx, fitLabels, iconPx = CYCLE_CHIP_ICON_PX, ink = COLORS.onSurface }) => {
     // A string label sizes itself; anything else falls back to the full size, since the
-    // shrink rule is measured in characters and cannot read an arbitrary node.
-    const labelPx = fontPx
-        ?? (typeof children === "string" ? cycleChipFontPx(children) : CYCLE_CHIP_FONT_PX);
+    // shrink rule is measured in characters and cannot read an arbitrary node. A fitted
+    // chip's label inherits the chip's own (restyled) size instead.
+    const labelPx = fitLabels
+        ? "inherit"
+        : fontPx ?? (typeof children === "string" ? cycleChipFontPx(children) : CYCLE_CHIP_FONT_PX);
     // Resolved per tone so the fill, the text and the icon prop cannot disagree.
     const isBlu = tone === "blu";
+    const isBare = tone === "bare";
     const activeFill = isBlu ? COLORS.bluM : COLORS.onSurface;
     const activeInk = isBlu ? COLORS.onSurface : COLORS.white;
-    const fg = active ? activeInk : COLORS.iconColor;
+    // Bare: one ink in every state — there is no fill for the state to invert.
+    const fg = isBare ? ink : active ? activeInk : COLORS.iconColor;
     return (
         <Box
         className={[
@@ -509,7 +545,7 @@ export const HeaderCycleChip: React.FC<{
         onClick={onClick}
         role="button"
         aria-label={ariaLabel}
-        sx={{
+        sx={[{
             display: "inline-flex",
             alignItems: "center",
             // The icon is pinned left and the label takes the rest; see the block comment.
@@ -521,8 +557,8 @@ export const HeaderCycleChip: React.FC<{
             // font here would make the "fixed" width move with the label.
             fontSize: CYCLE_CHIP_FONT_PX,
             lineHeight: LEADING.none,
-            padding: "6px 8px",
-            borderRadius: "7px",
+            padding: isBare ? 0 : "6px 8px",
+            borderRadius: isBare ? 0 : "7px",
             whiteSpace: "nowrap",
             // `ch` against the mono face is one character advance, so `widthCh` chars
             // is EXACTLY the longest label with zero slack — enough for subpixel
@@ -530,18 +566,21 @@ export const HeaderCycleChip: React.FC<{
             // CYCLE_CHIP_SLACK_CH is the breathing room, added inside the derived
             // value so every state still measures identically. Callers derive `widthCh`
             // from `cycleChipWidthCh`, which already discounts any shrunken label.
-            width: icon
-                ? `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch + ${CYCLE_CHIP_ICON_ALLOWANCE_PX}px)`
-                : `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch)`,
-            backgroundColor: active ? activeFill : COLORS.grey,
+            // A fitted chip takes its width from its stacked labels instead (fitLabels).
+            width: fitLabels
+                ? "auto"
+                : icon
+                    ? `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch + ${CYCLE_CHIP_ICON_ALLOWANCE_PX}px)`
+                    : `calc(${widthCh}ch + ${CYCLE_CHIP_SLACK_CH}ch)`,
+            backgroundColor: isBare ? "transparent" : active ? activeFill : COLORS.grey,
             color: fg,
             cursor: "pointer",
-        }}
+        }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
         {icon && (
             <Icon
                 name={icon}
-                size={CYCLE_CHIP_ICON_PX}
+                size={iconPx}
                 color={fg}
             />
         )}
@@ -550,9 +589,24 @@ export const HeaderCycleChip: React.FC<{
             className="page-header__cycle-label"
             // flex:1 makes this span the whole of the chip minus the pinned icon, so the
             // word centres in the remaining space rather than in the chip as a whole.
-            sx={{ flex: 1, textAlign: "center", fontSize: labelPx }}
+            sx={{
+                flex: 1,
+                textAlign: "center",
+                fontSize: labelPx,
+                // Fitted: every label in one grid cell, so the cell is the longest one.
+                ...(fitLabels ? { display: "grid", "& > *": { gridArea: "1 / 1" } } : {}),
+            }}
         >
-            {children}
+            {fitLabels ? (
+                <>
+                    {fitLabels.map((l) => (
+                        <span key={l} className="page-header__cycle-sizer" aria-hidden style={{ visibility: "hidden" }}>
+                            {l}
+                        </span>
+                    ))}
+                    <span className="page-header__cycle-current">{children}</span>
+                </>
+            ) : children}
         </Box>
     </Box>
     );

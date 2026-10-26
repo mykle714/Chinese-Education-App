@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ISO } from "./iso";
+import { useIsoPalette, useIsoWash } from "./iso";
 
 /**
  * CardSplat — cards bursting up from the bottom of the screen, as if the falling tower
@@ -102,6 +102,9 @@ const CardSplat: React.FC<CardSplatProps> = ({ elapsedMs, floorY, minX, maxX, un
     // Rolled once on mount; the page passes the FALLEN tower's count and band (from the
     // swap view), not the new deck's.
     const [burst] = useState(() => ({ flyers: rollBurst(cards, minX, maxX), bandColor }));
+    // Card stock and the deck's band, under the scene's time-of-day wash.
+    const palette = useIsoPalette();
+    const wash = useIsoWash();
     if (elapsedMs >= SPLAT_MAX_MS) return null;
 
     return (
@@ -132,8 +135,8 @@ const CardSplat: React.FC<CardSplatProps> = ({ elapsedMs, floorY, minX, maxX, un
                             width={w}
                             height={h}
                             rx={rx}
-                            fill={faceUp ? ISO.card.top : ISO.card.left}
-                            stroke={ISO.cardSeam}
+                            fill={faceUp ? palette.card.top : palette.card.left}
+                            stroke={palette.cardSeam}
                             strokeWidth={1}
                             vectorEffect="non-scaling-stroke"
                         />
@@ -145,7 +148,7 @@ const CardSplat: React.FC<CardSplatProps> = ({ elapsedMs, floorY, minX, maxX, un
                                 width={w - 2 * rx}
                                 height={h * BAND_SHARE}
                                 rx={rx / 2}
-                                fill={burst.bandColor}
+                                fill={wash(burst.bandColor)}
                             />
                         )}
                     </g>

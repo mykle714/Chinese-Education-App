@@ -7,7 +7,8 @@ import {
     FC_FONT_CJK,
 } from "../constants";
 import { WEIGHT } from "../../../theme/scale";
-import { CARD_SURFACE, CARD_SURFACE_RADIUS } from "../../../theme/surfaces";
+import { COLORS } from "../../../theme/colors";
+import { CARD_SURFACE, CARD_SURFACE_CLIP_RADIUS } from "../../../theme/surfaces";
 import type { VocabEntry } from "../types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
@@ -393,7 +394,20 @@ export const CardFaceSide: React.FC<{
     // (WritingCardFace, docs/WRITING_PRACTICE_REWORK.md § 3). The face's surface, edge,
     // flip culling and `contentHidden` behave exactly as for any other face.
     fill?: React.ReactNode;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill }) => {
+    // The flip's duration (ms) the away-face hide is timed against — the Deck Tower's
+    // slower flip passes TOWER_CARD_FLIP_MS.
+    flipMs?: number;
+    // The Deck Tower's CARD STOCK (the tower-hosted flp, FlashCard `towerStock`): the face is
+    // the tower's IsoCard — a cream rim (`COLORS.cardFace`) around a beige printed panel
+    // (`COLORS.cardBeige`), no hairline. A custom `cardColor` fills the PANEL (the rim stays
+    // cream), and icons are clipped to the panel (`--card-icon-clip`, read by CardIconLayer
+    // and the fie canvas). The rim's width and the panel's corner come from the card frame's
+    // `--card-stock-inset` / `--card-panel-radius` (FlashCardSection `TOWER_STOCK_VARS`).
+    // Fixed tokens, not the theme's `flashCard`: the tower is one lit scene in every theme,
+    // and its time-of-day wash is applied over the study layer by the page.
+    // See docs/TOWER_STYLE_SHIFT.md § "Card stock".
+    towerStock?: boolean;
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill, flipMs = CARD_FLIP_MS, towerStock = false }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
@@ -401,7 +415,11 @@ export const CardFaceSide: React.FC<{
     // (`isUsingAdvancedLayout`, decided per face by the caller). A basic card, and any face the
     // caller has gated off (the flp Chinese front), ignores cardColor and follows the theme.
     // Resolve to a concrete hex, or undefined to keep the theme default.
-    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(cardColor) : undefined) ?? fc.flashCard;
+    const customBg = isUsingAdvancedLayout ? resolveCardColor(cardColor) : undefined;
+    // Tower stock: the face itself is the cream rim and the colour (custom or beige) moves
+    // onto the inset panel. Otherwise the whole face takes it.
+    const faceBg = towerStock ? COLORS.cardFace : customBg ?? fc.flashCard;
+    const panelBg = customBg ?? COLORS.cardBeige;
     const hasCustom = showIcon && !!iconLayout && iconLayout.length > 0;
     const editing = !!editCanvas;
     // The back face renders its two text blocks one of two ways:
@@ -431,9 +449,14 @@ export const CardFaceSide: React.FC<{
             // shadow (FlashCardSection's Card, the cdp's `*__hero-card` box) — applying it
             // on both would double it. `border-box` so the hairline eats into the face
             // rather than pushing it past the wrapper's 100% width.
-            border: CARD_SURFACE.border,
+            // Tower stock has no hairline: the tower's own cards are unoutlined, and this
+            // face lies exactly over one (a documented exception to the outline rule —
+            // docs/TOWER_STYLE_SHIFT.md).
+            border: towerStock ? "none" : CARD_SURFACE.border,
             borderRadius: CARD_SURFACE.borderRadius,
             boxSizing: "border-box",
+            // Icons on tower stock are cut at the panel's edge, not the card's.
+            ...(towerStock && { "--card-icon-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))" }),
             // NOT clipped here — see the inner clip box. The edit canvas (a child of this
             // outer box) needs overflow:visible so its selection indicators can poke past
             // the card edge into the surrounding padding.
@@ -444,15 +467,30 @@ export const CardFaceSide: React.FC<{
             // rotateY(180deg)), so we don't trust it for the visual. `inert` already
             // tracks "this face is facing away"; when so, force visibility:hidden but
             // DELAY it to exactly the mid-flip point — which, because the flip curve is
-            // LINEAR (CARD_FLIP_TRANSITION), is precisely 90° / edge-on, so the face
+            // LINEAR (cardFlipTransition), is precisely 90° / edge-on, so the face
             // vanishes at zero projected width with no mirror flash. The incoming face
             // is revealed immediately (no delay) on the way in.
             visibility: inert ? "hidden" : "visible",
-            transition: `visibility 0s ${inert ? CARD_FLIP_MS / 2 : 0}ms`,
+            transition: `visibility 0s ${inert ? flipMs / 2 : 0}ms`,
             ...(inert && { pointerEvents: "none" }),
             // See `contentHidden`: hide everything painted ON the face, keep the face itself.
-            ...(contentHidden && { "& > *": { visibility: "hidden" } }),
+            // The tower stock's panel is SURFACE, not content, so it stays.
+            ...(contentHidden && { "& > *:not(.card-face__stock-panel)": { visibility: "hidden" } }),
         }}>
+            {/* Tower stock's printed panel — FIRST, so the edit canvas, icons and text all
+                paint over it. Decorative: the face's content keeps the full-card layout. */}
+            {towerStock && (
+                <Box
+                    className="card-face__stock-panel"
+                    sx={{
+                        position: "absolute",
+                        inset: "var(--card-stock-inset)",
+                        borderRadius: "var(--card-panel-radius)",
+                        backgroundColor: panelBg,
+                        pointerEvents: "none",
+                    }}
+                />
+            )}
             {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection
                 overlay can escape the card boundary. The canvas clips its OWN icons to the
                 card internally, so partially-off-card icons are still cut off. */}
@@ -475,7 +513,7 @@ export const CardFaceSide: React.FC<{
                 // Clips content to the SAME curve the face draws, minus the hairline it
                 // sits inside — one less pixel of radius, or the icon layer shows a sliver
                 // of square corner outside the border.
-                borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
+                borderRadius: CARD_SURFACE_CLIP_RADIUS,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: CARD_FACE_JUSTIFY,

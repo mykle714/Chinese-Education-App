@@ -67,6 +67,16 @@ poke past the card boundary into the surrounding card padding while ordinary ico
 clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx`;
 `FlashCardSection.tsx` re-exports it.)
 
+**Narrower clip on the Deck Tower's card stock (`--card-icon-clip`).** Both icon clip
+layers — `CardIconLayer` and the canvas's `card-icon-canvas__clip` — also take
+`clipPath: var(--card-icon-clip, none)`. Only `CardFaceSide` `towerStock` sets it (to
+`inset(var(--card-stock-inset) round var(--card-panel-radius))`), so on the tower-hosted
+flp icons are cut at the beige printed panel rather than the card edge, and the editor shows
+the same cut the saved card will. Everywhere else it is unset → `none`. Text blocks are not
+narrowed. The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
+canvas, icons and text paint over it, and `contentHidden` spares it (it is surface).
+See [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower" → "The card stock".
+
 Two other things ride in that **outer** box for the same reason — they must paint over the
 icon layer and position against the face's own edge: `topRail` (the card-operations rail,
 [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21) and `noteSlot` (the learner's card

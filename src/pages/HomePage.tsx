@@ -15,7 +15,8 @@ import { useSlideNavigate } from "../hooks/useSlideNavigate";
 // the second tab as Menu (`/menu`, MenuPage). See docs/UX_AND_NAVIGATION.md.
 //
 // What stayed with the TAB rather than moving with the bento is the account header:
-//   • the validator "always play" toggle (renders null for everyone else),
+//   • the feature-tester test toggles — soft intro + banking "always play"
+//     (users.isFeatureTester, migration 178; render null for everyone else),
 //   • the Settings gear,
 //   • the profile picture, which raises AccountSheet,
 //   • and the daily banking run across the header flame, the avatar and the embers.
@@ -36,7 +37,7 @@ function HomePage() {
     return (
         <DailyBankingProvider>
             <FlashcardsDecksPage
-                // Validator-only test toggles, left of the flame: the banking run on
+                // Feature-tester-only test toggles, left of the flame: the banking run on
                 // every Home landing, and the soft-introduction viewer (Auto → Intro →
                 // Graduated) for the hand's card-count si (docs/SOFT_INTRODUCTION.md).
                 // Both render nothing for learners.

@@ -67,7 +67,16 @@ interface UseWorkingLoopArgs {
      * rebuild `handleCardDismiss` every render.
      */
     onDismissed?: () => void;
-    onUndone?: () => void;
+    /** `wasCorrect`: the undone mark was a right swipe (the snapshot's `isCorrect`). */
+    onUndone?: (wasCorrect: boolean) => void;
+    /**
+     * Fired with each dismiss's DIRECTION, alongside `onDismissed` (true = right swipe =
+     * correct). Optimistic: it fires at the swipe, before the server answers, so a
+     * correct mark the server later drops on cooldown still counted here. The Deck Tower
+     * takes a card off its tower per correct mark and reconciles against the server's
+     * figure when the session ends (docs/DECK_TOWER.md § "Studying the tower").
+     */
+    onMarked?: (isCorrect: boolean) => void;
 }
 
 export interface UseWorkingLoopReturn {
@@ -90,6 +99,7 @@ export interface UseWorkingLoopReturn {
      */
     handleCardDismiss: (direction: "left" | "right", writing?: WritingAttempt) => Promise<void>;
     handleUndoLastMark: () => Promise<void>;
+    clearUndo: () => void;
     /**
      * Temporary (provisional) words this session has SHOWN, accumulated across the
      * initial loop AND every refill. Empty when the learner's own deck covered the
@@ -125,10 +135,11 @@ export function useWorkingLoop({
     cardDragRef,
     onDismissed,
     onUndone,
+    onMarked,
 }: UseWorkingLoopArgs): UseWorkingLoopReturn {
-    // Latest-ref for the two counter callbacks (see UseWorkingLoopArgs.onDismissed).
-    const countersRef = useRef({ onDismissed, onUndone });
-    countersRef.current = { onDismissed, onUndone };
+    // Latest-ref for the counter callbacks (see UseWorkingLoopArgs.onDismissed).
+    const countersRef = useRef({ onDismissed, onUndone, onMarked });
+    countersRef.current = { onDismissed, onUndone, onMarked };
     // Which collection this session was launched from (docs/DECKS_FEATURE.md) — null
     // for an ordinary launch from the Review/Study/Challenge buttons. Read from the flp's own
     // URL, and threaded into BOTH the initial loop fetch and every mark call (which
@@ -388,7 +399,7 @@ export function useWorkingLoop({
         const isCorrect = direction === "right";
         // The prompt language showing on Side 1 decides the mark type.
         const markType = markTypeForSideOne(currentSideOneLanguage, world);
-        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMarks"> = {
+        const preDismissSnapshot: Omit<LastMarkUndoSnapshot, "cardId" | "markTimestamp" | "markType" | "displacedMarks" | "isCorrect"> = {
             workingLoop: [...workingLoop],
             currentIndex,
             currentSideOneLanguage,
@@ -397,6 +408,7 @@ export function useWorkingLoop({
 
         setIsAnimating(true);
         countersRef.current.onDismissed?.();
+        countersRef.current.onMarked?.(isCorrect);
 
         // Begin fly-out: current front slot animates off-screen in the swipe
         // direction. The back slot (already showing the next card) is immediately
@@ -490,6 +502,7 @@ export function useWorkingLoop({
                     markTimestamp,
                     markType,
                     displacedMarks,
+                    isCorrect,
                     ...preDismissSnapshot,
                 });
             })
@@ -536,7 +549,7 @@ export function useWorkingLoop({
             setCurrentSideOneLanguage(lastMarkUndoSnapshot.currentSideOneLanguage);
             setNextSideOneLanguage(lastMarkUndoSnapshot.nextSideOneLanguage);
             setLastMarkUndoSnapshot(null);
-            countersRef.current.onUndone?.();
+            countersRef.current.onUndone?.(lastMarkUndoSnapshot.isCorrect);
         } catch (err) {
             console.error("Failed to undo last mark:", err);
             setError(err instanceof Error ? err.message : "Failed to undo last mark");
@@ -545,6 +558,8 @@ export function useWorkingLoop({
         }
         // No `token` dep — see the note on markCard above.
     }, [lastMarkUndoSnapshot, isAnimating, isUndoing, cardDragRef]);
+
+    const clearUndo = useCallback(() => setLastMarkUndoSnapshot(null), []);
 
     return {
         workingLoop,
@@ -562,6 +577,8 @@ export function useWorkingLoop({
         nextSideOneLanguage,
         handleCardDismiss,
         handleUndoLastMark,
+        /** Forget the last mark's undo (a Deck Tower visit ended: FlpTowerHost `parked`). */
+        clearUndo,
         /** Lent words this session has SHOWN; drives the notice. */
         provisionalSeen,
         /** Lent words this session REVIEWED; drives the "keep these" offers. */

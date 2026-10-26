@@ -84,7 +84,7 @@ export interface DecksPanelState {
      * this drives the fdp Sort Cards tile's "card count low" glow (DecksTopRail), which must not
      * flash on page load or nag after a network error.
      */
-    learnNowCount: number | undefined;
+    learningCount: number | undefined;
 
     challengeDecks: DeckSummary[];
     authoredDecks: DeckSummary[];
@@ -328,8 +328,8 @@ export function useDecksPanel(lens: MasteryWorldId, restore?: DecksPanelSnapshot
     );
 
     // Same derivation as the Learning tile (builtinCollectionCount), held back until
-    // the counts are real — see `learnNowCount` on DecksPanelState.
-    const learnNowCount = useMemo(
+    // the counts are real — see `learningCount` on DecksPanelState.
+    const learningCount = useMemo(
         () => categoryCountsOk
             ? builtinCollectionCount({ kind: "learn-now", world: lens }, categoryCounts, masteredCounts)
             : undefined,
@@ -349,7 +349,7 @@ export function useDecksPanel(lens: MasteryWorldId, restore?: DecksPanelSnapshot
         collections,
         tileCount,
         categoryCounts,
-        learnNowCount,
+        learningCount,
         challengeDecks,
         authoredDecks,
         decksLoading,

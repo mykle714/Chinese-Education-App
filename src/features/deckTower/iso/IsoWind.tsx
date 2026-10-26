@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { toOpenPath } from "./geometry";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import type { WindGust } from "./useWindGusts";
 
 /**
@@ -46,6 +45,7 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 const IsoWind: React.FC<IsoWindProps> = ({ gust }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const groupRef = useRef<SVGGElement>(null);
     const strandRefs = useRef<(SVGPathElement | null)[]>([]);
 
@@ -100,7 +100,7 @@ const IsoWind: React.FC<IsoWindProps> = ({ gust }) => {
                     d={d}
                     pathLength={1}
                     fill="none"
-                    stroke={ISO.wind}
+                    stroke={palette.wind}
                     strokeWidth={STROKE_WIDTH * proj.unit}
                     strokeLinecap="round"
                     strokeLinejoin="round"

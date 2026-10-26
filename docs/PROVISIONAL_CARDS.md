@@ -784,7 +784,7 @@ earned in a game. It now branches, atomically, in one CTE:
 
 ### Removing from Learning demotes (dictionary eip toggle + vet cdp delete)
 
-Both the dictionary eip's "Added!" toggle (`LearnNowToggle` + `useLearnNowToggle`, on the
+Both the dictionary eip's "Added!" toggle (`LearningToggle` + `useLearningToggle`, on the
 Dictionary page's eip and the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
 confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —

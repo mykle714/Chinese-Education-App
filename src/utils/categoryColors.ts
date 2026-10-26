@@ -113,8 +113,8 @@ export const BAND_COLORS: Record<string, { main: string; accent: string }> = {
  * two tiers of its colour and a component takes a hue KEY when it does (theme/colors
  * § RAMP).
  */
-export const LEARN_NOW_HUE: RampHue = "yel";
-export const LEARN_NOW_COLORS = { main: RAMP[LEARN_NOW_HUE].surface, accent: RAMP[LEARN_NOW_HUE].tint } as const;
+export const LEARNING_HUE: RampHue = "yel";
+export const LEARNING_COLORS = { main: RAMP[LEARNING_HUE].surface, accent: RAMP[LEARNING_HUE].tint } as const;
 
 /**
  * The hue of each mastery bar's Mastered collection (the fdp's Mastered row,

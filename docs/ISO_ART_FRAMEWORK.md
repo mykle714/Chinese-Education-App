@@ -41,16 +41,18 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
 | Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
+| Math | `pawnFigure.ts` → `pawnFigure`, `circleHullPath` | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View") |
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoFloorRecess.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowTone` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
-| Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS` | The bob |
+| Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS`, `frozenBobOffsetPx` | The bob, and reading back where a paused one stopped |
 | Math | `geometry.ts` | Projection and shape math (below) |
+| Math | `camera.ts` → `makeCameraProjector`, `dimetricView`, `CameraView`, `DIMETRIC_Z_SCALE` | A moving camera with perspective that reproduces the fixed view exactly at one setting (§ The camera) |
 | Math | `cardStackMetrics.ts` → `cardStackMetrics` | Card thickness, stack height for N, and the seam-spacing rule (`SEAM_EVERY`, `isDrawnSeam`) |
 
 ## Geometry
@@ -64,7 +66,21 @@ World +x runs down-right, +y down-left and +z up. Screen coordinates are
 - **`flatPath`.** A rounded rect lying flat at height z. Used for floors, decals and
   shadows.
 - **`faceTransform`.** Maps flat world-unit drawing onto a top face, so printed text lies
-  on it. `faceAffine` is the same map as an `Affine`, for composing.
+  on it. `faceAffine` is the same map as an `Affine`, for composing. Both are built from
+  where a point `at` (pass the print's centre) and its two unit neighbours project, so
+  they work under any `Projector`: exact everywhere under the fixed view, exact at `at`
+  and a fraction of a px off a few units away under a perspective camera.
+- **`Projector`.** `{ unit, project, scaleAt, facingScaleAt }`. `scaleAt(x, y, z)` is the screen px per
+  world unit AT a point (the square root of the floor plane's area scale there) — equal to
+  `unit` everywhere under the fixed view, shrinking with distance under a perspective
+  camera. Anything that sizes itself in screen px (a stroke width, a radius) should use it
+  rather than `unit` (`IsoLever`'s stick and knob, `IsoSmokePuff`'s puffs, `prism`'s
+  bevel width, the pawn's shadow). `facingScaleAt(x, y, z)` is the px per world unit of a
+  length FACING the camera (the projected radius of a unit sphere): only perspective
+  shrinks it, so it is `unit·√2` under the fixed view, whose floor is foreshortened but
+  whose spheres are not. It sizes things drawn as true 3D round shapes (the pawn's figure,
+  `iso/pawnFigure.ts`). Code: `geometry.ts` → `Projector`, `makeProjector`; `camera.ts` →
+  `makeCameraProjector`.
 - **`frontContour`.** The visible front half of an outline. It is used for the card
   stack's seams.
 - **`insetRect` and `translateRect`.** Helpers that shrink, grow or slide a rect.
@@ -79,14 +95,84 @@ World +x runs down-right, +y down-left and +z up. Screen coordinates are
   anything already drawn flat at height z onto the swung plane. It is exact for flat things
   only. `hingedPlaneAffine` is the same map as an `Affine`, so it can be composed or
   inverted. Used by `IsoPlatform`'s `hingeAngle` and IsoFloorLabel's raised plate.
+- **`posedPrism`.** `prism` for a solid carried rigidly through space by any `place`
+  function (world point → where it is now): a rigid motion keeps the solid convex, so the
+  silhouette is still the hull of the two placed outlines. `hingedPrism` is `posedPrism`
+  with `hingePoint` (its only caller today).
+
+## The camera
+
+`camera.ts` → `makeCameraProjector(view)`. The fixed 2:1 view generalised into an orbit
+camera: relative to `target`, a point is turned by `yaw` about world z, its height scaled by
+`zScale`, tilted by `pitch` (π/3 = the iso tilt, 0 = straight down), scaled by `scale` px
+per unit and divided by `(1 − depth · perspective)` (1 / `perspective` is the camera's
+distance; anything that close or closer is clamped, `MIN_DEPTH_FACTOR`, not flipped),
+then placed so `target` lands on `screen`. `dimetricView(unit, target)` is the setting that
+reproduces `makeProjector(unit)` exactly (yaw π/4, pitch π/3, `zScale` √(2/3), `scale`
+unit·√2, no perspective) — so a camera can start on the frame already on screen with no
+jump (`__tests__/camera.test.ts` pins this).
+
+Used by the Deck Tower's dive onto its top card (DECK_TOWER.md § Studying the tower). What
+a moving camera changes for the objects:
+
+- They all draw through `project`, so they follow it. A memoised geometry keyed on `proj`
+  recomputes each frame the camera moves.
+- Screen-px sizes use `scaleAt` (§ Geometry → `Projector`).
+- Prints use `faceTransform` with their centre (§ Geometry).
+- The CSS screen-y slides (the bob, a sky drop's fall, the platform sink, the swap fall)
+  are only "up/down" under the fixed view. The bob is paused while the camera is away
+  (§ Levitation); the others belong to animations that only play in the fixed view.
+- The pawn is a projected 3D figure, so it looks right from any angle (§ IsoPawn → "View").
+- Hinged planes (`hingedPlaneAffine`) and the sky traffic's planned paths still assume
+  the fixed view.
 
 ## The scene
 
-`IsoScene` takes a `proj` (from `makeProjector(unit)`), a `viewBox` and an optional
+`IsoScene` takes a `proj` (from `makeProjector(unit)`, or a `makeCameraProjector` camera), a `viewBox` and an optional
 `preserveAspectRatio` (default centred; `"xMidYMax meet"` pins the scene to the bottom). Every object
 inside reads the projector from context (`useIsoProjector`, which throws outside a scene),
 so objects take world positions only and never a `proj` prop. The page fits the viewBox to
 its settled content, so the scene scales to any box.
+
+An optional `wash` lights the whole scene (§ Ambient wash): the scene provides the washed
+palette (`useIsoPalette`) and the wash itself (`useIsoWash`) to everything inside it.
+
+## Ambient wash
+
+`iso/wash.ts` → `IsoWash`, `NO_WASH`, `WashLight`, `lightWash`, `blendWash`, `washPalette`,
+`washMaterial`, `washTone`, `washColorMatrix`, `hexToOklch`, `oklchToHex`, `hueTurn`; `iso/sceneContext.ts` →
+`useIsoPalette`, `useIsoWash`; `IsoScene` `wash`.
+
+A wash is one colour transform, `(hex) => hex`, laid over every colour a scene paints — how
+the Deck Tower lights its scene for a time of day ([DECK_TOWER.md](./DECK_TOWER.md)
+§ "Time of day"). One rule, so nothing is washed twice:
+
+- **Objects read their constants from `useIsoPalette()`, never from `ISO`.** IsoScene builds
+  it once per wash (`washPalette`: every plain colour and every material tone of `ISO`).
+  Outside a washed scene it is plain `ISO`.
+- **Colours a caller passes in are the caller's to wash** — a platform `tone`, a `surface`
+  colour, a `bandColor`, a lever `knob`. A component inside the scene that passes its own
+  colours reads the wash with `useIsoWash()`. Prop defaults (`bandColor`, `knob`, `tone`)
+  fall back to the washed palette.
+- **Primitives paint what they are given** (`IsoSolid`, `IsoShadow`). A shadow's tone comes
+  from its receiver, which is already washed, so shadows follow.
+- **A light** (`WashLight`, `lightWash`): an sRGB mix `amount` toward `toward` (the cast —
+  what warms near-white card stock, which has no hue to turn), then OKLCH lightness × (1 −
+  `dim`) (dimming in OKLCH keeps the hue: a dim gold stays a darker orange, not olive).
+  `blendWash(a, b, t)` mixes two lights' RESULTS, exact at both ends, memoised per colour.
+
+Keep the wash's identity stable between renders: a new one re-washes the palette and
+re-renders every object.
+
+- **DOM content** (`washColorMatrix`). HTML laid over a washed scene (the Deck Tower's flp
+  session) is out of the palette's reach, so it takes the wash as one SVG `feColorMatrix`
+  filter on its layer, run with `color-interpolation-filters="sRGB"`. A wash is not affine
+  (its dim keeps OKLCH chroma), so the matrix approximates it: per channel, the affine map
+  through the wash's own black and white — exact on every grey, so card stock and ink match
+  the iso cards beside them — after a grey-preserving `saturate(s)` whose `s` is fitted by
+  least squares over the sRGB cube to restore the chroma an affine dim drains. Night (measured at the old 22% dim): RMS
+  error ≈ 10/255 (17.7 without the saturate); dawn is affine already. `null` for `NO_WASH`
+  — no filter at all by day.
 
 ## Surfaces
 
@@ -143,11 +229,18 @@ start, so they need no shared clock. Both stop under `prefers-reduced-motion`, l
 object at its lowest point, where its shadow was computed. A caller fitting a viewBox must
 allow `BOB_HEIGHT` of headroom.
 
+`paused` FREEZES both animations where they are (`animation-play-state`), so un-pausing
+carries on with no jump; the rise's px size (`--iso-bob`) is frozen with it, because a
+moving camera changes `unit` every frame. `IsoPlatform` passes it through as `bobPaused`.
+`levitation.ts` → `frozenBobOffsetPx(root)` reads back the screen-y offset a paused bob
+stopped at (the computed transform of the first `.iso-levitate__body` under `root`), so
+a camera can aim at where the object actually stands (the Deck Tower's study camera).
+
 ## Objects
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle? }`. A slab whose top,
+`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, overlay? }`. A slab whose top,
 the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
 from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
 `ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
@@ -161,10 +254,18 @@ It draws, in order:
    `insetRect(platform, RIM_WIDTH)`.
 4. `decals`: flat things printed on the floor (floor labels).
 5. `children`: the carpets and objects on the floor.
+6. `overlay`: drawn over everything, and left out of `fadeStyle`.
 
 With `floating`, steps 2–6 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
 the group holding steps 2–6, so a scene can move the whole loaded slab on top of the bob
 (the Deck Tower's landing sink, [DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
+
+**Fading.** `fadeStyle` (e.g. `{ opacity }`) lands on the groups holding steps 1–5 — but
+not on `overlay`. A group's opacity cannot be undone by a child, so anything that must stay
+opaque through a fade is passed as `overlay` instead, where it still rides the bob and
+`bodyStyle`. The Deck Tower fades its platform out on the study dive and keeps its deck as
+the overlay ([DECK_TOWER.md](./DECK_TOWER.md) § Studying the tower → "Hiding the
+platform").
 
 **Trap door.** `hingeAngle` (radians, 0 = shut) swings the slab open on its back-left
 top edge (`hingedPrism`).
@@ -189,11 +290,18 @@ the surface `{ z: surface.z + thickness, color: ISO.carpet.top }`.
 
 ### IsoCard
 
-`{ rect, z, thickness, figure?, label?, caption?, bandColor? }`. One flashcard: a `cardFace` top and
-`cardBeige` walls. The face carries:
+`{ rect, z, thickness, figure?, label?, caption?, bandColor?, printOpacity? }`. One flashcard: a `cardFace` top and
+`cardBeige` walls. `printOpacity` (default 1) fades everything printed on the face —
+panel, band, text — leaving the bare card stock (IsoCardStack passes it to its top card; the
+Deck Tower sets it to 0 while its study camera is down on the card, when the count card is
+drawn as its own layer — DECK_TOWER.md § Studying the tower → "The count card"). The face carries:
 
-- an inset beige panel;
-- a head band housing a small-caps `label` (`bandColor`, default `ISO.cardBand` blue) — drawn ONLY when a `label` is passed; without one the face has no band and the figure + caption centre on the whole panel (the Deck Tower passes neither);
+- an inset beige panel (`FACE_PAD` 0.34 units in from the edge, corner `PANEL_RADIUS` 0.24 —
+  rounder than concentric, and shared with the head band's corner. The tower-hosted flp
+  paints the same rim at `FLP_CARD_STOCK_INSET_RATIO` = `FACE_PAD` / `CARD_W` and
+  `FLP_CARD_PANEL_RADIUS_RATIO` = `PANEL_RADIUS` / `CARD_W`,
+  `src/features/flashcards/constants.ts`; retune each pair together);
+- a head band housing a small-caps `label` (`bandColor`, default `ISO.cardBand` blue) — drawn ONLY when a `label` is passed; without one the face has no band and the figure + caption centre on the whole panel (the Deck Tower passes both: the standing deck's plate label and `band`);
 - a big centred figure;
 - a caption (0.8 units).
 
@@ -201,7 +309,7 @@ The head is the low-y edge, because printed text runs along +x.
 
 ### IsoCardStack
 
-`{ rect, count, surface, progress?, label?, bandColor?, figure? }`. A deck of N cards (`bandColor` passes through to the top card). It is drawn as one body
+`{ rect, count, surface, progress?, label?, bandColor?, figure?, printOpacity? }`. A deck of N cards (`bandColor` and `printOpacity` pass through to the top card). It is drawn as one body
 solid plus a full `IsoCard` on top, not as N solids, because a deck can run to hundreds of
 cards. Seams (`frontContour`) under every other card suggest the individual cards. `cardStackMetrics` sets the
 proportions:
@@ -331,7 +439,7 @@ Used by `IsoLever` and `IsoModeSwitch`; animated by the Deck Tower's `usePopUpMo
 A rectangular (`w` across x by `d` along y; square when `d` is omitted) trapdoor in a floor that a fixture rises out of and sinks back into. It draws the
 hatch and frames the fixture; the fixture's body is `children(standZ)`, drawn standing at
 world z `standZ` (the lift's top). The hatch is two trapdoor flaps hinged on the hole's two x
-edges plus a **lift**, a floor-coloured slab (`surface.color` with shaded sides) filling the
+edges plus a **lift**, a floor-coloured slab (palette.ts → `floorSlabMaterial`) filling the
 hole that the fixture stands on. Risen, the lift is flush and drawn as just its top, unclipped,
 slightly larger than the hole, in the floor's colour: the floor under a standing fixture is
 unbroken, with no seam.
@@ -347,11 +455,35 @@ about its feet, and its shadow (`shadowFootprint`) stays under the landing spot,
 drawn while `air` is set, because the floor under it may still be moving; the Deck Tower drops
 its fixtures in on `FALL_FROM_SKY` ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5). Below-floor parts
 are hidden by clips: the lift always, and the fixture while `sink > 0`, by the hole's opening
-swept up the screen; the flaps by the opening itself (a hanging near flap is hidden under the
+swept up the screen (`hatchGeometry.ts` → `openingSweepPath`, shared with `IsoFloorRecess` and
+IsoPawn's `opening`); the flaps by the opening itself (a hanging near flap is hidden under the
 floor's front edge). Standing, the fixture is unclipped, so one that overhangs the hole's
 column must pull itself in while it passes through (IsoLever stands its stick upright).
 Scenes may target `iso-hatch__hole`, `__flap`, `__lift-top` and `__shadow` (the Deck Tower
-hides them on a fixture falling away with its floor).
+hides them on a fixture falling away with its floor). `inside` (a `Material`, optional) is the
+body under the floor — the Deck Tower passes its world's `platform.material` (through IsoLever
+`inside`) — and lines the hole: the open hole is palette.ts → `holeTone` (that body's darker,
+right wall tone — the hole's far walls face the viewer as the slab's outer walls do), and the
+lift's walls are `floorSlabMaterial` (the floor's colour on top, the body's walls). Without
+`inside` both fall back to the floor colour stepped down 0.1 / 0.18 (`insideMaterial`).
+
+### IsoFloorRecess
+
+*Code: `src/features/deckTower/iso/IsoFloorRecess.tsx`. Used by the Deck Tower's floor plate
+(`DeckTowerPlatform` → `plateDecal`), animated by `usePlateRecess`.*
+
+`{ rect, surface, inside?, plugTop, plugBase?, floorPlug?, className?, children? }`. A hole in a floor
+cut to the exact footprint of something that sinks into it, with a **plug** in it whose top
+stands `plugTop` world units above the floor (negative = sunk). No flaps and no fixed lift,
+unlike `IsoHatch`: the plug is either the fixture itself — `children(standZ)`, drawn standing
+at its base `plugBase` (e.g. a raised `IsoFloorLabel`, whose base is `plugTop − RAISED_HEIGHT`)
+— or, with `floorPlug`, a block of floor (`floorSlabMaterial`, `FLOOR_PLUG_DEPTH` deep) whose
+top is `plugTop`. Swapping one plug for the other at the same depth is invisible, so a fixture
+can go down and floor come up in its place with nothing standing on it jumping. Whenever the
+plug's base is under the floor the opening is filled `holeTone` (lined with `inside`, as
+IsoHatch's) and the plug is clipped by
+`openingSweepPath`; a floor plug flush with the floor draws only its top, so the floor reads
+unbroken. Draw it as a floor decal.
 
 ### IsoLever
 
@@ -361,7 +493,7 @@ hides them on a fixture falling away with its floor).
 `{ at, surface, pull, sink, hatch, air? }`. A floor lever standing in an `IsoHatch` (1.0-unit
 opening). A cream base box (`ISO.leverBase`, card stock's tones) with a dark pivot slot on its
 top, a short, thick ink stick pivoting there in the world x–z plane, and a plain red ball
-(`ISO.leverKnob` = `redMk` by default, flat, no outline or highlight; the optional `knob` prop recolours it — the Deck Tower's writing world passes `grnMk` (off its red sky) and reading `purMk` (off its lime sky), `towerWorlds.ts` → `TowerWorld.leverKnob`). `pull` is 0 leaning back toward −x
+(`ISO.leverKnob` = `redMk` by default, flat, no outline or highlight; the optional `knob` prop recolours it — the Deck Tower passes `towerWorlds.ts` → `TowerWorld.leverKnob`, currently the default red in every world). `pull` is 0 leaning back toward −x
 and 1 pulled toward the viewer (may overshoot); `sink`, `hatch` and `air` are the hatch's.
 Standing, the leaning ball overhangs the hole's column, so the stick stands upright from a
 third of the way down and a sinking or rising ball stays inside the clip. Its footprint is an
@@ -424,9 +556,9 @@ of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps? }`. A featureless ink
-worker: a pill body and a ball head in screen space, standing at a projected world point.
-Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
+`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, opening? }`. A featureless ink
+worker: a pill body and a ball head — a 3D capsule and sphere projected through the scene's
+camera (§ "View") — standing at a world point. Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
 **Shadow on decals.** `decals` are flat things on its floor that its shadow can cross, passed
 already in their shaded tones (e.g. `<IsoFloorLabel shaded … />`). The pawn draws them over its
@@ -434,14 +566,36 @@ shadow, clipped to the shadow's outline, inside `travel` (so the clip moves with
 `decal-anchor` group that `usePawnMotion` counter-translates (so the decals stay put). The clip
 outline shrinks and the copy fades in step with `shadow-hop`.
 
-**How it moves.** The pawn is drawn once, at `at`. All movement is `usePawnMotion.ts` →
-`usePawnMotion`, a requestAnimationFrame state machine that writes CSS transforms
-straight onto four nested groups through refs: `travel` (slides the whole pawn, shadow
-included), `shadow-hop`, `hop` (lifts the body and emote) and `pose` (leans and squashes
-the body about its feet), plus `decalShade` / `decalClip` / `decalAnchor` for the shaded decals. The projection is affine, so sliding the drawn pawn by a
-projected floor delta is the same as redrawing it there. React state changes only when
-an emote fires or the depth rank changes, so a walking pawn does not re-render the page.
-Under `prefers-reduced-motion` nothing runs and the pawn stands at `at`.
+**How it moves.** All movement is `usePawnMotion.ts` → `usePawnMotion`, a
+requestAnimationFrame state machine that advances the pose (position, lift, `hop`, `lean`,
+squash `sx`/`sy`) and hands it to `applyFrame`, which writes straight onto the SVG through
+refs: `presence` (hidden before an entrance), `travel` (slides the shadow, drawn once at
+`at`), `shadow-hop`, `decalShade` / `decalClip` / `decalAnchor` for the shaded decals, the
+body's path and head's circle (§ "View"), and `emoteAnchor`. The shadow slide is a
+projected floor delta, which is the same as redrawing the flat shadow there. React state
+changes only when an emote fires or the depth rank changes, so a walking pawn does not
+re-render the page. `applyFrame` also runs in a layout effect after every render, so the
+first paint, a re-render with a new camera, and `prefers-reduced-motion` (when no loop
+runs and the pawn stands at `at`) all draw the current frame at once.
+
+**View.** The body is a true 3D figure (`iso/pawnFigure.ts` → `pawnFigure`): a vertical
+capsule (the pill) under a sphere (the head), each sphere's outline a circle round its
+projected centre at `radius · facingScaleAt`, the capsule the hull of its two end circles
+(`circleHullPath`). It is recomputed from the feet's world point and the pose every frame,
+so it is right under any camera: under the fixed view it is pixel-for-pixel the old
+screen-space pill (0.78 × 1.5 `unit`s, the head 0.44 `unit`s across its radius, `lean` the
+same screen rotation about the feet; pinned by `__tests__/pawnFigure.test.ts`), and seen
+from straight above — the Deck Tower's study camera — it is a round head with the body
+peeking out on the side away from the view's centre, small far below the camera. Lean
+tilts the axis toward world (1, −1), the fixed view's screen-right; squash scales the
+axis by `sy` and the radii by `sx` (the head by √(sx·sy)) — circles where the old 2D scale
+made ellipses, which the brief squashes hide. The head is drawn after the body (it is the
+nearer part to any camera looking down). The "!" bubble is a billboard: upright on screen,
+its tail just over the head, sized by the head's `facingScaleAt`; it follows the startle's
+look-up lean but not the waddle or squash. The shadow, a true projection at `at`, rescales
+by `scaleAt(here) / scaleAt(at)`. The loop reads the projector through a ref, so a camera
+moving every frame neither restarts it nor resets the walk (the Deck Tower's pawn keeps
+wandering through a study).
 
 **Entrance.** With `entrance: { animation, startAt }` (a `PawnEntranceCue`, read once on
 mount), the pawn ARRIVES instead of standing there from the start.
@@ -483,6 +637,12 @@ honoured; the highest wins on overlap), the `travel` slide is projected at that 
 body, shadow and the shaded-decal clip all sit on the step's top face (the decal anchor still
 undoes the whole slide, so the decals stay put). On the same step the lift tracks the live
 height exactly, so a pawn on a pressed plate sinks with it and rides its spring back up.
+A step may go BELOW the floor (an `IsoFloorRecess` plug sinking): pass the hole as `opening`
+and, while the feet are under the floor, the whole pawn is clipped to `openingSweepPath`
+(`usePawnMotion` `openingClip`, set on the `iso-pawn__opening` group in `applyFrame`) so the
+floor in front of the hole hides its lower part. Only then: standing or airborne over the
+floor it is never cut. A pawn down the hole near the opening's x ends can lose a sliver of an
+overhanging side to the clip.
 - **Edge hop.** A walk HOPS on and off a step, from a standstill, rather than ramping
   (`usePawnMotion.ts` → the `edgeHop` mode, `EdgeHopMode`). Each frame the walk looks `HOP_LEAD`
   ahead (about the body's half width, clamped to the walk's end so a walk that stops short
@@ -712,9 +872,10 @@ The base colours are all `COLORS` tokens:
 `shadeHex` (an HSL lightness step), because the framework has no darker tier for these
 hues. That covers `space` (the sky's hue taken down to night, `spaceOver` — deep navy for
 blue; every Deck Tower world shares it), the wall tones (of every `platformTone`) (cloud walls included, shaded off `white`), the rim, the carpet, the card seams and every shadow
-(`shadowTone`). If the style spreads beyond the Deck Tower, promote them to tokens in
+(`shadowTone`). Every colour under a non-identity ambient wash (§ Ambient wash) is derived
+too. If the style spreads beyond the Deck Tower, promote them to tokens in
 `src/theme/colors.ts`.
 
 Adding an object: build it from `IsoSolid` and `flatPath`, read the projector with
-`useIsoProjector`, take a `surface` if it stands on something, cast its shadow with
+`useIsoProjector`, read its colours with `useIsoPalette` (§ Ambient wash), take a `surface` if it stands on something, cast its shadow with
 `IsoShadow` before drawing itself, and export it from `index.ts`.

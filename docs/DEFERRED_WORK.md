@@ -357,6 +357,58 @@ scale) once a day per language, on the app's landing screen.
 
 **Trigger.** Any accessibility pass, or any feedback about motion from a learner.
 
+### 24. The Deck Tower's study ignores `prefers-reduced-motion`
+
+*Added 2026-10-24. Docs: [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower";
+code: `src/features/deckTower/useTowerStudy.ts`.*
+
+**What.** Tapping a Learning tower always plays the 1.25 s camera dive onto the top
+card, the 1.05 s climb back out, the camera following the tower down per correct card,
+and the spawn's sky drop (a stack swelling past the screen's edges). None of it checks
+the OS reduced-motion setting, unlike the rest of the page (the build-up, the pan and the
+resizes are instant under it). The likely fallback: cross-fade between the tower view and
+the session (no camera move), step the tower's count without the camera easing, and land
+a spawn without the fall.
+
+**Why deferred.** The owner chose to build the motion first and account for the setting
+later.
+
+**Cost to leave.** A motion-sensitive learner gets a large perspective fly-in and fly-out
+on every study session, and a looming drop each time the tower runs out mid-session.
+
+**Trigger.** Once the in-place study's design is settled (it is still being tuned), or
+any accessibility pass.
+
+### 25. Retire `/flashcards/learn` once the Deck Tower's in-place study is kept
+
+*Added 2026-10-24. Docs: [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower".*
+
+**What.** The flp now runs in two places: its own route (`/flashcards/learn`, reached from
+the fdp hand, the Reading/Writing Centers and the mastery centers) and inside the Deck
+Tower (`FlashcardsLearnPage` with a `tower` host, `FlpTowerHost`). The Deck Tower is meant
+to replace the fdp, at which point the route — and the route-only machinery in the flp
+(`useFlpLeave` / `useFlpEntrance` and the fdp ⇄ flp choreography in
+`src/features/flashcards/flpLaunch.ts`, the URL parsing of `mode` / `category` /
+`collection`) — has no way in left.
+
+**Decided 2026-10-26: the in-place study is kept.** The tower-hosted flp is the app's one
+flp; the route is LEGACY. New flp work targets the `tower` path first (its card stock, its
+plate buttons — TOWER_STYLE_SHIFT.md) and the route only gets what it needs to keep
+working. The owner chose NOT to restructure yet: the paths and the single
+`FlashcardsLearnPage` with its `tower ?` branches stay as they are.
+
+**Why deferred.** The route still has entry points the tower does not cover (the fdp
+hand's Challenge / Review modes, collection study, the Reading/Writing Centers), and the
+owner asked for no restructure in the same pass.
+
+**Cost to leave.** Two hosting modes in one 1,200-line page, and the choreography code
+kept alive for the fdp.
+
+**Trigger.** The fdp's removal, or when the route's remaining entry points are rehomed.
+The likely shape then: the page always takes a host, and the route-only pieces
+(`FlashcardsLearnHeader`, `useFlpLeave` / `useFlpEntrance`, the URL parsing) move into a
+`legacy/` route host that can be deleted as one folder.
+
 ## Recently closed
 
 ### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)

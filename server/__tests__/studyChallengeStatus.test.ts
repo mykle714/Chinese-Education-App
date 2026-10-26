@@ -51,7 +51,7 @@ function row(overrides: Partial<StudyChallengeRow> = {}): StudyChallengeRow {
 }
 
 /** A service wired to just enough stubs for `getChallenge`. */
-function serviceFor(challenge: StudyChallengeRow, isValidator = false) {
+function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
     const challengeDAL = {
         findById: async () => challenge,
         // Only reached for a challenge that has words; this one has none.
@@ -69,7 +69,7 @@ function serviceFor(challenge: StudyChallengeRow, isValidator = false) {
             // own tests.
             timezone: CHALLENGEE_TZ,
             selectedLanguage: 'zh',
-            isValidator,
+            isFeatureTester,
         }),
     };
 
@@ -110,7 +110,7 @@ describe('StudyChallengeService.toSummary — lapsed accept window', () => {
         expect((await service.getChallenge(ALICE, CHALLENGE_ID)).status).toBe('expired');
     });
 
-    it('does not expire a pending challenge for a validator who asked for anytime', async () => {
+    it('does not expire a pending challenge for a feature tester who asked for anytime', async () => {
         // The tester escape hatch lifts the accept deadline along with every other
         // calendar gate (docs/STUDY_CHALLENGE.md § 2a) — otherwise a tester's own
         // invitation lapses out from under them mid-session and the only repair is to
@@ -121,7 +121,7 @@ describe('StudyChallengeService.toSummary — lapsed accept window', () => {
         expect((await service.getChallenge(BOB, CHALLENGE_ID, true)).status).toBe('pending');
     });
 
-    it('still expires it for a non-validator who asked for anytime', async () => {
+    it('still expires it for a non-feature-tester who asked for anytime', async () => {
         const service = serviceFor(row(), false);
         vi.useFakeTimers();
         vi.setSystemTime(aroundDeadline(60_000));

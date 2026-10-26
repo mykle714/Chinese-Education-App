@@ -98,11 +98,12 @@ export interface ChallengeUserLookup {
     selectedLanguage?: string;
     avatarIconId?: string | null;
     /**
-     * The TESTER flag (migration 104). Read here for one reason only: it is what
-     * authorizes the `anytime` escape hatch below. A validator asking for it gets
-     * it; anybody else asking for it is ignored, silently and without an error.
+     * The FEATURE-TESTER flag (migration 178). Read here for one reason only: it is
+     * what authorizes the `anytime` escape hatch below. A feature tester asking for it
+     * gets it; anybody else asking for it is ignored, silently and without an error.
+     * (It rode `isValidator` until migration 178 split data validation from testing.)
      */
-    isValidator?: boolean;
+    isFeatureTester?: boolean;
   } | null>;
 }
 
@@ -134,7 +135,7 @@ export interface ChallengeUserLookup {
  *   * a round is still scored, stored and resolved exactly as it is in a real week
  *
  * ⚠️ IT IS A REQUEST, NOT A STATE. The client asks per call (`?anytime=1`, held in
- * that browser's localStorage) and the server honours it only for a validator. There
+ * that browser's localStorage) and the server honours it only for a feature tester. There
  * is deliberately no column: the flag is a testing convenience, not a property of the
  * account, and a stored one would eventually be left on by somebody and silently turn
  * a real week into a free-for-all. The consequence is accepted and stated in the UI —
@@ -142,7 +143,7 @@ export interface ChallengeUserLookup {
  * their opponent.
  *
  * Every method that enforces a window takes `anytime` as its last parameter and
- * resolves it through `resolveAnytime` — the ONLY place the validator check lives.
+ * resolves it through `resolveAnytime` — the ONLY place the feature-tester check lives.
  */
 
 /**
@@ -1687,7 +1688,7 @@ export class StudyChallengeService {
   /**
    * May THIS caller have the tester escape hatch, and did they ask for it?
    *
-   * Both halves matter. A non-validator asking is ignored **silently** — no error,
+   * Both halves matter. A non-feature-tester asking is ignored **silently** — no error,
    * no hint — because a 403 here would be a probe for who holds the flag; they simply
    * get the ordinary weekly rules, which is what they would have got anyway.
    *
@@ -1696,7 +1697,7 @@ export class StudyChallengeService {
   private async resolveAnytime(userId: string, requested: boolean): Promise<boolean> {
     if (!requested) return false;
     const user = await this.userDAL.findById(userId);
-    return !!user?.isValidator;
+    return !!user?.isFeatureTester;
   }
 
   /**

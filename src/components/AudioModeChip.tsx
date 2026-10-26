@@ -1,4 +1,5 @@
 import React from "react";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { HeaderCycleChip } from "./PageHeader";
 import { cycleChipWidthCh } from "./cycleChipSizing";
 import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
@@ -23,7 +24,12 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  * StrictMode remount cancel the scp's first autoplay word (docs/AUDIO_PLAYBACK.md
  * § "Only the speaker stops on unmount").
  *
- * Used by: FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
+ * `tone`, `ink`, `sx`, `fitLabels` and `iconPx` let ONE surface reskin it without forking
+ * it: the Deck Tower study header (TowerStudyHeader) passes `tone="bare"` with white `ink`,
+ * so it floats as plain text on the sky rather than drawing the eye as a filled chip.
+ * Everywhere else takes the blue mono default.
+ *
+ * Used by: TowerStudyHeader (tower flp), FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
  * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeaderControls,
  * IWPlayPage (Immersive World).
  * Documented in: docs/AUDIO_PLAYBACK.md.
@@ -89,9 +95,22 @@ const MODE_CHIP: Record<AudioMode, { icon: string; label: string; ariaLabel: str
  * actually occupies rather than its raw character count. `mute` and `media` are
  * unaffected and stay full size.
  */
-const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(Object.values(MODE_CHIP).map((m) => m.label));
+const MODE_LABELS = Object.values(MODE_CHIP).map((m) => m.label);
+const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(MODE_LABELS);
 
-const AudioModeChip: React.FC<{ className?: string }> = ({ className }) => {
+const AudioModeChip: React.FC<{
+    className?: string;
+    /** The active-state skin (HeaderCycleChip `tone`); blue unless a surface overrides it. */
+    tone?: "ink" | "blu" | "bare";
+    /** The `bare` tone's text colour (HeaderCycleChip `ink`). */
+    ink?: string;
+    /** Layered over the chip's own skin (HeaderCycleChip `sx`). */
+    sx?: SxProps<Theme>;
+    /** Size to the labels in the chip's actual font — pass when `sx` changes the font. */
+    fitLabels?: boolean;
+    /** The glyph's size, px (HeaderCycleChip `iconPx`). */
+    iconPx?: number;
+}> = ({ className, tone = "blu", ink, sx, fitLabels = false, iconPx }) => {
     const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
     const chip = MODE_CHIP[mode];
 
@@ -103,7 +122,11 @@ const AudioModeChip: React.FC<{ className?: string }> = ({ className }) => {
             active={chip.active}
             // Mid blue rather than the shared ink inversion when audio is on (mute
             // stays grey). Holds on game grounds too — see gameSurfaceSx.
-            tone="blu"
+            tone={tone}
+            ink={ink}
+            sx={sx}
+            fitLabels={fitLabels ? MODE_LABELS : undefined}
+            iconPx={iconPx}
             widthCh={MODE_LABEL_WIDTH_CH}
             icon={chip.icon}
             ariaLabel={chip.ariaLabel}

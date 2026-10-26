@@ -56,7 +56,10 @@ import type { StudyModeId } from "./StudyHand";
 // `useFdpEntrance`), FlpStudyHand (`onLaunch`), FlashcardsLearnPage (`useFlpEntrance`,
 // `useFlpLeave`), useWorkingLoop (`peekLaunchLoop` / `clearLaunchLoop`), and the flp
 // game break (`playBreakAway` / `playBreakReturn` / `BREAK_AREA_MOTION` — GameBreakArea,
-// FlashcardsLearnPage; docs/FLP_GAME_BREAKS.md § 2).
+// FlashcardsLearnPage; docs/FLP_GAME_BREAKS.md § 2). (The Deck Tower mounts the flp in
+// place and keeps it mounted — its sessions fetch their own loops; docs/DECK_TOWER.md
+// § "Studying the tower" → "Parked sessions" — but a mounting session still adopts a matching Home preload
+// through `peekLaunchLoop`.)
 
 type Edge = "left" | "right" | "top" | "bottom";
 /**
@@ -401,8 +404,9 @@ export function clearLaunchLoop(): void {
  * loop (joined if Home's preload is still in flight, reused if it landed, fetched here
  * otherwise) and the flp's route chunk. Never rejects — on a failed fetch nothing is
  * stored and the flp simply fetches (and reports) itself.
+ *
  */
-async function prefetchFlpSession(scope: string, request: WorkingLoopRequest): Promise<void> {
+export async function prefetchFlpSession(scope: string, request: WorkingLoopRequest): Promise<void> {
     const existing = preloadedLoops.get(workingLoopKey(request));
     const entry = isUsable(existing) && existing.scope === scope ? existing : startLoopLoad(scope, request);
     await Promise.all([entry.promise, importFlpChunk()]);

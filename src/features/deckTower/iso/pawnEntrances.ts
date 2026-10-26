@@ -53,7 +53,6 @@ const SKY_FALL_HEIGHT = 55;
  */
 export const PAWN_GRAVITY = 110;
 const SKY_FALL_GRAVITY = PAWN_GRAVITY;
-const SKY_FALL_LAND_MS = Math.sqrt((2 * SKY_FALL_HEIGHT) / SKY_FALL_GRAVITY) * 1000;
 /** The landing squash, then back to its normal shape. Harder than a startle's landing: it fell a long way. */
 const SKY_FALL_SQUASH_MS = 260;
 const SKY_FALL_SQUASH = 0.3;
@@ -63,23 +62,33 @@ const SKY_FALL_SQUASH = 0.3;
  */
 const SKY_FALL_SHADOW_REACH = 12;
 
-export const FALL_FROM_SKY: PawnEntrance = {
-    id: "fall-from-sky",
-    landMs: SKY_FALL_LAND_MS,
-    durationMs: SKY_FALL_LAND_MS + SKY_FALL_SQUASH_MS,
-    frame: (t) => {
-        if (t < SKY_FALL_LAND_MS) {
-            const s = t / 1000;
-            const hop = Math.max(0, SKY_FALL_HEIGHT - 0.5 * SKY_FALL_GRAVITY * s * s);
-            const air = Math.min(1, hop / SKY_FALL_SHADOW_REACH);
-            // Stretched along the fall.
-            return { hop, sx: 0.92, sy: 1.1, shadowScale: 1 - 0.8 * air, shadowOpacity: 1 - air };
-        }
-        const u = Math.min(1, (t - SKY_FALL_LAND_MS) / SKY_FALL_SQUASH_MS);
-        const d = SKY_FALL_SQUASH * easeOutSq(u);
-        return { hop: 0, sx: 1 + 0.75 * d, sy: 1 - d, shadowScale: 1, shadowOpacity: 1 };
-    },
-};
+/**
+ * A fall from `height` world units over the floor, under the pawn's own gravity: stretched
+ * along the fall, the shadow growing in over the last SKY_FALL_SHADOW_REACH units, a hard
+ * squash on landing. FALL_FROM_SKY is this from SKY_FALL_HEIGHT.
+ */
+function fallFromHeight(height: number, id = "fall-from-height"): PawnEntrance {
+    const landMs = Math.sqrt((2 * Math.max(0, height)) / SKY_FALL_GRAVITY) * 1000;
+    return {
+        id,
+        landMs,
+        durationMs: landMs + SKY_FALL_SQUASH_MS,
+        frame: (t) => {
+            if (t < landMs) {
+                const s = t / 1000;
+                const hop = Math.max(0, height - 0.5 * SKY_FALL_GRAVITY * s * s);
+                const air = Math.min(1, hop / SKY_FALL_SHADOW_REACH);
+                // Stretched along the fall.
+                return { hop, sx: 0.92, sy: 1.1, shadowScale: 1 - 0.8 * air, shadowOpacity: 1 - air };
+            }
+            const u = Math.min(1, (t - landMs) / SKY_FALL_SQUASH_MS);
+            const d = SKY_FALL_SQUASH * easeOutSq(u);
+            return { hop: 0, sx: 1 + 0.75 * d, sy: 1 - d, shadowScale: 1, shadowOpacity: 1 };
+        },
+    };
+}
+
+export const FALL_FROM_SKY: PawnEntrance = fallFromHeight(SKY_FALL_HEIGHT, "fall-from-sky");
 
 // ── Registry ───────────────────────────────────────────────────────────────────
 

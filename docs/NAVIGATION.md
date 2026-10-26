@@ -62,8 +62,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    import `pages/` ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)). The header title
    is **"Home"**; the browser tab title is just "Cow" (`usePageTitle()` with no name).
    The header carries, around the minute-points flame:
-   - left of the flame: the validator-only `BankingAlwaysPlayToggle`
-     (`headerExtraActions`; renders null for everyone else);
+   - left of the flame: the feature-tester-only `SoftIntroToggle` and
+     `BankingAlwaysPlayToggle` (`headerExtraActions`; `users.isFeatureTester`, migration
+     178; both render null for everyone else);
    - right of the flame (`headerTrailingActions` → `PageHeader`'s `trailingContent`),
      in order **flame · Settings gear · avatar**:
      - the **Settings gear** (outlined `HeaderIconButton`, `home-page__settings-button`)
@@ -79,7 +80,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    shared tile primitive, also used by the Games hub; `HubMenu` was deleted
    2026-08-21 — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
    **Night Market**, **Games**, **Arena**, **Immersive World**, **Reader**,
-   **Community**, **Friends** (plus a validator- or admin-only **Tester Dashboard** tile
+   **Community**, **Friends** (plus a feature-tester- or admin-only **Tester Dashboard** tile
    and template-author-only tiles). There is **no Dictionary tile** — Dictionary is a
    footer tab, and a tile would be a second door to the same room. Its header is just the
    title "Menu" and the normal minute-points flame — no Settings gear, no avatar, no
@@ -143,21 +144,22 @@ became a sheet (2026-10-09) they are:
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
 became the hub menu, which now lives at `/menu`; `/` is the fdp (see 1 above).
 
-**Validator- or admin-gated.** The surface is for testers/curators, not ordinary
-learners, so it is gated on `users.isValidator` (migration 104, see
+**Feature-tester- or admin-gated.** The surface is for testers, not ordinary
+learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
+`users.isValidator` until that data-validation flag was split from feature testing, see
 [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) **or** `users.isAdmin`
 (migration 168) in two places, mirroring the `isTemplateAuthor` gate on the Night
 Market template editor:
 
 - `src/pages/MenuPage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
-  spread in only when `user?.isValidator || user?.isAdmin`, so nobody else sees the
+  spread in only when `user?.isFeatureTester || user?.isAdmin`, so nobody else sees the
   entry point.
 - `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved user who is
   neither to `/` (`replace: true`), covering deep links and bookmarks. Its back arrow
   returns to `/menu`.
 
 The route (`src/routes/routeMeta.ts`, `/tester-dashboard`) is `access: "any"` on
-purpose: a validator may be a public account, and the generic `isPublic` redirect
+purpose: a feature tester may be a public account, and the generic `isPublic` redirect
 must not pre-empt the role gate. For the personal widgets this is a **UX gate, not a
 security boundary** — they render the caller's own minute-point data from user-scoped
 endpoints.

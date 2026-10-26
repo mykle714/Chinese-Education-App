@@ -464,7 +464,7 @@ each end, so the user can see their collection grow as they sort:
 
 | Figure | Column | Definition | Color |
 | --- | --- | --- | --- |
-| **Learning** | left | library cards whose utcm category is Unfamiliar + Target + Comfortable | ink figure on a pill filled with `RAMP[LEARN_NOW_HUE].surface` — the fdp Learning filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`LEARN_NOW_COLORS`) |
+| **Learning** | left | library cards whose utcm category is Unfamiliar + Target + Comfortable | ink figure on a pill filled with `RAMP[LEARNING_HUE].surface` — the fdp Learning filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`LEARNING_COLORS`) |
 | **Mastered** | right | library cards whose utcm category is Mastered | ink figure on a pill filled with `RAMP[MASTERY_BAR_HUES.core].surface` — the fdp Mastered filter tile's fill (`LibraryDuo`); its bucket wears the same hue (`MASTERY_BAR_COLORS.core`) |
 
 - The figures sit at **opposite ends** rather than as one cluster, so each reads as its
@@ -477,7 +477,7 @@ each end, so the user can see their collection grow as they sort:
   page's `totalLibraryCards`, which is the inclusive total.
 - Each figure's pill, its drop bucket, and the fdp filter tile for the same collection
   (`src/features/flashcards/LibraryDuo.tsx`) all use **one hue per collection**: Learning =
-  `LEARN_NOW_HUE`, Mastered = `MASTERY_BAR_HUES.core` (`src/utils/categoryColors.ts`).
+  `LEARNING_HUE`, Mastered = `MASTERY_BAR_HUES.core` (`src/utils/categoryColors.ts`).
   These are *collection* colours, not utcm band colours — the buckets used to wear
   `BAND_COLORS.Unfamiliar`, which painted Learning red here and yellow on the fdp.
 - **Bucket look.** Each bucket is one solid fill of the collection's ramp SURFACE tier,
@@ -536,7 +536,7 @@ each end, so the user can see their collection grow as they sort:
   they render. They are `pointer-events: none` so they can never intercept a drag.
 - Client implementation: `src/features/discover/SortCardsPage.tsx` — the `SortTallyColumn`
   (`side="left" | "right"`) / `SortTallyValue` / `SortTallyLabel` styled components,
-  `learnNowCount` / `masteredCount` derivations, and `adjustTally` (called from
+  `learningCount` / `masteredCount` derivations, and `adjustTally` (called from
   `handleSortCard` and `handleUndo`).
 
 ### 5.3a Learning supply glow
@@ -545,7 +545,7 @@ The Learning tally pill tells a learner who came in **short** of cards when they
 sorted enough. The decision is made **once per visit**, from the first successfully
 loaded baseline (before any sort):
 
-| Arrived with | Pill while `learnNowCount < 30` | Pill once `learnNowCount ≥ 30` |
+| Arrived with | Pill while `learningCount < 30` | Pill once `learningCount ≥ 30` |
 | --- | --- | --- |
 | **< 30** Learning | yellow halo, **pulsing** | plain (halo simply drops) |
 | **≥ 30** Learning | plain | plain |
@@ -571,7 +571,7 @@ loaded baseline (before any sort):
 - The pulse shares the pill's `animation` property with the gulp (§ 5.3), so the two are
   listed together rather than one replacing the other.
 
-*Code:* `SortCardsPage.tsx` → `arrivedShort`, `learnNowLowGlow`, `SortTallyValue`'s `lowGlow`,
+*Code:* `SortCardsPage.tsx` → `arrivedShort`, `learningLowGlow`, `SortTallyValue`'s `lowGlow`,
 `tallyLowGlowKeyframes`.
 
 ### 5.1 Skip is a de-emphasized action, not a drag target

@@ -102,6 +102,35 @@ export function bandMaterial(band: string): Material {
     return material(band, 0.07, 0.15);
 }
 
+/**
+ * The material of the body under a floor — what a hole in it is lined with (IsoHatch,
+ * IsoFloorRecess `inside`). A scene passes the slab's own material (the Deck Tower: its
+ * world's `platform.material`), so the inside of a hole is the platform's own wall tones.
+ * Without one, the floor's colour stepped down like a slab's walls.
+ */
+export function insideMaterial(floor: string, inside?: Material): Material {
+    return inside ?? material(floor, 0.1, 0.18);
+}
+
+/**
+ * A slab cut from the floor itself (IsoHatch's lift, IsoFloorRecess's floor plug): the
+ * floor's own colour on top, so flush it melts into the floor with no seam, and the walls
+ * of the body it was cut from (`insideMaterial`).
+ */
+export function floorSlabMaterial(floor: string, inside?: Material): Material {
+    const m = insideMaterial(floor, inside);
+    return { top: floor, left: m.left, right: m.right };
+}
+
+/**
+ * The inside of an open floor hole (IsoHatch, IsoFloorRecess): its far walls, which face
+ * the viewer the way the slab's own outer walls do — so the slab's darker (right) wall
+ * tone, the same hue as the platform rather than a shade derived off the floor.
+ */
+export function holeTone(floor: string, inside?: Material): string {
+    return insideMaterial(floor, inside).right;
+}
+
 /** A floating platform's colours: its three-tone slab and the light bevel round its top edge. */
 export interface PlatformTone {
     material: Material;
@@ -149,7 +178,7 @@ export const ISO = {
     carpet: material(shadeHex(COLORS.gld, 0.05), 0.06, 0.12),
 
     /** Card stock: cream top (the app's card face), beige walls. */
-    card: { top: COLORS.cardFace, left: COLORS.cardBeige, right: shadeHex(COLORS.cardBeige, 0.07) } as Material,
+    card: { top: COLORS.cardFace, left: COLORS.cardBeige, right: COLORS.cardWall } as Material,
     /** The seams between stacked cards on a stack's walls. */
     cardSeam: shadeHex(COLORS.cardBeige, 0.16),
     /** The light wireframe a ghosted card leaves where it stood (IsoCardRuns), softened by its own opacity. */
@@ -159,7 +188,7 @@ export const ISO = {
     /**
      * The coloured band across the card's head — Good Job's prop blue. A DEFAULT: an
      * object that prints a band takes a `bandColor` prop, so a page can paint it in its
-     * deck's collection colour (the Deck Tower uses Learn Now's yellow).
+     * deck's collection colour (the Deck Tower uses Learning's yellow).
      */
     cardBand: COLORS.bluMk,
 
@@ -183,7 +212,7 @@ export const ISO = {
      * pawns' silhouettes, and a red ball — Good Job's switch-knob red, `redMk` (the red
      * ramp's mark tier).
      */
-    leverBase: { top: COLORS.cardFace, left: COLORS.cardBeige, right: shadeHex(COLORS.cardBeige, 0.07) } as Material,
+    leverBase: { top: COLORS.cardFace, left: COLORS.cardBeige, right: COLORS.cardWall } as Material,
     leverKnob: COLORS.redMk,
 
     /**

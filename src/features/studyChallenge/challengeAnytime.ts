@@ -18,7 +18,7 @@ import { useAuth } from "../../AuthContext";
  *
  * ── WHY LOCALSTORAGE AND NOT A COLUMN ────────────────────────────────────────
  * It is a REQUEST, not a property of the account: every call carries `?anytime=1`
- * and the SERVER decides, by checking `isValidator`, whether to honour it. A stored
+ * and the SERVER decides, by checking `isFeatureTester` (migration 178), whether to honour it. A stored
  * account flag would eventually be left switched on and would silently turn a real
  * week into a free-for-all; a per-device request cannot outlive the browser it was
  * set in.
@@ -26,7 +26,7 @@ import { useAuth } from "../../AuthContext";
  * Two consequences, both deliberate and both stated in the UI:
  *   * it is PER DEVICE — turning it on does not turn it on for your opponent, so a
  *     two-account test needs it set in both browsers;
- *   * a non-validator sending the flag is ignored SILENTLY. No error and no hint: a
+ *   * a non-feature-tester sending the flag is ignored SILENTLY. No error and no hint: a
  *     403 here would be a probe for who holds the flag, and they get the ordinary
  *     weekly rules either way.
  *
@@ -34,16 +34,16 @@ import { useAuth } from "../../AuthContext";
  * every accessor here is wrapped, because a browser in private mode (or with site
  * data blocked) THROWS on access rather than returning null.
  *
- * ── THE VALIDATOR GATE (client side) ─────────────────────────────────────────
+ * ── THE FEATURE-TESTER GATE (client side) ────────────────────────────────────
  * The server is still the authority — it honours `?anytime=1` only for an
- * `isValidator` account — but the CLIENT must not act as if the hatch were on for
- * anyone else, or a non-validator would see anytime-flavoured labels ("Round 1 of 3 ·
+ * `isFeatureTester` account — but the CLIENT must not act as if the hatch were on for
+ * anyone else, or a non-tester would see anytime-flavoured labels ("Round 1 of 3 ·
  * anytime") and lifted deadlines the server is quietly ignoring.
  *
  * So every accessor is additionally gated on `allowed`, a module latch fed by
  * `useChallengeAnytime()` from the auth user. It FAILS CLOSED: the latch starts false
  * and stays false until a mounted `useChallengeAnytime()` says otherwise, so a stale
- * `localStorage` value left behind by a revoked validator account is inert rather than
+ * `localStorage` value left behind by a revoked feature-tester account is inert rather than
  * live. (The hook also clears that value on sight.)
  */
 
@@ -53,7 +53,7 @@ const STORAGE_KEY = "cow.challengeAnytime";
 const listeners = new Set<(on: boolean) => void>();
 
 /**
- * Is the CURRENT account allowed to request the hatch at all (i.e. `isValidator`)?
+ * Is the CURRENT account allowed to request the hatch at all (i.e. `isFeatureTester`)?
  *
  * A module latch rather than a parameter because the non-React accessors
  * (`anytimeParams`, `anytimeQuerySuffix`) are called from api helpers and hand-built
@@ -62,7 +62,7 @@ const listeners = new Set<(on: boolean) => void>();
  */
 let allowed = false;
 
-/** Sets the validator latch; see `allowed`. Exported for the hook only. */
+/** Sets the feature-tester latch; see `allowed`. Exported for the hook only. */
 export function setChallengeAnytimeAllowed(next: boolean): void {
     if (allowed === next) return;
     allowed = next;
@@ -72,14 +72,14 @@ export function setChallengeAnytimeAllowed(next: boolean): void {
 
 /**
  * Is the hatch requested on this device AND permitted for this account? False
- * whenever storage is unreadable, and false for every non-validator.
+ * whenever storage is unreadable, and false for every non-feature-tester.
  */
 export function challengeAnytime(): boolean {
     if (!allowed) return false;
     return storedChallengeAnytime();
 }
 
-/** The raw stored request, ignoring the validator gate. Internal. */
+/** The raw stored request, ignoring the feature-tester gate. Internal. */
 function storedChallengeAnytime(): boolean {
     try {
         return localStorage.getItem(STORAGE_KEY) === "1";
@@ -119,19 +119,19 @@ export function anytimeQuerySuffix(): string {
 }
 
 /**
- * React binding: the current EFFECTIVE value (requested ∧ validator) plus a setter,
+ * React binding: the current EFFECTIVE value (requested ∧ feature tester) plus a setter,
  * re-rendering every subscriber in this tab when it changes.
  *
  * The subscription exists because the toggle and the list that reads it are
  * different components — flipping it must re-render the rows, not just the switch.
  *
- * It is also the one place the validator latch is fed, which is why every surface that
+ * It is also the one place the feature-tester latch is fed, which is why every surface that
  * branches on the hatch reads it through this hook rather than through
  * `challengeAnytime()`: mounting the hook is what makes the gate current.
  */
 export function useChallengeAnytime(): [boolean, (on: boolean) => void] {
     const { user } = useAuth();
-    const isValidator = !!user?.isValidator;
+    const isFeatureTester = !!user?.isFeatureTester;
     const [on, setOn] = useState(challengeAnytime);
 
     useEffect(() => {
@@ -140,12 +140,12 @@ export function useChallengeAnytime(): [boolean, (on: boolean) => void] {
     }, []);
 
     useEffect(() => {
-        setChallengeAnytimeAllowed(isValidator);
+        setChallengeAnytimeAllowed(isFeatureTester);
         // A revoked (or simply different) account should not leave a live-looking
         // request behind on this device — drop it rather than keeping it latent.
-        if (!isValidator && storedChallengeAnytime()) setChallengeAnytime(false);
+        if (!isFeatureTester && storedChallengeAnytime()) setChallengeAnytime(false);
         setOn(challengeAnytime());
-    }, [isValidator]);
+    }, [isFeatureTester]);
 
     return [on, useCallback((next: boolean) => setChallengeAnytime(next), [])];
 }

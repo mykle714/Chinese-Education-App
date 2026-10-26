@@ -16,9 +16,9 @@ import {
 } from "./geometry";
 import { MODE_SWITCH_HOLE } from "./hatchGeometry";
 import type { IsoSurface } from "./light";
-import { ISO, shadeHex, type Material } from "./palette";
+import { shadeHex, type Material } from "./palette";
 import type { PawnEntranceFrame } from "./pawnEntrances";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 
@@ -186,6 +186,7 @@ interface IsoModeSwitchProps {
 
 const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels, colors, sink, hatch, air }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const uid = `iso-mode-switch-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
     const body: WorldRect = { x: at.x - BODY_W / 2, y: at.y - BODY_L / 2, w: BODY_W, d: BODY_L, r: 0.2 };
     const slot: WorldRect = {
@@ -227,8 +228,8 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                 ];
                 return (
                     <>
-                        <IsoSolid className="iso-mode-switch__body" geometry={prism(proj, body, standZ, bodyTop)} material={ISO.switchBase} />
-                        <path className="iso-mode-switch__slot" d={flatPath(proj, slot, bodyTop)} fill={shadeHex(ISO.switchBase.top, 0.4)} />
+                        <IsoSolid className="iso-mode-switch__body" geometry={prism(proj, body, standZ, bodyTop)} material={palette.switchBase} />
+                        <path className="iso-mode-switch__slot" d={flatPath(proj, slot, bodyTop)} fill={shadeHex(palette.switchBase.top, 0.4)} />
                         {halves.map(({ key, side }) => {
                             const clipId = `${uid}-${key}`;
                             return (
@@ -238,7 +239,7 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                                     geometry={halfGeometry(proj, paddle, side)}
                                     material={material}
                                 >
-                                    <g className="iso-mode-switch__print" transform={affineToSvg(facePlane(proj, paddle, side))} fontFamily={FONTS.sans}>
+                                    <g className="iso-mode-switch__print" transform={affineToSvg(facePlane(proj, paddle, side))} fontFamily={FONTS.cjk}>
                                         {/* This face's side of the fold, in print coordinates. */}
                                         <clipPath id={clipId}>
                                             <rect x={side > 0 ? -PADDLE_L : 0} y={at.x - PADDLE_W} width={PADDLE_L} height={2 * PADDLE_W} />
@@ -253,7 +254,7 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                                             letterSpacing={0.03}
                                             textAnchor="middle"
                                             dominantBaseline="central"
-                                            fill={ISO.ink}
+                                            fill={palette.ink}
                                             opacity={inkOpacity}
                                         >
                                             {label}

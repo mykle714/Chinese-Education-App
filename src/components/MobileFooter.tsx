@@ -5,6 +5,8 @@ import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { LEADING } from "../theme/scale";
 import { SAFE_BOTTOM } from "../theme/safeArea";
+import Icon from "./Icon";
+import { SLAB_CAST_SHADOW_VAR, SLAB_FILTER_VAR } from "./footerCastShadow";
 
 // Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
 // so scroll containers (see MobileTabScreen) can reserve matching bottom padding and
@@ -16,6 +18,8 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
 // and the old `FLOATING_FOOTER_INSET` (the pill's gap to the frame edge) was DELETED
 // rather than renamed: a flush bar has no inset, and a permanently-zero constant
 // named "gap from the edges" is a trap for the next reader, not a tuning knob.
+// (The one floating footer, the Deck Tower's `slab`, has its own SLAB_FOOTER_* family
+// below; the FOOTER_* constants describe the bar only.)
 export const FOOTER_HEIGHT = 74;
 // Extra breathing gap added on top of the bar's own footprint, so the last row clears
 // it with a little slack. Bump this (not HEIGHT) to give every page more bottom room
@@ -37,6 +41,36 @@ export const FOOTER_CLEARANCE = FOOTER_HEIGHT + FOOTER_EXTRA_GAP;
 export const FOOTER_TOTAL_HEIGHT = `calc(${FOOTER_HEIGHT}px + ${SAFE_BOTTOM})`;
 // Same, for the scroll reservation: the design's 90px clearance plus the inset.
 export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTOM})`;
+
+// ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
+// Worn only by routes whose registry row says `footerStyle: "slab"` (today: /deck-tower).
+// Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
+// off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
+// casting an iso shadow onto whatever is painted behind it (the tower's sky).
+// Docs: docs/DECK_TOWER.md § Footer.
+//
+// Its gap to the screen's bottom edge. The design's 26px sits inside an iPhone frame, so
+// on a device whose home-indicator inset is larger the inset wins instead of the slab
+// sitting on the indicator.
+export const SLAB_FOOTER_BOTTOM = `max(26px, ${SAFE_BOTTOM})`;
+// Gap to the screen's left/right edges.
+const SLAB_FOOTER_SIDE_INSET = 16;
+// The slab's own height, and the lip it stands on (a solid `0 6px 0` shadow, like a
+// card's wall seen from the front).
+const SLAB_FOOTER_HEIGHT = 64;
+const SLAB_FOOTER_LIP = 6;
+// The cast shadow's offset onto the sky (the design's `10px 16px`): down-right, the
+// same direction the tower's iso objects throw theirs.
+const SLAB_CAST_X = 10;
+const SLAB_CAST_Y = 16;
+// The band from the screen's bottom edge to the slab's TOP — the slab's real footprint.
+// A page laid out around the slab (the Deck Tower's scroller clip and spacer) reserves
+// this, as a CSS string because it carries the safe area. The cast shadow is excluded:
+// it falls on sky and may overlap the scene.
+export const SLAB_FOOTER_TOTAL_HEIGHT = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP}px)`;
+// How far FooterPresenter pushes the slab to clear the frame's bottom edge entirely:
+// its footprint plus the cast shadow, or the shadow's tail would peek up when hidden.
+export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP + SLAB_CAST_Y}px)`;
 
 // The single, app-wide bottom spacer. Render it as the LAST child of any
 // footer-bearing scroll surface (hubs, decks, dictionary, card details, mastered
@@ -124,6 +158,56 @@ const FooterItem = styled(Box, {
     },
 }));
 
+// The slab (see the SLAB_FOOTER_* constants), in two layers so the page's light can reach
+// the slab without reaching its shadow:
+//   - SlabFooter (outer): position + the cast shadow on the sky. Never filtered — the sky
+//     is the light, so a shadow on it is not lit either. Transparent: box-shadow paints
+//     only outside the box, so the face above covers the rest.
+//   - SlabFooterFace (inner): the flashcard itself, drawn through the page's light filter
+//     (`--footer-slab-filter`, footerCastShadow.ts → setFooterSlabFilter; the Deck Tower's
+//     time-of-day wash). Painted in the flashcard's own colours — the same stock the
+//     tower's cards are cut from (ISO.card): cardFace top, cardWall lip.
+const SlabFooter = styled(Box)(() => ({
+    position: "absolute",
+    left: SLAB_FOOTER_SIDE_INSET,
+    right: SLAB_FOOTER_SIDE_INSET,
+    bottom: SLAB_FOOTER_BOTTOM,
+    height: SLAB_FOOTER_HEIGHT,
+    borderRadius: 22,
+    boxShadow: `${SLAB_CAST_X}px ${SLAB_CAST_Y}px 0 var(${SLAB_CAST_SHADOW_VAR}, transparent)`,
+    // Same reason as the bar: a drag from the footer must not pan the page under it.
+    touchAction: "none",
+    zIndex: 10,
+}));
+
+const SlabFooterFace = styled(Box)(() => ({
+    height: "100%",
+    backgroundColor: COLORS.cardFace,
+    borderRadius: "inherit",
+    boxShadow: `0 ${SLAB_FOOTER_LIP}px 0 ${COLORS.cardWall}`,
+    filter: `var(${SLAB_FILTER_VAR}, none)`,
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    padding: 6,
+    boxSizing: "border-box",
+}));
+
+// One slab tab: icon over label. The active tab is a beige keycap set into the slab —
+// the card's inset face panel (cardBeige) with the shaded wall as its bottom lip.
+const SlabFooterItem = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "active",
+})<{ active?: boolean }>(({ active }) => ({
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+    borderRadius: 16,
+    cursor: "pointer",
+    backgroundColor: active ? COLORS.cardBeige : "transparent",
+    boxShadow: active ? `inset 0 -3px 0 ${COLORS.cardWall}` : "none",
+}));
+
 // The four top-level footer tabs. Every other surface is a drill-in reached from
 // one of these — there is no separate Games tab anymore; Games lives under Menu.
 //
@@ -141,26 +225,71 @@ const FooterItem = styled(Box, {
 // now lights Home.
 export type FooterTab = "home" | "menu" | "deck" | "dictionary";
 
+// Which footer is drawn: the app-wide flat `bar`, or the floating `slab` a route opts
+// into through its registry row (`footerStyle`, src/routes/routeMeta.ts).
+export type FooterStyle = "bar" | "slab";
+
 interface MobileFooterProps {
     activePage?: FooterTab;
+    // Which footer to draw. FooterPresenter picks it from the route. Defaults to the bar.
+    variant?: FooterStyle;
     // Spread onto the bar element. Used by FooterPresenter to drive the vertical
     // slide-in/out transform (the footer is animated independently of the page-slide
     // transitions). See FooterPresenter / docs/LEAF_NODE_PAGES.md.
     style?: React.CSSProperties;
 }
 
-const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", style }) => {
+const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", variant = "bar", style }) => {
     const navigate = useNavigate();
 
     // One row per tab, in the design's left-to-right order. This used to be four
     // copy-pasted JSX blocks differing only in label, icon and handler; with the icons
     // gone (decision D5) there was nothing left to justify the repetition.
-    const TABS: { tab: FooterTab; label: string; onClick: () => void }[] = [
-        { tab: "home", label: "Home", onClick: () => navigate("/") },
-        { tab: "menu", label: "Menu", onClick: () => navigate("/menu") },
-        { tab: "deck", label: "Deck", onClick: () => navigate("/deck-tower") },
-        { tab: "dictionary", label: "Dictionary", onClick: () => navigate("/dictionary") },
+    // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
+    const TABS: { tab: FooterTab; label: string; icon: string; onClick: () => void }[] = [
+        { tab: "home", label: "Home", icon: "home", onClick: () => navigate("/") },
+        { tab: "menu", label: "Menu", icon: "apps", onClick: () => navigate("/menu") },
+        { tab: "deck", label: "Deck", icon: "stacks", onClick: () => navigate("/deck-tower") },
+        { tab: "dictionary", label: "Dictionary", icon: "translate", onClick: () => navigate("/dictionary") },
     ];
+
+    if (variant === "slab") {
+        return (
+            <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
+                <SlabFooterFace className="mobile-footer__slab-face">
+                    {TABS.map(({ tab, label, icon, onClick }) => {
+                        const active = activePage === tab;
+                        const tone = active ? COLORS.onSurface : COLORS.textSecondary;
+                        return (
+                            <SlabFooterItem
+                                key={tab}
+                                className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
+                                active={active}
+                                onClick={onClick}
+                            >
+                                {/* Filled, weight 500 — the design's icon-font axes for this bar. */}
+                                <Icon className={`mobile-footer__${tab}-icon`} name={icon} size={22} weight={500} fill={1} color={tone} />
+                                <Typography
+                                    className={`mobile-footer__${tab}-label`}
+                                    sx={{
+                                        // 11px/600 flat, the design's `.ft div` — like the bar's
+                                        // 12px, pinned independently of the body ramp.
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        lineHeight: LEADING.tight,
+                                        color: tone,
+                                        fontFamily: FONTS.sans,
+                                    }}
+                                >
+                                    {label}
+                                </Typography>
+                            </SlabFooterItem>
+                        );
+                    })}
+                </SlabFooterFace>
+            </SlabFooter>
+        );
+    }
 
     return (
         <Footer className="mobile-footer" style={style}>

@@ -48,10 +48,32 @@ export interface WorldRect {
     r: number;
 }
 
-/** Screen-space projector bound to one scale + origin. */
+/**
+ * World → screen. Two kinds exist: the fixed 2:1 dimetric one below (`makeProjector`, the
+ * framework's default view) and the moving camera of camera.ts (`makeCameraProjector`,
+ * the Deck Tower's dive onto its top card — docs/DECK_TOWER.md § "Studying the tower").
+ * Every object draws through `project`, so it works under either; anything that sizes
+ * itself in screen px should prefer `scaleAt` over `unit`, which is exact only for the
+ * fixed view.
+ */
 export interface Projector {
+    /** Screen px per world unit at the view's centre (the fixed view: everywhere). */
     unit: number;
     project: (x: number, y: number, z: number) => Pt;
+    /**
+     * Screen px per world unit AT a point: the square root of the floor plane's area scale
+     * there. Equals `unit` everywhere under the fixed view; under a perspective camera it
+     * shrinks with distance, so a pawn far below the camera draws small.
+     */
+    scaleAt: (x: number, y: number, z: number) => number;
+    /**
+     * Screen px per world unit of a length FACING the camera at a point — the projected
+     * radius of a unit sphere there. Larger than `scaleAt` under the tilted views (the
+     * fixed view: unit·√2, because the floor is foreshortened but a sphere is not). For
+     * round things drawn in true 3D, e.g. IsoPawn's capsule body and ball head
+     * (iso/pawnFigure.ts).
+     */
+    facingScaleAt: (x: number, y: number, z: number) => number;
 }
 
 export function makeProjector(unit: number, originX = 0, originY = 0): Projector {
@@ -61,6 +83,9 @@ export function makeProjector(unit: number, originX = 0, originY = 0): Projector
             x: originX + (x - y) * unit,
             y: originY + ((x + y) * unit) / 2 - z * unit,
         }),
+        scaleAt: () => unit,
+        // The fixed view is camera.ts's `dimetricView`, whose `scale` is unit·√2.
+        facingScaleAt: () => unit * Math.SQRT2,
     };
 }
 
@@ -182,7 +207,7 @@ export function prism(proj: Projector, rect: WorldRect, zBottom: number, zTop: n
         top: toPath(topPts),
         hull: toPath(hullPts),
         frontX: front.x,
-        bevelHalfWidth: Math.max(1, r * proj.unit * 0.9),
+        bevelHalfWidth: Math.max(1, r * proj.scaleAt(rect.x + rect.w, rect.y + rect.d, zTop) * 0.9),
         bounds: boundsOf(hullPts),
     };
 }
@@ -233,19 +258,29 @@ export function boundsOf(pts: Pt[]) {
  * top face of a solid at height z — so text and decals on a card lie flat on it like a
  * print, instead of floating upright. Draw content in world coordinates (the same ones
  * passed to `roundedRectWorld`) inside a `<g transform={…}>`.
+ *
+ * `at` is the world point the map is measured around — pass the print's centre. Under
+ * the fixed view the plane map is affine and `at` changes nothing; under a perspective
+ * camera (camera.ts) it is only LOCALLY affine, so it is exact at `at` and drifts
+ * slightly away from it — a print a few units across stays true to a fraction of a px.
  */
-export function faceTransform(proj: Projector, z: number): string {
-    const o = proj.project(0, 0, z);
-    const u = proj.unit;
-    // Columns of the affine map: world x̂ → (u, u/2), world ŷ → (−u, u/2).
-    return `matrix(${u} ${u / 2} ${-u} ${u / 2} ${o.x.toFixed(2)} ${o.y.toFixed(2)})`;
+export function faceTransform(proj: Projector, z: number, at: Pt = { x: 0, y: 0 }): string {
+    return affineToSvg(faceAffine(proj, z, at));
 }
 
 /** `faceTransform` as an `Affine`, for composing with other plane maps (e.g. a hinge). */
-export function faceAffine(proj: Projector, z: number): Affine {
-    const o = proj.project(0, 0, z);
-    const u = proj.unit;
-    return { a: u, b: u / 2, c: -u, d: u / 2, e: o.x, f: o.y };
+export function faceAffine(proj: Projector, z: number, at: Pt = { x: 0, y: 0 }): Affine {
+    // The images of `at` and its two unit neighbours fix the map: world x̂ → (a, b),
+    // world ŷ → (c, d), translated so `at` lands where it projects. (Under the fixed
+    // view that is (u, u/2), (−u, u/2) — the matrix this used to hard-code.)
+    const o = proj.project(at.x, at.y, z);
+    const px = proj.project(at.x + 1, at.y, z);
+    const py = proj.project(at.x, at.y + 1, z);
+    const a = px.x - o.x;
+    const b = px.y - o.y;
+    const c = py.x - o.x;
+    const d = py.y - o.y;
+    return { a, b, c, d, e: o.x - a * at.x - c * at.y, f: o.y - b * at.x - d * at.y };
 }
 
 // ── Affine maps ─────────────────────────────────────────────────────────────────
@@ -345,11 +380,23 @@ export function hingedOutline(rect: WorldRect, z: number, hinge: Hinge): Pt3[] {
  * over them — still holds for every angle a door swings through.
  */
 export function hingedPrism(proj: Projector, rect: WorldRect, zBottom: number, zTop: number, hinge: Hinge): PrismGeometry {
+    return posedPrism(proj, rect, zBottom, zTop, (p) => hingePoint(hinge, p));
+}
+
+/**
+ * `prism` for an extruded rounded rect carried rigidly through space by `place` (a world
+ * point of the unposed solid → where it is now): `hingedPrism` is the hinge's swing. A rigid
+ * motion keeps the solid convex, so its silhouette is still the hull of its two outlines,
+ * and the top is painted over the walls (IsoSolid) — right while the top faces the camera,
+ * which is all its caller needs.
+ */
+export function posedPrism(proj: Projector, rect: WorldRect, zBottom: number, zTop: number, place: (p: Pt3) => Pt3): PrismGeometry {
     const toScreen = (pts: Pt3[]) => pts.map((p) => proj.project(p.x, p.y, p.z));
-    const topPts = toScreen(hingedOutline(rect, zTop, hinge));
-    const hullPts = convexHull(topPts.concat(toScreen(hingedOutline(rect, zBottom, hinge))));
+    const outlineAt = (z: number) => roundedRectWorld(rect).map((p) => place({ x: p.x, y: p.y, z }));
+    const topPts = toScreen(outlineAt(zTop));
+    const hullPts = convexHull(topPts.concat(toScreen(outlineAt(zBottom))));
     const r = Math.max(0, Math.min(rect.r, rect.w / 2, rect.d / 2));
-    const f = hingePoint(hinge, { x: rect.x + rect.w, y: rect.y + rect.d, z: zTop });
+    const f = place({ x: rect.x + rect.w, y: rect.y + rect.d, z: zTop });
     return {
         top: toPath(topPts),
         hull: toPath(hullPts),

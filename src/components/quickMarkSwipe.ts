@@ -6,7 +6,7 @@
 // Kept in its own module (not QuickMarkCard.tsx) so the card file only exports a
 // component — otherwise Vite fast-refresh disables HMR for it.
 import type { SwipeDirection } from "../hooks/useSwipeCommit";
-import { LEARN_NOW_COLORS, MASTERY_BAR_COLORS } from "../utils/categoryColors";
+import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../utils/categoryColors";
 
 // The server bucket each direction commits. The values ARE `StarterPacksService.sortCard`
 // bucket ids: right = "I already know it" (8/8 core history → Mastered), left = "Add to
@@ -18,11 +18,11 @@ export const QUICK_MARK_BUCKET: Record<SwipeDirection, "library" | "already-lear
 };
 
 // Each direction is painted with the colour of the COLLECTION the card joins — the same
-// surface the fdp draws that collection's card with: Learning gold (`LEARN_NOW_COLORS`)
+// surface the fdp draws that collection's card with: Learning gold (`LEARNING_COLORS`)
 // and the core bar's Mastered blue (`MASTERY_BAR_COLORS.core`). The card's own fill
 // shifts to it as it is dragged (no overlay).
 export const QUICK_MARK_COLOR: Record<SwipeDirection, string> = {
-    left: LEARN_NOW_COLORS.main,
+    left: LEARNING_COLORS.main,
     right: MASTERY_BAR_COLORS.core.main,
 };
 

@@ -37,7 +37,7 @@ import { useTTS } from "../../hooks/useTTS";
 import AudioModeChip from "../../components/AudioModeChip";
 import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { LEARN_NOW_HUE, LEARN_NOW_COLORS, MASTERY_BAR_HUES, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
+import { LEARNING_HUE, LEARNING_COLORS, MASTERY_BAR_HUES, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
 import { SHADOW } from "../../theme/shadows";
@@ -508,7 +508,7 @@ const SortTallyColumn = styled(Box, {
 }));
 
 // The number, painted as a small pill in the SAME hue as its fdp filter tile
-// (features/flashcards/LibraryDuo.tsx): Learning = LEARN_NOW_HUE's surface, Mastered =
+// (features/flashcards/LibraryDuo.tsx): Learning = LEARNING_HUE's surface, Mastered =
 // the core bar's MASTERY_BAR_HUES surface. Like the tile, the fill carries the colour and
 // the figure stays ink on a hairline border — the ramp surfaces are pastel, so tinting
 // the TEXT itself would be unreadable on paper. Taking the hue KEY (not a hex) means a
@@ -1046,12 +1046,12 @@ const SortCardsPage: React.FC = () => {
     // NOT EXISTS clause) — every sortable on-deck card is therefore a brand-new library
     // row, never a re-categorization of one already counted in the fetched baseline.
     const { counts: categoryCounts, loaded: countsLoaded, ok: countsOk } = useCategoryCounts();
-    const [tallyDelta, setTallyDelta] = useState({ learnNow: 0, mastered: 0 });
+    const [tallyDelta, setTallyDelta] = useState({ learning: 0, mastered: 0 });
     // How many cards each tally pill has "swallowed" this session. Used as the pill's
     // React `key`, so every landing remounts it and restarts its gulp animation; 0 means
     // no sort yet, so the pill does not gulp on first render. Only sorts bump it — an
     // Undo takes a card back out and should not look like the pill ate one.
-    const [tallyGulps, setTallyGulps] = useState({ learnNow: 0, mastered: 0 });
+    const [tallyGulps, setTallyGulps] = useState({ learning: 0, mastered: 0 });
     // Dropped cards still falling into their bucket (FallingCardGhost). A card is sorted
     // the moment it is released, but its tally credit waits for the landing, so the
     // count ticks (and gulps) as the card disappears into the well rather than before.
@@ -1099,13 +1099,13 @@ const SortCardsPage: React.FC = () => {
 
     const buckets = useMemo<BucketZone[]>(() => [
         // Coloured as the COLLECTION each bucket feeds, exactly as the fdp's filter tiles
-        // (LibraryDuo) paint those collections: LEARN_NOW_COLORS for Learning and the
+        // (LibraryDuo) paint those collections: LEARNING_COLORS for Learning and the
         // core bar's MASTERY_BAR_COLORS for Mastered (the SURFACE tier). The
         // level-bar tally above uses the same hues, so a bucket, its running count and
         // the fdp tile it fills are one colour. (Previously the band pair —
         // BAND_COLORS.Unfamiliar / .Mastered — which made Learning red here but yellow
         // on the fdp.)
-        { id: "library", label: "Learning", mainColor: LEARN_NOW_COLORS.main },
+        { id: "library", label: "Learning", mainColor: LEARNING_COLORS.main },
         { id: "already-learned", label: "Already Learned", mainColor: MASTERY_BAR_COLORS.core.main },
     ], []);
 
@@ -1228,13 +1228,13 @@ const SortCardsPage: React.FC = () => {
     // also writes a perfect 8/8 typed history, which resolves the row's utcm category
     // to Mastered. So "Learning" here means the still-being-learned part of the
     // library (everything except Mastered), not the library total the decks page shows.
-    const learnNowCount = useMemo(
+    const learningCount = useMemo(
         () =>
             (categoryCounts["Unfamiliar"] ?? 0) +
             (categoryCounts["Target"] ?? 0) +
             (categoryCounts["Comfortable"] ?? 0) +
-            tallyDelta.learnNow,
-        [categoryCounts, tallyDelta.learnNow]
+            tallyDelta.learning,
+        [categoryCounts, tallyDelta.learning]
     );
     const masteredCount = (categoryCounts["Mastered"] ?? 0) + tallyDelta.mastered;
 
@@ -1247,17 +1247,17 @@ const SortCardsPage: React.FC = () => {
     const [arrivedShort, setArrivedShort] = useState<boolean | null>(null);
     useEffect(() => {
         if (!countsOk || arrivedShort !== null) return;
-        setArrivedShort(learnNowCount < LEARN_NOW_ENOUGH_THRESHOLD);
-    }, [countsOk, arrivedShort, learnNowCount]);
+        setArrivedShort(learningCount < LEARN_NOW_ENOUGH_THRESHOLD);
+    }, [countsOk, arrivedShort, learningCount]);
     // Live: reaching the threshold drops the halo; an Undo back below it restores it.
-    const learnNowLowGlow = !!arrivedShort && learnNowCount < LEARN_NOW_ENOUGH_THRESHOLD;
+    const learningLowGlow = !!arrivedShort && learningCount < LEARN_NOW_ENOUGH_THRESHOLD;
 
     // Apply one card's effect on the tally. `direction` is +1 for a sort, -1 for an undo.
     // A skip touches neither bucket (it never creates a vet row).
     // A sort also makes the receiving pill gulp (tallyGulps). For a dropped card this
     // runs when its fall lands (handleFallLanded), not at release.
     const adjustTally = useCallback((bucket: string, direction: 1 | -1) => {
-        const key = bucket === "library" ? "learnNow" : bucket === "already-learned" ? "mastered" : null;
+        const key = bucket === "library" ? "learning" : bucket === "already-learned" ? "mastered" : null;
         if (!key) return;
         setTallyDelta((d) => ({ ...d, [key]: d[key] + direction }));
         if (direction === 1) setTallyGulps((g) => ({ ...g, [key]: g[key] + 1 }));
@@ -2110,17 +2110,17 @@ const SortCardsPage: React.FC = () => {
                 {countsLoaded && (
                     <>
                         <SortTallyColumn
-                            className="sort-cards__tally sort-cards__tally--learn-now"
+                            className="sort-cards__tally sort-cards__tally--learning"
                             side="left"
                         >
                             <SortTallyValue
                                 className="sort-cards__tally-value"
-                                key={tallyGulps.learnNow}
-                                gulp={tallyGulps.learnNow > 0}
-                                lowGlow={learnNowLowGlow}
-                                hue={LEARN_NOW_HUE}
+                                key={tallyGulps.learning}
+                                gulp={tallyGulps.learning > 0}
+                                lowGlow={learningLowGlow}
+                                hue={LEARNING_HUE}
                             >
-                                {learnNowCount}
+                                {learningCount}
                             </SortTallyValue>
                             <SortTallyLabel className="sort-cards__tally-label">Learning</SortTallyLabel>
                         </SortTallyColumn>

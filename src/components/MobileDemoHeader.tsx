@@ -26,8 +26,11 @@ interface MobileDemoHeaderProps {
     arrowDirection?: "down" | "left";
     // Title scale override. Only "dense" is ever worth passing — see PageHeader.
     size?: PageHeaderSize;
-    // Forwarded to PageHeader's `trailingContent` (right of the flame). Home only.
+    // Forwarded to PageHeader's `trailingContent` (right of the flame). Home and the
+    // Deck Tower only.
     trailingActions?: ReactNode;
+    // Forwarded to PageHeader's `titleColor`. Deck Tower only (white over its sky).
+    titleColor?: string;
 }
 
 const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
@@ -38,6 +41,7 @@ const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
     arrowDirection = "down",
     size,
     trailingActions,
+    titleColor,
 }) => (
     <PageHeader
         title={title}
@@ -47,6 +51,7 @@ const MobileDemoHeader: React.FC<MobileDemoHeaderProps> = ({
         size={size}
         rightContent={extraActions}
         trailingContent={trailingActions}
+        titleColor={titleColor}
     />
 );
 

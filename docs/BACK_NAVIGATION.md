@@ -107,7 +107,7 @@ The arrow should land exactly where browser Back (B/C/D) would land. That keeps 
 If the page just left can never be returned to meaningfully, the exit must use `{ replace: true }`. Otherwise Back lands on a dead page. Current examples:
 - the page's object was deleted (`CollectionViewPage` → `handleDelete`);
 - a one-shot action spent it (`ChallengeRoundScoreboard` "Next round");
-- the learner is not allowed there (the `isTemplateAuthor` / `isValidator` bounces);
+- the learner is not allowed there (the `isTemplateAuthor` / `isFeatureTester`-or-`isAdmin` bounces);
 - a required launch parameter is missing (Bubble Match with no level, Word Search with no mode).
 
 ### 2.3 Rule 3: Back returns the page as it was left

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mixHex, prefersReducedMotion } from "./iso";
-import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
+import { WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
 
 /**
  * useWorldPan — the Deck Tower's camera dash from one world to the next
@@ -30,16 +30,25 @@ import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
  * the other way: going right (core → writing) the scene leaves to the left and the new
  * one enters from the right.
  *
- * The clock is React state, ticked by rAF only while a pan runs (~1.3 s) — the same
+ * The clock is React state, ticked by rAF only while a pan runs (~0.8 s) — the same
  * per-frame pattern as useDeckSwap. Under prefers-reduced-motion `go` switches at once.
+ *
+ * The colours come from `paletteOf`: each world's sky at the current time of day
+ * (timeOfDay.ts), so a pan blends between the two worlds as they look right now.
  */
 
+/** A world's backdrop colours (its sky now, and the space above it). */
+export interface WorldPalette {
+    sky: string;
+    space: string;
+}
+
 /** The scene whipping off screen from rest (shorter when a swipe carries it part-way). */
-const OUT_MS = 300;
+const OUT_MS = 260;
 /** Empty sky racing past while it turns the new world's colour. */
-const CRUISE_MS = 560;
+const CRUISE_MS = 260;
 /** The new world's scene sliding in and settling. */
-const IN_MS = 440;
+const IN_MS = 300;
 
 export interface WorldPanView {
     /** The world drawn now. Switches mid-pan, while the scene is off screen. */
@@ -51,7 +60,7 @@ export interface WorldPanView {
     /** The camera's travel: +1 to the right, −1 to the left (0 at rest). */
     direction: -1 | 0 | 1;
     /** The backdrop's colours right now (blending mid-pan). */
-    palette: { sky: string; space: string };
+    palette: WorldPalette;
     /** A pan is running: world taps / swipes and the plate are ignored. */
     busy: boolean;
 }
@@ -111,9 +120,9 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smoothstep = (u: number) => u * u * (3 - 2 * u);
 
 /** The pan at `e` ms in. Pure. */
-function panView(plan: PanPlan, e: number): WorldPanView {
-    const from = TOWER_WORLDS[plan.from];
-    const to = TOWER_WORLDS[plan.to];
+function panView(plan: PanPlan, e: number, paletteOf: (id: TowerWorldId) => WorldPalette): WorldPanView {
+    const from = paletteOf(plan.from);
+    const to = paletteOf(plan.to);
     const d = plan.direction;
     const { out } = plan;
     let sceneShiftX: number;
@@ -142,7 +151,7 @@ function panView(plan: PanPlan, e: number): WorldPanView {
     };
 }
 
-export function useWorldPan(): WorldPanView & { go: (to: TowerWorldId, carry?: PanCarry) => void } {
+export function useWorldPan(paletteOf: (id: TowerWorldId) => WorldPalette): WorldPanView & { go: (to: TowerWorldId, carry?: PanCarry) => void } {
     const [world, setWorld] = useState<TowerWorldId>("core");
     const [plan, setPlan] = useState<PanPlan | null>(null);
     const [now, setNow] = useState(0);
@@ -181,13 +190,13 @@ export function useWorldPan(): WorldPanView & { go: (to: TowerWorldId, carry?: P
     }, [plan]);
 
     const view: WorldPanView = plan
-        ? panView(plan, now - plan.startedAt)
+        ? panView(plan, now - plan.startedAt, paletteOf)
         : {
               world,
               sceneShiftX: 0,
               speed: 0,
               direction: 0,
-              palette: { sky: TOWER_WORLDS[world].sky, space: TOWER_WORLDS[world].space },
+              palette: paletteOf(world),
               busy: false,
           };
     return { ...view, go };

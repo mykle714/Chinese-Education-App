@@ -64,7 +64,7 @@ function row(overrides: Partial<StudyChallengeRow> = {}): StudyChallengeRow {
 }
 
 /** Materialisation is exercised for real (idempotent-ensure), so its stub records calls. */
-function serviceFor(challenge: StudyChallengeRow, isValidator = false) {
+function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
     const ensured: string[] = [];
     const challengeDAL = {
         findById: async () => challenge,
@@ -72,7 +72,7 @@ function serviceFor(challenge: StudyChallengeRow, isValidator = false) {
     } as unknown as IStudyChallengeDAL;
     const userDAL = {
         findById: async (id: string) => ({
-            id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isValidator,
+            id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester,
         }),
     };
     const starterPacks = {
@@ -179,7 +179,7 @@ describe('StudyChallengeService.getRoundContext', () => {
     // ── The tester escape hatch (docs/STUDY_CHALLENGE.md § 2a) ──
     // Study Challenge is a weekly feature, so without this the round runner can only
     // be exercised on a Friday. The hatch must lift the WINDOW and nothing else, and
-    // must be spendable only by a validator.
+    // must be spendable only by a feature tester.
 
     it('lets a VALIDATOR play outside the test window when they ask for anytime', async () => {
         const { service } = serviceFor(row(), true);
@@ -190,7 +190,7 @@ describe('StudyChallengeService.getRoundContext', () => {
         expect(context.roundIndex).toBe(1);
     });
 
-    it('IGNORES anytime from a non-validator, silently', async () => {
+    it('IGNORES anytime from a non-feature-tester, silently', async () => {
         // Silently: a 403 here would be a probe for who holds the flag, and the caller
         // gets the ordinary weekly rules either way.
         const { service } = serviceFor(row(), false);
@@ -268,7 +268,7 @@ describe('StudyChallengeService — claimed (in-progress) rounds', () => {
         } as unknown as IStudyChallengeDAL;
         const userDAL = {
             findById: async (id: string) => ({
-                id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isValidator: false,
+                id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester: false,
             }),
         };
         const unused = {} as never;

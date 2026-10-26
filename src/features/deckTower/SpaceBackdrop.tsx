@@ -1,6 +1,8 @@
 import React, { useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
-import { ISO, mixHex } from "./iso";
+import { ISO, mixHex, shadeHex } from "./iso";
+import { setFooterCastShadow } from "../../components/footerCastShadow";
+import ShootingStars from "./ShootingStars";
 
 /**
  * SpaceBackdrop — the Deck Tower's sky, which darkens into star-filled space as the
@@ -18,8 +20,16 @@ import { ISO, mixHex } from "./iso";
  *     the world's sky → space (`palette`) on a smoothstep of `t`, and the stars fade in on the last
  *     part of it (`STARS_FADE_FROM`), so they never show on a still-light sky.
  *   - It is altitude, not a timer: scrolling back down brings the sky back.
+ *   - The time of day (timeOfDay.ts) arrives through `palette.sky` (the world's sky at
+ *     this hour) and `groundStars` (night's faint stars from the ground). At night it
+ *     also hosts the ShootingStars layer (`shootingStars`), over the star field.
  *   - `palette` changes every frame during a world pan (useWorldPan blends one world's
  *     colours into the next); each change re-applies at once, without a scroll.
+ *   - `altitudeY` OVERRIDES the scroll: while the tower is being studied
+ *     (docs/DECK_TOWER.md § "Studying the tower") the camera has left the scroll behind
+ *     and stands over the tower's top card, so the page hands in the altitude it is at —
+ *     a viewBox y on the tower's axis in the same frame as `band` — and the sky follows
+ *     it: studying down a tall tower brings the sky back from space, card by card.
  *
  * ⚡ Scroll handling writes the styles directly to the DOM (rAF-throttled), NOT through
  * React state. A state update per scroll frame would re-render the whole scene (tower,
@@ -29,7 +39,7 @@ import { ISO, mixHex } from "./iso";
  * same z-index, but earlier in the DOM, so the scroller (and the svg in it) paints over
  * it, and whatever covers the scroller covers it too.
  *
- * Depends on: iso/palette.ts (`ISO.star`, `mixHex`); towerWorlds.ts (the palettes, via the page).
+ * Depends on: iso/palette.ts (`ISO.star`, `mixHex`); ShootingStars.tsx; towerWorlds.ts (the palettes, via the page).
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space".
  */
 
@@ -50,8 +60,25 @@ interface SpaceBackdropProps {
     band: SpaceBand;
     /** The current world's sky and the space above it (blending mid-pan). */
     palette: { sky: string; space: string };
+    /**
+     * The star field's opacity on the ground — above 0 at night (timeOfDay.ts
+     * `groundStars`), so stars show over a night sky before any climb. The climb's own
+     * fade-in takes over wherever it is stronger.
+     */
+    groundStars?: number;
+    /** Fire occasional meteors over the sky (timeOfDay.ts `shootingStars`: night). */
+    shootingStars?: boolean;
     /** The backdrop's bottom edge (the footer bar's height), matching the scroller's. */
     bottom: number | string;
+    /** The altitude to show instead of the scroll's (see the header), or null to follow the scroll. */
+    altitudeY?: number | null;
+    /**
+     * Px at the scroller's bottom hidden behind the footer bar: the scroller runs to the
+     * screen's bottom edge (so a study session's scene can fill it), and its last
+     * `scrollerBottomInset` px are a spacer under the footer — not part of the view whose
+     * middle is the altitude.
+     */
+    scrollerBottomInset?: number;
 }
 
 /** Stars only start to show once the blend is this far along, so they never sit on a light sky. */
@@ -106,13 +133,17 @@ function starTile(tile: number, count: number, rMin: number, rMax: number, seed:
 const STAR_IMAGES = STAR_LAYERS.map((l) => starTile(l.tile, l.count, l.rMin, l.rMax, l.seed)).join(", ");
 const STAR_SIZES = STAR_LAYERS.map((l) => `${l.tile}px ${l.tile}px`).join(", ");
 
-const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom }) => {
+const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false }) => {
     const backdropRef = useRef<HTMLDivElement>(null);
     const starsRef = useRef<HTMLDivElement>(null);
     // Read by `apply` through refs: the palette changes per frame during a pan, and
     // re-subscribing the scroll listener that often would be wasted work.
     const paletteRef = useRef(palette);
     paletteRef.current = palette;
+    const groundStarsRef = useRef(groundStars);
+    groundStarsRef.current = groundStars;
+    const altitudeRef = useRef(altitudeY);
+    altitudeRef.current = altitudeY;
     const applyRef = useRef<(() => void) | null>(null);
 
     // Re-subscribes when the band changes (the deck count arriving refits the viewBox).
@@ -136,10 +167,16 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             if (svgRect.width <= 0 || band.viewBoxWidth <= 0) return;
             // Rendered px per viewBox unit (the svg is full-width; its height follows).
             const scale = svgRect.width / band.viewBoxWidth;
-            const midY = band.viewBoxMinY + (scrollerRect.top + scrollerRect.height / 2 - svgRect.top) / scale;
+            const viewHeight = scrollerRect.height - scrollerBottomInset;
+            const midY = altitudeRef.current ?? band.viewBoxMinY + (scrollerRect.top + viewHeight / 2 - svgRect.top) / scale;
             const t = (band.yFrom - midY) / (band.yFrom - band.yTo);
-            backdrop.style.backgroundColor = mixHex(paletteRef.current.sky, paletteRef.current.space, smoothstep(0, 1, t));
-            stars.style.opacity = String(smoothstep(STARS_FADE_FROM, 1, t));
+            const skyNow = mixHex(paletteRef.current.sky, paletteRef.current.space, smoothstep(0, 1, t));
+            backdrop.style.backgroundColor = skyNow;
+            // The floating slab footer stands on this sky and casts its shadow onto it: the
+            // sky one iso step darker (the design's `shade(sky, .1)`), following the sky into
+            // space as the tower is climbed. See components/footerCastShadow.ts.
+            setFooterCastShadow(shadeHex(skyNow, 0.1));
+            stars.style.opacity = String(Math.max(groundStarsRef.current, smoothstep(STARS_FADE_FROM, 1, t)));
             // Parallax: how far the learner has scrolled UP from the bottom. Content moves
             // down the screen as they climb; each star layer follows at its own fraction.
             const climbed = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
@@ -161,15 +198,16 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         return () => {
             applyRef.current = null;
             cancelAnimationFrame(frame);
+            setFooterCastShadow(null);
             scroller.removeEventListener("scroll", schedule);
             window.removeEventListener("resize", schedule);
         };
-    }, [scrollerRef, band]);
+    }, [scrollerRef, band, scrollerBottomInset]);
 
-    // A new palette (a world pan's colour blend) repaints straight away.
+    // A new palette (a world pan's colour blend), or a new study altitude, repaints straight away.
     useLayoutEffect(() => {
         applyRef.current?.();
-    }, [palette.sky, palette.space]);
+    }, [palette.sky, palette.space, altitudeY, groundStars]);
 
     return (
         <Box
@@ -182,6 +220,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
                 className="deck-tower-page__space-stars"
                 sx={{ position: "absolute", inset: 0, opacity: 0, backgroundImage: STAR_IMAGES, backgroundSize: STAR_SIZES, backgroundRepeat: "repeat" }}
             />
+            <ShootingStars active={shootingStars} />
         </Box>
     );
 };

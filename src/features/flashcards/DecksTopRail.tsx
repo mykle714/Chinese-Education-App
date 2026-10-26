@@ -111,10 +111,10 @@ interface DecksTopRailProps {
     /** The Centers this account gets, in MASTERY_CENTER_WORLDS order (activeMasteryCenters). */
     centers: MasteryCenterWorld[];
     /** Light the Sort tile's low-supply halo + badge. */
-    learnNowLow: boolean;
+    learningLow: boolean;
 }
 
-const DecksTopRail: React.FC<DecksTopRailProps> = ({ centers, learnNowLow }) => {
+const DecksTopRail: React.FC<DecksTopRailProps> = ({ centers, learningLow }) => {
     const slideNavigate = useSlideNavigate();
     const { goToSort } = useDiscoverNavigation();
 
@@ -148,11 +148,11 @@ const DecksTopRail: React.FC<DecksTopRailProps> = ({ centers, learnNowLow }) => 
                 label="Sort Cards"
                 className={[
                     "flashcards-decks__sort-tile",
-                    learnNowLow && "flashcards-decks__sort-tile--low",
+                    learningLow && "flashcards-decks__sort-tile--low",
                 ].filter(Boolean).join(" ")}
                 onClick={goToSort}
-                ariaLabel={learnNowLow ? "Sort Cards — card count low" : undefined}
-                sx={learnNowLow ? {
+                ariaLabel={learningLow ? "Sort Cards — card count low" : undefined}
+                sx={learningLow ? {
                     animation: `${sortTileLowGlow} ${LOW_SUPPLY_GLOW_PULSE_MS}ms ease-in-out infinite`,
                     "@media (prefers-reduced-motion: reduce)": {
                         animation: "none",
@@ -160,7 +160,7 @@ const DecksTopRail: React.FC<DecksTopRailProps> = ({ centers, learnNowLow }) => 
                     },
                 } : undefined}
             >
-                {learnNowLow && (
+                {learningLow && (
                     // Inside the tile's top-right corner, on the glyph's row (the tile's
                     // 13px top pad + ~1px to centre on the 19px glyph), so it sits beside
                     // the icon and clear of the label below.

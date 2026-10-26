@@ -4,7 +4,7 @@ import { Box } from "@mui/material";
 import LeafPage from "../../../components/LeafPage";
 import { HeaderIconButton } from "../../../components/PageHeader";
 import Icon from "../../../components/Icon";
-import { FIRE_GLYPH_SIZE_PX } from "../../../minutePoints/FireCount";
+import { FIRE_COUNT_FONT_SIZE, FIRE_COUNT_INK, FIRE_GLYPH_SIZE_PX } from "../../../minutePoints/FireCount";
 import { useAuth } from "../../../AuthContext";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../../hooks/useBlockEdgeSwipe";
@@ -53,7 +53,7 @@ import { FONTS } from "../../../theme/fonts";
  */
 /**
  * The sheet's counter in the header, drawn in the minute-points flame's shape
- * (`FireCount` — `.hd .fire`): one big filled glyph with a mono 11px count beside it,
+ * (`FireCount` — `.hd .fire`): one big filled glyph with a mono `FIRE_COUNT_FONT_SIZE` / `FIRE_COUNT_INK` count beside it,
  * 4px apart, so the two readouts in the right slot read as a matched pair. Ink2
  * (`COLORS.iconColor`, the header icons' ink) rather than the flame's orange: the
  * orange is the earning signal and stays the flame's alone.
@@ -64,7 +64,7 @@ function NotebookHeaderCount({ count }: { count: number }) {
             className="writing-notebook-page__count"
             role="img"
             aria-label={`${count} ${count === 1 ? "time written" : "times written"}`}
-            sx={{ display: "flex", alignItems: "center", gap: "4px", fontFamily: FONTS.mono, fontSize: 11, fontVariantNumeric: "tabular-nums", color: COLORS.iconColor }}
+            sx={{ display: "flex", alignItems: "center", gap: "4px", fontFamily: FONTS.mono, fontSize: FIRE_COUNT_FONT_SIZE, ...FIRE_COUNT_INK, fontVariantNumeric: "tabular-nums", color: COLORS.iconColor }}
         >
             <Icon className="writing-notebook-page__count-icon" name={NOTEBOOK_GLYPH} size={FIRE_GLYPH_SIZE_PX} color={COLORS.iconColor} fill={1} />
             {count}

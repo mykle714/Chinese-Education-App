@@ -2,6 +2,7 @@ import { Box, Typography } from "@mui/material";
 import Icon from "../components/Icon";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT } from "../theme/scale";
 
 /**
  * `FireCount` — the app's flame-and-number readout, as a PURE presentational
@@ -31,6 +32,26 @@ import { FONTS } from "../theme/fonts";
 export const FIRE_GLYPH_SIZE_PX = 22.5;
 
 /**
+ * The count's size when a caller does not ask for another. Raised from the design's
+ * literal 11px to `SIZE.body` (14px) on 2026-10-26: at 11px the figure was hard to read
+ * beside the 22.5px glyph, notably over the Deck Tower's sky. Exported so the Writing
+ * Notebook's look-alike header counter (`WritingNotebookPage` → `NotebookHeaderCount`),
+ * which sits beside this badge, stays the same size.
+ */
+export const FIRE_COUNT_FONT_SIZE = SIZE.body;
+
+/**
+ * The count's line weight: medium, one step over the design's regular. Bold with a
+ * hairline self-outline (the Deck Tower card count's treatment) and then semibold were
+ * tried on 2026-10-26 and both read as too heavy. Azeret Mono's 500 is already loaded in
+ * index.html. Shared with the Writing Notebook's header counter for the same reason as
+ * `FIRE_COUNT_FONT_SIZE`.
+ */
+export const FIRE_COUNT_INK = {
+    fontWeight: WEIGHT.medium,
+} as const;
+
+/**
  * Where the flame's INK sits inside its em box, as a percentage of that box measured
  * from the bottom. A Material Symbols glyph does not touch the edges of its em square,
  * so a raw 0–100% clip would spend its first and last ~8% moving through empty space —
@@ -53,7 +74,7 @@ export interface FireCountProps {
     /**
      * Numeral size — a px number or any CSS length. It takes a string so a caller can
      * pass a `SIZE` token (those are `rem`, and respect the reader's browser font
-     * size); the default stays the design's literal 11px, which the header badge is
+     * size); the default is `FIRE_COUNT_FONT_SIZE`, which the header badge is
      * authored at.
      */
     countFontSize?: number | string;
@@ -81,7 +102,7 @@ const FireCount: React.FC<FireCountProps> = ({
     value,
     tone = COLORS.fireActive,
     glyphSize = FIRE_GLYPH_SIZE_PX,
-    countFontSize = 11,
+    countFontSize = FIRE_COUNT_FONT_SIZE,
     fillPct,
     animateFill = false,
     struck = false,
@@ -194,6 +215,7 @@ const FireCount: React.FC<FireCountProps> = ({
                 sx={{
                     fontFamily: FONTS.mono,
                     fontSize: countFontSize,
+                    ...FIRE_COUNT_INK,
                     // Tabular so the row does not shift width as the count ticks over.
                     fontVariantNumeric: "tabular-nums",
                     color: tone,

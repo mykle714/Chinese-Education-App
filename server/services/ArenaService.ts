@@ -40,6 +40,8 @@ export interface ArenaUserLookup {
     timezone?: string;
     avatarIconId?: string | null;
     arenaMessage?: string | null;
+    /** Feature-tester grant (migration 178) — read only by `canManuallyTick`. */
+    isFeatureTester?: boolean;
   } | null>;
 }
 
@@ -602,10 +604,25 @@ export class ArenaService {
    * top of them. Resolving first makes that self-healing rather than escalating.
    */
   async tick(now = new Date()): Promise<{ resolved: number; formed: number; stranded: number }> {
+    // (Ungated by design: the cron and server/scripts/arena-tick.ts call it directly.
+    // The HTTP lever gates on `canManuallyTick` in ArenaController.adminTick.)
     const resolved = await this.resolveDue(now);
     const formed = await this.formArenas(now);
     const stranded = await this.countStranded(now);
     return { resolved, formed: formed.length, stranded };
+  }
+
+  /**
+   * May this caller pull the manual tick lever (`POST /api/arena/admin/tick`)?
+   * Feature testers only (users."isFeatureTester", migration 178). Read from the DB
+   * rather than the request: the access-token JWT carries only { userId, email }, so a
+   * grant flag is never on `req.user`. A failed lookup denies.
+   *
+   * Docs: docs/ARENA_FEATURE.md (the admin-tick gate).
+   */
+  async canManuallyTick(userId: string): Promise<boolean> {
+    const user = await this.userLookup.findById(userId).catch(() => null);
+    return !!user?.isFeatureTester;
   }
 
   /**

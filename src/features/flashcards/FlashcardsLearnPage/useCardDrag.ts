@@ -41,6 +41,9 @@ export function useCardDrag(
     onDismiss: (direction: 'left' | 'right') => void,
     // resetKey should change whenever a new card is shown so flip-tracking resets
     resetKey: number = 0,
+    // The flip's duration — the lockout below lasts exactly this long. The Deck Tower's
+    // slower flip passes TOWER_CARD_FLIP_MS.
+    flipMs: number = CARD_FLIP_MS,
 ): UseCardDragReturn {
     const cardRef = useRef<HTMLDivElement>(null);
     const dragStart = useRef({ x: 0, y: 0 });
@@ -124,7 +127,7 @@ export function useCardDrag(
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
         flipLockTimer.current = setTimeout(() => {
             flipLockRef.current = false;
-        }, CARD_FLIP_MS);
+        }, flipMs);
     };
 
     // Put the card straight onto Side 2 without the tap-to-flip gate. Used when a

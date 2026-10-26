@@ -5,6 +5,8 @@ import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { COLORS } from "../../../theme/colors";
 import { SAFE_BOTTOM } from "../../../theme/safeArea";
+import { towerPlateSx } from "./towerPlate";
+import type { PlateTones } from "./flpTowerHost";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
 
@@ -259,9 +261,13 @@ export const ContentArea = styled(Box)(() => ({
 // the screen edge: flp is footerless and the frame paints edge to edge, so a bare `bottom: 24`
 // sat inside the 34pt home-indicator band on Face ID iPhones. The card moves up with it for
 // free — useCardSlotPadding reserves the band from the pill's live `offsetTop` down.
+//
+// `plate` (Deck Tower sessions only): drawn as the tower's floor-plate push button instead
+// of the white pill — towerPlate.ts. It overrides the fill, outline, print and shadow, and
+// presses along with the pill's own `translateX(-50%)` centring.
 export const MoreInfoPill = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled",
-})<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean }>(({ isFlipped, hintActive, isDisabled, theme }) => ({
+    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled" && prop !== "plate",
+})<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean; plate?: PlateTones }>(({ isFlipped, hintActive, isDisabled, plate, theme }) => ({
     position: "absolute",
     bottom: `calc(24px + ${SAFE_BOTTOM})`,
     left: "50%",
@@ -285,11 +291,14 @@ export const MoreInfoPill = styled(Box, {
     pointerEvents: isDisabled ? "none" : "auto",
     transition: "opacity 0.35s ease",
     whiteSpace: "nowrap",
-    animation: hintActive && !isDisabled ? "moreInfoPulse 1.6s ease-in-out infinite" : "none",
+    // The "tap me" bob. Not in Deck Tower sessions (`plate`): there the pill is a solid
+    // floor-plate button, and a bobbing plate reads as a glitch rather than a hint.
+    animation: hintActive && !isDisabled && !plate ? "moreInfoPulse 1.6s ease-in-out infinite" : "none",
     "@keyframes moreInfoPulse": {
         "0%, 100%": { transform: "translateX(-50%) translateY(0)", opacity: 0.7 },
         "50%": { transform: "translateX(-50%) translateY(-4px)", opacity: 1 },
     },
+    ...(plate ? towerPlateSx(plate, "translateX(-50%)") : {}),
 }));
 
 // ── Card-slot vertical padding ────────────────────────────────────────────────
@@ -403,40 +412,54 @@ export const DraggableCardContainer = styled(Box, {
     containerType: "size",
 }));
 
-// Swipe-direction tutorial label, rendered above the card after the user taps
-// an already-flipped card. Left side reads "← Incorrect" in the incorrect color,
-// right side reads "Correct →" in the correct color. Fade + slight rise on entry.
+/**
+ * The hint labels sit IN the card's top corners, centred in its top band
+ * (`--card-hint-band`, set on the card frame by FlashCardSection: the Deck Tower stock's
+ * cream rim, or a fixed row on the plain flp), and in from the side by the card's corner
+ * radius (`--card-radius`) so they start where the straight edge does. The card's own top
+ * chrome (CardOpsRail's `•••`, the CardNote strip) sits below the band
+ * (`--card-chrome-inset`), leaving the corners to these labels.
+ * Fallbacks are only for a frame that sets neither.
+ */
+const HINT_BAND_CSS = "var(--card-hint-band, 32px)";
+const HINT_SIDE_CSS = "var(--card-radius, 24px)";
+
+// Swipe-direction tutorial label, in the card's top-left / top-right corner after the user
+// taps an already-flipped card. Left reads "← Incorrect" in the incorrect color, right
+// reads "Correct →" in the correct color. Fade + slight rise on entry.
 export const SwipeHintLabel = styled(Box, {
     shouldForwardProp: (prop) => prop !== "visible" && prop !== "side",
 })<{ visible: boolean; side: "left" | "right" }>(({ visible, side }) => ({
     position: "absolute",
-    top: 16,
-    [side === "left" ? "left" : "right"]: 24,
+    top: `calc(${HINT_BAND_CSS} / 2)`,
+    [side === "left" ? "left" : "right"]: HINT_SIDE_CSS,
     display: "flex",
     alignItems: "center",
     gap: 6,
     fontFamily: FC_FONT,
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
+    lineHeight: 1,
     letterSpacing: "0.02em",
     color: side === "left" ? INCORRECT_LABEL : CORRECT_LABEL,
     opacity: visible ? 1 : 0,
-    transform: visible ? "translateY(0)" : "translateY(-4px)",
+    // Centred on the band's middle line; the hidden state sits 4px higher (the rise).
+    transform: visible ? "translateY(-50%)" : "translateY(calc(-50% - 4px))",
     transition: "opacity 0.28s ease, transform 0.28s ease",
     pointerEvents: "none",
     userSelect: "none",
-    zIndex: 4,
+    zIndex: 10,
     whiteSpace: "nowrap",
 }));
 
-// Flip tutorial label — centered above the card, shown after the user attempts
+// Flip tutorial label — centred in the card's top band, shown after the user attempts
 // to drag a card that hasn't been flipped yet. Mirrors SwipeHintLabel's entry
 // animation but in a neutral (instructional) color and a centered position.
 export const FlipHintLabel = styled(Box, {
     shouldForwardProp: (prop) => prop !== "visible",
 })<{ visible: boolean }>(({ visible, theme }) => ({
     position: "absolute",
-    top: 16,
+    top: `calc(${HINT_BAND_CSS} / 2)`,
     left: "50%",
     display: "flex",
     alignItems: "center",
@@ -444,14 +467,15 @@ export const FlipHintLabel = styled(Box, {
     fontFamily: FC_FONT,
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
+    lineHeight: 1,
     letterSpacing: "0.02em",
     color: theme.palette.flashcard.textSecondary,
     opacity: visible ? 1 : 0,
-    transform: visible ? "translate(-50%, 0)" : "translate(-50%, -4px)",
+    transform: visible ? "translate(-50%, -50%)" : "translate(-50%, calc(-50% - 4px))",
     transition: "opacity 0.28s ease, transform 0.28s ease",
     pointerEvents: "none",
     userSelect: "none",
-    zIndex: 4,
+    zIndex: 10,
     whiteSpace: "nowrap",
 }));
 

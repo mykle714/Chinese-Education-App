@@ -16,7 +16,8 @@ import { fallMsFor, planCardCollapse, type CardCollapsePlan } from "./iso";
  * a list below, a `kind` in `TowerResizePlan`, and a branch in each of those two.
  *
  * Depended on by: useTowerResize.ts (plays a plan), DeckTowerPlatform.tsx (draws one),
- * DeckTowerPage.tsx (plans a grow's camera move).
+ * DeckTowerPage.tsx (plans a grow's camera move), useTowerStudy.ts (a study's spawn reuses
+ * `SKY_DROP`'s plan and `IMPACT_MS`, drawn its own way for the study camera).
  */
 
 /** Cartoon gravity for a sky drop's falling tower, world units / s² (the pawn's sky fall uses 110). */

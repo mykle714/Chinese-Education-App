@@ -395,7 +395,7 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   page IS the eip panel, mounted inline (see the table above), so the det's icon is not
   shown here. The panel's sense chip drives every tab (`selectedSenseIndex`, page state,
   reset on drill-in along with the tab); its speaker speaks the selected sense's reading.
-  The Learning toggle sits under the panel's speaker (`learnNow`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
+  The Learning toggle sits under the panel's speaker (`learning`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
   the **bottom of the definition tab**, under Synonyms + Related, through the panel's
   `definitionFooter` slot — there is no card for it to sit above.
   Reached from the Dictionary node, so
@@ -406,14 +406,14 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   The one write affordance is the **Learning toggle** (discoverable entries only,
   signed-in users only), stacked **under the speaker**, left-justified with it, in the panel's entry header
   (2026-10-10; it used to sit in the page title bar). The SAME control rides in the
-  Dictionary page's eip (`EipSheet` `showLearnNow`), where it tracks whichever word tab
+  Dictionary page's eip (`EipSheet` `showLearning`), where it tracks whichever word tab
   is showing:
-  - **Not in Learning** → a compact 24px **"+"** (`learn-now-toggle--add`) breathing the
+  - **Not in Learning** → a compact 24px **"+"** (`learning-toggle--add`) breathing the
     soft green halo from `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE`, 3.6s pulse;
     static at peak under reduced motion), the same "add cards" nudge the fdp's Sort Cards
     tile wears (DECKS_FEATURE.md § "Sort Cards tile"). Tap → `addToLibrary`.
   - **In Learning** (bucket `'library'`) → a small greyed **"Added!"** pill
-    (`learn-now-toggle--added`: `COLORS.grey` fill, `COLORS.textFaint` text, the app's
+    (`learning-toggle--added`: `COLORS.grey` fill, `COLORS.textFaint` text, the app's
     `COLORS.border` outline, no glow). Tap → `removeFromLibrary`, **no confirmation**:
     removal demotes the row to `'provisional'` rather than deleting it, so marks and deck
     memberships survive and a re-add promotes it back in place (PROVISIONAL_CARDS.md).
@@ -426,9 +426,9 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   - The flp eip keeps its own older add-only "+" (`onAddToLibrary`, hidden once added) in
     the same slot under the speaker.
 
-  *Code:* `src/hooks/useLearnNowToggle.ts` (state + rules), `src/components/LearnNowToggle.tsx`
+  *Code:* `src/hooks/useLearningToggle.ts` (state + rules), `src/components/LearningToggle.tsx`
   (the control), `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (the
-  vertical action stack, `learnNow` prop); `src/utils/vocabApi.ts` (`getLibraryStatus`,
+  vertical action stack, `learning` prop); `src/utils/vocabApi.ts` (`getLibraryStatus`,
   `removeFromLibrary`, `addToLibrary`); `server/services/VocabEntryService.ts`
   (`getLibraryStatus`, `removeFromLibrary`); `server/dal/implementations/VocabEntryDAL.ts`
   (`findBucketRowByUserAndKey`, `demoteLibraryRowToProvisional`).
@@ -441,7 +441,7 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   trail, never a page. It is the only `EipSheet` host with the dictionary extras:
   `showSynonymsRelated` (Synonyms + Related at the bottom of the definition tab),
   `showWordTools` (`Write it` · `Compare` under them, Compare opening the eip's own Compare
-  tab) and `showLearnNow` (the toggle above).
+  tab) and `showLearning` (the toggle above).
 
 ### Breakdown drill-in targets
 

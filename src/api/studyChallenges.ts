@@ -16,7 +16,7 @@
  *
  * ⚠️ EVERY CALL HERE CARRIES `?anytime=` WHEN THE TESTER HATCH IS ON, and this file is
  * the ONE place that happens — a page must never remember to add it. The server
- * honours it only for a validator account (docs/STUDY_CHALLENGE.md § 2a), so sending
+ * honours it only for a feature-tester account (docs/STUDY_CHALLENGE.md § 2a), so sending
  * it unconditionally from a normal session would be harmless; it is sent
  * conditionally only to keep an ordinary request log clean. The one call that does
  * NOT go through here is the game-pool read, which builds its own URL — see

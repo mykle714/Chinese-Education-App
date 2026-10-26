@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./geometry";
 import { shadowSlide } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
 import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
+import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
 
 /**
  * usePawnMotion — the IsoPawn's behaviour (docs/ISO_ART_FRAMEWORK.md § "IsoPawn").
@@ -26,9 +27,10 @@ import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
  *   falling from the sky) and goes into IDLE's opening pause. A startle that arrives
  *   mid-entrance is dropped: the pawn is still in the air.
  *
- * It writes CSS transforms straight onto four SVG groups (plus the three that keep the
- * pawn's shaded decals in line with its shadow, see IsoPawn `decals`) through refs rather than
- * through React state: the pawn moves every frame, and the page re-rendering at 60 fps
+ * It writes straight onto the pawn's SVG through refs — the travel and shadow groups'
+ * transforms (plus the three that keep the pawn's shaded decals in line with its shadow,
+ * see IsoPawn `decals`), the body's path, the head's circle and the "!" bubble's anchor —
+ * rather than through React state: the pawn moves every frame, and the page re-rendering at 60 fps
  * for it would be wasted work. React state changes only for the two things the tree
  * needs to know: a fresh emote (to mount the "!" bubble) and the pawn's DEPTH RANK
  * among the obstacles (its slot in their back-to-front order, `depthRankAmong` — the page
@@ -57,6 +59,11 @@ import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
  *   speed, flies off, and lands in a couple of shrinking bounces (BOUNCE_RESTITUTION) with
  *   a squash on each impact. While airborne this way it doesn't walk, waddle or set off.
  *
+ * OPENING: a step may sink BELOW the floor (the Deck Tower's plate receding into the
+ * platform for a study dive, IsoFloorRecess), and a pawn on it rides it down. While its feet
+ * are below the floor the whole pawn is clipped to `openingClip`, the opening swept up the
+ * screen, so the floor in front of the hole hides its lower part.
+ *
  * FLOOR DROP: `floorDrop` > 0 means the floor itself is falling away (the Deck Tower's trap
  * door, docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). The pawn has no surface
  * then, and falls on its own: a launch still in flight carries on to its apex first, and
@@ -66,6 +73,16 @@ import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
  * by its launch height. It drops out of the air, then keeps pace with the tower and is
  * gone when the tower is. Its "!"
  * bubble pops as that fall starts.
+ *
+ * VIEW: the body is a true 3D figure — a capsule under a ball (iso/pawnFigure.ts) — projected
+ * every frame from the feet's world position and the pose (hop, lean, squash), so it looks
+ * right under ANY camera: under the fixed dimetric view it is the familiar upright pill,
+ * and seen from straight above (iso/camera.ts — the Deck Tower's study camera) it is a
+ * round head with the body peeking out past it, small far below the camera. The "!" bubble
+ * is a billboard: always upright on screen, over the head, sized to the head's scale. The
+ * projector is read through a ref, so a camera moving every frame neither restarts the
+ * loop nor resets the pawn's walk; the page re-rendering with a new camera redraws the
+ * figure at once (a layout effect) rather than a frame late.
  *
  * Under prefers-reduced-motion nothing runs: the pawn stands at `at` and the startle is
  * skipped.
@@ -195,7 +212,7 @@ const FALL_BLEND_MS = 350;
 const HOP_MIN_RISE = 0.05;
 
 /** Startle. */
-export const LOOK_UP_LEAN_DEG = 10;
+const LOOK_UP_LEAN_DEG = 10;
 export const LEAP_HOP_HEIGHT = 0.9;
 const LEAP_DISTANCE = 0.85;
 const LEAN_MS = 120;
@@ -357,14 +374,20 @@ interface EdgeHopMode {
 export interface PawnMotionRefs {
     /** Slides the whole pawn (shadow included) across the floor. */
     travel: React.RefObject<SVGGElement | null>;
-    /** Lifts body + emote off the floor (step bounce, leap arc). */
-    hop: React.RefObject<SVGGElement | null>;
+    /** Hides the whole pawn before its entrance starts. */
+    presence: React.RefObject<SVGGElement | null>;
+    /** The body's outline: rewritten every frame (see VIEW in the header). */
+    body: React.RefObject<SVGPathElement | null>;
+    /** The head's circle: rewritten every frame. */
+    head: React.RefObject<SVGCircleElement | null>;
+    /** Places the "!" bubble (drawn round its tail tip at the origin, EMOTE_DRAW_SCALE px per unit) over the head. */
+    emoteAnchor: React.RefObject<SVGGElement | null>;
     /** Shrinks the shadow while airborne. */
     shadow: React.RefObject<SVGGElement | null>;
-    /** Leans / squashes / waddles the body about its feet. */
-    pose: React.RefObject<SVGGElement | null>;
     /** The shaded-decal copy: fades with the shadow. */
     decalShade: React.RefObject<SVGGElement | null>;
+    /** Wraps the whole pawn: clipped to `openingClip` while its feet are below the floor (see the header's OPENING). */
+    opening: React.RefObject<SVGGElement | null>;
     /** The shadow outline the decal copy is clipped to: shrinks with the shadow. */
     decalClip: React.RefObject<SVGPathElement | null>;
     /** Undoes `travel` on the decal copy, so the decals stay put on the floor. */
@@ -374,9 +397,14 @@ export interface PawnMotionRefs {
 export interface PawnEmote {
     /** Bumps per startle (or alarm); used as a React key so the bubble's CSS pop replays. */
     id: number;
-    /** Which way the pawn leans while looking up (+1 = top tips screen-right); 0 = an alarm, no lean. */
-    leanSign: 1 | -1 | 0;
 }
+
+/**
+ * The scale IsoPawn draws the "!" bubble at: px per world unit, round its tail tip at the
+ * origin. The motion loop rescales it to the head's real scale each frame. A large fixed
+ * scale rather than 1, so the bubble's text is never laid out at a sub-pixel font size.
+ */
+export const EMOTE_DRAW_SCALE = 100;
 
 /** An entrance to play on mount, and when to start it (a `performance.now()` timestamp). */
 export interface PawnEntranceCue {
@@ -401,6 +429,14 @@ export function usePawnMotion(opts: {
     floorDrop?: number;
     /** Raised floor the pawn steps up onto (see the header's STEPS). Read live: may be a new array each render. */
     steps?: PawnStep[];
+    /**
+     * A `url(#…)` clip — a floor opening swept up the screen (hatchGeometry.ts →
+     * `openingSweepPath`) — applied to the whole pawn while its feet are below the floor
+     * (see the header's OPENING). Read live.
+     */
+    openingClip?: string;
+    /** World z of the surface the pawn stands on (its feet are drawn in absolute world space). */
+    surfaceZ: number;
 }): { refs: PawnMotionRefs; emote: PawnEmote | null } {
     const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
@@ -408,11 +444,14 @@ export function usePawnMotion(opts: {
     const entranceCue = useRef(opts.entrance);
     const refs: PawnMotionRefs = {
         travel: useRef<SVGGElement>(null),
-        hop: useRef<SVGGElement>(null),
+        presence: useRef<SVGGElement>(null),
+        body: useRef<SVGPathElement>(null),
+        head: useRef<SVGCircleElement>(null),
+        emoteAnchor: useRef<SVGGElement>(null),
         shadow: useRef<SVGGElement>(null),
-        pose: useRef<SVGGElement>(null),
         decalShade: useRef<SVGGElement>(null),
         decalClip: useRef<SVGPathElement>(null),
+        opening: useRef<SVGGElement>(null),
         decalAnchor: useRef<SVGGElement>(null),
     };
     const [emote, setEmote] = useState<PawnEmote | null>(null);
@@ -450,7 +489,24 @@ export function usePawnMotion(opts: {
         // With the floor dropping away (FLOOR DROP): when the pawn's own fall started —
         // null until then.
         fall: null as { t0: number } | null,
+        // The last frame's pose, which `applyFrame` draws (the loop, and a re-render with a
+        // new camera, both draw from it). `hop` is world units off the surface, `lean`
+        // degrees; `emoteLean` the lean the "!" bubble follows (the startle's look-up only —
+        // it does not waddle). Hidden from the start when an entrance is to come.
+        pose: {
+            hop: 0,
+            lean: 0,
+            sx: 1,
+            sy: 1,
+            emoteLean: 0,
+            shadowOverride: null as { scale: number; opacity: number } | null,
+            hidden: !!opts.entrance && !prefersReducedMotion(),
+        },
     });
+    // The latest projector: a moving camera hands in a new one every frame, which must not
+    // restart the loop (see VIEW in the header).
+    const projRef = useRef(proj);
+    projRef.current = proj;
     // The latest callback, so a new inline function from the page doesn't restart the loop.
     const onRank = useRef(onDepthRankChange);
     onRank.current = onDepthRankChange;
@@ -460,7 +516,79 @@ export function usePawnMotion(opts: {
     // Latest floor drop (animates every frame of a swap), read by the loop.
     const floorDropRef = useRef(opts.floorDrop ?? 0);
     floorDropRef.current = opts.floorDrop ?? 0;
+    // Latest opening clip (only set while a step can sink below the floor), read by `applyFrame`.
+    const openingClipRef = useRef(opts.openingClip);
+    openingClipRef.current = opts.openingClip;
+    const surfaceZRef = useRef(opts.surfaceZ);
+    surfaceZRef.current = opts.surfaceZ;
     const reduced = prefersReducedMotion();
+
+    /**
+     * Draws the current state (position, lift, `state.pose`) through the latest projector:
+     * slides the shadow, redraws the 3D figure, places the bubble. Called by the loop every
+     * frame, and after every render (below) so a new camera never shows a stale frame.
+     */
+    const applyFrame = () => {
+        const s = state.current;
+        const { hop, lean, sx, sy, emoteLean, shadowOverride, hidden } = s.pose;
+        // CSS px on SVG elements are user units, so these are scene units.
+        const p = projRef.current;
+        const z0 = surfaceZRef.current;
+        const home = p.project(at.x, at.y, z0);
+        // `lift` raises the whole pawn (shadow and decal clip included): it stands, and
+        // casts its shadow, on the step's top face.
+        const here = p.project(s.pos.x, s.pos.y, z0 + s.lift);
+        // The shadow is a true projection drawn at `at` (IsoShadow), so it is already the
+        // right size THERE: it only rescales by the change from there to here.
+        const shadowSizeHere = p.scaleAt(s.pos.x, s.pos.y, z0 + s.lift) / p.scaleAt(at.x, at.y, z0);
+        if (refs.presence.current) refs.presence.current.style.visibility = hidden ? "hidden" : "";
+        if (refs.travel.current) refs.travel.current.style.transform = `translate(${here.x - home.x}px, ${here.y - home.y}px)`;
+        if (refs.decalAnchor.current) refs.decalAnchor.current.style.transform = `translate(${home.x - here.x}px, ${home.y - here.y}px)`;
+
+        // VIEW (header): the figure in true 3D, its feet `hop` above the surface.
+        const feet = { x: s.pos.x, y: s.pos.y, z: z0 + s.lift + hop };
+        const fig = pawnFigure(p, feet, { lean, sx, sy });
+        // OPENING (header): feet below the floor means the pawn is down a hole — the floor in
+        // front of the hole hides its lower part. Clipped only then: standing or in the air
+        // over the floor it may overhang the opening's column, and must not be cut.
+        if (refs.opening.current) {
+            const clip = openingClipRef.current;
+            if (clip && s.lift + hop < -1e-3) refs.opening.current.setAttribute("clip-path", clip);
+            else refs.opening.current.removeAttribute("clip-path");
+        }
+        refs.body.current?.setAttribute("d", fig.bodyPath);
+        if (refs.head.current) {
+            refs.head.current.setAttribute("cx", String(fig.head.cx));
+            refs.head.current.setAttribute("cy", String(fig.head.cy));
+            refs.head.current.setAttribute("r", String(fig.head.r));
+        }
+        if (refs.emoteAnchor.current) {
+            // Billboard: upright on screen, its tail tip just over the head's top, not
+            // squashed or waddling with the body (an unsquashed figure at the look-up lean).
+            const still = emoteLean === lean && sx === 1 && sy === 1 ? fig : pawnFigure(p, feet, { lean: emoteLean, sx: 1, sy: 1 });
+            const k = still.headScale;
+            const tipY = still.head.cy - (HEAD_RADIUS + EMOTE_GAP) * k;
+            const f = k / EMOTE_DRAW_SCALE;
+            refs.emoteAnchor.current.style.transform = `translate(${still.head.cx}px, ${tipY}px) scale(${f})`;
+        }
+        if (refs.shadow.current) {
+            // Clamped at 0: falling BELOW its surface (FLOOR DROP) doesn't grow the shadow.
+            const air = clamp01(hop / LEAP_HOP_HEIGHT);
+            const shadowScale = shadowOverride ? shadowOverride.scale : 1 - 0.25 * air;
+            const shadowOpacity = shadowOverride ? shadowOverride.opacity : 1 - 0.4 * air;
+            refs.shadow.current.style.transform = `scale(${shadowScale * shadowSizeHere})`;
+            refs.shadow.current.style.opacity = String(shadowOpacity);
+            // The shaded decals are the same shadow seen on another receiver: same
+            // shrink, same fade.
+            if (refs.decalClip.current) refs.decalClip.current.style.transform = refs.shadow.current.style.transform;
+            if (refs.decalShade.current) refs.decalShade.current.style.opacity = refs.shadow.current.style.opacity;
+        }
+    };
+    const applyRef = useRef(applyFrame);
+    applyRef.current = applyFrame;
+    // After every render, before paint: the first frame (and every frame under reduced
+    // motion, when no loop runs) and every re-render with a new camera draw at once.
+    useLayoutEffect(() => applyRef.current());
 
     // Rising edge of `startled` → switch to the startle timeline from wherever the feet are.
     // Seeded with the MOUNT value: a pawn that mounts beside an already-tall tower (the
@@ -473,6 +601,7 @@ export function usePawnMotion(opts: {
         wasStartled.current = startled;
         if (!rose || reduced) return;
         const s = state.current;
+        // In the air arriving: no startle.
         if (s.mode.kind === "entrance") return;
         // Cut a hop short: ease the lift from wherever the arc had it (see the step code).
         if (s.mode.kind === "edgeHop") {
@@ -481,12 +610,13 @@ export function usePawnMotion(opts: {
         }
         // Lean AWAY from the source on screen: a pawn to the tower's right tips its top
         // further right as it cranes up at it.
-        const pawnSx = proj.project(s.pos.x, s.pos.y, 0).x;
-        const srcSx = startledBy ? proj.project(startledBy.x + startledBy.w / 2, startledBy.y + startledBy.d / 2, 0).x : pawnSx - 1;
+        const p = projRef.current;
+        const pawnSx = p.project(s.pos.x, s.pos.y, 0).x;
+        const srcSx = startledBy ? p.project(startledBy.x + startledBy.w / 2, startledBy.y + startledBy.d / 2, 0).x : pawnSx - 1;
         const leanSign: 1 | -1 = pawnSx >= srcSx ? 1 : -1;
         s.mode = { kind: "startle", t0: performance.now(), from: { ...s.pos }, to: leapLanding(s.pos, startledBy, roam), leanSign };
-        setEmote((e) => ({ id: (e?.id ?? 0) + 1, leanSign }));
-    }, [startled, reduced, proj, startledBy, roam]);
+        setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
+    }, [startled, reduced, startledBy, roam]);
 
     useEffect(() => {
         if (reduced) return;
@@ -718,7 +848,7 @@ export function usePawnMotion(opts: {
                 s.launchArmed = false;
                 if (!s.fall && s.feetV <= 0) {
                     s.fall = { t0: now };
-                    setEmote((e) => ({ id: (e?.id ?? 0) + 1, leanSign: 0 }));
+                    setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
                 }
                 s.feetV -= GRAVITY * dt;
                 s.feetZ += s.feetV * dt;
@@ -799,31 +929,9 @@ export function usePawnMotion(opts: {
                 }
             }
 
-            // Apply. CSS px on SVG elements are user units, so these are scene units.
-            const home = proj.project(at.x, at.y, 0);
-            // `lift` raises the whole pawn (shadow and decal clip included): it stands, and
-            // casts its shadow, on the step's top face.
-            const here = proj.project(s.pos.x, s.pos.y, s.lift);
-            const u0 = proj.unit;
-            if (refs.travel.current) {
-                refs.travel.current.style.transform = `translate(${here.x - home.x}px, ${here.y - home.y}px)`;
-                refs.travel.current.style.visibility = hidden ? "hidden" : "";
-            }
-            if (refs.decalAnchor.current) refs.decalAnchor.current.style.transform = `translate(${home.x - here.x}px, ${home.y - here.y}px)`;
-            if (refs.hop.current) refs.hop.current.style.transform = `translateY(${-hop * u0}px)`;
-            if (refs.pose.current) refs.pose.current.style.transform = `rotate(${lean}deg) scale(${sx}, ${sy})`;
-            if (refs.shadow.current) {
-                // Clamped at 0: falling BELOW its surface (FLOOR DROP) doesn't grow the shadow.
-                const air = clamp01(hop / LEAP_HOP_HEIGHT);
-                const shadowScale = shadowOverride ? shadowOverride.scale : 1 - 0.25 * air;
-                const shadowOpacity = shadowOverride ? shadowOverride.opacity : 1 - 0.4 * air;
-                refs.shadow.current.style.transform = `scale(${shadowScale})`;
-                refs.shadow.current.style.opacity = String(shadowOpacity);
-                // The shaded decals are the same shadow seen on another receiver: same
-                // shrink, same fade.
-                if (refs.decalClip.current) refs.decalClip.current.style.transform = refs.shadow.current.style.transform;
-                if (refs.decalShade.current) refs.decalShade.current.style.opacity = refs.shadow.current.style.opacity;
-            }
+            // Apply: hand the pose to `applyFrame`, which draws it.
+            s.pose = { hop, lean, sx, sy, emoteLean: s.mode.kind === "startle" ? lean : 0, shadowOverride, hidden };
+            applyRef.current();
 
             if (roam) {
                 const rank = depthRankAmong(s.pos, roam.obstacles);
@@ -836,9 +944,9 @@ export function usePawnMotion(opts: {
         };
         frame = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(frame);
-        // refs are stable useRef objects; `at`/`roam` are expected to be module constants.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reduced, proj, at, roam]);
+        // `at`/`roam` are expected to be module constants; the projector and the drawing are
+        // reached through `applyRef` (see VIEW in the header), so a new camera never restarts it.
+    }, [reduced, at, roam]);
 
     return { refs, emote };
 }

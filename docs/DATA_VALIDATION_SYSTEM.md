@@ -121,14 +121,18 @@ document is the right review surface for it.
   template editor; migration 115 split that onto its own `users."isTemplateAuthor"`
   flag, so the two responsibilities are now independent grants.
 
-  ⚠️ **A SECOND READER JOINED IT ON 2026-08-22**, and it is not about dictionary data:
-  Study Challenge's tester hatch ("allow anytime") is offered and honoured only for a
-  validator ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). That is a deliberate
-  reuse — the flag already means "trusted tester account" on this deployment — but it
-  means **granting `isValidator` now also grants the ability to bypass the challenge
-  week**, which is worth knowing before handing it to someone who only needs to
-  validate definitions. If the two ever need to diverge, split it the way 115 split
-  the template author flag rather than adding a second check to this one. Surfaced to the client
+  **Data validation is its ONLY job.** From 2026-08-22 it was also reused as the
+  "trusted tester" grant (the Study Challenge "allow anytime" hatch, then the soft-intro
+  override, the banking always-play toggle, the tester dashboard and the arena manual
+  tick). Migration 178 split those onto their own `users."isFeatureTester"` flag — the
+  same move 115 made for the template author — and backfilled every existing validator
+  as a feature tester, so granting `isValidator` no longer grants the ability to bypass
+  the challenge week. The remaining `isValidator` readers are all data curation: this
+  system's endpoints and buttons (`server/services/ValidationService.ts`,
+  `src/components/ValidateFlagButtons.tsx`, the Reader validate-download button in
+  `src/features/reader/ReaderPage.tsx`) and lazy AI enrichment spend
+  (`server/services/LazyEnrichmentService.ts`, `server/controllers/DictionaryController.ts`).
+  Do not gate a new testing tool on it — use `isFeatureTester`. Surfaced to the client
   through the `user` object (login + `/api/auth/me`);
   **not** on the JWT. It must be listed in `UserDAL.findById`'s SELECT
   (`server/dal/implementations/UserDAL.ts`) or it vanishes after a token refresh.

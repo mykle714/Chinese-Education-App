@@ -310,3 +310,32 @@ textarea,
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ⚠️ TEMP font trial (set by DeckTowerPage while mounted): every text on the tower page,
+   the flp session in it and anything it portals to <body>, in 975 Maru SC — NOT the
+   account's typeface: DeckTowerPage shadows `--cjk-font` on <body> (useChineseFont's
+   account choice stays on :root, untouched). !important because most
+   flp text names its own family (FC_FONT / FONTS.sans). The icon font (.ms) is spared.
+   Faux bold is re-allowed (the selectable faces ship one weight), and buttons go bold. */
+.tower-font-trial *:not(.ms) {
+  font-family: var(--cjk-font, "Noto Sans SC", sans-serif) !important;
+  font-synthesis: weight;
+}
+.tower-font-trial :is(button, [role="button"], .MuiButton-root, .MuiButtonBase-root):not(.ms),
+.tower-font-trial :is(button, [role="button"], .MuiButton-root, .MuiButtonBase-root) *:not(.ms) {
+  font-weight: 700 !important;
+}
+/* …except pinyin, which keeps the face's true single weight: faux bold smears the
+   tone diacritics into the vowels at pinyin sizes. Covers every pinyin render the tower
+   flp reaches — cpcd rows (CPCDRow), inline cpcd (CPCDInline) and the writing card's
+   toned syllables (TonedPronunciation). Same specificity as the rule above, so it wins
+   by coming later. */
+.tower-font-trial :is(
+  .char-pinyin-display__pinyin,
+  .cpcd-row__pinyin-sep,
+  .cpcd-inline__pinyin,
+  .toned-pronunciation__syllable
+),
+.tower-font-trial :is(.char-pinyin-display__pinyin, .cpcd-inline__pinyin) * {
+  font-synthesis: none;
+}

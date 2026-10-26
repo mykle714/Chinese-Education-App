@@ -4,8 +4,8 @@ import { addToLibrary, getLibraryStatus, removeFromLibrary } from "../utils/voca
 import type { Language, VocabEntry } from "../types";
 
 /**
- * Learning membership of ONE word, as a toggle — the state behind `LearnNowToggle`
- * (src/components/LearnNowToggle.tsx). ("Learning" is the UI name of the internal
+ * Learning membership of ONE word, as a toggle — the state behind `LearningToggle`
+ * (src/components/LearningToggle.tsx). ("Learning" is the UI name of the internal
  * `'library'` bucket — CLAUDE.md § Terminology; the API helpers keep `library`.)
  *
  * A TOGGLE, not an add-only button: removal is never a delete — the server demotes the
@@ -24,7 +24,7 @@ import type { Language, VocabEntry } from "../types";
  * Hosts: EipSheet (the Dictionary page's eip) and DictionaryCardDetailPage.
  * Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
  */
-export function useLearnNowToggle(entry: VocabEntry | null | undefined, language: Language) {
+export function useLearningToggle(entry: VocabEntry | null | undefined, language: Language) {
     const { user } = useAuth();
     const entryKey = entry?.entryKey;
     const available = !!entry?.discoverable && !!user?.id;
@@ -76,4 +76,4 @@ export function useLearnNowToggle(entry: VocabEntry | null | undefined, language
     return { available, inLibrary, pending, toggle, error, clearError };
 }
 
-export type LearnNowToggleState = ReturnType<typeof useLearnNowToggle>;
+export type LearningToggleState = ReturnType<typeof useLearningToggle>;

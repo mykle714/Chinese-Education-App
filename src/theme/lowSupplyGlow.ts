@@ -11,7 +11,7 @@ import { RAMP } from "./colors";
  *   • the sort page's Learning tally pill (SortCardsPage.tsx → SortTallyValue), lit
  *     while a learner who arrived short is still under LEARN_NOW_ENOUGH_THRESHOLD —
  *     YELLOW (`LOW_SUPPLY_GLOW_TALLY`), the Learning hue, so it reads as "fill this one";
- *   • the compact "+ to Learning" under the eip header's speaker (LearnNowToggle.tsx — the
+ *   • the compact "+ to Learning" under the eip header's speaker (LearningToggle.tsx — the
  *     Dictionary page's eip and the dictionary cdp), lit whenever it shows (only for a word
  *     not yet in Learning) — GREEN (`LOW_SUPPLY_GLOW_NUDGE`), the same "add cards" nudge.
  *

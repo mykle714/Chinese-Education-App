@@ -421,7 +421,7 @@ function DictionaryPage() {
             speakingKey={tts.speakingKey}
             showSynonymsRelated
             showWordTools
-            showLearnNow
+            showLearning
             // A lookup is the whole point of this page, so the result opens tall — and a
             // downward drag/fling clips back to this 90% rather than to the usual 60%.
             defaultHeightRatio={0.9}

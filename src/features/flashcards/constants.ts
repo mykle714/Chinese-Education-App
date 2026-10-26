@@ -31,6 +31,42 @@ export const FC_FONT_CJK = FONTS.cjk;
 // and the CSS transform transition (FlashCardSection) MUST stay in lock-step,
 // so both derive from this single constant. Changing it here changes both.
 export const CARD_FLY_OUT_MS = 450;
+
+/**
+ * The flp card's proportions (width : height), the `aspect-ratio` FlashCardSection's card
+ * wrapper keeps. The Deck Tower's card footprint is cut to the same shape, because its
+ * study camera lands the tower's top card exactly on this card
+ * (src/features/deckTower/towerPlatforms.ts → `CARD_D`; docs/DECK_TOWER.md § "Studying the tower").
+ */
+export const FLP_CARD_ASPECT = { width: 295, height: 426 } as const;
+
+/**
+ * The flp card's corner radius as a fraction of its WIDTH. Shared with the Deck Tower's
+ * card footprint (towerPlatforms.ts → `CARD`, `r = CARD_W × this`) for the same reason as
+ * `FLP_CARD_ASPECT`: the study camera lays the tower's top card exactly over this card, so
+ * their corners must match at every screen size. FlashCardSection turns it into the
+ * `--card-radius` it sets on the card frame (`flpCardRadiusCss`). 0.45 / 4.8 world units.
+ */
+export const FLP_CARD_CORNER_RATIO = 0.09375;
+
+/**
+ * The Deck Tower card's STOCK RIM as a fraction of the card's WIDTH: how far the beige
+ * printed panel sits in from the card's cream edge, on every side. The tower draws it as
+ * IsoCard's `FACE_PAD` (0.34 world units on a 4.8-wide card — keep the two in step); the
+ * tower-hosted flp paints the same rim + panel on its faces (CardFaceSide `towerStock`,
+ * FlashCardSection's `--card-stock-inset`), so the study card and the tower's own cards
+ * are one card stock. Docs: docs/TOWER_STYLE_SHIFT.md § "Card stock".
+ */
+export const FLP_CARD_STOCK_INSET_RATIO = 0.34 / 4.8;
+
+/**
+ * The Deck Tower card's beige PANEL corner radius (the cream rim's inner radius) as a
+ * fraction of the card's WIDTH. IsoCard's `PANEL_RADIUS` (0.24 world units on a 4.8-wide
+ * card — keep the two in step). Rounder than concentric with the card's corner
+ * (`FLP_CARD_CORNER_RATIO − FLP_CARD_STOCK_INSET_RATIO` would be a near-square 0.11 units),
+ * so the rim swells a little at the corners. FlashCardSection sets it as `--card-panel-radius`.
+ */
+export const FLP_CARD_PANEL_RADIUS_RATIO = 0.24 / 4.8;
 export const CARD_FLY_OUT_TRANSITION = `transform ${CARD_FLY_OUT_MS}ms ease`;
 
 // The flip (Side 1 → Side 2 rotateY) is a separate, faster animation from the
@@ -38,6 +74,7 @@ export const CARD_FLY_OUT_TRANSITION = `transform ${CARD_FLY_OUT_MS}ms ease`;
 // duration. The JS flip-lockout timer (useCardDrag) and the mid-flip away-face
 // visibility delay (FlashCardSection's CardFaceSide) MUST stay in lock-step with
 // this, so both derive from this single constant. Changing it here changes both.
+// (The Deck Tower flips at its own TOWER_CARD_FLIP_MS, below, passed as `flipMs`.)
 export const CARD_FLIP_MS = 250;
 
 // The 3D flip (rotateY) uses a LINEAR curve, NOT `ease`, on purpose: the away-facing
@@ -46,7 +83,14 @@ export const CARD_FLIP_MS = 250;
 // (edge-on) well before the time-midpoint, so the rotated-away face's mirrored
 // backside would flash between edge-on and the hide. `linear` makes 90° land exactly
 // at CARD_FLIP_MS / 2, so the hide fires precisely at edge-on — no flash.
-export const CARD_FLIP_TRANSITION = `transform ${CARD_FLIP_MS}ms linear`;
+export const cardFlipTransition = (flipMs: number): string => `transform ${flipMs}ms linear`;
+
+// The Deck Tower's flip (FlashCardSection `towerStack`) is slower: there the card is
+// LIFTED off the deck as it turns (FlashCardSection → FLIP_LIFT_KEYFRAMES), and the lift
+// needs the time to read. Every place that times off the flip takes the duration as a
+// parameter (`flipMs`) so the tower's lockout and mid-flip face hide stay in lock-step
+// with its own rotation. Docs: docs/DECK_TOWER.md § "Studying the tower".
+export const TOWER_CARD_FLIP_MS = 350;
 
 // Tab accent colors — decorative, consistent across all themes.
 //
@@ -111,3 +155,12 @@ export const TAB_SWIPE_TRANSITION = "transform 0.28s cubic-bezier(0.22, 1, 0.36,
 // translateY=0 occupies this much of the container — i.e. how close the
 // "maximized" panel gets to the page header above it.
 export const EIC_FULL_RATIO = 0.9;
+
+/**
+ * How far the card's own top-edge chrome (CardOpsRail's `•••`, the CardNote strip) sits in
+ * from the card's edge, as a custom property the flp's card frame sets — below the card's
+ * top band, where the flp's hint labels sit in the corners (FlashCardSection
+ * `TOWER_TOP_BAND_VARS` / `PLAIN_TOP_BAND_VARS`). Unset elsewhere (the cdp): each reader
+ * falls back to its own px.
+ */
+export const cardChromeInsetCss = (fallbackPx: number): string => `var(--card-chrome-inset, ${fallbackPx}px)`;

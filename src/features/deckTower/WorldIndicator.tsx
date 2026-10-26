@@ -61,9 +61,11 @@ interface WorldIndicatorProps {
     /** CSS length the stage's bottom edge is held off the screen bottom by (the footer's
      *  height), as on SpaceBackdrop / SpeedLines; the indicator sits FOOTER_GAP_PX above it. */
     bottom: string;
+    /** The arrow's and name's ink: `ISO.white` under the time-of-day wash (timeOfDay.ts). Default unwashed. */
+    color?: string;
 }
 
-const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidden, bottom }) => {
+const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidden, bottom, color = ISO.white }) => {
     const isLeft = side === "left";
     const Arrow = isLeft ? ChevronLeftIcon : ChevronRightIcon;
     // Read once per mount: the delay only has to align the cycle's START.
@@ -84,7 +86,7 @@ const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidd
                 // The arrow hugs the screen edge; the name sits on its inner side.
                 [isLeft ? "pr" : "pl"]: "8px",
                 py: "8px",
-                color: ISO.white,
+                color,
                 opacity: hidden ? 0 : 1,
                 transition: "opacity 160ms ease-out",
             }}
@@ -105,9 +107,9 @@ const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidd
                         component="span"
                         sx={{
                             display: "block",
-                            fontFamily: FONTS.sans,
+                            fontFamily: FONTS.cjk,
                             fontSize: SIZE.body,
-                            fontWeight: WEIGHT.semibold,
+                            fontWeight: WEIGHT.bold,
                             lineHeight: 1,
                         }}
                     >

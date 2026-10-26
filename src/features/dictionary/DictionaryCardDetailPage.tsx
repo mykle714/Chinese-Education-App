@@ -4,7 +4,7 @@ import { Box, Alert, Snackbar } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import NodePage from "../../components/NodePage";
 import { apiGet } from "../../api/http";
-import { useLearnNowToggle } from "../../hooks/useLearnNowToggle";
+import { useLearningToggle } from "../../hooks/useLearningToggle";
 import type { DictionaryEntry, VocabEntry, Language } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -130,9 +130,9 @@ const DictionaryCardDetailPage: React.FC = () => {
     const { openCompare, compareSheet } = useCompareSheet();
 
     // Learning toggle — the only write action on this read-only page, for discoverable
-    // entries. Lives in the panel header under the speaker (LearnNowToggle), the same
-    // control the Dictionary page's eip shows; state + rules in useLearnNowToggle.
-    const learnNow = useLearnNowToggle(entry, userLanguage);
+    // entries. Lives in the panel header under the speaker (LearningToggle), the same
+    // control the Dictionary page's eip shows; state + rules in useLearningToggle.
+    const learning = useLearningToggle(entry, userLanguage);
 
     return (
         <NodePage
@@ -180,7 +180,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             saved-card cdp. Every drill-in (breakdown row, used-in row,
                             example segment) navigates to that word's dictionary cdp rather
                             than opening a nested eip tab, so browsing stays read-only.
-                            The Learning toggle rides under the header speaker (learnNow).
+                            The Learning toggle rides under the header speaker (learning).
                             No headerDragBind — there is no sheet to resize. */}
                         <InfoCardPanelBody
                             currentEntry={entry}
@@ -196,7 +196,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             onSpeak={(e) => tts.speak(e, selectedSenseIndex)}
                             onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
-                            learnNow={learnNow}
+                            learning={learning}
                             selectedSenseIndex={selectedSenseIndex}
                             onSelectSense={setSelectedSenseIndex}
                             showSynonymsRelated
@@ -237,17 +237,17 @@ const DictionaryCardDetailPage: React.FC = () => {
             {/* Failures only — a successful add/remove is shown by the toggle itself. */}
             <Snackbar
                 className="dictionary-card-detail__library-error-snackbar"
-                open={learnNow.error !== null}
+                open={learning.error !== null}
                 autoHideDuration={2500}
-                onClose={learnNow.clearError}
+                onClose={learning.clearError}
                 anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
                 <Alert
                     severity="error"
                     variant="filled"
-                    onClose={learnNow.clearError}
+                    onClose={learning.clearError}
                 >
-                    {learnNow.error}
+                    {learning.error}
                 </Alert>
             </Snackbar>
         </NodePage>

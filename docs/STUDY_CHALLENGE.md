@@ -45,7 +45,7 @@ became a full-bleed dark board (§ 5.5).
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
 | **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it — Hydra included as of 2026-08-22, since a challenge round is the one timed variant it has |
 | **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) all four eligible games classify contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
-| **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A validator-only switch on `/friends/challenges` that lifts the calendar gates (the Monday issue window, accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isValidator`. See § 2a |
+| **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A feature-tester-only switch on `/friends/challenges` that lifts the calendar gates (the Monday issue window, accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isFeatureTester` (migration 178). See § 2a |
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
 `challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
 on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
@@ -695,10 +695,11 @@ challenged **this week**, after an invitation accepted before **Wednesday 04:00*
 there is one switch that lifts the calendar, and only a tester may spend it.
 
 **Where it is.** A `Switch` at the top of `/friends/challenges`, rendered **only for a
-validator account** (`users.isValidator`, migration 104 — the same flag the data
-validation system uses). Not hidden behind a menu: a tester needs to SEE whether the
-week is being bypassed, because a silent flag that rewrites every deadline is exactly
-the kind of state that gets left on and then misread as a bug.
+feature-tester account** (`users.isFeatureTester`, migration 178). Until 178 it rode
+`users.isValidator` (migration 104), the data-validation flag; 178 split the two and
+backfilled every validator as a feature tester. Not hidden behind a menu: a tester
+needs to SEE whether the week is being bypassed, because a silent flag that rewrites
+every deadline is exactly the kind of state that gets left on and then misread as a bug.
 
 **What it lifts — and only this:**
 
@@ -715,16 +716,16 @@ would be testing a game nobody plays.
 
 **It is a REQUEST, not a state.** The switch lives in that browser's `localStorage`
 (`cow.challengeAnytime`); every call carries `?anytime=1`, and the **server** decides
-whether to honour it by checking `isValidator`
+whether to honour it by checking `isFeatureTester`
 (`StudyChallengeService.resolveAnytime` — the one place that check exists). Two
 consequences, both deliberate:
 
-**The client is gated on `isValidator` too**, and fails closed. `challengeAnytime.ts`
+**The client is gated on `isFeatureTester` too**, and fails closed. `challengeAnytime.ts`
 holds a module latch (`allowed`, fed by `useChallengeAnytime()` from the auth user);
-until a mounted hook says the account is a validator, `challengeAnytime()`,
+until a mounted hook says the account is a feature tester, `challengeAnytime()`,
 `anytimeParams()` and `anytimeQuerySuffix()` all read false regardless of what is in
 `localStorage`. The hook also **clears a stored request** when the current account is
-not a validator, so a flag left behind by a revoked account (or by a different user on
+not a feature tester, so a flag left behind by a revoked account (or by a different user on
 a shared browser) cannot linger. Without this the server would correctly ignore the
 flag while the client still drew anytime-flavoured labels and lifted deadlines — the
 worst of the two states.
@@ -732,14 +733,14 @@ worst of the two states.
 * **There is no column, on purpose.** A stored account flag would eventually be left
   switched on and would silently turn a real week into a free-for-all for that
   account. A per-device request cannot outlive the browser it was set in.
-* **A non-validator sending the flag is ignored SILENTLY** — no error, no hint. A 403
+* **A non-feature-tester sending the flag is ignored SILENTLY** — no error, no hint. A 403
   would be a probe for who holds the flag, and they get the ordinary weekly rules
   either way.
 * **It covers the holder's own calls only.** It is resolved per REQUEST and is not
   attached to the challenge, so one player having it on does nothing for the other:
   their accept, and their own three rounds, are judged against the real calendar unless
-  they are also a validator with the switch on in their own browser. A two-sided test
-  therefore needs two validator accounts and two switches. The UI says so.
+  they are also a feature tester with the switch on in their own browser. A two-sided test
+  therefore needs two feature-tester accounts and two switches. The UI says so.
 
 **An anytime challenge is parked in the pair's next free week.** The pair-week rule is
 not only an app check — it is the unique index `study_challenges_pair_week_uniq` — so
@@ -763,7 +764,7 @@ tester would otherwise meet as a bug report against themselves:
 | a library that grew 12 cards they never sorted, and a deck they did not make | accepting materialises the contested set as `library` rows on BOTH accounts and creates the `vs <name>` deck (§ 3.3). The deck is dropped when that player finishes; an abandoned challenge leaves it on `/decks` |
 | mastery moving during a test run | a challenge round is normal play — real typed marks, real minute points, real streak (§ 5.7) |
 | a challenge dated weeks out | a repeat challenge is parked in the pair's next free week (above) |
-| a friend who cannot accept, or cannot play | the hatch is spent PER REQUEST and is not attached to the challenge, so it covers the holder's own calls only. The other player's accept and their own rounds are judged against the real calendar unless they too are a validator with the switch on in their own browser — a two-sided test needs two validator accounts and two switches |
+| a friend who cannot accept, or cannot play | the hatch is spent PER REQUEST and is not attached to the challenge, so it covers the holder's own calls only. The other player's accept and their own rounds are judged against the real calendar unless they too are a feature tester with the switch on in their own browser — a two-sided test needs two feature-tester accounts and two switches |
 | Play buttons vanishing | switching it off puts a parked challenge's test window back in the future, so the server withholds `gameSequence` again. Submitted rounds are kept |
 | "you're in 6 challenges" in a normal session | parked challenges still count toward the cap when the hatch is off |
 | a challenge quietly becoming `no_contest` | on PPE the hourly job resolves it once the parked week actually passes. Not installed on dev |
@@ -781,7 +782,7 @@ status line, the page's only other reader of the flag, is gone (see § 5.4).
 one place, so no page has to remember. The one exception is the game-pool read, which
 builds its own URL — `useChallengeRound` adds `anytimeQuerySuffix()` to `poolParams`,
 without which a tester could open a round from the challenge page and then be refused
-its board. That hook also mounts `useChallengeAnytime()` purely to keep the validator
+its board. That hook also mounts `useChallengeAnytime()` purely to keep the feature-tester
 latch current, so a game reached by direct URL still carries the flag.
 
 ⚠️ **A game must append `poolParams`, never re-spell `challengeId`/`gameId` itself.**

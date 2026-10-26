@@ -11,7 +11,8 @@ Parent: [NAVIGATION.md § Tester Dashboard](./NAVIGATION.md#tester-dashboard).
 
 | Grant | Migration | Means |
 |---|---|---|
-| `isValidator` | 104 | curate dictionary data; reaches the tester dashboard |
+| `isValidator` | 104 | curate dictionary data (data validation only) |
+| `isFeatureTester` | 178 | feature-testing tools; reaches the tester dashboard |
 | `isTemplateAuthor` | 115 | author Night Market / Immersive World content |
 | **`isAdmin`** | **168** | see cross-user operator views (this dashboard) |
 
@@ -19,8 +20,10 @@ Parent: [NAVIGATION.md § Tester Dashboard](./NAVIGATION.md#tester-dashboard).
 people's usage". Migration 168 grants it to exactly one account **by email**
 (`michaelren1928@gmail.com`), so it is a no-op on dev boxes where that account does
 not exist. The same statement also sets `isValidator` on that account, for the
-validator-only tools (Reader Validate, lazy enrichment, the Study Challenge anytime
-hatch) — not for page access, which `isAdmin` already gives. Grant / revoke later with a direct `UPDATE users SET "isAdmin" = …` — no
+validator-only tools (Reader Validate, lazy enrichment) — not for page access, which
+`isAdmin` already gives. Migration 178's backfill (`isFeatureTester = true` for every
+validator) then gives that account the feature-testing tools too (the Study Challenge
+anytime hatch, the si / banking toggles). Grant / revoke later with a direct `UPDATE users SET "isAdmin" = …` — no
 code change.
 
 The gate has two halves, and unlike the rest of the tester dashboard the server half
@@ -32,8 +35,8 @@ is a **real security boundary** (every figure is about other accounts):
   so the role is read from the row, never from `req.user`.
 - **Client (UX):** `src/pages/TesterDashboardPage.tsx` renders `UsageDashboardSection`
   only when `user.isAdmin`, and `useUsageDashboard` never fires the request for a
-  non-admin. An admin who is not a validator can still reach the page (the Home tile
-  and the page's bounce both accept `isValidator || isAdmin`).
+  non-admin. An admin who is not a feature tester can still reach the page (the Menu tile
+  and the page's bounce both accept `isFeatureTester || isAdmin`).
 
 Code: `database/migrations/168-add-users-is-admin.sql`,
 `server/dal/implementations/UserDAL.ts` → `findById` (selects `"isAdmin"`),

@@ -4,9 +4,9 @@ import IsoSolid from "./IsoSolid";
 import { prism, toPath, type WorldRect } from "./geometry";
 import { LEVER_HOLE } from "./hatchGeometry";
 import type { IsoSurface } from "./light";
-import { ISO } from "./palette";
+import type { Material } from "./palette";
 import type { PawnEntranceFrame } from "./pawnEntrances";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoLever — a floor lever standing in a hatch (docs/ISO_ART_FRAMEWORK.md § "IsoLever").
@@ -46,6 +46,8 @@ interface IsoLeverProps {
     at: { x: number; y: number };
     /** The floor it stands in. */
     surface: IsoSurface;
+    /** The body under the floor, lining its hatch (IsoHatch `inside`). */
+    inside?: Material;
     pull: number;
     sink: number;
     hatch: number;
@@ -55,8 +57,10 @@ interface IsoLeverProps {
     knob?: string;
 }
 
-const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, pull, sink, hatch, air, knob = ISO.leverKnob }) => {
+const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, inside, pull, sink, hatch, air, knob }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
+    const knobColor = knob ?? palette.leverKnob;
     const base: WorldRect = { x: at.x - BASE_SIDE / 2, y: at.y - BASE_SIDE / 2, w: BASE_SIDE, d: BASE_SIDE, r: 0.12 };
 
     // The stick leans out past the hole's column (the ball overhangs it by ~0.6 units), so
@@ -71,6 +75,7 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, pull, sink, hatch, air
             at={at}
             w={LEVER_HOLE}
             surface={surface}
+            inside={inside}
             sink={sink}
             hatch={hatch}
             sinkDepth={SINK_DEPTH}
@@ -80,10 +85,15 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, pull, sink, hatch, air
             {(standZ) => {
                 const baseTop = standZ + BASE_HEIGHT;
                 const pivot = proj.project(at.x, at.y, baseTop);
-                const tip = proj.project(at.x + Math.sin(lean) * STICK_LENGTH, at.y, baseTop + Math.cos(lean) * STICK_LENGTH);
+                const tipWorld = { x: at.x + Math.sin(lean) * STICK_LENGTH, z: baseTop + Math.cos(lean) * STICK_LENGTH };
+                const tip = proj.project(tipWorld.x, at.y, tipWorld.z);
+                // Screen-px sizes at the stick and the knob (`scaleAt`, not `unit`): under the
+                // Deck Tower's perspective camera the lever stands far below the view's centre.
+                const stickPx = STICK_WIDTH * proj.scaleAt(at.x, at.y, baseTop);
+                const knobPx = KNOB_RADIUS * proj.scaleAt(tipWorld.x, at.y, tipWorld.z);
                 return (
                     <>
-                        <IsoSolid className="iso-lever__base" geometry={prism(proj, base, standZ, baseTop)} material={ISO.leverBase} />
+                        <IsoSolid className="iso-lever__base" geometry={prism(proj, base, standZ, baseTop)} material={palette.leverBase} />
                         {/* The slot the stick pivots in, cut into the base's top. */}
                         <path
                             className="iso-lever__slot"
@@ -93,7 +103,7 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, pull, sink, hatch, air
                                 proj.project(at.x + BASE_SIDE * 0.3, at.y + STICK_WIDTH * 0.9, baseTop),
                                 proj.project(at.x - BASE_SIDE * 0.3, at.y + STICK_WIDTH * 0.9, baseTop),
                             ])}
-                            fill={ISO.ink}
+                            fill={palette.ink}
                             opacity={0.55}
                         />
                         <line
@@ -102,12 +112,12 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, pull, sink, hatch, air
                             y1={pivot.y}
                             x2={tip.x}
                             y2={tip.y}
-                            stroke={ISO.ink}
-                            strokeWidth={STICK_WIDTH * proj.unit}
+                            stroke={palette.ink}
+                            strokeWidth={stickPx}
                             strokeLinecap="round"
                         />
                         {/* The knob: a plain ball in the world's knob colour. */}
-                        <circle className="iso-lever__knob" cx={tip.x} cy={tip.y} r={KNOB_RADIUS * proj.unit} fill={knob} />
+                        <circle className="iso-lever__knob" cx={tip.x} cy={tip.y} r={knobPx} fill={knobColor} />
                     </>
                 );
             }}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { WEIGHT } from "../../theme/scale";
 import { formatCountdownParts } from "./arenaStyles";
 
 /**
@@ -91,7 +92,7 @@ const ArenaCountdown: React.FC<ArenaCountdownProps> = ({ label, target, subtitle
                         fontSize: 52,
                         lineHeight: 0.95,
                         letterSpacing: "-0.03em",
-                        fontWeight: 500,
+                        fontWeight: WEIGHT.medium,
                         color: COLORS.onSurface,
                         // Tabular figures so the row does not jitter sideways once a
                         // second as digits change width. The whole point of a live clock

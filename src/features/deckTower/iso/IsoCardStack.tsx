@@ -5,8 +5,7 @@ import IsoCard from "./IsoCard";
 import { CARD_THICKNESS, cardStackMetrics, isDrawnSeam } from "./cardStackMetrics";
 import { frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
 
 /**
  * IsoCardStack — a deck of N cards stacked into a tower (docs/ISO_ART_FRAMEWORK.md
@@ -40,10 +39,13 @@ interface IsoCardStackProps {
      * resizes"). Shown as-is, not counted up by `progress`.
      */
     figure?: number;
+    /** The top card's print opacity (IsoCard `printOpacity`). Default 1. */
+    printOpacity?: number;
 }
 
-const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progress = 1, label, bandColor, figure }) => {
+const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progress = 1, label, bandColor, figure, printOpacity }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     const metrics = useMemo(() => cardStackMetrics(count), [count]);
     const baseZ = surface.z;
     const bodyHeight = metrics.bodyHeight * progress;
@@ -78,13 +80,13 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
         <g className="iso-card-stack">
             <IsoShadow footprint={rect} casterZ={baseZ} receiver={surface} className="iso-card-stack__shadow" />
             {body && (
-                <IsoSolid geometry={body} material={ISO.card} className="iso-card-stack__body">
+                <IsoSolid geometry={body} material={palette.card} className="iso-card-stack__body">
                     {seams && (
                         <path
                             className="iso-card-stack__seams"
                             d={seams}
                             fill="none"
-                            stroke={ISO.cardSeam}
+                            stroke={palette.cardSeam}
                             strokeWidth={1}
                             strokeLinecap="round"
                         />
@@ -99,6 +101,7 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
                 bandColor={bandColor}
                 figure={String(shown)}
                 caption={shown === 1 ? "card" : "cards"}
+                printOpacity={printOpacity}
             />
         </g>
     );

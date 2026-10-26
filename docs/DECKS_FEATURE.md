@@ -1058,6 +1058,14 @@ view-transition. **Back plays it all in reverse** (see "The way back" below). On
 fdp's core hand does this; the Reading / Writing Centers' hands navigate directly
 (`FlpStudyHand` without `onLaunch`), and their flps go back without animating.
 
+The Deck Tower opens the flp a third way: in place, with no navigation. `FlashcardsLearnPage`
+takes an optional `tower` host (`FlashcardsLearnPage/flpTowerHost.ts` → `FlpTowerHost`) and
+runs over the tower scene. The tower keeps one session per visited world mounted (parked)
+for the page's life, each fetching its own loop on mount — a matching preload from Home is
+still adopted through `peekLaunchLoop`, since the request is the hand's Mix one. None of
+this section's choreography plays there — see [DECK_TOWER.md](./DECK_TOWER.md) § "Studying
+the tower".
+
 | Step | What moves | Owner |
 |---|---|---|
 | 1. Loading | The three hand cards **shake side to side in a light tremor, independently**: fast (90–130ms cycles), linear, with uneven amplitudes (up to ±2px), and each slot has its own period and phase. The shake follows the **swipe's tilt trajectory**: each offset carries the tilt a drag of that size gets (`x · DRAG_TILT`, `useHandSwipe`), pivoting at the card's top centre. The motion is on the individual `translate`/`rotate` properties so the fan's `transform` is untouched. There is **no minimum**, so a fast load skips straight to step 2, and when Home's preload has already landed there is no shake at all. The hand and the page take no input; the footer stays live, and a tab tap abandons the launch. | `StudyHand` (`shaking`, `HAND_SHAKE_KEYFRAMES`, `HAND_SHAKE_BEAT`); `FlashcardsDecksPage` (frame `pointerEvents`) |
@@ -1148,10 +1156,10 @@ breathes a soft **green halo** and carries a small green **"Low"** badge.
   their own supply is running out. 20 is the point where Study Mix starts being topped up.
 * **Which count.** The same figure as the Learning tile: Unfamiliar + Target +
   Comfortable on the core bar (`builtinCollectionCount` → `learn-now`), exposed as
-  `DecksPanelState.learnNowCount`. That field is `undefined` until
+  `DecksPanelState.learningCount`. That field is `undefined` until
   `useCategoryCounts` reports `ok` — unlike `tileCount`, a failed or in-flight fetch never
   reads as 0, so the glow cannot flash on arrival or appear after a network error. The
-  decision is made in `FlashcardsDecksPage.tsx` (`learnNowLow`) and passed down.
+  decision is made in `FlashcardsDecksPage.tsx` (`learningLow`) and passed down.
 * **fdp only.** The Mastery Centers have no top rail; their Learning is per-skill, and a
   learner who has read everything has a reading problem, not a supply problem.
 * **Halo.** Green rather than the tile's blue so it stands out as an inviting "go here"
@@ -1176,8 +1184,8 @@ replaced by the always-present tile, so the route to sorting is never hidden and
 low state is a glow on a known control rather than a control that appears.
 
 *Code:* `src/features/flashcards/DecksTopRail.tsx` (`DecksTopRail`, `RailTile`,
-`railTileSx`); mounted by `FlashcardsDecksPage.tsx` (`learnNowLow`); count from
-`useDecksPanel.ts` (`learnNowCount`); halo from `src/theme/lowSupplyGlow.ts`.
+`railTileSx`); mounted by `FlashcardsDecksPage.tsx` (`learningLow`); count from
+`useDecksPanel.ts` (`learningCount`); halo from `src/theme/lowSupplyGlow.ts`.
 
 ### Back restores the page
 
@@ -1358,7 +1366,7 @@ panel — so inside the sheet the height stops encoding anything and only the nu
 carries the count. The Mastery Center **pages** have room and do band.
 
 Colors come from `lensCollectionEntries` for the built-ins (which reads
-`LEARN_NOW_COLORS` and `MASTERY_BAR_COLORS` out of
+`LEARNING_COLORS` and `MASTERY_BAR_COLORS` out of
 `src/utils/categoryColors.ts`) and from `deckTileColors(id)` for a user deck — the
 same id-derived palette as `deckAccentColor` (its `.main` is the deck hue's MID tier). A
 **challenge** deck's spine is `COLORS.orgM` regardless of id (docs/STUDY_CHALLENGE.md
@@ -1366,7 +1374,7 @@ same id-derived palette as `deckAccentColor` (its `.main` is the deck hue's MID 
 color on the page names a set, and All is their union rather than another member, so it
 takes a neutral instead of another hue. **Learning** takes the gold `--yel`. ⚠️ Since
 Shelf System v2 (2026-09-23) Target is ALSO yellow, so yellow means both the Target band
-(pills, cells) and Learning / Study Mix — an open collision tracked on `LEARN_NOW_HUE` in
+(pills, cells) and Learning / Study Mix — an open collision tracked on `LEARNING_HUE` in
 `src/utils/categoryColors.ts`. It was purple until 2026-09-01; gold is the
 **Study Mix** card's own hue (`HAND_HUES.mix`), and Study Mix plays exactly the Learning
 set, so the hand and the filter now name the same cards in the same colour.
@@ -1378,7 +1386,7 @@ cells themselves are band-coloured since 2026-09-23). `core` blends recognition 
 borrow, and keeps Mastered blue.
 
 Since 2026-08-31 those pairs are **derived from a `RampHue` key**, not hand-copied hexes:
-`MASTERY_BAR_HUES` / `LEARN_NOW_HUE` name the hue and the `{main, accent}` pair is
+`MASTERY_BAR_HUES` / `LEARNING_HUE` name the hue and the `{main, accent}` pair is
 `RAMP[hue].fill` / `RAMP[hue].tint`. `BuiltinCollectionEntry` carries the same `hue` key
 beside its `colors`, because a surface that needs a THIRD tier — `LibraryDuo`'s active
 filter tile wants the saturated `ink` — must not pair one hue's fill with another's ink
@@ -1755,8 +1763,8 @@ no such treatment: that is a real value, and "Lowest" legitimately starts there.
 | §3 Games-hub selector | `src/features/flashcards/selectedCollection.ts`; `src/games/GamesCollectionSelector.tsx`; `src/games/GamesPage.tsx` (`launchPath`); `src/games/word-search/WordSearchHubItem.tsx` (`newGamePath`); `src/api/decks.ts` (`fetchDecks`) |
 | §4 Client | `src/api/decks.ts`, `collectionRef.ts`, `useLaunchCollection.ts`, `CollectionViewPage.tsx`, `FlashcardsDecksPage.tsx`, `useDecksPanel.ts`, `DecksPanelBody.tsx`, `NewDeckDialog.tsx`, `AddToDeckMenu.tsx`, `routes/routeMeta.ts`, `routes/registry.ts` |
 | §4 Mastery Centers | `src/features/flashcards/masteryCenters.ts` (bars, routes, titles, `activeMasteryCenters`); `MasteryCenterPage.tsx`; `useDecksPanel.ts` (the lens); `collectionRef.ts` (`withLens`, `lensFromSearch`, `lensFromCollection`, `LEARN_NOW_COLLECTION_IDS`); `builtinCollections.ts` (`lensCollectionEntries`); `src/hooks/useCategoryCounts.ts` (`?world=`); `src/components/MiniVocabCard.tsx` + `MiniVocabCardGrid.tsx` (the `lens` prop); `src/components/mastery/MasteryWindow.tsx` (`lens`); `VocabCardDetailPage.tsx` (`?world=`); `server/contracts/wire.ts` (`LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`, `parseMasteryWorld`); `server/dal/shared/vetTable.ts` (`unmasteredBarClause`, `builtinCollectionClause`); `OnDeckVocabService.getCategoryCounts` (the `world` param); `OnDeckVocabController.getCategoryCounts`; `routes/routeMeta.ts` + `registry.ts`. See [MASTERY_REWORK.md](./MASTERY_REWORK.md). |
-| §1 (b) top rail + §4 Sort Cards tile | `src/features/flashcards/DecksTopRail.tsx`; `src/theme/lowSupplyGlow.ts`; `FlashcardsDecksPage.tsx` (`learnNowLow`); `useDecksPanel.ts` (`learnNowCount`); `src/hooks/useCategoryCounts.ts` (`ok`); `server/contracts/wire.ts` (`LEARN_NOW_LOW_THRESHOLD`, `LEARN_NOW_ENOUGH_THRESHOLD`); `src/hooks/useDiscoverNavigation.ts` (`goToSort`). Sort-page half: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.3a. |
-| §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARN_NOW_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionWorld`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByWorld`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
+| §1 (b) top rail + §4 Sort Cards tile | `src/features/flashcards/DecksTopRail.tsx`; `src/theme/lowSupplyGlow.ts`; `FlashcardsDecksPage.tsx` (`learningLow`); `useDecksPanel.ts` (`learningCount`); `src/hooks/useCategoryCounts.ts` (`ok`); `server/contracts/wire.ts` (`LEARN_NOW_LOW_THRESHOLD`, `LEARN_NOW_ENOUGH_THRESHOLD`); `src/hooks/useDiscoverNavigation.ts` (`goToSort`). Sort-page half: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.3a. |
+| §4 Spines & built-in collections | `src/components/shelf/*` (`Shelf`, `Spine`, `AddSpine`, `spineGeometry`) (+ `DeckBuckets.tsx`, the Account host); `src/utils/categoryColors.ts` (`BAND_COLORS.All`, `LEARNING_COLORS`, `MASTERY_BAR_COLORS`); `src/features/flashcards/builtinCollections.ts` (`lensCollectionEntries`, `builtinCollectionCount`); `collectionRef.ts` (`deckTileColors`, `MASTERED_TITLES`, `builtinCollectionRef`, `builtinCollectionId`); `server/dal/shared/vetTable.ts` (`BUILTIN_COLLECTION_IDS`, `parseBuiltinCollectionId`, `builtinCollectionClause`); `server/contracts/wire.ts` (`ALL_COLLECTION_ID`, `MASTERED_COLLECTION_IDS`, `masteredCollectionWorld`, `LEARN_NOW_COLLECTION_IDS`, `learnNowCollectionWorld`); `OnDeckVocabService.getBuiltinCollectionCards` + `getMasteredCountsByWorld`; `OnDeckVocabController.getCollectionCards` + `getMasteredCounts`; `routes/onDeckRoutes.ts`; `src/hooks/useMasteredCounts.ts` |
 | §1 `editMode` + §4 Challenges section | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) §§ 4, 9; `database/migrations/148-create-study-challenges.sql`; `DeckService` → `assertMutable` (the preset mutation guard) and `createPresetDeck`; `DeckDAL` → `createPresetDeck` / `countCustomDecks` / `findDeckEditMode`; `study_challenges.presetDeckIds` |
 | §4 Cards section (inline library) | `src/api/collections.ts` (`fetchCollectionCards`) — also the collection page's built-in read; `src/components/MiniVocabCardGrid.tsx`; `src/utils/vocabSearch.ts` (`filterVocabEntries`); `useDecksPanel.ts` (the fetch, the search + sort state); `DecksPanelBody.tsx` (the section + the `decksSheet.decksOpen` collapse) |
 | §4 Back restores the page | `src/features/flashcards/backRestore.ts` (`saveBackSnapshot`, `readBackSnapshot`, `DecksPanelSnapshot`, `DecksPageSnapshot`, `MasteryCenterSnapshot`, `CollectionPageSnapshot`); `useDecksPanel.ts` (the `restore` param, `restored`, `snapshot`); `DecksPanelBody.tsx` (`initialScrollTop`); `FlashcardsDecksPage.tsx`, `MasteryCenterPage.tsx`, `CollectionViewPage.tsx` (`rememberPlace`); `src/components/sheet/SheetPanel.tsx` (`restoreHeight`); `src/components/MiniVocabCardGrid.tsx` (`revealImmediately`); `src/hooks/usePageSlide.ts` (no enter on `POP`). See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § "Card-grid back-restore". |

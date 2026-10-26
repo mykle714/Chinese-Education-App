@@ -108,17 +108,24 @@ export const COLORS = {
     grnBg: "#C4E7CA",    // oklch(89.5% 0.055  150)
     purBg: "#DED2F7",    // oklch(88.5% 0.052  300)
 
-    // ── Lime and pink: two single-tier hues outside the design's ramp ──────────
-    // Added 2026-10-19 for the Deck Tower's reading world (lime sky, pink platform —
-    // src/features/deckTower/towerWorlds.ts, docs/DECK_TOWER.md § Worlds), asked for as
-    // #C2F127 / #FFCFFF and snapped onto the v2 recipe (per-channel clip). Not in RAMP:
-    // they have no other tiers yet. Add the rest from the same recipe before using them
+    // ── Sky green and pinks: single-tier colours outside the design's ramp ─────────────
+    // For the Deck Tower's reading world (green sky, pink platform) and writing world
+    // (powder-pink sky) — src/features/deckTower/towerWorlds.ts, docs/DECK_TOWER.md § Worlds. Not in RAMP:
+    // they have no other tiers. Add the rest from the same recipe before using them
     // elsewhere.
-    //  - limMk is a MARK (C 0.24) but at 89% L, not the marks' 80–83%: at 83% this hue
-    //    is an olive #ABDD00, not the lime asked for.
-    //  - pnk is a SURFACE (pur's own 92% / 0.085), on hue 326 between pur and red.
-    limMk: "#BEF200",    // oklch(89%   0.24   123) clipped
+    //  - grnSky (2026-10-24) replaced the lime sky `limMk` (#BEF200, oklch 89% 0.24 123),
+    //    which read as neon yellow-green. It is the grn hue nudged to 150, between a
+    //    surface and a mark: 83% L is about as deep as the main world's bluMk sky (77%),
+    //    and 0.15 chroma is softer than grnMk (0.21), so it reads as a fresh spring green
+    //    rather than a highlighter.
+    //  - pnk (2026-10-19, asked for as #FFCFFF) is a SURFACE (pur's own 92% / 0.085), on
+    //    hue 326 between pur and red.
+    //  - pnkSky (2026-10-24, asked for as "powder pink") replaced the writing world's red
+    //    sky (redMk). A warm, dusty pink on hue 5 — warmer and greyer than pnk (326), so
+    //    the two pinks never read as one colour — at 87% L, about as light as grnSky.
+    grnSky: "#78E292",   // oklch(83%   0.15   150)
     pnk: "#FFD1FF",      // oklch(92%   0.085  326) clipped
+    pnkSky: "#F7C6D0",   // oklch(87%   0.057    5)
 
     // ── `--gld`, the action metal ─────────────────────────────────
     // A saturated gold, the one ramp member that is NOT a pale ground. The arena flow
@@ -161,6 +168,12 @@ export const COLORS = {
     // couple of hub tiles. Named for its colour rather than its role because it has no
     // single role; `cardFace` above is the one with a role.
     cardBeige: "#F5EBE0",        // the design's bare `.mcd` fill
+    // The flashcard's SHADED wall: `cardBeige` darkened one iso step (= the Deck Tower's
+    // `shadeHex(cardBeige, 0.07)`, frozen here as a literal so shared chrome can use it
+    // without importing the iso framework). The card stock's right wall in the tower
+    // (ISO.card.right) and the lip under the tower page's slab footer (MobileFooter
+    // `slab` style). Docs: docs/DECK_TOWER.md § Footer.
+    cardWall: "#EDDAC4",
     infoCard: "#F5EBE0",         // same beige — kept as a distinct token for eip surfaces
     sectionCard: "#FFFFFF",      // was a beige; the design puts sections on white over paper
     iconBg: "#E7E7EA",           // --grey — the tinted square behind a leading icon

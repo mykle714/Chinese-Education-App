@@ -21,9 +21,9 @@ Client-only. There is no server, API, or database component.
 | Layer | File | Role |
 |---|---|---|
 | Registry | `src/softIntro/softIntroRegistry.ts` → `SOFT_INTROS`, `VISIT_DEDUPE_MS` | Every si id and its thresholds |
-| Storage + pure logic | `src/softIntro/softIntroStorage.ts` → `recordVisit`, `hasMetThresholds`, `resolveSoftIntroState`, `recordSoftIntroVisit`, override read/write/subscribe | localStorage records, graduation rule, validator override |
+| Storage + pure logic | `src/softIntro/softIntroStorage.ts` → `recordVisit`, `hasMetThresholds`, `resolveSoftIntroState`, `recordSoftIntroVisit`, override read/write/subscribe | localStorage records, graduation rule, feature-tester override |
 | Hook | `src/softIntro/useSoftIntro.ts` → `useSoftIntro` | What a component calls: returns `"intro"` or `"graduated"` |
-| Validator UI | `src/softIntro/SoftIntroToggle.tsx` | Header button: Auto → Intro → Graduated |
+| Feature-tester UI | `src/softIntro/SoftIntroToggle.tsx` | Header button: Auto → Intro → Graduated |
 | Tests | `src/__tests__/softIntro.test.ts` | Dedupe window and both-thresholds rule |
 
 `src/softIntro/` is a subsystem directory (like `src/minutePoints/`), not a feature
@@ -52,7 +52,7 @@ folder: any feature may consume it.
 Two localStorage keys, every access in try/catch (a failure reads as "no visits yet", i.e. the intro):
 
 - `softIntro.v1` — `{ [id]: { firstVisitAt, lastVisitAt, visits, graduatedAt? } }` (epoch ms).
-- `softIntro.override` — the validator override (§ 5); absent = `auto`.
+- `softIntro.override` — the feature-tester override (§ 5); absent = `auto`.
 
 Writes re-read the map first, so two si mounting together cannot clobber each other.
 
@@ -69,9 +69,10 @@ Writes re-read the map first, so two si mounting together cannot clobber each ot
   `enabled: variant === "full"` so the Reading/Writing Centers' compact hands, which have
   no numeral, cannot graduate the fdp's si unseen.
 
-## 5. Validator viewing toggle
+## 5. Feature-tester viewing toggle
 
-`SoftIntroToggle` renders only for `users.isValidator`. Each tap cycles one app-wide
+`SoftIntroToggle` renders only for `users.isFeatureTester` (migration 178; it rode
+`isValidator` before that flag was split into data validation vs feature testing). Each tap cycles one app-wide
 override:
 
 | Override | Icon | Effect |
@@ -83,7 +84,7 @@ override:
 - The override is **live**: `useSyncExternalStore` on a window event, plus `storage` for
   other tabs. It re-renders immediately so the two styles can be compared in place.
 - It **never touches the visit records**.
-- `useSoftIntro` ignores it for non-validators, so a stale key on a shared device cannot
+- `useSoftIntro` ignores it for non-testers, so a stale key on a shared device cannot
   change a learner's experience.
 - It belongs in the header of any page hosting an si. Today that is the hp
   (`src/pages/HomePage.tsx`, `headerExtraActions`, left of the banking always-play toggle).

@@ -44,7 +44,7 @@
  */
 import type { MasteryWorldId } from '../../utils/masteryCompute';
 import {
-    LEARN_NOW_COLORS, LEARN_NOW_HUE, MASTERY_BAR_COLORS, MASTERY_BAR_HUES,
+    LEARNING_COLORS, LEARNING_HUE, MASTERY_BAR_COLORS, MASTERY_BAR_HUES,
 } from '../../utils/categoryColors';
 import type { RampHue } from '../../theme/colors';
 import { collectionTitle, type CollectionRef } from './collectionRef';
@@ -86,15 +86,15 @@ export interface BuiltinCollectionEntry {
  * see docs/DECKS_FEATURE.md § "Which collections exist".
  */
 export function lensCollectionEntries(lens: MasteryWorldId): BuiltinCollectionEntry[] {
-    const learnNow: CollectionRef = { kind: 'learn-now', world: lens };
+    const learning: CollectionRef = { kind: 'learn-now', world: lens };
     const mastered: CollectionRef = { kind: 'mastered', world: lens };
     return [
         {
             key: `learn-now-${lens}`,
-            ref: learnNow,
-            label: collectionTitle(learnNow),
-            colors: LEARN_NOW_COLORS,
-            hue: LEARN_NOW_HUE,
+            ref: learning,
+            label: collectionTitle(learning),
+            colors: LEARNING_COLORS,
+            hue: LEARNING_HUE,
         },
         {
             key: `mastered-${lens}`,

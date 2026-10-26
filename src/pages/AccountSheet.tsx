@@ -19,7 +19,8 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
 /**
  * Account — artboard 5 of the shelf redesign (docs/SHELF_REDESIGN.md entry 5), as a
  * MAXIMIZABLE BOTTOM SHEET raised from the Home header's avatar button
- * (HeaderAvatarButton → HomePage). It used to be the `/account` footer tab; Dictionary
+ * (HeaderAvatarButton → HomePage) — and from the Deck Tower's floating avatar
+ * (src/features/deckTower/DeckTowerAvatar.tsx). It used to be the `/account` footer tab; Dictionary
  * took that slot on 2026-10-09 and the route was deleted.
  *
  * Why a sheet: the account is something you glance at from Home (your library shelf,
@@ -43,7 +44,7 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
  * LAYER: app-level page surface (src/pages — not part of any one feature). Data comes
  * from AuthContext + useCategoryCounts/useVelocity; no direct server calls.
  *
- * Depended on by: docs/SHELF_REDESIGN.md entry 5, docs/UX_AND_NAVIGATION.md,
+ * Depended on by: docs/SHELF_REDESIGN.md entry 5, docs/DECK_TOWER.md, docs/UX_AND_NAVIGATION.md,
  * docs/VELOCITY.md, docs/MASTERY_REWORK.md.
  */
 

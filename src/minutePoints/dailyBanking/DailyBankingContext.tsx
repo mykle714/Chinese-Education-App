@@ -99,11 +99,11 @@ function useDailyBankingRun(store: FrameStore): void {
         (async () => {
             const summary = await fetchLanguageSummary(language, tokenRef.current);
             // The server owns "owed today?" — it compares the streak dates, the client
-            // never does. The one override is the validator "always play" toggle (§ 8),
-            // honored only on a validator account so a stale localStorage key on a shared
+            // never does. The one override is the feature-tester "always play" toggle (§ 8),
+            // honored only on a feature-tester account so a stale localStorage key on a shared
             // device cannot affect a learner. A zero yesterday never plays either way
             // (Q11a): there is nothing to drain.
-            const forced = !!user?.isValidator && readBankingAlwaysPlay();
+            const forced = !!user?.isFeatureTester && readBankingAlwaysPlay();
             if (cancelled || !summary || summary.yesterdayMinutes <= 0) return;
             if (!summary.bankingPending && !forced) return;
 
@@ -143,7 +143,7 @@ function useDailyBankingRun(store: FrameStore): void {
         };
         // Stable identities only: user id + language. A language switch re-checks, and
         // replays for the other language if its run is owed (Q3).
-    }, [user?.id, user?.isValidator, language, store]);
+    }, [user?.id, user?.isFeatureTester, language, store]);
 }
 
 /** Mounted by HomePage around its screen. Only the hp plays the banking run. */

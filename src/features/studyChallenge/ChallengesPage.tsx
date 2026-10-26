@@ -73,7 +73,7 @@ function ChallengesPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // The tester escape hatch, per device (docs/STUDY_CHALLENGE.md § 2a). Only a
-    // validator account can spend it — the server ignores it from anybody else — so
+    // feature-tester account can spend it — the server ignores it from anybody else — so
     // the switch below is rendered only for one.
     const [anytime, setAnytime] = useChallengeAnytime();
 
@@ -176,12 +176,13 @@ function ChallengesPage() {
                 </Button>
 
                 {/* ── TESTER: allow anytime (docs/STUDY_CHALLENGE.md § 2a) ──
-                    Validator accounts only. The row is rendered rather than hidden
+                    Feature-tester accounts only (users.isFeatureTester,
+                    migration 178). The row is rendered rather than hidden
                     behind a menu because a tester needs to SEE whether the week is
                     being bypassed — a hidden flag that silently rewrites every
                     deadline is exactly the kind of state that gets left on and then
                     misread as a bug. */}
-                {user?.isValidator && (
+                {user?.isFeatureTester && (
                     <Box
                         className="challenges-page__anytime"
                         sx={{
@@ -227,10 +228,10 @@ function ChallengesPage() {
 
                 {/* The consequences, spelled out WHILE the hatch is on. Every one of
                     them is correct behaviour that reads as a bug if you meet it
-                    unprepared (see the component). Only for a validator, and only
+                    unprepared (see the component). Only for a feature tester, and only
                     while the switch is on — the second condition is what keeps it from
                     becoming wallpaper. */}
-                {user?.isValidator && anytime && <ChallengeAnytimeNotice />}
+                {user?.isFeatureTester && anytime && <ChallengeAnytimeNotice />}
 
                 {/* Hidden while the hatch is on: the cap is not being enforced, so a
                     count of slots "used this week" would be stating a rule that is not

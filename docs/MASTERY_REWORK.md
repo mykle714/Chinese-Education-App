@@ -596,7 +596,7 @@ variant and `yelMkD` were deleted and both bars take the same colour.
 **Layering note — REVERSED 2026-08-31.** The cycle this warned about is gone:
 `theme/colors.ts` now imports **nothing** (its four `*Main` aliases read hoisted local
 constants instead of `CATEGORY_COLORS`), so the theme is the palette's root and
-`categoryColors.ts` sits *above* it. `LEARN_NOW_COLORS` / `MASTERY_BAR_COLORS` are
+`categoryColors.ts` sits *above* it. `LEARNING_COLORS` / `MASTERY_BAR_COLORS` are
 derived from `RAMP` hue keys there, as are `BAND_MID` / `BAND_MARK`.
 
 > The old cycle was harmless only while neither module needed the other's VALUES at

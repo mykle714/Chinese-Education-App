@@ -113,7 +113,7 @@ function serviceFor(
             avatarIconId: null,
             timezone: tzOf(id),
             selectedLanguage: 'zh',
-            isValidator: false,
+            isFeatureTester: false,
         }),
     };
 

@@ -9,8 +9,8 @@ import { InfoSheetEntryHeader } from "./styled";
 import { FC_FONT_CJK } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "../../../components/SpeakerButton";
-import LearnNowToggle from "../../../components/LearnNowToggle";
-import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
+import LearningToggle from "../../../components/LearningToggle";
+import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry } from "../types";
 
 // The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
@@ -36,12 +36,12 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     speakingKey?: string | null;
     // Add-only "+ to Learning" (discoverable entries only). Passed by the flp for a
     // drilled-into word not yet in Learning (the flp drops it once added). Superseded
-    // by `learnNow` when both are given.
+    // by `learning` when both are given.
     onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learning TOGGLE (glowing "+" ⇄ "Added!", useLearnNowToggle) for the entry
+    // The Learning TOGGLE (glowing "+" ⇄ "Added!", useLearningToggle) for the entry
     // showing. Takes the slot under the speaker in place of `onAddToLibrary`. Passed by
     // the Dictionary page's eip (EipSheet) and the dictionary cdp.
-    learnNow?: LearnNowToggleState;
+    learning?: LearningToggleState;
     // Index into sortedSenseClusters(entry); drives the dd, the reading and the chip.
     selectedSenseIndex?: number;
     // A pick in the SensePicker; undefined hides the picker.
@@ -60,7 +60,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     onSpeak,
     speakingKey,
     onAddToLibrary,
-    learnNow,
+    learning,
     selectedSenseIndex,
     onSelectSense,
     className,
@@ -104,8 +104,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                 )}
                 {/* Header actions — a VERTICAL STACK: Speaker on top, the Learning control
                     under it (2026-10-10; was a 2-column grid, Speaker · Add). Either may be
-                    absent — Speaker needs onSpeak; the Learning slot needs `learnNow` (the
-                    compact glowing "+" ⇄ "Added!" toggle, LearnNowToggle) or, failing that,
+                    absent — Speaker needs onSpeak; the Learning slot needs `learning` (the
+                    compact glowing "+" ⇄ "Added!" toggle, LearningToggle) or, failing that,
                     the flp's add-only `onAddToLibrary` on a discoverable entry.
                     The header keeps ONLY the actions that are about the ENTRY ITSELF —
                     hear it, save it. CARD operations have left the panel for good: the
@@ -120,7 +120,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                     is identity (word, how to hear it) → meaning → which sense. */}
                 {entry && (
                     onSpeak ||
-                    learnNow?.available ||
+                    learning?.available ||
                     (onAddToLibrary && entry.discoverable)
                 ) && (
                     <Box
@@ -142,8 +142,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                                 isLoading={speakingKey === entry.entryKey}
                             />
                         )}
-                        {learnNow ? (
-                            <LearnNowToggle state={learnNow} />
+                        {learning ? (
+                            <LearningToggle state={learning} />
                         ) : onAddToLibrary && entry.discoverable && (
                             // The flp eip's add-only "+" (hidden by the flp once the word is
                             // added). Only discoverable entries can join Learning.

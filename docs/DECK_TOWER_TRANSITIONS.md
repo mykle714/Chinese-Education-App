@@ -1,6 +1,6 @@
 # Deck Tower Transitions (deck switch)
 
-Tapping the Deck Tower's floor plate switches the tower between the learner's **Learn Now**
+Tapping the Deck Tower's floor plate switches the tower between the learner's **Learning**
 and **Mastered** decks. The plate cuts straight to the other deck's colour and name. Then a
 **deck transition** clears the old tower off the platform, a **pawn entrance** brings on a
 new pawn, and the new deck's tower grows. Transitions and entrances each come from a
@@ -13,12 +13,12 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 ## Status
 
 - Built on dev, 2026-10-18. Front-end only: no new endpoint, table or migration. The
-  Learn Now figure comes from the existing `GET /api/onDeck/flpReadyCounts`
+  Learning figure comes from the existing `GET /api/onDeck/flpReadyCounts`
   (`useFlpReadyCounts`), the Mastered figure from `GET /api/onDeck/masteredCounts`
   (`useMasteredCounts`).
 - Registries: one deck transition (**trap door**) and one pawn entrance (**fall from the
   sky**).
-- The page always opens on Learn Now. The chosen deck is not persisted.
+- The page always opens on Learning. The chosen deck is not persisted.
 
 ## Layers
 
@@ -41,12 +41,12 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 
 `TOWER_DECKS` (`towerDecks.ts`):
 
-| Id | Title | Plate label | Band (plate) | Count |
+| Id | Title | Plate label | Band (plate + top card head band) | Count |
 |---|---|---|---|---|
-| `learn-now` | Learn Now | LEARN NOW | `RAMP[LEARN_NOW_HUE].mid` (`yelM`) in every world | `bandTotal` over the READY counts (`useFlpReadyCounts(bar)`): off-cooldown cards in all four utcm bands (`TOWER_MODES.mix.bands`, [DECK_TOWER.md](./DECK_TOWER.md) § Study mode) |
+| `learn-now` | Learning | LEARNING | `RAMP[LEARNING_HUE].mid` (`yelM`) in every world | `bandTotal` over the READY counts (`useFlpReadyCounts(bar)`): off-cooldown cards in all four utcm bands (`TOWER_MODES.mix.bands`, [DECK_TOWER.md](./DECK_TOWER.md) § Study mode) |
 | `mastered` | Mastered | MASTERED | `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for both — blue in every world | `builtinCollectionCount({ kind: "mastered", bar }, …)`: `useMasteredCounts().counts[bar]` |
 
-`bar` is the world's id (`core` / `reading` / `writing`, towerWorlds.ts). Learn Now
+`bar` is the world's id (`core` / `reading` / `writing`, towerWorlds.ts). Learning
 is the ready cards of all four bands, by the flp's readiness rule — the study hand's Mix
 figure — NOT the fdp's Learning tile, which counts cooling cards and leaves out
 Mastered. Mastered matches the Mastered tile. A band is the deck's fdp hue at the `mid` tier, because the pale
@@ -169,6 +169,9 @@ or while the camera pans between worlds. A horizontal drag that starts on the pl
 a world swipe: the scroller captures the pointer, so the plate lets go without firing.
 If the page ignores the tap (counts not loaded) the plate simply pops back up. Under
 prefers-reduced-motion the height jumps instead of easing.
+While the tower is studied the plate is stowed in the platform and is no button at all
+(`DeckTowerPlatform` → `plateUp`, `usePlateRecess`; [DECK_TOWER.md](./DECK_TOWER.md)
+§ Studying the tower → "The floor fixtures").
 
 **The face change is a hard cut.** On release the plate's band and label switch to the
 other deck in a single frame — no flip, fade or colour blend (`useDeckSwap` →
@@ -320,6 +323,7 @@ starts in the `entrance` mode from its first render.
 
 The pawn drops from `SKY_FALL_HEIGHT` (55 units, off the top of a phone screen over the
 platform) under `SKY_FALL_GRAVITY` (110 u/s²). That gives `landMs` = 1000 ms.
+`FALL_FROM_SKY` is the module-private `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)).
 
 - **In the air** it is stretched (0.92 × 1.1).
 - **Shadow.** Its shadow is a faint dot while it is high, and grows to full size and tone

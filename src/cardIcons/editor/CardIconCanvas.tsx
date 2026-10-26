@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { useGesture } from "@use-gesture/react";
-import { CARD_SURFACE_RADIUS } from "../../theme/surfaces";
+import { CARD_SURFACE_CLIP_RADIUS } from "../../theme/surfaces";
 import OpenWithIcon from "@mui/icons-material/OpenWith";
 import LockIcon from "@mui/icons-material/Lock";
 import type { IconLayoutItem, SnapConfig, TextBlock, TextLayoutItem } from "../../types";
@@ -723,7 +723,11 @@ const CardIconCanvas: React.FC<{
                     // The card's own inner-clip curve (CardFaceSide / CardIconLayer),
                     // so an icon dragged into a corner is cut off exactly where it
                     // would be once the layout is saved and rendered read-only.
-                    borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
+                    borderRadius: CARD_SURFACE_CLIP_RADIUS,
+                    // Same narrower clip the read-only layer takes (CardIconLayer): on the
+                    // Deck Tower's card stock an icon is cut at the printed panel, so the
+                    // editor shows exactly what the saved card will.
+                    clipPath: "var(--card-icon-clip, none)",
                     zIndex: 0,
                 }}
             >
@@ -827,7 +831,7 @@ const CardIconCanvas: React.FC<{
                     // The card's own inner-clip curve (CardFaceSide / CardIconLayer),
                     // so an icon dragged into a corner is cut off exactly where it
                     // would be once the layout is saved and rendered read-only.
-                    borderRadius: `${CARD_SURFACE_RADIUS - 1}px`,
+                    borderRadius: CARD_SURFACE_CLIP_RADIUS,
                     zIndex: 1,
                     // The layer spans the whole canvas (above the icon clip layer), but only the
                     // two text blocks should be interactive — make the layer itself transparent

@@ -2,9 +2,11 @@ import { useRef } from "react";
 import { useLocation } from "react-router-dom";
 import MobileFooter, {
     FOOTER_TOTAL_HEIGHT,
+    SLAB_FOOTER_HIDDEN_OFFSET,
+    type FooterStyle,
     type FooterTab,
 } from "./MobileFooter";
-import { routeFooterTab } from "../routes/routeMeta";
+import { routeFooterStyle, routeFooterTab } from "../routes/routeMeta";
 import { useFooterSuppressed } from "../hooks/useHideFooter";
 
 // Persistent footer layer. The footer bar is rendered ONCE here (inside
@@ -39,7 +41,13 @@ const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 // height, and translating by 74px alone would leave the inset's worth of bar peeking
 // above the bottom edge on every footerless page. `translateY()` takes a calc(), so
 // the string goes straight in.
-const HIDDEN_OFFSET = FOOTER_TOTAL_HEIGHT;
+//
+// The floating slab (`footerStyle: "slab"`) sits higher and casts a shadow below
+// itself, so it travels further: SLAB_FOOTER_HIDDEN_OFFSET.
+const HIDDEN_OFFSET: Record<FooterStyle, string> = {
+    bar: FOOTER_TOTAL_HEIGHT,
+    slab: SLAB_FOOTER_HIDDEN_OFFSET,
+};
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
@@ -55,12 +63,19 @@ const FooterPresenter: React.FC = () => {
     // blank or flip its highlight as it leaves.
     const lastActive = useRef<FooterTab>("home");
     if (activePage) lastActive.current = activePage;
+    // The same for the style: a slab leaving for a footerless route slides out AS a slab.
+    // Between two footer routes of different styles the swap is instant — tab changes
+    // have no page slide, so it lands with the page.
+    const style = routeFooterStyle(pathname);
+    const lastStyle = useRef<FooterStyle>("bar");
+    if (activePage) lastStyle.current = style;
 
     return (
         <MobileFooter
             activePage={lastActive.current}
+            variant={lastStyle.current}
             style={{
-                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET})`,
+                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET[lastStyle.current]})`,
                 transition: `transform ${DURATION_MS}ms ${EASING}`,
                 // Above the page surfaces and the exit clone (z-index 50) so the
                 // bar is always visible while it (and the pages) animate.

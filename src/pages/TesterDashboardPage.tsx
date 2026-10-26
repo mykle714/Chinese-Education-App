@@ -21,13 +21,13 @@ function TesterDashboardPage() {
     const navigate = useNavigate();
     const { user, isAuthenticated } = useAuth();
 
-    // Validator- or admin-only surface (users.isValidator, migration 104; users.isAdmin,
-    // migration 168). Once auth resolves, bounce everyone else to Home so a deep link /
+    // Feature-tester- or admin-only surface (users.isFeatureTester, migration 178;
+    // users.isAdmin, migration 168). Once auth resolves, bounce everyone else to Home so a deep link /
     // stale bookmark can't reach it. This is a UX gate, not a security boundary: the
     // personal widgets read user-scoped endpoints, and the cross-user usage endpoint is
     // gated on isAdmin by the server (UsageDashboardService).
     useEffect(() => {
-        if (isAuthenticated && user && !user.isValidator && !user.isAdmin) navigate("/", { replace: true });
+        if (isAuthenticated && user && !user.isFeatureTester && !user.isAdmin) navigate("/", { replace: true });
     }, [isAuthenticated, user, navigate]);
 
     const {

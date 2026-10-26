@@ -1,5 +1,5 @@
 import { matchPath } from "react-router-dom";
-import type { FooterTab } from "../components/MobileFooter";
+import type { FooterStyle, FooterTab } from "../components/MobileFooter";
 import { GAME_REGISTRY } from "../games/registry";
 import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
@@ -51,7 +51,7 @@ import { isFeatureEnabled } from "../../server/contracts/featureFlags";
  *   'any'     — any signed-in account, including public/demo ones. The common case.
  *   'account' — a full (non-public) account. Public accounts are bounced to "/".
  *
- * Feature-level gates (isValidator, isTemplateAuthor) are NOT expressed here: those
+ * Feature-level gates (isValidator, isFeatureTester, isTemplateAuthor, isAdmin) are NOT expressed here: those
  * pages use 'any' and enforce their own gate inside the page, with the server
  * enforcing it too. Putting them here would let the generic isPublic redirect
  * pre-empt the specific gate.
@@ -93,6 +93,12 @@ export interface RouteMeta {
   chrome: RouteChrome;
   /** Which footer tab is active here. Omit for footerless routes. */
   footerTab?: FooterTab;
+  /**
+   * How the footer bar is drawn here. Omit for the app-wide flat `bar`; `slab` is the
+   * floating flashcard slab (Tower Style design), worn only by /deck-tower for now.
+   * Meaningless without `footerTab`. See MobileFooter / docs/DECK_TOWER.md § Footer.
+   */
+  footerStyle?: FooterStyle;
   // NOTE: there is deliberately no `lazy` flag. Every route is code-split (see
   // routes/registry.ts) and App.tsx wraps them all in <Suspense>, so a per-row
   // flag would be always-true and could only ever drift.
@@ -274,7 +280,8 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "tab",
     footerTab: "deck",
-    note: "Experimental: the Learn Now deck as an isometric card tower, in the \"Good Job!\" art style (docs/DECK_TOWER.md). The footer's Deck tab — it took Discover's slot 2026-10-17.",
+    footerStyle: "slab",
+    note: "Experimental: the Learning deck as an isometric card tower, in the \"Good Job!\" art style (docs/DECK_TOWER.md). The footer's Deck tab — it took Discover's slot 2026-10-17.",
   },
 
   {
@@ -389,6 +396,11 @@ export function routeShell(pathname: string): RouteShell {
 /** The active footer tab for a pathname, or undefined when the footer is hidden. */
 export function routeFooterTab(pathname: string): FooterTab | undefined {
   return findRoute(pathname)?.footerTab;
+}
+
+/** How the footer bar is drawn on a pathname (the flat `bar` unless the row says otherwise). */
+export function routeFooterStyle(pathname: string): FooterStyle {
+  return findRoute(pathname)?.footerStyle ?? "bar";
 }
 
 /** The page archetype for a pathname. */

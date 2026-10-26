@@ -21,7 +21,7 @@ import {
 } from "../constants";
 import { WEIGHT } from "../../../theme/scale";
 import EipEntryHeader from "./EipEntryHeader";
-import type { LearnNowToggleState } from "../../../hooks/useLearnNowToggle";
+import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
@@ -50,7 +50,7 @@ export interface InfoCardPanelBodyProps {
     onAddToLibrary?: (entry: VocabEntry) => void;
     // The Learning TOGGLE (glowing "+" ⇄ "Added!") under the speaker — supersedes
     // onAddToLibrary. Dictionary page eip (EipSheet) + dictionary cdp. See EipEntryHeader.
-    learnNow?: LearnNowToggleState;
+    learning?: LearningToggleState;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
@@ -123,7 +123,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onExampleSegmentClick,
     onSpeak,
     onAddToLibrary,
-    learnNow,
+    learning,
     onSpeakSentence,
     speakingKey,
     headerCpcdSize = "md",
@@ -492,7 +492,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 onSpeak={onSpeak}
                 speakingKey={speakingKey}
                 onAddToLibrary={onAddToLibrary}
-                learnNow={learnNow}
+                learning={learning}
                 selectedSenseIndex={selectedSenseIndex}
                 onSelectSense={onSelectSense}
                 {...(headerDragBind ? headerDragBind() : {})}

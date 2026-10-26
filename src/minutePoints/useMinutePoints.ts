@@ -10,6 +10,7 @@ import {
 } from './minutePointsStorage';
 import { MINUTE_POINTS_CONFIG, STREAK_CONFIG } from '../constants';
 import { isMinutePointsAutoActivePath, isMinutePointsEligiblePath } from './eligibility';
+import { useIsStudySurfaceClaimed } from './studySurface';
 import { useActivityDetection } from '../hooks/useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from './minutePointsSync';
 import { isSameStreakDay } from './streakDay';
@@ -116,8 +117,11 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
     isSyncing: false
   });
 
-  // The three route lists, resolved in `./eligibility` so the rule is testable on its own.
-  const isEligiblePage: boolean = isMinutePointsEligiblePath(location.pathname);
+  // The three route lists, resolved in `./eligibility` so the rule is testable on its own —
+  // OR a non-study route hosting a study surface (the Deck Tower's in-place flp session,
+  // `./studySurface`), which counts exactly like being on an eligible route.
+  const studySurfaceClaimed: boolean = useIsStudySurfaceClaimed();
+  const isEligiblePage: boolean = isMinutePointsEligiblePath(location.pathname) || studySurfaceClaimed;
   const isAutoActivePage: boolean = isMinutePointsAutoActivePath(location.pathname);
 
   const liveSeconds: number = Math.floor((state.todaysMinutePointsMilli % 60000) / 1000);

@@ -48,9 +48,11 @@ interface SpeedLinesProps {
     strength: number;
     /** The overlay's bottom edge (the footer bar's height), matching the scroller's. */
     bottom: number | string;
+    /** The streaks' colour: `ISO.wind` under the time-of-day wash (timeOfDay.ts). Default unwashed. */
+    color?: string;
 }
 
-const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom }) => {
+const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom, color = ISO.wind }) => {
     // Each streak's lane, length, weight, speed and phase — fixed per mount.
     const lines = useMemo(() => {
         const rand = seededRandom(41);
@@ -83,7 +85,7 @@ const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom }) 
                         width: `${l.widthPct}%`,
                         height: l.heightPx,
                         borderRadius: l.heightPx,
-                        backgroundColor: ISO.wind,
+                        backgroundColor: color,
                         opacity: l.opacity,
                         animation: `${streak} ${l.durationMs}ms linear ${l.delayMs}ms infinite`,
                     }}

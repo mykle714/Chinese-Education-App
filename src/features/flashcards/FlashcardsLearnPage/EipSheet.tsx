@@ -7,7 +7,7 @@ import { saveSelectedSense } from "../../../utils/vocabApi";
 import { senseLabelForIndex } from "../../../utils/definitionUtils";
 import { Alert, Snackbar } from "@mui/material";
 import WordToolsRail from "../../../components/WordToolsRail";
-import { useLearnNowToggle } from "../../../hooks/useLearnNowToggle";
+import { useLearningToggle } from "../../../hooks/useLearningToggle";
 import type { Language, VocabEntry } from "../../../types";
 
 /**
@@ -49,10 +49,10 @@ interface EipSheetProps {
     // the word trail like any drill-in. Dictionary page only: a reference lookup has no
     // card to hang the rail above.
     showWordTools?: boolean;
-    // Put the Learning TOGGLE (glowing "+" ⇄ "Added!", LearnNowToggle) under the header
+    // Put the Learning TOGGLE (glowing "+" ⇄ "Added!", LearningToggle) under the header
     // speaker, tracking whichever entry tab is showing. Dictionary page only. A failed
     // add/remove raises this sheet's own error snackbar.
-    showLearnNow?: boolean;
+    showLearning?: boolean;
     // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
@@ -62,7 +62,7 @@ interface EipSheetProps {
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearnNow, depth = 0, defaultHeightRatio,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -70,8 +70,8 @@ const EipSheet: React.FC<EipSheetProps> = ({
     const compareTab = active?.kind === "compare" ? active : null;
     // Membership of the SHOWING word — re-fetched as the trail moves between words.
     // Fed `null` unless the host asked for it, which leaves the hook inert (no fetch).
-    const learnNow = useLearnNowToggle(
-        showLearnNow ? entryTab?.entry ?? null : null,
+    const learning = useLearningToggle(
+        showLearning ? entryTab?.entry ?? null : null,
         (entryTab?.entry.language ?? "zh") as Language,
     );
 
@@ -94,7 +94,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
-                    learnNow={showLearnNow ? learnNow : undefined}
+                    learning={showLearning ? learning : undefined}
                     selectedSenseIndex={entryTab ? entryTab.selectedSenseIndex : 0}
                     // The tab records the pick so the panel re-renders at once; the chosen
                     // cluster's LABEL is persisted for a word with a vet row. A word without
@@ -145,14 +145,14 @@ const EipSheet: React.FC<EipSheetProps> = ({
             <TooManyTabsSnackbar signal={eip.overflowSignal} />
             {/* Learning failures only — a successful add/remove is shown by the toggle. */}
             <Snackbar
-                className="eip-sheet__learn-now-error-snackbar"
-                open={learnNow.error !== null}
+                className="eip-sheet__learning-error-snackbar"
+                open={learning.error !== null}
                 autoHideDuration={2500}
-                onClose={learnNow.clearError}
+                onClose={learning.clearError}
                 anchorOrigin={{ vertical: "top", horizontal: "center" }}
             >
-                <Alert severity="error" variant="filled" onClose={learnNow.clearError}>
-                    {learnNow.error}
+                <Alert severity="error" variant="filled" onClose={learning.clearError}>
+                    {learning.error}
                 </Alert>
             </Snackbar>
         </>

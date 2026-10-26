@@ -22,11 +22,13 @@ export { default as IsoCardImprint } from "./IsoCardImprint";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
 export { default as IsoHatch } from "./IsoHatch";
+export { default as IsoFloorRecess } from "./IsoFloorRecess";
 export { default as IsoModeSwitch } from "./IsoModeSwitch";
 export {
     hatchFootprint,
     leverFootprint,
     modeSwitchFootprint,
+    openingSweepPath,
     LEVER_HOLE,
     MODE_SWITCH_HOLE,
 } from "./hatchGeometry";
@@ -50,8 +52,25 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 
 // Rules + math
 export * from "./geometry";
-export { bandMaterial, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
+export { dimetricView, makeCameraProjector, DIMETRIC_Z_SCALE, type CameraView } from "./camera";
+export { bandMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
 export { shadowFootprint, shadowTone, type IsoSurface } from "./light";
-export { BOB_HEIGHT, BOB_PERIOD_MS } from "./levitation";
+export {
+    blendWash,
+    hexToOklch,
+    hueTurn,
+    lightWash,
+    NO_WASH,
+    oklchToHex,
+    washColorMatrix,
+    washMaterial,
+    washPalette,
+    washTone,
+    type IsoPalette,
+    type IsoWash,
+    type WashLight,
+} from "./wash";
+export { useIsoPalette, useIsoWash } from "./sceneContext";
+export { BOB_HEIGHT, BOB_PERIOD_MS, frozenBobOffsetPx } from "./levitation";
 export { cardStackMetrics, CARD_THICKNESS, type CardStackMetrics } from "./cardStackMetrics";
 export { planCardCollapse, cardsShowingAt, fallMsFor, shadowLandTiming, type CardCollapsePlan, type CollapseRun, type GhostChunk } from "./cardCollapse";

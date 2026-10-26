@@ -1,0 +1,41 @@
+/**
+ * The slab footer's cast-shadow colour channel (MobileFooter `slab` style).
+ *
+ * The colour is a CSS custom property on the document root, not a prop: it must be the
+ * sky behind the footer darkened one iso step, and that sky is owned by the page under
+ * the footer (the Deck Tower repaints it imperatively every scroll frame as a tall tower
+ * climbs into space — SpaceBackdrop). The footer is rendered at frame level, outside that
+ * page, so the page writes the colour here and the slab's box-shadow reads it — no React
+ * re-render on scroll. Unset, the slab casts no shadow.
+ *
+ * Lives in its own module (not MobileFooter.tsx) so that file exports only components
+ * and constants (react-refresh/only-export-components).
+ *
+ * LAYER: shared UI. Knows nothing about the tower — any page behind a slab may set it.
+ * Docs: docs/DECK_TOWER.md § Footer.
+ */
+export const SLAB_CAST_SHADOW_VAR = "--footer-slab-cast-shadow";
+
+/** Sets (or, with null, clears) the colour of the slab footer's cast shadow. */
+export function setFooterCastShadow(color: string | null): void {
+    const root = document.documentElement.style;
+    if (color) root.setProperty(SLAB_CAST_SHADOW_VAR, color);
+    else root.removeProperty(SLAB_CAST_SHADOW_VAR);
+}
+
+/**
+ * The slab's light channel: a CSS `filter` value (e.g. `url(#some-wash-filter)`) the page
+ * behind the slab lights it with — the Deck Tower's time-of-day wash, so the slab dims with
+ * the scene at night. Same root-custom-property route as the cast shadow, for the same
+ * reason (the footer renders outside the page). The filter goes on the slab's FACE only,
+ * never its cast shadow: that shadow falls on the sky, which is the light and is never
+ * washed. Unset, the slab is drawn as is.
+ */
+export const SLAB_FILTER_VAR = "--footer-slab-filter";
+
+/** Sets (or, with null, clears) the filter the slab footer's face is drawn through. */
+export function setFooterSlabFilter(filter: string | null): void {
+    const root = document.documentElement.style;
+    if (filter) root.setProperty(SLAB_FILTER_VAR, filter);
+    else root.removeProperty(SLAB_FILTER_VAR);
+}

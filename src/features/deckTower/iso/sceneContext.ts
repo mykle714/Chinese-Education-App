@@ -7,6 +7,8 @@
  */
 import { createContext, useContext } from "react";
 import type { Hinge, Projector } from "./geometry";
+import { ISO } from "./palette";
+import { NO_WASH, type IsoPalette, type IsoWash } from "./wash";
 
 export const IsoSceneContext = createContext<Projector | null>(null);
 
@@ -24,3 +26,25 @@ export function useIsoProjector(): Projector {
  * raised plate) reads it to undo that transform and draw itself in true 3-D on the door.
  */
 export const IsoDeckHingeContext = createContext<Hinge | null>(null);
+
+/**
+ * The scene's palette: `ISO` under the scene's ambient wash (IsoScene `wash`, wash.ts).
+ * Every object reads its colour constants through `useIsoPalette()` rather than `ISO`,
+ * so a time-of-day light reaches all of them. Outside a washed scene it is plain `ISO`.
+ */
+export const IsoPaletteContext = createContext<IsoPalette>(ISO);
+
+export function useIsoPalette(): IsoPalette {
+    return useContext(IsoPaletteContext);
+}
+
+/**
+ * The scene's ambient wash itself, for a component that passes its OWN colours (a deck's
+ * band, a world's platform) down to objects: it washes them with this first. Outside a
+ * washed scene it is the identity.
+ */
+export const IsoWashContext = createContext<IsoWash>(NO_WASH);
+
+export function useIsoWash(): IsoWash {
+    return useContext(IsoWashContext);
+}

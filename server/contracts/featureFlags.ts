@@ -24,9 +24,10 @@
  * half still requires a rebuild.
  *
  * A flag is for a feature that is BUILT but should not be reachable yet. It is not
- * a permission check — per-user gating is `users.isValidator` / `users.isTemplateAuthor`
- * — and it is not a rollback mechanism for data (see CLAUDE.md, which records that
- * gloss-confusability rolls back by `TRUNCATE`, not by a flag).
+ * a permission check — per-user gating is `users.isValidator` / `users.isFeatureTester`
+ * / `users.isTemplateAuthor` / `users.isAdmin` — and it is not a rollback mechanism
+ * for data (see CLAUDE.md, which records that gloss-confusability rolls back by
+ * `TRUNCATE`, not by a flag).
  *
  * ── Adding a flag ────────────────────────────────────────────────────────────
  * Add one boolean below with a comment saying what it gates, then guard every

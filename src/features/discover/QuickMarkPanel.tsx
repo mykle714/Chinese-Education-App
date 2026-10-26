@@ -490,7 +490,7 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
 
                 {/* Legend — what each swipe direction does. */}
                 <Box className="sort-cards-quick-mark__legend" sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 2, px: 2, pb: 0.5 }}>
-                    <LegendItem className="sort-cards-quick-mark__legend-learn-now" direction="left" />
+                    <LegendItem className="sort-cards-quick-mark__legend-learning" direction="left" />
                     <LegendItem className="sort-cards-quick-mark__legend-mastered" direction="right" />
                 </Box>
 

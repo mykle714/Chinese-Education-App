@@ -1,11 +1,17 @@
 import React from "react";
 import IsoShadow from "./IsoShadow";
 import { flatPath, type WorldRect } from "./geometry";
+import { openingSweepPath } from "./hatchGeometry";
 import { shadowFootprint, type IsoSurface } from "./light";
-import { ISO } from "./palette";
-import { useIsoProjector } from "./sceneContext";
-import { LOOK_UP_LEAN_DEG, PAWN_FOOT_RADIUS, usePawnMotion, type PawnEntranceCue, type PawnRoam, type PawnStep } from "./usePawnMotion";
-import { prefersReducedMotion } from "./skyTraffic";
+import { useIsoPalette, useIsoProjector } from "./sceneContext";
+import {
+    EMOTE_DRAW_SCALE,
+    PAWN_FOOT_RADIUS,
+    usePawnMotion,
+    type PawnEntranceCue,
+    type PawnRoam,
+    type PawnStep,
+} from "./usePawnMotion";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 
@@ -13,15 +19,13 @@ import { WEIGHT } from "../../../theme/scale";
  * IsoPawn — one of Good Job's featureless ink "pawn" workers: a pill body and a ball
  * head (docs/ISO_ART_FRAMEWORK.md § "IsoPawn").
  *
- * The body is drawn in SCREEN space at the projected point it stands on — a pill reads
- * the same from every angle, so it needs no iso geometry. Its shadow is NOT: it is a
- * round footprint cast through IsoShadow like every other shadow, so it falls the same
- * way and in the same tone as the rest of the scene's.
- *
- * It is DRAWN once, at `at`; all movement is `usePawnMotion` transforming four nested
- * groups (travel ⊃ shadow, hop ⊃ pose + emote). Because the projection is affine, sliding
- * the drawn pawn by a projected floor delta is the same as redrawing it there — shadow
- * included, since the shadow lies flat on the same floor.
+ * The body is a 3D figure — a capsule under a ball (iso/pawnFigure.ts) — projected
+ * through the scene's camera, so it reads as a pawn from the fixed iso view AND from the
+ * Deck Tower's straight-down study camera. usePawnMotion redraws it every frame (the
+ * body's path, the head's circle), so neither carries geometry in this JSX. Its shadow is
+ * a round footprint cast through IsoShadow like every other shadow, so it falls the same
+ * way and in the same tone as the rest of the scene's; it is DRAWN once, at `at`, and
+ * slid by the `travel` group (a projected floor delta — the shadow lies flat on the floor).
  *
  * Its shadow falls on DECALS too (flat things printed on its floor, e.g. IsoFloorLabel):
  * an opaque floor-tone shadow would paint over them, so `decals` — passed already drawn
@@ -75,31 +79,39 @@ interface IsoPawnProps {
      * IsoFloorLabel, at its current height). Heights are read live (usePawnMotion `steps`).
      */
     steps?: PawnStep[];
+    /**
+     * A floor opening one of its `steps` can sink into (e.g. IsoFloorRecess's hole): while the
+     * pawn's feet are below the floor it is clipped to the opening swept up the screen, so
+     * it reads as standing down in the hole (usePawnMotion `openingClip`). Omitted while no
+     * step goes below the floor.
+     */
+    opening?: WorldRect;
 }
 
-/** Sizes in world units. */
-const BODY_WIDTH = 0.78;
-const BODY_HEIGHT = 1.5;
-const HEAD_RADIUS = 0.44;
-const EMOTE_RADIUS = 0.62;
-const EMOTE_GAP = 0.3;
+/**
+ * The "!" bubble's radius in camera-facing world units (it was 0.62 `unit`s across in the
+ * fixed view, which draws a facing unit at unit·√2 — see iso/pawnFigure.ts). Drawn at
+ * EMOTE_DRAW_SCALE round its tail tip; usePawnMotion places and scales it over the head.
+ */
+const EMOTE_RADIUS = 0.62 / Math.SQRT2;
 /** The "!" bubble's one-shot: snap in (shock is sudden), hold, fade. */
 const EMOTE_MS = 2000;
 
 /**
  * Only the emote is a CSS animation — it is a fire-and-forget one-shot, remounted (by key)
- * per startle. The pivots for the JS-driven groups live here too: the pose turns about the
- * feet (bottom of the body's box), the shadow scales about its own centre.
+ * per startle. The shadow's pivot (its own centre, for usePawnMotion's scale) lives here
+ * too. The emote is drawn at EMOTE_DRAW_SCALE, so its fade's drift up is in those units:
+ * a third of the bubble's radius (the 4 px it was at the Deck Tower's unit).
  */
+const EMOTE_DRIFT = (EMOTE_RADIUS * EMOTE_DRAW_SCALE) / 3;
 const PAWN_CSS = `
 @keyframes iso-pawn-emote {
     0% { transform: scale(0.4); opacity: 0; animation-timing-function: linear; }
     3.5% { transform: scale(1.25); opacity: 1; }
     9% { transform: scale(1); }
     82% { transform: scale(1); opacity: 1; }
-    100% { transform: translateY(-4px) scale(0.9); opacity: 0; }
+    100% { transform: translateY(-${EMOTE_DRIFT}px) scale(0.9); opacity: 0; }
 }
-.iso-pawn__pose { transform-box: fill-box; transform-origin: 50% 100%; }
 .iso-pawn__shadow-hop, .iso-pawn__decal-clip-shape { transform-box: fill-box; transform-origin: center; }
 .iso-pawn__emote {
     transform-box: fill-box;
@@ -111,11 +123,26 @@ const PAWN_CSS = `
 }
 `;
 
-const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, floorDrop, onDepthRankChange, decals, entrance, steps }) => {
+const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, floorDrop, onDepthRankChange, decals, entrance, steps, opening }) => {
     const proj = useIsoProjector();
+    const palette = useIsoPalette();
     // `url(#…)` needs a plain id; React's useId wraps its ids in colons.
-    const decalClipId = `iso-pawn-decal-clip-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    const { refs, emote } = usePawnMotion({ proj, at, startled, roam, startledBy, onDepthRankChange, entrance, floorDrop, steps });
+    const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
+    const decalClipId = `iso-pawn-decal-clip-${uid}`;
+    const openingClipId = `iso-pawn-opening-clip-${uid}`;
+    const { refs, emote } = usePawnMotion({
+        proj,
+        at,
+        startled,
+        roam,
+        startledBy,
+        onDepthRankChange,
+        entrance,
+        floorDrop,
+        steps,
+        surfaceZ: surface.z,
+        openingClip: opening ? `url(#${openingClipId})` : undefined,
+    });
     // The id of the last emote whose one-shot has finished. A finished bubble must be
     // UNMOUNTED, not just left at its keyframes' final opacity 0: the page reorders the
     // pawn among its siblings as it walks behind / in front of the tower, React does that
@@ -123,22 +150,14 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
     // animations — so a lingering bubble would pop "!" again on every reorder.
     const [finishedEmoteId, setFinishedEmoteId] = React.useState(0);
     const showEmote = emote !== null && emote.id !== finishedEmoteId;
-    const u = proj.unit;
-    const feet = proj.project(at.x, at.y, surface.z);
     const r = PAWN_FOOT_RADIUS;
     const footprint = { x: at.x - r, y: at.y - r, w: 2 * r, d: 2 * r, r };
-    const bodyW = BODY_WIDTH * u;
-    const bodyH = BODY_HEIGHT * u;
-    const headR = HEAD_RADIUS * u;
-    const headCy = feet.y - bodyH - headR * 0.55;
 
-    // The emote sits over where the head is while the pawn looks up: leaning by θ about
-    // the feet shifts the head sideways by h·sin θ (h = head top above the feet).
-    const emoteR = EMOTE_RADIUS * u;
-    const headTopAboveFeet = feet.y - (headCy - headR);
-    const leanShift = emote ? emote.leanSign * headTopAboveFeet * Math.sin((LOOK_UP_LEAN_DEG * Math.PI) / 180) : 0;
-    const emoteCx = feet.x + leanShift;
-    const emoteTipY = headCy - headR - EMOTE_GAP * u;
+    // The bubble, round its tail tip at the origin (usePawnMotion's `emoteAnchor` puts the
+    // tip over the head).
+    const emoteR = EMOTE_RADIUS * EMOTE_DRAW_SCALE;
+    const emoteCx = 0;
+    const emoteTipY = 0;
     const emoteCy = emoteTipY - emoteR * 1.25;
     const tailL = { x: emoteCx - emoteR * 0.32, y: emoteCy + emoteR * 0.9 };
     const tailR = { x: emoteCx + emoteR * 0.32, y: emoteCy + emoteR * 0.9 };
@@ -146,68 +165,78 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
     return (
         <g className="iso-pawn">
             <style>{PAWN_CSS}</style>
-            {/* Hidden from the first paint when it has an entrance to make: the motion loop
-                only starts after mount, and would otherwise let the pawn flash standing on
-                the floor for a frame before its entrance hides it. (Not under reduced
-                motion: no loop runs then to un-hide it.) The loop owns
-                `visibility` from then on (React never rewrites an unchanged style). */}
-            <g className="iso-pawn__travel" ref={refs.travel} style={entrance && !prefersReducedMotion() ? { visibility: "hidden" } : undefined}>
-                <g className="iso-pawn__shadow-hop" ref={refs.shadow}>
-                    <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
-                </g>
-                {/* The shaded decals, clipped to the shadow's outline (same path IsoShadow
-                    draws; usePawnMotion scales it in step with shadow-hop). The inner group
-                    undoes `travel`, so the decals stay where the floor has them. */}
-                {decals && (
-                    <g className="iso-pawn__decal-shade" clipPath={`url(#${decalClipId})`} ref={refs.decalShade}>
-                        <clipPath id={decalClipId} className="iso-pawn__decal-clip">
-                            <path
-                                className="iso-pawn__decal-clip-shape"
-                                ref={refs.decalClip}
-                                d={flatPath(proj, shadowFootprint(footprint, surface.z, surface), surface.z)}
-                            />
-                        </clipPath>
-                        <g className="iso-pawn__decal-anchor" ref={refs.decalAnchor}>
-                            {decals}
+            {opening && (
+                <clipPath id={openingClipId} className="iso-pawn__opening-clip">
+                    <path d={openingSweepPath(proj, opening, surface.z)} />
+                </clipPath>
+            )}
+            {/* usePawnMotion sets `clip-path` here only while the feet are down the opening. */}
+            <g className="iso-pawn__opening" ref={refs.opening}>
+                {/* Hidden from the first paint when it has an entrance to make (usePawnMotion
+                    writes `visibility` in a layout effect, before the first paint). */}
+                <g className="iso-pawn__presence" ref={refs.presence}>
+                    <g className="iso-pawn__travel" ref={refs.travel}>
+                        <g className="iso-pawn__shadow-hop" ref={refs.shadow}>
+                            <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
                         </g>
+                        {/* The shaded decals, clipped to the shadow's outline (same path IsoShadow
+                            draws; usePawnMotion scales it in step with shadow-hop). The inner group
+                            undoes `travel`, so the decals stay where the floor has them. */}
+                        {decals && (
+                            <g className="iso-pawn__decal-shade" clipPath={`url(#${decalClipId})`} ref={refs.decalShade}>
+                                <clipPath id={decalClipId} className="iso-pawn__decal-clip">
+                                    <path
+                                        className="iso-pawn__decal-clip-shape"
+                                        ref={refs.decalClip}
+                                        d={flatPath(proj, shadowFootprint(footprint, surface.z, surface), surface.z)}
+                                    />
+                                </clipPath>
+                                <g className="iso-pawn__decal-anchor" ref={refs.decalAnchor}>
+                                    {decals}
+                                </g>
+                            </g>
+                        )}
                     </g>
-                )}
-                <g className="iso-pawn__hop" ref={refs.hop}>
-                    <g className="iso-pawn__pose" ref={refs.pose}>
-                        <rect className="iso-pawn__body" x={feet.x - bodyW / 2} y={feet.y - bodyH} width={bodyW} height={bodyH} rx={bodyW / 2} fill={ISO.ink} />
-                        <circle className="iso-pawn__head" cx={feet.x} cy={headCy} r={headR} fill={ISO.ink} />
+                    {/* The 3D figure, in absolute screen space: usePawnMotion writes the body's `d`
+                        and the head's cx/cy/r every frame (iso/pawnFigure.ts). The head is drawn
+                        last: it is the nearest part to any camera looking down. */}
+                    <g className="iso-pawn__figure">
+                        <path className="iso-pawn__body" ref={refs.body} fill={palette.ink} />
+                        <circle className="iso-pawn__head" ref={refs.head} fill={palette.ink} />
                     </g>
-                    {/* Inside the hop (rides the arc with the head) but outside the pose (does
-                        not lean or waddle). Keyed per startle so the CSS pop replays. */}
-                    {showEmote && (
-                        <g className="iso-pawn__emote" key={emote.id} onAnimationEnd={() => setFinishedEmoteId(emote.id)}>
-                            <path
-                                className="iso-pawn__emote-bubble"
-                                d={[
-                                    // A round bubble with a short tail pointing down at the head.
-                                    `M ${tailL.x} ${tailL.y}`,
-                                    `L ${emoteCx} ${emoteTipY}`,
-                                    `L ${tailR.x} ${tailR.y}`,
-                                    `A ${emoteR} ${emoteR} 0 1 0 ${tailL.x} ${tailL.y}`,
-                                    "Z",
-                                ].join(" ")}
-                                fill={ISO.white}
-                            />
-                            <text
-                                className="iso-pawn__emote-mark"
-                                x={emoteCx}
-                                y={emoteCy}
-                                fontSize={emoteR * 1.35}
-                                fontFamily={FONTS.sans}
-                                fontWeight={WEIGHT.bold}
-                                textAnchor="middle"
-                                dominantBaseline="central"
-                                fill={ISO.ink}
-                            >
-                                !
-                            </text>
-                        </g>
-                    )}
+                    {/* A billboard over the head, placed and scaled by usePawnMotion. Keyed per
+                        startle so the CSS pop replays. */}
+                    <g className="iso-pawn__emote-anchor" ref={refs.emoteAnchor}>
+                        {showEmote && (
+                            <g className="iso-pawn__emote" key={emote.id} onAnimationEnd={() => setFinishedEmoteId(emote.id)}>
+                                <path
+                                    className="iso-pawn__emote-bubble"
+                                    d={[
+                                        // A round bubble with a short tail pointing down at the head.
+                                        `M ${tailL.x} ${tailL.y}`,
+                                        `L ${emoteCx} ${emoteTipY}`,
+                                        `L ${tailR.x} ${tailR.y}`,
+                                        `A ${emoteR} ${emoteR} 0 1 0 ${tailL.x} ${tailL.y}`,
+                                        "Z",
+                                    ].join(" ")}
+                                    fill={palette.white}
+                                />
+                                <text
+                                    className="iso-pawn__emote-mark"
+                                    x={emoteCx}
+                                    y={emoteCy}
+                                    fontSize={emoteR * 1.35}
+                                    fontFamily={FONTS.cjk}
+                                    fontWeight={WEIGHT.bold}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fill={palette.ink}
+                                >
+                                    !
+                                </text>
+                            </g>
+                        )}
+                    </g>
                 </g>
             </g>
         </g>

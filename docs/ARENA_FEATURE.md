@@ -1194,7 +1194,11 @@ bucketing and in the penalty cron's partitioning. `ArenaController` now runs bot
 body and the query value through `resolveLanguage` (`server/utils/languageParam.ts`),
 which coerces anything unsupported to `'zh'`. `geoCell` and `message` were already
 validated in `ArenaService` (`GEOCELL_PATTERN`, `MESSAGE_MAX`); `/api/arena/admin/tick`
-is gated on `users.isValidator` in the controller.
+is gated on `users.isFeatureTester` (migration 178) in the controller, via
+`ArenaService` → `canManuallyTick` — a DB read, because `req.user` is the decoded JWT
+(`{ userId, email }`) and carries no grant flags. (Before 178 the controller read
+`req.user.isValidator`, which was always undefined, so the lever 403'd for everyone.)
+There is no client button for it; call it with curl or use `server/scripts/arena-tick.ts`.
 
 **Code:** `server/services/ArenaService.ts` → `optIn`, `withdraw`, `formArenas`;
 `server/controllers/ArenaController.ts` → `optIn`, `contextOf`, `adminTick`;
@@ -1447,7 +1451,7 @@ transaction. This is the same shape as the penalty cron's `lastPenaltyDate` guar
 ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), and it is worth copying that
 pattern rather than inventing one.
 
-Because the cron is **PPE-only**, dev needs a manual trigger — an admin/validator-gated
+Because the cron is **PPE-only**, dev needs a manual trigger — a feature-tester-gated
 `POST /api/arena/admin/tick` or a `server/scripts/arena-tick.ts` — or the feature is
 untestable locally. Do not skip this.
 

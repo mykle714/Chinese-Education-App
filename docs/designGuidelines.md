@@ -12,6 +12,10 @@ This service (internally referred to as cow) is a web application to help non-ma
 - Use Typescript and use strong typing as much as possible while avoiding errors.
 - Lightly comment the code to explain to me how complicated parts of the code work.
 
+## Visual style direction
+The app is moving from the bento look to the Deck Tower's tower style. Before styling a
+surface, read [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) to see which style it belongs to.
+
 ## Constructs
 You can understand the different constructs of this project by inspecting the tables in the Database Schema section below.
 

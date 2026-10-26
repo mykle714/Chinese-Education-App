@@ -196,5 +196,5 @@ Difficulty is a **dictionary-entry** property, not a vocab-entry tag:
   [docs/SORT_PACKS_IMPLEMENTATION.md](docs/SORT_PACKS_IMPLEMENTATION.md).
 
 Card ownership/provenance, which `isCustomTag` used to express, is now
-`vocabentries_*.starterPackBucket` (`'library'` = Learn Now, `'provisional'` = lent) plus
+`vocabentries_*.starterPackBucket` (`'library'` = Learning, `'provisional'` = lent) plus
 the nullable `author` FK for user-authored cards.

@@ -21,7 +21,8 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * The minute-points flame — the app's single earning indicator, in every header.
  *
  * The VISUAL is `FireCount` — the design's `.hd .fire` / `.lhd .fire` treatment: a
- * Material Symbols Rounded `local_fire_department` glyph beside a mono count at 11px,
+ * Material Symbols Rounded `local_fire_department` glyph beside a mono count at `FIRE_COUNT_FONT_SIZE` (14px; the design's 11px until 2026-10-26)
+ * in `FIRE_COUNT_INK` (medium),
  * both in `COLORS.fireActive` (#E65100 — the design writes the same hex), with a 4px
  * gap. Nothing else: no MUI `Badge` bubble, no bordered counter chip, no drop-shadow
  * glow, no circular ground. This file is the STATE around it — the hooks, the

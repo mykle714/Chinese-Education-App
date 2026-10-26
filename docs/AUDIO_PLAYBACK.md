@@ -84,9 +84,13 @@ deliberate exception to the buttons-and-cards `--line2` outline rule (design cal
 stays the grey header-chip pill. The chip passes `tone="blu"` to `HeaderCycleChip`, and
 every other header toggle keeps the shared ink inversion. On a game ground,
 `gameSurfaceSx` re-inks active header chips but deliberately skips the blu tone
-(`.page-header__toggle--blu`), so the chip looks the same on every surface.
-*Code:* `src/components/AudioModeChip.tsx`, `src/components/PageHeader.tsx` →
-`HeaderCycleChip` (`tone`), `src/games/shared/gameSurface.ts` → `gameSurfaceSx`.
+(`.page-header__toggle--blu`), so the chip looks the same on every game surface.
+**One exception: the Deck Tower study header** passes `tone="bare"` with white `ink` — no
+fill — the glyph and label in plain white in every state, bundled by a thin white pill
+outline it passes through `sx`, so it does not draw the eye off the card (docs/DECK_TOWER.md § Studying the tower → "The audio chip").
+*Code:* `src/components/AudioModeChip.tsx` (`tone`, `ink`, `sx`, `fitLabels`, `iconPx`),
+`src/components/PageHeader.tsx` → `HeaderCycleChip` (`tone`, `ink`, `sx`, `fitLabels`, `iconPx`), `src/games/shared/gameSurface.ts` → `gameSurfaceSx`,
+`src/features/flashcards/FlashcardsLearnPage/TowerStudyHeader.tsx`.
 
 ⚠️ **Verify every glyph name against Material Symbols.** `multitrack_audio` was the
 first choice for `media`; it is a Material *Icons* name absent from the Symbols face,

@@ -65,6 +65,8 @@
  *   npx tsx /app/scripts/backfill-example-sentences.js --spot-check # test 3 entries
  *   npx tsx /app/scripts/backfill-example-sentences.js --locate-targets [--repeated-segments] [--dry-run]
  *     # heal stored sentences that repeat the headword (target index + per-occurrence tags)
+ *   npx tsx /app/scripts/backfill-example-sentences.js --retag-segment=累 [--words=...] [--dry-run]
+ *     # re-tag ONE segment (POS/sense) across stored sentences after its det row was (re)clustered
  */
 
 import dotenv from 'dotenv';
@@ -105,6 +107,17 @@ const isStale = process.argv.includes('--stale');
 const isLocateTargets = process.argv.includes('--locate-targets');
 const includeRepeatedSegments = process.argv.includes('--repeated-segments');
 const isDryRun = process.argv.includes('--dry-run');
+
+// --retag-segment=累 → HEAL mode (no generation, no re-segmentation): for every stored
+// sentence whose `segments` contain this exact segment, re-ask the tagger for THAT
+// segment only and merge its labels into the four dicts (+ segmentOccurrenceTags when it
+// repeats). Every other segment's tags are left byte-identical. Use it after a segment's
+// own det row gains/changes `definitionClusters` (e.g. a polyphone like 累 clustered
+// late), since sentences tagged earlier carry no senseDict entry for it and so fall
+// back to the row-level pronunciation. Honors --words= (scope the HOST rows) and
+// --dry-run. Rows are NOT re-stamped.
+const retagSegmentArg = process.argv.find(a => a.startsWith('--retag-segment='));
+const retagSegment = retagSegmentArg ? retagSegmentArg.slice('--retag-segment='.length).trim() || null : null;
 
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -1327,6 +1340,128 @@ async function runLocateTargets(client) {
   console.log('='.repeat(60) + '\n');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  HEAL mode (--retag-segment=<seg>) — re-tag ONE segment across stored sentences.
+//  See the flag comment at the top. Deliberately keeps the stored `segments` (no GSA
+//  re-run, no audit) so a heal can never shift any other segment's dict keys.
+// ─────────────────────────────────────────────────────────────────────────────
+async function runRetagSegment(client, seg) {
+  // The segment's own det row is what the tagger picks senses from — no clusters, nothing to heal.
+  const { rows: segRows } = await client.query(
+    `SELECT "definitionClusters", "partsOfSpeech" FROM dictionaryentries_zh
+     WHERE language = 'zh' AND word1 = $1 ORDER BY id LIMIT 1`,
+    [seg]
+  );
+  const clusters = Array.isArray(segRows[0]?.definitionClusters) ? segRows[0].definitionClusters : [];
+  const dictPos = Array.isArray(segRows[0]?.partsOfSpeech) ? segRows[0].partsOfSpeech.filter(Boolean) : [];
+  if (clusters.length === 0) {
+    console.log(`❌ ${seg} has no definitionClusters — cluster it first (backfill-cluster-definitions).`);
+    return;
+  }
+  const clustersBySeg = new Map([[seg, clusters]]);
+  const validSenses = new Set(clusters.map(c => c.sense));
+
+  // Host rows: discoverable (or --words-scoped) rows with a sentence containing the segment.
+  // The headword's own row is excluded — its target sense is generation-validated.
+  const { rows } = await client.query(`
+    SELECT id, word1, "exampleSentences"
+    FROM dictionaryentries_zh d
+    WHERE language = 'zh'
+      AND jsonb_typeof("exampleSentences") = 'array'
+      AND word1 <> $1
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements(d."exampleSentences") s WHERE s->'segments' ? $1)
+      ${discoverableGate}
+      ${wordsFilter}
+    ORDER BY id ASC
+  `, [seg]);
+
+  const stats = { rows: 0, sentences: 0, tagged: 0, untagged: 0, failedRows: 0 };
+  const senseCounts = new Map();
+  for (const row of rows) {
+    const sentences = row.exampleSentences;
+    try {
+      let changed = false;
+      const next = sentences.map(sentence => {
+        if (!Array.isArray(sentence?.segments) || !sentence.segments.includes(seg)) return sentence;
+        return { sentence, pending: true };
+      });
+
+      for (let i = 0; i < next.length; i++) {
+        if (!next[i]?.pending) continue;
+        const sentence = next[i].sentence;
+        stats.sentences++;
+        // Only this segment's occurrences become tagger items; isTarget is false because
+        // the host row's headword is a different word (filtered above).
+        const items = buildTagItems(sentence.foreignText, sentence.segments, row.word1, sentence.vocabCharIndex)
+          .filter(item => item.seg === seg)
+          .map(item => ({ ...item, isTarget: false }));
+        const modelTags = await callSegmentTagger(sentence, items, clustersBySeg);
+
+        const updated = {
+          ...sentence,
+          partOfSpeechDict: { ...(sentence.partOfSpeechDict ?? {}) },
+          senseDict: { ...(sentence.senseDict ?? {}) },
+          numberDict: { ...(sentence.numberDict ?? {}) },
+          tenseDict: { ...(sentence.tenseDict ?? {}) },
+          ...(sentence.segmentOccurrenceTags ? { segmentOccurrenceTags: { ...sentence.segmentOccurrenceTags } } : {}),
+        };
+        for (const dict of [updated.partOfSpeechDict, updated.senseDict, updated.numberDict, updated.tenseDict]) delete dict[seg];
+
+        // First occurrence owns the string-keyed dicts (same rule as tagSentenceSegments
+        // for a non-target repeated string); every occurrence of a repeat gets its own tags.
+        let ownerWritten = false;
+        for (const item of items) {
+          const resolved = resolveItemTag(item, modelTags.get(item.key), sentence, clusters, dictPos);
+          if (item.repeated && Object.keys(resolved).length > 0) {
+            updated.segmentOccurrenceTags = { ...(updated.segmentOccurrenceTags ?? {}), [item.index]: resolved };
+          }
+          if (ownerWritten) continue;
+          ownerWritten = true;
+          if (resolved.pos) updated.partOfSpeechDict[seg] = resolved.pos;
+          if (resolved.sense) updated.senseDict[seg] = resolved.sense;
+          if (resolved.number) updated.numberDict[seg] = resolved.number;
+          if (resolved.tense) updated.tenseDict[seg] = resolved.tense;
+        }
+
+        const sense = updated.senseDict[seg];
+        if (sense && validSenses.has(sense)) {
+          stats.tagged++;
+          senseCounts.set(sense, (senseCounts.get(sense) ?? 0) + 1);
+        } else {
+          stats.untagged++;
+        }
+        console.log(`  ${row.word1}: ${sentence.foreignText}  → ${sense ?? '⚠ no sense'}`);
+        next[i] = updated;
+        changed = true;
+      }
+
+      if (changed) {
+        stats.rows++;
+        if (!isDryRun) {
+          await client.query(
+            `UPDATE dictionaryentries_zh SET "exampleSentences" = $1::jsonb WHERE id = $2`,
+            [JSON.stringify(next), row.id]
+          );
+        }
+      }
+    } catch (err) {
+      if (err?.oracleExport) throw err;
+      stats.failedRows++;
+      console.log(`    FAILED ${row.word1}: ${err.message}`);
+    }
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log(`📊 Retag-segment ${seg} ${isDryRun ? 'DRY RUN ' : ''}complete`);
+  console.log(`Rows touched     : ${stats.rows}${isDryRun ? ' (not written)' : ''}`);
+  console.log(`Sentences        : ${stats.sentences}`);
+  console.log(`Sense resolved   : ${stats.tagged}`);
+  console.log(`Sense unresolved : ${stats.untagged}  (read path falls back to row pronunciation)`);
+  for (const [sense, n] of senseCounts) console.log(`  ${sense}: ${n}`);
+  console.log(`Failed rows      : ${stats.failedRows}`);
+  console.log('='.repeat(60) + '\n');
+}
+
 async function run() {
   if (isSpotCheck) {
     console.log('🔍 SPOT CHECK MODE — processing 3 entries only\n');
@@ -1345,6 +1480,11 @@ async function run() {
     if (isLocateTargets) {
       console.log(`🎯 Locate-targets heal mode${includeRepeatedSegments ? ' (+ repeated segments)' : ''}\n`);
       await runLocateTargets(client);
+      return;
+    }
+    if (retagSegment) {
+      console.log(`🏷️  Retag-segment heal mode: ${retagSegment}\n`);
+      await runRetagSegment(client, retagSegment);
       return;
     }
 

@@ -243,6 +243,18 @@ Two conversions/guards live in `senseReading` (`segmentString.ts`):
 Covered by `server/__tests__/segmentString.test.ts`
 (`buildSegmentMetadata — sense-aware pronunciation`).
 
+**Late-clustered segments need a re-tag.** A sentence only carries a `senseDict` entry
+for a segment whose own det row was clustered *when the sentence was tagged*. A
+polyphone clustered afterwards (累: lèi "tired" / lěi "accumulate" / léi "bind") has no
+entry in older sentences, so they fall back to the row-level `pronunciation`, which is
+wrong whenever that column holds a minority reading. Heal it with
+`backfill-example-sentences.js --retag-segment=<seg> [--words=<hosts>] [--dry-run]`
+(`runRetagSegment`): one tagger call per sentence containing the segment, for that
+segment only. Stored `segments` and every other segment's tags are left untouched, and
+rows are not re-stamped. An untaggable occurrence (e.g. 累 inside a transliteration the
+GSA split, like 达累斯萨拉姆) should have its `senseDict` key removed by hand so it falls
+back to the column reading.
+
 > Replaces the former `segmentGloss` field (an AI-written per-segment "broken
 > English" reading) removed in `SCRIPT_VERSION 4`. `segmentGloss` bundled two jobs —
 > *sense selection* and *form inflection*; those are now `senseDict` (per-segment

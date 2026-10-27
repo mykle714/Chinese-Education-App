@@ -195,6 +195,91 @@
       "word1": "大雷",
       "reason": "explicit-sexual: only sense is '(slang) large breasts'",
       "droppedAt": "2026-10-14T08:48:16Z"
+    },
+    {
+      "word1": "胸推",
+      "reason": "explicit-sexual: only sense is 'massage using one's breasts' (a sexual service)",
+      "droppedAt": "2026-10-20T02:17:52Z"
+    },
+    {
+      "word1": "胸大无脑",
+      "reason": "slur: only senses are the sexist derogatory epithet '(having) big boobs but no brain' / 'bimbo'",
+      "droppedAt": "2026-10-20T02:17:52Z"
+    },
+    {
+      "word1": "丁丁",
+      "reason": "explicit-sexual: first-listed sense is slang for penis (merged row with Tintin / onomatopoeia senses); not authoring around it",
+      "droppedAt": "2026-10-20T04:18:22Z"
+    },
+    {
+      "word1": "低能儿",
+      "reason": "slur — primary/only senses are the ableist derogatory epithet 'retarded child / moron / idiot' (cedict); no neutral sense to ship",
+      "droppedAt": "2026-10-21T08:55:00Z"
+    },
+    {
+      "word1": "二鬼子",
+      "reason": "slur — derogatory epithet for collaborators (built on 鬼子) as only sense",
+      "droppedAt": "2026-10-21T13:18:01Z"
+    },
+    {
+      "word1": "假洋鬼子",
+      "reason": "slur — (derog.) epithet built on 洋鬼子 as only sense",
+      "droppedAt": "2026-10-21T13:18:01Z"
+    },
+    {
+      "word1": "日本鬼子",
+      "reason": "slur: wartime ethnic term of abuse for Japanese people",
+      "droppedAt": "2026-10-21T16:17:44Z"
+    },
+    {
+      "word1": "东洋鬼",
+      "reason": "slur: ethnic term of abuse for Japanese people (\"Jap\"/\"Nip\")",
+      "droppedAt": "2026-10-21T16:17:44Z"
+    },
+    {
+      "word1": "洋鬼子",
+      "reason": "slur: term of abuse for Westerners (\"foreign devil\")",
+      "droppedAt": "2026-10-21T16:17:44Z"
+    },
+    {
+      "word1": "东洋鬼子",
+      "reason": "slur: ethnic term of abuse for Japanese people (\"Jap\"/\"Nip\")",
+      "droppedAt": "2026-10-21T17:47:49Z"
+    },
+    {
+      "word1": "白鬼",
+      "reason": "slur: derogatory term for white people (\"white ghost\")",
+      "droppedAt": "2026-10-21T17:47:49Z"
+    },
+    {
+      "word1": "鬼子",
+      "reason": "slur: derogatory term for foreign (esp. Japanese) invaders (\"Jap\"/\"Nip\"); no neutral sense in source",
+      "droppedAt": "2026-10-21T18:18:00Z"
+    },
+    {
+      "word1": "黑鬼",
+      "reason": "slur: derogatory term for Black/African people (only sense)",
+      "droppedAt": "2026-10-21T18:48:12Z"
+    },
+    {
+      "word1": "功夫流感",
+      "reason": "slur: \"kung flu\", racially derogatory epithet for COVID-19 (only sense)",
+      "droppedAt": "2026-10-26T11:18:11Z"
+    },
+    {
+      "word1": "功夫病毒",
+      "reason": "slur: \"kung flu\", racially derogatory epithet for COVID-19 (only sense)",
+      "droppedAt": "2026-10-26T11:18:11Z"
+    },
+    {
+      "word1": "打手枪",
+      "reason": "explicit-sexual: only det sense is 'to masturbate'",
+      "droppedAt": "2026-10-26T13:47:58Z"
+    },
+    {
+      "word1": "狗日",
+      "reason": "slur/vulgar epithet: only sense is the obscene insult 'fucked/spawned by a dog; contemptible, fucking'",
+      "droppedAt": "2026-10-26T17:47:50Z"
     }
   ],
   "es": []

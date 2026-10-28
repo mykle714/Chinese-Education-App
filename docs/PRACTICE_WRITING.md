@@ -356,7 +356,9 @@ changed (SHELF_REDESIGN A2c).
 `handleVerify` sends each character's strokes to `recognizeHandwriting`
 (→ `POST /api/handwriting/recognize`) **in parallel**. A character is **correct iff
 `target === top1`** (the recognizer's #1 candidate) — strictly top-1 so writing a
-*different* character is never accepted. Per-slot result overlay is ✓
+*different* character is never accepted. Candidates are already normalized server-side
+(`handwritingRecognizer.ts` → `normalizeCandidates`: Han-only, 戸 folded to 户) — without
+that a snapped 十 lost top-1 to `"+"` and a snapped 户 to `"戸"` (HANDWRITING_RECOGNITION.md § "Adapter responsibilities"). Per-slot result overlay is ✓
 (`COLORS.greenMain`) / ✗ (`COLORS.redMain`); an empty panel counts as ✗. Redrawing a
 panel invalidates that character's prior result back to `idle`.
 

@@ -22,22 +22,21 @@ export interface CPCDRowItem {
     // Optional callback receiving the rendered char cell DOM node. Used by
     // SegmentedSentenceDisplay to measure per-character rects for highlights.
     cellRef?: (node: HTMLDivElement | null) => void;
-    // Draw a MASK — an outlined circle with a "?" — in place of the glyph, keeping the
-    // cell's width and the pinyin above it. `character` stays the real character so the
-    // row's measurement is unchanged; it is never shown (or copied). Set via
-    // ForeignText's `maskChar`. First user: the writing flp's used-in bubbles
-    // (docs/WRITING_PRACTICE_REWORK.md § 3b).
+    // Draw a MASK — a plain "?" — in place of the glyph, keeping the cell's width and the
+    // pinyin above it. `character` stays the real character so the row's measurement is
+    // unchanged; it is never shown (or copied). Set via ForeignText's `maskChar`. First
+    // user: the writing flp's used-in bubbles (docs/WRITING_PRACTICE_REWORK.md § 3b).
     masked?: boolean;
 }
 
-/** The mask's diameter, in em of the cell's character font. */
-const MASK_SIZE_EM = 0.8;
-
 /**
- * The masked-character mark: a circle with a "?", sized in `em` so it scales with the
- * cell's character font at every CPCDSize. Ring and "?" follow the glyph colour (the
- * per-card Contrast override when given, else the secondary text ink) so the mark
- * reads as part of the word, a shade lighter than the characters around it.
+ * The masked-character mark: a bare "?" (no ring, decided 2026-10-28), centred in a
+ * 1em-wide box — the advance width of the CJK glyph it replaces — so the row's spacing
+ * and the pinyin centring don't shift. It inherits the cell's font size and line
+ * height, so it scales with every CPCDSize and sits on the same line as the characters.
+ * Ink follows the glyph colour (the per-card Contrast override when given, else the
+ * secondary text ink) so the mark reads as part of the word, a shade lighter than the
+ * characters around it.
  */
 function MaskedCharMark({ color }: { color?: string }) {
     return (
@@ -46,27 +45,15 @@ function MaskedCharMark({ color }: { color?: string }) {
             className="char-pinyin-display__mask"
             aria-label="hidden character"
             sx={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                // Centre the mark in the cell's line box, where CJK glyphs sit. `middle`
-                // would centre it on the Latin x-height, which rides visibly low next to
-                // the characters. Top-align, then drop by half the leftover line height.
-                verticalAlign: "top",
-                marginTop: `calc((${CHAR_LINE_HEIGHT}em - ${MASK_SIZE_EM}em) / 2)`,
-                width: `${MASK_SIZE_EM}em`,
-                height: `${MASK_SIZE_EM}em`,
-                boxSizing: "border-box",
-                borderRadius: "50%",
-                border: "0.065em solid",
-                borderColor: color ?? COLORS.textSecondary,
+                display: "inline-block",
+                width: "1em",
+                textAlign: "center",
                 color: color ?? COLORS.textSecondary,
                 fontFamily: FONTS.sans,
-                fontSize: "inherit",
-                lineHeight: 1,
+                fontWeight: WEIGHT.medium,
             }}
         >
-            <Box component="span" sx={{ fontSize: "0.55em", fontWeight: WEIGHT.bold, lineHeight: 1 }}>?</Box>
+            ?
         </Box>
     );
 }

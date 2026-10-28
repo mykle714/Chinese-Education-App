@@ -1,6 +1,7 @@
 import React, { useContext, useMemo } from "react";
 import IsoShadow from "./IsoShadow";
 import IsoSolid from "./IsoSolid";
+import IsoSpacedText from "./IsoSpacedText";
 import {
     affineToSvg,
     composeAffine,
@@ -121,7 +122,7 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                 {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded)} />}
                 <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.cjk}>
                     <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandFill) : bandFill} />
-                    <text
+                    <IsoSpacedText
                         className="iso-floor-label__text"
                         x={rect.x + rect.w / 2}
                         y={rect.y + rect.d / 2}
@@ -133,7 +134,7 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                         fill={shaded ? shadowTone(palette.ink) : palette.ink}
                     >
                         {text}
-                    </text>
+                    </IsoSpacedText>
                 </g>
             </g>
         </g>

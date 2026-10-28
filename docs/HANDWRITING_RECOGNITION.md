@@ -72,6 +72,25 @@ each stroke `[ [xs], [ys], [ts] ]`. Coordinate space: `x` right-positive,
 The proxy endpoint speaks the canonical `Ink` in and a ranked
 `{ candidates: string[] }` out, so the client never sees a backend's wire format.
 
+**Candidates are Han-only.** Google's `zh_CN` model also ranks Latin letters, digits
+and symbols, and for simple glyphs one can outrank the character — a perfectly snapped
+十 comes back `["+", "十", "t", …]`, so strict top-1 graded a correct 十 as ✗. The
+adapter drops every candidate that is not entirely `\p{Script=Han}`, so `candidates[0]`
+/ `top1` is the best Han reading for every grader (practice popup, writing flp, Writing
+Grid, notebook). Known non-simplified forms that outrank the simplified character are
+then folded onto it (`VARIANT_TO_SIMPLIFIED`: a perfect 户 comes back `["戸", "户", …]`),
+and duplicates removed. That table is deliberately tiny — only forms *observed*
+outranking a correct glyph — not a general traditional ↔ simplified map. Code:
+`server/utils/handwritingRecognizer.ts` → `normalizeCandidates`, `ALL_HAN`,
+`VARIANT_TO_SIMPLIFIED`. Tests: `server/__tests__/handwritingCandidates.test.ts`.
+
+**Snap-ink sweep (2026-10-28).** Every distinct character of every discoverable zh word
+(865) was drawn from its corpus medians exactly as Snap writes it and sent through the
+recognizer: after normalization all are top-1 correct except **曰**, which reads as 日
+(曰 appears in no discoverable word). Look-alike pairs (人/入/八, 土/士, 己/已/巳, 未/末,
+千/干/于, 天/夭) stay distinct on perfect ink. Re-run this sweep whenever a character
+with `hanzi-writer-data` medians is made discoverable in bulk.
+
 > Porting "down" to a geometry-only backend (drop `ts`) is trivial; porting "up"
 > to a timestamped backend is not (you'd need real capture times). So **always
 > capture timestamps** even though the offline fallback discards them.

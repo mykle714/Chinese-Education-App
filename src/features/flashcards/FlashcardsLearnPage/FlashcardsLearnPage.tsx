@@ -95,7 +95,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const selectedMode: StudyMode | null = tower ? null : parseStudyMode(searchParams.get('mode')) ?? null;
     // BAR — `reading` for the READING flp, launched from the Reading Center's study hand in
     // any of the three modes (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only front,
-    // no narration before the flip, every mark a reading mark (flpFaceSteering).
+    // narration only after the flip, every mark a reading mark (flpFaceSteering).
     const flpWorld = tower ? tower.world : parseFlpWorld(searchParams.get('world'));
     const readingMode = flpWorld === 'reading';
     // `writing` — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the same card,
@@ -218,8 +218,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     cardDragRef.current = { resetCard, restoreFlipped, resetDragPosition };
 
     // Writing flp (`?world=writing`): the same card, drawn with the writing face. The
-    // learner never swipes — a tap on the front submits (or wiggles the card while a cell
-    // is still empty), and a tap on its back sends it off.
+    // card never follows a drag — a tap (or swipe attempt) on the front submits (or
+    // wiggles the card while a cell is still empty), and one on its back sends it off.
     // See useWritingFlashcard and docs/WRITING_PRACTICE_REWORK.md § 3.
     const writing = useWritingFlashcard({
         enabled: writingMode,
@@ -458,13 +458,16 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         ? (currentSideOneLanguage === 'zh' ? 'en' : 'zh')
         : currentSideOneLanguage;
     const chineseVisible = shownFaceLanguage === 'zh';
+    // A reading session narrates on the REVEAL instead: its question face is hanzi-only and
+    // narrating it would hand the learner the pronunciation the card is asking them to read
+    // (same rule as a reading Bubble Match run), but the answer face shows the reading, so
+    // the audio plays once the card is flipped. Side 1 is always zh in reading mode, so
+    // `chineseVisible` would wrongly count the answer face as "English" here.
+    const narrateNow = readingMode ? isFlipped : chineseVisible;
     useEffect(() => {
-        // A reading session is SILENT: narrating the word would hand the learner the
-        // pronunciation the card is asking them to read (same rule as a reading Bubble
-        // Match run). The answer face's speaker still plays on a tap.
         // Parked under the tower: nobody is looking at the card yet. It is narrated when the
         // visit starts (`parked` is a dep).
-        if (!chineseVisible || !currentEntry || readingMode || parked) return;
+        if (!narrateNow || !currentEntry || parked) return;
         // autoSpeak is a no-op when autoplay is off, so the setting is enforced
         // in one place rather than re-checked at every narration site.
         tts.autoSpeak(currentEntry);
@@ -478,7 +481,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         // tts.autoSpeak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chineseVisible, currentEntry?.id, parked]);
+    }, [narrateNow, currentEntry?.id, parked]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -953,7 +956,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     shakeNonce={writingMode ? writing.shakeNonce : shakeNonce}
                     // The writing card is never dragged; it is flipped and sent off by the
                     // writing hook (a tap on its front / its back via onCardClick, or a
-                    // swipe attempt on its back via swipeHandlers — direction ignored).
+                    // swipe attempt on either face via swipeHandlers — direction ignored).
                     handlers={writingMode ? writing.swipeHandlers : handlers}
                     writingFace={writingMode ? writing.renderFace : undefined}
                     onCardClick={writingMode ? writing.handleCardClick : undefined}
@@ -1040,7 +1043,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     DOM so it paints above the card stack; before the eip so the sheet
                     still covers it. */}
                 {writingMode && !editMode && (
-                    <WritingUsedInBubbles entry={displayCurrentEntry ?? null} cardRef={cardRef} />
+                    <WritingUsedInBubbles
+                        entry={displayCurrentEntry ?? null}
+                        cardRef={cardRef}
+                        // Tower: grow in only once the card is actually seen (parked, or under
+                        // the count card / a respawn drop, it is not).
+                        unseen={parked || !!tower?.cardsCovered || !!tower?.cardsHidden}
+                    />
                 )}
                 {/* Centered pill button — ghosted before flip, full opacity after. While
                     the icon editor is open it stays DRAWN but greyed + inert (isDisabled);

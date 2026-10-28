@@ -173,7 +173,8 @@ writing grid since phase 5), `centers/useWordGridGeometry.ts`.
 - [x] Client flp: `?world=reading` → `sideOneForCard(card, bar)` always `zh`,
       `markTypeForSideOne(_, bar)` always `reading`; `FlashCardSection.readingMode` drops
       pinyin + speaker from the question face and shows pinyin on the answer face; flp
-      autoplay narration is suppressed for the session. `readingMode` is the **only**
+      autoplay narration plays on the answer face only (on the flip, never on the question
+      face — `FlashcardsLearnPage` → `narrateNow`). `readingMode` is the **only**
       input to flp pinyin: the flp header's `pinyin` chip was removed (2026-10-18), and
       the flp no longer reads `useFlashcardLearnSettings().showPinyin`, so the normal
       (core / writing) flp shows pinyin on every face. That shared pref still drives the

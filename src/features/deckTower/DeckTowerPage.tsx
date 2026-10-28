@@ -10,9 +10,7 @@ import {
     BOB_HEIGHT,
     CARD_THICKNESS,
     ISO,
-    IsoCloud,
     IsoScene,
-    IsoWind,
     boundsOf,
     cardStackMetrics,
     makeCameraProjector,
@@ -22,9 +20,6 @@ import {
     projectOutline,
     roundedRectWorld,
     shadowFootprint,
-    sortCloudsBackToFront,
-    useCloudDrifts,
-    useWindGusts,
     washColorMatrix,
     type CloudSky,
     type WindSky,
@@ -42,6 +37,8 @@ import DeckTowerAvatar from "./DeckTowerAvatar";
 import TapToStartHint from "./TapToStartHint";
 import { TOWER_DECKS, otherTowerDeck, type TowerDeckId } from "./towerDecks";
 import CardSplat from "./CardSplat";
+import { SkyTrafficLayer, SkyTrafficSource } from "./SkyTraffic";
+import { useSkyTrafficStore } from "./skyTrafficStore";
 import DeckTowerPlatform, { type PlateFace } from "./DeckTowerPlatform";
 import { useDeckSwap } from "./useDeckSwap";
 import { useBuildProgress } from "./useBuildProgress";
@@ -59,6 +56,7 @@ import TowerCoverCard from "./TowerCoverCard";
 import { readTowerHeight, writeTowerHeight } from "./towerHeightStore";
 import { useStudyPlatformHidden } from "./studyPlatformStore";
 import { useHideFooter } from "../../hooks/useHideFooter";
+import { useThemeColor } from "../../hooks/useThemeColor";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useClaimStudySurface } from "../../minutePoints/studySurface";
 
@@ -403,6 +401,11 @@ const DeckTowerPage: React.FC = () => {
     const pan = useWorldPan((id) => ({ sky: light.skyOf(TOWER_WORLDS[id]), space: TOWER_WORLDS[id].space }));
     // The world on screen. One whose goal is switched off while it is up falls back to main.
     const worldId: TowerWorldId = shownWorlds.includes(pan.world) ? pan.world : "core";
+    // The browser's top-edge colour follows the settled world's sky. Without a claim it is
+    // the paper default, and iOS Safari draws its scroll-edge effect behind the clock as a
+    // paper-white fade over the sky (and the top of a tall tower). Keyed on the world's
+    // sky, not `pan.palette.sky`, so a pan does not rewrite the meta tag every frame.
+    useThemeColor(light.skyOf(TOWER_WORLDS[worldId]));
 
     // ── Studying the tower (docs/DECK_TOWER.md § "Studying the tower") ────────────
     // The session is page state, not a route: useTowerStudy owns the dive, the camera and
@@ -584,22 +587,13 @@ const DeckTowerPage: React.FC = () => {
     const hintFit = useMemo(() => fitScene(proj, TAP_HINT_FIT_CARDS, TAP_HINT_FIT_CARDS), [proj]);
 
     // The sky travellers circle the tower on screen. None start while the camera dashes
-    // between worlds (the ones already out finish their crossing).
+    // between worlds (the ones already out finish their crossing). They are scheduled and
+    // drawn by SkyTraffic.tsx, outside this page's render: a crossing starting or ending
+    // re-renders only the two sky layers, not the page (SkyTraffic.tsx header).
     const skyLive = !pan.busy && !study.active;
-    const cloudDrifts = useCloudDrifts({
-        proj,
-        active: skyLive && (alwaysHasSky || cardsOnTower >= CLOUD_BAND_CARDS.from),
-        sky: scene.cloudSky,
-        maxInSky: CLOUDS_IN_SKY_MAX,
-    });
-    const gusts = useWindGusts({
-        proj,
-        active: skyLive && (alwaysHasSky || cardsOnTower >= WIND_BAND_CARDS.from),
-        sky: scene.windSky,
-        maxGusts: WIND_GUSTS_MAX,
-    });
-    // Clouds can overlap each other, so they are drawn back to front.
-    const clouds = useMemo(() => sortCloudsBackToFront(cloudDrifts), [cloudDrifts]);
+    const skyTraffic = useSkyTrafficStore();
+    const cloudsActive = skyLive && (alwaysHasSky || cardsOnTower >= CLOUD_BAND_CARDS.from);
+    const windActive = skyLive && (alwaysHasSky || cardsOnTower >= WIND_BAND_CARDS.from);
 
     // ── Scroll height, shared by every world ─────────────────────────────────────
     // The camera pans SIDEWAYS, so it keeps its height: arriving in a world opens at the
@@ -874,11 +868,6 @@ const DeckTowerPage: React.FC = () => {
     const towerUiOpacity = 1 - clamp01(e / TOWER_UI_GONE_AT);
     const sessionOpacity = study.cameraDown ? 1 : study.phase === "preparing" ? 0 : clamp01((e - SESSION_FADE_FROM) / (1 - SESSION_FADE_FROM));
     const skyTrafficOpacity = 1 - clamp01(e / SKY_TRAFFIC_GONE_AT);
-    // The footer's band at the bottom of the scroller — the floating slab's footprint
-    // (screen edge → slab top; this route wears `footerStyle: "slab"`): clipped off in the
-    // tower view so the scene stands above the slab, opening up as the dive hides the
-    // footer. A CSS length. The SKY is not clipped: it runs on under the slab.
-    const footerBand = e <= 0 ? SLAB_FOOTER_TOTAL_HEIGHT : `calc(${SLAB_FOOTER_TOTAL_HEIGHT} * ${(1 - e).toFixed(4)})`;
     // The sky's altitude while a session is up: from where the view stood at the tap to
     // the camera's (the tower's top), so studying down a tall tower brings the sky back.
     const studyAltitudeY = study.active ? study.startMidY + (scene.axisYAtZ(study.cameraZ) - study.startMidY) * e : null;
@@ -1021,7 +1010,7 @@ const DeckTowerPage: React.FC = () => {
                 />
 
                 {/* The one scroll surface (vertical only — the app's opt-in scrolling, see
-                    docs/UX_AND_NAVIGATION.md). It ends at the footer bar. The scene's
+                    docs/UX_AND_NAVIGATION.md). It runs under the footer slab. The scene's
                     `marginTop: auto` pins it to the bottom, so a short tower sits on the
                     footer with sky above it; a tall one overflows and scrolls. (NOT
                     `justify-content: flex-end` — that overflows past the TOP edge, where a
@@ -1029,10 +1018,11 @@ const DeckTowerPage: React.FC = () => {
                     It is also the world-swipe surface: `touch-action: pan-y` leaves the
                     vertical scroll native and hands horizontal drags to `worldSwipe`.
                     It runs to the screen's BOTTOM edge, its last SLAB_FOOTER_TOTAL_HEIGHT a
-                    spacer under the footer bar and clipped off (`clipPath`) — the same picture
-                    as ending at the footer, but a study's scene can open that band up as the
-                    footer slides away. Locked (no scroll) while a session is up: the camera
-                    aims through the frame on screen. */}
+                    spacer under the footer slab, so a fully-scrolled tower rests its platform
+                    on the slab's top. The band is NOT clipped: the slab floats, so a tall
+                    tower scrolling down passes behind it and shows in the gaps beside and
+                    below it. Locked (no scroll) while a session is up: the camera aims
+                    through the frame on screen. */}
                 <Box
                     ref={scrollerRef}
                     className="deck-tower-page__scroller"
@@ -1050,7 +1040,6 @@ const DeckTowerPage: React.FC = () => {
                         overflowY: study.active ? "hidden" : "auto",
                         overscrollBehavior: "contain",
                         touchAction: study.active ? "none" : "pan-y",
-                        clipPath: `inset(0 0 ${footerBand} 0)`,
                         // No visible scrollbar (desktop draws a chunky grey one over the sky).
                         // Wheel / trackpad / touch scrolling all still work.
                         scrollbarWidth: "none",
@@ -1074,6 +1063,17 @@ const DeckTowerPage: React.FC = () => {
                         .deck-tower-page__falling .iso-hatch__hole,
                         .deck-tower-page__falling .iso-hatch__flap { display: none; }
                     `}</style>
+                    {/* Schedules the clouds and wind the scene's two sky layers draw; renders nothing. */}
+                    <SkyTrafficSource
+                        store={skyTraffic}
+                        proj={proj}
+                        cloudSky={scene.cloudSky}
+                        windSky={scene.windSky}
+                        cloudsActive={cloudsActive}
+                        windActive={windActive}
+                        maxClouds={CLOUDS_IN_SKY_MAX}
+                        maxGusts={WIND_GUSTS_MAX}
+                    />
                     <IsoScene
                         proj={sceneProj}
                         wash={light.wash}
@@ -1142,31 +1142,10 @@ const DeckTowerPage: React.FC = () => {
                                 stowInstantly: fixturesSnapped(worldId),
                             }}
                             lever={focusLevers[worldId].lever}
-                            behind={
-                                <g className="deck-tower-page__sky-behind" opacity={skyTrafficOpacity < 1 ? skyTrafficOpacity : undefined}>
-                                    {/* Clouds on the tower's BACK sides, behind it. */}
-                                    {clouds.filter((c) => c.side === "behind").map((c) => (
-                                        <IsoCloud key={`cloud-${c.id}`} drift={c} />
-                                    ))}
-                                    {/* Wind on the tower's BACK sides, behind it. It blows ~50 cards above
-                                        the clouds, so its order among them is free. */}
-                                    {gusts.filter((g) => g.side === "behind").map((g) => (
-                                        <IsoWind key={`wind-${g.id}`} gust={g} />
-                                    ))}
-                                </g>
-                            }
-                            front={
-                                <g className="deck-tower-page__sky-front" opacity={skyTrafficOpacity < 1 ? skyTrafficOpacity : undefined}>
-                                    {/* Wind on the tower's FRONT sides, over it. */}
-                                    {gusts.filter((g) => g.side === "front").map((g) => (
-                                        <IsoWind key={`wind-${g.id}`} gust={g} />
-                                    ))}
-                                    {/* Clouds on the tower's FRONT sides, over it. */}
-                                    {clouds.filter((c) => c.side === "front").map((c) => (
-                                        <IsoCloud key={`cloud-${c.id}`} drift={c} />
-                                    ))}
-                                </g>
-                            }
+                            // Clouds and wind on the tower's BACK sides (under it) and FRONT
+                            // sides (over it) — SkyTraffic.tsx.
+                            behind={<SkyTrafficLayer store={skyTraffic} side="behind" opacity={skyTrafficOpacity} />}
+                            front={<SkyTrafficLayer store={skyTraffic} side="front" opacity={skyTrafficOpacity} />}
                         />
                         {/* Over everything: the old tower hitting the floor below the screen. */}
                         {splat && (
@@ -1184,7 +1163,7 @@ const DeckTowerPage: React.FC = () => {
                             />
                         )}
                     </IsoScene>
-                    {/* The band under the footer bar (see the scroller's note). */}
+                    {/* The band under the footer slab (see the scroller's note). */}
                     <Box ref={footerSpacerRef} className="deck-tower-page__footer-spacer" sx={{ height: SLAB_FOOTER_TOTAL_HEIGHT, flexShrink: 0 }} />
                 </Box>
 
@@ -1217,7 +1196,9 @@ const DeckTowerPage: React.FC = () => {
                             flexDirection: "column",
                             opacity: host.parked ? 0 : sessionOpacity,
                             clipPath: host.parked ? "inset(50%)" : undefined,
-                            filter: studyWashMatrix ? `url(#${studyWashFilterId})` : undefined,
+                            // Studied layer only: an svg `url()` filter on HTML is drawn on the
+                            // CPU in most browsers, and a parked layer shows nothing to light.
+                            filter: studyWashMatrix && !host.parked ? `url(#${studyWashFilterId})` : undefined,
                             pointerEvents: !host.parked && study.phase === "studying" ? "auto" : "none",
                         }}
                     >

@@ -46,7 +46,7 @@ export interface TowerWorld {
     /**
      * Per-phase overrides of timeOfDay.ts `PHASE_SKY`, for a world whose sky would
      * otherwise land too close to another world's (or wrong for its own). Reading's sunset
-     * is a deeper vermilion, so it doesn't match writing's orange; writing's dawn is lilac.
+     * is a deeper vermilion, so it doesn't match writing's orange; writing's dawn is lilac; main's dawn is a lighter pink.
      */
     skyRecipes?: Partial<Record<Exclude<DayPhase, "day">, SkyRecipe>>;
     /** The night the sky darkens into on a tall tower (SpaceBackdrop) — one for every world (`SPACE`). */
@@ -89,7 +89,14 @@ function world(
 }
 
 export const TOWER_WORLDS: Record<TowerWorldId, TowerWorld> = {
-    core: world("core", "Main", "Flashcards", COLORS.bluMk, COLORS.gld),
+    core: {
+        ...world("core", "Main", "Flashcards", COLORS.bluMk, COLORS.gld),
+        // Dawn: a light pink — the shared recipe's hue (20, 80%) at writing's dawn lightness
+        // and a little more chroma → #FFB9D7 (hue ≈ 352, C 0.09, L 0.86), lighter than the
+        // shared soft rose (#F99DC6). At the same lightness as writing's dawn it stays apart
+        // on hue: warm pink here, cool lilac there (#EAC2EA: hue 326, C 0.07).
+        skyRecipes: { dawn: { hue: 20, hueBy: 0.8, L: 0.86, C: 0.09 } },
+    },
     reading: {
         ...world("reading", "Reading", "Reading Flashcards", COLORS.grnSky, COLORS.pnk),
         // Sunset: hue 35 at 95% and a little darker → vermilion #EC6D3B (shared recipe: #EC8900, ≈ writing's #F5802A).

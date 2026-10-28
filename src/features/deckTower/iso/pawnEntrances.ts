@@ -48,11 +48,22 @@ const easeOutSq = (u: number) => (1 - u) * (1 - u);
 const SKY_FALL_HEIGHT = 55;
 /**
  * The pawn's cartoon gravity, world units / s². (A pawn is ~2 units tall, so real gravity
- * would crawl.) Shared: the pawn's feet physics in usePawnMotion (the plate's press, launch
- * and bounces, and its fall through the trap door) use the same pull.
+ * would crawl.) Used by the pawn's feet physics in usePawnMotion (the plate's press, launch
+ * and bounces, and its fall through the trap door). The sky-fall entrance uses its own
+ * SKY_FALL_GRAVITY.
  */
 export const PAWN_GRAVITY = 110;
-const SKY_FALL_GRAVITY = PAWN_GRAVITY;
+/**
+ * The sky fall's own, gentler pull: at PAWN_GRAVITY a 55-unit drop hit the floor at
+ * 110 u/s and read as too fast. Still an accelerating fall, just a floatier one (~81 u/s
+ * at impact, landMs ≈ 1354 ms). Kept apart from PAWN_GRAVITY so the plate press / launch
+ * / trap-door physics are untouched.
+ *
+ * Ceiling: landMs must stay under the shortest trap-door `readyMs` (deckTransitions.ts →
+ * TRAP_DOOR: drop + bounce + hold + close = 1420 ms), or the incoming pawn's entrance
+ * would be scheduled to start before its swap does and it would pop in mid-fall.
+ */
+const SKY_FALL_GRAVITY = 60;
 /** The landing squash, then back to its normal shape. Harder than a startle's landing: it fell a long way. */
 const SKY_FALL_SQUASH_MS = 260;
 const SKY_FALL_SQUASH = 0.3;

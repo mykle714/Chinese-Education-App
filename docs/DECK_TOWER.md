@@ -82,7 +82,7 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `TowerPlatformLayout.card` | A portrait 4.8 × ~6.93 (`CARD_W` × `CARD_D`) footprint, centred on the platform. `CARD_D` is derived from the flp card's proportions (`FLP_CARD_ASPECT`, 295 : 426, `src/features/flashcards/constants.ts`) because the study camera lands the top card exactly on the flp card (§ Studying the tower); it was 6.6 until 2026-10-24. Its corner radius, `CARD_W × FLP_CARD_CORNER_RATIO` (= 0.45), is shared with the flp card the same way — the flp sets it as a width-proportional `--card-radius` (`FlashCardSection` → `flpCardRadiusCss`; docs/SHELF_REDESIGN.md D14) |
 | `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `plateStep`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it was past the lever, then at the back-right corner), so it walks behind the tower rather than over it |
 | `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does arriving in a world whose tower already stands at 50+ (the remounted pawn was not watching it grow) |
-| `CLOUD_BAND_CARDS`, `CLOUDS_IN_SKY_MAX` | Clouds (`IsoCloud`, `useCloudDrifts`) drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 250–300 (card k's underside is (k − 1) · `CARD_THICKNESS` up). Up to 3 are in the sky at once, with 4–14 s gaps between drifts. They switch on when the build-up puts the 250th card on the tower: each slot's first cloud fades in partway across the screen, so the band is never empty at first. A deck under 250 never has clouds; a deck short of 300 lowers the band's top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still |
+| `CLOUD_BAND_CARDS`, `CLOUDS_IN_SKY_MAX` | Clouds (`IsoCloud`, `useCloudDrifts`) drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 250–300 (card k's underside is (k − 1) · `CARD_THICKNESS` up). Up to 3 are in the sky at once, with 4–14 s gaps between drifts. They switch on when the build-up puts the 250th card on the tower: each slot's first cloud fades in partway across the screen, so the band is never empty at first. A deck under 250 never has clouds; a deck short of 300 lowers the band's top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still. Clouds and wind are scheduled and drawn by `SkyTraffic.tsx` (`SkyTrafficSource` runs both schedulers and publishes into a small store, `skyTrafficStore.ts`; the memoised `SkyTrafficLayer side="behind"|"front"` subscribes and draws one side), so a crossing starting or ending re-renders only those two layers, never the page |
 | `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the build-up puts the 350th card on the tower, so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the clouds' (`skyBand`). Back-side gusts are drawn after the back-side clouds, front-side gusts before the front-side clouds. Under reduced motion there is no wind |
 | `SPACE_BAND_CARDS` | 450–650. Over this height band the sky darkens into space and stars fade in (§ Sky → space) |
 | `TowerPlatformLayout.labelPlate`, `.labelPlateHit` | The deck's floor plate in front of the stack, and its enlarged tap target. Tapping it switches the world's deck |
@@ -146,10 +146,10 @@ far taller than the screen. The page never zooms out to fit it:
   the header, to the screen's **bottom** edge, so a tall tower climbs over the header and
   off the top of the screen. Its last `SLAB_FOOTER_TOTAL_HEIGHT` (the slab footer's
   footprint, § Footer) are a spacer under the footer (`deck-tower-page__footer-spacer`, measured into px as `footerPx` /
-  `footerSpacerPx`, since the height is a `calc` with the safe area), clipped off with
-  `clip-path` — the same picture as a scroller ending at the footer's top, which it did
-  until 2026-10-24, but a study can open that band up as the footer slides away (the
-  clip's inset follows the dive, `footerBand`). Scroll maths that means "what the learner
+  `footerSpacerPx`, since the height is a `calc` with the safe area), so a tower scrolled
+  to the bottom rests its platform on the slab's top. The band is **not clipped** (it was,
+  by a `footerBand` `clip-path`, until 2026-10-27): the slab floats, so a tall tower
+  scrolling down passes behind it and shows in the gaps beside and below it. Scroll maths that means "what the learner
   sees" uses the view above the spacer (`startResize` → `viewH`). This works because the stage is
   deliberately *unpositioned*: the scroller's containing block is `MobileTabScreen`'s
   full-screen `ScreenRoot`, which also lets it escape the clipping of the
@@ -170,8 +170,14 @@ far taller than the screen. The page never zooms out to fit it:
   scroller (`wrapHeader`, `z-index: 2` over the scroller's 1), so the flame and the
   profile picture (`DeckTowerAvatar`) are tappable; the trade-off is that a drag starting
   on the header strip does not scroll the tower. A tall tower scrolls up behind it.
-- **Shadow.** It is fitted (above), because the scroller clips at the footer bar and an
-  unfitted shadow is cut off there.
+- **Status-bar band.** The scroller runs up under the clock, where iOS Safari draws its
+  own scroll-edge effect, tinted with `theme-color`. Left at the paper default, it showed
+  as a white fade over the sky and the top of a tall tower. The page claims the shown
+  world's sky (`useThemeColor(light.skyOf(…))`, `src/hooks/useThemeColor.ts`), so the
+  tint matches the sky. It follows the world and the time of day, not the sky → space
+  darkening, so high up a tall tower the band can still read lighter than space.
+- **Shadow.** It is fitted (above), so the platform's shadow ends above the footer
+  spacer rather than running under the slab.
 
 ## Footer
 
@@ -214,16 +220,14 @@ keeps the bar.
   `setFooterCastShadow` (`src/components/footerCastShadow.ts`) and clears it on unmount.
   Unset, the slab casts nothing.
 - **Layout around it.** `SLAB_FOOTER_TOTAL_HEIGHT` (screen edge → slab top; the cast shadow
-  is excluded and may fall over the scene) is the scroller's bottom spacer, its
-  `footerBand` clip, and the `WorldIndicator`s' floor. The backdrop and `SpeedLines` run
-  to the screen's bottom. A study still hides the footer with `useHideFooter` and opens
-  the band with the dive, unchanged.
+  is excluded and may fall over the scene) is the scroller's bottom spacer and the `WorldIndicator`s' floor. The backdrop and `SpeedLines` run
+  to the screen's bottom. A study still hides the footer with `useHideFooter`.
 
 Code: `src/components/MobileFooter.tsx` → `SlabFooter`, `SlabFooterFace`, `SlabFooterItem`,
 `SLAB_FOOTER_*`; `src/components/footerCastShadow.ts`; `src/components/FooterPresenter.tsx`
 → `HIDDEN_OFFSET`, `lastStyle`; `src/routes/routeMeta.ts` → `footerStyle`,
 `routeFooterStyle`; `src/features/deckTower/SpaceBackdrop.tsx` → `apply`;
-`src/features/deckTower/DeckTowerPage.tsx` → `footerBand`; `src/theme/colors.ts` →
+`src/features/deckTower/DeckTowerPage.tsx` → `footerSpacerRef`; `src/theme/colors.ts` →
 `cardWall`.
 
 ## Worlds
@@ -454,7 +458,7 @@ a tint of its own hue at every hour.
 
   | Phase | Turn toward | L | C | Main (bluMk) | Reading (grnSky) | Writing (pnkSky) |
   |---|---|---|---|---|---|---|
-  | Dawn | hue 20, 80% | 0.80 | 0.12 | `#F99DC6` rose | `#FEA57A` peach | `#EAC2EA` lilac ² |
+  | Dawn | hue 20, 80% | 0.80 | 0.12 | `#FFB9D7` light pink ³ | `#FEA57A` peach | `#EAC2EA` lilac ² |
   | Day | — | token | token | `#59BFFF` | `#78E292` | `#F7C6D0` powder pink |
   | Sunset | hue 55, 90% | 0.72 | 0.17 | `#FB7851` coral orange | `#EC6D3B` vermilion ¹ | `#F67F2F` orange |
   | Night | hue 270, 35% | 0.34 | 0.08 | `#113A5F` | `#004443` | `#4F274A` plum |
@@ -467,7 +471,11 @@ a tint of its own hue at every hour.
   ² Writing overrides the dawn recipe (hue 300, 60%, L 0.86, C 0.07). Its powder-pink day sky
   is already lighter (L 0.87) and softer than the shared dawn's L 0.80 / C 0.12, so the shared
   recipe gave `#FF9DA2` — a dawn darker and hotter than the day it leads into. The override
-  keeps day's lightness and turns cool, clear of main's rose and reading's peach.
+  keeps day's lightness and turns cool, clear of main's light pink and reading's peach.
+
+  ³ Main overrides the dawn recipe (hue 20, 80%, L 0.86, C 0.09). The shared recipe's soft rose
+  (`#F99DC6`, L 0.80) read too deep; the override lifts it to writing's dawn lightness, and the
+  two stay apart on hue — warm pink (≈ 352) against writing's cool lilac (326).
 
   Night stays lighter than `SPACE` (L ≈ 0.25), so climbing a tall tower at night still
   deepens into space. ⚠️ Derived colours, outside the colour framework (like `spaceOver`).
@@ -542,8 +550,18 @@ On a tall tower the sky turns into space as the learner scrolls up.
   233 px and 317 px, so the repeat is hard to spot. The layers drift down at 0.4% and 0.8%
   of the distance climbed, a slow parallax that keeps space looking far away.
 - **No re-render.** The scroll listener is passive and rAF-throttled. It writes
-  `backgroundColor`, `opacity` and `backgroundPosition` straight to the DOM rather than
-  React state, so scrolling never re-renders the tower, pawn, clouds or wind.
+  `backgroundColor`, `opacity` and each star layer's `transform` straight to the DOM rather
+  than React state, so scrolling never re-renders the tower, pawn, clouds or wind.
+  (`SpaceBackdrop.tsx` → `apply`, `starLayerTransform`.)
+- **Cheap scroll frames.** A scroll frame writes only what changed since the last one (a
+  style write invalidates even when the value is unchanged). The stars' parallax is a
+  `translate3d` on each layer's own compositor layer (`will-change: transform`), taken
+  modulo the tile, with the layer extended one tile above the backdrop; a moving
+  `background-position` would repaint the full-screen layer every frame. The footer's
+  cast-shadow colour is a custom property on the document root, and a root style write
+  re-checks the styles of the whole document, so `setFooterCastShadow` /
+  `setFooterSlabFilter` (`src/components/footerCastShadow.ts` → `setRootProperty`) write
+  only on a change.
 
 ## Tap to Start
 
@@ -652,7 +670,7 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   `clip-path: inset(50%)` on FlashCardSection's card frame that keeps the box measurable —
   not `visibility: hidden`, which CardFace's facing side overrides with its own `visible`), and the top card keeps its print
   all the way down. The footer slides away from the tap
-  (`useHideFooter`), and the scroller's footer band opens with the dive (`footerBand`).
+  (`useHideFooter`).
 - **The floor fixtures** (`DeckTowerPage` → `fixturesStowed`: from the dive's start — not
   while preparing — through `covering`; not for a dive made with the platform hidden,
   `stowSkipped`, until the platform is brought back mid-session, when they snap stowed —

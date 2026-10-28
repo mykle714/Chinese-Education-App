@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
+import IsoSpacedText from "./IsoSpacedText";
 import { faceTransform, flatPath, insetRect, prism, type WorldRect } from "./geometry";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
@@ -86,7 +87,7 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                     the card's centre: exact there under a perspective camera). */}
                 <g className="iso-card__print" transform={faceTransform(proj, faceZ, { x: cx, y: rect.y + rect.d / 2 })} fill={palette.ink} fontFamily={FONTS.cjk}>
                     {label && (
-                        <text
+                        <IsoSpacedText
                             className="iso-card__label"
                             x={cx}
                             y={band.y + band.d / 2}
@@ -97,7 +98,7 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                             dominantBaseline="central"
                         >
                             {label}
-                        </text>
+                        </IsoSpacedText>
                     )}
                     {figure && (
                         <text

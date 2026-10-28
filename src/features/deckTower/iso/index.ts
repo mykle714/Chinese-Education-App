@@ -12,6 +12,7 @@ export { default as IsoScene } from "./IsoScene";
 export { default as IsoSolid } from "./IsoSolid";
 export { default as IsoShadow } from "./IsoShadow";
 export { default as IsoLevitate } from "./IsoLevitate";
+export { default as IsoSpacedText } from "./IsoSpacedText";
 
 // Objects
 export { default as IsoPlatform, RIM_WIDTH } from "./IsoPlatform";

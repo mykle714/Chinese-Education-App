@@ -126,6 +126,14 @@ const ENTRY_SLIDE_TRAVEL_PCT = 34;
 const ENTRY_SLIDE_MS = 280;
 const ENTRY_SLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
+// Where, between the open height and the max, an eip release flips from "spring back to
+// the open height" to "grow to max" — forwarded to SheetPanel's `collapseThresholdRatio`.
+// 0.25 = a quarter of the way up (0.6 → 0.7 of the screen at the default open height), so a
+// short upward pull maximizes. SheetPanel's 0.5 midpoint made the pull up feel like it
+// wasn't taking. The same line governs the way down: from max, the sheet must come below
+// it before a release collapses to the open height. Docs: docs/EIP_SHEET_GESTURES.md.
+const EIP_COLLAPSE_THRESHOLD_RATIO = 0.25;
+
 // Re-export the handle under the original name so callers don't need to update.
 export type InfoCardSectionHandle = SheetPanelHandle;
 
@@ -220,6 +228,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             depth={depth}
             initialHeight={initialHeight}
             defaultHeightRatio={defaultHeightRatio}
+            collapseThresholdRatio={EIP_COLLAPSE_THRESHOLD_RATIO}
             bodyRef={panelRef}
             // Fold selectedTab into the key: InfoCardPanelBody's scrollable
             // element is the ACTIVE tab's pane (each pane scrolls on its own),

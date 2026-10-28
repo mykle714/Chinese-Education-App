@@ -129,13 +129,23 @@ function starTile(tile: number, count: number, rMin: number, rMax: number, seed:
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
-/** Built once at module load: the tiles never change. */
-const STAR_IMAGES = STAR_LAYERS.map((l) => starTile(l.tile, l.count, l.rMin, l.rMax, l.seed)).join(", ");
-const STAR_SIZES = STAR_LAYERS.map((l) => `${l.tile}px ${l.tile}px`).join(", ");
+/** Built once at module load: the tiles never change. One image per layer. */
+const STAR_IMAGES = STAR_LAYERS.map((l) => starTile(l.tile, l.count, l.rMin, l.rMax, l.seed));
+
+/**
+ * A star layer's parallax as a vertical TRANSFORM, not a `background-position`: moving a
+ * background repaints the whole full-screen layer on every scroll frame, while a transform
+ * on its own compositor layer (`will-change`) just moves the already-painted pixels. The
+ * tile repeats every `tile` px, so the offset is taken modulo it, and the layer extends one
+ * tile above the backdrop so a shift of up to a tile never uncovers its top.
+ */
+const starLayerTransform = (climbed: number, layer: (typeof STAR_LAYERS)[number]) =>
+    `translate3d(0, ${((climbed * layer.parallax) % layer.tile).toFixed(1)}px, 0)`;
 
 const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false }) => {
     const backdropRef = useRef<HTMLDivElement>(null);
     const starsRef = useRef<HTMLDivElement>(null);
+    const starLayerRefs = useRef<(HTMLDivElement | null)[]>([]);
     // Read by `apply` through refs: the palette changes per frame during a pan, and
     // re-subscribing the scroll listener that often would be wasted work.
     const paletteRef = useRef(palette);
@@ -156,6 +166,11 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         const stars = starsRef.current;
         if (!scroller || !backdrop || !stars) return;
 
+        // What `apply` last wrote, so a scroll frame that changes nothing writes nothing (a
+        // style write invalidates even when the value is the same).
+        let lastSky = "";
+        let lastStarsOpacity = "";
+        const lastStarTransforms: string[] = [];
         const apply = () => {
             // The scene's svg, found by tag rather than position: the scroller also holds a
             // <style> (DeckTowerPage's falling-shadow rule), whose empty rect would read as
@@ -171,16 +186,30 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             const midY = altitudeRef.current ?? band.viewBoxMinY + (scrollerRect.top + viewHeight / 2 - svgRect.top) / scale;
             const t = (band.yFrom - midY) / (band.yFrom - band.yTo);
             const skyNow = mixHex(paletteRef.current.sky, paletteRef.current.space, smoothstep(0, 1, t));
-            backdrop.style.backgroundColor = skyNow;
+            if (skyNow !== lastSky) {
+                lastSky = skyNow;
+                backdrop.style.backgroundColor = skyNow;
+            }
             // The floating slab footer stands on this sky and casts its shadow onto it: the
             // sky one iso step darker (the design's `shade(sky, .1)`), following the sky into
             // space as the tower is climbed. See components/footerCastShadow.ts.
             setFooterCastShadow(shadeHex(skyNow, 0.1));
-            stars.style.opacity = String(Math.max(groundStarsRef.current, smoothstep(STARS_FADE_FROM, 1, t)));
+            const starsOpacity = Math.max(groundStarsRef.current, smoothstep(STARS_FADE_FROM, 1, t)).toFixed(3);
+            if (starsOpacity !== lastStarsOpacity) {
+                lastStarsOpacity = starsOpacity;
+                stars.style.opacity = starsOpacity;
+            }
             // Parallax: how far the learner has scrolled UP from the bottom. Content moves
-            // down the screen as they climb; each star layer follows at its own fraction.
+            // down the screen as they climb; each star layer follows at its own fraction
+            // (starLayerTransform).
             const climbed = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
-            stars.style.backgroundPosition = STAR_LAYERS.map((l) => `0px ${(climbed * l.parallax).toFixed(1)}px`).join(", ");
+            STAR_LAYERS.forEach((l, i) => {
+                const el = starLayerRefs.current[i];
+                const transform = starLayerTransform(climbed, l);
+                if (!el || transform === lastStarTransforms[i]) return;
+                lastStarTransforms[i] = transform;
+                el.style.transform = transform;
+            });
         };
 
         let frame = 0;
@@ -218,8 +247,29 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             <Box
                 ref={starsRef}
                 className="deck-tower-page__space-stars"
-                sx={{ position: "absolute", inset: 0, opacity: 0, backgroundImage: STAR_IMAGES, backgroundSize: STAR_SIZES, backgroundRepeat: "repeat" }}
-            />
+                sx={{ position: "absolute", inset: 0, opacity: 0, overflow: "hidden" }}
+            >
+                {STAR_LAYERS.map((l, i) => (
+                    <Box
+                        key={l.seed}
+                        ref={(el: HTMLDivElement | null) => {
+                            starLayerRefs.current[i] = el;
+                        }}
+                        className="deck-tower-page__space-star-layer"
+                        sx={{
+                            position: "absolute",
+                            top: -l.tile,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundImage: STAR_IMAGES[i],
+                            backgroundSize: `${l.tile}px ${l.tile}px`,
+                            backgroundRepeat: "repeat",
+                            willChange: "transform",
+                        }}
+                    />
+                ))}
+            </Box>
             <ShootingStars active={shootingStars} />
         </Box>
     );

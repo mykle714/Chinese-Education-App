@@ -1,6 +1,7 @@
 import React, { useId } from "react";
 import IsoHatch from "./IsoHatch";
 import IsoSolid from "./IsoSolid";
+import IsoSpacedText from "./IsoSpacedText";
 import {
     affineFrom3,
     affineToSvg,
@@ -244,7 +245,7 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                                         <clipPath id={clipId}>
                                             <rect x={side > 0 ? -PADDLE_L : 0} y={at.x - PADDLE_W} width={PADDLE_L} height={2 * PADDLE_W} />
                                         </clipPath>
-                                        <text
+                                        <IsoSpacedText
                                             className="iso-mode-switch__label"
                                             clipPath={`url(#${clipId})`}
                                             x={0}
@@ -258,7 +259,7 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                                             opacity={inkOpacity}
                                         >
                                             {label}
-                                        </text>
+                                        </IsoSpacedText>
                                     </g>
                                 </IsoSolid>
                             );

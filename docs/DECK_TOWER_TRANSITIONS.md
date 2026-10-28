@@ -322,7 +322,10 @@ starts in the `entrance` mode from its first render.
 ### Fall from the sky (`FALL_FROM_SKY`)
 
 The pawn drops from `SKY_FALL_HEIGHT` (55 units, off the top of a phone screen over the
-platform) under `SKY_FALL_GRAVITY` (110 u/s²). That gives `landMs` = 1000 ms.
+platform) under `SKY_FALL_GRAVITY` (60 u/s² — its own, gentler than the pawn's 110
+`PAWN_GRAVITY`, which read as too fast from this height). That gives `landMs` ≈ 1354 ms and
+~81 u/s at impact. `landMs` must stay under the shortest trap-door `readyMs` (1420 ms, an
+empty tower), or the entrance would be scheduled to start before the swap does.
 `FALL_FROM_SKY` is the module-private `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)).
 
 - **In the air** it is stretched (0.92 × 1.1).

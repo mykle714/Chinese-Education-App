@@ -129,7 +129,10 @@ max, min, collapseRatio)` is the single rule every release path uses: below defa
 sheet passes `min > 0`, which suppresses the dismiss stop (see above).
 
 `collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
-**0.5**, which is exactly the plain "nearest stop wins" midpoint rule. A smaller value
+**0.5**, which is exactly the plain "nearest stop wins" midpoint rule. **The eip itself
+passes 0.25** (`InfoCardSection.tsx` → `EIP_COLLAPSE_THRESHOLD_RATIO`, every eip host: flp/td,
+cdp, Dictionary, scp, Reading Swipe Grid, IW), so a short upward pull from the open height
+maximizes — at the default 0.6 open height the flip point is 0.7 of the screen. A smaller value
 moves the collapse point **down**, so the sheet springs back open from heights that
 used to close it — a partial pull-down no longer counts as "close it". The /decks collections sheet used to pass **0.3** while it was persistent — it had to be
 dragged below 30% of the closed→max travel before a release collapsed it — and now takes

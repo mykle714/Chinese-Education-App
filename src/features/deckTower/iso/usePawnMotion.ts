@@ -31,7 +31,8 @@ import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
  * transforms (plus the three that keep the pawn's shaded decals in line with its shadow,
  * see IsoPawn `decals`), the body's path, the head's circle and the "!" bubble's anchor —
  * rather than through React state: the pawn moves every frame, and the page re-rendering at 60 fps
- * for it would be wasted work. React state changes only for the two things the tree
+ * for it would be wasted work. A frame that would draw exactly what the last one drew (a
+ * pawn standing in a pause) writes nothing, because any svg write repaints the whole scene. React state changes only for the two things the tree
  * needs to know: a fresh emote (to mount the "!" bubble) and the pawn's DEPTH RANK
  * among the obstacles (its slot in their back-to-front order, `depthRankAmong` — the page
  * reorders its children by it, so the pawn walks behind the tower rather than over it).
@@ -171,8 +172,8 @@ const HOP_END = HOP_AIR_END + HOP_RECOVER_MS;
 
 /** Feet physics (see the header's STEPS). World units per second (squared). */
 /**
- * Pulls the feet down onto their surface: the pawn's own cartoon gravity, the same as its
- * sky-fall entrance (pawnEntrances.ts → PAWN_GRAVITY). A 0.25-unit plate press takes ~67 ms
+ * Pulls the feet down onto their surface: the pawn's own cartoon gravity
+ * (pawnEntrances.ts → PAWN_GRAVITY; the sky-fall entrance uses a gentler SKY_FALL_GRAVITY). A 0.25-unit plate press takes ~67 ms
  * to fall — the plate's ease-out sink drops away faster at first, so the feet lift off it
  * for a moment and land with a small bounce.
  */
@@ -519,6 +520,24 @@ export function usePawnMotion(opts: {
     // Latest opening clip (only set while a step can sink below the floor), read by `applyFrame`.
     const openingClipRef = useRef(opts.openingClip);
     openingClipRef.current = opts.openingClip;
+    // What `applyFrame` last wrote to the DOM, so the loop can skip a frame that would
+    // write the same thing (see IDLE FRAMES in `applyFrame`). Null until the first draw.
+    const drawn = useRef<{
+        proj: Projector;
+        z0: number;
+        clip: string | undefined;
+        x: number;
+        y: number;
+        lift: number;
+        hop: number;
+        lean: number;
+        sx: number;
+        sy: number;
+        emoteLean: number;
+        shadowScale: number | undefined;
+        shadowOpacity: number | undefined;
+        hidden: boolean;
+    } | null>(null);
     const surfaceZRef = useRef(opts.surfaceZ);
     surfaceZRef.current = opts.surfaceZ;
     const reduced = prefersReducedMotion();
@@ -528,12 +547,56 @@ export function usePawnMotion(opts: {
      * slides the shadow, redraws the 3D figure, places the bubble. Called by the loop every
      * frame, and after every render (below) so a new camera never shows a stale frame.
      */
-    const applyFrame = () => {
+    const applyFrame = (force: boolean) => {
         const s = state.current;
         const { hop, lean, sx, sy, emoteLean, shadowOverride, hidden } = s.pose;
         // CSS px on SVG elements are user units, so these are scene units.
         const p = projRef.current;
         const z0 = surfaceZRef.current;
+        // IDLE FRAMES: a pawn standing in a pause draws the same pose every frame, and any
+        // write to the scene svg (even of an unchanged value) costs a repaint of the WHOLE
+        // svg — the tower, its gradients, the clouds — since svg children get no
+        // compositor layers of their own. So the loop skips the write when nothing it
+        // draws from has changed. A render always draws (`force`): it may have mounted a
+        // node (the "!" bubble's anchor) that has never been placed.
+        const clip = openingClipRef.current;
+        const d = drawn.current;
+        if (
+            !force &&
+            d !== null &&
+            d.proj === p &&
+            d.z0 === z0 &&
+            d.clip === clip &&
+            d.x === s.pos.x &&
+            d.y === s.pos.y &&
+            d.lift === s.lift &&
+            d.hop === hop &&
+            d.lean === lean &&
+            d.sx === sx &&
+            d.sy === sy &&
+            d.emoteLean === emoteLean &&
+            d.shadowScale === shadowOverride?.scale &&
+            d.shadowOpacity === shadowOverride?.opacity &&
+            d.hidden === hidden
+        ) {
+            return;
+        }
+        drawn.current = {
+            proj: p,
+            z0,
+            clip,
+            x: s.pos.x,
+            y: s.pos.y,
+            lift: s.lift,
+            hop,
+            lean,
+            sx,
+            sy,
+            emoteLean,
+            shadowScale: shadowOverride?.scale,
+            shadowOpacity: shadowOverride?.opacity,
+            hidden,
+        };
         const home = p.project(at.x, at.y, z0);
         // `lift` raises the whole pawn (shadow and decal clip included): it stands, and
         // casts its shadow, on the step's top face.
@@ -552,7 +615,6 @@ export function usePawnMotion(opts: {
         // front of the hole hides its lower part. Clipped only then: standing or in the air
         // over the floor it may overhang the opening's column, and must not be cut.
         if (refs.opening.current) {
-            const clip = openingClipRef.current;
             if (clip && s.lift + hop < -1e-3) refs.opening.current.setAttribute("clip-path", clip);
             else refs.opening.current.removeAttribute("clip-path");
         }
@@ -588,7 +650,7 @@ export function usePawnMotion(opts: {
     applyRef.current = applyFrame;
     // After every render, before paint: the first frame (and every frame under reduced
     // motion, when no loop runs) and every re-render with a new camera draw at once.
-    useLayoutEffect(() => applyRef.current());
+    useLayoutEffect(() => applyRef.current(true));
 
     // Rising edge of `startled` → switch to the startle timeline from wherever the feet are.
     // Seeded with the MOUNT value: a pawn that mounts beside an already-tall tower (the
@@ -931,7 +993,7 @@ export function usePawnMotion(opts: {
 
             // Apply: hand the pose to `applyFrame`, which draws it.
             s.pose = { hop, lean, sx, sy, emoteLean: s.mode.kind === "startle" ? lean : 0, shadowOverride, hidden };
-            applyRef.current();
+            applyRef.current(false);
 
             if (roam) {
                 const rank = depthRankAmong(s.pos, roam.obstacles);

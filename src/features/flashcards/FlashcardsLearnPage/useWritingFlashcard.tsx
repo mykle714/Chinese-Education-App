@@ -5,10 +5,12 @@ import WritingStage from "../../../components/handwriting/WritingStage";
 import WritingFocusEditor from "../../../components/handwriting/WritingFocusEditor";
 import { levelPreview, WRITING_FOCUS_SIZE } from "../../../components/handwriting/levelBehavior";
 import { recognizeHandwriting } from "../../../components/handwriting/recognize";
+import { findLookalike, type LookalikeMatch } from "../../../components/handwriting/lookalikes";
 import type { Ink, WritingAttempt } from "../../../components/handwriting/types";
 import { PHONE_OVERLAY_SX } from "../../../components/phoneGeometry";
 import { modeOfLevel, writingLevelForMastery } from "../../../../server/contracts/writingLevels";
 import type { VocabEntry } from "../../../types";
+import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import { COLORS } from "../../../theme";
 import WritingCardFace from "./WritingCardFace";
 import type { WritingFaceRenderer } from "./FlashCardSection";
@@ -19,7 +21,8 @@ import type { WritingFaceRenderer } from "./FlashCardSection";
  * owns what is drawn ON it and the two overlays it opens.
  *
  *   inks / locked / results / checking — the attempt on the FRONT card, reset whenever
- *       the front card changes.
+ *       the front card changes. `recognized` keeps each cell's top-1 alongside its
+ *       verdict, so the back face can explain a look-alike miss (`lookalikeFor`).
  *   outgoing — a frozen copy of the attempt just dismissed, so the card flying out keeps
  *       showing its graded back face while the new front card starts clean.
  *
@@ -32,9 +35,10 @@ import type { WritingFaceRenderer } from "./FlashCardSection";
  * fill the rest. On the back, a
  * cell tap inspects it enlarged and a tap anywhere else dismisses the card — right only
  * when every character is correct. The learner never steers the card: a swipe ATTEMPT
- * on the graded back (`swipeHandlers`) is read as that same dismiss tap — the card goes
- * right/left by its grade, never by the swipe's direction — and FlashCardSection plays
- * its "grab and throw" fly-out (`writingThrowKeyframes`). A swipe on the front does nothing.
+ * (`swipeHandlers`) is read as the tap on whichever face is showing — on the front it
+ * submits and flips (or wiggles while a cell is empty), on the graded back it dismisses,
+ * the card going right/left by its grade, never by the swipe's direction — and
+ * FlashCardSection plays its "grab and throw" fly-out (`writingThrowKeyframes`).
  *
  * Level 8: a character whose clock started is final once its editor closes (`locked`),
  * so closing and reopening cannot reset the clock. A locked cell counts as FILLED for the
@@ -50,6 +54,43 @@ interface Attempt {
     inks: Ink[];
     locked: boolean[];
     results: boolean[] | null;
+    /** Per-cell recognizer top-1 from the same grading pass as `results` (null = no read). */
+    recognized: (string | null)[] | null;
+}
+
+/**
+ * Words this long or shorter get the look-alike notice. Their cells fill only the TOP row
+ * of the 2×2 block, and the notice takes the empty second row (WritingCardFace); a 3–4
+ * character word has no free space, so it shows none (decided 2026-10-28).
+ */
+const LOOKALIKE_MAX_CHARS = 2;
+
+/**
+ * The look-alike notice for a graded attempt: the FIRST wrong cell (reading order) whose
+ * ink was read as a listed look-alike of its character (lookalikes.ts). Null for an
+ * ungraded attempt, a word over LOOKALIKE_MAX_CHARS, or no such cell.
+ *
+ * The TARGET's pinyin is the card's own syllable for that character, not the table's:
+ * lookalikes.ts holds one standalone reading per character, which is wrong for a
+ * polyphone read in context (了 in 了解 is liǎo, not le; 处 in 处理 is chǔ, not chù).
+ * The card's reading is the one the face header already shows (resolveDisplayPronunciation),
+ * split positionally — the app's one-space-separated-syllable-per-character convention.
+ * When the syllable count disagrees with the character count (erhua, a malformed row),
+ * the table's reading stands. The RECOGNIZED character has no context, so it keeps the
+ * table's reading.
+ */
+function lookalikeFor(entry: VocabEntry, state: Attempt): LookalikeMatch | null {
+    const chars = [...entry.entryKey];
+    if (!state.results || !state.recognized || chars.length > LOOKALIKE_MAX_CHARS) return null;
+    for (let i = 0; i < chars.length; i++) {
+        if (state.results[i]) continue;
+        const match = findLookalike(chars[i], state.recognized[i]);
+        if (!match) continue;
+        const syllables = (resolveDisplayPronunciation(entry) ?? "").split(/\s+/).filter(Boolean);
+        const syllable = syllables.length === chars.length ? syllables[i] : null;
+        return syllable ? { ...match, target: { ...match.target, pinyin: syllable } } : match;
+    }
+    return null;
 }
 
 /** Pointer travel (px) past which a press is a swipe attempt, not a tap — useCardDrag's tap slop. */
@@ -62,6 +103,7 @@ const blankAttempt = (entry: VocabEntry | null): Attempt => {
         inks: Array.from({ length: n }, () => []),
         locked: Array.from({ length: n }, () => false),
         results: null,
+        recognized: null,
     };
 };
 
@@ -133,24 +175,26 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         const chars = [...entry.entryKey];
         const submittedFor = entry.id;
         setChecking(true);
-        const perChar = await Promise.all(
-            chars.map(async (ch, i) => {
+        const graded = await Promise.all(
+            chars.map(async (ch, i): Promise<{ correct: boolean; top1: string | null }> => {
                 const ink = live.inks[i] ?? [];
-                if (ink.length === 0) return false;
+                if (ink.length === 0) return { correct: false, top1: null };
                 try {
                     const { top1 } = await recognizeHandwriting(ink, WRITING_FOCUS_SIZE, WRITING_FOCUS_SIZE, token);
-                    return top1 === ch;
+                    return { correct: top1 === ch, top1 };
                 } catch (err) {
                     // An unreachable recognizer grades the character wrong rather than
                     // stranding the card on its front face.
                     console.warn("[WritingFlp] verify failed", err);
-                    return false;
+                    return { correct: false, top1: null };
                 }
             }),
         );
         setChecking(false);
+        const results = graded.map((g) => g.correct);
+        const recognized = graded.map((g) => g.top1);
         // The card changed under the request (e.g. a refetch) — drop the stale verdict.
-        setAttempt((prev) => (prev.entryId === submittedFor ? { ...prev, results: perChar } : prev));
+        setAttempt((prev) => (prev.entryId === submittedFor ? { ...prev, results, recognized } : prev));
         flip();
     };
 
@@ -169,28 +213,34 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         return true;
     };
 
+    // Front face: submit (grade + flip) when every cell is filled, else wiggle the card.
+    // Shared by the front tap and a swipe attempt. Returns false when the press should
+    // be ignored (back face, a fly-out running, or a submit already being checked).
+    const submitOrNudge = (): boolean => {
+        if (!enabled || isAnimating || isFlipped || checking) return false;
+        if (allFilled) void handleSubmit();
+        else setShakeNonce((n) => n + 1);
+        return true;
+    };
+
     /**
      * A tap on the card body (cells stop their own taps). Front: submit when every cell
      * is filled, else wiggle the card. Back (graded): send the card off.
      */
     const handleCardClick = () => {
-        if (!enabled || isAnimating) return;
-        if (!isFlipped) {
-            if (checking) return;
-            if (allFilled) void handleSubmit();
-            else setShakeNonce((n) => n + 1);
-            return;
-        }
-        sendOff();
+        if (isFlipped) sendOff();
+        else submitOrNudge();
     };
 
     /**
      * Swipe-attempt detection, in place of useCardDrag's handlers. The card never follows
-     * the finger; a press that travels past SWIPE_ATTEMPT_PX on the graded back is a
-     * dismiss, exactly as if tapped. Only start/end matter, so no move listener.
+     * the finger; a press that travels past SWIPE_ATTEMPT_PX acts exactly as a tap on the
+     * card body — a submit/flip on the front, a dismiss on the graded back. Only
+     * start/end matter, so no move listener.
      *
-     * The tap that would otherwise follow is swallowed so it cannot dismiss twice or
-     * open a cell's inspect view under the departing card (a swipe that STARTED on a
+     * The tap that would otherwise follow is swallowed so it cannot act twice (a second
+     * submit before `checking` re-renders, a double dismiss) or open a cell's editor /
+     * inspect view under the moving card (a swipe that STARTED on a
      * cell still bubbles here): touch via preventDefault on touchend (React's touchend
      * listener is not passive), mouse via a one-shot capture-phase click blocker —
      * a mouse click fires after mouseup however far the pointer moved.
@@ -198,6 +248,8 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     const pressStart = useRef<{ x: number; y: number } | null>(null);
     const travelled = (x: number, y: number) =>
         !!pressStart.current && Math.hypot(x - pressStart.current.x, y - pressStart.current.y) >= SWIPE_ATTEMPT_PX;
+    // The face-appropriate tap action for a swipe; false when it was ignored.
+    const swipeAction = () => (isFlipped ? sendOff() : submitOrNudge());
     const swallowNextClick = () => {
         const block = (ev: MouseEvent) => { ev.stopPropagation(); ev.preventDefault(); };
         window.addEventListener("click", block, { capture: true, once: true });
@@ -213,7 +265,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
             const t = e.changedTouches[0];
             const swiped = !!t && travelled(t.clientX, t.clientY);
             pressStart.current = null;
-            if (swiped && sendOff()) e.preventDefault();
+            if (swiped && swipeAction()) e.preventDefault();
         },
         onMouseDown: (e: React.MouseEvent) => {
             pressStart.current = { x: e.clientX, y: e.clientY };
@@ -221,7 +273,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
             const onUp = (up: MouseEvent) => {
                 const swiped = travelled(up.clientX, up.clientY);
                 pressStart.current = null;
-                if (swiped && sendOff()) swallowNextClick();
+                if (swiped && swipeAction()) swallowNextClick();
             };
             document.addEventListener("mouseup", onUp, { once: true });
         },
@@ -250,6 +302,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
                 }}
                 onInspectCell={setInspecting}
                 flashNonce={role === "front" ? shakeNonce : 0}
+                lookalike={side === "back" ? lookalikeFor(cardEntry, state) : null}
             />
         );
     };

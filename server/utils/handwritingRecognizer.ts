@@ -31,6 +31,16 @@ const MAX_POINTS_PER_STROKE = 600;
 const REQUEST_TIMEOUT_MS = 5000;
 
 /**
+ * Google's zh_CN model also ranks Latin letters, digits and ASCII symbols, and for
+ * simple glyphs those can win: a perfectly snapped 十 comes back `["+", "十", "t", …]`
+ * (others sit just behind — 工 → "I", 土 → "±", 二 → "="). Every caller grades against a Han target
+ * (strict top-1), so non-Han candidates can only ever cause a false ✗ — drop them
+ * here so `candidates[0]` is the best *Han* reading. Multi-char Han candidates
+ * (e.g. "十一") are kept; they simply never equal a single-char target.
+ */
+const ALL_HAN = /^\p{Script=Han}+$/u;
+
+/**
  * Validates that a value is a well-formed `Ink`: a non-empty array of strokes,
  * each with equal-length numeric xs/ys (ts optional but normalized). Returns a
  * sanitized copy or throws on malformed input.
@@ -124,5 +134,35 @@ export async function recognizeChinese(
     return [];
   }
   const candidates = data?.[1]?.[0]?.[1];
-  return Array.isArray(candidates) ? candidates.filter((c: any) => typeof c === 'string') : [];
+  return Array.isArray(candidates) ? normalizeCandidates(candidates) : [];
+}
+
+/**
+ * Non-simplified forms Google's zh_CN model ranks ABOVE the simplified character for
+ * a correctly written glyph, mapped to that simplified character. Found by sweeping
+ * every discoverable character's corpus medians through the recognizer (2026-10-28):
+ * a perfect 户 comes back `["戸", "户", "戶", …]` — 戸 is the Japanese form of the
+ * same character. Only forms observed outranking the target belong here; this is NOT a
+ * general traditional ↔ simplified table (traditional input is still out of scope —
+ * docs/HANDWRITING_RECOGNITION.md open questions).
+ */
+const VARIANT_TO_SIMPLIFIED: Record<string, string> = {
+  '戸': '户',
+};
+
+/**
+ * Raw Google candidates → what every grader compares against: Han-only (`ALL_HAN`),
+ * known variant forms folded onto their simplified character, de-duplicated in rank order.
+ */
+export function normalizeCandidates(raw: unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of raw) {
+    if (typeof c !== 'string' || !ALL_HAN.test(c)) continue;
+    const folded = Array.from(c, (ch) => VARIANT_TO_SIMPLIFIED[ch] ?? ch).join('');
+    if (seen.has(folded)) continue;
+    seen.add(folded);
+    out.push(folded);
+  }
+  return out;
 }

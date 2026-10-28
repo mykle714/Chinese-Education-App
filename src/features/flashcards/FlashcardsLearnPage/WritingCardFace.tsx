@@ -13,6 +13,8 @@ import { SIZE } from "../../../theme/scale";
 import { CARD_FLIP_MS, FC_FONT } from "../constants";
 import TonedPronunciation from "../../../components/TonedPronunciation";
 import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
+import type { LookalikeMatch } from "../../../components/handwriting/lookalikes";
+import LookalikeNotice from "./LookalikeNotice";
 
 /**
  * WritingCardFace — the CONTENT of one face of a writing-flp card
@@ -32,7 +34,14 @@ import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
  *          Quarters / Sixths, nothing for Memorize / Blank / Timed (Memorize's outline is
  *          the editor's study phase, never previewed).
  *   BACK   the same layout; each cell shows the learner's ink over the WHOLE outline
- *          with its ✓ / ✗, and the bottom line says "Tap the card to continue".
+ *          with its ✓ / ✗, and the bottom line says "Tap the card to continue". When a
+ *          wrong cell was read as a listed look-alike (`lookalike`, 1–2 character words
+ *          only) LookalikeNotice sits at the BOTTOM of the card's content box — it reaches
+ *          down through the blank bottom line (`NOTICE_REACH_PX`); the row of cells stays
+ *          centred unless the notice would reach it, and then moves up only by the overlap
+ *          (`writing-card-face__notice-slot`). The bottom line is left blank — its height
+ *          kept, so the grid area, and with it the cell size, matches the front. Any move happens across the flip (the
+ *          back is its own face), so the learner never sees the cells jump.
  *
  * Pure presentation: every state and handler is the host's (useWritingFlashcard). A cell
  * tap stops propagation so it never reaches the card's own tap (the dismiss).
@@ -58,10 +67,12 @@ export interface WritingCardFaceProps {
      * front card on each `shakeNonce` bump, and the host passes that same nonce here.
      */
     flashNonce?: number;
+    /** Back face: the look-alike miss to explain (useWritingFlashcard → lookalikeFor), else null. */
+    lookalike?: LookalikeMatch | null;
 }
 
 export default function WritingCardFace({
-    entry, side, level, inks, locked, results, checking, interactive, onOpenCell, onInspectCell, flashNonce = 0,
+    entry, side, level, inks, locked, results, checking, interactive, onOpenCell, onInspectCell, flashNonce = 0, lookalike = null,
 }: WritingCardFaceProps) {
     const chars = [...entry.entryKey];
     const spec = WRITING_LEVELS[level - 1];
@@ -69,7 +80,12 @@ export default function WritingCardFace({
     const back = side === "back";
     const pronunciation = resolveDisplayPronunciation(entry);
     const iconId = headerIconId(entry);
-    const { gridRef, cellPx } = useFourCharCellSize();
+    const { gridRef, cellPx, areaPx } = useFourCharCellSize();
+    // A look-alike notice (back face, 1–2 characters) takes the 2×2 block's empty second
+    // row, bottom-aligned; the single row of cells moves up only if it has to.
+    // Without a notice the row stays centred, as on the front.
+    const notice = back && chars.length <= 2 && lookalike ? lookalike : null;
+    const blockWidth = cellPx * 2 + CELL_GAP;
 
     return (
         <Box
@@ -80,10 +96,14 @@ export default function WritingCardFace({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                px: 2.5,
-                pt: 3,
-                pb: 2.5,
-                gap: 1,
+                // On the Deck Tower the face is card stock: a cream rim round a beige panel
+                // (CardFaceSide `towerStock`, rim width `--card-stock-inset` set on the card
+                // frame). Every row is kept inside the panel, a little in from its edge;
+                // the plain flp sets no inset and keeps its old 20 / 24 / 20 px.
+                px: insetPad(20),
+                pt: insetPad(24),
+                pb: insetPad(20),
+                gap: `${FACE_ROW_GAP}px`,
                 boxSizing: "border-box",
                 fontFamily: FC_FONT,
             }}
@@ -91,20 +111,20 @@ export default function WritingCardFace({
             {/* Header: text on the left, the card's icon on the right. */}
             <Box className="writing-card-face__header" sx={{ width: "100%", display: "flex", alignItems: "center", gap: 1.5 }}>
                 <Box className="writing-card-face__header-text" sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0.5 }}>
-                    <Box className="writing-card-face__level" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.caption, color: COLORS.textFaint }}>
+                    <Box className="writing-card-face__level" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.body, color: COLORS.textFaint }}>
                         Level {spec.level} · {spec.name}
                     </Box>
                     {pronunciation && (
                         <TonedPronunciation
                             pronunciation={pronunciation}
                             className="writing-card-face__pinyin"
-                            fontSize={SIZE.title}
+                            fontSize={SIZE.heading}
                         />
                     )}
                     <Box
                         className="writing-card-face__definition"
                         sx={{
-                            fontSize: SIZE.body,
+                            fontSize: SIZE.bodyLg,
                             color: COLORS.textSecondary,
                             maxWidth: "100%",
                             display: "-webkit-box",
@@ -132,7 +152,25 @@ export default function WritingCardFace({
                 if it held the 2×2 (4-character) layout; the cells inside are always that
                 size, laid out 2 per row (0→TL, 1→TR, 2→BL, 3→BR, as in the popup) and
                 centred as a block. */}
-            <Box ref={gridRef} className="writing-card-face__grid-area" sx={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", py: 1 }}>
+            <Box ref={gridRef} className="writing-card-face__grid-area" sx={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", py: `${GRID_AREA_PAD_Y}px` }}>
+            <Box
+                className="writing-card-face__block"
+                sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    // With a notice the block fills the grid area's height: a spacer above
+                    // the cells and the notice slot below split the free space equally, so
+                    // the row stays centred in the grid area. The slot also reaches
+                    // NOTICE_REACH_PX past the area's bottom (negative margin, offset by an
+                    // equal flex-basis so the split stays even), pinning the notice to the
+                    // bottom of the card. The slot can't shrink below the notice (flex
+                    // min-height: auto), so a tall notice takes its height from the TOP
+                    // spacer — the row moves up only by the overlap, never further.
+                    alignSelf: notice ? "stretch" : undefined,
+                }}
+            >
+            {notice && <Box className="writing-card-face__notice-spacer" sx={{ flex: "1 1 0" }} />}
             <Box
                 className="writing-card-face__grid"
                 sx={{
@@ -207,13 +245,25 @@ export default function WritingCardFace({
                     );
                 })}
             </Box>
+            {notice && cellPx > 0 && (
+                <Box className="writing-card-face__notice-slot" sx={{ flex: `1 1 ${NOTICE_REACH_PX}px`, mb: `${-NOTICE_REACH_PX}px`, width: blockWidth, display: "flex", flexDirection: "column", justifyContent: "flex-end", pt: `${CELL_GAP}px` }}>
+                    <LookalikeNotice match={notice} width={blockWidth} height={cellPx} tellWidth={Math.round(areaPx * NOTICE_TELL_WIDTH_FRACTION)} delayMs={CARD_FLIP_MS} />
+                </Box>
+            )}
+            </Box>
             </Box>
 
             {/* The bottom hint line. The card itself is the submit/continue target
-                (useWritingFlashcard.handleCardClick); cells stop their own taps. */}
-            <Box className="writing-card-face__hint" sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, minHeight: 36, display: "flex", alignItems: "center", gap: 0.5 }}>
-                {back ? "Tap the card to continue" : checking ? "Checking…" : "Tap the card to submit"}
-                {!checking && <TouchApp className="writing-card-face__hint-icon" sx={{ fontSize: 16, color: COLORS.textSecondary }} />}
+                (useWritingFlashcard.handleCardClick); cells stop their own taps. A look-alike
+                notice replaces it: the row stays (empty, the notice drawn over it) so the grid
+                area — and with it the cell size — matches the front face. */}
+            <Box className="writing-card-face__hint" sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, minHeight: HINT_ROW_PX, display: "flex", alignItems: "center", gap: 0.5 }}>
+                {!notice && (
+                    <>
+                        {back ? "Tap the card to continue" : checking ? "Checking…" : "Tap the card to submit"}
+                        {!checking && <TouchApp className="writing-card-face__hint-icon" sx={{ fontSize: 16, color: COLORS.textSecondary }} />}
+                    </>
+                )}
             </Box>
         </Box>
     );
@@ -221,8 +271,34 @@ export default function WritingCardFace({
 
 /** Gap between grid cells, px — also subtracted when sizing the 2×2 cell. */
 const CELL_GAP = 12;
+/** Vertical gap between the face's rows (header, grid area, hint line), px. */
+const FACE_ROW_GAP = 8;
+/** The grid area's top/bottom padding, px. */
+const GRID_AREA_PAD_Y = 8;
+/** The bottom hint line's height, px — kept on the back face even when blank. */
+const HINT_ROW_PX = 36;
+/**
+ * How far the look-alike notice slot reaches below the grid area, px: through the area's
+ * bottom padding, the row gap and the (blank) hint line — to the bottom of the face's
+ * content box, so the notice is bottom-aligned on the card.
+ */
+const NOTICE_REACH_PX = GRID_AREA_PAD_Y + FACE_ROW_GAP + HINT_ROW_PX;
+/** Gap between the tower stock's beige panel edge and the face's content, px. */
+const PANEL_CONTENT_GAP = 12;
+
+/**
+ * A face padding that clears the tower stock's cream rim: the larger of the plain-flp
+ * padding and rim + PANEL_CONTENT_GAP. Without a `--card-stock-inset` (the plain flp) it
+ * is just `plainPx`.
+ */
+function insetPad(plainPx: number): string {
+    return `max(${plainPx}px, calc(var(--card-stock-inset, 0px) + ${PANEL_CONTENT_GAP}px))`;
+}
+
 /** The header icon's box, px. */
 const ICON_SIZE = 84;
+/** The look-alike tell's text column, as a share of the card's inner width (centred). */
+const NOTICE_TELL_WIDTH_FRACTION = 0.6;
 
 /**
  * The icon the header shows: the most prominent icon of a saved custom arrangement
@@ -245,6 +321,9 @@ function headerIconId(entry: VocabEntry): string | null {
 function useFourCharCellSize() {
     const gridRef = useRef<HTMLDivElement | null>(null);
     const [cellPx, setCellPx] = useState(0);
+    // The grid area's content width — the card's inner width. LookalikeNotice sizes its
+    // tell text off it (NOTICE_TELL_WIDTH_FRACTION) rather than off the narrower 2×2 block.
+    const [areaPx, setAreaPx] = useState(0);
     useEffect(() => {
         const el = gridRef.current;
         if (!el) return;
@@ -255,13 +334,14 @@ function useFourCharCellSize() {
             const h = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
             const fit = (len: number) => (len - CELL_GAP * (perAxis - 1)) / perAxis;
             setCellPx(Math.max(0, Math.floor(Math.min(fit(el.clientWidth), fit(h)))));
+            setAreaPx(el.clientWidth);
         };
         const ro = new ResizeObserver(measure);
         ro.observe(el);
         measure();
         return () => ro.disconnect();
     }, []);
-    return { gridRef, cellPx };
+    return { gridRef, cellPx, areaPx };
 }
 
 /**

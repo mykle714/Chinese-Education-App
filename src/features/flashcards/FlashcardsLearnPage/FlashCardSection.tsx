@@ -170,7 +170,7 @@ interface FlashCardSectionProps {
     // FRONT card, the PEEKing card behind it, or the card FLYING out.
     //
     // A writing card is never swiped: the host passes inert drag handlers, flips the
-    // card itself on a submit tap, and dismisses it by calling the loop. `onCardClick` is
+    // card itself on a submit tap (or swipe attempt), and dismisses it by calling the loop. `onCardClick` is
     // the tap on the front card's body — on the front face it submits (or wiggles the
     // card via the host's `shakeNonce` while a cell is empty); on the back it is the
     // "tap anywhere to continue".

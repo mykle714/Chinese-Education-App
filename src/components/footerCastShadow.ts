@@ -18,9 +18,25 @@ export const SLAB_CAST_SHADOW_VAR = "--footer-slab-cast-shadow";
 
 /** Sets (or, with null, clears) the colour of the slab footer's cast shadow. */
 export function setFooterCastShadow(color: string | null): void {
+    setRootProperty(SLAB_CAST_SHADOW_VAR, color);
+}
+
+/**
+ * Sets (or, with null, removes) a custom property on the document root — only when the value
+ * actually changes. Any write to the root's style re-checks the styles of the WHOLE document
+ * (every element inherits from it), and the Deck Tower calls these every scroll frame, where
+ * the colour usually has not changed since the last frame (it is quantised to hex, and is
+ * constant outside the sky → space band). Reading the inline value back is cheap: it reads
+ * the root's own style declaration, not computed style.
+ */
+function setRootProperty(name: string, value: string | null): void {
     const root = document.documentElement.style;
-    if (color) root.setProperty(SLAB_CAST_SHADOW_VAR, color);
-    else root.removeProperty(SLAB_CAST_SHADOW_VAR);
+    const current = root.getPropertyValue(name);
+    if (value) {
+        if (current !== value) root.setProperty(name, value);
+    } else if (current !== "") {
+        root.removeProperty(name);
+    }
 }
 
 /**
@@ -35,7 +51,5 @@ export const SLAB_FILTER_VAR = "--footer-slab-filter";
 
 /** Sets (or, with null, clears) the filter the slab footer's face is drawn through. */
 export function setFooterSlabFilter(filter: string | null): void {
-    const root = document.documentElement.style;
-    if (filter) root.setProperty(SLAB_FILTER_VAR, filter);
-    else root.removeProperty(SLAB_FILTER_VAR);
+    setRootProperty(SLAB_FILTER_VAR, filter);
 }

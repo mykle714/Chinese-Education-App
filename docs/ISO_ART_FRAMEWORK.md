@@ -39,6 +39,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Scene | `IsoScene.tsx` → `IsoScene`, `sceneContext.ts` → `useIsoProjector` | The `<svg>` root and the context that hands the projector to every component inside it |
 | Primitive | `IsoSolid.tsx` → `IsoSolid` | Paints one prism in three-tone shading. Takes ready-made geometry, so it needs no context |
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
+| Primitive | `IsoSpacedText.tsx` → `IsoSpacedText` | Centred letter-spaced text that anchors the same in every engine (§ Objects → IsoSpacedText) |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
 | Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
 | Math | `pawnFigure.ts` → `pawnFigure`, `circleHullPath` | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View") |
@@ -301,7 +302,7 @@ drawn as its own layer — DECK_TOWER.md § Studying the tower → "The count ca
   paints the same rim at `FLP_CARD_STOCK_INSET_RATIO` = `FACE_PAD` / `CARD_W` and
   `FLP_CARD_PANEL_RADIUS_RATIO` = `PANEL_RADIUS` / `CARD_W`,
   `src/features/flashcards/constants.ts`; retune each pair together);
-- a head band housing a small-caps `label` (`bandColor`, default `ISO.cardBand` blue) — drawn ONLY when a `label` is passed; without one the face has no band and the figure + caption centre on the whole panel (the Deck Tower passes both: the standing deck's plate label and `band`);
+- a head band housing a small-caps `label` (drawn with `IsoSpacedText`, spacing 0.055, so it centres on iOS Safari too; `bandColor`, default `ISO.cardBand` blue) — drawn ONLY when a `label` is passed; without one the face has no band and the figure + caption centre on the whole panel (the Deck Tower passes both: the standing deck's plate label and `band`);
 - a big centred figure;
 - a caption (0.8 units).
 
@@ -408,7 +409,7 @@ Depended on by the Deck Tower's tower shrinks (the focus lever's focus-on,
 `{ rect, surface, text, fontSize?, bandColor?, shaded?, raised? }`. A name plate printed flat on a floor: a
 rounded rect (`bandColor`, default `ISO.cardBand`) with ink text, the same treatment as a
 card's head band. Plate and text are drawn in world units inside one `faceTransform` at the
-plate's top. Text runs along +x. By default (`raised` 0) it is part of its surface like a carpet: zero height,
+plate's top. The text is an `IsoSpacedText` (spacing 0.06), not a bare `letterSpacing` `<text>` — see § IsoSpacedText. Text runs along +x. By default (`raised` 0) it is part of its surface like a carpet: zero height,
 no shadow, and pawns walk over it (it is not a `PawnRoam` obstacle).
 
 `raised` (0 → 1, briefly above 1 on a spring overshoot) stands the plate up as a thin slab
@@ -429,6 +430,25 @@ outside any depth sort. `shaded` draws it as it looks in shadow (plate and print
 `shadowTone`, walls included); pass that copy, at the same `raised`, to a pawn's `decals` so
 the pawn's shadow darkens it. The shaded copy draws no contact shadow — the pawn's shadow
 already darkens that floor to the same tone.
+
+### IsoSpacedText
+
+*Code: `src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`. Used by `IsoFloorLabel` (the plate text), `IsoCard` (the head-band label) and `IsoModeSwitch` (the paddle label).*
+
+`{ children: string, letterSpacing, ...<text> props }`. A centred (`textAnchor="middle"`), letter-spaced SVG `<text>`. Use it
+instead of a bare `letterSpacing` + `textAnchor="middle"` `<text>`: WebKit (iOS Safari) anchors on the run's UNSPACED width
+and then adds the spacing, so the word slides toward its end by about half its total spacing (~8 px on the Deck Tower's
+plate), while Chrome centres it.
+
+- **How.** It measures the natural glyph width with `getComputedTextLength` and draws the text with
+  `textLength = natural + letterSpacing × (glyphs − 1)` and `lengthAdjust="spacing"`. Every engine anchors on an explicit
+  `textLength`, and `spacing` spreads the extra length evenly between glyphs, so it looks the same as `letterSpacing`.
+- **When it measures.** Once per measure key (text, `fontSize`, `fontWeight`, font-load epoch), in a layout effect. A
+  render with no measurement for its key draws the bare text; the effect measures and re-renders before paint. Per-frame
+  re-renders (the plate's press spring) keep the key and do no work.
+- **Fonts.** The epoch bumps on `document.fonts.ready` and on every `loadingdone`, so a measurement taken against a
+  fallback face is retaken when Noto Sans SC (or a `--cjk-font` override) arrives.
+- **No layout** (measure is 0 or throws, e.g. jsdom): falls back to plain `letterSpacing`.
 
 ### IsoHatch
 
@@ -535,7 +555,7 @@ sinks and drops in from the sky exactly like `IsoLever`.
 - **Colour.** The paddle takes `colors[nearer]` — the band of the position `flip` is nearer
   — in the platform's wall steps (`shadeHex` 0.07 / 0.15, the same flagged wall-tone
   divergence as the rest of the palette).
-- **Label.** Only `labels[nearer]` is printed, centred on the crease and folded over both
+- **Label.** Only `labels[nearer]` is printed (an `IsoSpacedText`, spacing 0.03 — § IsoSpacedText), centred on the crease and folded over both
   faces of the V: it is printed once per face through the affine map onto that face
   (`facePlane`, measured along the surface from the crease so the two prints meet at the
   fold), each clipped to its own side. Reads along −y (screen left → right). Its ink fades
@@ -576,7 +596,13 @@ projected floor delta, which is the same as redrawing the flat shadow there. Rea
 changes only when an emote fires or the depth rank changes, so a walking pawn does not
 re-render the page. `applyFrame` also runs in a layout effect after every render, so the
 first paint, a re-render with a new camera, and `prefers-reduced-motion` (when no loop
-runs and the pawn stands at `at`) all draw the current frame at once.
+runs and the pawn stands at `at`) all draw the current frame at once. **Idle frames write
+nothing:** the loop keeps running, but `applyFrame` skips a frame whose inputs (projector,
+surface z, opening clip, position, lift and pose) match what it last drew (`drawn` ref in
+`usePawnMotion.ts`). Any write into the scene svg repaints the whole svg (svg children get
+no compositor layers of their own), so a pawn standing in a pause used to repaint the
+tower 60 times a second. The layout-effect draw is always forced, because a render can
+mount a node (the "!" bubble's anchor) that has not been placed yet.
 
 **View.** The body is a true 3D figure (`iso/pawnFigure.ts` → `pawnFigure`): a vertical
 capsule (the pill) under a sphere (the head), each sphere's outline a circle round its
@@ -664,8 +690,8 @@ overhanging side to the clip.
   lift over `STEP_MS` instead.
 - **Feet physics.** On top of `lift` (the surface, carrying the shadow) the feet have their own
   height and vertical speed (`feetZ`, `feetV`) under `GRAVITY` — the pawn's own cartoon
-  gravity, 110 u/s², shared with its sky-fall entrance (`pawnEntrances.ts` → `PAWN_GRAVITY`;
-  the scene's falling towers use 130–140) — so the pawn reacts to its step
+  gravity, 110 u/s² (`pawnEntrances.ts` → `PAWN_GRAVITY`; the sky-fall entrance uses a gentler
+  60, `SKY_FALL_GRAVITY`, and the scene's falling towers use 130–140) — so the pawn reacts to its step
   moving under it (the Deck Tower plate being pressed and released, docs/DECK_TOWER_TRANSITIONS.md
   § "The plate button"):
   - **Pressed** — the plate's ease-out sink drops away faster than gravity can follow at

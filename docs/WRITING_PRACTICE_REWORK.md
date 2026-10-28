@@ -238,11 +238,12 @@ More Info pill below it, laid out as on the core flp — with only its CONTENT c
 `useWritingFlashcard.renderFace`, which draws `WritingCardFace` into the face's full-card
 `CardFaceSide.fill` slot (no icons, note or card-ops rail). The card never follows a drag;
 the hook flips the card (`setIsFlipped(true)`) and dismisses it (`handleCardDismiss`). In
-place of useCardDrag's handlers it passes `useWritingFlashcard.swipeHandlers`: on the graded
-back, a press that travels ≥ `SWIPE_ATTEMPT_PX` (10 px) is read as the dismiss tap
-(`sendOff`) — the card still goes right/left by its **grade**, never by the swipe's
-direction — and the click that would follow is swallowed; on the front a swipe does
-nothing. The dismissal plays a **grab-and-throw** keyframe (`FlashCardSection` →
+place of useCardDrag's handlers it passes `useWritingFlashcard.swipeHandlers`: a press that
+travels ≥ `SWIPE_ATTEMPT_PX` (10 px) is read as the tap on the face showing — on the front
+it is the submit tap (`submitOrNudge`: grade + flip once every cell is filled, else the
+wiggle), on the graded back the dismiss tap (`sendOff`), the card still going right/left by
+its **grade**, never by the swipe's direction. Either way the click that would follow is
+swallowed, so it cannot submit/dismiss twice or open a cell's editor. The dismissal plays a **grab-and-throw** keyframe (`FlashCardSection` →
 `writingThrowKeyframes`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `WRITING_THROW_LIFT_SCALE` = 1.1 over the first 30%, rises `WRITING_THROW_LIFT_RISE_PX` = 40 px, tilts
 toward its exit), then accelerates off along an arc. It is a keyframe animation rather than
 the core flp's transition because the flying slot remounts on dismiss (its key changes) and
@@ -263,8 +264,9 @@ so it opens only after the submit tap.
   custom arrangement, else `iconId`; omitted when the card has none).
 - **Cell size** — every word, 1–4 characters, gets cells of the **4-character** size:
   `useFourCharCellSize` measures the grid area as if it held the 2×2 layout and hands that
-  side to every `CellBox`. Shorter words lay out 2 per row (0→TL, 1→TR, 2→BL) and are
-  centred as a block, so cell size never hints at word length.
+  side to every `CellBox`. Shorter words lay out 2 per row (0→TL, 1→TR, 2→BL), so cell
+  size never hints at word length; the block is centred. A back face showing the
+  look-alike notice may nudge it up (§ 3c).
 - **Front** — the header, then the character grid. Each cell PREVIEWS
   what the editor first shows at the level (`levelPreview`, `levelBehavior.ts`): the outline
   (looping on Trace) for Snap / Trace / Step Through, the first region for Quarters / Sixths,
@@ -284,17 +286,62 @@ so it opens only after the submit tap.
 - **Back** — the same, with ✓ / ✗ (stamped in once the flip finishes — see below) and the whole outline behind each character's ink. Tapping
   a **cell** inspects it enlarged; tapping **anywhere else** on the card
   (`FlashCardSection.onCardClick`) sends it off — right iff every character was correct.
-  The learner never drags.
+  The learner never drags. A wrong cell read as a listed look-alike gets the
+  **look-alike notice** (§ 3c) in place of the bottom line.
 - The dismissal calls `useWorkingLoop` → `handleCardDismiss(direction, { level, perChar })`,
   which sends `writing` on the mark. Writing marks offer **no undo** (the server refuses it).
+
+### 3c. Look-alike notice (graded back, 1–2 character words)
+
+Grading stays strict top-1 — writing 未 for 末 is wrong. The notice explains *why*: when a
+wrong cell's ink was read as a **listed look-alike** of its character, the back face
+names the other character and how to tell them apart.
+
+- **Data** — `src/components/handwriting/lookalikes.ts`: a curated, hand-authored table of
+  **groups** of mutually confusable characters (人/入/八, 土/士/工, 未/末/木/本, 甲/由/申/田,
+  大/太/犬, …). Each member has its pinyin and a `tell` — the feature that sets it apart
+  from every other member, written as a predicate that follows the character ("目 is a
+  tall box with two bars inside instead of one"); a contrast is used only where it holds
+  against every other member, so it reads right whichever partner the ink was read as. A character is in at most one group (the module throws on a duplicate).
+  `findLookalike(target, recognized)` → `{ target, recognized }` or null. Only listed
+  pairs fire; a miss read as an unrelated character shows the normal bottom line.
+- **Detection** — `useWritingFlashcard.handleSubmit` keeps each cell's recognizer top-1
+  (`Attempt.recognized`) alongside its verdict; `lookalikeFor` returns the FIRST wrong cell
+  (reading order) with a look-alike match. Words over `LOOKALIKE_MAX_CHARS` (2) get none —
+  a 3–4 character card has no free space below its cells (decided 2026-10-28).
+- **Pinyin** — the table's pinyin is each character's standalone reading. `lookalikeFor`
+  replaces the TARGET's with the card's own syllable for that position
+  (`resolveDisplayPronunciation`, split one syllable per character), so a polyphone shows
+  its in-word reading (了解 → 了 liǎo, not le). If the syllable count doesn't match the
+  character count, it falls back to the table. The RECOGNIZED character has no word
+  around it, so it keeps the table's reading.
+- **Presentation** — `LookalikeNotice` (`src/features/flashcards/FlashcardsLearnPage/`)
+  takes the 2×2 block's empty second row, bottom-aligned on the card: its slot reaches
+  past the grid area through the blank hint row to the face's content bottom
+  (`WritingCardFace` → `NOTICE_REACH_PX`). The 1–2 cells stay centred in the grid area
+  unless the notice would reach them; then they move up only by the overlap
+  (`WritingCardFace` → `writing-card-face__block`: equal flex spacers above the cells and
+  in `writing-card-face__notice-slot` — the slot's negative margin offset by an equal
+  flex-basis — the slot unable to shrink below the notice, so no measuring). Any move happens across the flip, while the card is edge-on, so the cells
+  never visibly jump. The notice shows the two characters side by side as
+  printed corpus glyphs (`GlyphSvg`, the stroke shapes Snap paints — so the proportions
+  the tell describes are exact), the target in ink (unlabelled), the misread in
+  `COLORS.textFaint` labelled "yours looks like", each with tone-coloured pinyin, then the
+  target's tell as one sentence, "<char> <tell>", centred in a column ~60% of the card's inner
+  width (`WritingCardFace` → `NOTICE_TELL_WIDTH_FRACTION`), clamped to 3 lines. It fades in after the flip (`CARD_FLIP_MS`, as the ✓/✗ stamps do).
+  The "Tap the card to continue" line is hidden while it shows (the notice draws over its
+  blank row); the row keeps its height so the grid area — and the cell size — matches the front. The notice is not tappable:
+  a tap on it dismisses the card like the rest of the back.
+- Tests: `src/__tests__/lookalikes.test.ts` (lookup contract; every listed character has
+  `hanzi-writer-data` strokes).
 
 ### 3b. Used-in hint bubbles (single-character cards)
 
 **Floating on the writing card's top edge, up to 2 bubbles show words that contain the card's character — the learner's own saved words
 first, then everyday dictionary words**: each with
-its pinyin, its dd, and the word with the character being written drawn as a **mask**: an
-outlined circle with a `?` in it (`ForeignText` → `maskChar`, see below). For 你, a saved
-你们 shows as `(?)们 · nǐmen · you (plural)`, with the pinyin kept above the mask.
+its pinyin, its dd, and the word with the character being written drawn as a **mask**: a
+plain `?` (`ForeignText` → `maskChar`, see below). For 你, a saved
+你们 shows as `?们 · nǐmen · you (plural)`, with the pinyin kept above the mask.
 
 | question | decision (2026-10-04) |
 |---|---|
@@ -303,10 +350,10 @@ outlined circle with a `?` in it (`ForeignText` → `maskChar`, see below). For 
 | frequency gate | pass 1 **none**: words the learner chose aren't vetted for commonality. Pass 2 **`frequencyScore` 4–5** (added 2026-10-04), stricter than the eip list's 3–5. Ordered saved-first, then `frequencyScore DESC NULLS LAST`, then shortest, then `entryKey` |
 | how many | up to **2** in total (cut from 4 on 2026-10-04). Saved words fill first, and dictionary words only take the slots left over |
 | tap | **inert**. The eip is gated until submit on the writing flp, so a tap must not open the word |
-| look / motion | the bk's hint bubble (§ 6z-4 of `docs/BEGINNER_KEYBOARD.md`) through the shared `HintBubbleSurface`: grows in after `HINT_MOTION.enterDelayMs`, staggered in random order. When the front card changes, the old set pops and the new set grows in |
+| look / motion | the bk's hint bubble (§ 6z-4 of `docs/BEGINNER_KEYBOARD.md`) through the shared `HintBubbleSurface`: grows in after `HINT_MOTION.enterDelayMs`, staggered in random order. When the front card changes, the old set pops and the new set grows in. On the Deck Tower the set is cleared at once (no pop) while the card is unseen — session parked, count card over it, respawn drop (`WritingUsedInBubbles` → `unseen`, from FlpTowerHost `parked`/`cardsCovered`/`cardsHidden`) — so a visit's first card grows its bubbles in on screen |
 | placement | every bubble sits on **one level**, its tail touching the card's top edge, at a **random x** drawn uniformly from the spots inside the card's width that don't overlap a bubble already placed. If none is free (a card narrower than ~300 px), it takes whichever end overlaps least. Computed once per bubble when first measured, in card-relative coordinates (`writingBubblePlacement.ts` → `placeBubble`), so a bubble never jumps. Popping bubbles from the previous card don't block spots. (A same-day version stacked colliding bubbles upward into levels. That was dropped 2026-10-04.) |
 | width | hugs the content (the wider of the word and its dd), capped at **140 px**, with the dd truncated by an ellipsis |
-| geometry | the bubbles live in an overlay (`position: absolute; inset: 0`) over the flp's `ContentArea`, mounted after `FlashCardSection` so they paint above the card stack and below the eip. `ContentArea` centres its children (`alignItems: center`), which collapsed the first in-flow version to 0 px wide. The card's box comes from the `offsetLeft`/`offsetTop` chain, which ignores transforms, so the flip's `rotateY` never narrows the measured card mid-turn |
+| geometry | the bubbles live in an overlay (`position: absolute; inset: 0`) over the flp's `ContentArea`, mounted after `FlashCardSection` so they paint above the card stack and below the eip. `ContentArea` centres its children (`alignItems: center`), which collapsed the first in-flow version to 0 px wide. The card's box comes from the `offsetLeft`/`offsetTop` chains of the card AND the overlay, walked to their first common `offsetParent` (the overlay is a sibling, not an ancestor, of the card — `WritingUsedInBubbles.tsx` → `offsetBoxWithin`), which ignores transforms, so a flip/lift/drag in progress never skews the measured card. It is re-measured on any resize of the card or its ancestors up to `ContentArea` (the slot's padding glide moves a width-bound card without resizing it), and each bubble is bottom-anchored (`translateY(-100%)`) so its tail kisses the card edge whatever its final height |
 | room | `WritingUsedInBand`, a fixed **92 px** in-flow spacer (holds the one level) reserved on **every** writing card so the card slot never resizes from one card to the next. |
 | faces | shown on both faces. The mask stays after the flip |
 | mask by level | levels **1–3** (Snap / Trace / Step Through) show the **real character** in the bubbles: the card front already shows its whole outline, so there's nothing to hide. Levels 4–8 mask it. Derived from `levelBehavior.ts` → `previewShowsWholeCharacter(mode)` for the card's level (`writingLevelForMastery`), so the bubbles and the card's own preview can't disagree |
@@ -325,10 +372,11 @@ Code:
   (overlay), `WritingUsedInBand` (spacer), `useCardBox`, `offsetBoxWithin`,
   `MAX_BUBBLES`, `MAX_BUBBLE_WIDTH`; both mounted by `FlashcardsLearnPage` (writing mode only)
 - `src/components/ForeignText.tsx` → `maskChar` prop (row layout only) →
-  `src/components/CPCDRow.tsx` → `CPCDRowItem.masked`, `MaskedCharMark`. The mask is drawn,
-  not a character: Unicode has no circled question mark, and the earlier `⍰` (U+2370) isn't
-  in the CJK fonts, so it rendered in a fallback font. The mark is sized in `em`, so it
-  scales with every CPCDSize; it takes the glyph colour (`characterColor`, else
+  `src/components/CPCDRow.tsx` → `CPCDRowItem.masked`, `MaskedCharMark`. The mask is a plain
+  `?` in `FONTS.sans` (the circled-`?` ring was dropped 2026-10-28; the earlier `⍰` (U+2370)
+  isn't in the CJK fonts, so it rendered in a fallback font). It sits in a 1em-wide box, the
+  advance of the CJK glyph it replaces, so the row's spacing and pinyin centring don't
+  shift, and inherits the cell's font size, so it scales with every CPCDSize; it takes the glyph colour (`characterColor`, else
   `COLORS.textSecondary`) and copies as `?` under `tapToCopy`
 - `src/features/flashcards/FlashcardsLearnPage/writingBubblePlacement.ts` → `placeBubble`
   (tests: `src/__tests__/writingBubblePlacement.test.ts`)

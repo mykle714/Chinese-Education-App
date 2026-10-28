@@ -53,6 +53,9 @@ own cards:
   advanced layout. The custom colour fills the panel and the rim stays cream.
 - **No hairline, no shadow.** The tower's cards have neither.
 - **Icons are clipped to the panel** (`--card-icon-clip`). Text is not, so it may cross the rim.
+  The writing flp's face is the exception: `WritingCardFace` pads itself by the rim plus
+  `PANEL_CONTENT_GAP` (`insetPad`, never less than its plain-flp padding), so its header,
+  cells and hint line all sit inside the panel.
 - **Not themed.** The tower is one lit scene in every theme; the page's study wash filter
   supplies time-of-day light.
 

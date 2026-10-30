@@ -2,6 +2,7 @@ import { SHADOW } from "../../../theme/shadows";
 import { COLORS } from "../../../theme/colors";
 import { WEIGHT } from "../../../theme/scale";
 import { FONTS } from "../../../theme/fonts";
+import { keycapPressSx } from "../../../theme/keycapPress";
 import type { PlateTones } from "./flpTowerHost";
 
 /**
@@ -17,8 +18,9 @@ import type { PlateTones } from "./flpTowerHost";
  *
  * Same numbers as the scene's plate so the two read as one control:
  *   - `PLATE_WALL_PX` ≈ the scene plate's `RAISED_HEIGHT` (0.25 world units ≈ 5 px);
- *   - the press is `PRESS_MS` 80 ease-out, the pop `POP_MS` 220 with an ease-out-back
- *     overshoot (usePlatePress.ts → `easeOutBack`, k = 1.6 ≈ the bezier below);
+ *   - the press SNAPS (no transition) — the app's raised-key press, theme/keycapPress.ts.
+ *     (It used to copy the scene plate's animated 80 ms sink / 220 ms overshoot pop; all
+ *     HTML keycaps snap since 2026-10-29. The in-scene plate still animates.)
  *   - the print is the plate's: ink, bold, upper-case, tracked out.
  *
  * Pure CSS (`:active`), not usePlatePress: these are ordinary HTML buttons whose click
@@ -39,10 +41,6 @@ import type { PlateTones } from "./flpTowerHost";
 /** The slab's visible wall, px — the scene plate's RAISED_HEIGHT at the tower's scale. */
 export const PLATE_WALL_PX = 5;
 
-/** The press (usePlatePress `PRESS_MS`, ease-out). */
-const PRESS_TRANSITION = "80ms cubic-bezier(0, 0, 0.58, 1)";
-/** The pop back up (usePlatePress `POP_MS`, ease-out-back ≈ its `easeOutBack`). */
-const POP_TRANSITION = "220ms cubic-bezier(0.34, 1.56, 0.64, 1)";
 
 /** Rest: the wall under the face, then the contact shadow. Pressed: flush, no wall, no shadow. */
 const restShadow = (tones: PlateTones) => `0 ${PLATE_WALL_PX}px 0 ${tones.right}, ${SHADOW.chip}`;
@@ -58,23 +56,25 @@ const pressedShadow = (tones: PlateTones) => `0 0 0 ${tones.right}`;
  * is centred by `translateX(-50%)`), so the press composes with it.
  */
 export function towerPlatePressSx(tones: PlateTones, baseTransform = "") {
-    const at = (y: number) => `${baseTransform} translateY(${y}px)`.trim();
+    // The app's raised-key press: snaps down onto the wall and back up (keycapPress.ts).
+    const press = keycapPressSx({
+        restShadow: restShadow(tones),
+        pressedShadow: pressedShadow(tones),
+        pressedY: PLATE_WALL_PX,
+        baseTransform,
+    });
     return {
         backgroundColor: tones.top,
         border: "none",
-        transform: at(0),
-        boxShadow: restShadow(tones),
-        // `opacity` kept for MoreInfoPill's ghost-until-flipped fade.
-        transition: `transform ${POP_TRANSITION}, box-shadow ${POP_TRANSITION}, opacity 0.35s ease`,
+        ...press,
+        // Only `opacity` animates — MoreInfoPill's ghost-until-flipped fade. The press snaps.
+        transition: "opacity 0.35s ease",
         "&:active": {
-            transform: at(PLATE_WALL_PX),
-            boxShadow: pressedShadow(tones),
-            transition: `transform ${PRESS_TRANSITION}, box-shadow ${PRESS_TRANSITION}, opacity 0.35s ease`,
+            ...press["&:active"],
             // Belt and braces: an animation would own `transform` and hide the press.
             // (MoreInfoPill's hint pulse is already off for plate pills — styled.ts.)
             animation: "none",
         },
-        "@media (prefers-reduced-motion: reduce)": { transition: "none", "&:active": { transition: "none" } },
     } as const;
 }
 

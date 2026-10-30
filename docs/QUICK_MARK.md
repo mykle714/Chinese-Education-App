@@ -3,9 +3,11 @@
 > ↑ Part of [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) → [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
 > Sibling: [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md) — the panel host.
 >
-> STATUS: **IMPLEMENTED.** All open questions resolved (see §9). This doc describes
-> the shipped structure. Since 2026-10-17 Quick Mark is **not a page**: it is Sort
-> Cards' on-deck platform, maximized (§ 1 "Where it lives").
+> STATUS: **DORMANT since 2026-10-29 — no entry point.** The Tower Tier 2 re-skin of Sort
+> Cards removed the ⊞ expand button that was Quick Mark's only way in, and scp's hosting
+> code with it ([SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md),
+> [DEFERRED_WORK.md](./DEFERRED_WORK.md) #27). The panel and its hooks are still in the
+> tree, unimported. Below is the structure as it shipped.
 
 ## 1. What it is
 
@@ -23,8 +25,8 @@ same per-card `sortCard` / `undoSort` endpoints — so it introduces **no new pe
 
 There is **no route**. The `/discover/quick-mark/:language` page, its `ROUTE_META` row,
 its Discover-hub Bento tile and `useDiscoverNavigation`'s `quickMarkPath` were all
-deleted on 2026-10-17. Quick Mark opens from inside Sort Cards (`/discover/sort/:language`):
-the **⊞ button beside "skip"** on the on-deck platform maximizes the platform into this
+deleted on 2026-10-17. Quick Mark opened from inside Sort Cards (`/discover/sort/:language`)
+until 2026-10-29: the **⊞ button beside "skip"** on the on-deck platform maximizes the platform into this
 grid, with the pack on deck pinned as its first cards, and the panel's **✕** shrinks it
 back. The open/close morph, the pinned-pack contract and everything else the host owns
 are specified in [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md); this

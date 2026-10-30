@@ -1169,7 +1169,7 @@ which is why they stay different components:
 | shape | what a pick changes |
 |---|---|
 | `Segmented` (`.trkseg`) | which SLICE of the same data you are looking at — the content below does not change kind, only which track/period/lens it reports. Small and quiet: a lens control, not a destination |
-| `.tabs2` (the eip tab strip) | which KIND of content. Full width, sentence case, underlined |
+| `.tabs2` (the eip tab strip) | which KIND of content. Full width. ⚠️ Superseded 2026-10-29 by the Tower Tier 2 sunken segmented track (EIP_SHEET_GESTURES.md § Telescope) |
 | `.chip` / `.mode` (MUI theme overrides) | a filter or a mode that changes what an ACTION will do |
 
 Not a MUI `ToggleButtonGroup`: the group ships 44px touch targets, a ripple and a
@@ -2004,6 +2004,8 @@ change on a page whose shell doesn't scroll. Check the touch rules before wiring
 
 **Status: DONE.** The keypad landed 2026-08-22, the rows on 2026-08-24. Typecheck, lint,
 `vite build` and the 576-test suite all clean. Smaller than the artboard suggests.
+**Restyled again 2026-10-29 (§ 7b below)** — read that first; it replaces the row
+layout, the keypad and the pager described here.
 
 **Today.** `DictionaryPage` is a `NodePage` with `PinyinKeypad`, a search
 `TextField`, result count + AI chip, `DictionaryEntryRow` results, and MUI
@@ -2049,9 +2051,55 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   `CPCDSize` is a fixed five-step scale shared by every foreign-text surface in the app;
   adding a sixth step for one row would be a worse trade than 5px. `sm`'s pinyin (13px)
   is within half a pixel of the artboard's anyway.
-- **The gloss carries every sense, joined with `; `, not just the first.** The artboard
-  shows "time; period" for 时间. The line is ellipsized and the row height is fixed either
-  way, so the extra senses are free information.
+- **The gloss carries every sense, joined with a spaced middle dot, not just the first.** The artboard
+  shows "time; period" for 时间; the middle dot, with two (non-breaking) spaces either side,
+  replaced the semicolon (owner's call 2026-10-29; `src/utils/definitionUtils.ts` →
+  `joinDefinitionList` / `DEFINITION_LIST_SEPARATOR`, shared with the Dictionary eip's
+  header). The row height is fixed either way, so the extra senses are free information.
+- **On the Dictionary page the gloss swipes** (owner's request 2026-10-29). A gloss that
+  overflows its line is not ellipsized; the line is a horizontal scroller the learner swipes
+  to read the senses past the edge. Text past either edge is plainly clipped — no fade, no
+  "…" (owner's call 2026-10-29). Swiping past either end drags the text a little further against growing
+  resistance and springs it back on release (`src/hooks/useEdgeRubberBand.ts`, one bounce on
+  every platform — the scroller sets `overscroll-behavior-x: none`). On zh rows the text column stretches to the row's height so the whole body takes
+  the swipe. A tap still opens the entry (no `click` after a pan) and a vertical drag still
+  scrolls the page (`pan-x pan-y`, the browser picks the axis). It needs the page's scroll
+  area to allow `pan-x`, so DictionaryPage passes `horizontalPan` to MobileTabScreen. Opt-in
+  per row (`swipeGloss`); the Compare picker and community search keep the ellipsis. Code:
+  `src/components/DictionaryEntryRow.tsx` → `DictionaryEntryGloss`, `swipeGloss`; the line
+  itself is the shared `src/components/SwipeableTextLine.tsx`.
+- **The Dictionary eip shows every meaning** (owner's call 2026-10-29; EipSheet
+  `showAllDefinitions`, set only by DictionaryPage). A lookup is not a card, so:
+  - the header gloss is the WHOLE flat `definitions` list (`definitionListItems`, joined by
+    `DEFINITION_LIST_SEPARATOR`) on **up to two lines** — `src/components/SwipeableTwoLineText.tsx`:
+    one line if it fits; else two lines broken greedily between glosses; and only if two
+    lines still overflow, two lines re-split to EQUAL length that swipe sideways together
+    (clipped, rubber-banded, `touch-action: pan-x` since vertical drags on the header resize
+    the sheet). Right-aligned while it fits — by an auto margin, not `text-align: right`,
+    which in Blink pushed overflow off the unscrollable LEFT edge. No sense is
+    marked (it is the flat list, not the sense list below) and the pinyin is the default reading
+    (`resolveDefaultPronunciation`), as on the search row. `EipEntryHeader` →
+    `showAllDefinitions`.
+  - the entries carry the list because the eip's tabs come from `lookupVocabEntry`, whose
+    adapter (`src/utils/dictEntryAdapter.ts`) copies det's `definitions` onto the client-only
+    `VocabEntry.definitions` (`src/types.ts`; vet rows never carry it, so the flag falls back
+    to the dd there).
+  - the definition tab is unchanged (a two-column all-definitions list there was tried and
+    removed the same day). Its long definition and facts still follow the tab's
+    `selectedSenseIndex` (a word with a saved card opens on its saved sense) — with the
+    picker hidden that sense can no longer be changed from this eip.
+- **Every other eip lists the senses too** (owner's call 2026-10-29). For a word with ≥2
+  displayable clusters (the SensePicker's gate, `sortedSenseClusters`) the header gloss is
+  each sense's dd (`ddt`), in the picker's order, through the same `SwipeableTwoLineText`
+  layout. The chosen sense (`selectedSenseIndex`, falling back to the persisted pick) is
+  **underlined** in the palette's `muted` ink; the default (index 0) carries the picker's
+  **star** (13px, in FRONT of the gloss — 2026-10-30 — in the gloss's own colour via `inherit` — as in the picker). The list is **display-only** — the
+  eip's sense chip is gone, and a pick is made on the card face's `SensePicker`, which the
+  open eip follows via `useEipTabs.syncEntry`. A drilled-in word (no card face) therefore
+  shows its saved/default sense. A single-sense word keeps the plain dd. Decorations ride on
+  `SwipeableTwoLineText`'s `TwoLineSegment` (`className` + `leading`/`leadingWidth`, the
+  star's width added to every measurement so it never pushes a line over). Code:
+  `EipEntryHeader` → `senseSegments`; `src/components/SwipeableTwoLineText.tsx` → `TwoLineSegment`.
 
 **The duplicate page title is gone.** `NodePage`'s back-arrow header said "Dictionary"
 and an `h1` a few millimetres below said it again; the artboard has only the header. This
@@ -2076,11 +2124,106 @@ reaches the row's `<button>`. The gloss and chevron still open the entry. The Co
 slot-B search leaves it off: there the row is a picker, and a tap anywhere means "choose
 this word". Spanish rows ignore it (ForeignText's plain branch has no tap-to-copy).
 
-**Code:** `src/features/dictionary/DictionaryPage.tsx` → `FULL_BLEED_LIST_SX`;
-`src/components/DictionaryEntryRow.tsx`; `src/components/PinyinKeypad.tsx` →
+### 7b · Tier-2 redesign (2026-10-29)
+
+Source: Claude Design project "Tower Tier 2 - Time of Day", artboards *Dictionary ·
+search + results*, *· keyboard, pinyin mode*, *· keyboard, handwriting* and *· no
+results*. It **supersedes several decisions above** — the full-bleed rows, the
+`SectionRule` dividers, the inline zh keypad and the pager are gone:
+
+- **Search field** — a 50px white well, 14px corner, 17px text; focused it takes a
+  **2px ink ring** instead of MUI's primary outline (`DictionaryPage` →
+  `searchFieldSx(look)`). It keeps the app's 1px outline unfocused (CLAUDE.md § Buttons &
+  cards); the artboard drops it. The input declares `enterKeyHint="search"`.
+- **AI row** — the AI chip became a raised `.kc` keycap with an orange `auto_awesome`,
+  right-aligned under the field (`DictionaryAskAiRow`). The artboard's result-count overline
+  beside it was **dropped 2026-10-29** (owner's call): the section labels say what was found.
+- **Section labels are lowercase** (owner's call 2026-10-29): `DictionarySlabLabel` sets the
+  `Label` overline in lowercase at body size (`SIZE.body` 14px, medium weight, up from the
+  overline's 10px — owner's call 2026-10-29, they are section titles) with its caps tracking
+  eased (0.14em → 0.02em), for the match sections and the segment-mode groups alike.
+- **Welcome state** (owner's copy 2026-10-29) — before anything is typed, the page shows
+  "Welcome to the Mandarin Dictionary!" (ink) and, under it, one row per query shape (no
+  intro line — owner's call): `hello` English, `你好` Chinese characters, `nǐ hǎo` Pinyin with tone
+  marks, `ni3 hao3` Pinyin with tone numbers. Everything is centred; the rows are a centred
+  text-only grid of three columns (example in `look.ink2`, dash, name in `look.muted`), each
+  flush left so the examples and dashes line up. The examples are plain text, not `ForeignText`: they show what to type,
+  not a word. es has its own list (`hola` Spanish, `hello` English). Code:
+  `src/features/dictionary/DictionaryPage.tsx` → `WELCOME_COPY`, `welcomeCopyFor`.
+- **Rows sit on one white slab** (`DictionaryResultSlab`) with hairlines BETWEEN rows,
+  rather than full-bleed. `DictionaryEntryRow` gained `variant="slab"` (16/12px insets,
+  15px ink2 gloss, 22px chevron); the default `list` variant is unchanged for Compare and
+  community search. Group headings ("Starts with “shí”", a segment name) are bare `Label`
+  overlines (`DictionarySlabLabel`).
+- **Match sections** (added 2026-10-29, owner request; order set by the owner). Plain-search
+  results are split into labelled slabs by kind of match, in the server's rank order:
+  **English “long”** (a sense is the term) → **Pinyin “long”** (the main or another reading is
+  the term; numbered-pinyin queries like "ma2" land here whole) → **English starts with “long”**
+  (a sense leads with it, whole word: "long life") → **Pinyin starts with “long”** → **Other**
+  (the term inside a sense). es says "Spanish" for "Pinyin". The kinds are the search ladder's
+  buckets, returned per row as `matchKind`; the ladder itself was reordered to English-first at
+  every level for all surfaces. A section is a run of consecutive rows, so infinite scroll just
+  extends the last one (`dictionaryMatchSections.ts`; docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md
+  § "The shared bucket ladder"). Segment mode (CJK input) keeps its own exact / "Starts with" groups.
+- **Infinite scroll replaced the pager** — `useDictionarySearch` appends pages
+  (`hasMore` / `loadingMore` / `loadMore`); an IntersectionObserver sentinel at the tail
+  (`DictionaryLoadMore`, 300px look-ahead) fetches the next one. `dictionaryBrowseState`
+  no longer persists a page: only the first page is restored after a drill-in.
+- **No results** is a recessed well ("Nothing for “…”") plus a full-width "Ask AI about
+  “…”" keycap when `canAskAi` (`DictionaryNoResults`); the meta row's AI keycap hides
+  while the wide one shows. The artboard's **"Closest matches"** list is not built — no
+  server search for it exists (docs/DEFERRED_WORK.md).
+- **The zh inline keypad is gone** from this page: tone vowels now come from the
+  beginner keyboard's **ā pad** (docs/BEGINNER_KEYBOARD.md § 6z-10). `PinyinKeypad` still
+  renders above the field for **es** (accents, ñ, ¿ ¡ — es has no beginner keyboard) and
+  in the Compare tab.
+- **Slab footer** — the artboard draws the Deck Tower's floating slab (`.ft`), not the
+  flat bar, so `/dictionary` and `/dictionary/card/:word` carry `footerStyle: "slab"` in
+  `routeMeta`. No cast shadow and no wash: the page sets neither footer channel, so the
+  slab shows only its own lip, as in the artboard. Its colours follow the time of day
+  (below) — cream by day, slate at night. The bottom clearance and
+  edge fade follow the route's style (`MobileTabScreen`, `FooterSpacer`).
+- **Time of day** (added 2026-10-29). The page follows the Deck Tower's clock
+  (`src/timeOfDay/useDayClock.ts`, the tester pin included) via `useTier2Look`, called once
+  at the page root and passed down as `look`:
+  - **Dawn / day / sunset** tint only the GROUND and its sunken WELL (the no-results
+    panel) — the design's `--g` / `--well` / `--wellSh`, the same `--g` family as the
+    eip's upper panel (scp uses the separate `--gr` ground, `sortTimeOfDay.ts`).
+    Surfaces, ink and the slab footer stay as by day.
+  - **Night** turns the page slate: #1E2735 ground, #2A3446 field / slabs / keycaps on a
+    #121822 lip, light ink (#EEF0F6 / #C3C8D6 / #8F97AA) — the slab footer and the
+    beginner keyboard's keys included. The owner chose the design's CSS over its artboard
+    note ("keycaps, cards and footer keep their day colours"), which the CSS contradicts.
+  - Grounds **blend** across the 30-minute twilights; surfaces and ink **flip** together
+    once night holds the larger share (`dark`), as the eip's ink does.
+  - **Outside the framework** on purpose, like the tower's skies: the phase grounds and
+    every night value are the design's hexes (`tier2Look.ts` header).
+  - **Chrome outside the page** (the slab footer, the beginner keyboard) reads the look
+    through root CSS variables (`tier2Chrome.ts` → `tier2Var`), so it is themed only while
+    a Tier 2 page is up; claims are counted so a Dictionary → card-page slide never clears
+    the newcomer's look. `useTier2Look` also claims the browser-chrome strip (`useThemeColor`).
+  - The **card page** (`/dictionary/card/:word`) takes the ground and header ink too; its
+    inline eip panel keeps its own palette. **Not themed:** the es `PinyinKeypad`, the AI
+    suggestion card (its own AI surface) and the `DelayedCircularProgress` spinner.
+
+**Code:** `src/features/dictionary/DictionaryPage.tsx` → `searchFieldSx`, `useTier2Look`;
+`src/features/dictionary/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
+`server/dal/implementations/DictionaryDAL.ts` → `searchByWord1`, `prefixGlossMatch`, `LADDER_MATCH_KINDS`;
+`server/contracts/wire.ts` → `DictionaryMatchKind`, `matchKind`;
+`src/features/dictionary/DictionaryPageParts.tsx` → `DictionaryAskAiRow`,
+`DictionaryResultSlab`, `DictionarySlabLabel`, `DictionaryLoadMore`, `DictionaryNoResults`;
+`src/components/DictionaryEntryRow.tsx` → `variant`; `src/components/PinyinKeypad.tsx` →
 `ZH_ROWS`, `ES_ROWS`, `KeyGroup`; `src/components/ForeignText.tsx` →
-`isLatinScriptLang`; `src/components/primitives/Label.tsx` → `SectionRule`;
-`src/components/CompareWorkspace.tsx`; `src/hooks/useDictionarySearch.ts`.
+`isLatinScriptLang`; `src/components/primitives/Label.tsx` → `Label`;
+`src/components/CompareWorkspace.tsx`; `src/hooks/useDictionarySearch.ts`;
+`src/routes/routeMeta.ts` → `/dictionary` rows' `footerStyle`;
+`src/components/MobileTabScreen.tsx` → `footerFootprint`, `footerClearance`;
+`src/components/MobileFooter.tsx` → `FooterSpacer`, `SLAB_FOOTER_TOTAL_CLEARANCE`.
+Time of day: `src/timeOfDay/tier2Look.ts` → `tier2LookAt`, `Tier2Look`;
+`src/timeOfDay/tier2Chrome.ts` → `tier2Var`, `claimTier2Chrome`, `writeTier2Chrome`;
+`src/timeOfDay/useTier2Look.ts`; `src/components/DictionaryEntryRow.tsx` → `tones`;
+`src/features/dictionary/DictionaryCardDetailPage.tsx`;
+`src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`.
 **Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
 `docs/DICTIONARY_AI_FALLBACK_SEARCH.md`, `docs/WORD_COMPARE_FEATURE.md`.
 
@@ -2918,7 +3061,7 @@ that card's rail).
   buttons — a square sized to the character clips the GLOSS, which is the part being
   read, and a grid destroys the word's own order the moment it wraps. Rendered by the
   eip breakdown tab, which both cdps now mount; `InfoCardBlockButton` is deleted.
-- **The word trail (`.wtrail`).** The eip tab strip becomes filled pills — and **loses its
+- **The word trail (`.wtrail`).** (⚠️ Superseded 2026-10-29: the Tower Tier 2 trail is a bare breadcrumb, always shown — EIP_SHEET_GESTURES.md § The trail scrolls.) The eip tab strip becomes filled pills — and **loses its
   tone colours**. Tone colour means ONE thing in this app (D2b); a pill tinted by a hue
   picked at random from the tone palette was borrowing that vocabulary to say "tab 3", on
   a strip sitting directly above cpcd rows where the same five colours mean their real

@@ -29,7 +29,8 @@ export type FocusResolution =
 /**
  * Pick a focused world's daily set (docs/FOCUS_MODE.md § 3): the flp's Study Mix shape
  * scaled to FOCUS_DAILY_CARDS (FOCUS_QUOTAS), each band drawn from its off-cooldown cards
- * in working-loop order (`rankCardQueue`, longest-waiting first), the shortfall borrowed
+ * in working-loop order (`rankCardQueue`: marked in the last 30 days longest-waiting
+ * first, then the rest easiest first), the shortfall borrowed
  * across bands in STUDY_MIX_FILL_ORDER — the same fill the flp working loop does for 10.
  *
  * Returns the chosen ids and how many off-cooldown cards there were in all; the caller
@@ -43,8 +44,8 @@ export function selectFocusSet(
 ): { ids: number[]; offCooldownTotal: number } {
   const ranked = rankCardQueue([...cards], now, { world }).map(({ card }) => card);
 
-  // Ranked order is kept inside each band, so "take the first n" is "take the n most
-  // overdue".
+  // Ranked order is kept inside each band, so "take the first n" is "take the n the
+  // queue would serve next".
   const byBand = new Map<string, FocusCardRow[]>();
   for (const card of ranked) {
     const band = barCategory(card.typedMarkHistory, world, card.writingMastery);

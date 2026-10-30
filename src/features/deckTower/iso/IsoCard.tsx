@@ -56,6 +56,10 @@ interface IsoCardProps {
  * 0.11), so the rim swells slightly at the corners, and it equals the head band's corner so
  * the band's top corners sit flush in the panel's. The flp mirrors it as
  * `FLP_CARD_PANEL_RADIUS_RATIO` (= PANEL_RADIUS / CARD_W) — retune both together.
+ *
+ * The scp's "SORTED" head band (features/discover/SortCardsPage.tsx → `sortedBandSx`)
+ * copies the head band's BAND_DEPTH and the label's size and tracking as ratios of CARD_W.
+ * Retune it together with this band.
  */
 const FACE_PAD = 0.34;
 const PANEL_RADIUS = 0.24;
@@ -107,11 +111,6 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                             y={bodyMidY - (caption ? 0.45 : 0)}
                             fontSize={2.1}
                             fontWeight={WEIGHT.bold}
-                            // ⚠️ TEMP font trial: a hairline outline in the ink's own colour
-                            // makes the count a touch heavier than the faux bold elsewhere.
-                            stroke={palette.ink}
-                            strokeLinejoin="round"
-                            style={{ strokeWidth: "0.012em" }}
                             textAnchor="middle"
                             dominantBaseline="central"
                         >

@@ -70,6 +70,7 @@ Joined via `LEFT JOIN LATERAL` in `server/dal/shared/dictJoin.ts`, matching on `
 | `pronunciation` | `pronunciation` | Space-separated pinyin/romaji; DET value overwrites VET's own column |
 | `tone` | `tone` | Tone digit string (e.g. `"12"` for fēng kuáng); derived from pronunciation |
 | `difficulty` | `difficulty` | Language-agnostic difficulty band, `smallint` 1..6. **There is no `hskLevel` column** — migration 76 renamed it to `difficulty`, 79 stripped the `HSK` prefix, 92 retyped it to smallint. For zh the values ARE HSK levels (1 = HSK1 … 6 = HSK6) and the UI re-adds an HSK badge. |
+| `maxCharStrokeCount` | `maxCharStrokeCount` | zh only (`smallint`, migration 179): stroke count of the word's **hardest** character, from hanzi-writer-data; NULL for es and for words with a character outside that data. The writing bar's ease key in the queue's stale tier (`cardQueueRanking.rankCardQueue`). |
 | `script` | `script` | Writing system variant (traditional/simplified/kanji) |
 | `breakdown` | `breakdown` | JSONB `Record<char, { definition: string }>` — per-character decomposition |
 | `longDefinition` | `longDefinition` | AI-generated extended definition, JSONB **per sense** for zh (`[{sense, pos, definition}]`, 25–200 chars each) / per POS for es; hydrated at read time to the card's current sense — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) #5 |

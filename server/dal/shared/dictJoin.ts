@@ -10,7 +10,7 @@
 // es since migration 123 (docs/DEFINITION_CLUSTERS.md). NULL for entries not yet
 // clustered. Drives the flp sense-picker dropdown (EnglishBlock).
 export const DICT_COLS =
-  `de.script, de.pronunciation, de.tone, de."difficulty", de."partsOfSpeech", ` +
+  `de.script, de.pronunciation, de.tone, de."difficulty", de."maxCharStrokeCount", de."partsOfSpeech", ` +
   `de."frequencyScore", ` +
   `de.breakdown, de.synonyms, de."exampleSentences", ` +
   `de."longDefinition", de."longDefinitionCitations", ` +
@@ -32,12 +32,16 @@ export const DICT_COLS =
 // mean?" is now answered ONE LAYER UP by their `selectedSense` label, exactly as it
 // already was for Chinese heteronyms.
 //
-// ONE column diverges again as of migration 126: `longDefinitionCitations` (translations for
+// TWO columns diverge again. Migration 126's `longDefinitionCitations` (translations for
 // the Chinese runs cited inside a long definition) is a zh-only enrichment — Spanish long
-// definitions contain no Han runs, so the es branch substitutes a typed NULL to keep the two
-// SELECT lists union-compatible. Same pattern `dictionaryColumns()` uses for definitionClusters.
+// definitions contain no Han runs — and so is migration 179's `maxCharStrokeCount` (the
+// writing queue's ease key, cardQueueRanking.rankCardQueue). The es branch substitutes a
+// typed NULL for each to keep the two SELECT lists union-compatible. Same pattern `dictionaryColumns()` uses for definitionClusters.
 const dictLateralSelect = (language: 'zh' | 'es'): string =>
   `SELECT script, pronunciation, tone, "difficulty", "partsOfSpeech", "frequencyScore",` +
+  (language === 'zh'
+    ? `       "maxCharStrokeCount",`
+    : `       NULL::smallint AS "maxCharStrokeCount",`) +
   `       breakdown, synonyms,` +
   `       "exampleSentences", "longDefinition",` +
   (language === 'zh'

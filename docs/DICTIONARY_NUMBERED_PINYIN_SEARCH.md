@@ -68,17 +68,37 @@ ships 长 "long" at all.)
 ### The shared bucket ladder
 
 A match is **complete** when the term *is* the whole field, and **partial** when the term is only
-part of it. Crossing that with the two readings gives four tiers, used by **every** ranking and
-**both** languages; the complete-word tier is further split into a main and an alternate bucket
-(zh only — see "Primary vs alternate readings" below):
+part of it. Crossed with the two readings, used by **every** ranking and **both** languages; the
+complete-word tier is split into a main and an alternate bucket (zh only — see "Primary vs
+alternate readings" below), and since 2026-10-29 partial English is split into a sense that
+LEADS with the term (bucket 3) and one that merely contains it (bucket 5):
 
 | # | Bucket | Test | `long` (zh) | `casa` (es) |
 |---|---|---|---|---|
 | 0 | complete English | **any** normalized sense `=` normalized term | 长 "long" | — |
 | 1 | complete word (main) | `lower(word1) =` term, or the row's **default reading** (`DEFAULT_READING_SQL`) `~ '^…$'` | 龙 lóng | **casa** |
 | 2 | complete word (alternate) — zh only | `pronunciation`, `numberedPinyin` or any `searchReadings` entry `~ '^…$'`, but not the default reading | 吗 for "ma2" | — |
-| 3 | partial word | `word1 ILIKE 'term%'`, or a pinyin regex as a prefix (`'^…'`) | 龙虾 lóng xiā | casarse |
-| 4 | partial English | term is a whole word *inside* a sense | 寿 "long life" | casón "augmentative of casa" |
+| 3 | English prefix | **any** normalized sense `~ '^term\y'` — starts with the term as a whole word (`prefixGlossMatch`) | 寿 "long life" (not "longevity") | — |
+| 4 | partial word | `word1 ILIKE 'term%'`, or a pinyin regex as a prefix (`'^…'`) | 龙虾 lóng xiā | casarse |
+| 5 | partial English | term is a whole word *inside* a sense, leading none | 美术 "fine arts" for "art" | casón "augmentative of casa" |
+
+**Order (owner's, 2026-10-29): English leads at every level** — complete English, complete word,
+English starts-with, word starts-with, then the rest. It replaced "the word side leads the partial
+pair", which put 龙头-style pinyin prefixes above 寿 "long life". The cost is visible on a broad
+term: "long" has ~240 English-prefix rows on dev, so its pinyin prefixes start near row 277.
+
+### Match kinds on the wire (added 2026-10-29)
+
+Each `/search` row now says which bucket it landed in: the entries query SELECTs the ladder as
+`"rankBucket"` and `searchByWord1` maps it to `matchKind` (`DictionaryMatchKind` in
+`server/contracts/wire.ts`, via `LADDER_MATCH_KINDS`): `meaning-exact` (0), `word-exact` (1),
+`reading-alternate` (2), `meaning-prefix` (3), `word-prefix` (4), `meaning-partial` (5). When the ladder degrades to the
+two-bucket order (numbered pinyin — below) every row is `word`, since completeness was never tested.
+The Dictionary page maps kinds to five sections — English "…" / Pinyin "…" (word-exact,
+reading-alternate and `word`) / English starts with / Pinyin starts with / Other — and draws one
+labelled section per run
+(`src/features/dictionary/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
+docs/SHELF_REDESIGN.md § 7b). `LADDER_MATCH_KINDS` must be reordered with the CASE ladder.
 
 ### Primary vs alternate readings (added 2026-10-03)
 
@@ -194,21 +214,23 @@ so "complete" agrees with how the dd is built — only 18 zh rows have a `'; '` 
 (从来's "never; always"), but without the split those senses would be invisible to the equality.
 
 The ladder is a SQL `CASE`, so precedence falls out of the `WHEN` order: a row that is both
-complete-English and complete-pinyin takes 0. Bucket 3 is the `ELSE` by elimination, since the
+complete-English and complete-pinyin takes 0. Bucket 5 is the `ELSE` by elimination, since the
 `WHERE` guarantees every row matched something.
 
 ### The interleaved head
 
 `english-first` does not simply emit the buckets in order. It first takes **two rows from each
-bucket** — `0,0,1,1,2,2,3,3` — and only then resumes the plain ladder. `long` therefore opens:
+head group** — by bucket `0,0,1,1,3,3,4,4,5,5` (buckets 1 and 2 share a group) — and only then
+resumes the plain ladder. `long` therefore opens (dev, 2026-10-29):
 
 | # | | |
 |---|---|---|
 | 1–2 | 长 "long", 久 "long" | complete English |
 | 3–4 | 龙 lóng, 儱 lǒng | complete pinyin |
-| 5–6 | 龙头 lóng tóu, 龙年 lóng nián | incomplete pinyin |
-| 7–8 | 伫 "to stand for a long time", 寿 "long life" | incomplete English |
-| 9+ | 𬙂, 悠久, 悠长, 漫漫… | bucket 0 continues, then 1, 2, 3 |
+| 5–6 | 早, 条 | English starts with "long" |
+| 7–8 | 龙头 lóng tóu, 龙年 lóng nián | incomplete pinyin |
+| 9–10 | 老, 道 | "long" inside a sense |
+| 11+ | bucket 0 continues, then 1, 2, 3, 4 | |
 
 Straight bucket order has a failure mode at the top of a short strip: a term with dozens of
 exact glosses fills every visible slot with bucket 0 and the learner never learns a complete
@@ -223,7 +245,8 @@ exactly once and the id set is identical to `relevance`'s.
 **The head is the ONLY difference between the iw tray and every other surface**, and that is
 verified rather than asserted: paging both rankings end-to-end for zh `long`/`me`/`eat`/`men`/`shi`
 and es `casa`/`perro`/`house`/`libro`, `english-first` comes out as exactly its own 8 head rows
-followed by `relevance`'s order with those rows removed.
+followed by `relevance`'s order with those rows removed (10 head rows since the 2026-10-29
+split, 8 before).
 
 Mechanically it is also the one place the two run **different SQL**: `english-first` wraps
 the shared `WHERE` in a subquery that numbers each row within its bucket
@@ -234,7 +257,7 @@ historical two-bucket word-first expression (no gloss predicate — only an empt
 callers already reject, so this is a defensive path) `english-first` degrades **all the way**, taking the flat path too, rather than
 sampling a head off buckets the caller never asked for.
 
-**Spanish uses the same four buckets**, with the headword in pinyin's slot (decided
+**Spanish uses the same buckets** (never 2 — it has one reading), with the headword in pinyin's slot (decided
 2026-09-09, reversing an earlier two-buckets-for-es call): es has no `pronunciation` column, so
 "complete word" means `word1` equals the term and "partial word" means it is a prefix. The
 two-bucket version buried exact headwords under Wiktionary glosses that quote them ("casa" ranked

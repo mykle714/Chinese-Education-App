@@ -625,6 +625,10 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 textAlign: "center",
                                 fontSize: pinyinFontSize,
                                 fontFamily: FONTS.sans,
+                                // Pinned, not inherited: the pinyin stays regular whatever
+                                // weight the host sets (e.g. the Deck Tower stage is bold,
+                                // and the tower flp session mounts inside it).
+                                fontWeight: WEIGHT.regular,
                                 fontStretch: "condensed",
                                 color: color as string,
                                 lineHeight: CHAR_LINE_HEIGHT,
@@ -671,6 +675,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                             left: 0,
                             fontSize: pinyinFontSize,
                             fontFamily: FONTS.sans,
+                            fontWeight: WEIGHT.regular,
                             lineHeight: 1,
                             color: "currentColor",
                             visibility: "hidden",

@@ -294,7 +294,8 @@ which underlines the `translatedVocab` substring.
 
 **One renderer, one chrome.** Every surface reaches the est through the eip's Examples
 tab (`InfoCardTabContent`), which renders `ExampleSentenceList` with **no caption row** —
-the active sense is named only by the header `SensePicker` directly above. (The
+the active sense is named only by the header's sense list directly above (the chosen
+sense underlined — `EipEntryHeader`). (The
 `.shelfhd` "sense N · <sense>" / "N examples" caption was removed 2026-10-10. The cdp used
 to pass `compact` and omit `showSegmentSpaces`, and the dictionary cdp used to wrap the
 list in its own "EXAMPLE SENTENCES" section; all gone.)
@@ -333,13 +334,14 @@ Every sentence arrives with a server-computed `humanApproved` flag (attached in
 `enrichExampleSentencesMetadataBatch`, both zh + es branches): TRUE iff a
 `validations` row with the approval stamp (`action = 'approve'`) matches the
 sentence's **current** raw det object (docs/DATA_VALIDATION_SYSTEM.md).
-Sentences without a valid approval render in the shared AI-generated treatment —
-orange `COLORS.aiGenerated` border, ~8% tint, and an `AutoAwesome` "AI GENERATED"
-badge (`src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx`,
-same treatment as the dictionary
-AI-fallback card). Approved sentences keep the quiet `flashcard.subtleBg`
-background **and a transparent border of the same width as the AI one** — without it the
-two states are different sizes and the whole list reflows as sentences get approved. Because the flag is computed at read time, a data deploy or backfill
+Since 2026-10-29 (Tower Tier 2) every sentence is an outlined CARD — the eip palette's
+`card` fill in a 1.5px `line` ring, 14px radius, with the speaker floating in the card's
+top-right action cluster beside the validator buttons (the design's left speaker gutter was not
+taken) (`src/features/flashcards/ExampleSentenceList.tsx`). A sentence without a valid approval swaps
+the ring for a 1px orange `COLORS.aiGenerated` one and carries the "AI GENERATED" tag pinned
+over its bottom-right edge (`AiGeneratedBadge` `variant="tag"`). There is no orange tint any
+more; this list no longer uses the shared `aiGeneratedSurfaceSx`. Both rings are inset
+shadows of no layout width, so the list never reflows as sentences get approved. Because the flag is computed at read time, a data deploy or backfill
 that changes a sentence's text automatically demotes it back to AI-generated.
 
 ## Segment popup → eip drill-in

@@ -44,6 +44,8 @@
  */
 import { Box, Typography } from '@mui/material';
 import { COLORS, FONTS, SIZE, WEIGHT, TRACKING } from '../../theme';
+import { tier2Var } from '../../timeOfDay/tier2Chrome';
+import { KEYBOARD_COLORS } from './keyboardColors';
 
 interface ComponentBufferProps {
   /** The component buffer, flat — one chip per entry. */
@@ -74,7 +76,8 @@ export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferPro
           fontWeight: WEIGHT.semibold,
           letterSpacing: TRACKING.caps,
           textTransform: 'uppercase',
-          color: COLORS.textFaint,
+          // Faint by default; a Tier 2 page's muted ink when one is up (keyboardColors).
+          color: tier2Var('muted', COLORS.textFaint),
         }}
       >
         Parts
@@ -83,7 +86,7 @@ export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferPro
       {buffer.length === 0 ? (
         <Typography
           className="beginner-keyboard__buffer-empty"
-          sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: COLORS.textSecondary }}
+          sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: KEYBOARD_COLORS.muted }}
         >
           Parts you pick appear here.
         </Typography>
@@ -107,11 +110,11 @@ export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferPro
                 minWidth: 40, // tap-target floor, now that the × no longer pads it out
                 height: 40,
                 px: 1,
-                border: `1px solid ${COLORS.border}`,
+                border: `1px solid ${KEYBOARD_COLORS.outline}`,
                 borderRadius: 2,
-                backgroundColor: COLORS.white,
+                backgroundColor: KEYBOARD_COLORS.key,
                 cursor: 'pointer',
-                '&:active': { backgroundColor: COLORS.rowHoverBg },
+                '&:active': { backgroundColor: KEYBOARD_COLORS.pressed },
               }}
             >
               <Box
@@ -121,7 +124,7 @@ export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferPro
                   fontFamily: FONTS.hanziComponents,
                   fontSize: SIZE.subtitle,
                   lineHeight: 1,
-                  color: COLORS.onSurface,
+                  color: KEYBOARD_COLORS.ink,
                 }}
               >
                 {component}

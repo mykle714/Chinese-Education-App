@@ -19,6 +19,7 @@ Every column in `dictionaryentries_zh` and the script responsible for populating
 | `pronunciation` | Import / seed data | — | — | all |
 | `tone` | `backfill/chinese/backfill-tones.js` | Deterministic | No | zh |
 | `numberedPinyin` | `backfill/chinese/backfill-numbered-pinyin.js` | Deterministic | No | zh |
+| `maxCharStrokeCount` | `backfill/chinese/backfill-max-char-stroke-count.js` (migration 179 filled existing rows) | Deterministic (hanzi-writer-data, committed as `chinese/lib/hanziStrokeCounts.json`) | No | zh |
 | `definitions` | Import / seed data | — | — | all |
 | `discoverable` | Manual / admin action | — | — | all |
 | `script` | Import / seed data | — | — | all |

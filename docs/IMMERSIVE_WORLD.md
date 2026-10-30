@@ -1423,10 +1423,10 @@ The learner cannot act during the hold anyway — `SheetPanel`'s scrim covers th
 composer — so reading about a word and playing the scene are separate modes, exactly as sorting
 and reading are on scp.
 
-**Not wired, on purpose:** `onAddToLibrary`. A scene is the strongest case in the app for "I met
+**No add-to-Learning control, on purpose.** A scene is the strongest case in the app for "I met
 this word, teach it to me", but it is a study action inside a play surface and it has not been
-designed yet; the panel hides the + button when the handler is absent (scp omits it for its own
-reason). Tracked as an open question rather than shipped half-formed.
+designed yet. Adding from an eip is a Dictionary-flow action only (the old `onAddToLibrary` "+"
+was removed app-wide 2026-10-29). Tracked as an open question rather than shipped half-formed.
 
 Referenced by: `src/features/immersiveworld/play/IWPlayPage.tsx`,
 `src/features/immersiveworld/play/IWSpeechBubbles.tsx`,
@@ -3325,6 +3325,13 @@ one four-bucket ladder:
 | 1 | complete word — headword or pronunciation **is** the term | 龙 lóng | **casa** |
 | 2 | partial word — the term is a leading prefix | 龙虾 lóng xiā | casarse |
 | 3 | partial English — the term sits inside a sense | 寿 "long life" | casón |
+
+> **Superseded 2026-10-29:** the ladder is now six buckets with English leading at every level —
+> complete English, complete word (main, alternate), **English starts-with** (寿 "long life"),
+> partial word, then a sense merely containing the term — and the head takes two from each of five
+> groups (10 rows). The table above is the original four-bucket design. Current ladder:
+> [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) § "The shared
+> bucket ladder".
 
 > Since 2026-10-03 the complete-word tier is split into a **main** reading (the one the row
 > displays) and an **alternate** reading bucket, and the head samples the two as one group, so the

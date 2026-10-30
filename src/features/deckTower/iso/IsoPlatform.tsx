@@ -19,17 +19,18 @@ import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneCont
  *   3. the top again, inset by `RIM_WIDTH`, in the true floor tone — leaving the rim as a
  *      thin light bevel line round the edge;
  *   4. `decals` — flat things printed on the floor (floor labels), which belong to it;
- *   5. `children` — whatever stands on the floor (carpets, then the objects on them);
- *   6. `overlay` — drawn over everything, and left out of `fadeStyle` (below).
+ *   5. `children` — whatever stands on the floor (carpets, then the objects on them).
  *
- * With `floating`, steps 2–6 go through IsoLevitate: the slab and everything on it bob
+ * With `floating`, steps 2–5 go through IsoLevitate: the slab and everything on it bob
  * together, and the shadow breathes in step. `bodyClassName` / `bodyStyle` reach the group
- * that holds steps 2–6, so a scene can animate the whole loaded slab on top of the bob — the
+ * that holds steps 2–5, so a scene can animate the whole loaded slab on top of the bob — the
  * Deck Tower sinks it briefly when a tower lands on it (docs/DECK_TOWER.md § "Tower
- * resizes"). `fadeStyle` fades steps 1–5 but NOT the overlay: a group's opacity cannot be
- * undone by a child, so what must stay opaque through a fade is drawn after the faded group
- * instead (the Deck Tower keeps its deck: docs/DECK_TOWER.md § "Hiding the
- * platform").
+ * resizes"). `fadeStyle` fades steps 1–5. A group's opacity cannot be undone by a child, so
+ * a scene that must keep one of its `children` opaque through the fade passes
+ * `fadeChildren={false}` and fades the others itself, one by one — keeping every child in
+ * its place in the draw order (the Deck Tower keeps its deck: docs/DECK_TOWER.md § "Hiding
+ * the platform"). Lifting the kept child out over the faded group instead drew it over
+ * everything that stands in front of it.
  *
  * `hingeAngle` swings the slab open like a TRAP DOOR on its back-left top edge (the
  * upper-left edge on screen; geometry.ts → `Hinge`). Steps 3–4 swing with it — they are
@@ -62,10 +63,10 @@ interface IsoPlatformProps {
     tone?: PlatformTone;
     /** Freeze a `floating` platform's bob where it is (IsoLevitate `paused`). */
     bobPaused?: boolean;
-    /** Style for a fade of the shadow, the slab and `children` — not `overlay` (e.g. `{ opacity }`). */
+    /** Style for a fade of the shadow, the slab and (unless `fadeChildren` is false) `children` (e.g. `{ opacity }`). */
     fadeStyle?: React.CSSProperties;
-    /** Drawn last, over `children`: rides the bob and `bodyStyle`, but not `fadeStyle`. */
-    overlay?: React.ReactNode;
+    /** False: `fadeStyle` leaves `children` alone — the scene fades them itself, child by child. Default true. */
+    fadeChildren?: boolean;
 }
 
 /** World-unit width of the light bevel line round the top edge. Exported so a scene can keep things off it (towerPlatforms.ts → each layout's `roam`). */
@@ -74,7 +75,7 @@ export const RIM_WIDTH = 0.16;
 /** How far the swung top's veil goes toward the right-wall tone, at π/2 (see the veil below). */
 const SWING_SHADE_MAX = 0.7;
 
-const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone, bodyClassName, bodyStyle, bobPaused = false, fadeStyle, overlay }) => {
+const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone, bodyClassName, bodyStyle, bobPaused = false, fadeStyle, fadeChildren = true }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     const slabTone = tone ?? { material: palette.platform, rim: palette.platformRim };
@@ -133,9 +134,12 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
                         />
                     )}
                 </IsoSolid>
+            </g>
+            {/* Its own group, after the slab's: the same draw order, but a scene can take the
+                children out of the fade (`fadeChildren`). */}
+            <g className="iso-platform__children" style={fadeChildren ? fadeStyle : undefined}>
                 {children}
             </g>
-            {overlay}
         </g>
     );
 

@@ -40,10 +40,28 @@ export interface StudyFrame {
  */
 export const STUDY_CAMERA_HEIGHT = 14;
 
-/** The dive's ease (cubic in-out) — `e` as a function of the dive's 0 → 1 clock. */
+/**
+ * The share of the dive's clock spent speeding up at the start (and slowing down at the end).
+ * The smaller it is, the harder the camera accelerates: the acceleration is
+ * 1 / (r · (1 − r)) — 7.8 at 0.15, vs 4 for a plain quadratic in-out (r = 0.5).
+ */
+const DIVE_RAMP_SHARE = 0.15;
+
+/**
+ * The dive's ease — `e` as a function of the dive's 0 → 1 clock (the climb plays it in
+ * reverse). A trapezoidal velocity profile: constant acceleration over the first
+ * DIVE_RAMP_SHARE of the clock, a constant cruise, then the mirror-image braking. It gets the
+ * camera up to speed fast without the near-still tails of a cubic (or steeper) in-out, which
+ * read as a stall where the dive hands over to the count card's slide (and where the climb
+ * starts after the card lands back on).
+ */
 export function easeDive(u: number): number {
     const t = Math.min(1, Math.max(0, u));
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const r = DIVE_RAMP_SHARE;
+    const a = 1 / (r * (1 - r)); // the ramps' acceleration, chosen so e lands on exactly 1
+    if (t < r) return (a * t * t) / 2;
+    if (t > 1 - r) return 1 - (a * (1 - t) * (1 - t)) / 2;
+    return (t - r / 2) / (1 - r);
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

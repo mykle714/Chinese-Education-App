@@ -7,7 +7,7 @@ import type { TowerWorldId } from "./towerWorlds";
 import { COLORS } from "../../theme/colors";
 import type { FlpTowerHost } from "../flashcards/FlashcardsLearnPage/flpTowerHost";
 import { CARD_FLY_OUT_MS } from "../flashcards/constants";
-import { COVER_LIFT_DELAY_MS, COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCard";
+import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCard";
 
 /**
  * useTowerStudy — studying the Deck Tower IN PLACE: the camera dives onto the tower's
@@ -80,8 +80,8 @@ import { COVER_LIFT_DELAY_MS, COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } 
 export type TowerStudyPhase = "idle" | "preparing" | "diving" | "uncovering" | "studying" | "covering" | "climbing";
 
 /** The dive onto the card, and the climb back out. */
-const DIVE_MS = 1250;
-const CLIMB_MS = 1050;
+const DIVE_MS = 550;
+const CLIMB_MS = 480;
 /** The camera following the tower's top down one card (a correct mark), and back up (its undo). */
 const CARD_DROP_MS = 240;
 const UNDO_RISE_MS = 380;
@@ -467,7 +467,7 @@ export function useTowerStudy(opts: {
             if (diving) {
                 // Down on the count card: slide it off the deck to show the first card.
                 setPhase("uncovering");
-                if (!slideCover("lifting", COVER_LIFT_DELAY_MS + COVER_LIFT_MS, "studying")) setPhase("studying");
+                if (!slideCover("lifting", COVER_LIFT_MS, "studying")) setPhase("studying");
                 return;
             }
             // Climbed out: the page takes the tower back at the height it now stands at.

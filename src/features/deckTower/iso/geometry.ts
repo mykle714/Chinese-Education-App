@@ -74,6 +74,16 @@ export interface Projector {
      * (iso/pawnFigure.ts).
      */
     facingScaleAt: (x: number, y: number, z: number) => number;
+    /**
+     * Whether the camera sees the vertical world plane `axis = at` from its HIGH side (the
+     * side where that coordinate is greater). Depth sorting reads it: something past a
+     * box's high-x (or high-y) face is in front of the box exactly when that face is seen.
+     * The fixed view looks in from +x/+y, so always true there; a camera that tips over to
+     * look straight down (iso/camera.ts) stops seeing a face once it is over the face's
+     * plane, which is when the tower starts hiding what stands in front of it
+     * (usePawnMotion.ts → `depthRankAmong`, `backToFront`).
+     */
+    seesHighSide: (axis: "x" | "y", at: number) => boolean;
 }
 
 export function makeProjector(unit: number, originX = 0, originY = 0): Projector {
@@ -86,6 +96,7 @@ export function makeProjector(unit: number, originX = 0, originY = 0): Projector
         scaleAt: () => unit,
         // The fixed view is camera.ts's `dimetricView`, whose `scale` is unit·√2.
         facingScaleAt: () => unit * Math.SQRT2,
+        seesHighSide: () => true,
     };
 }
 

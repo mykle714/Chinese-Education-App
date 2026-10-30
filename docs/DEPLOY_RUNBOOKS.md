@@ -22,6 +22,7 @@ PPE is current through migration **178** (2026-10-27).
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
+| [CLUSTER_RESTAMP_DEPLOY_RUNBOOK.md](./CLUSTER_RESTAMP_DEPLOY_RUNBOOK.md) | Migration **179** (`maxCharStrokeCount`, before the rebuild) + cluster v11/v5 re-stamp right after the rebuild, before the next oracle tick | Deploying 2026-10-30 | Verification SQL not yet run on PPE |
 | [EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md](./EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md) | Example-sentence target index + per-occurrence tags. **No migration**; needs the manual `--locate-targets` heal on PPE | Deployed + healed 2026-10-10 (161 rows tagged, 15 deliberate-repeat residue) | Someone must open 了's est on PPE and see 心中**了**然 underlined |
 | [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md) | Memory Map slot tree (migration **173**, contract) | Deployed 2026-10-06 | Someone must open Memory Map on PPE and see a full, tilted 50-tile map |
 | [DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md](./DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md) | 164 + 165 before the rebuild, contract drop 166 after it; `searchReadings` backfill | Deployed 2026-09-24 | Someone must run a logged-in dictionary search for 行 and see results |

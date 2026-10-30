@@ -103,8 +103,9 @@ almost everything below follows from that one difference:
   of `OnDeckVocabService` into `server/services/cardQueueRanking.ts`, a pure module
   parameterized on which mark types count as ready and which utcm category supplies the
   cooldown window. The flp's behaviour is unchanged; Memory Map ranks the same way on
-  the **reading** track. Any future game wanting "longest-waiting first, never-marked
-  last" on its own track should use this rather than copy it.
+  the **reading** track. Any future game wanting the flp's queue order (recent cards
+  longest-waiting first, stale cards easiest first) on its own track should use this
+  rather than copy it.
 - **A game that lends without a `CARD_BASELINES` entry.** Since 2026-10-06 the map is
   always filled to 50 — rested cards, then cooling ones, then lent ones by name
   (MEMORY_MAP_GAME.md § 2.1). Originally it declared no baseline at all ("a small library
@@ -452,7 +453,10 @@ Rules of thumb:
   declares either `markType` or `modes`.
 - **`WRONG_SHAKE_KEYFRAMES`** (`src/games/bubbles/constants.ts`) — Bubble Match's
   wrong-match shake, extracted so a wrong Bucket Drop bucket shakes identically
-  (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it).
+  (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it). Since 2026-10-29 it is
+  an alias of the app-wide invalid-operation shake, `src/theme/invalidShake.ts` →
+  `INVALID_SHAKE_KEYFRAMES` / `INVALID_SHAKE_ANIMATION` (keyframes `invalidShake`). That
+  shake moved to theme/ so features/ can use it too: scp shakes a dragged sorted card.
 - **The first game whose pool fetch goes through `src/api/http.ts`** (`apiGet`), as
   [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) requires. ⚠️ Bubble Match, Match Speed,
   Hydra Bubbles and Speed Reading still call `fetch(API_BASE_URL + "/api/onDeck/gamePool?…")`

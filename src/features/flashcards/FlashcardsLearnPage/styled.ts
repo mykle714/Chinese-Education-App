@@ -1,9 +1,9 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha, keyframes } from "@mui/material/styles";
-import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT } from "../constants";
+import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT, TAB_SWIPE_TRANSITION } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
-import { COLORS } from "../../../theme/colors";
+import { SHADOW } from "../../../theme/shadows";
 import { SAFE_BOTTOM } from "../../../theme/safeArea";
 import { towerPlateSx } from "./towerPlate";
 import type { PlateTones } from "./flpTowerHost";
@@ -36,112 +36,142 @@ export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
     flexShrink: 0,
 }));
 
-// Strip of "entry tabs" sitting above the grabber/header. One tab per looked-up
-// dictionary entry inside the current EIP. The strip is unmounted entirely
-// when only the root entry is open (EipTabStrip handles that). Padding mirrors
-// InfoSheetTabStrip's horizontal padding so tab edges align with the
-// underline tab strip below.
-// `.wtrail` — the WORD TRAIL: the words that have been opened in this panel, and how
-// you get back to one. NOT a second content tab strip: the three content tabs
-// (definition / examples / breakdown) are `InfoSheetTabStrip` directly below it, and
-// two underline strips stacked would have read as one two-row control.
+// `.trail` — the WORD TRAIL (Tower Tier 2 design): the words opened in this panel as a
+// breadcrumb, `过去 › 去`, the showing word in ink and the rest muted. It is ALWAYS shown,
+// even with one word (2026-10-29; it used to hide until a second word opened), because the
+// row is also where the panel's ✕ and the Dictionary eip's Add key live (EipTrailRow in
+// EipUpperPanel). The strip itself is only the word list; it takes the row's free width.
 //
-// That distinction is why the trail's pills are ROUNDED and FILLED while the content
-// tabs are underlined — the two strips answer different questions ("which word?" vs
-// "what about it?"), so they are deliberately different shapes.
-// No bottom rule: the trail's filled pills already read as their own band, and a hairline
-// under them stacked with the content tabs' own rule directly below, which made the two
-// strips read as one boxed two-row control.
+// Bare words, not pills (the shelf system's filled `.wtrail` pills were retired by the
+// same design): the content tabs right below are now the filled shape (a sunken segmented
+// track), so the trail reads as a caption line above the headword rather than as a second
+// control.
 export const EipTabStripContainer = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
-    gap: 7,
-    padding: "11px 16px 12px",
-    flexShrink: 0,
+    flex: 1,
+    minWidth: 0,
     overflow: "hidden",
 }));
 
-// How long a trail pill takes to widen into the strip. Exported because EipTabStrip has
-// to wait it out before it can scroll a freshly-pushed pill into view — measured
-// mid-entrance, the pill is still near zero-width and the scroll lands short.
+// How long a trail word takes to widen into the strip. Exported because EipTabStrip has
+// to wait it out before it can scroll a freshly-pushed word into view — measured
+// mid-entrance, the word is still near zero-width and the scroll lands short.
 export const EIP_PILL_IN_MS = 240;
 
-// Entrance keyframes for a trail pill (see EipEntryTab). Kept as a `keyframes` const so
+// Entrance keyframes for a trail word (see EipEntryTab). Kept as a `keyframes` const so
 // the animation is emitted with the component's own styles rather than a global rule.
 const eipPillIn = keyframes({
-    from: { opacity: 0, maxWidth: 0, paddingLeft: 0, paddingRight: 0, transform: "scale(0.9)" },
-    to: { opacity: 1, maxWidth: "240px", paddingLeft: "11px", paddingRight: "11px", transform: "scale(1)" },
+    from: { opacity: 0, maxWidth: 0, transform: "scale(0.9)" },
+    to: { opacity: 1, maxWidth: "240px", transform: "scale(1)" },
 });
 
-// One word in the trail. The showing word is INK; the rest are grey — a plain
-// present/absent contrast rather than a per-tab hue.
+// One word in the trail (design `.trail b`): CJK 15px, the showing word in ink, the rest
+// muted. Colours come from the eip palette (night inverts them), passed in by EipTabStrip.
 //
-// The tone-coloured fill this used to carry is gone. Tone colour means ONE thing in
-// this app (a syllable's tone, D2b), and a pill tinted by a colour picked at random
-// from the tone palette was borrowing that vocabulary to say "tab 3" — on a strip
-// sitting directly above cpcd rows where the same five colours mean their real thing.
 // `toneColor` survives on the tab MODEL (useEipTabs) because nothing else assigns tab
-// identity yet; it is simply no longer painted.
+// identity yet; it is not painted (tone colour means one thing in this app, D2b).
 export const EipEntryTab = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isActive" && prop !== "toneColor",
-})<{ isActive: boolean; toneColor: string }>(({ isActive, theme }) => ({
+    shouldForwardProp: (prop) => prop !== "isActive" && prop !== "toneColor" && prop !== "ink" && prop !== "muted",
+})<{ isActive: boolean; toneColor: string; ink: string; muted: string }>(({ isActive, ink, muted }) => ({
     display: "inline-flex",
     alignItems: "center",
-    justifyContent: "center",
-    padding: "6px 11px",
-    borderRadius: "999px",
-    background: isActive ? COLORS.onSurface : COLORS.grey,
-    color: isActive ? COLORS.white : theme.palette.flashcard.textSecondary,
+    padding: "4px 4px 5px",
+    borderRadius: 9,
+    color: isActive ? ink : muted,
     cursor: "pointer",
     fontFamily: FONTS.cjk,
-    fontSize: 14,
-    fontWeight: WEIGHT.bold,
-    letterSpacing: "0.01em",
+    fontSize: 15,
+    fontWeight: WEIGHT.medium,
     lineHeight: 1.1,
     userSelect: "none",
     whiteSpace: "nowrap",
-    transition: "background 0.15s ease",
+    transition: "color 0.15s ease",
     flexShrink: 0,
-    // Entrance: a pill only ever mounts when a word is ADDED to the trail, so a
-    // mount-time keyframe is the whole trigger — no state, no flag to reset. It widens
-    // from nothing (max-width + horizontal padding/margin) so the pills already on the
-    // strip are pushed aside rather than jumped aside, and rises to full opacity, in step
-    // with the panel slide that shows the same word's content (InfoCardSection).
-    // max-width, not width: the resting size stays intrinsic to the label.
+    // Entrance: a word only ever mounts when it is ADDED to the trail, so a mount-time
+    // keyframe is the whole trigger. It widens from nothing (max-width) so the words
+    // already on the strip are pushed aside rather than jumped aside, in step with the
+    // panel slide that shows the same word's content (InfoCardSection).
     animation: `${eipPillIn} ${EIP_PILL_IN_MS}ms cubic-bezier(0.22, 1, 0.36, 1) both`,
 }));
 
-// `.tabs2` — the eip's CONTENT tabs: which question about this word is being
-// answered. Underlined rather than filled, because the word trail directly above it is
-// the filled shape; the two strips must not read as one two-row control.
-export const InfoSheetTabStrip = styled(Box)(({ theme }) => ({
+// `.tabs` — the eip's CONTENT tabs (definition / examples / breakdown), as the Tower Tier 2
+// design draws them: a SUNKEN SEGMENTED TRACK — a well with a 2px inner top lip — in which
+// the selected tab is a raised chip. Replaced the shelf system's underlined `.tabs2`
+// (2026-10-29). The word trail above is now bare breadcrumb text, so this is the panel's
+// one filled control and the two still cannot read as one two-row strip.
+//
+// Track colours come from the eip palette (`tabWell` / `tabWellShadow`, the time-of-day
+// well mixed into white), passed in by InfoCardPanelBody.
+export const InfoSheetTabStrip = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "trackColor" && prop !== "trackShadow",
+})<{ trackColor: string; trackShadow: string }>(({ trackColor, trackShadow }) => ({
+    // Positioning context for the sliding chip (InfoSheetTabIndicator).
+    position: "relative",
     display: "flex",
-    gap: 0,
-    padding: "0 14px",
-    borderBottom: `1px solid ${theme.palette.flashcard.border}`,
+    gap: EIP_TAB_GAP,
+    padding: EIP_TAB_TRACK_PAD,
+    margin: "0 18px",
+    borderRadius: 12,
+    background: trackColor,
+    boxShadow: `inset 0 2px 0 ${trackShadow}`,
     flexShrink: 0,
 }));
 
-// One content tab. The active one is inked and carries a 2px underline drawn as an
-// INSET SHADOW rather than a border: a border changes the box's height, so the strip
-// used to shift by a pixel as the selection moved.
+// The track's inner padding and the gap between segments — shared by the track and the
+// sliding chip, whose width and travel are computed from them.
+const EIP_TAB_TRACK_PAD = 3;
+const EIP_TAB_GAP = 2;
+
+// The SELECTED-TAB CHIP (design `.tabs b.on`: white, 9px radius, a hairline drop) — ONE
+// element that SLIDES between segments (2026-10-29) rather than a fill that jumps from tab
+// to tab. Absolutely positioned inside the track, one segment wide, moved by
+// translateX(index × (segment + gap)); `100%` in a translate is the chip's OWN width, i.e.
+// one segment. Same duration/easing as the content panes' slide (TAB_SWIPE_TRANSITION), so
+// the chip and the pane below arrive together.
+export const InfoSheetTabIndicator = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "index" && prop !== "count" && prop !== "chipColor",
+})<{ index: number; count: number; chipColor: string }>(({ index, count, chipColor }) => ({
+    position: "absolute",
+    top: EIP_TAB_TRACK_PAD,
+    bottom: EIP_TAB_TRACK_PAD,
+    left: EIP_TAB_TRACK_PAD,
+    width: `calc((100% - ${2 * EIP_TAB_TRACK_PAD}px - ${(count - 1) * EIP_TAB_GAP}px) / ${count})`,
+    borderRadius: 9,
+    background: chipColor,
+    // Design `0 1px 2px rgba(23,22,26,.12)` → SHADOW.rest (same geometry, 0.05 alpha).
+    boxShadow: SHADOW.rest,
+    transform: `translateX(calc(${index} * (100% + ${EIP_TAB_GAP}px)))`,
+    transition: TAB_SWIPE_TRANSITION,
+    pointerEvents: "none",
+    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+}));
+
+// One content tab — a transparent segment over the track; the selected one is marked by
+// the sliding chip under it (InfoSheetTabIndicator) and by its ink label.
+//
+// No outline ring on these (CLAUDE.md § Buttons & cards): they are segments of one
+// control, not separate buttons, and the selected chip is already set off by its fill.
 //
 // An EMPTY tab (no examples, no breakdown) stays legible but is dimmed — it is still a
 // real destination that says "nothing here for this word", which is an answer.
 export const InfoSheetTab = styled(Box, {
     shouldForwardProp: (prop) => prop !== "isActive" && prop !== "isEmpty",
-})<{ isActive: boolean; isEmpty?: boolean }>(({ isActive, isEmpty, theme }) => ({
+})<{ isActive: boolean; isEmpty?: boolean }>(({ isActive, isEmpty }) => ({
+    // Above the sliding chip.
+    position: "relative",
+    zIndex: 1,
     flex: 1,
     textAlign: "center",
-    padding: "11px 2px 10px",
-    background: "transparent",
+    padding: "7px 2px",
+    borderRadius: 9,
     border: "none",
     cursor: "pointer",
-    boxShadow: isActive ? `inset 0 -2px 0 ${theme.palette.flashcard.tabUnderline}` : "none",
     fontFamily: FC_FONT,
     userSelect: "none",
     opacity: isEmpty && !isActive ? 0.4 : 1,
-    transition: "opacity 0.2s ease, box-shadow 0.2s ease",
+    background: "transparent",
+    transition: "opacity 0.2s ease",
 }));
 
 export const ArrowIndicator = styled(Box)(({ theme }) => ({

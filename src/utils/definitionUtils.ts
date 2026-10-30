@@ -45,6 +45,33 @@ export function stripParentheses(text: string): string {
 }
 
 /**
+ * Between the senses of a definitions LIST rendered as one line: a middle dot with two
+ * spaces either side (owner's call 2026-10-29). Non-breaking spaces, because HTML would
+ * collapse plain ones to one.
+ */
+export const DEFINITION_LIST_SEPARATOR = '\u00A0\u00A0·\u00A0\u00A0';
+
+/**
+ * The flat `definitions` array as ONE line: each gloss `stripParentheses`'d, empties
+ * dropped, joined by `DEFINITION_LIST_SEPARATOR`. "" when nothing is left.
+ * Used by: components/DictionaryEntryRow.tsx (the search row's gloss). The Dictionary eip's
+ * header lays out `definitionListItems` itself, with `DEFINITION_LIST_SEPARATOR`.
+ * Docs: docs/SHELF_REDESIGN.md § 7b.
+ */
+export function joinDefinitionList(definitions: readonly string[] | null | undefined): string {
+  return definitionListItems(definitions).join(DEFINITION_LIST_SEPARATOR);
+}
+
+/**
+ * The flat `definitions` array as display items: each gloss `stripParentheses`'d, empties
+ * dropped. The unjoined form of `joinDefinitionList`, for a renderer that lays the glosses
+ * out itself (the Dictionary eip's two-line header, components/SwipeableTwoLineText.tsx).
+ */
+export function definitionListItems(definitions: readonly string[] | null | undefined): string[] {
+  return (definitions ?? []).map(stripParentheses).filter(Boolean);
+}
+
+/**
  * `stripParentheses` WITHOUT the final trim — for callers that render a definition as
  * a stream of FRAGMENTS, where the whitespace at a fragment's edges is load-bearing.
  * The long-definition parts path (LongDefinitionDisplay) splices `"noun: "` labels and

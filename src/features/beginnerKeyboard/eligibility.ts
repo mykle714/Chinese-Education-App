@@ -98,7 +98,7 @@ export const DEFAULT_SOURCE_ATTRIBUTE = 'data-beginner-keyboard-default';
 /** The field's declared default keyboard, or null when it follows the session. */
 export function defaultSourceOf(field: EditableField): KeyboardSource | null {
   const value = field.getAttribute(DEFAULT_SOURCE_ATTRIBUTE);
-  return value === 'os' || value === 'ours' ? value : null;
+  return value === 'os' || value === 'ours' || value === 'pinyin' ? value : null;
 }
 
 /**

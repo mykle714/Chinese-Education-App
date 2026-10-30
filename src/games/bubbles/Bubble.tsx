@@ -7,6 +7,7 @@ import { FONTS } from "../../theme/fonts";
 import { COLORS } from "../../theme/colors";
 import { API_BASE_URL } from "../../constants";
 import type { BubbleBody, BubbleFill, BubbleStatus } from "./types";
+import { INVALID_SHAKE_ANIMATION } from "../../theme/invalidShake";
 import {
     CORRECT_BUBBLE_BG,
     CORRECT_BUBBLE_BORDER,
@@ -14,7 +15,6 @@ import {
     NOMATCH_BUBBLE_BG,
     NOMATCH_BUBBLE_BORDER,
     POP_DURATION_MS,
-    WRONG_FEEDBACK_MS,
     WRONG_SHAKE_KEYFRAMES,
 } from "./constants";
 
@@ -365,7 +365,7 @@ const Bubble: React.FC<BubbleProps> = ({
                         },
                     }),
                     ...(status === "wrong" && {
-                        animation: `bubbleShake ${WRONG_FEEDBACK_MS}ms ease-in-out`,
+                        animation: INVALID_SHAKE_ANIMATION,
                         ...WRONG_SHAKE_KEYFRAMES,
                     }),
                 }}

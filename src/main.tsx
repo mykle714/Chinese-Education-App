@@ -11,6 +11,7 @@ import App from './App.tsx'
 import AppErrorBoundary from './components/AppErrorBoundary.tsx'
 import { initPerfDiagnostics } from './utils/perfDiagnostics'
 import { initErrorReporting } from './utils/errorReporting'
+import { installKeycapPress } from './utils/keycapPressDelegate'
 
 // Interaction-latency telemetry. The footer/decks tap-lag only reproduces in
 // PPE, so we instrument real users there. `localStorage.perfDiag = "1"` opts a
@@ -24,6 +25,9 @@ if (import.meta.env.MODE === 'production' || localStorage.getItem('perfDiag') ==
 // previously invisible (no boundary, no reporting), so we capture them in every
 // session rather than ppe-sampling like the perf telemetry above.
 initErrorReporting()
+
+// Every raised keycap's press (pointerdown → pressed, min held time) — keycapPressDelegate.ts.
+installKeycapPress()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

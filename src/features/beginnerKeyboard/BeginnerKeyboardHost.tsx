@@ -85,6 +85,7 @@ import { createPortal } from 'react-dom';
 import { Box, Slide, useMediaQuery } from '@mui/material';
 import { frameOverlayHost } from '../../components/overlayHost';
 import BeginnerKeyboard from './BeginnerKeyboard';
+import PinyinToneKeyboard from './PinyinToneKeyboard';
 import KeyboardSwitchBar, { type KeyboardSource } from './KeyboardSwitchBar';
 import type { CompositionDraft } from './compositionRules';
 import { DEFAULT_HEIGHT, useKeyboardViewport } from './useKeyboardViewport';
@@ -240,8 +241,12 @@ export default function BeginnerKeyboardHost({
    * raise a keyboard again — a leak that presents as a permanently dead input,
    * long after the learner has left the page.
    */
+  // Both of our surfaces (写 and ā) suppress the OS keyboard. Keyed on this boolean
+  // rather than on `source`, so a 写 ⇄ ā flip does not re-run the blur/refocus dance
+  // (which would flash the caret and, on iOS, briefly raise the OS keyboard).
+  const suppressOs = source !== 'os';
   useEffect(() => {
-    if (source !== 'ours') return;
+    if (!suppressOs) return;
     field.inputMode = 'none';
     // Blur-then-refocus makes the browser re-read inputMode and drop a keyboard
     // that is already on screen; setting the property alone does not.
@@ -251,9 +256,9 @@ export default function BeginnerKeyboardHost({
       cancelAnimationFrame(frame);
       field.inputMode = '';
     };
-  }, [source, field]);
+  }, [suppressOs, field]);
 
-  const useOsKeyboard = useCallback(() => {
+  const switchToOsKeyboard = useCallback(() => {
     onSourceChange('os');
     field.inputMode = '';
     field.blur();
@@ -261,8 +266,11 @@ export default function BeginnerKeyboardHost({
   }, [field, onSourceChange]);
 
   // Coming back the other way needs no dance of its own: the effect above owns
-  // the whole suppression sequence and re-runs on the source change.
-  const useOurKeyboard = useCallback(() => onSourceChange('ours'), [onSourceChange]);
+  // the whole suppression sequence and re-runs when `suppressOs` flips.
+  const selectSource = useCallback(
+    (next: KeyboardSource) => (next === 'os' ? switchToOsKeyboard() : onSourceChange(next)),
+    [switchToOsKeyboard, onSourceChange],
+  );
 
   const commit = useCallback((text: string) => insertAtCaret(field, text), [field]);
 
@@ -313,8 +321,7 @@ export default function BeginnerKeyboardHost({
     <KeyboardSwitchBar
       source={source}
       up={barUp}
-      onUseOurs={useOurKeyboard}
-      onUseOs={useOsKeyboard}
+      onSelect={selectSource}
       onDismiss={onDismiss}
     />
   );
@@ -355,7 +362,12 @@ export default function BeginnerKeyboardHost({
             parked bar would have been stranded in mid-air over the page for the
             frames before the keyboard arrived underneath it. */}
         {switchBar}
-        <BeginnerKeyboard onCommit={commit} height={keyboardHeight} debug={debug} draft={draft} />
+        {/* 写 or ā. Same height either way, so a flip swaps the keys in place. */}
+        {source === 'pinyin' ? (
+          <PinyinToneKeyboard field={field} height={keyboardHeight} onCommit={commit} onDismiss={onDismiss} />
+        ) : (
+          <BeginnerKeyboard onCommit={commit} height={keyboardHeight} debug={debug} draft={draft} />
+        )}
       </Box>
     </Slide>,
     host,

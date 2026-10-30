@@ -18,6 +18,7 @@ import { resolveSelectedSenseIndex } from "../../utils/definitionUtils";
 import { VocabCardBadges } from "../../features/flashcards/VocabCardDetailBody";
 import WordToolsRail from "../../components/WordToolsRail";
 import { useCompareSheet } from "../../components/CompareSheet";
+import { useTier2Look } from "../../timeOfDay/useTier2Look";
 
 // READ-ONLY dictionary card detail (cdp) — the page a dictionary result opens into
 // (instead of the eip popup). It's a NODE page (keeps the footer; see
@@ -62,7 +63,7 @@ const DictionaryCardDetailPage: React.FC = () => {
     // way a word is spoken here.
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    // Which definitionClusters sense the panel shows (header dd + chip, definition tab, breakdown pinyin).
+    // Which definitionClusters sense the panel shows (header's underlined sense, definition tab, breakdown pinyin).
     const [selectedSenseIndex, setSelectedSenseIndex] = useState(0);
     // Which eip tab (definition / examples / breakdown) the inline panel shows.
     const [selectedTab, setSelectedTab] = useState(0);
@@ -134,6 +135,12 @@ const DictionaryCardDetailPage: React.FC = () => {
     // control the Dictionary page's eip shows; state + rules in useLearningToggle.
     const learning = useLearningToggle(entry, userLanguage);
 
+    // Tier 2 time of day, like the Dictionary page it is drilled into from: the ground
+    // tints with the hour (slate at night), and the slab footer + beginner keyboard follow
+    // while this page is up (docs/SHELF_REDESIGN.md § 7b "Time of day"). The inline eip
+    // panel colours itself (the eip's own palette), not from this look.
+    const look = useTier2Look();
+
     return (
         <NodePage
             title="Card Detail"
@@ -141,8 +148,10 @@ const DictionaryCardDetailPage: React.FC = () => {
             // Matches the vet Card Detail page, which the design draws at 18px — the
             // two are the same surface and must not disagree on their title size.
             headerSize="dense"
-            // No `surfaceColor` — the app's standard ground, in lockstep with the vet cdp
-            // above. Both used to paint yellowAccent.
+            // The Tier 2 ground (2026-10-29). This breaks the old lockstep with the vet cdp,
+            // which stays on the app's standard ground: that page is not a Tier 2 surface.
+            surfaceColor={look.ground}
+            headerTitleColor={look.ink}
             // Fixed, NON-scrolling page: the eip panel below fills the space between the
             // header and the footer, and each of its tab panes scrolls on its own (the
             // panel's own model — see InfoCardPanelBody). A scrolling page would let the
@@ -198,7 +207,6 @@ const DictionaryCardDetailPage: React.FC = () => {
                             speakingKey={tts.speakingKey}
                             learning={learning}
                             selectedSenseIndex={selectedSenseIndex}
-                            onSelectSense={setSelectedSenseIndex}
                             showSynonymsRelated
                             // pan-y: the panes scroll natively; horizontal stays free for
                             // the panel's own tab-swipe listener to claim.

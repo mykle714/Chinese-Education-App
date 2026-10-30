@@ -2,9 +2,10 @@
  * The iso art framework — the "Good Job!"-style isometric drawing kit
  * (docs/ISO_ART_FRAMEWORK.md). Import from here, not from the individual files.
  *
- * Lives under features/deckTower/ because the Deck Tower is its only user; per
- * docs/FRONTEND_LAYERING.md § 1 it moves to src/components/iso/ when a second feature
- * imports it.
+ * Lives under features/deckTower/ because the Deck Tower was its only user. Since
+ * 2026-10-29 scp's bins (features/discover/SortBins.tsx) import it too, so per
+ * docs/FRONTEND_LAYERING.md § 1 it is due to move to src/components/iso/
+ * (docs/DEFERRED_WORK.md #28).
  */
 
 // Scene + primitives
@@ -36,7 +37,7 @@ export {
 export { default as IsoCardRuns } from "./IsoCardRuns";
 export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";
-export { depthRankAmong, PLATE_LAUNCH_APEX_MS, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
+export { backToFront, depthRankAmong, PLATE_LAUNCH_APEX_MS, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
 export {
     PAWN_ENTRANCES,
     FALL_FROM_SKY,
@@ -63,7 +64,6 @@ export {
     lightWash,
     NO_WASH,
     oklchToHex,
-    washColorMatrix,
     washMaterial,
     washPalette,
     washTone,

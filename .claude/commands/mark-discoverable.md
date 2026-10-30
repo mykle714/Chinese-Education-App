@@ -100,6 +100,7 @@ Run all steps in order with `--words=word1,word2,...` (comma-joined hanzi).
 ```bash
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-max-char-stroke-count.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
@@ -115,6 +116,8 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-classifier.
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-senses.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-elaboration.js --words=未来,摸脉
 ```
+
+**`backfill-max-char-stroke-count` NULL is a valid answer, not a miss.** It writes `maxCharStrokeCount` (migration 179) = the stroke count of the word's HARDEST character, read from the committed `scripts/backfill/chinese/lib/hanziStrokeCounts.json` (hanzi-writer-data). It is the writing flp's easiest-first key (docs/MASTERY_REWORK.md § 6 "Ordering"). A word containing any character outside that data (Latin letters as in 卡拉OK, punctuation, a rare variant) gets NULL and simply sorts last in the writing queue; done-ness is its `enrichmentLog` stamp. Deterministic, no API calls, no ordering constraint — it reads only `word1`. Most rows already carry it (migration 179 filled and stamped every row that existed then), so on those it reports "0 rows".
 
 **The two breakdown steps are no-ops on single-character words.** Both carry
 `when: 'multiChar'` in the manifest and gate on `char_length(word1) > 1`, so a
@@ -152,6 +155,9 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 
 ```sql
 SELECT word1, tone, difficulty,
+  -- NULL is valid (a character outside hanzi-writer-data); the stamp proves the step ran.
+  "maxCharStrokeCount",
+  "enrichmentLog" ? 'chinese/backfill-max-char-stroke-count' AS has_stroke_count_stamp,
   "longDefinition" IS NOT NULL AS has_long_def,
   -- has_longdef_citations is TRUE even for '[]' — a definition with nothing translatable
   -- (quotes no Chinese, or every quoted run is itself a det headword) records "done" as [].

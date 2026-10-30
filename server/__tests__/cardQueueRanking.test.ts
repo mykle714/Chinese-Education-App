@@ -5,6 +5,7 @@ import {
   isMarkOnCooldown,
   lastCorrectMarkTimestamp,
   lastCorrectOnBar,
+  lastMarkOnBar,
   queueArrivalAt,
   rankCardQueue,
   rankCardQueueCooled,
@@ -121,9 +122,33 @@ describe('queueArrivalAt', () => {
     expect(queueArrivalAt(h, 'core')).toBe(NOW - 5 * DAY + COOLDOWN_MS_BY_CATEGORY.Unfamiliar);
   });
 
-  it('returns -Infinity only when the bar carries no correct mark', () => {
+  it('falls back to the newest WRONG mark when the bar has no correct one', () => {
+    // No correct mark → no cooldown, so the card re-entered the queue the moment it
+    // was last answered.
+    const h = { reading: [{ isCorrect: false, timestamp: new Date(NOW - 3 * DAY).toISOString() }] } as TypedMarkHistory;
+    expect(queueArrivalAt(h, 'reading')).toBe(NOW - 3 * DAY);
+  });
+
+  it('returns -Infinity only when the bar carries no mark at all', () => {
     expect(queueArrivalAt({}, 'core')).toBe(-Infinity);
     expect(queueArrivalAt(history({ reading: [3, DAY] }), 'core')).toBe(-Infinity);
+  });
+});
+
+describe('lastMarkOnBar', () => {
+  it('counts wrong marks as well as right ones', () => {
+    const h = {
+      recognition: [{ isCorrect: true, timestamp: new Date(NOW - 40 * DAY).toISOString() }],
+      production: [{ isCorrect: false, timestamp: new Date(NOW - 2 * DAY).toISOString() }],
+    } as TypedMarkHistory;
+    expect(lastMarkOnBar(h, 'core')).toBe(NOW - 2 * DAY);
+  });
+
+  it('skips viaWord fan-out marks, as the clock does', () => {
+    const h = {
+      writing: [{ isCorrect: true, viaWord: true, timestamp: new Date(NOW - DAY).toISOString() }],
+    } as TypedMarkHistory;
+    expect(lastMarkOnBar(h, 'writing')).toBeNull();
   });
 });
 
@@ -139,13 +164,74 @@ describe('rankCardQueue', () => {
     expect(rank(cards)).toEqual(['rested']);
   });
 
-  it('serves the longest-waiting card first', () => {
+  it('serves the longest-waiting card first within the recent tier', () => {
     const cards = [
       { id: 'recent', typedMarkHistory: history({ reading: [1, 1 * HOUR] }) },
-      { id: 'ancient', typedMarkHistory: history({ reading: [1, 90 * DAY] }) },
+      { id: 'oldest', typedMarkHistory: history({ reading: [1, 25 * DAY] }) },
       { id: 'middle', typedMarkHistory: history({ reading: [1, 10 * DAY] }) },
     ];
-    expect(rank(cards)).toEqual(['ancient', 'middle', 'recent']);
+    expect(rank(cards)).toEqual(['oldest', 'middle', 'recent']);
+  });
+
+  it('drops a card with no mark in 30 days to the stale tier, below every recent card', () => {
+    // Arrived 90 days ago, so it would have led a pure arrival-time queue.
+    const cards = [
+      { id: 'stale', typedMarkHistory: history({ reading: [1, 90 * DAY] }) },
+      { id: 'recent', typedMarkHistory: history({ reading: [1, 1 * HOUR] }) },
+    ];
+    expect(rank(cards)).toEqual(['recent', 'stale']);
+  });
+
+  it('keeps a card answered only WRONGLY this month in the recent tier', () => {
+    const wrongOnly = {
+      id: 'wrong-only',
+      typedMarkHistory: { reading: [{ isCorrect: false, timestamp: new Date(NOW - 2 * DAY).toISOString() }] },
+    };
+    const lastRightLongAgo = {
+      id: 'right-long-ago-wrong-recently',
+      typedMarkHistory: {
+        reading: [
+          { isCorrect: false, timestamp: new Date(NOW - 1 * DAY).toISOString() },
+          { isCorrect: true, timestamp: new Date(NOW - 60 * DAY).toISOString() },
+        ],
+      },
+    };
+    const stale = { id: 'stale', typedMarkHistory: history({ reading: [1, 45 * DAY] }), difficulty: 1 };
+    // Both recent cards beat the (easier) stale one. Within recent: right-long-ago
+    // arrived 60 d − 5 min ago, wrong-only 2 d ago.
+    expect(rank([stale, wrongOnly, lastRightLongAgo])).toEqual([
+      'right-long-ago-wrong-recently', 'wrong-only', 'stale',
+    ]);
+  });
+
+  it('orders the stale tier easiest first by det difficulty, unknown last', () => {
+    const cards = [
+      { id: 'hsk4', typedMarkHistory: {}, difficulty: 4 },
+      { id: 'unknown', typedMarkHistory: {}, difficulty: null },
+      { id: 'hsk1', typedMarkHistory: history({ reading: [1, 40 * DAY] }), difficulty: 1 },
+      { id: 'hsk2', typedMarkHistory: {}, difficulty: 2 },
+    ];
+    expect(rank(cards)).toEqual(['hsk1', 'hsk2', 'hsk4', 'unknown']);
+  });
+
+  it('orders the WRITING stale tier by the hardest character\'s stroke count, not difficulty', () => {
+    const cards = [
+      { id: 'many-strokes-hsk1', typedMarkHistory: {}, difficulty: 1, maxCharStrokeCount: 14 },
+      { id: 'few-strokes-hsk5', typedMarkHistory: {}, difficulty: 5, maxCharStrokeCount: 3 },
+      { id: 'no-data', typedMarkHistory: {}, difficulty: 1, maxCharStrokeCount: null },
+    ];
+    expect(rankCardQueue(cards, NOW, { world: 'writing' }).map((r) => r.card.id)).toEqual([
+      'few-strokes-hsk5', 'many-strokes-hsk1', 'no-data',
+    ]);
+  });
+
+  it("serves the learner's own stale cards before LENT ones, however easy the lent card", () => {
+    const cards = [
+      { id: 'lent-hsk1', typedMarkHistory: {}, difficulty: 1, starterPackBucket: 'provisional' },
+      { id: 'own-hsk3', typedMarkHistory: {}, difficulty: 3, starterPackBucket: 'library' },
+      { id: 'lent-hsk2', typedMarkHistory: {}, difficulty: 2, starterPackBucket: 'provisional' },
+    ];
+    expect(rank(cards)).toEqual(['own-hsk3', 'lent-hsk1', 'lent-hsk2']);
   });
 
   it('sinks never-marked cards BELOW every card with history', () => {
@@ -158,7 +244,7 @@ describe('rankCardQueue', () => {
     expect(rank(cards)).toEqual(['marked', 'never']);
   });
 
-  it("keeps the caller's incoming order among never-marked cards", () => {
+  it("keeps the caller's incoming order among equally easy stale cards", () => {
     // Stability is what lets the SQL ORDER BY be the final tiebreak.
     const cards = ['a', 'b', 'c'].map((id) => ({ id, typedMarkHistory: {} }));
     expect(rank(cards)).toEqual(['a', 'b', 'c']);

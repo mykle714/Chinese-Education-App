@@ -36,6 +36,16 @@ export const SOFT_INTROS = {
         minDays: 7,
         description: 'fdp hand numeral: "cards" label (intro) → ink hairline (graduated)',
     },
+    /**
+     * scp's level pill ("Auto" / "HSK 3", SortCardsPage toolbar). Intro: a small
+     * "Difficulty" caption under it, so the learner learns what the pill picks. Graduated:
+     * the pill alone, as the Tower Tier 2 design draws it.
+     */
+    sortDifficultyCaption: {
+        minVisits: 7,
+        minDays: 7,
+        description: 'scp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
+    },
 } as const satisfies Record<string, SoftIntroSpec>;
 
 export type SoftIntroId = keyof typeof SOFT_INTROS;

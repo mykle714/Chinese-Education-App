@@ -43,6 +43,8 @@ export const InfoSheetContainer = styled(Box)(({ theme }) => ({
     // design paints all three of them (`.sheet`, `.eic`, `.pnl`) `var(--white)` over
     // `--paper`. It used to take `flashcard.background` — the same value as the page
     // behind it — which only read as a sheet because of its shadow.
+    // A host may override it per sheet (SheetPanel `surface`): the eip paints its
+    // time-of-day ground here (eipPalette.ts).
     background: COLORS.white,
     borderRadius: "20px 20px 0 0",
     padding: "10px 0 18px",

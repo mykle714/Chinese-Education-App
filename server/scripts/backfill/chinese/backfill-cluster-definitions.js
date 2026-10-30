@@ -77,7 +77,7 @@ import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
 import { createClusterTiebreaker } from '../shared/lib/tiebreakOrder.js';
 
-const SCRIPT_VERSION = 10; // bump when this script's logic/prompt changes (v10: GRAMMATICAL-FUNCTION senses — Stage C's sense-mode rubric now scores a classifier/particle/complement sense by how often speakers pick THIS word for that job (not how common the job is) and receives the cluster's pos; Stage C.5 gains rule 3, core content meaning before grammatical function (exception: words learned AS the function word — 个/了/的/把) and also receives pos. Fixes 回 starring "classifier for times/occurrences" over "to go back / return". Scores + order only, labels untouched — re-run with --rescore-only, NEVER --stale. v9: Stage C.5 — tied clusters (equal frequencyScore) are now ORDERED by a dedicated ranking pass instead of falling through to whatever order Stage A emitted; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. Ordering only — no cluster's score, label or glosses change, so --rescore-only picks it up safely. v8: THE FREQUENCY AXIS CHANGED — Stage C now scores how much a sense would STAND OUT in casual conversation rather than how often it occurs; bands 4+5 merged and the old band 1 split. All pre-2026-08-28 cluster scores are on the old axis — re-score with --rescore-only. v7: the shared rubric now credits BOUND FORMS through their compounds — a bound morpheme heard constantly inside common compounds is frequent, not rare — and the cluster write now enforces the word/cluster frequency invariant, det."frequencyScore" == MAX(cluster.frequencyScore), in the same statement; re-score with --rescore-only. v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
+const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes (v11: OVER-COMPACTION FIX — Stage A's rule 3 and the A.5 merge rule now decide membership by a TRANSLATION TEST (would a sentence using this gloss translate the word with the cluster's label?) instead of "one origin / one underlying image", and the 会 worked example, which TAUGHT the bad merges (can + likely-to, meeting + association), now splits them. A 2026-10-29 audit found 118 discoverable senses (94 zh) hiding a distinct meaning, e.g. 开 "to open" holding turn on / drive / boil / write a prescription. Rows judged fine by that audit were re-stamped at v11 without re-running (server/scripts/backfill/shared/restamp-cluster-version.js); only the flagged rows re-cluster — do NOT --stale the corpus. v10: GRAMMATICAL-FUNCTION senses — Stage C's sense-mode rubric now scores a classifier/particle/complement sense by how often speakers pick THIS word for that job (not how common the job is) and receives the cluster's pos; Stage C.5 gains rule 3, core content meaning before grammatical function (exception: words learned AS the function word — 个/了/的/把) and also receives pos. Fixes 回 starring "classifier for times/occurrences" over "to go back / return". Scores + order only, labels untouched — re-run with --rescore-only, NEVER --stale. v9: Stage C.5 — tied clusters (equal frequencyScore) are now ORDERED by a dedicated ranking pass instead of falling through to whatever order Stage A emitted; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. Ordering only — no cluster's score, label or glosses change, so --rescore-only picks it up safely. v8: THE FREQUENCY AXIS CHANGED — Stage C now scores how much a sense would STAND OUT in casual conversation rather than how often it occurs; bands 4+5 merged and the old band 1 split. All pre-2026-08-28 cluster scores are on the old axis — re-score with --rescore-only. v7: the shared rubric now credits BOUND FORMS through their compounds — a bound morpheme heard constantly inside common compounds is frequent, not rare — and the cluster write now enforces the word/cluster frequency invariant, det."frequencyScore" == MAX(cluster.frequencyScore), in the same statement; re-score with --rescore-only. v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
 const isSpotCheck = process.argv.includes('--spot-check');
 const includeAll  = process.argv.includes('--all');
@@ -133,7 +133,7 @@ const { tiebreakClusterOrder } = createClusterTiebreaker({ anthropic, cachedSyst
 
 // ─── Stage A: clustering prompt ───────────────────────────────────────────────
 
-const CLUSTER_SYSTEM = `You are a Chinese linguistics expert grouping the English definitions of a Chinese word into sense clusters — each cluster one origin-sense (a prototype and its extensions) — for a modern (2020s) Mandarin learner's vocabulary card.`;
+const CLUSTER_SYSTEM = `You are a Chinese linguistics expert grouping the English definitions of a Chinese word into sense clusters — each cluster ONE meaning a learner would learn as one thing — for a modern (2020s) Mandarin learner's vocabulary card.`;
 
 // Static instructions → cached system block; per-entry word/reading/glosses →
 // user message (clusterUser). The entry's primary reading is interpolated into
@@ -145,7 +145,21 @@ Rules:
 
 2. READING IS A HARD BOUNDARY. Each cluster has exactly one "reading". Every gloss in a cluster must be pronounceable with that reading. A gloss that takes a different reading belongs in a different cluster — ALWAYS, even if the meanings feel related. Never mix readings inside one cluster.
 
-3. CLUSTER BY SHARED CORE IDEA. Within a single reading, put in ONE cluster the glosses that express the SAME core idea — near-synonyms, inflections, or one underlying image applied in a slightly different frame — even if they differ in part of speech, grammatical role, domain, or surface context. Those surface differences are NOT reasons to split. Split into different clusters when two groups of glosses are genuinely different senses. It is fine to err toward FINER, precise clusters here — a later consolidation pass will merge any that turn out too similar. Aim for clean, self-consistent atomic senses.
+3. ONE CLUSTER = ONE MEANING A LEARNER LEARNS AS ONE THING. The learner sees each cluster as one line, under its "sense" label; a gloss that the label does not describe is HIDDEN from them. Decide membership with the TRANSLATION TEST: take a natural sentence that uses the word in the gloss's meaning — would you translate the word there with the cluster's label? If yes, the gloss belongs; if the translation needs a different English word or idea, it is a different cluster.
+   KEEP TOGETHER (these pass the test):
+   - near-synonyms and paraphrases of one idea (产生: to produce | to generate | to give rise to | to bring about);
+   - the SAME idea in different parts of speech (结: to tie | knot; 旅游: to travel | tourism) — a noun/verb pair of one idea is one cluster;
+   - one idea in different domains or with a scope qualifier (回合: round (boxing) | round (of negotiations) | inning).
+   SPLIT (these fail the test, even when the meanings are historically related or "extend" one another):
+   - a different action or use: 开 "to open" vs "to turn on (a light)" vs "to drive (a car)" vs "to boil" vs "to write out (a prescription)"; 见 "to see" vs "to meet (a person)"; 管 "to manage" vs "to care about" (不管); 接 "to catch" vs "to answer (the phone)" vs "to meet (someone arriving)";
+   - ability vs probability: 会/能 "can / know how" vs "likely to / will";
+   - space vs time: 中间 "in the middle / between" vs "during";
+   - an event vs an organization: "meeting / gathering" vs "association / union";
+   - different question words: 怎么 "how?" vs "why?";
+   - a positive vs negative evaluation: 意见 "opinion / idea" vs "objection / complaint";
+   - a grammatical use vs the content meaning: 一些 "some" vs "(after an adjective) slightly …er".
+   A history of "one origin" or "one underlying image" is NOT a reason to merge — the learner meets the uses separately. Err toward FINER clusters; a later consolidation pass merges any that are mere synonyms.
+   LABEL CHECK: if the only label that covers a cluster has to join two different ideas with "/" (e.g. "to be able to / will (likely)", "to see / meet"), the cluster is two clusters.
 
 4. REGISTER SPLIT (the one exception that ADDS clusters). Within a single origin, if the glosses straddle a LARGE register/frequency gap — some are everyday modern usage while others are literary, classical, archaic, or narrowly technical — split that origin into register-homogeneous clusters (same reading and sense family, but grouped so each cluster's members share a similar register). This keeps the later per-cluster frequency score honest — an everyday sense and an archaic one must not share a score. Do NOT split for small register differences — only for a clear everyday-vs-literary/archaic gap (e.g. 别 everyday "don't …!" vs. literary "to part from").
 
@@ -159,18 +173,20 @@ Rules:
 
 7. FLAG YOUR UNCERTAINTY. If you are even slightly unsure about ANY decision, add a short note to "reviewNotes" so a human can double-check. Err heavily toward flagging — a false alarm is cheap, a wrong card is not. Flag things like: an ambiguous origin boundary (could reasonably split or merge), a gloss that plausibly belongs in two clusters, a register split you were unsure whether to make, an uncertain or guessed "reading" (especially heteronyms), a sense whose pos you're unsure of, broken/cryptic source glosses, or anything that just looks off. If you are fully confident, return an empty array.
 
-Worked example (note the origin-merges: "can/know-how" and "likely to" are one modal origin; "meeting" senses stay together across noun/verb):
+Worked example (note: "can" and "likely to" are SPLIT — 我会游泳 "I can swim" and 明天会下雨 "it will rain tomorrow" translate 会 differently; "meeting" (an event) and "association" (an organization) are SPLIT; "meeting" and "to meet" stay TOGETHER — one idea, noun and verb):
 Word: 会  (primary reading: hui4)
 Input: ["can","to know how to","to have the skill","to be likely to","to be sure to","meeting","gathering","to meet","to get together","association","group","(suffix) union","(bound form) a moment (Taiwan pr. [hui3])","(bound form) to reckon accounts"]
 Output:
 {
   "clusters": [
-    {"sense":"to be able to / will (likely)","reading":"hui4","pos":["verb"],"glosses":["can","to know how to","to have the skill","to be likely to","to be sure to"]},
-    {"sense":"to assemble / a meeting","reading":"hui4","pos":["verb","noun"],"glosses":["meeting","gathering","to meet","to get together","association","group","(suffix) union"]},
+    {"sense":"can / to know how to","reading":"hui4","pos":["verb"],"glosses":["can","to know how to","to have the skill"]},
+    {"sense":"will (likely to)","reading":"hui4","pos":["verb"],"glosses":["to be likely to","to be sure to"]},
+    {"sense":"a meeting / to meet","reading":"hui4","pos":["noun","verb"],"glosses":["meeting","gathering","to meet","to get together"]},
+    {"sense":"association / union","reading":"hui4","pos":["noun"],"glosses":["association","group","(suffix) union"]},
     {"sense":"a moment","reading":"hui4","pos":["noun"],"glosses":["(bound form) a moment (Taiwan pr. [hui3])"]},
     {"sense":"to reckon accounts","reading":"kuai4","pos":["verb"],"glosses":["(bound form) to reckon accounts"]}
   ],
-  "reviewNotes": ["Merged 'to be likely to / sure to' with 'can / know how' as one modal origin (ability → probability); flag in case you'd separate future-probability."]
+  "reviewNotes": []
 }
 
 Return ONLY a valid JSON object with keys "clusters" and "reviewNotes", no explanation.`;
@@ -190,12 +206,12 @@ ${JSON.stringify(definitions, null, 2)}`;
 // exact partition of the original input (re-checked with validatePartition).
 const MERGE_SYSTEM = `You are a Chinese linguistics expert consolidating candidate sense clusters for a modern (2020s) Mandarin learner's vocabulary card.`;
 
-const MERGE_INSTRUCTIONS = `You are given a Chinese word and a list of CANDIDATE sense clusters (each with a reading and a set of English glosses). The candidates were split conservatively and may be TOO fine-grained. Your job is to MERGE any clusters that a learner would reasonably treat as the same sense, and leave genuinely distinct senses apart.
+const MERGE_INSTRUCTIONS = `You are given a Chinese word and a list of CANDIDATE sense clusters (each with a reading and a set of English glosses). The candidates may be TOO fine-grained. Your job is to MERGE clusters that say the same thing (synonyms), and leave every distinct meaning apart — a learner sees one line per cluster, so an over-merge HIDES a meaning.
 
 Rules:
 1. REGROUP ONLY, never edit text. You may only move whole glosses between clusters and combine clusters. Never add, rephrase, split the text of, or drop a gloss. Every input gloss must appear in exactly one output cluster, copied character-for-character. The union of all output glosses must equal the input set exactly.
 2. NEVER merge clusters with different "reading" values. Reading is a hard boundary — a merged cluster's members must all share one reading.
-3. Merge two clusters whenever their meanings are the same, overlap substantially, OR are connected as near-synonyms, a shared function, or one sense being a natural extension of the other. You do NOT need a learner to see them as identical — a clear thread of relation is enough.
+3. Merge two clusters ONLY when they are the same meaning — near-synonyms or paraphrases of one idea, or the same idea in a different part of speech (结 to tie | knot). Use the TRANSLATION TEST: would a sentence using one cluster's meaning translate the word with the other cluster's label? If not, keep them apart. A "thread of relation", a shared origin, or one sense being an extension of the other is NOT enough: 开 "to open" vs "to turn on", 会 "can" vs "will (likely)", 见 "to see" vs "to meet", 中间 "middle" vs "during" all stay SEPARATE. Never produce a label that needs "/" to join two different ideas.
 4. For each output cluster provide:
    - "sense": a short English label (2–5 words) for the (possibly merged) meaning.
    - "reading": the shared numbered-pinyin reading.

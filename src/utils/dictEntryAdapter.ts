@@ -25,6 +25,9 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
         language: dict.language,
         pronunciation: dict.pronunciation ?? null,
         definition: dict.definitions?.[0] ?? null,
+        // The whole list too — the Dictionary eip shows every gloss (EipSheet
+        // `showAllDefinitions`), not just the dd.
+        definitions: Array.isArray(dict.definitions) ? dict.definitions : null,
         // Sense clusters + the requester's saved pick for this word (attached by
         // DictionaryController.lookupTerm when they have it as a card). Together these let
         // resolveDisplayDefinition give a drilled-in eip tab the SAME dd the learner sees on

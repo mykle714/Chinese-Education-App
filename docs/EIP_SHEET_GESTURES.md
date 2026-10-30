@@ -82,7 +82,7 @@ description of something on screen:
 | | modal (`minHeight = 0`, default) | persistent (`minHeight > 0`) |
 |---|---|---|
 | stops | `{0, default, max}` | `{minHeight, max}` — `default` **is** `minHeight` |
-| on mount | animates `0 → default` | painted **at** `minHeight`, no animation |
+| on mount | laid out at `default`, slid up from below the frame (§ Open slide) | painted **at** `minHeight`, no animation |
 | drag to the bottom | dismisses (`onClose` after the shrink) | stops dead at `minHeight` |
 | release below default | dismiss | snap back to `minHeight` |
 | release between the stops | collapse below `collapseThresholdRatio` of the travel, else grow to max | same rule, from `minHeight` |
@@ -119,7 +119,7 @@ strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
 | Stop | Value | Meaning |
 |---|---|---|
 | `0` | — | dismissed (panel unmounts after the shrink animation) |
-| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` passes **0.9**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
+| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` passes **0.8**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
@@ -171,6 +171,11 @@ imperative").
 
 ### The panel header
 
+> **The eip does not use it (2026-10-29).** `InfoCardSection` passes no `title` and
+> `showClose={false}`: the eip draws its own title row and close control (a down caret, not
+> a ✕) in its UPPER panel, and the title row telescopes in only toward max — see **§ Telescope** below. Everything in
+> this section still holds for every OTHER titled sheet (decks, compare, account, notebook).
+
 The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`), not a
 lookalike, so the header a panel wears is the app's one header. It lives in
 `SheetHeaderSlot` (`sheetStyled.ts`) as the sheet's **second flex child**, directly under
@@ -210,8 +215,8 @@ and the tab strip: the top edge is where a hand reaches to pull a sheet back dow
 before that binding only the 44px pill above it responded. `useDrag`'s `filterTaps` is
 what keeps the ✕ inside it tappable.
 
-Titles, one per host: `InfoCardSection` passes **"More Info"** (or **"Compare"** on the
-compare tab) and thereby covers flp, scp and cdp at once; `FlashcardsDecksPage` passes
+Titles, one per host: the eip's **"More Info"** / **"Compare"** is drawn by its own upper
+panel (§ Telescope), not through this prop; `FlashcardsDecksPage` passes
 **"Cards"** / **"Decks"**, matching the pill that opened the sheet; `CompareSheet` passes
 **"Compare"**. A panel with no `title` has no header and therefore no ✕ — it still grows to
 full height, it just has no way out but a downward drag. Nothing ships in that state.
@@ -243,11 +248,46 @@ that is deleted. The header is permanent, so the cluster simply lives in it, and
 one always-available control is in the same place at every height — which is the property a
 thumb actually needs. The trail gets its reserved column back as usable width.
 
-What the ✕ *does* on the eip is still the trail's rule (close the showing word; the last
-one closes the panel), passed in by the host as `onCloseX`; returning `true` from it means
-"handled, stay open".
+**The eip has no ✕ (2026-10-29).** Its close control is a down caret that closes the whole
+panel through the render function's `dismiss` (§ Telescope). The trail's pop rule
+(`onCloseX` → pop the showing word; popping the root closes the panel — § The trail is a
+breadcrumb stack) now runs only on **Escape**, through `requestClose`; returning `true` from
+`onCloseX` still means "handled, stay open".
+
+### The trail is a breadcrumb stack
+
+**Since 2026-10-29** the trail is a STACK, not a set of tabs: the showing word is always the
+LAST crumb, and the trail always reads as the path from the root to it.
+
+| Action | Effect on the stack |
+|---|---|
+| Drill into a NEW word (breakdown row, example segment, "used in" row) | push it |
+| Drill into a word ALREADY on the stack, or tap its crumb | pop everything above it — it is the top again |
+| Escape (desktop) | pop the top (back one word); popping the root closes the panel |
+| Down caret (⌄) | close the panel; the stack is kept (it outlives the panel — below) |
+| Open Compare with a Compare crumb already on the stack | pop down to it, refill slot A, clear slot B |
+
+Any pop also cancels an in-flight drill-in lookup, so a fetch that lands after the learner
+walked back cannot push onto the trail they left. A popped crumb's state (sub-tab, sense
+pick) is discarded with it; the crumbs below keep theirs, so walking back restores each
+word's last sub-tab.
+
+Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTabs`
+(`activeIndex` is derived as `tabs.length - 1`, never set), `popTo`, `pop`,
+`openForEntryKey`, `openCompareTab`; `EipTabStrip.tsx` (crumb tap → `popTo`); the hosts'
+`onCloseX` (`EipSheet.tsx`, `FlashcardsLearnPage.tsx` → `pop`).
 
 ### The trail scrolls, holds up to 50 words, and outlives the panel
+
+**Its row is always present** — it carries the down caret and the Dictionary eip's Add key
+(§ Telescope) — but the **crumbs are hidden until the learner first navigates to another
+word**: a panel opened on a word shows an empty trail slot, not a lone crumb repeating the
+headword. The first push (a drill-in, or Compare) latches the crumbs on for that trail's
+life, so walking back to the root still shows the root crumb; only a new root
+(`openForRoot`, `clear`) resets it. Code: `useEipTabs` → `trailShown`, passed to
+`EipTabStrip` as `showCrumbs` by `EipSheet.tsx` and `FlashcardsLearnPage.tsx`; the strip keeps
+its flex slot while empty so the Add key never moves. It is a bare breadcrumb
+(`过去 › 去`: CJK 15px words, the showing one in ink, chevrons between), not filled pills.
 
 Three rules, all changed on **2026-09-06**:
 
@@ -256,6 +296,11 @@ Three rules, all changed on **2026-09-06**:
   trail does not rubber-band the sheet), and desktop drags it with the shared
   `useDragScroll` mouse-drag hook — the same gesture the card shelves use. No scrollbar is
   drawn; the pill cut off at the edge IS the affordance.
+  The trail is no longer the upper panel's only sideways scroller: in the Dictionary eip
+  (`showAllDefinitions`) the header gloss is a `SwipeableTwoLineText`
+  (`src/components/SwipeableTwoLineText.tsx`), also `touch-action: pan-x` so vertical drags
+  stay with the sheet's resize, with its own rubber band at the ends
+  (`src/hooks/useEdgeRubberBand.ts`). See docs/SHELF_REDESIGN.md § 7b.
 - **It is capped by COUNT, not by width** — `MAX_EIP_TABS` (50) in `useEipTabs`. It used to
   be a width gate (`fitsNewTab`, which measured a candidate pill off-DOM and refused any
   word that would not fit the row entirely) because a half-pill reads as "scroll for more"
@@ -266,30 +311,163 @@ Three rules, all changed on **2026-09-06**:
 - **The active pill is scrolled into view** whenever the active index or the tab count
   changes — twice, because a just-pushed pill is mid-entrance (`eipPillIn` widens it from
   `max-width: 0`) and a scroll aimed at it then lands short. The second pass runs at
-  `EIP_PILL_IN_MS`; on an already-mounted pill both passes are no-ops (`inline: "nearest"`
-  does not move a fully visible target).
+  `EIP_PILL_IN_MS`; on an already-mounted pill both passes are no-ops (only the distance
+  needed to bring the pill inside the row is scrolled). ⛔ It scrolls the pill row's OWN
+  `scrollLeft` (`EipTabStrip.tsx` → `scrollActiveIntoView`), never `scrollIntoView`: that
+  scrolls every scrollable ancestor too, and during the open slide (§ Open slide) the pill
+  is below the frame — opening Compare scrolled the phone frame itself, which is
+  `overflow: hidden` and so stayed shifted (fixed 2026-10-30). The same rule holds for
+  anything inside a sheet: no `scrollIntoView`, and `focus({ preventScroll: true })`.
 
 **The trail now outlives the panel.** Closing the eip no longer clears the tabs — the trail
 belongs to the CARD, so reopening the sheet on the same card resumes the same drill-in
 chain on the same word. It is dropped when the ROOT changes: the flp's next card (the
 `currentIndex` reset effect, plus `openForRoot` reseeding), another card's info button on
-scp, or the page unmounting. The `isTabbedMode` latch resets with the trail, so a new card
-never opens showing a leftover one-pill strip. (The cdp is unaffected — it has no entry-tab
+scp, or the page unmounting. (The cdp is unaffected — it has no entry-tab
 strip at all; it drills in by NAVIGATING to the tapped word's own card detail, and its
 content sub-tab already survives a close for the page's life.)
 
-### The sheet grows for its tab strip — it does not squeeze
+### Telescope — the eip's two panels (2026-10-29, Tower Tier 2)
 
-When the word trail appears, the strip is ~40px of new chrome. Laid out normally it takes
-that space from the **body**: every line the learner is reading shifts down by a row,
-which reads as the content jumping away from the tap that opened it. So `SheetPanel`
-watches its tab-strip wrapper with a `ResizeObserver` and grows the sheet by exactly the
-strip's height instead, taking the row from the screen. The **resting stop**
-(`defaultHeightRef`) grows with it, or the next drag-release would snap back to a height
-that no longer has room for the strip. The first measurement is a baseline only.
+The eip is two stacked panels (design file "Tower Tier 2 - Time of Day", EIP artboards):
 
-At the cap there is nothing left to take: a sheet already at full height cannot grow, and
-the body does shift down by a row. That is the only case where it does.
+| Panel | Rows | Component |
+|---|---|---|
+| **Upper** — the tinted `ground` | TITLE (⌄ "More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (⌄ · words · Add key) · HEADER (headword tile, gloss — a multi-sense word lists every sense, chosen one underlined) | `EipUpperPanel` |
+| **Lower** — the white SHELF | its own small grabber · content tabs (sunken segmented track) · tab body | `InfoCardSection` (`.eip-shelf`) + `InfoCardPanelBody` (`hideEntryHeader`) |
+
+The shelf has a 24px top radius and a solid 3px `edge` lip above it; the sheet's `surface`
+(the upper panel's ground) shows in its corners.
+
+The content tabs' selected state is ONE white chip that **slides** between the three
+segments (`styled.ts` → `InfoSheetTabIndicator`, driven by `selectedTab`), on the same
+280 ms easing as the content panes below (`TAB_SWIPE_TRANSITION`), so chip and pane arrive
+together whether the tab was tapped or swiped.
+
+**The upper panel TELESCOPES.** It is SheetPanel's opt-in telescope (`telescopeRef`,
+`SheetTelescopeHandle`): SheetPanel writes the upper frame's height on every height write,
+with the same transition, piecewise linearly in the sheet's height:
+
+```
+sheet h:   0 ────────── open (default) height ────────── max
+upper:     0 ──linear──▶ rest                ──linear──▶ rest + extra
+lower:     the remainder (flex: 1)
+```
+
+`rest` is the panel's natural height without the title row, `extra` the title row's (both
+measured by a ResizeObserver, never in the per-frame write — `measureTelescope`). So as the
+sheet opens, BOTH panels grow from 0 together; pulled toward max, the upper panel grows
+again to reveal "More Info" and the flame. The frame clips and bottom-anchors its content
+(`justify-content: flex-end`), so a short frame shows the header first and the title row
+is the last thing revealed. A content change (a two-line gloss, the Compare tab) re-places
+the frame at the current height.
+
+**Close is a down caret (⌄), shown at every height (2026-10-29).** It replaces the ✕
+entirely and sits where a page header's back chevron sits. SheetPanel's own header and ✕
+are off for the eip (`showClose={false}`, no `title`); the caret calls SheetPanel's
+`dismiss` (handed out by the `children` render function), which closes the whole panel —
+it does NOT run `onCloseX`, so it never pops a word.
+
+- **At and below the open height** the caret is the first thing in the TRAIL row.
+- **Toward max** the TITLE row telescopes in with its own caret, and the trail-row caret's
+  slot narrows to 0 and fades over the same travel, so the crumbs slide left into its
+  place. It reads `--sheet-telescope-t` (0 at the open height → 1 at max) and
+  `--sheet-telescope-transition` (the snap's duration, or `0ms` while dragging), which
+  `writeTelescope` sets on the frame alongside its height.
+
+**The title row is a real `PageHeader`** (leaf size, `arrowDirection="down"`,
+`safeAreaTop={false}`, `titleColor` = the palette ink, flame only with
+`showMinutePoints`), so a maximized eip puts its caret, title and flame on exactly the
+pixels a drill-in page's header would: the merged sheet's top padding is the status-bar
+inset (`writeMergeChrome`, with `edgePadding` off below), PageHeader adds the leaf's 27px,
+and its 18px side padding is the panel's own gutter. The flame rides the title row, so it
+shows only toward max.
+
+**There is no top grabber** (`SheetPanel` `showGrabber={false}`, 2026-10-29): the whole
+upper panel and the shelf's small pill are the resize handles (`bindHeaderDrag`).
+
+**No sheet edge padding** (`edgePadding={false}`): the sheet container's own 10px top /
+18px bottom padding is dropped, so the upper panel starts at the sheet's top edge and the
+white shelf runs to its bottom edge — with it on, the time-of-day `surface` showed as a band
+under the shelf and a gap above the telescoping upper panel. At full merge the top still
+takes the status-bar inset (`writeMergeChrome`).
+
+Code: `src/components/sheet/SheetPanel.tsx` → `SheetTelescopeHandle`, `writeTelescope`,
+`measureTelescope`, `surface` / `showGrabber` / `edgePadding` props;
+`src/features/flashcards/FlashcardsLearnPage/EipUpperPanel.tsx`, `InfoCardSection.tsx`.
+
+**Removed with it:** SheetPanel's `tabStrip` slot and its "grow the sheet for the strip"
+ResizeObserver. The trail was the slot's only user, and an always-present trail inside the
+telescope never appears mid-session, so there is nothing to grow for.
+
+### Time of day — the eip's palette (2026-10-29)
+
+The eip follows the learner's time of day, at the same hour as the Deck Tower. The shared
+CLOCK is `src/timeOfDay/useDayClock.ts` → `useDayClock` (moved out of `features/deckTower`;
+it also carries the feature-tester override, now a module store so every reader agrees).
+`eipPalette.ts` → `eipPaletteAt(time)` turns it into an `EipPalette`; `useEipPalette.ts` →
+`useEipPalette` samples it; `EipPaletteContext.tsx` → `EipPaletteProvider` (mounted by
+`InfoCardSection`) publishes it, and pieces read it with `useEipColors()` (the DAY palette
+outside a provider — the cdps' inline panels).
+
+- **Dawn / day / sunset** tint only the upper panel's ground and wells (rose / pale
+  sky / peach). Keys, shelf, cards and ink stay as by day.
+- **Night** is the design's *Night–inverted*: slate panels (#2A3446 upper, #1E2735 shelf),
+  light ink, cards a lifted slate. The provider also **re-themes the subtree** — the
+  flashcard palette's ink/border tokens are swapped — so everything that reads
+  `theme.palette.flashcard.*` (cpcd, dd, synonyms, compare) follows without knowing.
+- Phases **blend** across the 30-minute twilights (`eipPaletteAt` mixes the fills). Ink cannot
+  blend; it flips to night's once night is the larger share (`phaseShare`).
+
+**Does not follow night:** anything reading `COLORS.*` directly — notably `SheetCloseX` (fixed `textFaint`). (The SensePicker's
+white menu used to be listed here; the eip header no longer mounts the picker.)
+
+**⚠️ Outside the colour framework** (like the tower's `PHASE_SKY`): the phase grounds and
+wells, the whole night palette, the shelf grabber (#D2D2D8 — no token is close)
+and the Add key's check green (#008A48). Design values mapped to the NEAREST token instead:
+`--edge` #E2E2E6 → `COLORS.grey` #E7E7EA; `--line` .08 → `COLORS.rowBorder` (.10); the
+selected tab chip's `0 1px 2px @.12` → `SHADOW.rest` (@.05). The Dictionary page's tier-2
+ground (`src/timeOfDay/tier2Look.ts`) carries the same dawn/day/sunset hexes for its page.
+
+### Add key — the Dictionary eip's Learning key (2026-10-29)
+
+`EipAddKey` — the design's `.kc.add`, built exactly: a 92px raised key in the trail row,
+at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses the lip;
+`✓ Added!` sits 2px low on a 2px lip with a green check). Driven by `useLearningToggle`
+(EipSheet `showLearning`, Dictionary page only); tapping "Added!" removes. The hook is
+optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
+never disabled waiting on the network (LEAF_NODE_PAGES.md § "Read-only dictionary cdp"). **No glow** —
+the dictionary cdp keeps its glowing `LearningToggle` under the header speaker. Adding a word
+is a Dictionary-flow action only: no other eip host (flp, scp, saved-card cdp, iw) offers one —
+the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
+
+**Both eip keycaps press the same way** — the Add key and the headword tile use the app's
+raised-key press, `src/theme/keycapPress.ts` → `keycapPressSx`: they SNAP down onto the lip
+and back up with no transition. Since 2026-10-29 (by request) that is EVERY raised keycap in
+the app — the tower plates (`towerPlate.ts` → `towerPlatePressSx`), the scp toolbar, the
+Dictionary page's keycaps and the beginner keyboard all spread the same helper. It used to
+animate (the scene plate's 80 ms ease-out sink and 220 ms overshoot pop).
+
+**`:active` does not work in the upper panel.** Both keys sit inside its drag handle, and
+`useDrag` captures the pointer onto the handle on pointerdown; Chrome then applies `:active`
+to the capture target, not the key under the finger, so a CSS-only press never shows. The
+keys get their pressed look from pointer events instead — the app-wide keycap delegate
+(`src/utils/keycapPressDelegate.ts` → `installKeycapPress`, below), which hears the release
+on `window`, so the handle's capture does not matter.
+
+**Every raised key presses through one delegate** (2026-10-30). `keycapPressSx` marks its
+element with the custom property `KEYCAP_MARKER_PROPERTY` (`--keycap-press: 1`, registered
+non-inheriting), and a single capture-phase `pointerdown` listener on `window` (installed
+in `src/main.tsx`) finds the marked key under the finger and adds `KEYCAP_PRESSED_CLASS`
+directly on the DOM — no React render, so the press is on the next frame even when the
+tap's click does heavy work. A release sooner than `KEYCAP_MIN_HELD_MS` (100 ms,
+`src/theme/keycapPress.ts`) keeps the key down for the rest of it; 8px of travel (a sheet
+drag, a scroll) or a `pointercancel` lets it up at once. Disabled keys (`:disabled`,
+`aria-disabled="true"`) are skipped, presses are per pointer, and a `MutationObserver` puts
+the class back if React rewrites a held key's `className` (the Add key flips to Added! on
+the tap itself). No consumer wires anything: the tower plates (Write it, Compare, More
+Info), these two eip keys, the scp toolbar, the Dictionary page's keycaps and the beginner
+keyboard all get it by spreading `keycapPressSx`.
 
 ### Height is imperative, not React state
 
@@ -305,10 +483,31 @@ write that wants it and cleared for every other. So grabbing a snapping sheet re
 to 1:1 finger tracking immediately instead of trailing by the snap duration.
 
 `freezeHeight()` pins the sheet to its **on-screen** height (via
-`getBoundingClientRect`) and kills the transition. It is called on a gesture's first
+`getBoundingClientRect`, minus any open slide's offset) and kills the transition. It is called on a gesture's first
 *real movement*, never at touch-down — so a tap can't interrupt the open animation,
 but a drag always takes over from what the user sees rather than from an animation's
 not-yet-reached target.
+
+### Open slide (transform, not height) — 2026-10-30
+
+A modal sheet's OPEN is the one motion not on the height model: `playEntrySlide` lays the
+sheet out at its open height in one write and slides it up from below the frame
+(`translateY(h + ENTRY_SLIDE_SHADOW_CLEARANCE_PX)` → `0`, `SNAP_DURATION_MS` ease-out),
+then hands back (`endEntrySlide`). Animating `height` from 0 re-laid-out the whole eip body
+on every frame of the open; a transform is compositor-only. Side effect: the telescope
+frame (upper panel) is at its open height from the first frame rather than growing with
+the sheet.
+
+While the slide runs, the visible height is `heightRef − translateY`. **Every height write
+takes over from it**: `writeHeight` (and `applyResize`, which reads `heightRef` first)
+call `endEntrySlide(true)`, which pins the height to what is on screen and clears the
+transform before the write — so a grab, a wheel tick, a scrim-tap dismiss or Escape during
+the slide continue from where the sheet visibly is. Drags, snaps and the dismiss still
+animate height.
+
+While it slides the sheet is laid out BELOW the frame, so anything in it that asks the
+browser to reveal itself (`scrollIntoView`, a `focus()` without `preventScroll`) scrolls
+the frame instead — see § "The trail scrolls, holds up to 50 words, and outlives the panel" → the active-pill scroll.
 
 ---
 
@@ -403,9 +602,8 @@ dismisses immediately. Only the top-most mounted `depth` reacts (module-level
 ### Escape key (desktop)
 
 Escape does exactly what the ✕ does: both call `requestClose`, which runs `onCloseX`
-first and only `dismiss()`es when it does not return `true`. So on the eip, Escape closes
-the word that is showing, and the panel closes only after the last word on the trail is
-gone. Only the **most recently opened dismissible panel** reacts. That panel is tracked
+first and only `dismiss()`es when it does not return `true`. So on the eip, Escape pops
+the word that is showing, and the panel closes only when the root itself is popped. Only the **most recently opened dismissible panel** reacts. That panel is tracked
 by a module-level `escapeStack` of per-panel tokens in mount order. It is separate from
 `mountedDepths` because that set is keyed by depth and also holds persistent sheets.
 Persistent panels (`minHeight > 0`) never register. Escape still works while focus is
@@ -512,11 +710,21 @@ page archetype that transforms its surface inherits the fix automatically.
 
 ## Drag zones outside `root`
 
-The grabber, the tab strip, and the eip entry header sit **outside** the body's
-`root`, so the raw touch listeners never see them. They share `bindHeaderDrag`
+The grabber, the eip's upper panel (trail + entry header) and the shelf's grabber sit
+**outside** the body's `root`, so the raw touch listeners never see them. They share `bindHeaderDrag`
 (`useDrag`, `axis: "y"`, `filterTaps: true`) instead, which tracks absolutely from
 the height captured on the drag's first real movement and calls the same `settle()`
 on release. `filterTaps` keeps taps on header icons and tab chips working.
+
+## Off-screen panes mount late
+
+`InfoCardPanelBody` renders only the ACTIVE pane's content on the opening commit. The
+other panes' scrollers are mounted (empty) from the start — so `paneRefs`, the edge fades
+and the track never change shape — and their `InfoCardTabContent` fills in once
+`panesWarm` flips: `OFFSCREEN_PANES_WARM_MS` (260 ms, just past the open slide) after
+mount, or at once on the first touchstart on the track (a swipe must find its neighbour
+drawn). A tapped tab needs nothing: the active pane always renders. One-way — once warm,
+all panes stay mounted for the panel's life.
 
 ## Interaction with the body's own horizontal swipe
 
@@ -572,8 +780,8 @@ Now:
    WAAPI enter animation (`ENTRY_SLIDE_TRAVEL_PCT` 34%, `ENTRY_SLIDE_MS` 280ms, easing
    matched to `TAB_SWIPE_TRANSITION`) on a wrapper around the body whenever the active
    tab's **id** changes; the direction is the sign of the `activeIndex` delta, so a pushed
-   tab (always appended) enters from the right and tapping a pill to the left enters from
-   the left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and scp do; the
+   word enters from the right and a pop (Escape, or tapping an earlier crumb) enters from the
+   left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and scp do; the
    cdp has no trail and passes neither, disabling the animation).
    - It is **enter-only** — the outgoing word's DOM is already gone — which is why the
      travel is a fraction of the panel width rather than a full page.
@@ -596,10 +804,16 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
 "Pinyin Copied!") that self-dismisses after `COPY_MESSAGE_MS` (1.4 s).
 
 - **Where it lives.** The behaviour is a `CPCDRow` property (`tapToCopy`, defaulting to
-  false), threaded through `ForeignText` and switched on at exactly one call site: the
-  header `ForeignText` in `InfoCardPanelBody`. It is opt-in because most cpcd surfaces
+  false), threaded through `ForeignText` and switched on for the eip header's
+  `ForeignText` in `EipEntryHeader` (and the Dictionary page's result headwords,
+  `DictionaryEntryRow.headwordTapToCopy`). It is opt-in because most cpcd surfaces
   already own the tap (flip the card, select a segment); the eip header is the one place
   the headword is shown purely as a reference, so a tap there has nothing else to mean.
+- **The headword sits in a pressable KEYCAP (2026-10-29).** The raised tile around it
+  (`.mobile-demo-eic-headword-tile`, a `ButtonBase`) sinks onto its 4px lip while held with
+  the app's raised-key press (`keycapPressSx`, § Add key), and the WHOLE tile copies: a tap on its padding is forwarded as a click on
+  the cpcd row (`EipEntryHeader` → `copyFromTile`), so CPCDRow stays the one copy
+  implementation (alternation and caption included).
 - **The caption is the est's popup**, not a new widget: `CpcdPopup`
   (`src/components/CpcdPopup.tsx`), anchored to the row's root element, non-interactive,
   class `.cpcd-row__copy-toast`. See
@@ -641,9 +855,20 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
 
 - `src/components/sheet/SheetPanel.tsx` — everything above
   (the scrim portal host, constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
+  the open slide: `playEntrySlide`/`endEntrySlide`/`entrySlideOffset`,
   `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`,
-  the tab-strip `ResizeObserver`)
-- `src/components/sheet/SheetCloseX.tsx` — the shared ✕, also worn by the challenge
+  the telescope: `SheetTelescopeHandle`, `writeTelescope`, `measureTelescope`)
+- `src/features/flashcards/FlashcardsLearnPage/EipUpperPanel.tsx` — the eip's upper
+  panel (PageHeader title row, trail row with the down caret, entry header slot); the
+  telescope's frame
+- `src/features/flashcards/FlashcardsLearnPage/EipAddKey.tsx` — the Dictionary eip's
+  Add ⇄ Added! key
+- `src/features/flashcards/FlashcardsLearnPage/eipPalette.ts` (`eipPaletteAt`,
+  `EIP_DAY_PALETTE`), `useEipPalette.ts` (`useEipPalette`, `useEipColors`),
+  `EipPaletteContext.tsx` (`EipPaletteProvider`) — the time-of-day palette
+- `src/timeOfDay/dayPhase.ts` (`timeOfDayAt`, `phaseShare`) and `src/timeOfDay/useDayClock.ts`
+  (`useDayClock`) — the shared clock
+- `src/components/sheet/SheetCloseX.tsx` — the shared ✕ (every sheet but the eip), also worn by the challenge
   sheet (`src/features/studyChallenge/ChallengeSheet.tsx`, docs/STUDY_CHALLENGE.md § 3.2)
 - `src/components/PageHeader.tsx` — `rightContent`, which is how the panel header carries
   the close cluster
@@ -651,13 +876,15 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   `bodyKey` (re-binds the coupling when the active tab's scroller changes), the entry
   pager slide (`entryTabId` / `entryTabIndex`)
 - `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx` — body handle,
-  per-pane scrollers (each with an `OverlayScrollbar` thumb), horizontal tab-swipe axis lock, end-of-strip rubber-band, the
+  per-pane scrollers (each with an `OverlayScrollbar` thumb), deferred off-screen panes
+  (`panesWarm`, `OFFSCREEN_PANES_WARM_MS`), horizontal tab-swipe axis lock, end-of-strip rubber-band, the
   entry-jump layout effect (`entryJumpRef`)
 - `src/components/OverlayScrollbar.tsx` — the pane scrollbar thumb (§ Pane scrollbar)
 - `src/features/flashcards/FlashcardsLearnPage/styled.ts` — `EipEntryTab` + the
-  `eipPillIn` entrance keyframes
-- `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail pills (it no
-  longer reserves a column for the ✕; see § The close cluster)
+  `eipPillIn` entrance keyframes; `InfoSheetTabStrip` / `InfoSheetTab` (the segmented
+  content tabs)
+- `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail breadcrumb
+  (always shown; rendered inside EipUpperPanel's trail row)
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
   (axis lock, commit ratio, transition, edge rubber-band)
 - `src/components/CPCDRow.tsx` — `tapToCopy` (the header copy gesture) and

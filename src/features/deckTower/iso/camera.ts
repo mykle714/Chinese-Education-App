@@ -113,5 +113,16 @@ export function makeCameraProjector(view: CameraView): Projector {
         const det = (px.x - o.x) * (py.y - o.y) - (px.y - o.y) * (py.x - o.x);
         return Math.sqrt(Math.abs(det)) / STEP;
     };
-    return { unit: scaleAt(target.x, target.y, target.z), project, scaleAt, facingScaleAt };
+    // The camera's side of a vertical plane. In z-scaled world space (x, y, z·zScale — the
+    // vertical planes are unchanged by it) the direction toward the viewer is the unit vector
+    // (sy·sp, cy·sp, cp), and with perspective the camera stands 1 / perspective along it
+    // from the target. The sign of perspective · (camera − plane) along the axis is then
+    // dir + perspective · (target − at), which with no perspective (a camera at infinity)
+    // is just the direction's sign. Edge-on (0) counts as seen, as in the fixed view.
+    const seesHighSide = (axis: "x" | "y", at: number): boolean => {
+        const dir = axis === "x" ? sy * sp : cy * sp;
+        const from = axis === "x" ? target.x : target.y;
+        return dir + perspective * (from - at) >= 0;
+    };
+    return { unit: scaleAt(target.x, target.y, target.z), project, scaleAt, facingScaleAt, seesHighSide };
 }

@@ -348,8 +348,11 @@ export function useCardIconEditor({ currentEntry, nextEntry }: UseCardIconEditor
         },
         [iconLayoutOverrides, snapConfigOverrides, textColorsOverrides, textLayoutOverrides, cardColorOverrides, selectedSenseOverrides, noteOverrides],
     );
-    const displayCurrentEntry = applyIconOverride(currentEntry);
-    const displayNextEntry = applyIconOverride(nextEntry);
+    // Memoised: a card WITH an override would otherwise be a fresh merged object on every
+    // render, which defeats the flp's React.memo'd FlashCardSection (it takes these as
+    // `currentEntry` / `nextEntry`). Both inputs are stable between real changes.
+    const displayCurrentEntry = useMemo(() => applyIconOverride(currentEntry), [applyIconOverride, currentEntry]);
+    const displayNextEntry = useMemo(() => applyIconOverride(nextEntry), [applyIconOverride, nextEntry]);
 
     // The picker's prefetched first page, for the CURRENT card only. Memoized so its
     // identity is stable across renders — IconPickerDialog's load effect depends on it,

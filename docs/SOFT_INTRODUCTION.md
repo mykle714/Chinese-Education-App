@@ -46,6 +46,7 @@ folder: any feature may consume it.
 | Id | Where | Intro | Graduated | Thresholds |
 |---|---|---|---|---|
 | `handCardCount` | fdp card hand (full variant) — `StudyHand` `figureMark`, chosen in `FlpStudyHand` | small "cards" under the big numeral | the design's 34×2px ink hairline (`.bignum:after`) | 15 visits + 7 days |
+| `sortDifficultyCaption` | scp toolbar level pill — `SortCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
 
 ## 3. Storage
 
@@ -87,7 +88,9 @@ override:
 - `useSoftIntro` ignores it for non-testers, so a stale key on a shared device cannot
   change a learner's experience.
 - It belongs in the header of any page hosting an si. Today that is the hp
-  (`src/pages/HomePage.tsx`, `headerExtraActions`, left of the banking always-play toggle).
+  (`src/pages/HomePage.tsx`, `headerExtraActions`, left of the banking always-play toggle)
+  and scp (`src/features/discover/SortCardsPage.tsx`, `headerExtraActions`, left of the
+  audio chip).
 
 ## 6. Adding a soft introduction
 

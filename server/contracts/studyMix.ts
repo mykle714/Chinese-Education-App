@@ -33,7 +33,9 @@ export const STUDY_MIX_QUOTAS: readonly BandQuota[] = [
 /**
  * Study Mix's top-up order: when a band's quota underfills, the shortfall is borrowed
  * from these bands, in this order (Target first). Readers: the flp Mix working loop
- * (`OnDeckVocabService` → `DEFAULT_LOOP_CONFIG`) and focus mode's daily snapshot
+ * (`OnDeckVocabService` → `DEFAULT_LOOP_CONFIG`, also the Mix loop's cooled-tier order),
+ * the per-mark refill (`OnDeckVocabService` → `getNextLibraryCardWithFallback`, filtered
+ * to a mode's allowed bands) and focus mode's daily snapshot
  * (`FocusModeService` → `selectFocusSet`, docs/FOCUS_MODE.md § 3), which fills its 25 the
  * same way the loop fills its 10.
  */

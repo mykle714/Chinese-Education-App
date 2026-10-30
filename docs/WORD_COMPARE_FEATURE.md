@@ -135,9 +135,10 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   > One earlier home, also gone: a labelled "Compare To…" button in `InfoCardActionBar` at
   > the end of the eip definition tab. That bar is **deleted** — artboards 20–25 make the
   > panel body information-only.
-- **Re-entry from a different word** (Compare tab already open): focus it, **refill slot A**
-  with the new source word, and **clear slot B** back to the `+` placeholder (decided — the old
-  pair is no longer what the user asked about).
+- **Re-entry from a different word** (Compare crumb already on the trail): the trail's
+  breadcrumb rule pops everything above it, then **refill slot A** with the new source word and
+  **clear slot B** back to the `+` placeholder (decided — the old pair is no longer what the user
+  asked about). See [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § The trail is a breadcrumb stack.
 - **Tab shape**: `useEipTabs`' `EipTab` currently assumes `entry: VocabEntry`; the Compare tab
   is a second variant (discriminated union, e.g. `kind: 'entry' | 'compare'`) with its own state
   (slot A entry, slot B entry | null, search text, comparison result/loading/error). When the
@@ -145,7 +146,7 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   `InfoCardPanelBody` content (no entry header, no inner sub-tab strip).
 - Closing the Compare tab discards its state entirely. The ✕ is the panel header's
   (`SheetCloseX`, passed in as `SheetPanel`'s `onCloseX`) — the word trail itself has
-  carried no ✕ since 2026-09-05; it closes whichever word is showing.
+  carried no ✕ since 2026-09-05; it pops whichever crumb is showing (the top of the stack).
 
 References: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`EipTab`,
 `MAX_EIP_TABS` — the Compare tab is pushed under the same 50-tab cap as a word tab; the

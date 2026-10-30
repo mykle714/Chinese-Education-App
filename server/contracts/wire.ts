@@ -347,25 +347,28 @@ export type BreakdownMap = Record<
  * only a piece of one. Crossed with the two readings:
  *
  *     0  complete English   a sense IS the term            "long" → 长; "me" → 我 ["I","me","my"]
- *     1  complete word      the headword or pronunciation IS the term   "long" → 龙 lóng;
+ *     1  complete word      the headword or the row's MAIN reading IS the term   "long" → 龙 lóng;
  *                           es "casa" → casa
- *     2  partial word       the term is a leading prefix    "long" → 龙虾; es → casarse
- *     3  partial English    the term sits inside a sense    "long" → 寿 "long life"
+ *     2  complete alternate another reading IS the term (zh only)   "ma2" → 吗
+ *     3  English prefix     a sense STARTS with the term (whole word)   "long" → 寿 "long life"
+ *     4  partial word       the term is a leading prefix    "long" → 龙虾; es → casarse
+ *     5  partial English    the term sits inside a sense, not leading it   "art" → 美术 "fine arts"
  *
- * Every complete match outranks every partial one; English leads the complete pair, the word
- * side leads the partial pair. The asymmetry is deliberate: someone typing a whole English word
- * usually means it, so an exact gloss is the best answer available — but a PARTIAL word-side
- * match is usually someone mid-word, which says far more than an English word merely appearing
- * inside a longer definition.
+ * Every complete match outranks every partial one, and English leads at each level (owner's
+ * order, 2026-10-29): someone typing a whole English word usually means it, and a sense that
+ * LEADS with the term ("long life") is a better answer than a pinyin prefix still being typed.
+ * A sense merely containing the term comes last. Each row's bucket ships as `matchKind`
+ * (`DictionaryMatchKind`). Full ladder: `DictionaryDAL.searchByWord1` → RANKING.
  *
- * Spanish uses the same four buckets with `word1` in the pronunciation's place (it has no
- * pronunciation column). It must: Spanish glosses quote their headword — casón is "augmentative
- * of casa" — so without a complete tier, searching "casa" ranked the word itself 11th behind
- * everything that merely mentions it.
+ * Spanish uses the same buckets with `word1` in the pronunciation's place (it has no
+ * pronunciation column, so never bucket 2). It must: Spanish glosses quote their headword — casón
+ * is "augmentative of casa" — so without a complete tier, searching "casa" ranked the word itself
+ * 11th behind everything that merely mentions it.
  *
  *   • `relevance`     — the ladder, nothing more. The dictionary page and Community search bar.
  *   • `english-first` — the same ladder, plus the interleaved head: the first two rows of every
- *                       bucket come first (0,0,1,1,2,2,3,3), then the ladder resumes. Without it
+ *                       head group come first (0,0,1,1,3,3,4,4,5,5 — buckets 1 and 2 share a group),
+ *                       then the ladder resumes. Without it
  *                       a term with dozens of exact glosses fills a short strip entirely with
  *                       bucket 0 and the learner never sees that a complete pinyin reading
  *                       exists. Used only by the iw composer's hint tray
@@ -376,6 +379,30 @@ export type BreakdownMap = Record<
  * the spaceless-pinyin clause and the AI fallback that sit behind both rankings unchanged.
  */
 export type DictionarySearchRanking = 'relevance' | 'english-first';
+
+/**
+ * How a `/search` row matched the term — one per ranking bucket of
+ * `DictionaryDAL.searchByWord1` (its RANKING comment), in rank order:
+ *
+ *   meaning-exact      a sense IS the term                       ("long" → 长)
+ *   word-exact         the headword or the row's MAIN reading IS the term ("long" → 龙 lóng)
+ *   reading-alternate  another reading of the row IS the term (zh only; "ma2" → 吗)
+ *   meaning-prefix     a sense STARTS with the term, whole word   ("long" → 寿 "long life")
+ *   word-prefix        the term is a leading prefix of the word   ("long" → 龙头)
+ *   meaning-partial    the term sits inside a sense, not leading it ("art" → 美术 "fine arts")
+ *   word               a word/pinyin match of unknown completeness — the ladder's two-bucket
+ *                      fallback, which runs when no English search did (numbered pinyin, "ma5")
+ *
+ * Read by the Dictionary page's result sections (src/features/dictionary/dictionaryMatchSections.ts).
+ */
+export type DictionaryMatchKind =
+  | 'meaning-exact'
+  | 'word-exact'
+  | 'reading-alternate'
+  | 'meaning-prefix'
+  | 'word-prefix'
+  | 'meaning-partial'
+  | 'word';
 
 /** Runtime-checkable list of the above, so the controller can validate the query param. */
 export const DICTIONARY_SEARCH_RANKINGS: readonly DictionarySearchRanking[] = [
@@ -856,6 +883,13 @@ export interface DictionaryEntryBase {
    * absent everywhere else. Computed by `resolveMatchedSense` (server/utils/searchSenseMatch.ts).
    */
   matchedSense?: string | null;
+  /**
+   * Search results only (`GET /api/dictionary/search`): HOW the row matched the term — the
+   * ranking bucket `DictionaryDAL.searchByWord1` ordered it by (`DictionaryMatchKind`). Rows
+   * arrive sorted by it, so the Dictionary page groups consecutive rows into one labelled
+   * section per kind. Absent everywhere else.
+   */
+  matchKind?: DictionaryMatchKind;
   /** Computed at read time by generateShortDefinition() (server/utils/definitions.ts). */
   shortDefinition?: string | null;
   exampleSentenceDefinitionPronunciationOverride?: ExampleSentenceDefinitionPronunciationOverride | null;
@@ -1486,6 +1520,13 @@ export interface VocabEntryBase {
   /** Tone digits derived from pronunciation (e.g. "12" for fēng kuáng). */
   tone?: string | null;
   difficulty?: DifficultyLevel | null;
+  /**
+   * Stroke count of the word's hardest character (det `maxCharStrokeCount`, migration
+   * 179; zh only, NULL for es and for words with a character outside hanzi-writer-data).
+   * The writing bar's ease key in the queue's stale tier
+   * (server/services/cardQueueRanking.ts → rankCardQueue).
+   */
+  maxCharStrokeCount?: number | null;
   /** POS tags from the det row (e.g. ["noun", "verb"]). */
   partsOfSpeech?: string[] | null;
 

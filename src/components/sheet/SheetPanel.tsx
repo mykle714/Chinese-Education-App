@@ -23,6 +23,32 @@ export interface SheetPanelBodyHandle {
     scroll: HTMLDivElement | null;
 }
 
+// The TELESCOPE (opt-in; the eip's upper panel — docs/EIP_SHEET_GESTURES.md § Telescope).
+// A host passes a ref to these three nodes and SheetPanel drives `frame`'s height from the
+// sheet's own height, on the same write and the same transition:
+//
+//   sheet h   0 ──────────────▶ default (open) height ──────────────▶ max
+//   frame     0 ──── linear ───▶ rest              ──── linear ───▶ rest + extra
+//
+// where `rest` = content's natural height minus `extra`'s, i.e. the panel without the row
+// that only a maximized sheet shows (the eip's "More Info" title). `frame` must clip
+// (overflow hidden) and bottom-anchor `content` (flex-end), so a short frame shows the
+// BOTTOM of the panel and growing reveals the top. Both heights are measured by a
+// ResizeObserver, never read in the per-frame write.
+//
+// The same write publishes the reveal on `frame` as two CSS custom properties, for content
+// that must CROSSFADE with the `extra` row rather than just be clipped by it (the eip's
+// trail-row caret, which hands over to the title row's caret as the title arrives):
+//   --sheet-telescope-t           0 at/below the open height → 1 at max (extra's reveal)
+//   --sheet-telescope-transition  the write's own duration ("0ms" while dragging), so a
+//                                 `transition: … var(--sheet-telescope-transition)` rides
+//                                 the snap exactly and tracks the finger 1:1 otherwise.
+export interface SheetTelescopeHandle {
+    frame: HTMLElement | null;
+    content: HTMLElement | null;
+    extra: HTMLElement | null;
+}
+
 // Imperative handle exposed by SheetPanel so the parent can read the panel's
 // live height when opening a child panel that should match it.
 export interface SheetPanelHandle {
@@ -51,7 +77,7 @@ interface SheetPanelProps {
     initialHeight?: number | null;
     // Open height as a FRACTION of the frame (default DEFAULT_HEIGHT_RATIO, 0.6). Unlike
     // `initialHeight` (a px value copied from a parent panel) this is a host's standing
-    // choice of how tall its sheet opens — the Dictionary page opens at 0.9. It is also
+    // choice of how tall its sheet opens — the Dictionary page opens at 0.8. It is also
     // the RESTING STOP: on the way down the sheet clips back to this height (release
     // snap, and a downward fling's momentum floor), and only a drag below it dismisses.
     // Ignored when `initialHeight` is given or the panel is persistent (minHeight > 0).
@@ -80,7 +106,14 @@ interface SheetPanelProps {
     // header-drag binder so an inner element (e.g. the EIP entry header) can
     // share the grabber's drag-to-resize gesture. useDrag's filterTaps option
     // keeps proper taps on header icons working.
-    children: React.ReactNode | ((api: { bindHeaderDrag: ReturnType<typeof useDrag> }) => React.ReactNode);
+    // `requestClose` is the ✕'s own action (honours `onCloseX`, then dismisses) for a host
+    // that draws its ✕ itself. `dismiss` closes the panel outright, skipping `onCloseX` —
+    // the eip's down caret, which closes the whole panel rather than popping a word.
+    children: React.ReactNode | ((api: {
+        bindHeaderDrag: ReturnType<typeof useDrag>;
+        requestClose: () => void;
+        dismiss: () => void;
+    }) => React.ReactNode);
     // Where, between the lower stop and the max, a release stops springing back
     // up and collapses instead. 0.5 (default) = the midpoint rule: whichever
     // stop is nearer wins. A SMALLER value makes the panel collapse from a much
@@ -93,9 +126,9 @@ interface SheetPanelProps {
     // with nothing passed the ✕ simply dismisses the sheet.
     //
     // Return TRUE to say "handled — keep the sheet open". That is the eip's case: its ✕
-    // closes the SHOWING WORD, and only the last word's close ends the panel, so the flp
-    // passes `() => !eip.closeActiveTab()` and SheetPanel dismisses exactly when the trail
-    // ran out. Returning true/void from a handler that did nothing would strand the user
+    // pops the SHOWING WORD off the breadcrumb trail, and only popping the root ends the
+    // panel, so the eip hosts return false at the root and SheetPanel dismisses exactly
+    // when the trail ran out. Returning true/void from a handler that did nothing would strand the user
     // in a panel whose only close affordance no longer closes.
     onCloseX?: () => boolean | void;
     // Whether to draw the ✕ at all. Defaults to "yes, unless the panel is PERSISTENT" —
@@ -115,13 +148,6 @@ interface SheetPanelProps {
     // live flames on a study surface is unchanged. It cannot over-credit: the server
     // claims each increment atomically under a 59s cooldown (UserDAL.claimMinutePointIncrement).
     showMinutePoints?: boolean;
-    // Optional row rendered above the grabber (e.g. entry-tabs strip). Rendered
-    // inside a drag-to-resize zone bound to bindHeaderDrag so a vertical drag
-    // started on the entry tabs resizes the sheet just like the grabber/header
-    // (this strip sits outside `root`, so the raw touch listeners don't reach
-    // it — useDrag is the only path). useDrag's filterTaps keeps tab-selection
-    // and the close-tab taps working.
-    tabStrip?: React.ReactNode;
     // Title for the panel's HEADER — a real `PageHeader` (size "node"), present at every
     // height from the moment the sheet opens, so a panel says what it is whether it is a
     // 60% sheet or the whole screen. It also OWNS THE CLOSE CLUSTER (the ✕ and, on study
@@ -139,6 +165,23 @@ interface SheetPanelProps {
     // Omitting it is allowed but discouraged for a modal sheet: with no header there is no
     // ✕ either, so the only way out is a downward drag.
     title?: string;
+    // Opt-in telescope (see SheetTelescopeHandle). Today: the eip (InfoCardSection).
+    telescopeRef?: React.RefObject<SheetTelescopeHandle | null>;
+    // Override for the sheet's own background. The eip passes its time-of-day ground
+    // (eipPalette.ts); every other sheet stays white.
+    surface?: string;
+    // Draw the top grabber row (default true). The eip turns it off (2026-10-29): its
+    // whole upper panel is the resize handle, and the shelf carries its own small pill.
+    // With it off there is also no untitled-panel ✕ fallback, so pass `showClose={false}`
+    // and draw a ✕ yourself (the eip's is in its trail row).
+    showGrabber?: boolean;
+    // Keep the container's own 10px top / 18px bottom padding (default true). That
+    // padding is breathing room around the grabber row and below a white body; a host
+    // whose panels fill the sheet edge to edge turns it off, or the `surface` shows as a
+    // band above and below them. The eip does (2026-10-29): its upper panel IS the top of
+    // the sheet (and telescopes from there), and its white shelf runs to the bottom edge.
+    // At full merge the top still gets the status-bar inset either way.
+    edgePadding?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +228,9 @@ const SHEET_BASE_Z_INDEX = 1201;
 
 // Duration of every snap/dismiss animation.
 const SNAP_DURATION_MS = 220;
+// How far past the sheet's own height the open slide starts, px: the sheet's shadow
+// reaches above its top edge, and must start out of view too.
+const ENTRY_SLIDE_SHADOW_CLEARANCE_PX = 32;
 
 // Scrim fade. IN is a mount-time keyframe on EicScrim itself (`eicScrimIn`); OUT is
 // driven from here, because only this component knows a dismiss has begun. The out
@@ -274,11 +320,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     bodyKey,
     collapseThresholdRatio = 0.5,
     children,
-    tabStrip,
     title,
     onCloseX,
     showClose,
     showMinutePoints = false,
+    telescopeRef,
+    surface,
+    showGrabber = true,
+    edgePadding = true,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -291,11 +340,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const headerRef = useRef<HTMLDivElement | null>(null);
     // Last merge ratio written, so a frame that does not change it writes no styles.
     const lastMergeRef = useRef(-1);
-    // Wrapper around the optional tab strip — what the strip ResizeObserver watches.
-    const tabStripWrapRef = useRef<HTMLDivElement | null>(null);
-    // Last tab-strip height the panel has already made room for. Seeded at -1 so the
-    // FIRST measurement only records the baseline and never grows the sheet.
-    const tabStripHeightRef = useRef(-1);
+    // The "unmerged" top padding, read through a ref so writeMergeChrome stays stable.
+    const restTopPaddingRef = useRef(SHEET_TOP_PADDING_PX);
+    restTopPaddingRef.current = edgePadding ? SHEET_TOP_PADDING_PX : 0;
 
     // ---- Where the scrim mounts -------------------------------------------
     // The scrim is `position: absolute; inset: 0`, so it dims exactly its nearest
@@ -395,21 +442,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // a stable callback called from touchmove/momentum frames, so it must not be rebuilt
     // (and its listeners re-bound) just because a prop identity changed.
 
-    // Put the close cluster (flame + ✕) on the right row.
-    //
-    // ⚠️ THE ✕ IS ONE ELEMENT THAT MOVES, not two that swap. It lives in the chrome row
-    // (top-right, beside the grabber) and slides DOWN into the tab strip's row the moment
-    // a strip appears — which is the row the eip's word-trail ✕ used to occupy, and the
-    // strip therefore reserves the column for it rather than drawing its own (EipTabStrip).
-    // Rendering a second ✕ in the strip and hiding the first would have been the easy
-    // version and it reads as a flicker: the button vanishes from one row and materialises
-    // in another, with nothing connecting them.
-    //
-    // The offset is MEASURED rather than derived from the strip's height, because the
-    // merge header grows in BETWEEN the two rows: at full height the strip sits a header
-    // lower than it does at rest, and any formula would have to re-derive the header's
-    // live interpolated height anyway.
-
     // Paint the "merging into the page" chrome for a given sheet height. `t` runs 0 → 1
     // across the last MERGE_ZONE_PX below the cap: 0 is a sheet (rounded, shadowed, no
     // header), 1 is a page (square, flat, headed). Everything here is a direct style
@@ -436,14 +468,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // shadow is what makes a sheet read as a surface sitting ON the page; a merged
         // sheet IS the page, so it must not cast one.
         el.style.boxShadow = t >= 1 ? "none" : "";
-        // Top padding interpolates from the sheet's own 10px to the STATUS-BAR INSET,
+        // Top padding interpolates from the sheet's own 10px (0 with `edgePadding` off) to the STATUS-BAR INSET,
         // not to 0. A fully merged sheet IS the page and reaches the top of the screen,
         // and since `viewport-fit=cover` the top of the screen is under the clock — so
         // at t=1 the grabber and the header below it need the same clearance every page
         // header gets (src/theme/safeArea.ts). `env()` cannot be interpolated in JS, so
         // the mix is expressed as a calc the browser evaluates: `SAFE_TOP * t`. On a
         // device with no inset it is 0px and this is exactly the old ramp to 0.
-        el.style.paddingTop = `calc(${SHEET_TOP_PADDING_PX * (1 - t)}px + ${SAFE_TOP} * ${t})`;
+        el.style.paddingTop = `calc(${restTopPaddingRef.current * (1 - t)}px + ${SAFE_TOP} * ${t})`;
         // THE HEADER IS NOT MERGE CHROME. It is at full height from the moment the panel
         // opens and the merge must not touch it — only the container's own corners,
         // shadow and top padding interpolate. Until 2026-09-05 the header's height and
@@ -453,14 +485,87 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         return transition;
     }, []);
 
+    // ---- Telescope ---------------------------------------------------------
+    // Natural heights of the telescope's content and its max-only row, kept current by the
+    // ResizeObserver below. -1 = not measured yet (measured synchronously on first use).
+    const telescopeFullRef = useRef(-1);
+    const telescopeExtraRef = useRef(-1);
+    const measureTelescope = useCallback(() => {
+        const tel = telescopeRef?.current;
+        telescopeFullRef.current = tel?.content?.offsetHeight ?? 0;
+        telescopeExtraRef.current = tel?.extra?.offsetHeight ?? 0;
+    }, [telescopeRef]);
+
+    // The frame's height for a sheet height `h` — piecewise linear, see SheetTelescopeHandle.
+    const writeTelescope = useCallback((h: number, animate: boolean) => {
+        const frame = telescopeRef?.current?.frame;
+        if (!frame) return;
+        if (telescopeFullRef.current < 0) measureTelescope();
+        const extra = telescopeExtraRef.current;
+        const rest = Math.max(0, telescopeFullRef.current - extra);
+        const openH = defaultHeightRef.current;
+        const maxH = parentHeightRef.current * MAX_HEIGHT_RATIO;
+        const reveal = h <= openH ? 0 : (maxH > openH ? clamp((h - openH) / (maxH - openH), 0, 1) : 1);
+        const frameH = h <= openH
+            ? (openH > 0 ? rest * (h / openH) : 0)
+            : rest + extra * reveal;
+        frame.style.transition = animate ? `height ${SNAP_DURATION_MS}ms ease-out` : "none";
+        frame.style.height = `${frameH}px`;
+        frame.style.setProperty("--sheet-telescope-t", String(reveal));
+        frame.style.setProperty("--sheet-telescope-transition", animate ? `${SNAP_DURATION_MS}ms` : "0ms");
+    }, [telescopeRef, measureTelescope]);
+
+    // ---- Entry slide ---------------------------------------------------------
+    // The OPEN animation is a transform, not a height: the sheet is laid out once at its
+    // open height and slid up from below the frame (`translateY`, compositor-only), where
+    // animating `height` from 0 re-laid-out the whole eip body on every frame of the
+    // slide. Only the open uses it — drags, snaps and the dismiss stay on the height model.
+    //
+    // While the slide runs the sheet's visible height is `heightRef − translateY`, not
+    // `heightRef`. Anything that writes a height mid-slide (a grab, a scrim-tap dismiss)
+    // goes through writeHeight, which first hands the slide back to the height model at
+    // exactly the visible height (`endEntrySlide`) — so the sheet never jumps.
+    // The timer that ends a running slide; null = no slide in flight.
+    const entrySlideTimerRef = useRef<number | null>(null);
+
+    // The slide's current offset, px (0 when none is in flight).
+    const entrySlideOffset = useCallback((): number => {
+        const el = sheetContainerRef.current;
+        if (!el || entrySlideTimerRef.current === null) return 0;
+        const t = getComputedStyle(el).transform;
+        return t && t !== "none" ? new DOMMatrixReadOnly(t).m42 : 0;
+    }, []);
+
+    // End a running slide. `convert`: mid-flight, so pin the height to what is on screen
+    // first (the caller is about to write its own height from there). Not converting = the
+    // slide finished; the transform is already 0 and just gets handed back.
+    const endEntrySlide = useCallback((convert: boolean) => {
+        const el = sheetContainerRef.current;
+        if (!el || entrySlideTimerRef.current === null) return;
+        const offset = convert ? entrySlideOffset() : 0;
+        window.clearTimeout(entrySlideTimerRef.current);
+        entrySlideTimerRef.current = null;
+        el.style.transition = "none";
+        el.style.transform = "";
+        if (offset > 0) {
+            const visible = Math.max(0, heightRef.current - offset);
+            heightRef.current = visible;
+            el.style.height = `${visible}px`;
+            void el.offsetHeight; // flush, so the caller's animated write starts from here
+        }
+    }, [entrySlideOffset]);
+
     // The single writer for the sheet's height. `animate` turns the CSS height
     // transition on for this write and off for every other one — so grabbing a
     // snapping sheet mid-animation immediately returns to 1:1 finger tracking
     // instead of trailing the finger by the snap duration.
     const writeHeight = useCallback((h: number, animate = false) => {
+        // A write during the open slide takes over from it (see "Entry slide").
+        endEntrySlide(true);
         heightRef.current = h;
         const el = sheetContainerRef.current;
         if (!el) return;
+        writeTelescope(h, animate);
         // The merge chrome rides the SAME transition as the height, so the corners,
         // the shadow and the header arrive exactly when the sheet reaches its stop
         // rather than snapping ahead of it.
@@ -469,7 +574,23 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             ? `height ${SNAP_DURATION_MS}ms ease-out${chromeTransition ? `, ${chromeTransition}` : ""}`
             : "none";
         el.style.height = `${h}px`;
-    }, [writeMergeChrome]);
+    }, [writeMergeChrome, writeTelescope, endEntrySlide]);
+
+    // Lay the sheet out at `h` at once and slide it up into place.
+    const playEntrySlide = useCallback((h: number) => {
+        const el = sheetContainerRef.current;
+        if (!el) return;
+        writeHeight(h);
+        // Past the frame by the sheet's height plus room for its upward shadow.
+        el.style.transition = "none";
+        el.style.transform = `translateY(${h + ENTRY_SLIDE_SHADOW_CLEARANCE_PX}px)`;
+        entrySlideTimerRef.current = window.setTimeout(() => endEntrySlide(false), SNAP_DURATION_MS + 20);
+        requestAnimationFrame(() => {
+            if (entrySlideTimerRef.current === null) return; // already ended by a gesture
+            el.style.transition = `transform ${SNAP_DURATION_MS}ms ease-out`;
+            el.style.transform = "translateY(0px)";
+        });
+    }, [writeHeight, endEntrySlide]);
 
     // Stop any in-flight height animation at exactly the height that is on
     // screen right now, and return it. A gesture must take over from what the
@@ -478,10 +599,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // never interrupts the open animation.
     const freezeHeight = useCallback(() => {
         const el = sheetContainerRef.current;
-        const h = el ? el.getBoundingClientRect().height : heightRef.current;
+        // Minus any open slide's offset: mid-slide, part of the laid-out sheet is still
+        // below the frame (the rect's height does not see a transform's travel).
+        const h = el ? el.getBoundingClientRect().height - entrySlideOffset() : heightRef.current;
         writeHeight(h);
         return h;
-    }, [writeHeight]);
+    }, [writeHeight, entrySlideOffset]);
 
     const stopMomentum = useCallback(() => {
         if (momentumRafRef.current !== null) {
@@ -591,12 +714,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // never close the panel on its own. Returns false when the delta was fully
     // absorbed by a boundary, which every caller treats as a hard stop.
     const applyResize = useCallback((rawDy: number, minH: number): boolean => {
+        // Mid open-slide, take over at the VISIBLE height (heightRef is still the target).
+        endEntrySlide(true);
         const h = heightRef.current;
         const next = clamp(h + rawDy * RESIZE_SENSITIVITY, minH, maxHeight());
         if (next === h) return false;
         writeHeight(next);
         return true;
-    }, [maxHeight, writeHeight]);
+    }, [maxHeight, writeHeight, endEntrySlide]);
 
     // Play the open animation from 0 → target height on first render. The
     // panel's own open height is a fixed fraction of the parent (screen) height
@@ -629,9 +754,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             writeHeight(targetHeight);
             return;
         }
-        // Written before paint, so the sheet never flashes at its natural height.
-        writeHeight(0);
-        requestAnimationFrame(() => writeHeight(targetHeight, true));
+        // Laid out at its open height and slid up from below the frame, before paint — so
+        // the sheet never flashes at its natural height (see "Entry slide").
+        playEntrySlide(targetHeight);
         // Keyed on scrimHost, NOT []: the sheet is portaled, so it is not in the DOM on
         // this component's first commit — it mounts on the commit that resolves the
         // host, and that is the one whose layout can be measured. The guard above makes
@@ -644,47 +769,29 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     useEffect(() => () => {
         stopMomentum();
         if (dismissTimerRef.current !== null) window.clearTimeout(dismissTimerRef.current);
+        if (entrySlideTimerRef.current !== null) window.clearTimeout(entrySlideTimerRef.current);
     }, [stopMomentum]);
 
     useImperativeHandle(ref, () => ({
         getCurrentHeight: () => heightRef.current,
     }), []);
 
-    // ---- The sheet GROWS for its tab strip, it does not squeeze -------------
-    // When the eip's word trail appears (a second word opened), the strip is a new row of
-    // chrome ~40px tall. Laid out normally it takes that space from the BODY: every line
-    // of the definition the learner is reading shifts down by a row, which reads as the
-    // content jumping away from the tap that opened it. So the panel takes the row from
-    // the SCREEN instead — it grows by exactly the strip's height, leaving the body where
-    // it was.
-    //
-    // The resting stop grows with it (`defaultHeightRef`), or the next drag-release would
-    // snap the panel back to a height that no longer has room for the strip and undo this.
-    //
-    // At the cap there is nothing left to take: a sheet already at full height cannot
-    // grow, and the body does shift down by a row. That is the only case where it does.
+    // The telescope's content changes height (a gloss wrapping to two lines on the next
+    // word, the Compare tab swapping in): re-measure and re-place the frame at the CURRENT
+    // sheet height, so the bottom of the panel never drifts off the frame's bottom edge.
     useEffect(() => {
-        const el = tabStripWrapRef.current;
-        if (!el) return;
+        const tel = telescopeRef?.current;
+        if (!tel?.content) return;
         const ro = new ResizeObserver(() => {
-            // Never while the sheet is leaving: its own shrink is what changed the strip,
-            // and growing back for it would fight the dismiss.
-            if (dismissingRef.current) return;
-            const h = el.getBoundingClientRect().height;
-            const prev = tabStripHeightRef.current;
-            tabStripHeightRef.current = h;
-            // First measurement is the baseline (the strip mounts at whatever height it
-            // opens with) — growing for it would double-count the space it already has.
-            if (prev < 0) return;
-            const delta = h - prev;
-            if (Math.abs(delta) > 0.5) {
-                defaultHeightRef.current = clamp(defaultHeightRef.current + delta, 0, maxHeight());
-                writeHeight(clamp(heightRef.current + delta, minHeightRef.current, maxHeight()), true);
-            }
+            measureTelescope();
+            if (!dismissingRef.current) writeTelescope(heightRef.current, false);
         });
-        ro.observe(el);
+        ro.observe(tel.content);
+        if (tel.extra) ro.observe(tel.extra);
         return () => ro.disconnect();
-    }, [maxHeight, writeHeight]);
+        // Keyed on scrimHost: the sheet (and the telescope inside it) is portaled, so it
+        // only exists once the host resolves — same reason as the open-animation effect.
+    }, [scrimHost, telescopeRef, measureTelescope, writeTelescope]);
 
     // Drag the grabber / tab strip / entry header to resize the sheet.
     const bindHeaderDrag = useDrag(
@@ -993,7 +1100,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // NOTE: no `height` key here on purpose — height is owned imperatively by
     // writeHeight (see the height-model comment above). Same for the merge chrome
     // (border radius, top padding, shadow) — writeMergeChrome owns those.
-    const sheetStyle: React.CSSProperties = { zIndex: SHEET_BASE_Z_INDEX + stackZ };
+    const sheetStyle: React.CSSProperties = {
+        zIndex: SHEET_BASE_Z_INDEX + stackZ,
+        ...(surface && { background: surface }),
+        // Top padding is written inline by writeMergeChrome (from restTopPaddingRef).
+        ...(!edgePadding && { paddingBottom: 0 }),
+    };
 
     // A persistent panel has no closed state, so it gets no ✕ unless a caller insists.
     const closeVisible = showClose ?? !persistent;
@@ -1039,6 +1151,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                     FIRST flex child, above the header: the grabber stays at the very top
                     of the panel at every height, including a maximized one, rather than
                     being pushed under the page header. */}
+                {showGrabber && (
                 <Box
                     className="mobile-demo-eic-drag-zone"
                     {...bindHeaderDrag()}
@@ -1078,6 +1191,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                         </Box>
                     )}
                 </Box>
+                )}
                 {/* PANEL HEADER — the app's real PageHeader, at full height from the
                     moment the panel opens (it was merge chrome until 2026-09-05; see the
                     `title` prop for why that changed). It sits under the grabber, so the
@@ -1123,27 +1237,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                         />
                     </SheetHeaderSlot>
                 )}
-                {/* Entry-tabs strip (optional) sits between the grabber and the
-                    entry header so it reads as part of the panel chrome. Wrapped
-                    in a drag zone so vertical drags started on the entry tabs
-                    resize the sheet; filterTaps keeps tab taps working. */}
-                {tabStrip && (
-                    <Box
-                        ref={tabStripWrapRef}
-                        className="mobile-demo-eic-tabstrip-drag-zone"
-                        {...bindHeaderDrag()}
-                        // flexShrink 0 — CHROME MUST NOT SQUEEZE. Without it a drag that
-                        // shrinks the sheet compresses the strip, the ResizeObserver above
-                        // reads that as "the strip got shorter" and shrinks the sheet by the
-                        // same amount, which shrinks the strip again: a feedback loop that
-                        // collapses the panel. The body (flex: 1, minHeight: 0) is what
-                        // absorbs a shrinking sheet, exactly as before.
-                        sx={{ touchAction: "none", flexShrink: 0 }}
-                    >
-                        {tabStrip}
-                    </Box>
-                )}
-                {typeof children === "function" ? children({ bindHeaderDrag }) : children}
+                {typeof children === "function" ? children({ bindHeaderDrag, requestClose, dismiss }) : children}
             </InfoSheetContainer>,
             scrimHost,
             )}

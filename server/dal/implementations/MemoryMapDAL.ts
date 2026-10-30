@@ -9,7 +9,6 @@ import { ValidationError } from '../../types/dal.js';
 import {
   vetTableForLanguage,
   vetSortedClause,
-  vetProvisionalClause,
   masteredBarClause,
   typeCategoryExpr,
 } from '../shared/vetTable.js';
@@ -96,7 +95,10 @@ export class MemoryMapDAL implements IMemoryMapDAL {
                ve."entryKey",
                ve.language,
                ve."typedMarkHistory",
-               ${vetProvisionalClause()}               AS "isLent",
+               -- Lent cards rank after the learner's own, and easiest first, in the
+               -- queue's stale tier (cardQueueRanking.rankCardQueue).
+               ve."starterPackBucket",
+               de."difficulty",
                -- Unresolved dd inputs for the "two words never read the same" guard
                -- (MemoryMapService.selectOccupants).
                ve."selectedSense",
@@ -119,7 +121,8 @@ export class MemoryMapDAL implements IMemoryMapDAL {
             SELECT 1 FROM ${table} s
             WHERE s."userId" = ve."userId" AND s."vocabEntryId" = ve.id
           )
-        -- Stable tiebreak only; the real ordering is rankCardQueue in app code.
+        -- Stable tiebreak only; the real ordering (incl. own-before-lent) is
+        -- rankCardQueue in app code.
         ORDER BY ve."createdAt" DESC
         `,
         [userId, language, lentIds]

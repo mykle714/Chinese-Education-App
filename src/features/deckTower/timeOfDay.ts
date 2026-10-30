@@ -1,5 +1,5 @@
 import { blendWash, hexToOklch, hueTurn, lightWash, mixHex, oklchToHex, washTone, type IsoWash, type WashLight } from "./iso";
-import { sunDay, type GeoPoint } from "./sunTimes";
+import { phaseShare, type DayPhase, type TimeOfDay } from "../../timeOfDay/dayPhase";
 import type { TowerWorld } from "./towerWorlds";
 
 /**
@@ -10,15 +10,9 @@ import type { TowerWorld } from "./towerWorlds";
  * Layer: page logic (feature module `src/features/deckTower`). Pure — `useTimeOfDay.ts`
  * samples it on a clock; DeckTowerPage paints with the result.
  *
- * ── The day's keyframes ────────────────────────────────────────────────────────
- * Around each sunrise and sunset (sunTimes.ts), TWILIGHT_MS either side:
- *
- *   night ──(rise − 1h)──▶ dawn @ rise ──(rise + 1h)──▶ day
- *   day   ──(set − 1h)───▶ sunset @ set ──(set + 1h)──▶ night
- *
- * Between two keyframes of different phases the look blends linearly; between two of the
- * same phase it holds. A day too short for a full hour of plain day (high-latitude winter)
- * meets dawn and sunset at its midday. A polar day / night holds day / night all day.
+ * WHEN each phase holds — the keyframes around the learner's real sunrise and sunset and
+ * the 30-minute twilight blends — is the shared clock in src/timeOfDay/dayPhase.ts
+ * (`timeOfDayAt`); this file says only what a phase LOOKS like over the tower.
  *
  * ── What a phase changes ───────────────────────────────────────────────────────
  *   - SKY: each world's own day sky (TowerWorld.sky, a COLORS token) turned toward the
@@ -27,23 +21,22 @@ import type { TowerWorld } from "./towerWorlds";
  *     world keeps a tint of its own hue at every hour. ⚠️ Derived colours, outside the
  *     colour framework (the same divergence as `spaceOver`): the framework has no dawn,
  *     sunset or night tiers.
- *   - WASH: everything drawn ON the sky (platform, cards, pawns, clouds, wind, plates, the
- *     page's white text and arrows, and the flp session laid over the tower — as a colour
- *     matrix, iso `washColorMatrix`) is lit by the phase's light (`PHASE_LIGHT`, the iso
- *     framework's ambient wash). The sky itself is never washed — it IS the light.
+ *   - WASH (night only; `NIGHT_WASH_ENABLED`): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
+ *     plates, the page's white text and arrows) is lit by night's light (`PHASE_LIGHT`, the iso
+ *     framework's ambient wash); dawn, day and sunset leave it as drawn. The sky itself is
+ *     never washed — it IS the light. HTML over the tower (the flp session, the slab
+ *     footer) is NOT washed: its SVG-filter wash was cut 2026-10-30 (CPU-rasterised, laggy).
  *   - STARS: night shows the star field faintly from the ground (`PHASE_STARS`); space
  *     still brings them in fully as a tall tower is climbed.
  *   - SHOOTING STARS: while the look is mostly night (`shootingStars`), SpaceBackdrop's
  *     ShootingStars layer fires an occasional burst of 1–3 meteors.
  *
- * Depends on: sunTimes.ts, iso/wash.ts. Depended on by: useTimeOfDay.ts, DeckTowerPage.tsx.
+ * Depends on: src/timeOfDay/dayPhase.ts, iso/wash.ts. Depended on by: useTimeOfDay.ts, DeckTowerPage.tsx.
  */
 
-export type DayPhase = "dawn" | "day" | "sunset" | "night";
-
-/** How long each side of a sunrise / sunset the sky takes to change. */
-const TWILIGHT_MS = 60 * 60_000;
-const DAY_MS = 86_400_000;
+// The clock moved to the shared src/timeOfDay/ (2026-10-29); re-exported so the tower's
+// own importers (towerWorlds, the tests) keep their paths.
+export { timeOfDayAt, type DayPhase, type TimeOfDay } from "../../timeOfDay/dayPhase";
 
 /**
  * A phase's sky, as a turn of the world's day sky (OKLCH): `hueBy` of the shortest turn
@@ -73,69 +66,28 @@ const PHASE_SKY: Record<Exclude<DayPhase, "day">, SkyRecipe> = {
 
 /**
  * Each phase's light over the scene (iso `WashLight`: a cast toward `toward`, then a dim).
- * Day is the scene as drawn. Dawn a faint pink cast (`pnk`), sunset a warm orange one
- * (`orgMk`) with a touch of dimming, night a cool blue cast (`bluMk`) dimmed as lightly as sunset (4%) — so
- * cream card stock reads peach at sunset and slate at night, and the clouds with it.
- * The `toward` colours are COLORS tokens; the dimmed results are derived.
+ * Only NIGHT washes: a cool blue cast (7% toward `bluMk`) dimmed 4%, so cream card stock reads cool
+ * at night, and the clouds with it. Dawn and sunset carry their colour in the SKY alone and
+ * draw the scene as day does (their pink / orange washes were removed 2026-10-28). The
+ * `toward` colour is a COLORS token; the dimmed result is derived.
  */
+const UNLIT: WashLight = { toward: "#FFFFFF", amount: 0, dim: 0 };
+/**
+ * Night's light. Tint cut from 14% to 7% on 2026-10-28 (read too blue); dim cut from 0.22
+ * on 2026-10-25 (read too dark). `NIGHT_WASH_ENABLED = false` turns night UNLIT (no scene
+ * wash, no flp/footer filter) while keeping the sky, stars and shooting stars.
+ */
+const NIGHT_WASH_ENABLED = true;
+const NIGHT_LIGHT: WashLight = { toward: "#59BFFF", amount: 0.07, dim: 0.04 }; // COLORS.bluMk
 const PHASE_LIGHT: Record<DayPhase, WashLight> = {
-    dawn: { toward: "#FFD1FF", amount: 0.12, dim: 0 }, // COLORS.pnk
-    day: { toward: "#FFFFFF", amount: 0, dim: 0 },
-    sunset: { toward: "#FF9800", amount: 0.16, dim: 0.04 }, // COLORS.orgMk
-    night: { toward: "#59BFFF", amount: 0.14, dim: 0.04 }, // COLORS.bluMk — dim cut from 0.22 on 2026-10-25 (read too dark)
+    dawn: UNLIT,
+    day: UNLIT,
+    sunset: UNLIT,
+    night: NIGHT_WASH_ENABLED ? NIGHT_LIGHT : UNLIT,
 };
 
 /** The star field's opacity from the ground, per phase (SpaceBackdrop `groundStars`). */
 const PHASE_STARS: Record<DayPhase, number> = { dawn: 0.08, day: 0, sunset: 0, night: 0.55 };
-
-/** The time of day at one moment: `t` of the way from phase `from` to phase `to` (equal = holding). */
-export interface TimeOfDay {
-    from: DayPhase;
-    to: DayPhase;
-    t: number;
-}
-
-interface Keyframe {
-    at: number;
-    phase: DayPhase;
-}
-
-/** One solar day's keyframes (see the header), or its polar phase. */
-function dayKeyframes(atMs: number, where: GeoPoint): Keyframe[] | DayPhase {
-    const sun = sunDay(atMs, where);
-    if (sun.polar) return sun.polar;
-    let dayStart = sun.rise + TWILIGHT_MS;
-    let dayEnd = sun.set - TWILIGHT_MS;
-    if (dayStart > dayEnd) dayStart = dayEnd = (sun.rise + sun.set) / 2;
-    return [
-        { at: sun.rise - TWILIGHT_MS, phase: "night" },
-        { at: sun.rise, phase: "dawn" },
-        { at: dayStart, phase: "day" },
-        { at: dayEnd, phase: "day" },
-        { at: sun.set, phase: "sunset" },
-        { at: sun.set + TWILIGHT_MS, phase: "night" },
-    ];
-}
-
-/** The time of day at `nowMs` for a learner at `where`. Pure. */
-export function timeOfDayAt(nowMs: number, where: GeoPoint): TimeOfDay {
-    // Yesterday's, today's and tomorrow's keyframes, so `now` is always bracketed (a
-    // night runs from one day's last keyframe to the next day's first).
-    const days = [-1, 0, 1].map((d) => dayKeyframes(nowMs + d * DAY_MS, where));
-    const frames = days.flatMap((d) => (typeof d === "string" ? [] : d)).sort((a, b) => a.at - b.at);
-    for (let i = 0; i < frames.length - 1; i++) {
-        const a = frames[i];
-        const b = frames[i + 1];
-        if (nowMs >= a.at && nowMs < b.at) {
-            if (a.phase === b.phase) return { from: a.phase, to: a.phase, t: 0 };
-            return { from: a.phase, to: b.phase, t: (nowMs - a.at) / (b.at - a.at) };
-        }
-    }
-    // Not bracketed: a polar day or night (or the edge of one).
-    const today = days[1];
-    const phase: DayPhase = typeof today === "string" ? today : frames.length > 0 && nowMs < frames[0].at ? frames[0].phase : "night";
-    return { from: phase, to: phase, t: 0 };
-}
 
 /** The sky-bearing part of a world: its day sky and any per-phase recipe overrides. */
 export type SkyWorld = Pick<TowerWorld, "sky" | "skyRecipes">;
@@ -173,7 +125,7 @@ export function towerLight(time: TimeOfDay): TowerLight {
         wash: blendWash(lightWash(PHASE_LIGHT[from]), lightWash(PHASE_LIGHT[to]), t),
         groundStars: lerp(PHASE_STARS[from], PHASE_STARS[to], t),
         // Night's share of the blend: 1 holding night, 1 − t leaving it, t entering it.
-        shootingStars: (from === "night" ? 1 - t : 0) + (to === "night" ? t : 0) >= 0.5,
+        shootingStars: phaseShare(time, "night") >= 0.5,
         skyOf: (world) => {
             let sky = skies.get(world);
             if (sky === undefined) {

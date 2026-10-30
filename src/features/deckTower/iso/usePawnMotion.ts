@@ -238,9 +238,11 @@ function insideGrown(p: Pt2, rect: WorldRect, by: number): boolean {
 /**
  * The point's slot in the draw order of `rects` (given back-to-front): the index of the
  * FIRST rect it stands behind, or `rects.length` when it is in front of them all. For
- * things that do not overlap on the floor, an iso object is nearer the viewer than a box
- * when it is past the box's far edge on either floor axis (+x or +y, the axes that run
- * toward the viewer).
+ * things that do not overlap on the floor, an object is nearer the viewer than a box when
+ * it is past one of the box's faces that the camera sees (`pointInFrontOfRect`) — under the
+ * fixed iso view, past its far edge on either floor axis (+x or +y, the axes that run
+ * toward the viewer). Under a moving camera `rects` must be in that camera's order
+ * (`backToFront`).
  *
  * Why not simply count the rects it is in front of: a fixed back-to-front list is not a
  * total order for every point. With the Deck Tower's lever at the floor's back-right
@@ -250,9 +252,60 @@ function insideGrown(p: Pt2, rect: WorldRect, by: number): boolean {
  * on screen, so any slot that respects the rects the pawn is behind is correct; taking
  * the first one errs toward hiding the pawn rather than drawing it over a tower.
  */
-export function depthRankAmong(p: Pt2, rects: WorldRect[]): number {
-    const behind = rects.findIndex((r) => p.x < r.x + r.w && p.y < r.y + r.d);
+export function depthRankAmong(p: Pt2, rects: WorldRect[], proj?: Projector): number {
+    const behind = rects.findIndex((r) => !pointInFrontOfRect(p, r, proj));
     return behind < 0 ? rects.length : behind;
+}
+
+/**
+ * Whether floor point `p` (outside box `r`'s footprint) is nearer the camera than the box:
+ * it is past one of the box's faces and the camera sees that face. Under the fixed view
+ * (no `proj`, or `makeProjector`'s) only the high-x / high-y faces are seen, so this is
+ * "past the far edge on either axis"; under the Deck Tower's study camera, tipping over
+ * to look straight down onto the tower, the faces stop being seen one by one, and what
+ * stood in front of the tower goes behind it — its top hides the floor round its foot.
+ */
+export function pointInFrontOfRect(p: Pt2, r: WorldRect, proj?: Projector): boolean {
+    const sees = (axis: "x" | "y", at: number) => (proj ? proj.seesHighSide(axis, at) : true);
+    return (
+        (p.x >= r.x + r.w && sees("x", r.x + r.w)) ||
+        (p.y >= r.y + r.d && sees("y", r.y + r.d)) ||
+        (p.x <= r.x && !sees("x", r.x)) ||
+        (p.y <= r.y && !sees("y", r.y))
+    );
+}
+
+/** The same test for a whole footprint `a` against box `b` (footprints that do not overlap). */
+function rectInFrontOfRect(a: WorldRect, b: WorldRect, proj: Projector): boolean {
+    return (
+        (a.x >= b.x + b.w && proj.seesHighSide("x", b.x + b.w)) ||
+        (a.y >= b.y + b.d && proj.seesHighSide("y", b.y + b.d)) ||
+        (a.x + a.w <= b.x && !proj.seesHighSide("x", b.x)) ||
+        (a.y + a.d <= b.y && !proj.seesHighSide("y", b.y))
+    );
+}
+
+/**
+ * The indices of `rects` (non-overlapping footprints, listed back to front for the fixed
+ * view) in back-to-front order for the camera `proj`: each one moved behind any earlier one
+ * that is now unambiguously in front of it. Two footprints separated on BOTH axes can test
+ * in front of each other at once (the Deck Tower's lever: past the tower's high-y face but
+ * short of its low-x one); then neither can occlude the other, so either order draws
+ * correctly and the listed one is kept — the fixed view keeps its order exactly. Both the
+ * pawn's rank (`depthRankAmong`, over the rects in THIS order) and the draw order of the
+ * obstacles' layers (DeckTowerPlatform) read it, so the two agree.
+ */
+export function backToFront(rects: WorldRect[], proj: Projector): number[] {
+    const order: number[] = [];
+    for (let i = 0; i < rects.length; i++) {
+        // Slot `i` in front of everything already placed, unless one of them is now in front of it.
+        const firstInFront = order.findIndex(
+            (j) => rectInFrontOfRect(rects[j], rects[i], proj) && !rectInFrontOfRect(rects[i], rects[j], proj),
+        );
+        if (firstInFront < 0) order.push(i);
+        else order.splice(firstInFront, 0, i);
+    }
+    return order;
 }
 
 /** The step the foot centre stands on (the highest, should two overlap), or -1 for the bare floor. */
@@ -996,7 +1049,14 @@ export function usePawnMotion(opts: {
             applyRef.current(false);
 
             if (roam) {
-                const rank = depthRankAmong(s.pos, roam.obstacles);
+                // Ranked among the obstacles in the CAMERA's back-to-front order (it changes
+                // as the study camera dives), the same order DeckTowerPlatform draws them in.
+                const p = projRef.current;
+                const rank = depthRankAmong(
+                    s.pos,
+                    backToFront(roam.obstacles, p).map((i) => roam.obstacles[i]),
+                    p,
+                );
                 if (rank !== s.rank) {
                     s.rank = rank;
                     onRank.current?.(rank);

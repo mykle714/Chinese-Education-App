@@ -2,9 +2,10 @@ import { TZ_COORDINATES } from "./tzCoordinates";
 
 /**
  * sunTimes.ts — where the learner loosely is, and when the sun rises and sets there, for
- * the Deck Tower's time of day (docs/DECK_TOWER.md § "Time of day").
+ * the app's time of day (docs/DECK_TOWER.md § "Time of day").
  *
- * Layer: page logic (feature module `src/features/deckTower`). Pure apart from
+ * Layer: shared module (`src/timeOfDay/` — the Deck Tower's sky and the eip's tint both
+ * read it). Pure apart from
  * `deviceLocation` reading the device's timezone. No network, no location permission.
  *
  *   - LOCATION comes from the device's IANA timezone (`Intl`), looked up in the bundled
@@ -14,7 +15,7 @@ import { TZ_COORDINATES } from "./tzCoordinates";
  *     for a sky colour): the solar transit for the day, the sun's declination, and the
  *     hour angle at which its centre sits 0.833° below the horizon (refraction + radius).
  *
- * Depends on: tzCoordinates.ts (generated). Depended on by: timeOfDay.ts.
+ * Depends on: tzCoordinates.ts (generated). Depended on by: dayPhase.ts, useDayClock.ts.
  */
 
 export interface GeoPoint {

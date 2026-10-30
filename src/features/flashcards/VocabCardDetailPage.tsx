@@ -411,12 +411,11 @@ const VocabCardDetailPage: React.FC = () => {
                             onSpeak={tts.speak}
                             onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
-                            // No `onAddToLibrary`: a card open on the cdp is already saved.
-                            // The panel's sense picker is the SAME pick the hero card shows —
-                            // one page-level index, persisted through the same handler as the
-                            // hero's picker, so the two can never disagree.
+                            // No add control: a card open on the cdp is already saved (and
+                            // adding from an eip is a Dictionary-flow action only).
+                            // The panel underlines the SAME pick the hero card shows — one
+                            // page-level index, set only by the hero's picker.
                             selectedSenseIndex={selectedSenseIndex}
-                            onSelectSense={handleSelectSense}
                             showSynonymsRelated
                             // A study surface (/flashcards/card is minute-eligible), and the
                             // panel covers this page's header — so the sheet carries the

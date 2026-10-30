@@ -23,9 +23,7 @@ import { WEIGHT } from "../theme/scale";
  */
 interface TonedPronunciationProps {
     pronunciation: string;
-    /** BEM block for the wrapper; each syllable gets `${className}-syllable`, plus the
-     *  shared `toned-pronunciation__syllable` hook that app-wide CSS (src/index.css →
-     *  the Deck Tower font trial) targets without knowing every caller's block name. */
+    /** BEM block for the wrapper; each syllable gets `${className}-syllable`. */
     className: string;
     fontSize: string;
     /** Space between syllables, px. */
@@ -42,7 +40,7 @@ const TonedPronunciation: React.FC<TonedPronunciationProps> = ({
             <Typography
                 key={`${syllable}-${i}`}
                 component="span"
-                className={`${className}-syllable toned-pronunciation__syllable`}
+                className={`${className}-syllable`}
                 sx={{
                     fontFamily: FONTS.sans,
                     fontSize,

@@ -35,16 +35,18 @@ import { COLORS } from "../theme/colors";
  * The `<meta>` tag itself is declared in index.html with the paper default; this hook
  * only ever rewrites its `content`, and creates the tag only if it has gone missing.
  *
- * A claim writes THREE places, all describing the same ground: the meta tag (browser
- * chrome), `documentElement`'s background (Safari's overscroll area), and the
- * `--surface-ground` variable (MobileDemoFrame's frame ground).
+ * A claim writes FOUR places, all describing the same ground: the meta tag (browser
+ * chrome), `documentElement`'s background (Safari's overscroll area), the
+ * `--surface-ground` variable (MobileDemoFrame's frame ground), and `documentElement`'s
+ * `color-scheme` (the iOS home-screen app's status-bar glyphs — see `schemeFor`).
  *
  * Layer: presentational (a document-level side effect, like `usePageTitle`).
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
  * gets this for free through `GameLeafPage`, which is what makes the header and the
  * status bar impossible to leave out of sync.
  * `DeckTowerPage` (src/features/deckTower) claims its world's sky, so iOS Safari's
- * top scroll-edge effect is tinted sky rather than paper (docs/DECK_TOWER.md).
+ * top scroll-edge effect is tinted sky rather than paper, and a night sky flips the
+ * home-screen app's clock to white (docs/DECK_TOWER.md § "Status-bar band").
  */
 
 /** The colour the strip returns to when nothing is claiming it — the app's paper ground. */
@@ -57,6 +59,46 @@ const DEFAULT_THEME_COLOR = COLORS.background;
  */
 type ThemeColorClaim = { color: string };
 const claims: ThemeColorClaim[] = [];
+
+/**
+ * WCAG relative luminance of a `#rgb` / `#rrggbb` colour, or null for anything else
+ * (an `rgb()` / named colour falls back to the light scheme rather than guessing).
+ */
+function relativeLuminance(color: string): number | null {
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+    if (!m) return null;
+    const hex = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+    const [r, g, b] = [0, 2, 4].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * The `color-scheme` a ground wants: `dark` when WHITE glyphs contrast with it better
+ * than black ones (WCAG contrast; the two are equal at luminance ≈ 0.179).
+ *
+ * WHY: in the iOS home-screen app (`black-translucent`, index.html) the app cannot pick
+ * the clock/battery colour — iOS follows the colour scheme — and iOS 26 lays a
+ * legibility fade behind those glyphs in the band: a WHITE fade behind dark glyphs. Over
+ * a dark ground (the Deck Tower's night sky) that read as a white smear across the top
+ * of the screen, and `theme-color` cannot reach it (verified on device 2026-10-28: the
+ * fade turns dark when the PHONE is switched to dark mode). Claiming `dark` for a dark
+ * ground asks for light glyphs and so a dark fade.
+ * ⚠️ That the PAGE's `color-scheme` (rather than only the system setting) drives the
+ * glyphs is the hypothesis this ships to test — unverified on device as of 2026-10-28.
+ *
+ * Side effect, by design limited to while a dark ground is claimed: native form
+ * controls and scrollbars render dark. Text is unaffected — `:root` sets `color`
+ * explicitly (src/index.css), so nothing inherits the dark scheme's default ink.
+ */
+function schemeFor(color: string): "light" | "dark" {
+    const l = relativeLuminance(color);
+    if (l === null) return "light";
+    // Contrast vs white: 1.05 / (l + .05); vs black: (l + .05) / .05.
+    return 1.05 / (l + 0.05) > (l + 0.05) / 0.05 ? "dark" : "light";
+}
 
 /** Push the top-of-stack colour (or the default) into the meta tag. */
 function applyTopClaim(): void {
@@ -89,6 +131,13 @@ function applyTopClaim(): void {
     // keeps a bounce from flashing paper under a saturated game ground. The app shell
     // itself never scrolls (see index.css), so this only ever shows during a bounce.
     document.documentElement.style.backgroundColor = color;
+
+    // The status-bar glyphs (and iOS 26's legibility fade behind them) follow the scheme;
+    // see `schemeFor`. Cleared, not set to "light", when unclaimed, so index.css's
+    // `:root { color-scheme: light }` stays the one source of the default.
+    const scheme = claims.length > 0 ? schemeFor(color) : null;
+    if (scheme === "dark") document.documentElement.style.colorScheme = "dark";
+    else document.documentElement.style.removeProperty("color-scheme");
 }
 
 /**

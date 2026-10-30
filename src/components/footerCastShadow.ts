@@ -38,18 +38,3 @@ function setRootProperty(name: string, value: string | null): void {
         root.removeProperty(name);
     }
 }
-
-/**
- * The slab's light channel: a CSS `filter` value (e.g. `url(#some-wash-filter)`) the page
- * behind the slab lights it with — the Deck Tower's time-of-day wash, so the slab dims with
- * the scene at night. Same root-custom-property route as the cast shadow, for the same
- * reason (the footer renders outside the page). The filter goes on the slab's FACE only,
- * never its cast shadow: that shadow falls on the sky, which is the light and is never
- * washed. Unset, the slab is drawn as is.
- */
-export const SLAB_FILTER_VAR = "--footer-slab-filter";
-
-/** Sets (or, with null, clears) the filter the slab footer's face is drawn through. */
-export function setFooterSlabFilter(filter: string | null): void {
-    setRootProperty(SLAB_FILTER_VAR, filter);
-}

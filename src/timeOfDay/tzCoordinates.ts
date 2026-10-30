@@ -7,7 +7,7 @@
  * and sunset (docs/DECK_TOWER.md § "Time of day"). A wide zone collapses to one city —
  * accepted: the sky only needs to be roughly right.
  *
- * Depended on by: src/features/deckTower/sunTimes.ts (`deviceLocation`).
+ * Depended on by: src/timeOfDay/sunTimes.ts (`deviceLocation`).
  */
 export const TZ_COORDINATES: Readonly<Record<string, readonly [number, number]>> = {
     "Africa/Abidjan": [5.3, -4],

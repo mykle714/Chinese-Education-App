@@ -1,26 +1,23 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Box, Typography, IconButton, Button, ButtonBase, CircularProgress, Menu, MenuItem } from "@mui/material";
+import { Box, Typography, ButtonBase, CircularProgress, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled, keyframes } from "@mui/material/styles";
-import UndoIcon from "@mui/icons-material/Undo";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import { useDrag } from "@use-gesture/react";
-import { useSpring, animated, easings } from "@react-spring/web";
+import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
-import { FOOTER_CLEARANCE, FOOTER_TOTAL_CLEARANCE } from "../../components/MobileFooter";
-import { SAFE_BOTTOM } from "../../theme/safeArea";
+import { SLAB_FOOTER_TOTAL_CLEARANCE, SLAB_FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
+import { setFooterCastShadow } from "../../components/footerCastShadow";
 import FrequencyScoreDots from "../../components/FrequencyScoreDots";
-import SpeakerButton from "../../components/SpeakerButton";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
-import QuickMarkPanel, { type QuickMarkPanelProps } from "./QuickMarkPanel";
-import { useQuickMarkPreload, type QuickMarkSupplySeed } from "./useQuickMarkPreload";
+import SortBins, { type SortBinSpec } from "./SortBins";
+import { sortLookAt, type SortLook } from "./sortTimeOfDay";
+import { useDayClock } from "../../timeOfDay/useDayClock";
 import { DIFFICULTY_LEVELS, MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL, difficultyLabel as levelLabelFor } from "./difficultyLevels";
 import Icon from "../../components/Icon";
 import { useLongPress } from "../../hooks/useLongPress";
+import { useThemeColor } from "../../hooks/useThemeColor";
 import HoldProgressRing from "../../components/HoldProgressRing";
 import { quietHaptic } from "../../utils/haptic";
 import { useEipTabs } from "../flashcards/FlashcardsLearnPage/useEipTabs";
@@ -35,16 +32,18 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
 import AudioModeChip from "../../components/AudioModeChip";
-import { useCategoryCounts } from "../../hooks/useCategoryCounts";
-import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { LEARNING_HUE, LEARNING_COLORS, MASTERY_BAR_HUES, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
+import { useSoftIntro } from "../../softIntro/useSoftIntro";
+import SoftIntroToggle from "../../softIntro/SoftIntroToggle";
+import { COLORS } from "../../theme/colors";
+import { shadeHex } from "../deckTower/iso";
+import { INVALID_SHAKE_ANIMATION, INVALID_SHAKE_KEYFRAMES } from "../../theme/invalidShake";
+import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
+import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
 import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT, LEADING, TRACKING } from "../../theme/scale";
-import { SHADOW } from "../../theme/shadows";
-import { lowSupplyGlowKeyframes, lowSupplyGlowPeak, LOW_SUPPLY_GLOW_TALLY, LOW_SUPPLY_GLOW_PULSE_MS } from "../../theme/lowSupplyGlow";
-import { LEARN_NOW_ENOUGH_THRESHOLD } from "../../../server/contracts/wire";
+import { keycapPressSx } from "../../theme/keycapPress";
+import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import MiniCard from "../../components/MiniCard";
-import { MINI_CARD_DIMENSIONS, MINI_CARD_RADIUS, type MiniCardSize } from "../../components/miniCardFace";
+import { MINI_CARD_DIMENSIONS, MINI_CARD_RING, type MiniCardSize } from "../../components/miniCardFace";
 
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 4
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
@@ -67,15 +66,12 @@ const UNDO_DEPTH = MAX_CARDS_PER_PACK;
 // Deliberately long: the gesture is undiscoverable by design, and a tap must never
 // turn into one by accident.
 const SKIP_HOLD_MS = 2000;
+// The toolbar keycaps' height; all three (level pill · undo · skip) are fully rounded pills.
+const TOOLBAR_KEY_HEIGHT_PX = 30;
 // The Skip button's corner radius — shared by its sx and its hold ring, which must agree.
-const SKIP_BUTTON_RADIUS_PX = 6;
-
-// Drag destinations (Skip is intentionally NOT here — §5.1).
-interface BucketZone {
-    id: "library" | "already-learned";
-    label: string;
-    mainColor: string;
-}
+// Half its height: a full pill like the level pill and undo (was a 6px rounded rect until
+// 2026-10-29, which read as out of style next to the pill).
+const SKIP_BUTTON_RADIUS_PX = TOOLBAR_KEY_HEIGHT_PX / 2;
 
 // A recorded card action, kept so Undo can reverse it and (if the pack has advanced)
 // bring the pack back on deck. `pack` is the full pack the card belonged to.
@@ -125,154 +121,116 @@ const ContentArea = styled(Box)({
     flexDirection: "column",
     alignSelf: "stretch",
     overflow: "visible",
-    // Containing block for this page's absolutely-positioned layers, mirroring the
-    // flp's ContentArea. (The eip sheet no longer needs it — SheetPanel portals to the
-    // frame.)
+    // Containing block for this page's absolutely-positioned layers (the toolbar over
+    // the bins), mirroring the flp's ContentArea.
     position: "relative",
     userSelect: "none",
     WebkitUserSelect: "none",
     touchAction: "none",
 });
 
-// The two destination buckets, laid out evenly across the top. A definite height lets
-// each bucket resolve its `height: 100%` while keeping the card aspect ratio (below).
-// The buckets' card-like proportion. The on-deck cards themselves are MiniCards
-// (MINI_CARD_DIMENSIONS, 92×132 — or 78×112 compact — a near-identical 0.70 ratio); the buckets
-// are deliberately larger drop targets and keep their own size.
-const CARD_ASPECT = "136 / 200";
+// ── Tower Tier 2 layout (docs/SORT_CARDS_REQUIREMENTS.md § 4.5, § 4.9) ─────────────
+// The page is a tier-2 ground under the Deck Tower (Claude Design "Tower Tier 2 - Time
+// of Day", the "Sort ·" artboards): the two bins float as iso decks in the upper part
+// (SortBins), the toolbar sits top-right over them, and the on-deck pack levitates in a
+// row along the bottom, above the slab footer. Every colour comes from `SortLook`
+// (sortTimeOfDay.ts), so the whole page follows the tower's clock.
 
-const BUCKET_GAP = "36px"; // healthy fixed breathing room between the two buckets
-const BUCKET_EDGE_PADDING = "28px"; // healthy fixed breathing room between each bucket and the screen edge
-
-const BucketsContainer = styled(Box)({
-    width: "100%",
-    flex: 1, // absorb the page's spare vertical space (and yield it back on short screens)
+// The bins' scene: absorbs the page's spare height (and gives it back on short screens).
+const BinsArea = styled(Box)({
+    flex: 1,
     minHeight: 0,
-    containerType: "size", // establishes cqw/cqh for the buckets' "contain" sizing (below) —
-    // reflects THIS element's content box, so the horizontal padding below is already
-    // excluded from cqw and the bucket-width formula needs no further adjustment for it.
-    paddingTop: 16,
-    paddingBottom: 20,
-    paddingLeft: BUCKET_EDGE_PADDING,
-    paddingRight: BUCKET_EDGE_PADDING,
+    width: "100%",
+    position: "relative",
     display: "flex",
-    flexDirection: "row",
-    gap: BUCKET_GAP, // enforced minimum between the two buckets; space-evenly grows it further when there's room
-    justifyContent: "space-evenly", // even spacing before / between / after the two buckets
-    alignItems: "center",
 });
 
-const Bucket = styled(Box, {
-    shouldForwardProp: (prop) => !["mainColor", "highlight"].includes(prop as string),
-})<{ mainColor: string; highlight?: boolean }>(
-    ({ mainColor, highlight }) => ({
-        // Card-shaped drop targets that keep the 136:200 card aspect ratio in EVERY
-        // regime. Width is the smallest of: half the container width (minus half the
-        // gap), the full container height mapped back through the ratio (a true
-        // "contain" fit), and a hard cap so the buckets never balloon on wide/tall
-        // screens. Height then follows from aspect-ratio. Uses the container query
-        // units established by BucketsContainer's `containerType: size`.
-        // Safe direction for aspect-ratio: the width is definite and the height
-        // is derived from it (the reverse is what breaks in iOS Safari).
-        aspectRatio: CARD_ASPECT,
-        width: "min(calc(50cqw - 18px), calc(100cqh * 136 / 200), 190px)",
-        minWidth: 0,
-        // Label breathing room. border-box so it sits INSIDE the computed width rather
-        // than growing the bucket past its card-ratio fit.
-        padding: 16,
-        boxSizing: "border-box",
-        // One solid fill of the collection's ramp SURFACE tier — no band, no tint inner
-        // panel (the old 14px SURFACE band around a TINT panel was dropped 2026-09-28).
-        backgroundColor: mainColor,
-        borderRadius: 12,
-        // Pressed INTO the page, not raised off it: the CardCrater's inward top shadow
-        // scaled up for a bucket that is ~2× a MiniCard, so a bucket reads as a well a
-        // card drops into (docs/SORT_CARDS_REQUIREMENTS.md §4.5). The recess
-        // is drawn only along the top edge, so the other three sides get their edge from
-        // the app's standard hairline — the same `1px solid COLORS.border` edge
-        // CARD_SURFACE puts on every card (src/theme/surfaces.ts). Replaced the dashed
-        // grey drop-zone outline 2026-09-28.
-        boxShadow: SHADOW.recessedDeep,
-        border: `1px solid ${COLORS.border}`,
-        // Resting opacity was 0.23, which washed both buckets out to near-invisible;
-        // 0.6 keeps the "inactive until you drag over it" read while letting the
-        // collection hue actually register. The active drop target goes fully opaque.
-        // The bucket does NOT change size on hover (it used to scale to 1.05): the
-        // "you're over a drop target" cue now lives on the HELD card — see
-        // DraggableCard's over-bucket wash, modelled on Bubble Match.
-        opacity: highlight ? 1 : 0.6,
-        transition: "opacity 0.2s ease-in-out",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        "& .bucket-text": {
-            // bodyLg (16px, was caption 12px): the label is the drop target's only
-            // text and is read mid-drag, at a glance.
-            fontSize: SIZE.bodyLg,
-            fontWeight: WEIGHT.regular,
-            lineHeight: LEADING.tight,
-            textAlign: "center",
-            color: COLORS.onSurface,
-            fontFamily: FONTS.sans,
-            letterSpacing: TRACKING.caps,
-        },
-    })
-);
+// Level pill · undo · skip, in a row along the top-right corner over the bins (the
+// artboard's `.tb`). Absolutely placed so it never pushes the scene down.
+const SortToolbar = styled(Box)({
+    position: "absolute",
+    top: 4,
+    right: 14,
+    zIndex: 2,
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 12,
+});
 
-// The up-to-3 draggable cards, presented on a raised "platform". Shrinks to fit its
-// contents (does NOT flex-fill the remaining space); it sits at the bottom because
-// BucketsContainer above it flex-fills. Extra bottom padding lifts the card row clear
-// of the floating footer pill. The platform look (rounded top, top-edge highlight, and
-// a soft drop shadow beneath) reads as a surface the cards physically rest on — the
-// per-card frequency meter + speaker button live in a header band along its top.
+/** A keycap's lip, px — how far its face sinks when pressed. */
+const KEYCAP_LIP_PX = 3;
+
+/**
+ * The keycap's lip under its face, then its cast shadow on the ground. `sunk` px pressed:
+ * the lip shrinks by that much, and since the cast shadow stays put on the ground while
+ * the key moves down, its offset from the key shrinks by the same amount.
+ */
+const keycapShadow = (look: SortLook, sunk: number) =>
+    `0 ${KEYCAP_LIP_PX - sunk}px 0 ${look.keyWall}, 4px ${7 - sunk}px 0 ${look.groundShadow}`;
+
+/**
+ * A keycap on the ground (the artboard's `.kc` / `.pill.dd`): the look's key face on its
+ * solid lip, casting the iso shadow down-right onto the ground. Keeps the app's
+ * hairline outline (CLAUDE.md "Buttons & cards").
+ */
+const keycapSx = (look: SortLook) => {
+    // The app's raised-key press (src/theme/keycapPress.ts): snaps down the lip's 3px
+    // while held and snaps back on release — no press/pop transition.
+    const press = keycapPressSx({
+        restShadow: keycapShadow(look, 0),
+        pressedShadow: keycapShadow(look, KEYCAP_LIP_PX),
+        pressedY: KEYCAP_LIP_PX,
+    });
+    return {
+        backgroundColor: look.keyFace,
+        color: look.keyInk,
+        border: `1px solid ${COLORS.border}`,
+        fontFamily: FONTS.sans,
+        fontSize: SIZE.body,
+        fontWeight: WEIGHT.semibold,
+        lineHeight: 1,
+        boxSizing: "border-box" as const,
+        ...press,
+        // Skip's hold: useLongPress may swallow :active, so the hold sets this class to
+        // keep the key sunk for the whole press.
+        "&.sort-cards__keycap--pressed": press["&:active"],
+    };
+};
+
+// The pack along the bottom. Transparent (the ground shows through — there is no white
+// platform any more); its bottom padding lifts the row clear of the floating slab
+// footer. The ScrollArea already reserves the SLAB's clearance, which the negative
+// margin hands back so this padding alone measures from the frame's bottom edge.
+/**
+ * Gap between the on-deck row's action TARGETS and the top of the slab footer. Zero: the
+ * 28px glyphs sit 4px inside their 36px targets, so they clear the slab by just that
+ * (user requests 2026-10-29).
+ */
+const ON_DECK_FOOTER_GAP_PX = 0;
 const OnDeckSection = styled(Box)({
     width: "100%",
     // Containing block for PackExitClip (the leaving-pack overlay). No z-index, so
     // this does not become a stacking context for the dragged card.
     position: "relative",
     flex: "0 0 auto",
-    // 4px (was 12px) — the OnDeckToolbar row below now supplies most of the top inset.
-    paddingTop: "4px",
-    // Extend the white platform down through the footer-clearance zone the
-    // MobileTabScreen ScrollArea reserves (paddingBottom: FOOTER_CLEARANCE),
-    // so the floating footer hovers over the on-deck white rather than a seam of
-    // page background. The negative margin cancels the padding in layout, keeping
-    // the platform's vertical footprint unchanged — it only paints the spacer.
-    paddingBottom: FOOTER_TOTAL_CLEARANCE,
-    marginBottom: `calc(-${FOOTER_CLEARANCE}px - ${SAFE_BOTTOM})`,
-    // Rounded top corners on a plain white slab.
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    background: COLORS.white,
-    // A hairline highlight along the very top edge + a broad shadow cast downward sell
-    // the "platform floating above the page" depth cue.
-    boxShadow: [
-        "inset 0 2px 0 rgba(255, 255, 255, 0.7)",
-        SHADOW.peekUp,
-    ].join(", "),
+    paddingTop: 8,
+    // The row's action targets sit ON_DECK_FOOTER_GAP_PX from the slab footer's top edge.
+    paddingBottom: `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${ON_DECK_FOOTER_GAP_PX}px)`,
+    // Hands back the ScrollArea's bottom reservation. scp is a SLAB route, so that is the
+    // slab's clearance (MobileTabScreen → footerClearance), not the bar's: handing back
+    // the bar's FOOTER_TOTAL_CLEARANCE (as this did until 2026-10-29) left ~22px of
+    // phantom space under the row on a device with no bottom safe area.
+    marginBottom: `calc(-1 * ${SLAB_FOOTER_TOTAL_CLEARANCE})`,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
 });
 
-// A slim right-aligned row along the platform's top edge holding the expand (⊞, § 4.8)
-// and Skip (docs/SORT_CARDS_REQUIREMENTS.md §5.1) actions. In the flow rather than absolutely positioned:
-// the per-card header bands (CardDeckHeader) fill the platform's top strip, so an overlay
-// in the corner would sit on the right-hand card's two-line tier label.
-const OnDeckToolbar = styled(Box)({
-    width: "100%",
-    display: "flex",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    gap: 4,
-    paddingInline: 8,
-});
-
 // Holds the up-to-4 cards side by side; wraps only if even the compact face can't fit.
 // `compact` (a pack laid out on compact MiniCards — see `dockCardSize`) also tightens the
-// gap between slots, since a 4-card row is what needs the room.
-const CARDS_ROW_GAP: Record<MiniCardSize, number> = { regular: 10, compact: 6 };
+// gap between slots, since a 4-card row is what needs the room. The artboard's 24 / 14.
+const CARDS_ROW_GAP: Record<MiniCardSize, number> = { regular: 24, compact: 14 };
 const CARDS_ROW_INLINE_PADDING = 8;
 const CardsRow = styled(Box, {
     shouldForwardProp: (prop) => prop !== "compact",
@@ -288,12 +246,12 @@ const CardsRow = styled(Box, {
 }));
 
 /**
- * The face size a pack of `cardCount` cards is laid out on, given the platform's width
+ * The face size a pack of `cardCount` cards is laid out on, given the row's width
  * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"). Fit-to-width, not a per-count
  * rule: the pack stays on regular 92px cards whenever the whole row fits across at that
  * size, and drops to the compact 78px face only when it doesn't — in practice a 4-card
- * pack on a phone narrower than ~430px. A 1–3-card pack always fits, so never shrinks.
- * An unmeasured platform (`dockWidth` null — the first commit only) reads as regular.
+ * pack on a phone. A 1–3-card pack always fits, so never shrinks.
+ * An unmeasured row (`dockWidth` null — the first commit only) reads as regular.
  */
 function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize {
     if (dockWidth == null || cardCount <= 1) return "regular";
@@ -301,54 +259,72 @@ function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize
     return regularRowWidth <= dockWidth - 2 * CARDS_ROW_INLINE_PADDING ? "regular" : "compact";
 }
 
-// One on-deck slot: a vertical column holding the card's "commonality" header band
-// stacked above the draggable card, with the play-audio button below it. The slot — not
-// the card — owns the width budget; its width is the card's fixed face (regular or
-// compact, CardWell) or the header band, whichever is wider. The 31% cap only ever
-// bites the header band on a very narrow frame — a card face never shrinks below its
-// footprint (four compact slots are chosen by `dockCardSize` precisely so they fit).
+// One on-deck slot: a vertical column holding the card's tier tag stacked above the
+// draggable card, with the card's action icons below it. The slot — not the card — owns
+// the width budget; its width is the card's fixed face (regular or compact, CardWell) or
+// the tier tag, whichever is wider.
 const CardSlot = styled(Box)({
     flex: "0 0 auto",
-    maxWidth: "31%",
     minWidth: 0,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    gap: 6,
 });
 
-// How a CardSlot arrives on the platform (docs/SORT_CARDS_REQUIREMENTS.md §4.1
+// Spacing inside a slot. Below the card it is just enough to clear the card's 2px wall
+// and its ≈ 7px cast shadow (CARD_WALL_Y + cardCastShadow) at the top of the levitation;
+// the glyphs' own 4px inset in their 36px targets adds the rest (tightened from 24,
+// user request 2026-10-29).
+const SLOT_HEADER_GAP_PX = 12;
+const SLOT_ACTIONS_GAP_PX = 12;
+
+// How a CardSlot arrives on deck (docs/SORT_CARDS_REQUIREMENTS.md §4.1
 // "Pack entrance"):
 //   - "dock": a pack landing on deck (first load, level switch, or the next pack
 //     replacing a finished/skipped one) — the whole slot rises from the bottom edge
 //     of the screen, the pack's slots staggered in a random order.
-//   - "rise": a slot re-appearing because of Undo (a card re-shown inside the
-//     on-deck pack, or a pack brought back from off-deck) — the small 24px
+//   - "rise": a card re-shown by Undo inside the on-deck pack — the small 24px
 //     rise + fade, so Undo reads as "put back", not as new content arriving.
-type SlotEntrance = "dock" | "rise";
+//   - "return": the PREVIOUS pack brought back on deck by Undo — the pack exit played
+//     backwards: its cards slide back in from the left, labels fading in once they
+//     arrive, after the on-deck pack has slid back out to the right (UNDO_EXIT).
+type SlotEntrance = "dock" | "rise" | "return";
 
 // Per-slot stagger step for the "dock" entrance. The pack's slots get the delays
-// 0, STEP, 2·STEP, … (one per card) in a shuffled order (see `dockDelays` in SortCardsPage).
+// 0, STEP, 2·STEP, … (one per card) in slot order, leftmost first (see `dockDelays` in SortCardsPage).
 const DOCK_STAGGER_STEP_MS = 60;
 
 // Silence between consecutive words in the pack autoplay (docs/AUDIO_PLAYBACK.md
 // "A manual press ends an autoplay sequence").
 const AUTOPLAY_GAP_MS = 600;
 
-// The travel distance is a CSS variable set per slot at mount (see EnteringCardSlot);
-// the 100vh fallback only matters if the measurement never lands.
+// The pack CONVEYOR (docs §4.1, sideways since 2026-10-29 — it used to rise from below
+// the screen): each card slides in from past the screen's right edge, and its info labels
+// (tier tag + dots above, action glyphs below) fade in once it has arrived; the leaving
+// pack's cards slide off to the left while their labels fade out in place. Every card
+// travels the same 100vw, so they move at one speed, like things on one belt.
+const DOCK_SLIDE_MS = 520;
+const LABEL_FADE_MS = 220;
 const dockInKeyframes = keyframes`
-    from { transform: translateY(var(--sort-cards-dock-travel, 100vh)); }
-    to   { transform: translateY(0); }
+    from { transform: translateX(100vw); }
+    to   { transform: translateX(0); }
 `;
+const labelFadeInKeyframes = keyframes`
+    from { opacity: 0; }
+    to   { opacity: 1; }
+`;
+/** The info labels of a slot: the tier tag row above the card and the action row below. */
+const SLOT_LABELS = "& .sort-cards__card-deck-header, & .sort-cards__card-actions";
 const riseInKeyframes = keyframes`
     from { transform: translateY(24px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
 `;
 
 /**
- * A CardSlot (header band + card + action row) that plays its entrance once, on mount.
- * The whole slot moves so the header band and buttons travel with the card —
+ * A CardSlot (tier tag + card + action row) that plays its entrance once, on mount.
+ * "dock" (a new pack): the card's well slides in from the right, then the labels fade in
+ * (see dockInKeyframes). "rise" (Undo re-showing a card): the whole slot rises in.
+ * "return" (Undo bringing back the previous pack): the pack exit backwards, from the left.
  * DraggableCard's own spring is left purely for dragging.
  *
  * Deliberately a CSS animation, NOT a react-spring spring: useSpring's function form
@@ -358,42 +334,42 @@ const riseInKeyframes = keyframes`
  *
  * `animation-fill-mode: backwards` applies the start frame during the stagger delay and
  * then drops the transform entirely at rest. That matters: any transform, even
- * translateY(0), makes the slot a stacking context, which would trap DraggableCard's
+ * translateX(0), makes its element a stacking context, which would trap DraggableCard's
  * zIndex: 1000 inside it — a card dragged across a later sibling slot (or up to the
- * buckets) would then paint UNDER it.
+ * bins) would then paint UNDER it.
  */
 function EnteringCardSlot({ entrance, delayMs, children }: {
     entrance: SlotEntrance;
     delayMs: number;
     children: React.ReactNode;
 }) {
-    const slotRef = useRef<HTMLDivElement>(null);
-
-    // Layout effect so the measured distance is in place before the first paint.
-    // Measured off the CardsRow parent (never animated), so the slot's own start-frame
-    // transform can't skew it. Travel = row top → bottom of the viewport, i.e. the slot
-    // starts just below the screen edge.
-    useLayoutEffect(() => {
-        if (entrance !== "dock") return;
-        const slot = slotRef.current;
-        const rowTop = slot?.parentElement?.getBoundingClientRect().top;
-        if (!slot || rowTop == null) return;
-        slot.style.setProperty("--sort-cards-dock-travel", `${Math.max(0, window.innerHeight - rowTop)}px`);
-    // Entrance is read once at mount by design — a later prop change must not replay it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const animation = entrance === "dock"
-        ? `${dockInKeyframes} 520ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms backwards`
-        : `${riseInKeyframes} 320ms ease-out backwards`;
+    const motion = entrance === "dock"
+        ? {
+            "& .sort-cards__card-well": {
+                animation: `${dockInKeyframes} ${DOCK_SLIDE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms backwards`,
+            },
+            [SLOT_LABELS]: {
+                animation: `${labelFadeInKeyframes} ${LABEL_FADE_MS}ms ease-out ${delayMs + DOCK_SLIDE_MS * 0.7}ms backwards`,
+            },
+        }
+        : entrance === "return"
+        ? {
+            // The exit's ease-in, mirrored: the cards come in fast and settle.
+            "& .sort-cards__card-well": {
+                animation: `${packReturnKeyframes} ${PACK_EXIT_MS}ms cubic-bezier(0.2, 0.75, 0.45, 1) ${delayMs}ms backwards`,
+            },
+            [SLOT_LABELS]: {
+                animation: `${labelFadeInKeyframes} ${LABEL_FADE_MS}ms ease-out ${delayMs + PACK_EXIT_MS * 0.7}ms backwards`,
+            },
+        }
+        : { animation: `${riseInKeyframes} 320ms ease-out backwards` };
 
     return (
         <CardSlot
-            ref={slotRef}
             className="sort-cards__card-slot"
             sx={{
-                animation,
-                "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                ...motion,
+                "@media (prefers-reduced-motion: reduce)": { animation: "none", "& *": { animation: "none" } },
             }}
         >
             {children}
@@ -401,29 +377,35 @@ function EnteringCardSlot({ entrance, delayMs, children }: {
     );
 }
 
-// Footer band below each card: the per-card actions (play audio, open the eip). Both
-// buttons are MUI `size="small"` IconButtons (32px hit target). The row stays rendered
-// under a sorted card's crater, so a sorted-away slot keeps its full height.
+// Below each card: its two actions (play audio, open the eip) as bare 28px glyphs on the
+// ground (the artboard's `.tier .ti`) — no keycap. The row stays rendered under a sorted
+// card's empty well, so a sorted-away slot keeps its full height.
 const CardActionRow = styled(Box)({
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 2,
+    gap: 12,
 });
 
-// Header band above each card: the card's own commonality tier label (e.g. "Used
-// sometimes") over the 5-dot frequency meter (frequencyScore) with an "x/5" readout
-// beside it. Fixed minHeight so cards with no score keep their card faces aligned with
-// neighbors that do. Sits on the platform surface, not on the draggable card, so it
-// stays put while the card is dragged away.
+// One action glyph's hit target: 36px round, the glyph centred, no chrome.
+const CardActionButton = styled(ButtonBase)({
+    width: 36,
+    height: 36,
+    borderRadius: "50%",
+});
+
+// Above each card: its commonality tier tag — the tier label over the 5-dot frequency
+// meter (frequencyScore). Fixed height so cards with no score keep their faces aligned
+// with neighbours that do. Sits on the ground, not on the draggable card, so it stays
+// put while the card is dragged away. Ink comes from the look (renderSlotBody).
 const CardDeckHeader = styled(Box)({
-    minHeight: 40,
+    minHeight: 48,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 3,
+    gap: 4,
 });
 
 // User-facing name for each 1–5 frequencyScore tier, shown above that card's meter.
@@ -432,7 +414,7 @@ const CardDeckHeader = styled(Box)({
 // scoring prompt and are too long for a ~100px card slot. Sort page only for now —
 // the eip/cdp meters still read "Commonality". See docs/SORT_CARDS_REQUIREMENTS.md.
 // Every multi-word label carries an explicit "\n" so it always stacks on two lines
-// (rendered via `white-space: pre-line`); single-word labels stay on one line.
+// (rendered via `white-space: pre`); single-word labels stay on one line.
 const COMMONALITY_TIER_LABELS: Record<number, string> = {
     5: "Used all\nthe time",
     4: "Common",
@@ -441,182 +423,60 @@ const COMMONALITY_TIER_LABELS: Record<number, string> = {
     1: "Rarely\nused",
 };
 
-// Two micro-size lines: the tallest a tier label can wrap to inside a ~31%-wide slot.
+// Two lines at the tag's size: the tallest a tier label can be.
 const TIER_LABEL_LINE_HEIGHT = 1.15;
-const TIER_LABEL_BOX_HEIGHT = `calc(2 * ${TIER_LABEL_LINE_HEIGHT} * ${SIZE.micro})`;
+const TIER_LABEL_BOX_HEIGHT = `calc(2 * ${TIER_LABEL_LINE_HEIGHT} * ${SIZE.body})`;
 
 // One card's tier label. Sentence case (not the app's uppercase overline) because
-// "USED ALL THE TIME" in tracked caps is ~145px — wider than the slot. Multi-word
-// labels break on their embedded "\n" (`pre-line`), so the box ALWAYS reserves two
-// lines and bottom-aligns its text: a one-line label and a two-line label then leave
-// every card's meter row on the same baseline, and every card face at the same height.
+// "USED ALL THE TIME" in tracked caps is far wider than the slot. Multi-word labels
+// break on their embedded "\n", so the box ALWAYS reserves two lines and bottom-aligns
+// its text: a one-line label and a two-line label then leave every card's meter row on
+// the same baseline, and every card face at the same height.
 const CommonalityTierLabel = styled(Typography)({
     height: TIER_LABEL_BOX_HEIGHT,
     display: "flex",
     alignItems: "flex-end",
     justifyContent: "center",
     textAlign: "center",
-    fontSize: SIZE.micro,
-    fontWeight: WEIGHT.semibold,
-    color: COLORS.textSecondary,
-    lineHeight: TIER_LABEL_LINE_HEIGHT,
-    whiteSpace: "pre-line",
-});
-
-// One card's score display: the 5-dot frequency meter + "x/5" readout on a row.
-// Each card wraps its own so every card in the pack aligns on a shared baseline (bottom of the
-// header band, under each card's fixed-height tier label).
-const CommonalityMeterRow = styled(Box)({
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-});
-
-// The "x/5" numeric readout beside the dots.
-const CommonalityScoreValue = styled(Typography)({
-    fontSize: SIZE.micro,
-    fontWeight: WEIGHT.bold,
-    color: COLORS.onSurface,
-    lineHeight: 1,
-});
-
-// One end of the running library tally: how many cards the account holds in each of the
-// two destinations the user is dragging into. The two figures sit at OPPOSITE ends of
-// the level bar (Learning left, Mastered right) with the difficulty dropdown between
-// them, rather than as one cluster, so each reads as its own standing total instead of
-// the pair reading as a ratio.
-// Deliberately NOT in the NodePage header — that row is already full (audio chip /
-// undo / fire badge), so the level bar is the nearest free row.
-// Placed by grid column (see the level bar's three equal `1fr` tracks): left tally in
-// column 1, right tally in column 3. Explicit placement keeps the dropdown in column 2
-// even before the counts load (the tallies are not rendered until then).
-const SortTallyColumn = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "side",
-})<{ side: "left" | "right" }>(({ side }) => ({
-    gridColumn: side === "left" ? 1 : 3,
-    gridRow: 1,
-    display: "flex",
-    flexDirection: "column",
-    // Pill centred over its caption, matching the difficulty dropdown in column 2 so
-    // all three level-bar elements share one pill → caption layout.
-    alignItems: "center",
-    // 4px between pill and caption; the old 1px let the pill's border touch the
-    // caps-height of the label.
-    gap: 4,
-    pointerEvents: "none", // purely informational — never intercepts a drag
-}));
-
-// The number, painted as a small pill in the SAME hue as its fdp filter tile
-// (features/flashcards/LibraryDuo.tsx): Learning = LEARNING_HUE's surface, Mastered =
-// the core bar's MASTERY_BAR_HUES surface. Like the tile, the fill carries the colour and
-// the figure stays ink on a hairline border — the ramp surfaces are pastel, so tinting
-// the TEXT itself would be unreadable on paper. Taking the hue KEY (not a hex) means a
-// future re-hue of either fdp tile carries over here with no edit.
-// The pill SHAPE shared by the two tally figures and the difficulty dropdown, so the
-// three level-bar controls read as one family: ink figure on a hairline border, fully
-// rounded. Only the fill differs — a tally takes its bucket's ramp surface, the
-// dropdown stays white (it is a control, not one of the two destinations).
-const LEVEL_BAR_PILL_SHAPE = {
     fontSize: SIZE.body,
-    fontWeight: WEIGHT.bold,
-    lineHeight: 1,
-    color: COLORS.onSurface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: 999,
-    padding: "3px 9px",
-    boxSizing: "border-box",
-} as const;
-
-// The tally pill's "gulp" when a dropped card lands in its bucket: it swells wide and
-// squat as if swallowing the card, then wobbles back to size (a damped squash-and-
-// stretch). Played by remounting the pill (a `key` bump) — see SortTallyValue's `gulp`.
-const TALLY_GULP_MS = 480;
-const tallyGulpKeyframes = keyframes`
-    0%   { transform: scale(1, 1); }
-    30%  { transform: scale(1.32, 1.14); }
-    55%  { transform: scale(0.94, 1.04); }
-    75%  { transform: scale(1.05, 0.98); }
-    100% { transform: scale(1, 1); }
-`;
-
-// The Learning pill's low-supply glow (§ 5.3a): a yellow halo that breathes while a
-// learner who ARRIVED under LEARN_NOW_ENOUGH_THRESHOLD is still under it. Reaching the
-// threshold simply drops the halo (the pill returns to plain — no "done" styling), and
-// an Undo back under it brings the glow back. Arriving at or above it, the pill is plain
-// for the whole visit. The halo's shape is shared with the fdp's Sort Cards tile
-// (theme/lowSupplyGlow.ts), which wears it in green. The
-// pill's own FILL stays the Learning hue; only the halo carries the signal.
-const tallyLowGlowKeyframes = lowSupplyGlowKeyframes(LOW_SUPPLY_GLOW_TALLY);
-
-const SortTallyValue = styled(Typography, {
-    shouldForwardProp: (prop) => prop !== "hue" && prop !== "gulp" && prop !== "lowGlow",
-})<{ hue: RampHue; gulp?: boolean; lowGlow?: boolean }>(({ hue, gulp, lowGlow }) => ({
-    // `animation` is one property, so the gulp and the low-glow pulse are listed
-    // together rather than one overwriting the other. The gulp's key-remount restarts
-    // the pulse's phase too, which is invisible at this amplitude.
-    ...((gulp || lowGlow) && {
-        animation: [
-            gulp && `${tallyGulpKeyframes} ${TALLY_GULP_MS}ms ease-out`,
-            lowGlow && `${tallyLowGlowKeyframes} ${LOW_SUPPLY_GLOW_PULSE_MS}ms ease-in-out infinite`,
-        ].filter(Boolean).join(", "),
-        "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-    }),
-    // Static halo: the reduced-motion fallback (the pulse animation above overrides it
-    // otherwise).
-    ...(lowGlow && {
-        boxShadow: lowSupplyGlowPeak(LOW_SUPPLY_GLOW_TALLY),
-    }),
-    ...LEVEL_BAR_PILL_SHAPE,
-    backgroundColor: RAMP[hue].surface,
-    // A floor so a one-digit count is a short pill rather than a lopsided circle,
-    // and the figure centred within it as the count grows.
-    minWidth: 30,
-    textAlign: "center",
-    // Tabular figures so a count ticking 99 → 100 does not re-space the digits.
-    fontVariantNumeric: "tabular-nums",
-}));
-
-// The difficulty dropdown trigger ("Auto" / "HSK 3" + a down arrow), drawn in the
-// tally pills' shape. A real <button> (ButtonBase) rather than a Chip so it keeps
-// keyboard focus + ripple without MUI Chip's own height/padding fighting the pill.
-const SortLevelDropdown = styled(ButtonBase)({
-    ...LEVEL_BAR_PILL_SHAPE,
-    backgroundColor: COLORS.white,
-    // Pull the right padding in: the arrow glyph carries its own side bearing, so the
-    // symmetric 9px would leave the pill visibly heavier on the arrow side.
-    paddingRight: 4,
-    gap: 1,
-    fontFamily: "inherit",
+    fontWeight: WEIGHT.semibold,
+    lineHeight: TIER_LABEL_LINE_HEIGHT,
+    whiteSpace: "pre",
 });
 
-const SortTallyLabel = styled(Typography)({
-    fontSize: SIZE.micro,
-    fontWeight: WEIGHT.semibold,
+// The level pill's soft-introduction caption (si `sortDifficultyCaption`,
+// docs/SOFT_INTRODUCTION.md): "DIFFICULTY" under the pill for a learner's first visits,
+// then gone. Ink on the ground, so it takes the look's soft ink.
+// 9px — two steps below the type scale's smallest (SIZE.micro, 11px) and below the shelf
+// overline (components/primitives/Label → `Label`, 10px); no token this small exists —
+// it matches the Settings page's 9px uppercase tags (made smaller twice by user request
+// 2026-10-29: 11 → 10 → 9).
+const LevelCaption = styled(Typography)({
+    fontFamily: FONTS.label,
+    fontSize: 9,
+    fontWeight: WEIGHT.bold,
     letterSpacing: TRACKING.caps,
     textTransform: "uppercase",
-    color: COLORS.textSecondary,
     lineHeight: 1,
     whiteSpace: "nowrap",
+    textAlign: "center",
+    marginTop: 9,
 });
 
 // The on-deck card IS the app's mini preview card (src/components/MiniCard.tsx) — the
 // same 92×132 tile, contents and hairline ring as MiniVocabCard / QuickMarkCard /
 // ChallengeWordCard — wrapped in `animated()` so the drag spring can drive its
 // transform. It carries no mastery strip (MiniCard omits it unless given a bar): these
-// are words being triaged, not the learner's cards. It used to be its own 102×150
-// flex-column card and had drifted from the others in size, radius, icon and outline.
+// are words being triaged, not the learner's cards.
 const AnimatedMiniCard = animated(MiniCard);
 
 // The card's resting place inside a slot: a fixed box the size of the card's face
-// (92×132 regular / 78×112 compact — MINI_CARD_DIMENSIONS) the DraggableCard sits in,
-// with a CardCrater painted underneath it. The crater is only seen when the card is
-// not there — while it is being dragged (the card moves by transform, so the well it
-// left is revealed) and once it has been sorted/skipped this session (the card is no
-// longer rendered). Keeping the slot's header band + action row around a crater, rather
-// than swapping the whole slot for an invisible placeholder, keeps neighbours from
-// re-centering AND gives the exit animation something to carry off
-// (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Pack exit", §4.5).
+// (92×132 regular / 78×112 compact — MINI_CARD_DIMENSIONS) the DraggableCard sits in.
+// A card sorted/skipped this session is no longer rendered, leaving the well empty
+// (the artboard draws no crater) — keeping the slot's tag + action row around it,
+// rather than swapping the whole slot out, keeps neighbours from re-centering AND gives
+// the exit animation something to carry off (docs/SORT_CARDS_REQUIREMENTS.md §4.1
+// "Pack exit", §4.5).
 // Deliberately no z-index / transform: a stacking context here would trap
 // DraggableCard's zIndex: 1000 and let a dragged card slide under its neighbours.
 const CardWell = styled(Box, {
@@ -627,97 +487,208 @@ const CardWell = styled(Box, {
     height: MINI_CARD_DIMENSIONS[cardSize].height,
 }));
 
-// The recessed "crater" — the old already-sorted card look (grey fill + inward top
-// shadow), now meaning "a card was here".
-const CardCrater = styled(Box)({
-    position: "absolute",
-    inset: 0,
-    borderRadius: MINI_CARD_RADIUS,
-    background: COLORS.header,
-    boxShadow: SHADOW.recessed,
-});
-
-// Clips the leaving pack at the platform's top edge (docs §4.1 "Pack exit"): the old
-// slots slide up and vanish as they cross it. Covers the whole OnDeckSection and clips
-// ONLY the leaving overlay — the platform itself stays overflow-visible so a dragged
-// card can still travel up to the buckets.
+// Holds the leaving pack over the on-deck row (docs §4.1 "Pack exit"): its cards slide
+// off to the left and its labels fade out in place. Covers the whole OnDeckSection and
+// clips ONLY the leaving overlay — the section itself stays overflow-visible so a
+// dragged card can still travel up to the bins.
 const PackExitClip = styled(Box)({
     position: "absolute",
     inset: 0,
     overflow: "hidden",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     pointerEvents: "none",
 });
 
-// Travel = the row's top offset inside the platform + the row's own height, so the
-// row's bottom edge ends exactly at the clip's top edge. Set per exit as a CSS var.
+// The leaving cards travel the same 100vw the arriving ones do, the other way (the belt
+// runs right → left); the labels fade out over the first part of it.
 const packExitKeyframes = keyframes`
-    from { transform: translateY(0); }
-    to   { transform: translateY(calc(-1 * var(--sort-cards-exit-travel, 400px))); }
+    from { transform: translateX(0); }
+    to   { transform: translateX(-100vw); }
+`;
+const labelFadeOutKeyframes = keyframes`
+    from { opacity: 1; }
+    to   { opacity: 0; }
 `;
 const PACK_EXIT_MS = 420;
+// Undo bringing back the previous pack plays the conveyor BACKWARDS (docs §4.1 "Undo
+// across packs"): the on-deck pack's dock-in reversed — labels fade out, then each card
+// slides back off to the right, rightmost first (the last in is the first out) — and
+// then the previous pack's exit reversed (packReturnKeyframes, EnteringCardSlot "return").
+const packReturnKeyframes = keyframes`
+    from { transform: translateX(-100vw); }
+    to   { transform: translateX(0); }
+`;
+const packUnDockKeyframes = keyframes`
+    from { transform: translateX(0); }
+    to   { transform: translateX(100vw); }
+`;
+/** The un-dock's total length for a pack of `cardCount`: the stagger plus one slide. */
+const undoExitMs = (cardCount: number) => Math.max(cardCount - 1, 0) * DOCK_STAGGER_STEP_MS + DOCK_SLIDE_MS;
 
-// Diagonal "sorted!" watermark over a card already in the user's library.
-const SortedWatermark = styled(Box)({
-    position: "absolute",
-    inset: 0,
-    // Above MiniCard's text layers (zIndex 1), level with its corner overlays.
-    zIndex: 2,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    pointerEvents: "none",
-    "& span": {
-        transform: "rotate(-20deg)",
-        fontSize: SIZE.caption,
+// The "SORTED" head band across the top of a card already in the user's library — the
+// Deck Tower card's head band (IsoCard `iso-card__band` + `iso-card__label`, the
+// "LEARNING" / "MASTERED" strip) on this HTML card (user request 2026-10-29; it was a
+// diagonal "sorted!" stamp across the centre, then a pill at the top). Every measure is
+// IsoCard's world-unit value over the tower card's width (CARD_W 4.8), so the band sits
+// in the panel's top exactly as it does on a tower card:
+//   inset FACE_PAD 0.34 (= FLP_CARD_STOCK_INSET_RATIO), depth BAND_DEPTH 1.05, corner
+//   PANEL_RADIUS 0.24 (= FLP_CARD_PANEL_RADIUS_RATIO), label 0.53 bold caps tracked 0.055.
+// Its fill is the sorted stock's wall grey (a tower band is its deck's ramp hue; a
+// sorted card has no deck hue, and the wall grey is the darkest tone already on it).
+// Docs: docs/SORT_CARDS_REQUIREMENTS.md § 4.5 "Already-sorted cards are locked".
+const TOWER_CARD_W = 4.8;
+const SORTED_BAND_DEPTH_RATIO = 1.05 / TOWER_CARD_W;
+const SORTED_BAND_FONT_RATIO = 0.53 / TOWER_CARD_W;
+const SORTED_BAND_TRACKING_EM = 0.055 / 0.53;
+const sortedBandSx = (size: MiniCardSize) => {
+    const width = MINI_CARD_DIMENSIONS[size].width;
+    const inset = width * FLP_CARD_STOCK_INSET_RATIO;
+    return {
+        position: "absolute",
+        top: `${inset}px`,
+        left: `${inset}px`,
+        right: `${inset}px`,
+        height: `${width * SORTED_BAND_DEPTH_RATIO}px`,
+        borderRadius: `${width * FLP_CARD_PANEL_RADIUS_RATIO}px`,
+        // Above MiniCard's print layers (zIndex 1), level with its corner overlays.
+        zIndex: 2,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+        backgroundColor: SORTED_STOCK.wall,
+        color: COLORS.onSurface,
+        fontFamily: FONTS.cjk,
+        fontSize: `${width * SORTED_BAND_FONT_RATIO}px`,
         fontWeight: WEIGHT.bold,
-        letterSpacing: TRACKING.caps,
-        textTransform: "uppercase",
-        color: COLORS.dangerInk,
-        border: `2px solid ${COLORS.dangerInk}`,
-        borderRadius: 6,
-        padding: "2px 8px",
-        opacity: 0.85,
-    },
-});
+        letterSpacing: `${SORTED_BAND_TRACKING_EM}em`,
+        lineHeight: 1,
+    } as const;
+};
 
 // The picked-up card's lift — the same value as Bubble Match's SCALE_HELD
 // (src/games/bubbles/constants.ts), and like it applied ONCE at pickup and held for the
-// whole drag: being over a bucket does not change the card's size, only its wash (below).
+// whole drag: being over a bin does not change the card at all — the bin itself grows
+// (SortBins → ACTIVE_SCALE). The card is never washed or dimmed while held (user request
+// 2026-10-29; it used to take Bubble Match's scrim wash over a bin).
 // Kept local rather than imported: features/ must not reach into games/.
+// No tilt while held: the artboard's `.held` rotate(-5deg) was dropped by user request
+// (2026-10-29) — the lift and its growing shadow are the whole pickup.
 const HELD_CARD_SCALE = 1.12;
 
-// The "over a drop target" cue on the held card: a `COLORS.scrim` wash over the whole
-// face — the same overlay Bubble Match draws on a held/hovered bubble (Bubble →
-// `.bubble__dim`). A pure overlay, so the card's own colours still read underneath.
-// An animated.div whose opacity is driven by the card's spring (`wash` 0→1), NOT by
-// React state: DraggableCard must never re-render mid-drag (see its memo note).
-// The drop "fall": a released card glides to the bucket's centre while shrinking and
-// fading, as if it dropped into the recessed well. Position eases OUT (it homes in on
-// the centre quickly), scale and opacity ease IN (they accelerate, like something
-// falling away from you), so the card is already centred when it visibly vanishes.
-const DROP_FALL_MS = 340;
-const DROP_FALL_END_SCALE = 0.15;
-const dropFallConfig = (key: string) =>
-    key === "x" || key === "y"
-        ? { duration: DROP_FALL_MS, easing: easings.easeOutCubic }
-        : { duration: DROP_FALL_MS, easing: easings.easeInCubic };
+// A card's solid wall — the card stock's thickness, seen below AND to the right of its
+// face, as the bins' iso cards show their front and right walls. The artboard drew only a 6px bottom lip
+// (`0 6px 0 --cardR`); by user request (2026-10-29) the wall shows on the right too and
+// is as thick as a Deck Tower card: `CARD_THICKNESS` (deckTower/iso/cardStackMetrics.ts,
+// 0.12 world units) at the tower scene's ~16.5px per unit ≈ 2px. A literal, not derived:
+// the tower scene scales to fit its screen, so it has no fixed px-per-unit to import.
+// box-shadow cannot slant, so the wall is the face's outline stepped along the extrusion
+// vector (CARD_WALL_X, CARD_WALL_Y), one copy per px.
+// The SORTED (already-in-library) card is the same stock in greys — see SORTED_STOCK.
+const CARD_WALL_X = 2;
+const CARD_WALL_Y = 2;
+const CARD_WALL_STEPS = 2;
+const cardWall = (color: string) =>
+    Array.from({ length: CARD_WALL_STEPS }, (_, i) => {
+        const k = (i + 1) / CARD_WALL_STEPS;
+        return `${(CARD_WALL_X * k).toFixed(2)}px ${(CARD_WALL_Y * k).toFixed(2)}px 0 ${color}`;
+    }).join(", ");
+const CARD_LIP = cardWall(COLORS.cardWall);
 
-const OverBucketWash = styled(animated.div)({
-    position: "absolute",
-    inset: 0,
-    // Above MiniCard's text layers (1) and corner overlays / watermark (2).
-    zIndex: 3,
-    borderRadius: MINI_CARD_RADIUS,
-    backgroundColor: COLORS.scrim,
-    pointerEvents: "none",
-});
+/**
+ * An already-sorted card: the card stock's three tones translated into greys, keeping the
+ * stock's light rim → deeper panel → deeper-still wall order, so the wall reads as the
+ * card's own edge. (The wall used to be the SAME grey as the face, `COLORS.header`, and
+ * a wall the face's colour reads as a second card stacked behind — user report 2026-10-29.)
+ * The wall is the panel darkened one iso step, exactly how `COLORS.cardWall` is derived
+ * from `cardBeige` (`shadeHex(…, 0.07)`); rim and panel are framework greys.
+ */
+const SORTED_STOCK = {
+    rim: COLORS.header,
+    panel: COLORS.card,
+    wall: shadeHex(COLORS.card, 0.07),
+} as const;
+const SORTED_CARD_LIP = cardWall(SORTED_STOCK.wall);
+/** How faint a sorted card's print (icon, word, definition) is, under its grayscale. */
+const SORTED_PRINT_OPACITY = 0.4;
+
+/**
+ * The Deck Tower's CARD STOCK on a sort card (docs/TOWER_STYLE_SHIFT.md § "Card stock";
+ * user request 2026-10-29), so the cards on deck look like the tower's own:
+ *   - the face is the cream rim (`COLORS.cardFace`, passed as MiniCard `background`)
+ *     with the beige printed panel inset in it — `FLP_CARD_STOCK_INSET_RATIO` of the
+ *     card's width in from every edge, corners `FLP_CARD_PANEL_RADIUS_RATIO` — the same
+ *     ratios CardFaceSide `towerStock` paints the tower-hosted flp's faces with;
+ *   - the wall (CARD_LIP), and a flat CAST SHADOW on the ground (`cardCastShadow`) in the
+ *     look's `groundShadow` — the iso shadow rule the tower and this page's floating
+ *     platforms use. (`SHADOW.lifted`, the tower's held-card shadow, was tried
+ *     2026-10-29: a soft 12%-ink blur, invisible on the tinted grounds.)
+ * The panel is a `::before`, so it paints FIRST: MiniCard's icon layer, icon and text
+ * all sit over it. Unlike the tower's stock it keeps the hairline ring (CLAUDE.md
+ * "Buttons & cards").
+ */
+/**
+ * The cast shadow scales with the wall, on both axes: it reaches CARD_SHADOW_PER_WALL ×
+ * the wall's own extrusion right and down — the artboard's ratio (a 14px shadow drop
+ * under a 6px lip), applied to the 2 × 2px wall, so ≈ 4.7px each way.
+ */
+const CARD_SHADOW_PER_WALL = 14 / 6;
+/**
+ * A held card is lifted further off the ground, so its shadow falls further away: at
+ * full lift (`lift` = 1) the cast shadow's offset is HELD_SHADOW_GROWTH × its resting
+ * offset. DraggableCard springs `lift` 0 → 1 on pickup and back to 0 on a miss.
+ */
+const HELD_SHADOW_GROWTH = 2.5;
+const cardCastShadow = (groundShadow: string, lift = 0) => {
+    const reach = CARD_SHADOW_PER_WALL * (1 + (HELD_SHADOW_GROWTH - 1) * lift);
+    return `${(CARD_WALL_X * reach).toFixed(2)}px ${(CARD_WALL_Y * reach).toFixed(2)}px 0 ${groundShadow}`;
+};
+/**
+ * The stock's whole box-shadow: hairline ring, wall, cast shadow (at `lift`). A sorted
+ * card is GROUNDED — it stands on the ground rather than floating over it, so it casts no
+ * shadow (its wall meets the ground) and never lifts.
+ */
+const cardStockShadow = (sorted: boolean, groundShadow: string, lift = 0) =>
+    sorted
+        ? `${MINI_CARD_RING}, ${SORTED_CARD_LIP}`
+        : `${MINI_CARD_RING}, ${CARD_LIP}, ${cardCastShadow(groundShadow, lift)}`;
+const sortCardStockSx = (size: MiniCardSize, sorted: boolean, groundShadow: string) => {
+    const width = MINI_CARD_DIMENSIONS[size].width;
+    return {
+        boxShadow: cardStockShadow(sorted, groundShadow),
+        "&::before": {
+            content: '""',
+            position: "absolute",
+            inset: `${width * FLP_CARD_STOCK_INSET_RATIO}px`,
+            borderRadius: `${width * FLP_CARD_PANEL_RADIUS_RATIO}px`,
+            backgroundColor: sorted ? SORTED_STOCK.panel : COLORS.cardBeige,
+            pointerEvents: "none",
+        },
+    } as const;
+};
+
+// Resting cards levitate: a 3px rise and fall (the artboard's `lev`), each slot a
+// different phase so the pack never moves in lockstep. Driven by the CSS `translate`
+// property, which composes with the drag spring's `transform` rather than fighting it.
+const CARD_LEVITATE_MS = 4200;
+const cardLevitateKeyframes = keyframes`
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -3px; }
+`;
+const LEVITATE_PHASES_MS = [0, -1100, -2300, -3100];
+
+// DESKTOP HOVER (user request 2026-10-29): a mouse resting on a live card stops its
+// levitation and raises it like the selected card in a hand of cards — up HOVER_RAISE_PX,
+// its cast shadow reaching HOVER_LIFT of the way to a held card's (so the shadow falls
+// further away as the card rises, by the same rule as a pickup). Mouse only: a touch has
+// no hover, and a press there is already the start of a drag.
+const HOVER_RAISE_PX = 10;
+const HOVER_LIFT = 0.5;
+const HOVER_RAISE_MS = 180;
 
 /**
  * One draggable (or locked) card within the on-deck pack. Owns its own drag spring so
  * the pack's cards move independently. On drop into a bucket it hands off to `onDrop`
- * (the page sorts it and draws the fall — FallingCardGhost); locked cards (already in the library) show a "sorted!" watermark and don't
+ * (the page sorts it; the card vanishes and the bin sets a new top card on its deck); locked cards (already in the library) show a "sorted!" watermark and don't
  * drag.
  */
 // memo is load-bearing, not just a perf tweak: while a card is being dragged, the
@@ -729,28 +700,59 @@ const OverBucketWash = styled(animated.div)({
 // is still down (the "snaps back a second or two into audio" bug). All props below are
 // referentially stable across those re-renders, so memo lets the dragged card skip them
 // entirely and keeps its gesture intact.
-const DraggableCard = memo(function DraggableCard({ card, size, locked, settleIn = false, onCheckCollision, onHighlight, onDrop, onFirstDrag }: {
+const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, groundShadow, levitatePhaseMs = 0, settleIn = false, onCheckCollision, onHighlight, onDrop, onFirstDrag }: {
     card: DiscoverCard;
     /** The pack's face size (see dockCardSize). Held/fall lift is relative to it. */
     size: MiniCardSize;
+    /** Not draggable (an already-sorted card, or any card in the leaving overlay). */
     locked: boolean;
+    /**
+     * Already in the user's library: drawn greyed and GROUNDED (no levitation, no cast
+     * shadow) with the "sorted!" tag. Separate from `locked` so a live card sliding out
+     * in the leaving overlay keeps its normal look.
+     */
+    sorted: boolean;
+    /** The look's `groundShadow` — the card's cast shadow on the ground. */
+    groundShadow: string;
+    /** The look's shadow tone on the ground, for the card's cast shadow (changes with the hour only). */
+    /** This slot's phase in the resting levitation (LEVITATE_PHASES_MS); 0 for none. */
+    levitatePhaseMs?: number;
     /** Read at mount only: pop the card back into its crater (Undo re-showing it). */
     settleIn?: boolean;
     onCheckCollision: (clientX: number, clientY: number) => string | null;
     onHighlight: (bucketId: string | null) => void;
     /**
-     * Dropped on a bucket. `cardRect` is where the card was let go — the fall's start —
-     * and `size` its face size, so the fall ghost is drawn at the same footprint.
+     * Dropped on a bucket: the page sorts the card (`handleSortCard`), which unmounts it.
      */
-    onDrop: (card: DiscoverCard, bucketId: string, cardRect: DOMRect | undefined, size: MiniCardSize) => void;
+    onDrop: (cardId: number, bucketId: string) => void;
     onFirstDrag: () => void;
 }) {
     // Pack arrivals are animated by the enclosing EnteringCardSlot (the whole slot
     // slides in), so this spring normally only moves for drag / drop. The one entrance
     // it owns is `settleIn`: Undo re-showing a card inside a slot that never left, where
     // the card pops back into the crater it left behind.
-    const cardRef = useRef<HTMLDivElement>(null);
-    const [{ x, y, scale, opacity, wash }, api] = useSpring(() => ({ x: 0, y: 0, scale: 1, opacity: 1, wash: 0 }));
+    // `lift` (0 resting → 1 held) drives the cast shadow's reach (HELD_SHADOW_GROWTH).
+    const [{ x, y, scale, opacity, lift }, api] = useSpring(() => ({ x: 0, y: 0, scale: 1, opacity: 1, lift: 0 }));
+    // Desktop hover raise (HOVER_RAISE_PX). `hovered` drives the raise; the ref lets a
+    // missed drop settle back to the hover lift rather than the ground. `wasHovered`
+    // makes the levitation restart from rest after a hover (see the sx `animation`).
+    const [hovered, setHovered] = useState(false);
+    const [wasHovered, setWasHovered] = useState(false);
+    const hoveredRef = useRef(false);
+    const canHover = !locked && !sorted;
+    const handlePointerEnter = (e: React.PointerEvent) => {
+        if (!canHover || e.pointerType !== "mouse") return;
+        hoveredRef.current = true;
+        setHovered(true);
+        setWasHovered(true);
+        api.start({ lift: HOVER_LIFT, config: { tension: 400, friction: 30 } });
+    };
+    const handlePointerLeave = (e: React.PointerEvent) => {
+        if (e.pointerType !== "mouse" || !hoveredRef.current) return;
+        hoveredRef.current = false;
+        setHovered(false);
+        api.start({ lift: 0, config: { tension: 400, friction: 30 } });
+    };
     useEffect(() => {
         if (!settleIn) return;
         api.set({ x: 0, y: 0, scale: 0.9, opacity: 0 });
@@ -759,38 +761,63 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, settleIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [api]);
 
+    // A drag attempted on a SORTED card plays the app's invalid-operation shake
+    // (theme/invalidShake). Each attempt bumps the nonce, and the effect restarts the CSS
+    // animation in place: an inline `animation: none`, a forced reflow, then clearing it
+    // hands the class's animation back from its first frame.
+    // NOT by re-keying the card (as it did at first): remounting the element in the
+    // middle of a gesture strands use-gesture's drag state on the removed node — its
+    // pointerup never arrives — so every later attempt never got a `first` and the shake
+    // played only once.
+    const [shakeNonce, setShakeNonce] = useState(0);
+    const cardElRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const el = cardElRef.current;
+        if (shakeNonce === 0 || !el) return;
+        el.style.animation = "none";
+        void el.offsetWidth;
+        el.style.animation = "";
+    }, [shakeNonce]);
+
     const bind = useDrag(
-        ({ first, down, movement: [mx, my], xy: [px, py] }) => {
-            if (locked) return;
+        ({ first, tap, down, movement: [mx, my], xy: [px, py] }) => {
+            if (locked) {
+                // A sorted card refuses both a drag (`first`, once past filterTaps'
+                // threshold) and a tap on the card itself (`tap`, on release) — user
+                // request 2026-10-29. Its audio/info buttons sit outside the card, so
+                // tapping them never shakes. A tap reports at most one of the two flags.
+                if (sorted && (first || tap)) setShakeNonce((n) => n + 1);
+                return;
+            }
             if (first) onFirstDrag();
             if (down) {
-                // Held: track the finger/cursor 1:1 (immediate) at the one pickup lift, and
-                // ease the scrim wash in or out as the card crosses a bucket — the wash is
-                // the only "over a drop target" cue (Bubble Match's hover wash, moved onto
-                // the held object). Re-issuing the same target every move is a no-op for a
-                // spring already there.
+                // Held: track the finger/cursor 1:1 (immediate) at the one pickup lift. The
+                // card itself never changes over a bucket; the page grows the target bin
+                // (onHighlight → activeBinId). Re-issuing the same target every move is a
+                // no-op for a spring already there.
                 const overBucket = onCheckCollision(px, py);
                 api.start({ x: mx, y: my, scale: HELD_CARD_SCALE, immediate: true });
-                api.start({ wash: overBucket ? 1 : 0, config: { tension: 400, friction: 30 } });
+                // The shadow eases out from under the card as it rises (not a snap).
+                api.start({ lift: 1, config: { tension: 400, friction: 30 } });
                 onHighlight(overBucket);
                 return;
             }
             // Released.
             const bucketId = onCheckCollision(px, py);
             if (bucketId) {
-                // Successful drop: hand off to the page. It resolves the card at once
-                // (this card unmounts, leaving its crater, and a completed pack can start
-                // sliding out THIS frame) and draws the fall into the bucket on a
-                // FallingCardGhost in a page-level layer, which outlives both this card
-                // and the slot it sat in. Measured here, while the card is still on screen.
-                // Deliberately never springs x/y back to the tray origin — that made the
+                // Successful drop: hand off to the page. It resolves the card at once —
+                // this card unmounts (despawns) where it was let go, leaving its crater,
+                // and a completed pack can start sliding out THIS frame. The only motion
+                // is the bin's own: its count ticks and it sets the new top card down on
+                // its deck (SortBins `sort-bins__placed`). There is no fall to the bin
+                // (removed by user request 2026-10-29). Deliberately never springs x/y back to the tray origin — that made the
                 // card visibly fly home as it committed (the old "snap-back" bug).
                 onHighlight(null);
-                onDrop(card, bucketId, cardRef.current?.getBoundingClientRect(), size);
+                onDrop(card.id, bucketId);
             } else {
                 // Missed the buckets: spring back to the resting tray slot, clean.
                 onHighlight(null);
-                api.start({ x: 0, y: 0, scale: 1, wash: 0 });
+                api.start({ x: 0, y: 0, scale: 1, lift: hoveredRef.current ? HOVER_LIFT : 0 });
             }
         },
         { filterTaps: true }
@@ -798,124 +825,71 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, settleIn
 
     return (
         <AnimatedMiniCard
-            className="sort-cards__flash-card"
-            ref={cardRef}
-            {...(locked ? {} : bind())}
-            style={{ x, y, scale, opacity, zIndex: 1000 }}
+            ref={cardElRef}
+            className={hovered ? "sort-cards__flash-card sort-cards__flash-card--hovered" : "sort-cards__flash-card"}
+            onPointerEnter={handlePointerEnter}
+            onPointerLeave={handlePointerLeave}
+            // Sorted cards bind too, only to catch a drag attempt and shake.
+            {...(locked && !sorted ? {} : bind())}
+            // boxShadow rides the spring (inline, so it wins over the sx one below).
+            style={{ x, y, scale, opacity, zIndex: 1000, boxShadow: lift.to((l) => cardStockShadow(sorted, groundShadow, l)) }}
             size={size}
             language={card.language}
             entryKey={card.entryKey}
             pronunciation={card.pronunciation}
             definition={stripParentheses(card.definition ?? "")}
             iconId={card.iconId}
-            // Locked (already-sorted) cards are GREY but otherwise the same raised tile —
-            // grey fill + grayscale filter + the watermark carry "already sorted"; the
-            // ring and shadow stay so the card still sits on the platform like its
-            // neighbours rather than looking pressed in.
-            background={locked ? COLORS.header : undefined}
+            // Sorted cards are the same raised stock in greys (SORTED_STOCK), standing on
+            // the ground instead of floating; their print is washed out and the "sorted!"
+            // head band (sortedBandSx) carries the meaning. The grayscale sits on the PRINT only —
+            // a filter on the card would also grey its stock and shadow.
+            background={sorted ? SORTED_STOCK.rim : COLORS.cardFace}
             sx={{
                 cursor: locked ? "not-allowed" : "grab",
                 "&:active": { cursor: locked ? "not-allowed" : "grabbing" },
                 touchAction: "none",
-                filter: locked ? "grayscale(0.85)" : "none",
+                ...(sorted && {
+                    "& .mini-card__icon-slot, & .mini-card__key-wrapper, & .mini-card__definition": {
+                        filter: "grayscale(1)",
+                        opacity: SORTED_PRINT_OPACITY,
+                    },
+                }),
+                // The tower's card stock: rim + panel, wall, lifted shadow (replacing
+                // MiniCard's soft raised shadow).
+                ...sortCardStockSx(size, sorted, groundShadow),
+                // A transformed, positioned card: content-visibility would let the browser
+                // skip painting it mid-drag at the screen edge.
+                contentVisibility: "visible",
+                // Only floating cards levitate; a sorted card rests on the ground, and
+                // shakes on a drag attempt (never on mount: nonce 0).
+                // Hovered (desktop): the bob stops and the card eases up into its raise —
+                // the transition starts from wherever the bob had it. Un-hovered, it eases
+                // back to rest, and the bob resumes FROM rest once it is there (a positive
+                // delay of HOVER_RAISE_MS rather than the slot's phase, which would jump).
+                animation: sorted
+                    ? (shakeNonce > 0 ? INVALID_SHAKE_ANIMATION : "none")
+                    : hovered
+                        ? "none"
+                        : `${cardLevitateKeyframes} ${CARD_LEVITATE_MS}ms ease-in-out ${wasHovered ? HOVER_RAISE_MS : levitatePhaseMs}ms infinite`,
+                translate: hovered ? `0 -${HOVER_RAISE_PX}px` : "0 0",
+                transition: `translate ${HOVER_RAISE_MS}ms ease-out`,
+                ...(sorted && INVALID_SHAKE_KEYFRAMES),
+                "@media (prefers-reduced-motion: reduce)": { animation: "none" },
             }}
         >
-            {locked && (
-                <SortedWatermark className="sort-cards__sorted-watermark">
-                    <span>sorted!</span>
-                </SortedWatermark>
+            {sorted && (
+                <Box className="sort-cards__sorted-band" sx={sortedBandSx(size)}>
+                    SORTED
+                </Box>
             )}
-            {!locked && <OverBucketWash className="sort-cards__over-bucket-wash" style={{ opacity: wash }} />}
         </AnimatedMiniCard>
-    );
-});
-
-/** One dropped card mid-fall: where it was let go and the bucket it is falling into. */
-interface FallingCard {
-    fallId: number;
-    card: DiscoverCard;
-    /** The dropped card's face size, so the ghost matches it exactly. */
-    size: MiniCardSize;
-    bucketId: string;
-    from: { cx: number; cy: number };
-    to: { cx: number; cy: number };
-}
-
-/**
- * The drop "fall", drawn by a stand-in for the dropped card. The real DraggableCard is
- * resolved (and unmounted) the instant it is released, so the fall cannot live inside
- * its pack slot: when the last card of a pack is dropped, that slot starts sliding out
- * through the platform's clip in the same frame (docs §4.1 "Pack exit"), and the fall
- * has to play IN PARALLEL with it. So the ghost is portalled to <body>, fixed-positioned
- * in viewport coordinates, and owned by the page — nothing about the pack's lifecycle
- * can cut it off.
- *
- * It starts exactly as the held card looked on release (centre, HELD_CARD_SCALE, wash
- * on) and falls to the bucket's centre with dropFallConfig; `onLanded` fires when it
- * arrives, which is when the tally ticks and gulps. Unmounted early (Undo pulling the
- * card back mid-fall), it never reports a landing.
- */
-// memo is load-bearing, for the same reason as DraggableCard's: react-spring v10's
-// `useSpring(() => initial)` re-applies `initial` on EVERY render (useSprings' layout
-// effect calls `ctrl.start(initial)` because `ref.add` never sets `ctrl.ref`). A drop
-// re-renders the page several times at once (resolve, tally, pack exit), and each one
-// used to snap the ghost back to its start pose, cancelling the fall — whose cancelled
-// promise then reported a "landing" and removed the ghost almost instantly. Both props
-// are referentially stable (`fall` lives unchanged in state, `onLanded` is a
-// useCallback), so memo keeps the ghost from ever re-rendering mid-fall.
-const FallingCardGhost = memo(function FallingCardGhost({ fall, onLanded }: { fall: FallingCard; onLanded: (fall: FallingCard) => void }) {
-    const [{ x, y, scale, opacity }, api] = useSpring(() => ({ x: fall.from.cx, y: fall.from.cy, scale: HELD_CARD_SCALE, opacity: 1 }));
-    useEffect(() => {
-        // `alive` guards StrictMode's mount→cleanup→mount and an early unmount: a
-        // stopped animation still settles its promises, and must not count as landing.
-        let alive = true;
-        Promise.all(api.start({ x: fall.to.cx, y: fall.to.cy, scale: DROP_FALL_END_SCALE, opacity: 0, config: dropFallConfig }))
-            .then(() => { if (alive) onLanded(fall); });
-        return () => {
-            alive = false;
-            api.stop();
-        };
-    // Mount-only: a fall is fixed once it starts; `onLanded` is a stable callback.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [api]);
-    const { card } = fall;
-    const face = MINI_CARD_DIMENSIONS[fall.size];
-    return createPortal(
-        <AnimatedMiniCard
-            className="sort-cards__falling-card"
-            aria-hidden
-            // x/y are the card's CENTRE in viewport px; the negative margins put the box's
-            // centre there, and the default centre transform-origin keeps it there as the
-            // card shrinks.
-            style={{ x, y, scale, opacity }}
-            size={fall.size}
-            language={card.language}
-            entryKey={card.entryKey}
-            pronunciation={card.pronunciation}
-            definition={stripParentheses(card.definition ?? "")}
-            iconId={card.iconId}
-            sx={{
-                position: "fixed",
-                left: 0,
-                top: 0,
-                marginLeft: `${-face.width / 2}px`,
-                marginTop: `${-face.height / 2}px`,
-                // Level with the held DraggableCard it replaces.
-                zIndex: 1000,
-                pointerEvents: "none",
-            }}
-        >
-            {/* It was over a bucket when let go, so it falls washed. */}
-            <OverBucketWash className="sort-cards__over-bucket-wash" style={{ opacity: 1 }} />
-        </AnimatedMiniCard>,
-        document.body,
     );
 });
 
 const SortCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const [searchParams] = useSearchParams();
 
@@ -954,51 +928,35 @@ const SortCardsPage: React.FC = () => {
     // FIFO queue of PACKS. queue[0] is the on-deck pack; the rest is the buffer.
     const [queue, setQueue] = useState<SortPack[]>([]);
 
-    // ---- expanded Quick Mark panel (docs/SORT_CARDS_REQUIREMENTS.md § 4.8) ----------
-    // Non-null while the on-deck platform is maximized into the Quick Mark grid (the ⊞
-    // button opens it; its ✕ closes it). Captured at the moment of opening:
-    //   - pinned:   the on-deck pack's still-unsorted cards, placed first in the grid;
-    //   - packKey:  that pack — on close, a DIFFERENT pack on deck (the pinned one was
-    //               finished in the grid, or a level change replaced it) docks in fresh;
-    //   - level:    the grid's level when the dropdown is on Auto (the pack's own level);
-    //   - seed:     the preloaded first supply page for that level, if one was ready.
-    const [quickMark, setQuickMark] = useState<{ pinned: DiscoverCard[]; packKey: string; level: number; seed: QuickMarkSupplySeed | null } | null>(null);
-    const quickMarkOpen = quickMark !== null;
-    // Read synchronously by advancePack (no pack-exit overlay under the panel) and the
-    // autoplay effect, which run from closures that may predate the latest render.
-    const quickMarkOpenRef = useRef(false);
-    quickMarkOpenRef.current = quickMarkOpen;
-    // Supply (non-pack) cards sorted in the grid this expansion. On close they are
-    // stripped from any queued pack still holding them — a pack fetched before the grid
-    // sort would otherwise put an already-sorted word back on deck.
-    const gridSortedIdsRef = useRef<Set<number>>(new Set());
-    // Bumped on close when the pack on deck is not the one the panel opened from: it
-    // re-keys the slots so that pack plays its "dock" entrance now, in view, instead of
-    // the one it already played unseen under the panel.
-    const [dockEpoch, setDockEpoch] = useState(0);
-    // The platform: where the panel's morph opens from / closes to.
-    const onDeckElRef = useRef<HTMLDivElement | null>(null);
-    // A pack that landed on deck while the panel was open, owed its autoplay narration
-    // once the panel closes; `narrationEpoch` is how the close re-runs that effect.
-    const deferredNarrationKeyRef = useRef<string | null>(null);
-    const [narrationEpoch, setNarrationEpoch] = useState(0);
-    // The pack most recently put back on deck by Undo. Its slots (re)mount with the
-    // small "rise" entrance instead of the "dock" slide-up from the screen bottom —
-    // see EnteringCardSlot. Only ever compared against the on-deck packKey, so it is
-    // harmless for it to linger once that pack has moved on.
-    const [undoRestoredPackKey, setUndoRestoredPackKey] = useState<string | null>(null);
-    // The pack that just advanced off deck, rendered in PackExitClip while it slides up
-    // and out through the platform's top edge (docs §4.1 "Pack exit"). `rowTop` /
-    // `rowHeight` are the live row's box inside the platform, measured at advance time
-    // (the overlay sits exactly there, and travels rowTop + rowHeight to clear the top);
-    // `exitId` keys the overlay so two quick advances restart the animation instead of
-    // reusing a finished one.
-    const [leavingPack, setLeavingPack] = useState<{ pack: SortPack; rowTop: number; rowHeight: number; exitId: number } | null>(null);
+    // The pack most recently put back on deck by Undo, and how its slots (re)mount
+    // instead of the "dock" slide-in: "rise" for a card re-shown in the on-deck pack,
+    // "return" (after `delayMs`, the un-dock) for the previous pack brought back — see
+    // EnteringCardSlot. Only ever compared against the on-deck packKey, so it is harmless
+    // for it to linger once that pack has moved on.
+    const [undoRestore, setUndoRestore] = useState<{ packKey: string; entrance: "rise" | "return"; delayMs: number } | null>(null);
+    const undoRestoredPackKey = undoRestore?.packKey ?? null;
+    // The pack that just advanced off deck, rendered in PackExitClip while its cards slide
+    // off to the left and its labels fade (docs §4.1 "Pack exit"). `rowTop` is the live
+    // row's top inside the section, measured at advance time (the overlay sits exactly
+    // there); `exitId` keys the overlay so two quick advances restart the animation instead of
+    // reusing a finished one. `direction` "left" is the forward conveyor; "right" is
+    // Undo's un-dock (the on-deck pack sliding back out the way it came, `durationMs`
+    // long — see undoExitMs).
+    const [leavingPack, setLeavingPack] = useState<{ pack: SortPack; rowTop: number; exitId: number; direction: "left" | "right"; durationMs: number } | null>(null);
+    // The leaving pack's overlay is dropped once its exit has played. A timer rather than
+    // animationend: the exit is several animations (each card, each label row), none of
+    // which is "the" end. Keyed on exitId so a new exit restarts it.
+    useEffect(() => {
+        if (!leavingPack) return;
+        const timer = window.setTimeout(() => setLeavingPack(null), leavingPack.durationMs);
+        return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [leavingPack?.exitId]);
     const exitIdRef = useRef(0);
     // The live CardsRow, measured when a pack leaves so the exit overlay can sit in the
-    // exact same spot and know how far it has to travel to clear the platform top.
+    // exact same spot and know how far it has to travel to clear the section's top.
     const cardsRowRef = useRef<HTMLDivElement>(null);
-    // The on-deck platform's width, which decides whether a pack fits across on regular
+    // The on-deck row's width, which decides whether a pack fits across on regular
     // MiniCards or needs the compact face (dockCardSize). A callback ref, not a ref +
     // effect: the platform only mounts once the first pack arrives (the page shows a
     // spinner before that), so an effect keyed on mount would miss it. The first width
@@ -1009,7 +967,6 @@ const SortCardsPage: React.FC = () => {
     const onDeckSectionRef = useCallback((el: HTMLDivElement | null) => {
         dockResizeObserverRef.current?.disconnect();
         dockResizeObserverRef.current = null;
-        onDeckElRef.current = el;
         if (!el) return;
         setDockWidth(el.clientWidth);
         const observer = new ResizeObserver(([entry]) => {
@@ -1034,32 +991,12 @@ const SortCardsPage: React.FC = () => {
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
-    // Library tally (top-right of the level bar). The server-side truth is fetched once
-    // on mount; sorts made during THIS session are layered on top as a delta rather than
-    // refetched, so the numbers move the instant a card lands in a bucket and move back
-    // when Undo reverses it.
-    //
-    // Why a delta and not a refetch: /api/onDeck/categoryCounts is a whole-library
-    // aggregate, so re-hitting it per card would be a request per drop for a number that
-    // only ever changes by one. The delta is exact because the pack supply query excludes
-    // any word the user already has a vet row for (StarterPacksService._fetchSupplyRows'
-    // NOT EXISTS clause) — every sortable on-deck card is therefore a brand-new library
-    // row, never a re-categorization of one already counted in the fetched baseline.
-    const { counts: categoryCounts, loaded: countsLoaded, ok: countsOk } = useCategoryCounts();
-    const [tallyDelta, setTallyDelta] = useState({ learning: 0, mastered: 0 });
-    // How many cards each tally pill has "swallowed" this session. Used as the pill's
-    // React `key`, so every landing remounts it and restarts its gulp animation; 0 means
-    // no sort yet, so the pill does not gulp on first render. Only sorts bump it — an
-    // Undo takes a card back out and should not look like the pill ate one.
-    const [tallyGulps, setTallyGulps] = useState({ learning: 0, mastered: 0 });
-    // Dropped cards still falling into their bucket (FallingCardGhost). A card is sorted
-    // the moment it is released, but its tally credit waits for the landing, so the
-    // count ticks (and gulps) as the card disappears into the well rather than before.
-    // `pendingLandingsRef` holds cardId → bucket for every sort whose credit is still
-    // owed; Undo consults it so a card pulled back mid-fall is never credited OR debited.
-    const [fallingCards, setFallingCards] = useState<FallingCard[]>([]);
-    const fallIdRef = useRef(0);
-    const pendingLandingsRef = useRef<Map<number, string>>(new Map());
+    // Session counts — how many cards the learner has sorted into each bin on THIS visit,
+    // printed on the bins' decks (SortBins), one deck layer per card. Start at 0 on every
+    // visit; Undo takes a card back off. Deliberately not the account's library totals
+    // (the pre-2026-10-29 tally pills): the decks grow as the learner works, which is the
+    // point of drawing them as decks.
+    const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({ library: 0, "already-learned": 0 });
 
     // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6): the CLIENT is the
     // sole owner of the auto target level once seeded. Refs (not state) because they
@@ -1089,25 +1026,45 @@ const SortCardsPage: React.FC = () => {
     // sheet can now grow to cover the whole screen and the pill would float over it on
     // every host, not just this one.
 
-    const bucketRefs = useRef<Map<string, HTMLElement>>(new Map());
-    // Bucket geometry snapshotted at drag START. The highlight and drop hit-tests both
-    // read from THIS (not live getBoundingClientRect), so they share one identical
-    // threshold and a drag-move costs no layout read. (It also guarded against the
-    // highlighted bucket's old 1.05 scale inflating its live rect; buckets no longer
-    // scale, but the snapshot stays for the shared threshold and the cheaper move.)
+    // Each bin's hit area (its SVG group) — registered by SortBins.
+    const binRefs = useRef<Map<string, Element>>(new Map());
+    const registerBin = useCallback((id: string, el: Element | null) => {
+        if (el) binRefs.current.set(id, el);
+        else binRefs.current.delete(id);
+    }, []);
+    // Bin geometry snapshotted at drag START. The highlight and drop hit-tests both read
+    // from THIS (not live getBoundingClientRect), so they share one identical threshold
+    // and a drag-move costs no layout read. (The bins bob a few px; a snapshot taken
+    // mid-bob is well inside that tolerance.)
     const bucketRectsRef = useRef<Map<string, DOMRect>>(new Map());
 
-    const buckets = useMemo<BucketZone[]>(() => [
-        // Coloured as the COLLECTION each bucket feeds, exactly as the fdp's filter tiles
-        // (LibraryDuo) paint those collections: LEARNING_COLORS for Learning and the
-        // core bar's MASTERY_BAR_COLORS for Mastered (the SURFACE tier). The
-        // level-bar tally above uses the same hues, so a bucket, its running count and
-        // the fdp tile it fills are one colour. (Previously the band pair —
-        // BAND_COLORS.Unfamiliar / .Mastered — which made Learning red here but yellow
-        // on the fdp.)
-        { id: "library", label: "Learning", mainColor: LEARNING_COLORS.main },
-        { id: "already-learned", label: "Already Learned", mainColor: MASTERY_BAR_COLORS.core.main },
+    // The two bins, coloured as the COLLECTION each one feeds, exactly as the fdp's
+    // filter tiles (LibraryDuo) paint those collections: LEARNING_COLORS for Learning and
+    // the core bar's MASTERY_BAR_COLORS for Mastered (the ramp SURFACE tier). Ids are the
+    // sort API's bucket wire values.
+    const bins = useMemo<readonly [SortBinSpec, SortBinSpec]>(() => [
+        // Bin names are the learner's own verdict on the card, not the collection names
+        // ("Learning" / "Already Learned") — user-chosen copy, 2026-10-29.
+        { id: "library", label: "To Learn", color: LEARNING_COLORS.main },
+        { id: "already-learned", label: "Already Know", color: MASTERY_BAR_COLORS.core.main },
     ], []);
+
+    // ---- Time of day (docs/SORT_CARDS_REQUIREMENTS.md § 4.9) ---------------
+    // The app's shared day clock — the one the Deck Tower and the eip read, with the
+    // feature-tester pin set from the tower's TimeOfDayToggle — so scp always shows the
+    // hour the tower does.
+    const { time: dayTime } = useDayClock(user?.isFeatureTester === true);
+    const look = useMemo(() => sortLookAt(dayTime), [dayTime]);
+    // The status-bar band and the home-screen app's glyph scheme follow the ground.
+    useThemeColor(look.ground);
+    // The slab footer casts its shadow onto this page's ground.
+    useEffect(() => {
+        setFooterCastShadow(look.groundShadow);
+        return () => setFooterCastShadow(null);
+    }, [look.groundShadow]);
+
+    // The level pill's "Difficulty" caption, shown for a learner's first visits only.
+    const difficultyCaption = useSoftIntro("sortDifficultyCaption");
 
     // Pack queue: (re)fetched on mount AND whenever the level dropdown changes — a
     // level switch is allowed to replace the on-deck pack (docs/SORT_CARDS_REQUIREMENTS.md
@@ -1125,7 +1082,7 @@ const SortCardsPage: React.FC = () => {
             setDone({});
             setUndoStack([]);
             packBucketsRef.current = {};
-            setUndoRestoredPackKey(null);
+            setUndoRestore(null);
             setLeavingPack(null);
             try {
                 // Set mode short-circuits the level-based supply entirely: the set is
@@ -1173,36 +1130,14 @@ const SortCardsPage: React.FC = () => {
     }, [language, isAuthenticated, selectedLevel, setMode, setWords]);
 
     const currentPack = queue[0];
-    // For the Quick Mark panel's close callback, which fires from an animation that
-    // started a render (or several) ago.
-    const currentPackKeyRef = useRef<string | undefined>(undefined);
-    currentPackKeyRef.current = currentPack?.packKey;
-
-    // The Quick Mark panel's first supply page, kept fetched in the background for the
-    // level it would open at, so the grid opens full (§ 4.8 "Preload"). Words resolved on
-    // the platform are filtered out when the panel takes it.
-    const isResolvedAnywhere = useCallback(
-        (cardId: number) => Object.values(doneRef.current).some((ids) => ids.has(cardId)), []);
-    const { take: takeQuickMarkPreload, invalidate: invalidateQuickMarkPreload } = useQuickMarkPreload({
-        language: language as Language | undefined,
-        level: selectedLevel ?? currentPack?.level ?? null,
-        enabled: !quickMarkOpen && currentPack !== undefined,
-        isExcluded: isResolvedAnywhere,
-        recheckKey: currentPack?.packKey,
-    });
-
     // "dock" entrance stagger (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Pack entrance"):
-    // each on-deck card gets one of 0, STEP, 2·STEP, … ms in a random order, drawn once per
-    // pack landing (keyed on packKey) so a re-render never reshuffles a pack mid-flight.
+    // each on-deck card gets 0, STEP, 2·STEP, … ms in slot order, fixed once per pack
+    // landing (keyed on packKey).
     const dockDelays = useMemo(() => {
         const delays: Record<number, number> = {};
         if (!currentPack) return delays;
+        // In slot order, leftmost first: the cards come in off the belt one behind another.
         const steps = currentPack.cards.map((_, i) => i * DOCK_STAGGER_STEP_MS);
-        // Fisher–Yates shuffle.
-        for (let i = steps.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [steps[i], steps[j]] = [steps[j], steps[i]];
-        }
         // Exit first, then enter (docs §4.1): when this pack replaced one that is now
         // sliding out, hold the whole entrance until the exit has finished. advancePack
         // sets leavingPack in the same batch as the queue change, so it is already set on
@@ -1211,9 +1146,8 @@ const SortCardsPage: React.FC = () => {
         const afterExitMs = leavingPack ? PACK_EXIT_MS : 0;
         currentPack.cards.forEach((card, i) => { delays[card.id] = afterExitMs + steps[i]; });
         return delays;
-    // dockEpoch: closing the Quick Mark panel onto a new pack replays its entrance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey, dockEpoch]);
+    }, [currentPack?.packKey]);
 
     // Difficulty label for a bare level number ("HSK 3" for zh, "Level 3" otherwise).
     const difficultyLabel = useCallback((lvl: number) => levelLabelFor(language, lvl), [language]);
@@ -1222,45 +1156,11 @@ const SortCardsPage: React.FC = () => {
     // too much to show live (docs §6), so it is never rendered as a number.
     const levelLabel = selectedLevel != null ? difficultyLabel(selectedLevel) : "Auto";
 
-    // The two tally figures, kept DISJOINT so they read as the two drop buckets.
-    // Both drop targets persist as starterPackBucket = 'library' (see
-    // StarterPacksService.sortCard) — what separates them is that "Already Learned"
-    // also writes a perfect 8/8 typed history, which resolves the row's utcm category
-    // to Mastered. So "Learning" here means the still-being-learned part of the
-    // library (everything except Mastered), not the library total the decks page shows.
-    const learningCount = useMemo(
-        () =>
-            (categoryCounts["Unfamiliar"] ?? 0) +
-            (categoryCounts["Target"] ?? 0) +
-            (categoryCounts["Comfortable"] ?? 0) +
-            tallyDelta.learning,
-        [categoryCounts, tallyDelta.learning]
-    );
-    const masteredCount = (categoryCounts["Mastered"] ?? 0) + tallyDelta.mastered;
-
-    // Did the learner ARRIVE short of Learning cards? Decided once, from the first
-    // successfully-loaded baseline (before any sort's delta), and never re-decided this
-    // visit — so a learner who arrives with plenty never sees the glow, and one who
-    // arrives short keeps seeing it (red until they reach the threshold) as they sort. null until the
-    // counts load; stays null on a failed fetch, which shows no glow at all.
-    // See § 5.3a and LEARN_NOW_ENOUGH_THRESHOLD (server/contracts/wire.ts).
-    const [arrivedShort, setArrivedShort] = useState<boolean | null>(null);
-    useEffect(() => {
-        if (!countsOk || arrivedShort !== null) return;
-        setArrivedShort(learningCount < LEARN_NOW_ENOUGH_THRESHOLD);
-    }, [countsOk, arrivedShort, learningCount]);
-    // Live: reaching the threshold drops the halo; an Undo back below it restores it.
-    const learningLowGlow = !!arrivedShort && learningCount < LEARN_NOW_ENOUGH_THRESHOLD;
-
-    // Apply one card's effect on the tally. `direction` is +1 for a sort, -1 for an undo.
-    // A skip touches neither bucket (it never creates a vet row).
-    // A sort also makes the receiving pill gulp (tallyGulps). For a dropped card this
-    // runs when its fall lands (handleFallLanded), not at release.
+    // Apply one card's effect on its bin's session count. `direction` is +1 for a sort,
+    // -1 for an undo. A skip touches neither bin (it never creates a vet row).
     const adjustTally = useCallback((bucket: string, direction: 1 | -1) => {
-        const key = bucket === "library" ? "learning" : bucket === "already-learned" ? "mastered" : null;
-        if (!key) return;
-        setTallyDelta((d) => ({ ...d, [key]: d[key] + direction }));
-        if (direction === 1) setTallyGulps((g) => ({ ...g, [key]: g[key] + 1 }));
+        if (bucket !== "library" && bucket !== "already-learned") return;
+        setSessionCounts((c) => ({ ...c, [bucket]: Math.max(0, (c[bucket] ?? 0) + direction) }));
     }, []);
 
     // Log every card that lands on-deck (i.e. becomes a live, visible slot). One log
@@ -1283,9 +1183,7 @@ const SortCardsPage: React.FC = () => {
     // read these frozen rects, so the two thresholds can never differ.
     const snapshotBucketRects = useCallback(() => {
         const rects = new Map<string, DOMRect>();
-        for (const [id, el] of bucketRefs.current) {
-            if (el) rects.set(id, el.getBoundingClientRect());
-        }
+        for (const [id, el] of binRefs.current) rects.set(id, el.getBoundingClientRect());
         bucketRectsRef.current = rects;
     }, []);
 
@@ -1431,18 +1329,8 @@ const SortCardsPage: React.FC = () => {
     // audio chip. Changing a setting is not a request to hear the pack again; the
     // per-card speaker button is. The guard below reads the flag as it stood when
     // the pack landed, which is the only moment auto-narration is meant to start.
-    //
-    // The Quick Mark panel (§ 4.8) holds narration: opening it stops a run in progress
-    // (handleOpenQuickMark), and a pack that lands while it is open is only marked
-    // (`deferredNarrationKeyRef`); closing onto that pack bumps `narrationEpoch`, which
-    // re-runs this effect then. Closing onto the pack it opened from replays nothing.
     useEffect(() => {
         if (!currentPack) return;
-        if (quickMarkOpenRef.current) {
-            deferredNarrationKeyRef.current = currentPack.packKey;
-            return;
-        }
-        deferredNarrationKeyRef.current = null;
         if (!tts.autoplay) return;
         const run = { stopped: false };
         packAutoplayRunRef.current = run;
@@ -1463,7 +1351,7 @@ const SortCardsPage: React.FC = () => {
             tts.cancel();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPack?.packKey, narrationEpoch]);
+    }, [currentPack?.packKey]);
 
     // Advance past a completed pack: drop the head and refill the tail with one pack,
     // excluding the packKeys we still hold so the replacement is never a duplicate.
@@ -1479,8 +1367,8 @@ const SortCardsPage: React.FC = () => {
         const rest = queue.filter((p) => p.packKey !== completedKey);
 
         // Pack exit (docs §4.1): hand the on-deck pack to the leaving overlay so it can
-        // slide up through the platform top; its replacement then slides in from below
-        // once the exit is done (see dockDelays).
+        // slide off to the left; its replacement then slides in from the right once the
+        // exit is done (see dockDelays).
         // Only when a replacement is ALREADY buffered — with an empty buffer the page
         // drops to its spinner branch (no platform, no overlay), and a leaving pack kept
         // in state would then play its exit late, once the fetched pack arrived. Retries
@@ -1489,11 +1377,9 @@ const SortCardsPage: React.FC = () => {
         const row = cardsRowRef.current;
         // Reduced motion: no exit at all (the new pack also appears without its slide).
         const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-        // Nor while the Quick Mark panel covers the platform: nobody would see it, and the
-        // replacement docks in when the panel closes (see dockEpoch).
-        if (attempt === 0 && !reducedMotion && !quickMarkOpenRef.current && leaving?.packKey === completedKey && rest.length > 0 && row) {
+        if (attempt === 0 && !reducedMotion && leaving?.packKey === completedKey && rest.length > 0 && row) {
             exitIdRef.current += 1;
-            setLeavingPack({ pack: leaving, rowTop: row.offsetTop, rowHeight: row.offsetHeight, exitId: exitIdRef.current });
+            setLeavingPack({ pack: leaving, rowTop: row.offsetTop, exitId: exitIdRef.current, direction: "left", durationMs: PACK_EXIT_MS });
         }
         setQueue(rest);
 
@@ -1637,14 +1523,12 @@ const SortCardsPage: React.FC = () => {
         // signal at all — nothing to do (§5.1).
     }, []);
 
-    // `deferTally`: the card is falling into its bucket (FallingCardGhost) and the tally
-    // is credited when it lands (handleFallLanded) rather than here.
-    const handleSortCard = useCallback(async (cardId: number, bucketId: string, deferTally = false) => {
+    const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
         const pack = currentPack;
         if (!pack) return;
         pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
         markResolved(pack.packKey, [cardId]);
-        if (!deferTally) adjustTally(bucketId, 1);
+        adjustTally(bucketId, 1);
         packBucketsRef.current = {
             ...packBucketsRef.current,
             [pack.packKey]: { ...(packBucketsRef.current[pack.packKey] ?? {}), [cardId]: bucketId },
@@ -1673,39 +1557,6 @@ const SortCardsPage: React.FC = () => {
             console.error("Error sorting card:", error);
         }
     }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, selectedLevel, applyPackSignal, advancePack, language]);
-
-    // A card let go over a bucket: sort it now, and (motion permitting) launch its fall
-    // from where it was released to the bucket's centre. Both centres are read from
-    // rects — the card's live one and the bucket's drag-start snapshot — and a centre is
-    // unaffected by the held card's scale, so the ghost starts exactly on top of it.
-    const handleCardDrop = useCallback((card: DiscoverCard, bucketId: string, cardRect: DOMRect | undefined, size: MiniCardSize) => {
-        const bucket = bucketRectsRef.current.get(bucketId);
-        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-        const falls = !!bucket && !!cardRect && !reducedMotion;
-        if (falls) {
-            fallIdRef.current += 1;
-            pendingLandingsRef.current.set(card.id, bucketId);
-            setFallingCards((prev) => [...prev, {
-                fallId: fallIdRef.current,
-                card,
-                size,
-                bucketId,
-                from: { cx: cardRect.left + cardRect.width / 2, cy: cardRect.top + cardRect.height / 2 },
-                to: { cx: bucket.left + bucket.width / 2, cy: bucket.top + bucket.height / 2 },
-            }]);
-        }
-        void handleSortCard(card.id, bucketId, falls);
-    }, [handleSortCard]);
-
-    // The fall reached the bucket: retire the ghost and pay the tally credit it owed
-    // (skipped if an Undo already took the card back out).
-    const handleFallLanded = useCallback((fall: FallingCard) => {
-        setFallingCards((prev) => prev.filter((f) => f.fallId !== fall.fallId));
-        const owedBucket = pendingLandingsRef.current.get(fall.card.id);
-        if (owedBucket === undefined) return;
-        pendingLandingsRef.current.delete(fall.card.id);
-        adjustTally(owedBucket, 1);
-    }, [adjustTally]);
 
     // Skip the whole on-deck pack: defer every remaining unsorted card at once.
     const handleSkipPack = useCallback(async () => {
@@ -1740,20 +1591,26 @@ const SortCardsPage: React.FC = () => {
         setUndoStack((prev) => prev.slice(0, -1));
 
         unmarkResolved(entry.pack.packKey, entry.cardId);
-        // Covers both undo shapes: a card re-shown inside the on-deck pack, and a pack
-        // brought back from off-deck — either way its slots "rise" rather than "dock".
-        setUndoRestoredPackKey(entry.pack.packKey);
-        // A pack still sliding out must not also be back on deck.
-        setLeavingPack((prev) => (prev?.pack.packKey === entry.pack.packKey ? null : prev));
-        // Give the tally back the card this action added (no-op for a skip) — unless the
-        // card is still falling, in which case it was never credited: cancel the owed
-        // credit and pull the ghost instead (it unmounts without reporting a landing).
-        if (pendingLandingsRef.current.has(entry.cardId)) {
-            pendingLandingsRef.current.delete(entry.cardId);
-            setFallingCards((prev) => prev.filter((f) => f.card.id !== entry.cardId));
+        // Two undo shapes. A card re-shown inside the on-deck pack "rises" back into its
+        // slot. Undo reaching back into the PREVIOUS pack plays the conveyor backwards
+        // (docs §4.1 "Undo across packs"): the on-deck pack un-docks to the right, then the
+        // previous pack "returns" from the left. Reduced motion, or no row to measure:
+        // just swap (the "rise" path, itself motionless under reduced motion).
+        const onDeck = currentPack;
+        const row = cardsRowRef.current;
+        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+        if (onDeck && onDeck.packKey !== entry.pack.packKey && row && !reducedMotion) {
+            const durationMs = undoExitMs(onDeck.cards.length);
+            exitIdRef.current += 1;
+            setLeavingPack({ pack: onDeck, rowTop: row.offsetTop, exitId: exitIdRef.current, direction: "right", durationMs });
+            setUndoRestore({ packKey: entry.pack.packKey, entrance: "return", delayMs: durationMs });
         } else {
-            adjustTally(entry.bucket, -1);
+            setUndoRestore({ packKey: entry.pack.packKey, entrance: "rise", delayMs: 0 });
+            // A pack still sliding out must not also be back on deck.
+            setLeavingPack((prev) => (prev?.pack.packKey === entry.pack.packKey ? null : prev));
         }
+        // Give the tally back the card this action added (no-op for a skip).
+        adjustTally(entry.bucket, -1);
         // Bring the undone pack back to the FRONT so it is on deck again. It may already
         // be the head (undoing a card within the on-deck pack — leave the queue as-is),
         // or it may still be sitting in the buffer (the server can re-serve a just-sorted
@@ -1776,114 +1633,15 @@ const SortCardsPage: React.FC = () => {
         } catch (error) {
             console.error("Error undoing action:", error);
         }
-    }, [undoStack, unmarkResolved, adjustTally, language]);
+    }, [undoStack, currentPack, unmarkResolved, adjustTally, language]);
 
-    // ---- expanded Quick Mark panel (§ 4.8) ---------------------------------
-    // Open: snapshot the pack's still-unsorted cards (pre-sorted and resolved ones stay
-    // on the platform as locked cards / craters) and the level the grid opens at — the
-    // dropdown's pin, else the pack's own level, which is what Auto is serving now.
-    // Narration stops: the words it would name are about to fly into a grid.
-    const handleOpenQuickMark = useCallback(() => {
-        const pack = currentPack;
-        if (!pack) return;
-        stopPackAutoplay();
-        ttsRef.current.cancel();
-        gridSortedIdsRef.current = new Set();
-        const pinned = pack.cards.filter((c) => !c.sorted && !isResolved(pack.packKey, c.id));
-        const level = selectedLevel ?? pack.level;
-        setQuickMark({
-            pinned,
-            packKey: pack.packKey,
-            level,
-            // Every card of this pack stays out of the supply: the unsorted ones are
-            // pinned, the rest are already sorted (some possibly still in flight).
-            seed: takeQuickMarkPreload(level, new Set(pack.cards.map((c) => c.id))),
-        });
-    }, [currentPack, isResolved, selectedLevel, stopPackAutoplay, takeQuickMarkPreload]);
-
-    // A pinned (pack) card swiped in the grid IS a sort of the on-deck pack: the same
-    // crater, adaptive-leveling signal, tally credit and Undo entry as a bucket drop.
-    const handleSortPinned = useCallback<QuickMarkPanelProps["onSortPinned"]>((card, bucket) => {
-        void handleSortCard(card.id, bucket);
-    }, [handleSortCard]);
-    // ...and the grid's Undo toast on it is this page's Undo. The panel only ever offers
-    // to undo its LAST swipe, and nothing else can push onto the stack while it is open,
-    // so that card is the stack's top; the check is a guard, not a search.
-    const handleUndoPinned = useCallback<QuickMarkPanelProps["onUndoPinned"]>((card) => {
-        if (undoStack[undoStack.length - 1]?.cardId === card.id) void handleUndo();
-    }, [undoStack, handleUndo]);
-    // A supply card the panel sorted (or un-sorted) itself: only the tally — and the
-    // strip-on-close list — need to know. Every supply card is a brand-new library row
-    // (the Quick Mark supply excludes words with a vet row, as the pack supply does), so
-    // the delta stays exact.
-    const handleSupplySorted = useCallback<QuickMarkPanelProps["onSupplySorted"]>((card, bucket) => {
-        gridSortedIdsRef.current.add(card.id);
-        adjustTally(bucket, 1);
-    }, [adjustTally]);
-    const handleSupplyUnsorted = useCallback<QuickMarkPanelProps["onSupplyUnsorted"]>((card, bucket) => {
-        gridSortedIdsRef.current.delete(card.id);
-        adjustTally(bucket, -1);
-    }, [adjustTally]);
-
-    // Close (the panel's morph has finished). Strip grid-sorted words out of the queue —
-    // never emptying the on-deck pack itself, and dropping a buffered pack only if
-    // nothing is left of it (the next advance refills the buffer). A pack on deck that is
-    // not the one the panel opened from docks in now, and is narrated if it is owed.
-    const handleCollapseQuickMark = useCallback(() => {
-        const opened = quickMark;
-        if (!opened) return;
-        const sortedInGrid = gridSortedIdsRef.current;
-        // The grid's own sorts moved the supply out from under the preloaded page.
-        if (sortedInGrid.size > 0) invalidateQuickMarkPreload();
-        if (sortedInGrid.size > 0) {
-            setQueue((prev) => prev.flatMap((pack, i) => {
-                const cards = pack.cards.filter((c) => !sortedInGrid.has(c.id));
-                if (cards.length === pack.cards.length) return [pack];
-                if (cards.length === 0) return i === 0 ? [pack] : [];
-                return [{ ...pack, cards }];
-            }));
-        }
-        if (currentPackKeyRef.current && currentPackKeyRef.current !== opened.packKey) setDockEpoch((e) => e + 1);
-        if (deferredNarrationKeyRef.current) setNarrationEpoch((e) => e + 1);
-        setQuickMark(null);
-    }, [quickMark, invalidateQuickMarkPreload]);
-
-    // Morph geometry, read live by the panel at open and at close.
-    const getPlatformRect = useCallback(() => onDeckElRef.current?.getBoundingClientRect() ?? null, []);
-    const getSlotRect = useCallback((cardId: number) => {
-        const well = cardsRowRef.current?.querySelector(`[data-sort-card-id="${cardId}"]`);
-        return well ? well.getBoundingClientRect() : null;
-    }, []);
-
-    // The expanded Quick Mark panel (§ 4.8), passed as `overlay` to EVERY NodePage below.
-    // Each branch returns a NodePage at the same position, so React keeps this subtree
-    // mounted across them — a level picked in the panel refetches the packs, which drops
-    // the page into its spinner branch for a moment, and the panel must ride that out
-    // with its grid, scroll and toast intact.
-    const quickMarkPanel = quickMark && language ? (
-        <QuickMarkPanel
-            language={language as Language}
-            level={selectedLevel ?? quickMark.level}
-            // A pick pins this page's dropdown too (a normal level switch: the pack on
-            // deck is replaced, and docks in when the panel closes).
-            onPickLevel={setSelectedLevel}
-            pinnedCards={quickMark.pinned}
-            supplySeed={quickMark.seed}
-            getPlatformRect={getPlatformRect}
-            getSlotRect={getSlotRect}
-            onSortPinned={handleSortPinned}
-            onUndoPinned={handleUndoPinned}
-            onSupplySorted={handleSupplySorted}
-            onSupplyUnsorted={handleSupplyUnsorted}
-            onOpenInfo={handleOpenCardInfo}
-            infoLoadingKey={eipLoadingKey}
-            onCollapsed={handleCollapseQuickMark}
-        />
-    ) : null;
+    // Every branch paints the same ground and header ink, so the page never flashes the
+    // app's paper between the spinner and the board.
+    const groundChrome = { surfaceColor: look.ground, headerTitleColor: look.ink, scrollable: false } as const;
 
     if (loading) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/")} scrollable={false} overlay={quickMarkPanel}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/")} {...groundChrome}>
                 <Box className="sort-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="sort-cards__spinner" />
                 </Box>
@@ -1895,7 +1653,7 @@ const SortCardsPage: React.FC = () => {
     // the completion popup rather than falling through to the spinner branch below.
     if (setModeDone) {
         return (
-            <NodePage title="Sort Cards" onBack={exitToOrigin} scrollable={false} overlay={quickMarkPanel}>
+            <NodePage title="Sort Cards" onBack={exitToOrigin} {...groundChrome}>
                 <ContentArea className="sort-cards__content sort-cards__content--set-complete">
                     <ProvisionalSortDonePopup
                         sortedCount={resolvedCount}
@@ -1910,11 +1668,11 @@ const SortCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Sort Cards" onBack={() => navigate("/")} scrollable={false} overlay={quickMarkPanel}>
+            <NodePage title="Sort Cards" onBack={() => navigate("/")} {...groundChrome}>
                 <ContentArea className="sort-cards__content">
                     <Box className="sort-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
-                            ? <Typography className="sort-cards__no-cards-error-text">Error: no cards found</Typography>
+                            ? <Typography className="sort-cards__no-cards-error-text" sx={{ color: look.ink }}>Error: no cards found</Typography>
                             : <DelayedCircularProgress className="sort-cards__spinner" />}
                     </Box>
                 </ContentArea>
@@ -1922,104 +1680,96 @@ const SortCardsPage: React.FC = () => {
         );
     }
 
-    // One slot's contents: the Commonality header band, the card in its well, and the
-    // per-card action row. Shared by the live row and the leaving-pack overlay so the
-    // exiting slots are pixel-identical to the ones they replace. In the overlay
-    // (`leaving`) nothing is interactive — PackExitClip is pointer-events: none — and no
-    // live DraggableCard is ever mounted for an unsorted card (there are none by then:
-    // a pack only advances once every card is resolved).
-    const renderSlotBody = (card: DiscoverCard, pack: SortPack, leaving: boolean) => {
+    // The bin a held card is over grows (SortBins → ACTIVE_SCALE); it settles back the
+    // moment the card is let go, as the card despawns and the bin's place animation plays.
+    const activeBinId = highlightedBucket;
+
+    // One slot's contents: the tier tag, the card in its well, and the per-card action
+    // row. Shared by the live row and the leaving-pack overlay so the exiting slots are
+    // pixel-identical to the ones they replace. In the overlay (`leaving`) nothing is
+    // interactive — PackExitClip is pointer-events: none — and no live DraggableCard is
+    // ever mounted for an unsorted card (there are none by then: a pack only advances
+    // once every card is resolved).
+    const renderSlotBody = (card: DiscoverCard, pack: SortPack, leaving: boolean, slotIndex: number) => {
         // Resolved this session (sorted/skipped) and not pre-sorted: the card is gone,
-        // its crater stays. Pre-sorted (locked) cards stay in place, greyed.
+        // its well left empty. Pre-sorted (locked) cards stay in place, greyed.
         const resolvedHere = !card.sorted && done[pack.packKey]?.has(card.id) === true;
         // Per PACK, not per page: a leaving 4-card pack keeps the compact face it was
         // shown at while the 3-card pack replacing it rises in at regular size.
         const cardSize = dockCardSize(pack.cards.length, dockWidth);
+        const infoLoading = !leaving && eipLoadingKey === card.entryKey;
         return (
             <>
-                {/* Header band: this card's tier label over the 5-dot frequency meter
+                {/* Tier tag: this card's tier label over the 5-dot frequency meter
                     (frequencyScore, 1 = almost never spoken … 5 = constant in daily
-                    speech) + an x/5 readout. NOT a register scale — that was the
-                    pre-migration-122 `vernacularScore` meaning; see
-                    docs/DEFINITION_MAPPING.md. Lives on the platform, not the card, so it
-                    stays put while the card is dragged into a bucket. */}
-                <CardDeckHeader className="sort-cards__card-deck-header">
+                    speech). NOT a register scale — that was the pre-migration-122
+                    `vernacularScore` meaning; see docs/DEFINITION_MAPPING.md. Lives on the
+                    ground, not the card, so it stays put while the card is dragged. */}
+                <CardDeckHeader className="sort-cards__card-deck-header" sx={{ mb: `${SLOT_HEADER_GAP_PX}px` }}>
                     {card.frequencyScore != null && (
                         <>
-                            <CommonalityTierLabel className="sort-cards__commonality-tier-label">
+                            <CommonalityTierLabel className="sort-cards__commonality-tier-label" sx={{ color: look.inkSoft }}>
                                 {COMMONALITY_TIER_LABELS[card.frequencyScore] ?? ""}
                             </CommonalityTierLabel>
-                            <CommonalityMeterRow className="sort-cards__commonality-meter">
-                                <FrequencyScoreDots
-                                    className="sort-cards__card-frequency-dots"
-                                    score={card.frequencyScore}
-                                    dotSize={7}
-                                    gap={3}
-                                />
-                                <CommonalityScoreValue className="sort-cards__commonality-value">
-                                    {card.frequencyScore}/5
-                                </CommonalityScoreValue>
-                            </CommonalityMeterRow>
+                            <FrequencyScoreDots
+                                className="sort-cards__card-frequency-dots"
+                                score={card.frequencyScore}
+                                dotSize={8}
+                                gap={4}
+                                filledColor={look.inkSoft}
+                                emptyBorderColor={look.inkSoft}
+                            />
                         </>
                     )}
                 </CardDeckHeader>
-                <CardWell
-                    className="sort-cards__card-well"
-                    cardSize={cardSize}
-                    // The Quick Mark panel's morph finds a card's slot by this (live row only).
-                    data-sort-card-id={leaving ? undefined : card.id}
-                >
-                    <CardCrater className="sort-cards__card-crater" aria-hidden />
+                <CardWell className="sort-cards__card-well" cardSize={cardSize}>
                     {!resolvedHere && (
                         <DraggableCard
                             card={card}
                             size={cardSize}
                             locked={leaving || !!card.sorted}
+                            sorted={!!card.sorted}
+                            groundShadow={look.groundShadow}
+                            levitatePhaseMs={leaving ? 0 : LEVITATE_PHASES_MS[slotIndex % LEVITATE_PHASES_MS.length]}
                             // Undo re-showing a card in a slot that never left.
-                            settleIn={!leaving && undoRestoredPackKey === pack.packKey}
+                            settleIn={!leaving && undoRestore?.entrance === "rise" && undoRestoredPackKey === pack.packKey}
                             onCheckCollision={checkBucketCollision}
                             onHighlight={setHighlightedBucket}
-                            onDrop={handleCardDrop}
+                            onDrop={handleSortCard}
                             onFirstDrag={handleCardPickup}
                         />
                     )}
                 </CardWell>
                 {/* Per-card actions below the card: play audio (docs §4.5) and open the
-                    eip (docs §4.7). They stay live over a crater, so a word that was
-                    just sorted can still be heard / looked up until its pack leaves. */}
-                <CardActionRow className="sort-cards__card-actions">
-                    <SpeakerButton
+                    eip (docs §4.7). They stay live under an emptied well, so a word that
+                    was just sorted can still be heard / looked up until its pack leaves. */}
+                <CardActionRow className="sort-cards__card-actions" sx={{ mt: `${SLOT_ACTIONS_GAP_PX}px` }}>
+                    <CardActionButton
+                        className="sort-cards__card-audio-button"
+                        aria-label={`Play ${card.entryKey}`}
                         onClick={() => handlePlayCardAudio(card)}
-                        isLoading={!leaving && tts.speakingKey === card.entryKey}
-                    />
-                    <IconButton
+                    >
+                        {!leaving && tts.speakingKey === card.entryKey ? (
+                            // Plain (not Delayed): tap feedback must appear at once.
+                            <CircularProgress className="sort-cards__card-audio-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
+                        ) : (
+                            <Icon name="volume_up" size={28} color={look.inkSoft} />
+                        )}
+                    </CardActionButton>
+                    <CardActionButton
                         className="sort-cards__card-info-button"
-                        size="small"
                         aria-label={`More info about ${card.entryKey}`}
                         onClick={() => handleOpenCardInfo(card)}
                         disabled={!leaving && eipLoadingKey !== null}
-                        sx={{
-                            color: COLORS.textSecondary,
-                            "&:hover": { color: COLORS.onSurface },
-                        }}
                     >
-                        {!leaving && eipLoadingKey === card.entryKey ? (
-                            // A plain (not Delayed) CircularProgress: this is button-action
-                            // feedback for a tap and must appear instantly — see the
-                            // DelayedCircularProgress docblock. Sized to sit inside the
-                            // 32px hit target so the row's height never changes mid-lookup.
-                            <CircularProgress
-                                className="sort-cards__card-info-spinner"
-                                size={18}
-                                thickness={4}
-                            />
+                        {infoLoading ? (
+                            // Sized inside the 36px target so the row never changes height
+                            // mid-lookup. Plain (not Delayed): tap feedback.
+                            <CircularProgress className="sort-cards__card-info-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
                         ) : (
-                            <InfoOutlinedIcon
-                                className="sort-cards__card-info-icon"
-                                fontSize="small"
-                            />
+                            <Icon name="info" size={28} color={look.inkSoft} />
                         )}
-                    </IconButton>
+                    </CardActionButton>
                 </CardActionRow>
             </>
         );
@@ -2029,182 +1779,71 @@ const SortCardsPage: React.FC = () => {
         <NodePage
             title="Sort Cards"
             onBack={() => navigate("/")}
-            scrollable={false}
-            overlay={quickMarkPanel}
+            {...groundChrome}
             headerExtraActions={
                 <>
+                    {/* Feature testers only: flip every si (the Difficulty caption here)
+                        between its two styles (docs/SOFT_INTRODUCTION.md § 5). */}
+                    <SoftIntroToggle />
                     {/* The APP-WIDE narration audio mode, not a page-local pref. One
                         tap cycles off → passthrough → media; the same setting has its
-                        explained three-option form on /settings. Was a bespoke MUI
-                        Button styled inline here; it is now the shared chip, so scp
-                        matches the flp and game headers exactly. */}
-                    <AudioModeChip className="sort-cards__audio-chip" />
-                    <IconButton
-                        className="sort-cards__undo-button"
-                        onClick={handleUndo}
-                        size="small"
-                        disabled={undoStack.length === 0}
-                        sx={{ color: COLORS.onSurface }}
-                    >
-                        <UndoIcon className="sort-cards__undo-icon" />
-                    </IconButton>
+                        explained three-option form on /settings. Drawn in the Deck Tower
+                        study header's `outlined` skin, in the ground's ink. */}
+                    <AudioModeChip className="sort-cards__audio-chip" outlined ink={look.ink} />
                 </>
             }
         >
-            <Box
-                className="sort-cards__level-bar"
-                // Three EQUAL columns (Learning | Difficulty | Mastered), each element
-                // centred in its own column, so the three pills are evenly distributed
-                // across the bar and none shifts when a tally's digit count grows.
-                sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", justifyItems: "center", alignItems: "center", minHeight: 40, px: 2, py: 0.5 }}
-            >
-                {levelLabel && (
-                    // Caption stacked BELOW the dropdown pill, mirroring the tally columns
-                    // (pill → caption) so all three level-bar elements share one layout
-                    // and one type treatment (SortTallyLabel). Middle grid column.
-                    <Box
-                        className="sort-cards__level-control"
-                        sx={{ gridColumn: 2, gridRow: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}
-                    >
-                        <SortLevelDropdown
-                            className="sort-cards__level-dropdown"
-                            onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
-                            aria-haspopup="menu"
-                            aria-expanded={Boolean(levelMenuAnchor)}
-                        >
-                            {levelLabel}
-                            <KeyboardArrowDownIcon className="sort-cards__level-dropdown-arrow" sx={{ fontSize: "1.125rem", my: "-3px" }} />
-                        </SortLevelDropdown>
-                        <SortTallyLabel className="sort-cards__level-caption">Difficulty</SortTallyLabel>
-                    </Box>
-                )}
-                <Menu
-                    className="sort-cards__level-menu"
-                    anchorEl={levelMenuAnchor}
-                    open={Boolean(levelMenuAnchor)}
-                    onClose={() => setLevelMenuAnchor(null)}
-                >
-                    <MenuItem
-                        className="sort-cards__level-menu-item"
-                        selected={selectedLevel == null}
-                        onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
-                    >
-                        Auto
-                    </MenuItem>
-                    {DIFFICULTY_LEVELS.map((lvl) => (
-                        <MenuItem
-                            className="sort-cards__level-menu-item"
-                            key={lvl}
-                            selected={selectedLevel === lvl}
-                            onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
-                        >
-                            {difficultyLabel(lvl)}
-                        </MenuItem>
-                    ))}
-                </Menu>
-
-                {/* Running library tally, in the bar's outer grid columns. Rendered
-                    only once the baseline counts have arrived, so the user never sees a
-                    "0" that then jumps to its real value. Each figure is tinted with its
-                    own bucket's fdp filter-tile hue. */}
-                {countsLoaded && (
-                    <>
-                        <SortTallyColumn
-                            className="sort-cards__tally sort-cards__tally--learning"
-                            side="left"
-                        >
-                            <SortTallyValue
-                                className="sort-cards__tally-value"
-                                key={tallyGulps.learning}
-                                gulp={tallyGulps.learning > 0}
-                                lowGlow={learningLowGlow}
-                                hue={LEARNING_HUE}
-                            >
-                                {learningCount}
-                            </SortTallyValue>
-                            <SortTallyLabel className="sort-cards__tally-label">Learning</SortTallyLabel>
-                        </SortTallyColumn>
-                        <SortTallyColumn
-                            className="sort-cards__tally sort-cards__tally--mastered"
-                            side="right"
-                        >
-                            <SortTallyValue
-                                className="sort-cards__tally-value"
-                                key={tallyGulps.mastered}
-                                gulp={tallyGulps.mastered > 0}
-                                hue={MASTERY_BAR_HUES.core}
-                            >
-                                {masteredCount}
-                            </SortTallyValue>
-                            <SortTallyLabel className="sort-cards__tally-label">Mastered</SortTallyLabel>
-                        </SortTallyColumn>
-                    </>
-                )}
-            </Box>
-
             <ContentArea className="sort-cards__content">
-                {/* Destination buckets */}
-                <BucketsContainer className="sort-cards__buckets-container">
-                    {buckets.map((bucket) => (
-                        <Bucket
-                            className="sort-cards__bucket"
-                            key={bucket.id}
-                            ref={(el: HTMLElement | null) => {
-                                if (el) bucketRefs.current.set(bucket.id, el);
-                                else bucketRefs.current.delete(bucket.id);
-                            }}
-                            mainColor={bucket.mainColor}
-                            // Lit while a card is held over it AND while one is still
-                            // falling into it, so the card visibly sinks into a lit well.
-                            highlight={highlightedBucket === bucket.id || fallingCards.some((f) => f.bucketId === bucket.id)}
-                        >
-                            <div className="bucket-text">{bucket.label}</div>
-                        </Bucket>
-                    ))}
-                </BucketsContainer>
+                {/* The two bins: iso decks on floating platforms, growing one layer per
+                    card sorted into them this session (SortBins). */}
+                <BinsArea className="sort-cards__bins-area">
+                    <SortBins
+                        className="sort-cards__bins"
+                        bins={bins}
+                        counts={sessionCounts}
+                        activeBinId={activeBinId}
+                        look={look}
+                        registerBin={registerBin}
+                    />
 
-                {/* Dropped cards falling into their buckets — portalled to <body>, so
-                    where they sit in this tree does not matter (see FallingCardGhost). */}
-                {fallingCards.map((fall) => (
-                    <FallingCardGhost key={fall.fallId} fall={fall} onLanded={handleFallLanded} />
-                ))}
-
-                {/* On-deck: up to 4 draggable cards (compact faces when 4 won't fit). A card the
-                    user resolved this session leaves an invisible placeholder in its
-                    slot so the other cards don't reposition. */}
-                <OnDeckSection ref={onDeckSectionRef} className="sort-cards__on-deck">
-                    {/* Skip — de-emphasized (§5.1): a small action in the platform's
-                        top-right corner, not a drag bucket. Defers every remaining
-                        unsorted card in the on-deck pack. Lives on the platform (not in
-                        the NodePage header) so it reads as acting on THESE cards. */}
-                    <OnDeckToolbar className="sort-cards__on-deck-toolbar">
-                        {/* Expand (§ 4.8): maximize the platform into the Quick Mark grid,
-                            this pack's cards first. Not in set mode — a fixed set is not
-                            an open-ended supply to bulk-triage. */}
-                        {!setMode && (
-                            <IconButton
-                                className="sort-cards__expand-button"
-                                aria-label="Expand into the Quick Mark grid"
-                                onClick={handleOpenQuickMark}
-                                sx={{
-                                    width: "24px", height: "24px", p: 0,
-                                    borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`,
-                                }}
+                    {/* Level pill · undo · skip — top-right over the bins (the artboard's
+                        `.tb`). Skip is de-emphasized (§5.1): a small keycap, not a drag
+                        bin; it defers every remaining unsorted card of the pack on deck. */}
+                    <SortToolbar className="sort-cards__toolbar">
+                        <Box className="sort-cards__level-control" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                            <ButtonBase
+                                className="sort-cards__level-dropdown"
+                                onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
+                                aria-haspopup="menu"
+                                aria-expanded={Boolean(levelMenuAnchor)}
+                                sx={{ ...keycapSx(look), fontWeight: WEIGHT.bold, borderRadius: 999, height: TOOLBAR_KEY_HEIGHT_PX, pl: "10px", pr: "4px", gap: "1px" }}
                             >
-                                <Icon name="apps" size={18} color={COLORS.onSurface} />
-                            </IconButton>
-                        )}
-                        <Button
-                            className="sort-cards__skip-button"
-                            variant="text"
-                            size="small"
+                                {levelLabel}
+                                <Icon name="keyboard_arrow_down" size={18} color={look.keyInk} />
+                            </ButtonBase>
+                            {/* si `sortDifficultyCaption`: names the pill for a learner's
+                                first 7 visits over 7 days, then retires. */}
+                            {difficultyCaption === "intro" && (
+                                <LevelCaption className="sort-cards__level-caption" sx={{ color: look.inkSoft }}>
+                                    Difficulty
+                                </LevelCaption>
+                            )}
+                        </Box>
+                        <ButtonBase
+                            className="sort-cards__undo-button"
+                            onClick={handleUndo}
+                            disabled={undoStack.length === 0}
+                            aria-label="Undo"
+                            sx={{ ...keycapSx(look), borderRadius: 999, height: TOOLBAR_KEY_HEIGHT_PX, px: "12px", "&.Mui-disabled": { opacity: 0.45 } }}
+                        >
+                            <Icon name="undo" size={18} color={look.keyInk} />
+                        </ButtonBase>
+                        <ButtonBase
                             // Tap = skip the pack; hold = the hidden skipped-cards sheet.
                             {...skipPress.handlers}
-                            sx={{
-                                minWidth: "unset", px: 1, py: 0.25, height: "24px",
-                                fontSize: SIZE.micro, textTransform: "lowercase", lineHeight: LEADING.normal,
-                                borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`, color: COLORS.onSurface,
-                            }}
+                            // Stays sunk for the whole hold, not just while :active holds.
+                            className={`sort-cards__skip-button${skipPress.pressing ? " sort-cards__keycap--pressed" : ""}`}
+                            sx={{ ...keycapSx(look), borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`, height: TOOLBAR_KEY_HEIGHT_PX, px: "12px", position: "relative" }}
                         >
                             skip
                             {/* Hold timer: traces the button's outline over SKIP_HOLD_MS.
@@ -2217,52 +1856,96 @@ const SortCardsPage: React.FC = () => {
                                     strokeWidth={2}
                                 />
                             )}
-                        </Button>
-                    </OnDeckToolbar>
+                        </ButtonBase>
+                    </SortToolbar>
+                    <Menu
+                        className="sort-cards__level-menu"
+                        anchorEl={levelMenuAnchor}
+                        open={Boolean(levelMenuAnchor)}
+                        onClose={() => setLevelMenuAnchor(null)}
+                    >
+                        <MenuItem
+                            className="sort-cards__level-menu-item"
+                            selected={selectedLevel == null}
+                            onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
+                        >
+                            Auto
+                        </MenuItem>
+                        {DIFFICULTY_LEVELS.map((lvl) => (
+                            <MenuItem
+                                className="sort-cards__level-menu-item"
+                                key={lvl}
+                                selected={selectedLevel === lvl}
+                                onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
+                            >
+                                {difficultyLabel(lvl)}
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                </BinsArea>
+
+                {/* On-deck: up to 4 levitating cards (compact faces when 4 won't fit). A
+                    card the user resolved this session leaves an empty well in its slot so
+                    the other cards don't reposition. */}
+                <OnDeckSection ref={onDeckSectionRef} className="sort-cards__on-deck">
                     <CardsRow
                         ref={cardsRowRef}
                         className="sort-cards__cards-row"
                         compact={dockCardSize(currentPack.cards.length, dockWidth) === "compact"}
                     >
-                        {currentPack.cards.map((card) => (
+                        {currentPack.cards.map((card, slotIndex) => (
                             // Keyed on pack + card, and the SAME element whether the card
-                            // is live or has left a crater — sorting a card must not
+                            // is live or has left its well — sorting a card must not
                             // remount the slot (that would replay its entrance).
                             <EnteringCardSlot
-                                key={`${dockEpoch}:${currentPack.packKey}:${card.id}`}
-                                entrance={undoRestoredPackKey === currentPack.packKey ? "rise" : "dock"}
-                                delayMs={dockDelays[card.id] ?? 0}
+                                key={`${currentPack.packKey}:${card.id}`}
+                                entrance={undoRestore && undoRestoredPackKey === currentPack.packKey ? undoRestore.entrance : "dock"}
+                                delayMs={undoRestore && undoRestoredPackKey === currentPack.packKey ? undoRestore.delayMs : dockDelays[card.id] ?? 0}
                             >
-                                {renderSlotBody(card, currentPack, false)}
+                                {renderSlotBody(card, currentPack, false, slotIndex)}
                             </EnteringCardSlot>
                         ))}
                     </CardsRow>
-                    {/* Pack exit (docs §4.1): the previous pack's slots — craters, locked
-                        cards, header bands, action rows — slide up and are clipped away
-                        at the platform's top edge; the new pack rises in after. */}
+                    {/* Pack exit (docs §4.1): the previous pack's slots — empty wells,
+                        locked cards, tier tags, action rows — slide off to the left (or, for
+                        Undo's un-dock, back out to the right) and are clipped at the
+                        section's edge; the next pack slides in after. */}
                     {leavingPack && (
                         <PackExitClip className="sort-cards__pack-exit-clip" aria-hidden>
                             <CardsRow
                                 key={leavingPack.exitId}
                                 className="sort-cards__cards-row sort-cards__cards-row--leaving"
                                 compact={dockCardSize(leavingPack.pack.cards.length, dockWidth) === "compact"}
-                                onAnimationEnd={(e) => {
-                                    // animationend bubbles; only the row's own exit counts.
-                                    if (e.target === e.currentTarget) setLeavingPack(null);
-                                }}
                                 sx={{
                                     position: "absolute",
                                     left: 0,
                                     top: `${leavingPack.rowTop}px`,
-                                    "--sort-cards-exit-travel": `${leavingPack.rowTop + leavingPack.rowHeight}px`,
-                                    // Ease-in: the old pack accelerates away; the new one
-                                    // then (ease-out, EnteringCardSlot) decelerates into place.
-                                    animation: `${packExitKeyframes} ${PACK_EXIT_MS}ms cubic-bezier(0.55, 0, 0.8, 0.25) forwards`,
+                                    // Ease-in: the old cards accelerate away; the new ones
+                                    // then (ease-out, EnteringCardSlot) decelerate into place.
+                                    // The "right" un-dock's wells animate per slot (below).
+                                    ...(leavingPack.direction === "left" && {
+                                        "& .sort-cards__card-well": {
+                                            animation: `${packExitKeyframes} ${PACK_EXIT_MS}ms cubic-bezier(0.55, 0, 0.8, 0.25) forwards`,
+                                        },
+                                    }),
+                                    [SLOT_LABELS]: {
+                                        animation: `${labelFadeOutKeyframes} ${LABEL_FADE_MS}ms ease-out forwards`,
+                                    },
                                 }}
                             >
-                                {leavingPack.pack.cards.map((card) => (
-                                    <CardSlot key={card.id} className="sort-cards__card-slot sort-cards__card-slot--leaving">
-                                        {renderSlotBody(card, leavingPack.pack, true)}
+                                {leavingPack.pack.cards.map((card, slotIndex) => (
+                                    <CardSlot
+                                        key={card.id}
+                                        className="sort-cards__card-slot sort-cards__card-slot--leaving"
+                                        // Un-dock: the dock-in backwards — the dock's ease-out
+                                        // curve mirrored into an ease-in, rightmost card first.
+                                        sx={leavingPack.direction === "right" ? {
+                                            "& .sort-cards__card-well": {
+                                                animation: `${packUnDockKeyframes} ${DOCK_SLIDE_MS}ms cubic-bezier(0.64, 0, 0.78, 0) ${(leavingPack.pack.cards.length - 1 - slotIndex) * DOCK_STAGGER_STEP_MS}ms both`,
+                                            },
+                                        } : undefined}
+                                    >
+                                        {renderSlotBody(card, leavingPack.pack, true, slotIndex)}
                                     </CardSlot>
                                 ))}
                             </CardsRow>
@@ -2284,7 +1967,7 @@ const SortCardsPage: React.FC = () => {
 
                 {/* eip bottom sheet. Only mounted while open so the open animation
                     replays on every reopen (same rule as the flp). The scrim inside
-                    SheetPanel covers the buckets and the on-deck cards, so no card can
+                    SheetPanel covers the bins and the on-deck cards, so no card can
                     be dragged while the panel is up — reading about a word and sorting
                     it are deliberately separate modes. */}
                 <EipSheet

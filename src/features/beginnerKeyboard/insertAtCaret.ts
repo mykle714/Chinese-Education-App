@@ -75,3 +75,74 @@ export function insertAtCaret(field: EditableField, text: string): string | null
   field.dispatchEvent(new Event('input', { bubbles: true }));
   return next;
 }
+
+/**
+ * Backspace: delete the selection, or the one code point before the caret when the
+ * selection is collapsed. Writes through the same React-visible path as
+ * `insertAtCaret` (native setter + bubbling `input`), for the same reason.
+ *
+ * A CODE POINT rather than a UTF-16 unit, so an astral character (a rare CJK
+ * extension glyph) is removed whole instead of leaving a lone surrogate behind.
+ * Every pinyin tone vowel the ā pad types is a single BMP code point, so a
+ * precomposed ǚ goes in one tap and comes out in one tap.
+ *
+ * Returns the field's new value, or null when there was nothing to delete or the
+ * field could not be written.
+ *
+ * Used by: PinyinToneKeyboard (the ā pad's backspace key).
+ */
+export function deleteBeforeCaret(field: EditableField): string | null {
+  const end = field.selectionEnd ?? field.value.length;
+  let start = field.selectionStart ?? end;
+  if (start === end) {
+    if (start === 0) return null;
+    const before = field.value.slice(0, start);
+    const lastCodePoint = Array.from(before).pop() ?? '';
+    start -= lastCodePoint.length;
+  }
+  const next = field.value.slice(0, start) + field.value.slice(end);
+
+  const setter = nativeValueSetter(field);
+  if (!setter) return null;
+  setter.call(field, next);
+  try {
+    field.setSelectionRange(start, start);
+  } catch {
+    // See insertAtCaret: selection APIs can be refused; the delete still landed.
+  }
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  return next;
+}
+
+/**
+ * Move the caret one code point left (-1) or right (+1), the way an OS keyboard's
+ * arrow keys do: a selection collapses to its start (left) or end (right) instead of
+ * moving, and a surrogate pair is stepped over whole.
+ *
+ * Only the selection changes — the value is untouched, so no `input` event is sent
+ * and React sees nothing. Returns false when the caret is already at that end of the
+ * field, or the field refuses selection APIs (the hold-to-repeat stops on false).
+ *
+ * Used by: PinyinToneKeyboard (the ā pad's ← → keys).
+ */
+export function moveCaret(field: EditableField, direction: -1 | 1): boolean {
+  const value = field.value;
+  const start = field.selectionStart ?? value.length;
+  const end = field.selectionEnd ?? start;
+  let next: number;
+  if (start !== end) {
+    next = direction < 0 ? start : end;
+  } else if (direction < 0) {
+    if (start === 0) return false;
+    next = start - (Array.from(value.slice(0, start)).pop() ?? '').length;
+  } else {
+    if (end >= value.length) return false;
+    next = end + (Array.from(value.slice(end))[0] ?? '').length;
+  }
+  try {
+    field.setSelectionRange(next, next);
+  } catch {
+    return false;
+  }
+  return true;
+}

@@ -39,6 +39,7 @@ export type {
   BreakdownMap,
   CommunityDesign,
   DefinitionCluster,
+  DictionaryMatchKind,
   DictionarySearchRanking,
   DifficultyLevel,
   DiscoverCard,

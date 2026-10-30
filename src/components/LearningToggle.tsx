@@ -1,4 +1,4 @@
-import { ButtonBase, CircularProgress, IconButton } from "@mui/material";
+import { ButtonBase, IconButton } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { COLORS, FONTS, SIZE, WEIGHT } from "../theme";
 import {
@@ -13,13 +13,16 @@ import type { LearningToggleState } from "../hooks/useLearningToggle";
 /**
  * The compact "+ to Learning" ⇄ "Added!" toggle that sits UNDER the speaker in the eip
  * entry header's vertical action stack (EipEntryHeader). Driven by `useLearningToggle`.
+ * Today only the dictionary cdp's inline panel shows it; the Dictionary page's eip draws
+ * the same state as the raised `EipAddKey` in its trail row (2026-10-29).
  *
  *   • Not in Learning → a small round "+" breathing the soft green halo
  *     (theme/lowSupplyGlow.ts, LOW_SUPPLY_GLOW_NUDGE) — the same "add more cards" nudge
  *     the fdp's Sort Cards tile wears. Static at the peak under reduced motion.
  *   • In Learning → a small greyed "Added!" pill. Still a button: tap = remove, no
  *     confirmation (removal demotes to 'provisional'; see the hook). No glow.
- *     While the add is in flight (`pending`) the "+" glyph becomes a small spinner.
+ *     Flips the instant it is tapped — the hook is optimistic, so there is no
+ *     in-flight state to draw.
  *   • Status unknown (still loading) or entry ineligible → renders nothing.
  *
  * Sized to the speaker's column: the "+" is 24px against the speaker's 30px hit target (SPEAKER_BUTTON_SIZE),
@@ -47,18 +50,17 @@ const ADD_INSET = (SPEAKER_BUTTON_SIZE - TOGGLE_HEIGHT) / 2;
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 const LearningToggle: React.FC<{ state: LearningToggleState }> = ({ state }) => {
-    const { available, inLibrary, pending, toggle } = state;
+    const { available, inLibrary, toggle } = state;
     if (!available || inLibrary === undefined) return null;
 
     return inLibrary ? (
         <ButtonBase
             className="learning-toggle learning-toggle--added"
             aria-label="Added to Learning — tap to remove"
-            onClick={(e) => { stop(e); void toggle(); }}
+            onClick={(e) => { stop(e); toggle(); }}
             onMouseDown={stop}
             onTouchStart={stop}
             onTouchEnd={stop}
-            disabled={pending}
             sx={{
                 boxSizing: "border-box",
                 height: TOGGLE_HEIGHT,
@@ -80,11 +82,10 @@ const LearningToggle: React.FC<{ state: LearningToggleState }> = ({ state }) => 
         <IconButton
             className="learning-toggle learning-toggle--add"
             aria-label="Add to Learning"
-            onClick={(e) => { stop(e); void toggle(); }}
+            onClick={(e) => { stop(e); toggle(); }}
             onMouseDown={stop}
             onTouchStart={stop}
             onTouchEnd={stop}
-            disabled={pending}
             sx={{
                 width: TOGGLE_HEIGHT,
                 height: TOGGLE_HEIGHT,
@@ -98,20 +99,7 @@ const LearningToggle: React.FC<{ state: LearningToggleState }> = ({ state }) => 
                 },
             }}
         >
-            {/* While the add request is in flight the "+" glyph is swapped for a spinner
-                of the same 16px footprint, so the button keeps its size and the stack
-                doesn't shift. Colored explicitly: the button is `disabled` while
-                pending, and MUI greys a disabled IconButton's inherited color. */}
-            {pending ? (
-                <CircularProgress
-                    className="learning-toggle__spinner"
-                    size={14}
-                    thickness={5}
-                    sx={{ color: COLORS.onSurface }}
-                />
-            ) : (
-                <AddIcon sx={{ fontSize: 16 }} />
-            )}
+            <AddIcon sx={{ fontSize: 16 }} />
         </IconButton>
     );
 };

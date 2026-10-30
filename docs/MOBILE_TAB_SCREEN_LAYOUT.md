@@ -164,8 +164,9 @@ a pan the page has no scroller for changes how cancelable a horizontal `touchmov
 and some pages cancel exactly those with a non-passive listener (`useBlockEdgeSwipe`).
 
 ⚠️ **Every sideways scroller under this shell needs the flag**, not just pagers — a
-`ShelfRow scrollable`, a horizontally-scrolling toolbar, a filmstrip. Current opt-in:
-`ChallengeDetailPage`.
+`ShelfRow scrollable`, a horizontally-scrolling toolbar, a filmstrip. Current opt-ins:
+`ChallengeDetailPage` (its pager), `MasteryCenterPage` (reading world, the games belt) and
+`DictionaryPage` (the swipeable result glosses, `DictionaryEntryRow` → `swipeGloss`).
 
 ### `wrapHeader` — a page that draws its own chrome AROUND the header
 
@@ -212,10 +213,13 @@ the bare numbers where there is no inset. See
 [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS status bar.
 
 **The flat bar is the app-wide footer style** — there is no pill or in-flow variant.
-The one exception is the Deck Tower's floating **slab**, opted into by its route row
-(`footerStyle: "slab"`) and drawn by the same `MobileFooter` (`variant`), with its own
-`SLAB_FOOTER_*` geometry — see [DECK_TOWER.md](./DECK_TOWER.md) § Footer. The constants
-below describe the bar only.
+The one exception is the floating **slab** (the Deck Tower, and the Dictionary tab since
+2026-10-29), opted into by a route row (`footerStyle: "slab"`) and drawn by the same
+`MobileFooter` (`variant`), with its own `SLAB_FOOTER_*` geometry — see
+[DECK_TOWER.md](./DECK_TOWER.md) § Footer. The constants above describe the bar only.
+`MobileTabScreen` (`footerFootprint` / `footerClearance`) and `FooterSpacer` read the
+route's style, so on a slab route they reserve `SLAB_FOOTER_TOTAL_CLEARANCE` (the slab's
+footprint + the same 16px gap) and end the bottom fade at the slab's top edge instead.
 `MobileFooter` always renders the bar and anchors it to the nearest positioned
 ancestor, the phone frame (`MobileDemoFrame`'s `FrameRoot`, `position: relative`).
 

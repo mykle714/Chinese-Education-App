@@ -22,13 +22,19 @@ export interface FocusSnapshot {
 
 /**
  * The fields focus mode reads off a vet row: enough to band it, cool it and queue it
- * (`barCategory`, `barCooldownRemainingMs`, `rankCardQueue`), and nothing that needs
- * DICT_JOIN.
+ * (`barCategory`, `barCooldownRemainingMs`, `rankCardQueue`).
+ *
+ * The two ease keys come from the det (DICT_JOIN) and are only read by
+ * `listWorldCards` — the one read that is ranked. `listCardsByIds` leaves them absent.
  */
 export interface FocusCardRow {
   id: number;
   typedMarkHistory: TypedMarkHistory | undefined;
   writingMastery: number | null;
+  /** det difficulty band — the stale tier's ease key on core/reading. */
+  difficulty?: number | null;
+  /** det maxCharStrokeCount (migration 179) — the stale tier's ease key on writing. */
+  maxCharStrokeCount?: number | null;
 }
 
 /**

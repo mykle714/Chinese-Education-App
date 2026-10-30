@@ -14,8 +14,7 @@
 // (case and spaces) or the face silently falls back.
 //
 // Consumed by: src/pages/SettingsPage.tsx (the picker), src/hooks/useChineseFont.ts
-// (applies the choice), src/pages/fontLab/* (the compare grid),
-// src/features/deckTower/DeckTowerPage.tsx (pins the tower to 975 Maru — TEMP font trial).
+// (applies the choice), src/pages/fontLab/* (the compare grid).
 // See docs/CJK_TYPEFACE_LAB.md.
 
 import { DEFAULT_CHINESE_FONT_ID } from "../../server/contracts/wire";

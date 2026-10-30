@@ -1,8 +1,9 @@
 import type { MasteryWorldId, TypedMarkHistory } from '../contracts/wire.js';
 import { barCooldownRemainingMs, barReadyAt } from '../contracts/cooldown.js';
+import { WORLD_MARK_TYPES } from '../contracts/mastery.js';
 
 /**
- * Card queue ranking — "which of these rested cards has been waiting longest?"
+ * Card queue ranking — "which of these rested cards should come next?"
  *
  * LAYER: pure module. No database, no clock of its own (callers pass `now`), no
  * service state. Every function is a function of its arguments.
@@ -20,7 +21,9 @@ import { barCooldownRemainingMs, barReadyAt } from '../contracts/cooldown.js';
  * caller can no longer pick a window that disagrees with the one the mark-time gate
  * enforces. See docs/MASTERY_REWORK.md § 6.
  *
- * Behaviour is otherwise identical for every caller, which is the point.
+ * Behaviour is otherwise identical for every caller, which is the point — the flp
+ * (deal + refill), focus mode's daily set and Memory Map all share the two-tier queue
+ * below (recent: longest-waiting first; stale: easiest first).
  */
 
 /** The minimum a card must carry to be ranked. Callers pass their own richer rows. */
@@ -28,6 +31,18 @@ export interface RankableCard {
   typedMarkHistory?: TypedMarkHistory;
   /** Computed writing mastery (migration 170); sets the WRITING bar's window. */
   writingMastery?: number | null;
+  /**
+   * det `difficulty` band, 1 (easiest) .. 6 — the stale tier's ease key on the core
+   * and reading bars. Absent/NULL sorts after every known band.
+   */
+  difficulty?: number | null;
+  /**
+   * det `maxCharStrokeCount` (migration 179; zh only) — the stale tier's ease key on
+   * the WRITING bar, where "easy" means few strokes. Absent/NULL sorts last.
+   */
+  maxCharStrokeCount?: number | null;
+  /** `'provisional'` marks a LENT card; the stale tier serves own cards first. */
+  starterPackBucket?: string | null;
 }
 
 /**
@@ -46,21 +61,64 @@ export {
 } from '../contracts/cooldown.js';
 
 /**
- * The card's ARRIVAL TIME in the queue: the moment its clock last released it, as
- * epoch ms (`lastCorrectOnBar + window`). Cards are served longest-waiting first, so
- * this is the sort key.
+ * How far back a mark keeps a card in the queue's RECENT tier: 30 days. A card whose
+ * newest mark on the bar (right or wrong) is older than this — or that has none —
+ * falls to the STALE tier, which is ordered easiest first rather than by arrival.
+ * Decided 2026-10-28; see rankCardQueue.
+ */
+export const RECENT_MARK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Newest mark of ANY outcome (right or wrong) across every track of `bar`, as epoch
+ * ms, or null when the bar holds none. This is the RECENT-tier test, deliberately
+ * wider than `lastCorrectOnBar` (the clock): a card the learner got wrong last week
+ * is being worked on, even though it never started a cooldown.
  *
- * -Infinity when the bar holds no correct mark at all — this module's definition of
- * "never marked". For the know clock that means neither recognition nor production
- * has ever been answered correctly; a card right on just ONE track has history and
- * queues by it.
+ * `viaWord` marks are skipped for the same reason `lastCorrectMarkTimestamp` skips
+ * them: a character mark fanned out from a word's writing result is not an attempt
+ * at the character card itself (migration 170).
+ */
+export function lastMarkOnBar(
+  typedMarkHistory: TypedMarkHistory | undefined,
+  world: MasteryWorldId
+): number | null {
+  let latest: number | null = null;
+  for (const type of WORLD_MARK_TYPES[world]) {
+    const track = typedMarkHistory?.[type];
+    if (!Array.isArray(track)) continue;
+    for (const mark of track) {
+      if (!mark?.timestamp || mark.viaWord) continue;
+      const ts = new Date(mark.timestamp).getTime();
+      if (Number.isNaN(ts)) continue;
+      if (latest === null || ts > latest) latest = ts;
+    }
+  }
+  return latest;
+}
+
+/**
+ * The card's ARRIVAL TIME in the queue: the moment it became available again, as
+ * epoch ms. Cards in the recent tier are served longest-waiting first, so this is
+ * their sort key.
+ *
+ *   - a correct mark on the bar → the moment its clock released it
+ *     (`lastCorrectOnBar + window`, i.e. `barReadyAt`);
+ *   - only WRONG marks → the newest of those: a card with no correct mark has no
+ *     cooldown, so it was back in the queue the moment it was last answered;
+ *   - no mark at all → -Infinity ("never marked"). Such a card is always in the
+ *     stale tier, which does not read this value.
+ *
+ * For the know clock "a correct mark" means on EITHER track; a card right on just
+ * one of recognition/production queues by that mark.
  */
 export function queueArrivalAt(
   typedMarkHistory: TypedMarkHistory | undefined,
   world: MasteryWorldId,
   writingMastery?: number | null
 ): number {
-  return barReadyAt(typedMarkHistory, world, writingMastery) ?? -Infinity;
+  return barReadyAt(typedMarkHistory, world, writingMastery)
+    ?? lastMarkOnBar(typedMarkHistory, world)
+    ?? -Infinity;
 }
 
 /** One ranked card, with the moment it became ready. */
@@ -69,24 +127,43 @@ export interface RankedCard<T> {
   readyAt: number;
 }
 
+/** Ascending comparison where null/undefined sorts after every number. */
+function compareNullsLast(a: number | null | undefined, b: number | null | undefined): number {
+  const aMissing = a === null || a === undefined;
+  const bMissing = b === null || b === undefined;
+  if (aMissing || bMissing) return aMissing === bMissing ? 0 : aMissing ? 1 : -1;
+  return a - b;
+}
+
 /**
- * The rested subset of `cards` (the bar's clock has run out), ordered AS A QUEUE:
- * longest-waiting first.
+ * The stale tier's ease key for one card on `world`: stroke count of the hardest
+ * character for the WRITING bar (how hard it is to write), the det difficulty band
+ * for core and reading.
+ */
+function easeKey(card: RankableCard, world: MasteryWorldId): number | null | undefined {
+  return world === 'writing' ? card.maxCharStrokeCount : card.difficulty;
+}
+
+/**
+ * The rested subset of `cards` (the bar's clock has run out), ordered AS A QUEUE in
+ * TWO TIERS:
  *
- * TWO TIERS, and the second is the reason this can't be a plain ascending sort:
+ *   1. RECENT — the card carries a mark on the bar (right or wrong) within the last
+ *      RECENT_MARK_WINDOW_MS (30 days). Ordered by arrival time ASC
+ *      (`queueArrivalAt`): the card waiting longest is served first. These are the
+ *      words the learner is actively working, so the cooldown queue still governs.
+ *   2. STALE — no mark on the bar in that window, including never-marked cards. Ordered
+ *      the learner's OWN cards before LENT ones (`starterPackBucket = 'provisional'`),
+ *      then EASIEST FIRST: `maxCharStrokeCount` on the writing bar, `difficulty` on
+ *      core/reading, unknown values last. Arrival order means little here — for a
+ *      Mastered card (180-day window) every rested card is stale — so re-entry starts
+ *      with the words most likely to come back.
  *
- *   1. cards with review history, by arrival time ASC — the card that came off
- *      cooldown earliest is served first;
- *   2. never-marked cards (no correct mark on the bar) — always LAST, however long
- *      they have technically been "available".
+ * Own-before-lent used to be the caller's SQL ORDER BY; it is explicit now because the
+ * ease sort would otherwise let a lent HSK 1 word beat the learner's own HSK 3 word.
  *
- * A never-marked card scores -Infinity, which an ascending sort would put at the
- * FRONT, so the tier is compared before the timestamp. Brand-new sorts and lent
- * provisional cards are therefore reached only once genuinely rested cards run out.
- *
- * Ties (notably the whole never-marked tail) keep the caller's incoming order —
- * `Array.prototype.sort` is stable — so the caller's own SQL ORDER BY is the final
- * tiebreak.
+ * Ties keep the caller's incoming order — `Array.prototype.sort` is stable — so the
+ * caller's own SQL ORDER BY (newest first) is the final tiebreak.
  */
 export function rankCardQueue<T extends RankableCard>(
   cards: T[],
@@ -96,25 +173,29 @@ export function rankCardQueue<T extends RankableCard>(
     world: MasteryWorldId;
   }
 ): RankedCard<T>[] {
-  const scored: RankedCard<T>[] = [];
+  const { world } = options;
+  const recent: RankedCard<T>[] = [];
+  const stale: RankedCard<T>[] = [];
+  const recentSince = now - RECENT_MARK_WINDOW_MS;
 
   for (const card of cards) {
-    if (barCooldownRemainingMs(card.typedMarkHistory, options.world, now, card.writingMastery) > 0) continue;
-    scored.push({ card, readyAt: queueArrivalAt(card.typedMarkHistory, options.world, card.writingMastery) });
+    if (barCooldownRemainingMs(card.typedMarkHistory, world, now, card.writingMastery) > 0) continue;
+    const ranked = { card, readyAt: queueArrivalAt(card.typedMarkHistory, world, card.writingMastery) };
+    const lastMark = lastMarkOnBar(card.typedMarkHistory, world);
+    (lastMark !== null && lastMark >= recentSince ? recent : stale).push(ranked);
   }
 
-  scored.sort((a, b) => {
-    // Tier first: never-marked cards sink below every card with history.
-    const aNever = a.readyAt === -Infinity;
-    const bNever = b.readyAt === -Infinity;
-    if (aNever !== bNever) return aNever ? 1 : -1;
-    // Within a tier, oldest arrival first. Equal (including the whole never-marked
-    // tail at -Infinity) returns 0 to keep the stable incoming order — subtracting
-    // would yield NaN for -Infinity - -Infinity and leave the sort undefined.
-    return a.readyAt === b.readyAt ? 0 : a.readyAt - b.readyAt;
+  // A recent card always has a mark, so readyAt is finite and subtraction is safe.
+  recent.sort((a, b) => a.readyAt - b.readyAt);
+
+  stale.sort((a, b) => {
+    const aLent = a.card.starterPackBucket === 'provisional';
+    const bLent = b.card.starterPackBucket === 'provisional';
+    if (aLent !== bLent) return aLent ? 1 : -1;
+    return compareNullsLast(easeKey(a.card, world), easeKey(b.card, world));
   });
 
-  return scored;
+  return [...recent, ...stale];
 }
 
 /**

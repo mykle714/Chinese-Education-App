@@ -2,10 +2,9 @@ import { Box, Typography, useTheme } from "@mui/material";
 import Icon from "../../components/Icon";
 import ForeignText from "../../components/ForeignText";
 import { stripParentheses } from "../../utils/definitionUtils";
-import { COLORS } from "../../theme/colors";
 import { FC_FONT } from "./constants";
-import { SIZE } from "../../theme/scale";
 import type { Language } from "../../types";
+import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
 
 /**
  * `BreakdownRow` — the design's `.bkr` (artboard 25): ONE component character of a
@@ -63,6 +62,7 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    const colors = useEipColors();
     const clickable = !!onClick;
 
     return (
@@ -75,23 +75,25 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
                 alignItems: "center",
                 gap: "14px",
                 width: "100%",
-                // No horizontal padding: the eip pane already insets its content 18px,
-                // so a row-level inset doubled the margin. Vertical padding stays — it
-                // spaces the glyph off the hairlines between rows.
-                padding: "11px 0",
-                // A hairline BETWEEN rows, drawn on the bottom of each and cancelled on
-                // the last: a bordered box per row would read as four cards rather than
-                // one word taken apart.
-                borderBottom: `1px solid ${fc.border}`,
-                "&:last-of-type": { borderBottom: "none" },
-                background: "transparent",
+                // `.bk` (Tower Tier 2, 2026-10-29): each character is its own outlined
+                // CARD — the eip palette's `card` fill in a 1.5px `line` ring, 14px
+                // radius — stacked 10px apart. (It was a ruled list, on the reasoning
+                // that boxes would read as four cards rather than one word taken apart;
+                // the design chose cards, and the word's ORDER still reads top to bottom.)
+                boxSizing: "border-box",
+                padding: "10px 12px",
+                marginBottom: "10px",
+                "&:last-of-type": { marginBottom: 0 },
+                borderRadius: "14px",
+                backgroundColor: colors.card,
+                boxShadow: `inset 0 0 0 1.5px ${colors.line}`,
                 border: "none",
                 textAlign: "left",
                 font: "inherit",
                 color: "inherit",
                 cursor: clickable ? "pointer" : "default",
                 transition: "background-color 0.12s ease-out",
-                "&:hover": clickable ? { background: fc.subtleBg } : undefined,
+                "&:hover": clickable ? { backgroundColor: fc.subtleBg } : undefined,
             }}
         >
             {/* Fixed-width glyph column, so every row's gloss starts on the same margin
@@ -103,7 +105,10 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
                 The reading sits UNDER the glyph as the cpcd's own pinyin line (the
                 same layout as every other CPCDRow), tone-coloured through the cpcd's
                 `useToneColor` rather than a hand-rolled per-syllable span. */}
-            <Box sx={{ width: 52, flexShrink: 0, display: "flex", justifyContent: "center" }}>
+            <Box
+                className="breakdown-row__glyph"
+                sx={{ width: 52, flexShrink: 0, display: "flex", justifyContent: "center" }}
+            >
                 <ForeignText
                     size="md"
                     language={language}
@@ -111,16 +116,15 @@ export const BreakdownRow: React.FC<BreakdownRowProps> = ({
                     pronunciation={pinyin}
                     showPinyin={showPinyin && !!pinyin}
                     useToneColor={showPinyinColor}
-                    bold
                 />
             </Box>
             <Typography
                 className="breakdown-row__gloss"
-                sx={{ flex: 1, minWidth: 0, fontSize: SIZE.body, color: fc.textSecondary, fontFamily: FC_FONT, lineHeight: 1.35 }}
+                sx={{ flex: 1, minWidth: 0, fontSize: 14.5, color: colors.ink, fontFamily: FC_FONT, lineHeight: 1.4 }}
             >
                 {stripParentheses(definition)}
             </Typography>
-            {clickable && <Icon name="chevron_right" size={16} color={COLORS.textFaint} />}
+            {clickable && <Icon name="chevron_right" size={20} color={colors.muted} />}
         </Box>
     );
 };

@@ -5,7 +5,8 @@
 > the switch bar (§ 6z-2) all ship, as do in-context component variants (§ 6z-5)
 > and buffer-fit re-ranking of the glyph row (§ 6z-6), look-alike components
 > sharing one chip (§ 6z-7), the green direct-commit chip (§ 6z-8), and the
-> half-built character surviving a change of field (§ 6z-9). §§ 1–4 are the ORIGINAL investigation — how
+> half-built character surviving a change of field (§ 6z-9), and the ā tone-vowel
+> pad as a third keyboard (§ 6z-10). §§ 1–4 are the ORIGINAL investigation — how
 > small a unit the decomposition system can hand us, and the complete inventory of
 > those units — kept because the numbers still describe the corpus; read them as
 > the record of how the design was reached, not as open questions. What genuinely
@@ -2413,14 +2414,15 @@ in, and where it is anchored), `transition.ts` → `switchBarTransition`,
 
 ```
 ┌──────────────────────────────────────────────┐
-│ [ 写 | ABC ]                              ⌄  │   ← the bar, 40px
+│ [ 写 | ā | ABC ]                          ⌄  │   ← the bar, 40px
 ├──────────────────────────────────────────────┤
 │  the handwriting keyboard, OR nothing of      │
 │  ours at all (the OS keyboard is up here)     │
 └──────────────────────────────────────────────┘
 ```
 
-A **segmented toggle** showing both destinations with the active side filled,
+A **segmented toggle** showing every destination with the active side filled
+(two segments until 2026-10-29, when the ā pad made it three — § 6z-10),
 rather than one key whose label flips. A flipping label is invisible until it is
 read, and it is read as a state ("I am on ABC") exactly as often as an action
 ("go to ABC"). The close chevron sits at the **far** edge: the two are different
@@ -2529,7 +2531,7 @@ keyboard comes up on its own, with the bar perched on it.
 ## 6z-3a. BUILT 2026-10-10 — a field may declare its own default keyboard
 
 **A field carrying `data-beginner-keyboard-default="os"` opens on `ABC` (the OS
-keyboard, switch bar perched on it) regardless of the session choice.** `"ours"` is
+keyboard, switch bar perched on it) regardless of the session choice.** `"ours"` and `"pinyin"` (§ 6z-10) are
 accepted for symmetry. The only user today is the dictionary search box. (It no longer auto-focuses on
 visit — removed 2026-10-12; the learner taps it to raise a keyboard.)
 
@@ -2990,6 +2992,91 @@ rule left to pin.
   `initialInk` on `WritingCanvas`
 - `src/features/beginnerKeyboard/useComposition.ts` → `CompositionDeps.draft`
   (seeding + the write-back effect)
+
+## 6z-10. BUILT 2026-10-29 — the ā pad (a third keyboard: tone vowels)
+
+**The switch bar now reads `写 · ā · ABC`.** `ā` raises a pad of the 24 tone-marked
+pinyin vowels, and nothing else. It replaces the inline `PinyinKeypad` that sat above the
+Dictionary's search field for zh learners, and it is offered on **every** field the
+beginner keyboard mounts on (decided by the owner 2026-10-29), not just the dictionary.
+
+Design: Claude Design project "Tower Tier 2 - Time of Day", artboard *Dictionary ·
+keyboard, pinyin mode*.
+
+```
+┌──────────────────────────────────────────────┐
+│ [ 写 | ā | ABC ]                          ⌄  │   the switch bar (§ 6z-2)
+├──────────────────────────────────────────────┤
+│   ā á ǎ à      ē é ě è                       │   red     orange
+│   ī í ǐ ì      ō ó ǒ ò                       │   yellow  green
+│   ū ú ǔ ù      ǖ ǘ ǚ ǜ                       │   blue    purple
+│   [ ⌫ ]                     [ 🔍 Search ]    │
+└──────────────────────────────────────────────┘
+```
+
+- **Vowels only.** No consonant keys: the learner types "sh" on ABC and switches to ā
+  for "í". The owner chose this over adding a QWERTY under the vowels. Numbered pinyin
+  ("shi2") typed on ABC still searches.
+- **Backspace is bottom LEFT; the action key bottom right.** The artboard put backspace
+  right-aligned beside Search, which read as one split button. Holding backspace repeats
+  (400 ms delay, then every 70 ms) and deletes whole code points (`deleteBeforeCaret`).
+- **← → caret keys sit between backspace and the action key** (owner request,
+  2026-10-29): placing the caret by tapping is hard on a phone, and fixing one tone mark
+  means stepping back over it. Each moves one code point (`moveCaret`); a selection
+  collapses to its start / end instead, as on an OS keyboard. They share backspace's
+  hold-to-repeat (`startRepeat`), which stops when the caret reaches the field's end.
+  Only the selection changes, so no `input` event fires.
+- **The action key reads the field's `enterkeyhint`** — `search` → 🔍 Search, `go` /
+  `send` / `next` → that word, otherwise Done; a `<textarea>` gets Return (inserts a
+  newline). On a single-line field it dispatches a cancelable `keydown` Enter (so a
+  field's own onKeyDown runs), submits the owning `<form>` when one exists and the event
+  was not cancelled, then dismisses the keyboard as an OS keyboard's Search would.
+- **Colours** follow the older keypad's vowel→hue order (a red, e org, i yel, o grn,
+  u blu, ü pur): face = the ramp's SURFACE tier, 3px lip = its MARK tier. The artboard's
+  lip (`oklch(.82 .09 h)`) is less saturated than MARK; MARK is the nearest framework
+  tier. Backspace / ← → / action keys are white with a `COLORS.grey` lip. Every key carries the
+  1px `COLORS.border` outline as an inset ring.
+- **Same height as the 写 surface** (the host's `keyboardHeight`), on the same
+  `COLORS.header` ground, so a 写 ⇄ ā flip swaps the keys in place and never jumps.
+- **It suppresses the OS keyboard exactly as 写 does.** The host's suppression effect
+  now keys on `suppressOs = source !== 'os'` rather than on `source`, so 写 ⇄ ā does
+  not re-run the blur/refocus dance.
+- **The session choice can be `pinyin`** (`sessionStorage` `beginnerKeyboard.source`),
+  and a field may declare `data-beginner-keyboard-default="pinyin"` (§ 6z-3a).
+
+**Code:**
+- `src/features/beginnerKeyboard/PinyinToneKeyboard.tsx` → `TONE_ROWS`, `actionFor`, `startRepeat`, `repeatKeyProps`
+- `src/features/beginnerKeyboard/KeyboardSwitchBar.tsx` → `KeyboardSource`, `SEGMENTS`, `onSelect`
+- `src/features/beginnerKeyboard/BeginnerKeyboardHost.tsx` → `suppressOs`, `selectSource`
+- `src/features/beginnerKeyboard/insertAtCaret.ts` → `deleteBeforeCaret`, `moveCaret`
+- `src/features/beginnerKeyboard/BeginnerKeyboardProvider.tsx` → `readStoredSource`
+- `src/features/beginnerKeyboard/eligibility.ts` → `defaultSourceOf`
+- `src/components/SearchField.tsx` → `inputAttributes.enterKeyHint`
+
+## 6z-11. BUILT 2026-10-29 — Tier 2 time-of-day colours
+
+Over a **Tier 2 page** (today the Dictionary and its card page) the keyboard takes that
+page's time-of-day look: the page's tinted ground at dawn / day / sunset, and slate keys
+with light ink at night. Everywhere else it is unchanged (owner's choice: "only on Tier 2
+pages").
+
+- **How it knows.** It doesn't: every chrome colour is a CSS string from
+  `KEYBOARD_COLORS` (`keyboardColors.ts`), each `var(--tier2-…, <its old COLORS value>)`
+  (`src/timeOfDay/tier2Chrome.ts` → `tier2Var`). A Tier 2 page writes the variables while
+  mounted (`useTier2Look`); with none up they are unset and the fallbacks are the keyboard's
+  original colours, so no prop or context reaches the host.
+- **Themed:** the 写 and ā surfaces and their top rule, the switch bar (ground, segment
+  track, active segment, labels, close chevron), the 写 Clear / Undo / Redo keys and the
+  controls rule, the component-buffer chips and labels, and the ā pad's utility keys
+  (backspace, ← →, action).
+- **Not themed, on purpose:** the ā pad's vowel keys (their ramp hues are content), the
+  handwriting canvas (white paper; stroke ink is dark), and the candidate row's blue / green
+  mode tints (the tint is the mode signal; its white chips stay legible on it).
+
+**Code:** `src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`;
+`BeginnerKeyboard.tsx` → `inkKeySx`; `KeyboardSwitchBar.tsx`; `ComponentBuffer.tsx`;
+`PinyinToneKeyboard.tsx` → `utilityKeySx`, `keycapShadow`, `keyPressSx` (→ `src/theme/keycapPress.ts`);
+`src/timeOfDay/tier2Chrome.ts`. **Docs:** docs/SHELF_REDESIGN.md § 7b "Time of day".
 
 ## 7. Outstanding before we can build
 

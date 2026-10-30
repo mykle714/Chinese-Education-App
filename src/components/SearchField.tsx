@@ -60,10 +60,14 @@ export interface SearchFieldProps {
     endAction?: React.ReactNode;
     /**
      * Extra attributes for the underlying `<input>` itself — e.g. the dictionary's
-     * `data-beginner-keyboard-default="os"`. Generic on purpose: this component stays
+     * `data-beginner-keyboard-default="os"`, or `enterKeyHint: "search"` (which labels
+     * the OS keyboard's return key AND the beginner keyboard's ā-pad action key —
+     * PinyinToneKeyboard → actionFor). Generic on purpose: this component stays
      * ignorant of which feature reads them.
      */
-    inputAttributes?: Record<`data-${string}`, string>;
+    inputAttributes?: Record<`data-${string}`, string> & {
+        enterKeyHint?: React.InputHTMLAttributes<HTMLInputElement>["enterKeyHint"];
+    };
     sx?: SxProps<Theme>;
 }
 

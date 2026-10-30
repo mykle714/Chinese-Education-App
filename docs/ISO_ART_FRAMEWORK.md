@@ -41,7 +41,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
 | Primitive | `IsoSpacedText.tsx` → `IsoSpacedText` | Centred letter-spaced text that anchors the same in every engine (§ Objects → IsoSpacedText) |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
-| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
+| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
 | Math | `pawnFigure.ts` → `pawnFigure`, `circleHullPath` | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View") |
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
@@ -71,7 +71,7 @@ World +x runs down-right, +y down-left and +z up. Screen coordinates are
   where a point `at` (pass the print's centre) and its two unit neighbours project, so
   they work under any `Projector`: exact everywhere under the fixed view, exact at `at`
   and a fraction of a px off a few units away under a perspective camera.
-- **`Projector`.** `{ unit, project, scaleAt, facingScaleAt }`. `scaleAt(x, y, z)` is the screen px per
+- **`Projector`.** `{ unit, project, scaleAt, facingScaleAt, seesHighSide }`. `seesHighSide(axis, at)` says whether the camera sees the vertical plane `axis = at` from its high side — always under the fixed view (it looks in from +x/+y); under a camera, whether the camera stands past the plane (`camera.ts` → `makeCameraProjector`). Depth sorting reads it (§ IsoPawn → "Depth sorting"). `scaleAt(x, y, z)` is the screen px per
   world unit AT a point (the square root of the floor plane's area scale there) — equal to
   `unit` everywhere under the fixed view, shrinking with distance under a perspective
   camera. Anything that sizes itself in screen px (a stroke width, a radius) should use it
@@ -141,7 +141,7 @@ palette (`useIsoPalette`) and the wash itself (`useIsoWash`) to everything insid
 ## Ambient wash
 
 `iso/wash.ts` → `IsoWash`, `NO_WASH`, `WashLight`, `lightWash`, `blendWash`, `washPalette`,
-`washMaterial`, `washTone`, `washColorMatrix`, `hexToOklch`, `oklchToHex`, `hueTurn`; `iso/sceneContext.ts` →
+`washMaterial`, `washTone`, `hexToOklch`, `oklchToHex`, `hueTurn`; `iso/sceneContext.ts` →
 `useIsoPalette`, `useIsoWash`; `IsoScene` `wash`.
 
 A wash is one colour transform, `(hex) => hex`, laid over every colour a scene paints — how
@@ -165,15 +165,11 @@ the Deck Tower lights its scene for a time of day ([DECK_TOWER.md](./DECK_TOWER.
 Keep the wash's identity stable between renders: a new one re-washes the palette and
 re-renders every object.
 
-- **DOM content** (`washColorMatrix`). HTML laid over a washed scene (the Deck Tower's flp
-  session) is out of the palette's reach, so it takes the wash as one SVG `feColorMatrix`
-  filter on its layer, run with `color-interpolation-filters="sRGB"`. A wash is not affine
-  (its dim keeps OKLCH chroma), so the matrix approximates it: per channel, the affine map
-  through the wash's own black and white — exact on every grey, so card stock and ink match
-  the iso cards beside them — after a grey-preserving `saturate(s)` whose `s` is fitted by
-  least squares over the sRGB cube to restore the chroma an affine dim drains. Night (measured at the old 22% dim): RMS
-  error ≈ 10/255 (17.7 without the saturate); dawn is affine already. `null` for `NO_WASH`
-  — no filter at all by day.
+- **DOM content is not washed.** The kit lights only what it draws. HTML laid over a washed
+  scene (the Deck Tower's flp session, the slab footer) is drawn as is. A
+  `washColorMatrix` SVG `feColorMatrix` filter used to light it (until 2026-10-30); it was
+  cut because WebKit rasterises an SVG `url()` filter on HTML on the CPU and re-ran it on
+  every repaint, which made the flp lag (DECK_TOWER.md § Time of day → "The wash").
 
 ## Surfaces
 
@@ -241,7 +237,7 @@ a camera can aim at where the object actually stands (the Deck Tower's study cam
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, overlay? }`. A slab whose top,
+`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, fadeChildren? }`. A slab whose top,
 the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
 from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
 `ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
@@ -254,18 +250,20 @@ It draws, in order:
    scene can keep walkers (and their shadows) off the bevel — the Deck Tower's `TowerPlatformLayout.roam` (towerPlatforms.ts) is
    `insetRect(platform, RIM_WIDTH)`.
 4. `decals`: flat things printed on the floor (floor labels).
-5. `children`: the carpets and objects on the floor.
-6. `overlay`: drawn over everything, and left out of `fadeStyle`.
+5. `children`: the carpets and objects on the floor, in their own group after the slab's.
 
-With `floating`, steps 2–6 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
-the group holding steps 2–6, so a scene can move the whole loaded slab on top of the bob
+With `floating`, steps 2–5 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
+the group holding steps 2–5, so a scene can move the whole loaded slab on top of the bob
 (the Deck Tower's landing sink, [DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
 
-**Fading.** `fadeStyle` (e.g. `{ opacity }`) lands on the groups holding steps 1–5 — but
-not on `overlay`. A group's opacity cannot be undone by a child, so anything that must stay
-opaque through a fade is passed as `overlay` instead, where it still rides the bob and
-`bodyStyle`. The Deck Tower fades its platform out on the study dive and keeps its deck as
-the overlay ([DECK_TOWER.md](./DECK_TOWER.md) § Studying the tower → "Hiding the
+**Fading.** `fadeStyle` (e.g. `{ opacity }`) lands on the groups holding steps 1–5. A
+group's opacity cannot be undone by a child, so a scene that must keep one child opaque
+through a fade passes `fadeChildren={false}` — the children's group is then left unfaded —
+and fades the other children itself, each on its own wrapper. The kept child stays in its
+slot of the draw order, so what stands in front of it still draws over it; lifting it out
+over the faded group (the old `overlay` prop, removed 2026-10-30) painted it over
+everything. The Deck Tower fades its platform out on the study dive and keeps its deck this
+way ([DECK_TOWER.md](./DECK_TOWER.md) § Studying the tower → "Hiding the
 platform").
 
 **Trap door.** `hingeAngle` (radians, 0 = shut) swings the slab open on its back-left
@@ -751,8 +749,17 @@ the shadow does not grow (`air` is clamped at 0) — the page fades it out inste
    over `RECOVER_MS`, and goes back to wandering.
 
 **Depth sorting.** A wandering pawn can be in front of or behind the things it walks
-around. An iso object is nearer the viewer than a box when it is past the box's far edge
-on +x or +y. `roam.obstacles` are given back-to-front, and `depthRankAmong(point, rects)`
+around. An object is nearer the viewer than a box when it is past one of the box's faces
+that the camera sees (`pointInFrontOfRect`, reading `Projector.seesHighSide`) — under the
+fixed view, past its far edge on +x or +y. Under a moving camera the order changes: as the
+Deck Tower's study camera tips over the tower to look straight down, the tower's walls stop
+being seen one by one and its top comes to hide what stood in front of it. So
+`roam.obstacles` are given back-to-front FOR THE FIXED VIEW, `backToFront(rects, proj)`
+re-orders them for the camera (a footprint moves behind an earlier one only when that one
+is unambiguously in front of it — two separated on both axes can test in front of each
+other at once, can then never overlap on screen, and keep the listed order), and both the
+caller's draw order of the obstacles (`DeckTowerPlatform`) and the pawn's rank (re-computed
+every frame against `projRef`) read that same order. `depthRankAmong(point, rects, proj)`
 returns the index of the FIRST rect the point stands behind (`rects.length` when it is in
 front of all of them). It is deliberately not a count of the rects it is in front of: a
 fixed back-to-front list is not a total order for every point (with the Deck Tower's lever at

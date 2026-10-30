@@ -107,13 +107,26 @@ function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEip
     };
 }
 
+/**
+ * The eip's word trail as a BREADCRUMB STACK (2026-10-29; was a set of tabs any of which
+ * could be the showing one). The showing word is ALWAYS the top of the stack:
+ *  - drilling into a NEW word pushes it;
+ *  - navigating to a word ALREADY on the stack — tapping its crumb, or drilling into it
+ *    again from a breakdown/example — pops everything above it, so it is the top again;
+ *  - Escape (desktop) pops the top (back one word); popping the root closes the panel.
+ * So the trail always reads as the path from the root to what is showing, never as a set
+ * of side-by-side tabs. Docs: docs/EIP_SHEET_GESTURES.md (word trail).
+ */
 export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     const [tabs, setTabs] = useState<EipTab[]>([]);
-    const [activeIndex, setActiveIndex] = useState(0);
-    // Latches to true the moment a 2nd tab is first added and stays true for
-    // the lifetime of the panel — closing back down to 1 tab does not hide the
-    // strip. Reset only by clear() when the panel closes.
-    const [isTabbedMode, setIsTabbedMode] = useState(false);
+    // Derived, not state: the showing crumb is always the top of the stack.
+    const activeIndex = Math.max(0, tabs.length - 1);
+    // Whether the trail's crumbs are drawn. A panel opened on a word shows NO trail — a lone
+    // crumb repeating the headword is noise — until the learner first navigates to another
+    // word. From then it is LATCHED on for this trail's life (popping back to the root still
+    // shows the root crumb, so the way forward is not hidden mid-walk); it resets only when a
+    // new root starts a new trail (openForRoot / clear). EipTabStrip reads it as `showCrumbs`.
+    const [trailShown, setTrailShown] = useState(false);
     // Bumped each time a new-tab push is rejected for hitting MAX_EIP_TABS. Consumers
     // watch this to fire a toast — we use a counter (not a boolean) so back-to-back
     // overflows still trigger the toast each time.
@@ -130,29 +143,28 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // to look at the card, and opens it again gets the same three pills and the same word
     // showing. So this is a no-op when the root tab is already this entry, and only a
     // DIFFERENT root starts a fresh trail (which is also what ends the old one: the flp's
-    // next card, or another card's info button on scp). The `isTabbedMode` latch resets
-    // with it, or the new card would open showing a one-pill strip left over from the old.
+    // next card, or another card's info button on scp).
     const openForRoot = useCallback((entry: VocabEntry) => {
         const root = tabs[0];
         if (root?.kind === "entry" && root.id === entry.entryKey) return;
+        latestRequestRef.current = null;
         setTabs([buildEntryTab(entry, new Set())]);
-        setActiveIndex(0);
-        setIsTabbedMode(false);
+        setTrailShown(false);
     }, [tabs]);
 
-    // Compare tab (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON pushed from the header's Compare
-    // button, not attached to any card. Re-tapping Compare from a different word's tab focuses the
-    // existing Compare tab, refills slot A with the new source word, and CLEARS slot B (decided —
-    // the old pair is no longer what the user asked about).
+    // Compare crumb (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON pushed from the word-tools
+    // Compare button, not attached to any card. Opening Compare while a Compare crumb is already
+    // on the stack follows the trail's pop rule: everything above it is popped, slot A is refilled
+    // with the new source word, and slot B is CLEARED (decided — the old pair is no longer what
+    // the user asked about).
     const openCompareTab = useCallback((entry: VocabEntry) => {
+        latestRequestRef.current = null;
         setTabs(prev => {
             const existingIdx = prev.findIndex(t => t.kind === "compare");
             if (existingIdx !== -1) {
-                const next = prev.map((t, i) =>
+                return prev.slice(0, existingIdx + 1).map((t, i) =>
                     i === existingIdx ? { ...(t as CompareEipTab), slotA: entry, slotB: null, comparison: null, comparisonParts: null } : t
                 );
-                setActiveIndex(existingIdx);
-                return next;
             }
 
             // Cap check before pushing, same rule as openForEntryKey.
@@ -162,11 +174,8 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
             }
 
             const usedColors = new Set(prev.map(t => t.toneColor));
-            const newTab = buildCompareTab(entry, usedColors);
-            const next = [...prev, newTab];
-            setActiveIndex(next.length - 1);
-            setIsTabbedMode(true);
-            return next;
+            setTrailShown(true);
+            return [...prev, buildCompareTab(entry, usedColors)];
         });
     }, []);
 
@@ -183,11 +192,19 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         setTabs(prev => prev.map(t => t.kind === "compare" ? { ...t, comparison, comparisonParts } : t));
     }, []);
 
+    // Pop the stack down to `index`, making that crumb the showing word. Also cancels an
+    // in-flight drill-in, so a lookup that lands after the pop cannot push onto the trail
+    // the learner just walked back from.
+    const popTo = useCallback((index: number) => {
+        latestRequestRef.current = null;
+        setTabs(prev => (index >= 0 && index < prev.length - 1 ? prev.slice(0, index + 1) : prev));
+    }, []);
+
     const openForEntryKey = useCallback(async (entryKey: string) => {
-        // Dedupe: if a tab for this entryKey already exists, activate it.
+        // Already on the stack (the showing word, or one below it): pop back to it.
         const existingIdx = tabs.findIndex(t => t.kind === "entry" && t.id === entryKey);
         if (existingIdx !== -1) {
-            setActiveIndex(existingIdx);
+            popTo(existingIdx);
             return;
         }
 
@@ -204,19 +221,14 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
             // Drop stale responses — a newer tap superseded this one.
             if (latestRequestRef.current !== entryKey) return;
             setTabs(prev => {
-                // Re-check dedupe in case the user double-tapped during fetch.
+                // Re-check against the stack as it is NOW (a double tap during the fetch, or
+                // a lookup whose canonical entryKey differs from the tapped text): a word
+                // already on the stack is popped back to, never pushed twice.
                 const dupeIdx = prev.findIndex(t => t.kind === "entry" && t.id === adapted.entryKey);
-                if (dupeIdx !== -1) {
-                    setActiveIndex(dupeIdx);
-                    return prev;
-                }
+                if (dupeIdx !== -1) return prev.slice(0, dupeIdx + 1);
                 const usedColors = new Set(prev.map(t => t.toneColor));
-                const newTab = buildEntryTab(adapted, usedColors);
-                const next = [...prev, newTab];
-                setActiveIndex(next.length - 1);
-                // Latch tabbed mode on — never reverting for this panel's life.
-                setIsTabbedMode(true);
-                return next;
+                setTrailShown(true);
+                return [...prev, buildEntryTab(adapted, usedColors)];
             });
         } catch (err) {
             console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
@@ -224,7 +236,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         // No `token` dep: the underlying apiGet reads the header at call time, so this callback's
         // identity survives a silent refresh (CLAUDE.md ⛔ rule). A non-2xx now throws
         // and is handled by the catch below, where the old code returned early.
-    }, [tabs, language]);
+    }, [tabs, language, popTo]);
 
     // Re-seed an already-open entry tab from a fresher copy of the same word. Tabs hold a
     // SNAPSHOT of the entry, so a change made outside the panel while it is open (today:
@@ -245,44 +257,22 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         ));
     }, []);
 
-    // Record the sense pick made by the ACTIVE entry tab's header picker. Panel-local:
-    // persisting it to the vet row is the host page's job (it owns the optimistic
-    // override), wired through InfoCardSection's `onPersistSense`.
-    const setActiveSenseIndex = useCallback((index: number) => {
-        setTabs(prev => prev.map((t, i) =>
-            (i === activeIndex && t.kind === "entry") ? { ...t, selectedSenseIndex: index } : t
-        ));
-    }, [activeIndex]);
-
-    const setActive = useCallback((index: number) => {
-        setActiveIndex(index);
-    }, []);
-
     const setActiveSubTab = useCallback((subTab: number) => {
         setTabs(prev => prev.map((t, i) => (i === activeIndex && t.kind === "entry") ? { ...t, selectedSubTab: subTab } : t));
     }, [activeIndex]);
 
-    // Removes the currently active tab. Returns true when the last tab is closed
-    // so the caller can close the EIP entirely. The active index shifts left when
-    // the removed tab was at or beyond the end of the remaining list.
-    const closeActiveTab = useCallback((): boolean => {
+    // Escape (via onCloseX): pop the showing (top) crumb — back one word. Returns true when that was the
+    // root, so the caller closes the eip entirely.
+    const pop = useCallback((): boolean => {
+        latestRequestRef.current = null;
         const willBeEmpty = tabs.length <= 1;
-        if (willBeEmpty) {
-            setTabs([]);
-            setActiveIndex(0);
-            latestRequestRef.current = null;
-        } else {
-            const removedIdx = activeIndex;
-            setTabs(prev => prev.filter((_, i) => i !== removedIdx));
-            setActiveIndex(prev => Math.max(0, prev >= tabs.length - 1 ? tabs.length - 2 : prev));
-        }
+        setTabs(prev => prev.slice(0, -1));
         return willBeEmpty;
-    }, [tabs, activeIndex]);
+    }, [tabs]);
 
     const clear = useCallback(() => {
         setTabs([]);
-        setActiveIndex(0);
-        setIsTabbedMode(false);
+        setTrailShown(false);
         latestRequestRef.current = null;
     }, []);
 
@@ -290,17 +280,16 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         tabs,
         activeIndex,
         activeTab: tabs[activeIndex] ?? null,
-        isTabbedMode,
+        trailShown,
         openForRoot,
         openForEntryKey,
         syncEntry,
         openCompareTab,
         setCompareSlot,
         setCompareResult,
-        setActive,
+        popTo,
         setActiveSubTab,
-        setActiveSenseIndex,
-        closeActiveTab,
+        pop,
         clear,
         overflowSignal,
     };

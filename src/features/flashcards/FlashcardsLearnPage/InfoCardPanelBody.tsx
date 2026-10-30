@@ -1,5 +1,5 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { Box, Typography, useTheme } from "@mui/material";
+import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { Box, Typography } from "@mui/material";
 import { type CPCDSize } from "../../../components/ForeignText";
 import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
 import { trackScrollEdgeFade } from "../../../components/scrollEdgeFade";
@@ -9,6 +9,7 @@ import { tabAvailability } from "./infoCardTabAvailability";
 import {
     InfoSheetTabStrip,
     InfoSheetTab,
+    InfoSheetTabIndicator,
 } from "./styled";
 import {
     TAB_LABELS,
@@ -21,6 +22,7 @@ import {
 } from "../constants";
 import { WEIGHT } from "../../../theme/scale";
 import EipEntryHeader from "./EipEntryHeader";
+import { useEipColors } from "./useEipPalette";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
@@ -45,12 +47,13 @@ export interface InfoCardPanelBodyProps {
     // passive tooltip.
     onExampleSegmentClick?: (segment: string) => void;
     onSpeak?: (entry: VocabEntry) => void;
-    // Add-only "+ to Learning" under the header's speaker (EipEntryHeader). Passed by
-    // the flp for a drilled-into word not yet in Learning.
-    onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learning TOGGLE (glowing "+" ⇄ "Added!") under the speaker — supersedes
-    // onAddToLibrary. Dictionary page eip (EipSheet) + dictionary cdp. See EipEntryHeader.
+    // The Learning TOGGLE (glowing "+" ⇄ "Added!") under the speaker — the eip's only
+    // add control outside the Dictionary eip. The dictionary cdp's inline panel only; the Dictionary page's eip
+    // draws its Learning key in the sheet's trail row instead (EipAddKey).
     learning?: LearningToggleState;
+    // Skip the entry header: the eip SHEET draws it in its upper panel (EipUpperPanel),
+    // above the tab shelf. Inline hosts (the cdps) leave it off and get the header here.
+    hideEntryHeader?: boolean;
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
@@ -74,13 +77,10 @@ export interface InfoCardPanelBodyProps {
     headerDragBind?: () => Record<string, unknown>;
     // Which definitionClusters sense the panel is showing — an index into
     // sortedSenseClusters(currentEntry), owned by the host (useEipTabs, per entry tab)
-    // so it survives tab switches. Drives the header's SensePicker, the header dd +
-    // pronunciation, and the definition tab's long definition / commonality.
+    // so it survives tab switches. Drives the header's underlined sense + pronunciation
+    // and the definition tab's long definition / commonality. Display-only here: the
+    // pick is made on the card face's SensePicker.
     selectedSenseIndex?: number;
-    // A pick in the header's SensePicker. The host both records it (so the panel
-    // re-renders) and persists it to the vet row when there is one — mirroring the
-    // flashcard/cdp pickers. Undefined hides the picker entirely.
-    onSelectSense?: (index: number) => void;
     // Appends Synonyms + Related Words to the definition tab. cdps only — see
     // InfoCardTabContent's `showSynonymsRelated` for why it is a section and not a tab.
     showSynonymsRelated?: boolean;
@@ -112,6 +112,14 @@ export interface InfoCardPanelBodyHandle {
  * can attach listeners to the whole panel while still querying scrollTop on
  * the actual overflow container.
  */
+/**
+ * How long after the panel mounts its OFF-SCREEN tab panes get their content, ms. Just
+ * past SheetPanel's open slide (SNAP_DURATION_MS, 220): mounting them during the slide
+ * would drop its frames, and mounting them in the opening commit is what made the eip
+ * slow to appear (every pane's example sentences / breakdown rows on one frame).
+ */
+const OFFSCREEN_PANES_WARM_MS = 260;
+
 const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyProps>(function InfoCardPanelBody({
     currentEntry,
     selectedTab,
@@ -122,7 +130,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onUsedInItemClick,
     onExampleSegmentClick,
     onSpeak,
-    onAddToLibrary,
     learning,
     onSpeakSentence,
     speakingKey,
@@ -130,17 +137,18 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     scrollTouchAction = "auto",
     headerDragBind,
     selectedSenseIndex,
-    onSelectSense,
     showSynonymsRelated,
     definitionFooter,
+    hideEntryHeader,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     // Clipping viewport around the sliding tab track. NOT itself scrollable —
     // each tab pane inside the track is its own vertical scroller.
     const clipRef = useRef<HTMLDivElement | null>(null);
     const trackRef = useRef<HTMLDivElement | null>(null);
-    // One scroll container per tab pane, indexed by tab. Every pane is always
-    // mounted (see the track JSX), so these are stable for the panel's life.
+    // One scroll container per tab pane, indexed by tab. Every pane's SCROLLER is always
+    // mounted (see the track JSX), so these are stable for the panel's life — only the
+    // off-screen panes' CONTENT is deferred (panesWarm).
     const paneRefs = useRef<(HTMLDivElement | null)[]>([]);
     // Mirror of selectedTab readable from the mount-once gesture listeners and
     // the imperative handle getter (both live outside the render cycle).
@@ -158,8 +166,21 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         get scroll() { return paneRefs.current[selectedTabRef.current] ?? null; },
     }), []);
 
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
+    const colors = useEipColors();
+
+    // DEFERRED OFF-SCREEN PANES. The opening commit renders only the ACTIVE pane's content;
+    // the other panes' scrollers are there (empty) and fill in OFFSCREEN_PANES_WARM_MS
+    // later, or at once when a finger lands on the track (a swipe must find its
+    // neighbour drawn) — whichever comes first. A tapped tab needs no warming: the active
+    // pane always renders, so it fills in the same commit that starts its slide. One-way:
+    // once warm, every pane stays mounted for the panel's life (the swipe section's
+    // "nothing mounts on a tab change" holds from then on).
+    const [panesWarm, setPanesWarm] = useState(false);
+    const warmPanesRef = useRef(() => setPanesWarm(true));
+    useEffect(() => {
+        const t = window.setTimeout(warmPanesRef.current, OFFSCREEN_PANES_WARM_MS);
+        return () => window.clearTimeout(t);
+    }, []);
 
     // Per-tab emptiness + the entry-derived values the tab bodies render. Derived ONCE
     // and shared with InfoCardTabContent so the greyed-out tab labels and the panes
@@ -170,7 +191,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     const tabIsEmpty = [!avail.definition, !avail.examples, !avail.breakdown];
 
     // --- Swipe-to-change-tab ------------------------------------------------
-    // All three tab panes are ALWAYS mounted side by side on a permanent
+    // All three tab panes are ALWAYS mounted (their content once panesWarm) side by side on a permanent
     // (N·100%)-wide track (see the JSX below); changing tabs — by tap or by
     // swipe — never mounts, unmounts, restyles, or resizes anything. It only
     // moves the track's transform:
@@ -356,6 +377,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         };
 
         const onTouchStart = (e: TouchEvent) => {
+            // A swipe may be starting: its neighbour pane has to be drawn (panesWarm).
+            warmPanesRef.current();
             if (e.touches.length !== 1) return;
             if (dragDxRef.current !== null) settleDrag(); // self-heal a swallowed release
             touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -485,30 +508,39 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             {/* Entry header: headword + English translation + speaker icon. When the bottom-sheet wrapper passes headerDragBind, this row also acts
                 as a drag-to-resize handle (useDrag's filterTaps keeps taps on
                 speaker/+ icons working). */}
+            {!hideEntryHeader && (
             <EipEntryHeader
                 entry={currentEntry}
                 showPinyinColor={showPinyinColor}
                 cpcdSize={headerCpcdSize}
                 onSpeak={onSpeak}
                 speakingKey={speakingKey}
-                onAddToLibrary={onAddToLibrary}
                 learning={learning}
                 selectedSenseIndex={selectedSenseIndex}
-                onSelectSense={onSelectSense}
                 {...(headerDragBind ? headerDragBind() : {})}
                 sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
             />
+            )}
 
-            {/* Underline tab strip. Also acts as a drag-to-resize handle
+            {/* Content tab strip — the design's sunken segmented track. Also acts as a drag-to-resize handle
                 (same bindHeaderDrag as the header) so a vertical drag started
                 on the tabs resizes the sheet on desktop too — on touch the
                 root's raw resize listeners already cover it. useDrag's
                 filterTaps keeps tab-selection taps working. */}
             <InfoSheetTabStrip
                 className="mobile-demo-tabs"
+                trackColor={colors.tabWell}
+                trackShadow={colors.tabWellShadow}
                 {...(headerDragBind ? headerDragBind() : {})}
                 sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
             >
+                {/* The selected tab's white chip — slides between segments. */}
+                <InfoSheetTabIndicator
+                    className="mobile-demo-tab-indicator"
+                    index={selectedTab}
+                    count={TAB_LABELS.length}
+                    chipColor={colors.tabOn}
+                />
                 {TAB_LABELS.map((label, index) => {
                     // Tab index 2 is the breakdown slot — relabeled to "Used In" for single-char zh.
                     const displayLabel = index === 2 ? breakdownTabLabel : label;
@@ -524,9 +556,10 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                 in a strip, not three headings, and Title Case here made
                                 them compete with the gloss directly above. */}
                             <Typography sx={{
-                                fontSize: 12,
+                                // Design `.tabs b`: 14px semibold, ink when selected.
+                                fontSize: 14,
                                 fontWeight: WEIGHT.semibold,
-                                color: selectedTab === index ? fc.onSurface : fc.textSecondary,
+                                color: selectedTab === index ? colors.ink : colors.muted,
                                 fontFamily: FC_FONT,
                                 userSelect: "none",
                                 lineHeight: 1,
@@ -539,7 +572,8 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             </InfoSheetTabStrip>
 
             {/* Tab body: a clipping viewport over a permanent 3-pane track.
-                Every pane is always mounted and is its own vertical scroller,
+                Every pane's scroller is always mounted (its content is deferred
+                until panesWarm — see above) and is its own vertical scroller,
                 so a tab change moves ONLY the track's transform — nothing
                 mounts, resizes, or shares scroll state (see the swipe section
                 comment above). Gesture listeners are attached imperatively
@@ -609,7 +643,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     ...sheetEdgeFadeSx,
                                 }}
                             >
-                                <InfoCardTabContent
+                                {(panesWarm || index === selectedTab) && <InfoCardTabContent
                                     tabIndex={index}
                                     currentEntry={currentEntry}
                                     breakdownItems={breakdownItems}
@@ -623,7 +657,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                                     selectedSenseIndex={selectedSenseIndex}
                                     showSynonymsRelated={showSynonymsRelated}
                                     definitionFooter={definitionFooter}
-                                />
+                                />}
                             </Box>
                             <OverlayScrollbar
                                 className="mobile-demo-tab-pane-scrollbar"

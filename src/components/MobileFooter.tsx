@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../theme/colors";
@@ -6,7 +6,9 @@ import { FONTS } from "../theme/fonts";
 import { LEADING } from "../theme/scale";
 import { SAFE_BOTTOM } from "../theme/safeArea";
 import Icon from "./Icon";
-import { SLAB_CAST_SHADOW_VAR, SLAB_FILTER_VAR } from "./footerCastShadow";
+import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
+import { routeFooterStyle } from "../routes/routeMeta";
+import { tier2Var } from "../timeOfDay/tier2Chrome";
 
 // Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
 // so scroll containers (see MobileTabScreen) can reserve matching bottom padding and
@@ -43,7 +45,9 @@ export const FOOTER_TOTAL_HEIGHT = `calc(${FOOTER_HEIGHT}px + ${SAFE_BOTTOM})`;
 export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTOM})`;
 
 // ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
-// Worn only by routes whose registry row says `footerStyle: "slab"` (today: /deck-tower).
+// Worn only by routes whose registry row says `footerStyle: "slab"` (today: /deck-tower,
+// and since 2026-10-29 the Dictionary tab — /dictionary and /dictionary/card/:word — and
+// scp, /discover/sort/:language).
 // Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
 // off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
 // casting an iso shadow onto whatever is painted behind it (the tower's sky).
@@ -68,6 +72,9 @@ const SLAB_CAST_Y = 16;
 // this, as a CSS string because it carries the safe area. The cast shadow is excluded:
 // it falls on sky and may overlap the scene.
 export const SLAB_FOOTER_TOTAL_HEIGHT = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP}px)`;
+// Same, for a scroll reservation: the footprint plus the bar's breathing gap, so a list
+// over the slab clears it by the same 16px it clears the bar by.
+export const SLAB_FOOTER_TOTAL_CLEARANCE = `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${FOOTER_EXTRA_GAP}px)`;
 // How far FooterPresenter pushes the slab to clear the frame's bottom edge entirely:
 // its footprint plus the cast shadow, or the shadow's tail would peek up when hidden.
 export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP + SLAB_CAST_Y}px)`;
@@ -78,13 +85,17 @@ export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FO
 // NOT MobileTabScreen's ScrollArea paddingBottom — because that padding is (a) eaten
 // when the flex content column overflows its computed height and (b) covered by the
 // scroll area's bottom edge-fade mask. One shared height (FOOTER_CLEARANCE)
-// means a single edit reflows every page at once.
-export const FooterSpacer: React.FC = () => (
-    <Box
-        className="footer-spacer"
-        sx={{ width: "100%", height: FOOTER_TOTAL_CLEARANCE, flexShrink: 0 }}
-    />
-);
+// means a single edit reflows every page at once. It reads the route's footer style, so
+// on a slab route (the Dictionary) it clears the taller floating slab instead of the bar.
+export const FooterSpacer: React.FC = () => {
+    const { pathname } = useLocation();
+    return (
+        <Box
+            className="footer-spacer"
+            sx={{ width: "100%", height: routeFooterStyle(pathname) === "slab" ? SLAB_FOOTER_TOTAL_CLEARANCE : FOOTER_TOTAL_CLEARANCE, flexShrink: 0 }}
+        />
+    );
+};
 
 // Extra room BELOW FooterSpacer, so a page that exactly fills the screen can still
 // be dragged up a little and settle back. FooterSpacer only guarantees the last row
@@ -158,15 +169,16 @@ const FooterItem = styled(Box, {
     },
 }));
 
-// The slab (see the SLAB_FOOTER_* constants), in two layers so the page's light can reach
-// the slab without reaching its shadow:
-//   - SlabFooter (outer): position + the cast shadow on the sky. Never filtered — the sky
-//     is the light, so a shadow on it is not lit either. Transparent: box-shadow paints
-//     only outside the box, so the face above covers the rest.
-//   - SlabFooterFace (inner): the flashcard itself, drawn through the page's light filter
-//     (`--footer-slab-filter`, footerCastShadow.ts → setFooterSlabFilter; the Deck Tower's
-//     time-of-day wash). Painted in the flashcard's own colours — the same stock the
-//     tower's cards are cut from (ISO.card): cardFace top, cardWall lip.
+// The slab (see the SLAB_FOOTER_* constants), in two layers:
+//   - SlabFooter (outer): position + the cast shadow on the sky. Transparent: box-shadow
+//     paints only outside the box, so the face above covers the rest.
+//   - SlabFooterFace (inner): the flashcard itself, painted in the flashcard's own colours
+//     — the same stock the tower's cards are cut from (ISO.card): cardFace top, cardWall lip.
+//     (It used to be drawn through the Deck Tower's time-of-day wash as an SVG `url()`
+//     filter; cut 2026-10-30 — WebKit rasterises that on the CPU on every repaint.)
+//   Every slab colour reads `tier2Var(…, its card colour)`: a Tier 2 page under the slab
+//   (the Dictionary, src/timeOfDay/tier2Chrome.ts) turns it slate at night; with no Tier 2
+//   page up the variables are unset and the slab is the card stock above.
 const SlabFooter = styled(Box)(() => ({
     position: "absolute",
     left: SLAB_FOOTER_SIDE_INSET,
@@ -182,10 +194,9 @@ const SlabFooter = styled(Box)(() => ({
 
 const SlabFooterFace = styled(Box)(() => ({
     height: "100%",
-    backgroundColor: COLORS.cardFace,
+    backgroundColor: tier2Var("footerFace", COLORS.cardFace),
     borderRadius: "inherit",
-    boxShadow: `0 ${SLAB_FOOTER_LIP}px 0 ${COLORS.cardWall}`,
-    filter: `var(${SLAB_FILTER_VAR}, none)`,
+    boxShadow: `0 ${SLAB_FOOTER_LIP}px 0 ${tier2Var("footerWall", COLORS.cardWall)}`,
     display: "grid",
     gridTemplateColumns: "repeat(4, 1fr)",
     padding: 6,
@@ -204,8 +215,8 @@ const SlabFooterItem = styled(Box, {
     gap: 2,
     borderRadius: 16,
     cursor: "pointer",
-    backgroundColor: active ? COLORS.cardBeige : "transparent",
-    boxShadow: active ? `inset 0 -3px 0 ${COLORS.cardWall}` : "none",
+    backgroundColor: active ? tier2Var("footerKey", COLORS.cardBeige) : "transparent",
+    boxShadow: active ? `inset 0 -3px 0 ${tier2Var("footerWall", COLORS.cardWall)}` : "none",
 }));
 
 // The four top-level footer tabs. Every other surface is a drill-in reached from
@@ -259,7 +270,9 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", varian
                 <SlabFooterFace className="mobile-footer__slab-face">
                     {TABS.map(({ tab, label, icon, onClick }) => {
                         const active = activePage === tab;
-                        const tone = active ? COLORS.onSurface : COLORS.textSecondary;
+                        const tone = active
+                            ? tier2Var("footerInkActive", COLORS.onSurface)
+                            : tier2Var("footerInk", COLORS.textSecondary);
                         return (
                             <SlabFooterItem
                                 key={tab}

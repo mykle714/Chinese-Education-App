@@ -1,7 +1,7 @@
 import { Box, Typography, useTheme } from "@mui/material";
 import ValidateFlagButtons from "../../components/ValidateFlagButtons";
-import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
-import { FC_FONT } from "./constants";
+import { WEIGHT } from "../../theme/scale";
+import { FONTS } from "../../theme/fonts";
 import type { Language, ValidationField } from "../../types";
 
 interface MetaChipLabelProps {
@@ -56,13 +56,15 @@ export default function MetaChipLabel({ label, field, word1, language, senseLabe
         <>
             <Typography
                 className={`${classPrefix}__meta-chip-label`}
+                // Tower Tier 2 `.lab` (2026-10-29): the info-type face (FONTS.label) at
+                // 10.5px bold, .08em tracking — was the UI face at SIZE.micro.
                 sx={{
-                    fontSize: SIZE.micro,
+                    fontSize: 10.5,
                     fontWeight: WEIGHT.bold,
                     color: theme.palette.flashcard.textSecondary,
-                    letterSpacing: TRACKING.caps,
+                    letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    fontFamily: FC_FONT,
+                    fontFamily: FONTS.label,
                 }}
             >
                 {label}

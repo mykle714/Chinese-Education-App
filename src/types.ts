@@ -40,6 +40,7 @@ export type {
   ChallengeWord,
   CommunityDesign,
   DefinitionCluster,
+  DictionaryMatchKind,
   DifficultyLevel,
   DiscoverCard,
   DiscoverFetchResponse,
@@ -151,6 +152,11 @@ export interface VocabEntry extends VocabEntryBase {
   // `masteredAt` is NOT redeclared: since migration 143 it is a per-bar jsonb object
   // whose values are already ISO strings on both sides, so the base type is exact.
   deckAddedAt?: string | null;
+  // det's whole flat `definitions` array. Client-only and det-sourced: set by
+  // utils/dictEntryAdapter.ts for an eip tab opened from a dictionary lookup, absent on
+  // vet rows (which carry only `definition` = definitions[0]). Read by the Dictionary
+  // eip's all-definitions header and list (EipSheet `showAllDefinitions`).
+  definitions?: string[] | null;
 }
 
 /**

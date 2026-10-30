@@ -25,8 +25,10 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  * § "Only the speaker stops on unmount").
  *
  * `tone`, `ink`, `sx`, `fitLabels` and `iconPx` let ONE surface reskin it without forking
- * it: the Deck Tower study header (TowerStudyHeader) passes `tone="bare"` with white `ink`,
- * so it floats as plain text on the sky rather than drawing the eye as a filled chip.
+ * it. `outlined` is the one named reskin: the bare glyph + label in `ink`, bundled by a
+ * thin pill outline in that same ink (`OUTLINED_SX`) — it floats as plain text on a
+ * scene ground rather than drawing the eye as a filled chip. Used by the Deck Tower study
+ * header (TowerStudyHeader, white ink on the sky) and the scp (the ground look's ink).
  * Everywhere else takes the blue mono default.
  *
  * Used by: TowerStudyHeader (tower flp), FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
@@ -98,6 +100,26 @@ const MODE_CHIP: Record<AudioMode, { icon: string; label: string; ariaLabel: str
 const MODE_LABELS = Object.values(MODE_CHIP).map((m) => m.label);
 const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(MODE_LABELS);
 
+/**
+ * The `outlined` skin's label type and glyph, px — a step up from the header chip's
+ * 10 px / 13 px now that there is no fill to carry it.
+ */
+const OUTLINED_TEXT_PX = 12;
+const OUTLINED_ICON_PX = 15;
+
+/**
+ * The `outlined` skin's pill: a 1px outline in the chip's own `ink` (not `COLORS.border`
+ * — the --line2 hairline is built for paper and goes muddy on a scene ground), pill ends
+ * like the tower's plates.
+ */
+const OUTLINED_SX = (ink: string) =>
+    ({
+        border: `1px solid ${ink}`,
+        borderRadius: "999px",
+        padding: "4px 10px",
+        fontSize: OUTLINED_TEXT_PX,
+    }) as const;
+
 const AudioModeChip: React.FC<{
     className?: string;
     /** The active-state skin (HeaderCycleChip `tone`); blue unless a surface overrides it. */
@@ -110,9 +132,26 @@ const AudioModeChip: React.FC<{
     fitLabels?: boolean;
     /** The glyph's size, px (HeaderCycleChip `iconPx`). */
     iconPx?: number;
-}> = ({ className, tone = "blu", ink, sx, fitLabels = false, iconPx }) => {
+    /**
+     * The scene-ground skin: bare glyph + label in `ink` inside a thin `ink` pill outline,
+     * 12 px type / 15 px glyph, boxed to the longest label. Overrides `tone`, `fitLabels`
+     * and `iconPx`; requires `ink`.
+     */
+    outlined?: boolean;
+}> = ({ className, tone = "blu", ink, sx, fitLabels = false, iconPx, outlined = false }) => {
     const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
     const chip = MODE_CHIP[mode];
+
+    // `outlined` resizes the label's font, so the default `ch` width would be wrong:
+    // it always sizes the box to the real labels (fitLabels).
+    const skin = outlined && ink
+        ? {
+              tone: "bare" as const,
+              sx: [OUTLINED_SX(ink), ...(Array.isArray(sx) ? sx : sx ? [sx] : [])] as SxProps<Theme>,
+              fitLabels: true,
+              iconPx: OUTLINED_ICON_PX,
+          }
+        : { tone, sx, fitLabels, iconPx };
 
     return (
         <HeaderCycleChip
@@ -122,11 +161,11 @@ const AudioModeChip: React.FC<{
             active={chip.active}
             // Mid blue rather than the shared ink inversion when audio is on (mute
             // stays grey). Holds on game grounds too — see gameSurfaceSx.
-            tone={tone}
+            tone={skin.tone}
             ink={ink}
-            sx={sx}
-            fitLabels={fitLabels ? MODE_LABELS : undefined}
-            iconPx={iconPx}
+            sx={skin.sx}
+            fitLabels={skin.fitLabels ? MODE_LABELS : undefined}
+            iconPx={skin.iconPx}
             widthCh={MODE_LABEL_WIDTH_CH}
             icon={chip.icon}
             ariaLabel={chip.ariaLabel}

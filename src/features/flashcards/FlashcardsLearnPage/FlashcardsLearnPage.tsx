@@ -6,8 +6,9 @@ import { useAuth } from "../../../AuthContext";
 import type { Language } from "../../../types";
 import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
-import { addToLibrary } from "../../../utils/vocabApi";
 import { ContentArea, MoreInfoPill } from "./styled";
+import { afterNextPaint } from "../../../utils/afterNextPaint";
+import { useEventCallback } from "../../../hooks/useEventCallback";
 import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { CARD_FLIP_MS, FC_FONT, TOWER_CARD_FLIP_MS } from "../constants";
@@ -39,7 +40,7 @@ import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultTextCenters } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
 import IconPickerDialog from "../../../components/IconPickerDialog";
-import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
+import { iconSearchTerm, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import {
     Dialog,
     DialogTitle,
@@ -556,40 +557,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [parked]);
 
-    // "+ Add to Learning" from the EIP header 2×2 action grid. The primary card
-    // is already in the library, but drilled-in words (breakdown chars / example
-    // segments opened as entry tabs) may not be — InfoCardPanelBody gates the
-    // button on `entry.discoverable`. Language comes from the entry itself so a
-    // drilled-in word is added under its own language. Mirrors the dictionary
-    // cdp handler (DictionaryCardDetailPage.handleAddToLibrary).
-    const [addToLibSnack, setAddToLibSnack] = useState<string | null>(null);
-    // Entries confirmed to be in the library this session (either freshly added
-    // or reported already-present). Once an entry is here, its Add button is
-    // hidden — the word is in the library, so the action is a no-op. Keyed by
-    // language:entryKey so the same headword in different languages stays
-    // independent. Persists for the page's lifetime (survives entry-tab switches
-    // and EIP reopen); a page reload rebuilds it from scratch, which is fine.
-    const [addedLibraryKeys, setAddedLibraryKeys] = useState<Set<string>>(new Set());
-    const libraryKeyOf = (entry: VocabEntry) => `${entry.language}:${entry.entryKey}`;
-    const handleAddToLibrary = useCallback(async (entry: VocabEntry) => {
-        try {
-            // 'library' is the internal/API name for what the UI calls "Learning"
-            // (see CLAUDE.md § Terminology) — the endpoint path stays as-is.
-            const data = await addToLibrary(entry.entryKey, entry.language);
-            setAddToLibSnack(data.status === 'already-in-library' ? 'Already in Learning' : 'Added to Learning');
-            // Either status means the word is now in the library — hide its Add button.
-            setAddedLibraryKeys((prev) => {
-                const next = new Set(prev);
-                next.add(`${entry.language}:${entry.entryKey}`);
-                return next;
-            });
-        } catch (err) {
-            console.error('Failed to add to library:', err);
-            setAddToLibSnack('Failed to add to Learning');
-        }
-        // No `token` dep: apiPost reads the header at call time (CLAUDE.md ⛔ rule).
-    }, []);
-
     // The card editor and the EIP can't coexist — entering edit mode dismisses the
     // panel (and the More Info pill is disabled while editing, see MoreInfoPill below).
     // Key off editMode ONLY (rising edge): closeEip's identity churns every render
@@ -643,6 +610,42 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         persistNote(currentEntry, note);
     }, [currentEntry, persistNote]);
 
+    // ── Stable props for the memoised FlashCardSection ───────────────────────
+    // FlashCardSection is React.memo'd so that page state the card does not read (the eip
+    // opening, its tab trail, the flip hint, the pill's hint) no longer re-renders the
+    // whole card stack — opening the eip used to pay for that on the same frame as its own
+    // mount. The memo only holds if every prop keeps its identity between renders, so the
+    // EVENT handlers are routed through useEventCallback (stable identity, always the
+    // latest closure). The writing card's `renderFace` is deliberately NOT wrapped: it is
+    // called during render and its output follows the writing state, so it has to change
+    // identity to re-render the card (writing sessions therefore re-render the card on
+    // every page render, as before). See useEventCallback's ⚠️.
+    const cardHandlersFor = () => (writingMode ? writing.swipeHandlers : handlers);
+    const cardTouchStart = useEventCallback((e: React.TouchEvent) => cardHandlersFor().onTouchStart(e));
+    const cardTouchEnd = useEventCallback((e: React.TouchEvent) => cardHandlersFor().onTouchEnd(e));
+    const cardMouseDown = useEventCallback((e: React.MouseEvent) => cardHandlersFor().onMouseDown(e));
+    const cardHandlers = useMemo(
+        () => ({ onTouchStart: cardTouchStart, onTouchEnd: cardTouchEnd, onMouseDown: cardMouseDown }),
+        [cardTouchStart, cardTouchEnd, cardMouseDown],
+    );
+    const handleWritingCardClick = useEventCallback(() => writing.handleCardClick());
+    const handleCancelNote = useCallback(() => setNoteEditing(false), []);
+    const handleCustomizeCard = useEventCallback(() =>
+        enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null));
+    const handleEditNote = useCallback(() => setNoteEditing(true), []);
+    // The card's `•••` operations rail, memoised so it is not a fresh element every render.
+    const cardTopRail = useMemo(
+        () => (displayCurrentEntry && !writingMode ? (
+            <CardOpsRail
+                entry={displayCurrentEntry}
+                onCustomize={handleCustomizeCard}
+                onEditNote={handleEditNote}
+                disabled={editMode || isAnimating}
+            />
+        ) : undefined),
+        [displayCurrentEntry, writingMode, editMode, isAnimating, handleCustomizeCard, handleEditNote],
+    );
+
     // The tower session's plate skin for the word-tools pills (undefined on the route).
     // Memoised on the host's tones so the rail's sx is stable between renders.
     const plateTones = tower?.plateTones;
@@ -655,9 +658,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
     // own, so it opens Compare AS AN EIP TAB beside the word — the one surface that does
     // not use the compare SHEET (both cdps do, having no strip to put a tab in).
+    // Deferred past the next paint, like More Info: opening the eip blocks a frame, and the
+    // Compare plate's press (keycapPressDelegate) must paint first.
     const handleCompare = (target: VocabEntry) => {
-        openEicSheet();
-        eip.openCompareTab(target);
+        afterNextPaint(() => {
+            openEicSheet();
+            eip.openCompareTab(target);
+        });
     };
 
     // Lock body scroll while this page is mounted so wheel/touch events that
@@ -957,9 +964,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // The writing card is never dragged; it is flipped and sent off by the
                     // writing hook (a tap on its front / its back via onCardClick, or a
                     // swipe attempt on either face via swipeHandlers — direction ignored).
-                    handlers={writingMode ? writing.swipeHandlers : handlers}
+                    // Dispatches to the writing hook's or the drag hook's handlers per
+                    // mode (cardHandlersFor) — one stable object, for FlashCardSection's memo.
+                    handlers={cardHandlers}
                     writingFace={writingMode ? writing.renderFace : undefined}
-                    onCardClick={writingMode ? writing.handleCardClick : undefined}
+                    onCardClick={writingMode ? handleWritingCardClick : undefined}
                     onSpeak={tts.speak}
                     speakingKey={tts.speakingKey}
                     // Persist the learner's definition-cluster sense pick per account (migration 99).
@@ -969,7 +978,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // doesn't re-render the card slot. See docs/CARD_NOTES.md.
                     noteEditing={noteEditing}
                     onSaveNote={handleSaveNote}
-                    onCancelNote={() => setNoteEditing(false)}
+                    onCancelNote={handleCancelNote}
                     // Gesture canvas only in advanced mode; basic mode renders the draft
                     // through the static icon layer (via editingCurrentEntry above).
                     editCanvas={editMode && advMode ? (
@@ -1028,14 +1037,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // the three actions is safe against a card that is flying out).
                     // Not on the writing card: its face is not the word layout the
                     // customize / note operations edit.
-                    topRail={displayCurrentEntry && !writingMode ? (
-                        <CardOpsRail
-                            entry={displayCurrentEntry}
-                            onCustomize={() => enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null)}
-                            onEditNote={() => setNoteEditing(true)}
-                            disabled={editMode || isAnimating}
-                        />
-                    ) : undefined}
+                    topRail={cardTopRail}
                 />
                 {writing.overlays}
                 {/* USED-IN HINT BUBBLES, part 2 — the overlay over ContentArea that floats
@@ -1069,6 +1071,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     placement="top"
                     arrow
                 >
+                    {/* Presses on pointerdown via the app-wide keycap delegate (tower plate
+                        skin only; held at least KEYCAP_MIN_HELD_MS). When the tap opens the
+                        eip, the open is deferred past the next paint (afterNextPaint) — the
+                        eip's mount blocks a frame, which used to swallow the press. */}
                     <MoreInfoPill
                         ref={moreInfoPillRef}
                         className="mobile-demo-more-info-pill"
@@ -1076,7 +1082,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         isDisabled={editMode}
                         hintActive={isFlipped && !eicHintConsumed && !editMode}
                         plate={tower?.plateTones}
-                        onClick={handleMoreInfoClick}
+                        onClick={() => (isFlipped && !editMode ? afterNextPaint(handleMoreInfoClick) : handleMoreInfoClick())}
                         aria-disabled={editMode}
                         aria-label="Open extra info"
                     >
@@ -1103,9 +1109,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // The panel's live sense pick. Seeded per entry tab from the entry's
                     // persisted `selectedSense`, so it agrees with the flashcard face on open.
                     const panelSenseIndex = active?.kind === "entry" ? active.selectedSenseIndex : 0;
-                    // Hide the Add button once this entry is known to be in the library:
-                    // drop the handler so InfoCardPanelBody's `onAddToLibrary` gate fails.
-                    const panelAlreadyInLibrary = panelEntry ? addedLibraryKeys.has(libraryKeyOf(panelEntry)) : false;
                     return (
                         <InfoCardSection
                             currentEntry={panelEntry}
@@ -1122,18 +1125,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                             onSpeak={tts.speak}
                             onSpeakSentence={tts.speakSentence}
                             speakingKey={tts.speakingKey}
-                            onAddToLibrary={panelAlreadyInLibrary ? undefined : handleAddToLibrary}
+                            // Display-only in the eip (its header underlines this sense); the
+                            // pick is made on the card face and arrives via syncEntry.
                             selectedSenseIndex={panelSenseIndex}
-                            // A pick in the eip header mirrors the flashcard's own picker:
-                            // record it on the tab (so the panel re-renders immediately) and
-                            // persist the chosen cluster's LABEL for saved cards. A drilled-in
-                            // dictionary word has no vet row (id 0), so its pick stays local to
-                            // the tab. Persisting the ROOT card's pick also feeds back through
-                            // the syncEntry effect above, keeping the card face in step.
-                            onSelectSense={(index) => {
-                                eip.setActiveSenseIndex(index);
-                                if (panelEntry?.id) persistSelectedSense(panelEntry, senseLabelForIndex(panelEntry, index));
-                            }}
                             compareTab={compareTab}
                             onSetCompareSlot={eip.setCompareSlot}
                             onCompareResult={eip.setCompareResult}
@@ -1143,24 +1137,23 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                                 <EipTabStrip
                                     tabs={eip.tabs}
                                     activeIndex={eip.activeIndex}
-                                    onSelect={eip.setActive}
-                                    isTabbedMode={eip.isTabbedMode}
+                                    onSelect={eip.popTo}
+                                    showCrumbs={eip.trailShown}
                                 />
                             }
-                            // The sheet's ✕ closes the SHOWING WORD, which is the word
-                            // trail's rule and used to live on the strip's own button.
-                            // `closeActiveTab` returns true when that was the last word,
+                            // Escape pops the SHOWING WORD off the breadcrumb trail
+                            // (back one crumb). `pop` returns true when that was the root,
                             // and returning false from here is how SheetPanel is told to
                             // play its dismiss — the panel then unmounts through `onClose`
                             // (closeEip) at the end of the animation rather than instantly.
                             onCloseX={() => {
-                                // The LAST word does not close its tab — it returns false and
-                                // lets SheetPanel play the dismiss, and the host's onClose
-                                // clears the trail once the sheet is gone. Closing the tab here
+                                // The ROOT is not popped — it returns false and lets SheetPanel
+                                // play the dismiss, and the host's onClose clears the trail
+                                // once the sheet is gone. Popping the root here
                                 // instead would empty the panel's body for the whole 220ms
                                 // slide-out, so the sheet would leave showing nothing.
                                 if (eip.tabs.length <= 1) return false;
-                                eip.closeActiveTab();
+                                eip.pop();
                                 return true;
                             }}
                             // A study surface: the panel covers the page header, so it
@@ -1175,25 +1168,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     <GameBreakArea gameBreak={gameBreak} contentAreaRef={contentAreaRef} />
                 )}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
-                {/* "+ Add to Learning" result toast from the EIP header action grid.
-                    Neutral severity — "already in library" is an informational outcome,
-                    not an error. */}
-                <Snackbar
-                    open={addToLibSnack !== null}
-                    autoHideDuration={3000}
-                    onClose={() => setAddToLibSnack(null)}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        severity={addToLibSnack === 'Failed to add to Learning' ? "error" : "success"}
-                        variant="filled"
-                        onClose={() => setAddToLibSnack(null)}
-                        sx={{ fontFamily: FC_FONT }}
-                    >
-                        {addToLibSnack}
-                    </Alert>
-                </Snackbar>
                 {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).
                     Replaces the prior silent console.error so the editor stays open
                     and the user knows the write didn't land. */}

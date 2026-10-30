@@ -37,6 +37,10 @@ interface NodePageProps {
     // Forwarded to MobileTabScreen -> PageHeader. Pass "dense" on a node page whose
     // header carries three or more right-slot actions (e.g. Card Detail).
     headerSize?: PageHeaderSize;
+    // Header title + back-arrow ink, forwarded to MobileTabScreen → PageHeader
+    // `titleColor`. Only for a node page whose ground the default ink cannot read on —
+    // today scp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
+    headerTitleColor?: string;
     surfaceColor?: string;
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
@@ -77,6 +81,7 @@ const NodePage: React.FC<NodePageProps> = ({
     onBack,
     headerExtraActions,
     headerSize,
+    headerTitleColor,
     surfaceColor,
     contentSx,
     contentClassName,
@@ -104,6 +109,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 onBack={handleBack}
                 headerExtraActions={headerExtraActions}
                 headerSize={headerSize}
+                headerTitleColor={headerTitleColor}
                 surfaceColor={surfaceColor}
                 contentSx={contentSx}
                 contentClassName={contentClassName}

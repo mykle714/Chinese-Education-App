@@ -3,8 +3,6 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import type { useEipTabs } from "./useEipTabs";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
-import { saveSelectedSense } from "../../../utils/vocabApi";
-import { senseLabelForIndex } from "../../../utils/definitionUtils";
 import { Alert, Snackbar } from "@mui/material";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { useLearningToggle } from "../../../hooks/useLearningToggle";
@@ -26,7 +24,7 @@ import type { Language, VocabEntry } from "../../../types";
  * Hosts: scp (`SortCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold),
  * the Reading Center's word grid (`centers/ReadingSwipeGrid`) and the Dictionary page
  * (`features/dictionary/DictionaryPage`, the only host that turns on
- * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
+ * `showSynonymsRelated` + `showWordTools` + `showAllDefinitions`). The flp and cdp mount
  * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
@@ -49,20 +47,27 @@ interface EipSheetProps {
     // the word trail like any drill-in. Dictionary page only: a reference lookup has no
     // card to hang the rail above.
     showWordTools?: boolean;
-    // Put the Learning TOGGLE (glowing "+" ⇄ "Added!", LearningToggle) under the header
-    // speaker, tracking whichever entry tab is showing. Dictionary page only. A failed
-    // add/remove raises this sheet's own error snackbar.
+    // Put the Learning key (raised "Add" ⇄ "Added!", EipAddKey) in the sheet's trail row
+    // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page only. A
+    // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
+    // Show EVERY meaning, as a lookup should (owner's call 2026-10-29): the header gloss is
+    // the whole flat `definitions` list joined with spaced middle dots on one swipeable
+    // line (the SensePicker is hidden — there is nothing left to switch), and the
+    // definition tab opens with every gloss in two columns. Dictionary page only; needs
+    // det-sourced entries (lookupVocabEntry carries `definitions`), which is every tab
+    // this host opens. See EipEntryHeader / InfoCardTabContent `showAllDefinitions`.
+    showAllDefinitions?: boolean;
     // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
     // Open height (and the stop a downward drag/fling clips back to) as a fraction of the
-    // frame — forwarded to SheetPanel's `defaultHeightRatio`. Omitted = 0.6. Dictionary: 0.9.
+    // frame — forwarded to SheetPanel's `defaultHeightRatio`. Omitted = 0.6. Dictionary: 0.8.
     defaultHeightRatio?: number;
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, depth = 0, defaultHeightRatio,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, showAllDefinitions, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -96,17 +101,6 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     speakingKey={speakingKey}
                     learning={showLearning ? learning : undefined}
                     selectedSenseIndex={entryTab ? entryTab.selectedSenseIndex : 0}
-                    // The tab records the pick so the panel re-renders at once; the chosen
-                    // cluster's LABEL is persisted for a word with a vet row. A word without
-                    // one (id 0) keeps the pick local to the tab.
-                    onSelectSense={(index) => {
-                        eip.setActiveSenseIndex(index);
-                        const entry = entryTab?.entry;
-                        if (entry?.id) {
-                            saveSelectedSense(entry.id, senseLabelForIndex(entry, index))
-                                .catch((err) => console.error("Failed to save selected sense:", err));
-                        }
-                    }}
                     compareTab={compareTab}
                     onSetCompareSlot={eip.setCompareSlot}
                     onCompareResult={eip.setCompareResult}
@@ -116,20 +110,21 @@ const EipSheet: React.FC<EipSheetProps> = ({
                         <EipTabStrip
                             tabs={eip.tabs}
                             activeIndex={eip.activeIndex}
-                            onSelect={eip.setActive}
-                            isTabbedMode={eip.isTabbedMode}
+                            onSelect={eip.popTo}
+                            showCrumbs={eip.trailShown}
                         />
                     }
-                    // ✕ = close the showing word. The LAST word returns false so SheetPanel
-                    // plays the dismiss; closing its tab here would empty the body for the
-                    // whole slide-out.
+                    // Escape = pop the showing word (back one crumb). The ROOT returns false so
+                    // SheetPanel plays the dismiss; popping it here would empty the body for
+                    // the whole slide-out.
                     onCloseX={() => {
                         if (eip.tabs.length <= 1) return false;
-                        eip.closeActiveTab();
+                        eip.pop();
                         return true;
                     }}
                     showMinutePoints
                     showSynonymsRelated={showSynonymsRelated}
+                    showAllDefinitions={showAllDefinitions}
                     definitionFooter={showWordTools && entryTab ? (
                         <WordToolsRail
                             className="eip-sheet__word-tools"

@@ -111,8 +111,8 @@ emptied would point at an answer.
   once web fonts load. Only a word too long even at 8px may break mid-word, as a last resort.
 - **Hovered** (word held over it): the shared `COLORS.scrim` wash, as on a hovered bubble.
 - **Wrong**: hairline and an extra 1.5px outer ring in `WRONG_BUBBLE_BG` (`--redMk`, the
-  palette's strongest red — `dangerInk` is ink in v2) plus the shared `bubbleShake`
-  (`WRONG_SHAKE_KEYFRAMES`, `src/games/bubbles/constants.ts`).
+  palette's strongest red — `dangerInk` is ink in v2) plus the app's shared invalid shake,
+  `invalidShake` (`INVALID_SHAKE_ANIMATION` + `WRONG_SHAKE_KEYFRAMES` → `src/theme/invalidShake.ts`).
 - **Words** (`StackWord`): bare `ForeignText` (size `md` — 36px characters, one cpcd step under the `lg` it
   launched at; sense-resolved pinyin), no tile,
   a thin 6×8px invisible grab margin (thin so an upper word in the pile does not steal grabs

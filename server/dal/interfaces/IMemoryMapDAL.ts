@@ -40,8 +40,13 @@ export interface MemoryMapCandidateRow {
   typedMarkHistory?: TypedMarkHistory;
   /** The card's per-type utcm category on the READING track (never 'Mastered' here). */
   readingCategory: string;
-  /** True for a lent (provisional) card — ranked after every card the learner chose. */
-  isLent: boolean;
+  /**
+   * `'provisional'` for a lent card. rankCardQueue reads it: in the stale tier a lent
+   * card is ranked after every card the learner chose.
+   */
+  starterPackBucket: string | null;
+  /** det difficulty band — the stale tier's ease key on the reading bar. */
+  difficulty?: number | null;
   selectedSense?: string | null;
   definition?: string | null;
   definitionClusters?: unknown;

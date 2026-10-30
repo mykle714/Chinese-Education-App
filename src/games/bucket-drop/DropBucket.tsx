@@ -14,9 +14,9 @@ import {
     GLOSS_MAX_FONT_PX,
     GLOSS_MIN_FONT_PX,
     GLOSS_FONT_STEP_PX,
-    WRONG_SHAKE_MS,
 } from "./constants";
 import type { PerimeterSlot } from "./perimeterLayout";
+import { INVALID_SHAKE_ANIMATION } from "../../theme/invalidShake";
 
 /**
  * One perimeter bucket — a grey keycap-shaped HOLE holding one English dd
@@ -35,7 +35,7 @@ import type { PerimeterSlot } from "./perimeterLayout";
  * States:
  *   hovered — the held word is over this bucket: the shared `COLORS.scrim` wash, the
  *             same "over a drop target" cue Bubble Match draws on a hovered bubble.
- *   wrong   — the outline goes red and the hole shakes (`bubbleShake`, shared with
+ *   wrong   — the outline goes red and the hole shakes (`invalidShake`, shared with
  *             Bubble Match). `shakeKey` changes per wrong drop so a second wrong drop
  *             on the same bucket restarts the animation.
  *   leaving — the word fell in: the hole fades out (rendered by the stage as a ghost
@@ -178,7 +178,7 @@ const DropBucket: React.FC<DropBucketProps> = ({ slot, text, hovered = false, wr
                 padding: "6px 8px",
                 overflow: "hidden",
                 ...(wrong && {
-                    animation: `bubbleShake ${WRONG_SHAKE_MS}ms ease-in-out`,
+                    animation: INVALID_SHAKE_ANIMATION,
                     ...WRONG_SHAKE_KEYFRAMES,
                 }),
             }}

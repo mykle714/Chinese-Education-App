@@ -7,8 +7,9 @@
 export { default as BeginnerKeyboardProvider } from './BeginnerKeyboardProvider';
 export { default as BeginnerKeyboardHost } from './BeginnerKeyboardHost';
 export { isEligibleField, asEditableField, isKeepOpenTarget, OPT_OUT_ATTRIBUTE, KEEP_OPEN_VALUE, DEFAULT_SOURCE_ATTRIBUTE } from './eligibility';
-export { insertAtCaret } from './insertAtCaret';
+export { insertAtCaret, deleteBeforeCaret, moveCaret } from './insertAtCaret';
 export { default as BeginnerKeyboard } from './BeginnerKeyboard';
+export { default as PinyinToneKeyboard } from './PinyinToneKeyboard';
 export { useKeyboardViewport } from './useKeyboardViewport';
 export { useBeginnerKeyboardInset, INSET_CSS_VARIABLE } from './insetContext';
 export {

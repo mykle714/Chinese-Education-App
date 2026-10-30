@@ -260,7 +260,7 @@ each glyph with its syllable from `entry.pronunciation` and falling back to the 
 breakdown degrades to fewer rows rather than to placeholders.
 
 **One row component, both surfaces: `src/features/flashcards/BreakdownRow.tsx`** (the
-design's `.bkr`, 2026-08-24). Rendered in ONE place, the eip's breakdown tab
+design's `.bkr`, 2026-08-24; restyled 2026-10-29 as the Tower Tier 2 `.bk` — each character an outlined card in the eip palette's `card` fill). Rendered in ONE place, the eip's breakdown tab
 (`FlashcardsLearnPage/InfoCardTabContent.tsx`), and every surface reaches it through that
 tab: the **dictionary cdp** mounts the eip panel itself (`InfoCardPanelBody`, 2026-10-10 —
 its own Character Breakdown box in `VocabCardDetailBody.tsx` is gone), and the **saved-card

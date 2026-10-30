@@ -296,7 +296,7 @@ So lending is the **bottom** of every fill ladder:
 
 | Tier | flp working loop | Game pool / Word Search grid |
 |---|---|---|
-| 1 | each quota, from its own category (longest-waiting first) | each requested bucket, FRESH cards only |
+| 1 | each quota, from its own category (`rankCardQueue`: recent longest-waiting first, then stale own-before-lent easiest first) | each requested bucket, FRESH cards only |
 | 2 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
 | 3 | **COOLED cards**, nearest-to-ready first (`rankCardQueueCooled`) | COOLED cards (requested buckets → fallback) |
 | 4 | — | soft-`avoid`ed cards (just cleared) |
@@ -784,8 +784,8 @@ earned in a game. It now branches, atomically, in one CTE:
 
 ### Removing from Learning demotes (dictionary eip toggle + vet cdp delete)
 
-Both the dictionary eip's "Added!" toggle (`LearningToggle` + `useLearningToggle`, on the
-Dictionary page's eip and the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
+Both the dictionary "Added!" toggle (`useLearningToggle` — drawn as `EipAddKey` on the
+Dictionary page's eip and as `LearningToggle` on the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
 confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
@@ -857,7 +857,7 @@ others, admits lent rows by id when it has to borrow.
 | DAL | `server/dal/implementations/ProvisionalCardDAL.ts` (+ `interfaces/IProvisionalCardDAL.ts`) | mint candidate query, bulk insert, `countSorted`, `findHeldProvisional` (re-lend source), key list |
 | Service | `server/services/ProvisionalCardService.ts` | how many to lend, when, re-lend-then-mint (`acquireLentCards`), the two-pass skip recycle, the sort set |
 | Service | `server/services/OnDeckVocabService.ts` | the fill ladders (§ 4b), `fetchRowsByIds` — the only read that surfaces a lent row into a round — and `getChallengeGamePool` (docs/STUDY_CHALLENGE.md § 5.2a) |
-| Service (pure) | `server/services/cardQueueRanking.ts` | `rankCardQueue` (rested, longest-waiting first) and `rankCardQueueCooled` (resting, nearest-to-ready first — the flp's tier 3) |
+| Service (pure) | `server/services/cardQueueRanking.ts` | `rankCardQueue` (rested: marked in 30 days longest-waiting first, then the rest own-before-lent and easiest first) and `rankCardQueueCooled` (resting, nearest-to-ready first — the flp's tier 3) |
 | Service | `server/services/StarterPacksService.ts` | `getCardsForWords`, in-place promotion, undo demotion |
 | Service | `server/services/VocabEntryService.ts` | `removeFromLibrary` (dictionary eip toggle demotion), `addToLibrary` (promotes a provisional row) |
 | Controller | `server/controllers/OnDeckVocabController.ts` | `ensureBaseline` before every set; Word Search retry ladder |

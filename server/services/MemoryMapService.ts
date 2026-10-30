@@ -249,7 +249,8 @@ export class MemoryMapService {
    * Comfortable words purely because they have rested the longest — backwards for a
    * learner. Same two-level shape the flp uses.
    *
-   * `rested` = off cooldown, longest-waiting first (`rankCardQueue`); `cooling` = still
+   * `rested` = off cooldown, in `rankCardQueue` order (read in the last 30 days:
+   * longest-waiting first; otherwise own before lent, easiest first); `cooling` = still
    * on cooldown, nearest-to-ready first (`rankCardQueueCooled`). Marks fired at a
    * cooling card are dropped by the mark endpoint's guard — the accepted trade for
    * re-serving the learner's own words instead of lending strangers (§ 4b).

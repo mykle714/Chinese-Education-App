@@ -50,6 +50,7 @@ import type { Ink, WritingCanvasHandle } from '../../components/handwriting/type
 import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import CandidateRow from './CandidateRow';
 import ComponentBuffer from './ComponentBuffer';
+import { KEYBOARD_COLORS } from './keyboardColors';
 import { useComposition, type Candidate } from './useComposition';
 import { hintCommit, type CompositionDraft } from './compositionRules';
 import type { HintCharacter } from '../../components/handwriting/glyphLookup';
@@ -89,13 +90,13 @@ function inkKeySx(enabled: boolean) {
     minWidth: 0,
     px: 0.5,
     height: 32,
-    border: `1px solid ${COLORS.border}`,
+    border: `1px solid ${KEYBOARD_COLORS.outline}`,
     borderRadius: 2,
-    backgroundColor: COLORS.white,
+    backgroundColor: KEYBOARD_COLORS.key,
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
     fontWeight: WEIGHT.semibold,
-    color: COLORS.textSecondary,
+    color: KEYBOARD_COLORS.muted,
     cursor: enabled ? 'pointer' : 'default',
     opacity: enabled ? 1 : 0.4,
   } as const;
@@ -197,8 +198,8 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
         height,
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: COLORS.header,
-        borderTop: `1px solid ${COLORS.border}`,
+        backgroundColor: KEYBOARD_COLORS.ground,
+        borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
         // The keyboard is a fixed surface; only its two inner scrollers move.
         touchAction: 'none',
         userSelect: 'none',
@@ -250,7 +251,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
               mx: 1.25,
               pt: 0.75,
               pb: 1,
-              borderTop: `1px solid ${COLORS.border}`,
+              borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
               display: 'flex',
               flexDirection: 'column',
               gap: 0.75,

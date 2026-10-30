@@ -168,26 +168,24 @@ export class OnDeckVocabService {
 
   /**
    * The flp-eligible subset of `cards` (the know clock has run out), ordered AS A
-   * QUEUE: longest-waiting first.
+   * QUEUE.
    *
    * This is the flp's one ranking rule, shared by the initial working loop and the
    * mark-endpoint refill so a loop and its replacements are drawn the same way. It
    * ranks WITHIN a utcm category — the quota distribution still decides how many cards
    * come from each mastery bucket, and this decides which cards fill them.
    *
-   * TWO TIERS, and the second is the reason this can't be a plain ascending sort:
+   * TWO TIERS (cardQueueRanking.rankCardQueue):
    *
-   *   1. cards with review history, by arrival time ASC — the card that came off
-   *      cooldown earliest is served first (see cardQueueRanking.queueArrivalAt);
-   *   2. never-marked cards (no correct mark on either know track) — always LAST,
-   *      however long they have technically been "available".
+   *   1. RECENT — a mark on the bar, right or wrong, in the last 30 days: by arrival
+   *      time ASC, so the card that came off cooldown earliest is served first (see
+   *      cardQueueRanking.queueArrivalAt);
+   *   2. STALE — no mark in 30 days, or never marked: the learner's own cards before
+   *      lent ones, then EASIEST FIRST — det `difficulty` on core/reading, the hardest
+   *      character's stroke count (`maxCharStrokeCount`) on writing.
    *
-   * A never-marked card scores -Infinity, which an ascending sort would put at the
-   * FRONT, so the tier is compared before the timestamp. Brand-new sorts and lent
-   * provisional cards are therefore reached only once genuinely rested cards run out.
-   *
-   * Ties (notably the whole never-marked tail) keep the caller's incoming order, which
-   * is `createdAt DESC` — newest first. Array.sort is stable.
+   * Ties keep the caller's incoming order, which is `createdAt DESC` — newest first.
+   * Array.sort is stable.
    */
   private rankFlpEligible(cards: VocabEntry[], now: number, world: MasteryWorldId = OnDeckVocabService.FLP_WORLD): VocabEntry[] {
     return rankCardQueue(cards, now, { world }).map(({ card }) => card);
@@ -898,8 +896,8 @@ export class OnDeckVocabService {
    * initial working loop and the mark-endpoint refill — so the two cannot drift.
    * `excludeIds` keeps already-chosen cards out.
    *
-   * Deliberately UNLIMITED. Cooldown eligibility and the longest-waiting-first queue
-   * ranking are computed in app code from `typedMarkHistory`, which SQL would have to
+   * Deliberately UNLIMITED. Cooldown eligibility and the two-tier queue ranking
+   * (rankFlpEligible) are computed in app code from `typedMarkHistory`, which SQL would have to
    * re-implement over jsonb to order by; a partial scan would rank a random subset and
    * silently return the wrong card. The refill path has always scanned a category in
    * full for the same reason. Enrichment stays deferred to only the chosen cards, so
@@ -931,10 +929,10 @@ export class OnDeckVocabService {
       AND ve.id != ALL($3::int[])
       ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       ${deck.clause}
-      -- Stable tiebreak only; the real ordering is rankFlpEligible in app code — but
-      -- the tie is REAL for never-marked cards, which all score equally and keep this
-      -- order. Own cards first, or a lent row (always created today, so newest by
-      -- createdAt) would beat the learner's own unmarked cards into the loop.
+      -- Stable tiebreak only; the real ordering is rankFlpEligible in app code, which
+      -- also puts own cards before lent ones in its stale tier. The tie is REAL for
+      -- stale cards of equal ease, which keep this order — own-first is repeated here
+      -- so the tiebreak agrees with the ranker.
       ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
     `, [userId, category, excludeIds, language, lentIds, ...deck.params]);
     return result.rows;
@@ -944,10 +942,11 @@ export class OnDeckVocabService {
    * Get the next library card for a correct-mark refill, honoring the know
    * cooldown (docs/MASTERY_REWORK.md § 6).
    *
-   * Priority: the preferred category, then Target -> Unfamiliar -> Comfortable ->
-   * Mastered, then a COOLING card, and only then a LENT one. At each step we take the
-   * head of that category's queue —
-   * the card waiting longest since it came off cooldown (rankFlpEligible).
+   * Priority: the preferred category, then the rest in STUDY_MIX_FILL_ORDER
+   * (Target -> Comfortable -> Unfamiliar -> Mastered — the same order the initial
+   * loop borrows in), then a COOLING card, and only then a LENT one. At each step we take the
+   * head of that category's queue (rankFlpEligible: marked in the last 30 days,
+   * longest-waiting first; then the rest, own before lent, easiest first).
    * `excludeIds` keeps cards already in the loop out.
    *
    * BORROW, THEN COOL, THEN LEND (2026-08-20, replacing the 2026-08-17 lend-first
@@ -994,7 +993,15 @@ export class OnDeckVocabService {
     // In a mode session, `allowedCategories` caps the pool: the preferred category
     // is honored only if it's allowed, and the fallback list is the remaining
     // allowed categories.
-    const fallbackBase = allowedCategories ?? ['Target', 'Unfamiliar', 'Comfortable', 'Mastered'];
+    //
+    // ONE BORROW ORDER (2026-10-28): the fallback walks STUDY_MIX_FILL_ORDER (TCUM),
+    // filtered to the allowed set — the same order getDistributedWorkingLoop tops a
+    // short loop up in, so a loop and its refills borrow alike. Filtering (rather than
+    // using `allowedCategories` as given) also keeps a mode session in that order:
+    // Challenge's allowed list is [Unfamiliar, Target], but it borrows Target first.
+    const fallbackBase = STUDY_MIX_FILL_ORDER.filter(
+      (cat) => !allowedCategories || allowedCategories.includes(cat)
+    ) as string[];
     const preferredFirst = !allowedCategories || allowedCategories.includes(preferredCategory)
       ? [preferredCategory]
       : [];
@@ -1081,7 +1088,7 @@ export class OnDeckVocabService {
 
   /**
    * The top `limit` flp-eligible cards of one category for the initial working loop —
-   * the head of that category's queue, longest-waiting first (rankFlpEligible).
+   * the head of that category's queue (rankFlpEligible).
    * `excludeIds` keeps already-picked cards out. Returns fewer than `limit`, including zero, when the category is spent.
    */
   private async fetchEligibleCategoryCards(
@@ -1203,9 +1210,10 @@ export class OnDeckVocabService {
    * a card is only offered once its know clock (shared by recognition and production)
    * has run out. Which face it then shows is decided client-side from the card's own
    * history (src/utils/flpFaceSteering.ts). Within each quota the
-   * eligible cards are ranked AS A QUEUE, longest-waiting first (rankFlpEligible), so
-   * a quota is filled by the cards most overdue for review; cards with no correct mark
-   * yet sort last. Enriches cards with related words that share
+   * eligible cards are ranked AS A QUEUE (rankFlpEligible): cards marked in the last
+   * 30 days come first, longest-waiting first, so a quota is filled by the cards most
+   * overdue for review; the rest (no mark in 30 days, or never marked) follow, own
+   * before lent, easiest first. Enriches cards with related words that share
    * characters.
    *
    * WHEN A QUOTA IS SHORT the loop BORROWS, then COOLS, then LENDS (2026-08-20): the
@@ -1280,7 +1288,8 @@ export class OnDeckVocabService {
         // mode's fill order. Mode loops only ever draw from their config's
         // categories; Mix may draw from all four.
         const config = mode ? MODE_CONFIGS[mode] : DEFAULT_LOOP_CONFIG;
-        loopCategories = mode ? MODE_CONFIGS[mode].allowed : ['Target', 'Unfamiliar', 'Comfortable', 'Mastered'];
+        // Mix walks its cooled tier in the same TCUM order it borrows in.
+        loopCategories = mode ? MODE_CONFIGS[mode].allowed : [...STUDY_MIX_FILL_ORDER];
         workingLoop = [];
 
         // Initial quota fetches (eligibility-filtered).

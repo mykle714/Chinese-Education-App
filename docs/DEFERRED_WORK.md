@@ -409,6 +409,54 @@ The likely shape then: the page always takes a host, and the route-only pieces
 (`FlashcardsLearnHeader`, `useFlpLeave` / `useFlpEntrance`, the URL parsing) move into a
 `legacy/` route host that can be deleted as one folder.
 
+### 26. Dictionary "Closest matches" on a no-result query
+
+*Added 2026-10-29. Docs: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § 7b.*
+
+| | |
+|---|---|
+| **What** | The tier-2 Dictionary redesign's no-results artboard lists **Closest matches** between the "Nothing for “shíjiānn”" well and the Ask AI button (shíjiānn → 时间, 事件, 世界). It needs a server-side near-miss search — e.g. strip tone marks, drop/edit trailing letters, rank the candidates by `frequencyScore` — returned alongside an empty `/api/dictionary/search` page |
+| **Why deferred** | No such search exists; the redesign shipped the well and the wide Ask AI button without it (decided by the owner 2026-10-29) |
+| **Cost of leaving it** | A typo'd query offers only AI, which spends the learner's daily AI-lookup cap on what is usually a spelling slip |
+| **Trigger** | Any work on dictionary search ranking, or a playtest note that typo'd searches dead-end |
+| **References** | `src/features/dictionary/DictionaryPageParts.tsx` → `DictionaryNoResults`; `server/controllers/DictionaryController.ts` → `search`; `server/dal/implementations/DictionaryDAL.ts` → `searchByWord1` |
+
+### 27. Quick Mark has no entry point (dormant panel code)
+
+*Added 2026-10-29. Docs: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 4.8, [QUICK_MARK.md](./QUICK_MARK.md).*
+
+| | |
+|---|---|
+| **What** | The Tower Tier 2 re-skin of scp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with scp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a Home tile) and restore the hosting from git at `09f607e` |
+| **Why deferred** | Removing the button was a design decision; deleting a whole feature's code was not asked for |
+| **Cost of leaving it** | Dead code that still type-checks and drifts silently; a reader of QUICK_MARK.md assumes a live feature |
+| **Trigger** | The next Quick Mark or scp toolbar change, or a dead-code sweep |
+| **References** | `src/features/discover/QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts` |
+
+### 28. Move the iso kit to `src/components/iso/`
+
+*Added 2026-10-29. Docs: [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § 1, [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md).*
+
+| | |
+|---|---|
+| **What** | scp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
+| **Why deferred** | A wide `git mv` across files other sessions were editing on the same day; the cross-feature import works meanwhile |
+| **Cost of leaving it** | A layering violation (features/ importing another feature's internals) that the next importer will copy |
+| **Trigger** | The next quiet day on `src/features/deckTower/`, or a third importer |
+| **References** | `src/features/deckTower/iso/index.ts`, `src/features/discover/SortBins.tsx`, `src/features/discover/sortTimeOfDay.ts` |
+
+### 29. One shared `mixHex`
+
+*Added 2026-10-29. Docs: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § 7b.*
+
+| | |
+|---|---|
+| **What** | Three copies of the same sRGB hex lerp: `src/features/deckTower/iso/palette.ts` → `mixHex` (exported), a private one in `src/features/flashcards/FlashcardsLearnPage/eipPalette.ts`, and a private one in `src/timeOfDay/tier2Look.ts`. Collapse them into one shared colour util (e.g. `src/theme/`) |
+| **Why deferred** | The shared `src/timeOfDay/` module may not import from a feature, and the other two files were being edited by other sessions the same day |
+| **Cost of leaving it** | A fix to one (clamping, short hex, alpha) silently misses the other two |
+| **Trigger** | Item 28 (the iso kit move), or the next touch of any of the three |
+| **References** | the three symbols above |
+
 ## Recently closed
 
 ### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)

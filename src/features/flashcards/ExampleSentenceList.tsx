@@ -1,11 +1,12 @@
-import { Box, Typography, useTheme } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import SegmentedSentenceDisplay from "../../components/SegmentedSentenceDisplay";
 import { SpeakerButton } from "./FlashcardsLearnPage/FlashCardSection";
 import ValidateFlagButtons from "../../components/ValidateFlagButtons";
 import { buildSentencePronunciation } from "../../utils/sentencePronunciation";
 import { renderEnglishWithVocabUnderline } from "./exampleSentenceText";
 import { FC_FONT } from "./constants";
-import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
+import { COLORS } from "../../theme/colors";
+import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { useAuth } from "../../AuthContext";
 import type { VocabEntry, Language, ValidationField } from "../../types";
@@ -54,8 +55,7 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
   onSpeakSentence,
   speakingKey,
 }) => {
-  const theme = useTheme();
-  const fc = theme.palette.flashcard;
+  const colors = useEipColors();
   // Account-level display preference (users."showSegmentSpaces", migration 129) —
   // read here rather than threaded so every est surface renders identically.
   const { user } = useAuth();
@@ -64,19 +64,18 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
   return (
     <Box
       className="example-sentence-list"
-      // `.esl` — one card per sentence, on the page's own ground rather than in a
-      // bordered box: provenance is the only thing that draws a border here, so an
-      // approved sentence and a generated one can never be mistaken for each other
-      // (docs/DATA_VALIDATION_SYSTEM.md, artboard 24).
+      // `.esl` — one outlined card per sentence (Tower Tier 2 `.ex`). Provenance shows
+      // as the ring's colour (orange = AI) plus the corner tag, so an approved sentence
+      // and a generated one can never be mistaken for each other
+      // (docs/DATA_VALIDATION_SYSTEM.md).
       sx={{ display: "flex", flexDirection: "column", gap: "10px" }}
     >
       {sentences.map((sentence, index) => {
         // A sentence counts as human-reviewed only when the server attached a valid
         // approval (validations row with the approve stamp whose stored content still
         // matches the det data — computed in enrichExampleSentencesMetadataBatch,
-        // docs/DATA_VALIDATION_SYSTEM.md). Anything else renders the shared
-        // AI-generated treatment (orange border/tint + sparkle badge), matching the
-        // dictionary AI-fallback result card.
+        // docs/DATA_VALIDATION_SYSTEM.md). Anything else renders the AI-generated
+        // treatment: an orange ring + the `.aib` corner tag (AiGeneratedBadge "tag").
         const isHumanApproved = sentence.humanApproved === true;
         return (
         <Box
@@ -88,30 +87,42 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           }
           sx={{
             position: "relative",
-            // Approved sentences keep the quiet flashcard background AND a TRANSPARENT
-            // border of the same width as the AI one: without it the two states are
-            // different sizes and the list reflows as sentences are approved. Spread
-            // FIRST so `aiGeneratedSurfaceSx`'s own border wins for the AI case.
-            ...(isHumanApproved ? { background: fc.subtleBg, border: "1px solid transparent" } : aiGeneratedSurfaceSx),
-            borderRadius: "12px",
-            padding: "11px 13px 12px",
+            // `.ex` (Tower Tier 2, 2026-10-29): an outlined CARD — the eip palette's `card`
+            // fill in a 1.5px `line` ring, 14px radius. An unapproved (AI) sentence swaps
+            // the ring for a 1px AI-orange one and carries the `.aib` tag on its bottom
+            // edge — no orange tint any more (that was the shared aiGeneratedSurfaceSx).
+            // Rings are inset shadows, so both states are the same size and the list
+            // never reflows as sentences are approved.
+            backgroundColor: colors.card,
+            boxShadow: `inset 0 0 0 ${isHumanApproved ? `1.5px ${colors.line}` : `1px ${COLORS.aiGenerated}`}`,
+            borderRadius: "14px",
+            // The speaker floats in the top-right action cluster (below), not in the
+            // design's left gutter (`.ex .rb`), so the sentence keeps the full width.
+            padding: "12px",
             display: "flex",
             flexDirection: "column",
-            gap: "8px",
+            gap: "6px",
+            // Room for the AI tag hanging 9px below the card's edge.
+            marginBottom: isHumanApproved ? 0 : "6px",
           }}
         >
           {!isHumanApproved && (
             <AiGeneratedBadge
               className="example-sentence-ai-badge"
               label="AI GENERATED"
+              variant="tag"
+              face={colors.card}
+              ink={colors.ink}
+              sx={{ position: "absolute", right: "10px", bottom: "-9px", zIndex: 2 }}
             />
           )}
-          {/* Top-right action cluster — the validator Approve/Flag pair and the
+             {/* Top-right action cluster — the validator Approve/Flag pair and the
               speaker sit on ONE absolutely-positioned row so they read as a single
-              group of controls in the corner (the validate buttons used to live in
-              the opposite corner). Out of flow on purpose: it floats OVER the card
-              and must never change the card's measured size, so a validator's view
-              lays out identically to everyone else's.
+              group of controls in the corner. The Tower Tier 2 design moves the speaker
+              to a left gutter (`.ex .rb`); that layout change was not taken.
+              Out of flow on purpose: it floats OVER the card and must never change the
+              card's measured size, so a validator's view lays out identically to
+              everyone else's.
               zIndex keeps the row above SegmentedSentenceDisplay's position:relative
               root, which would otherwise paint over (and steal clicks from) it
               because it follows in DOM order. */}
@@ -152,7 +163,7 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
               )}
             </Box>
           )}
-          <SegmentedSentenceDisplay
+       <SegmentedSentenceDisplay
             sentence={sentence}
             size="sm"
             flexWrap="wrap"
@@ -172,10 +183,11 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           <Typography
             className="example-sentence-english"
             sx={{
-              fontSize: 11.5,
-              color: fc.textSecondary,
+              // `.ex .en`: 13.5px in ink2 (was 11.5px muted).
+              fontSize: 13.5,
+              color: colors.ink2,
               fontFamily: FC_FONT,
-              lineHeight: 1.5,
+              lineHeight: 1.35,
             }}
           >
             {renderEnglishWithVocabUnderline(sentence.english, sentence.translatedVocab)}

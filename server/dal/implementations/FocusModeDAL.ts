@@ -13,6 +13,7 @@ import {
   WRITING_FLP_WORD_CLAUSE,
   WRITING_MASTERY_SELECT,
 } from '../shared/vetTable.js';
+import { DICT_JOIN } from '../shared/dictJoin.js';
 
 /**
  * Data access for focus mode (docs/FOCUS_MODE.md § 2). LAYER: DAL.
@@ -129,14 +130,13 @@ export class FocusModeDAL implements IFocusModeDAL {
   async listWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<FocusCardRow[]> {
     if (!userId) throw new ValidationError('userId is required');
     // Same population as OnDeckVocabService.getFlpReadyCounts (the tower's own figure),
-    // ordered by id so ties in the queue ranking are deterministic.
-    const result = await this.dbManager.executeQuery<{
-      id: number;
-      typedMarkHistory: TypedMarkHistory | null;
-      writingMastery: number | null;
-    }>((client) => client.query(
-      `SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
-         FROM ${vetReadFrom(language)}
+    // ordered by id so ties in the queue ranking are deterministic. DICT_JOIN supplies
+    // the stale tier's ease keys (cardQueueRanking.rankCardQueue). Sorted-only, so no
+    // row here is lent and starterPackBucket is not needed.
+    const result = await this.dbManager.executeQuery<CardRowSource>((client) => client.query(
+      `SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT},
+              de."difficulty", de."maxCharStrokeCount"
+         FROM ${vetReadFrom(language)} ${DICT_JOIN}
         WHERE ve."userId" = $1
           AND ve."language" = $2
           ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
@@ -150,11 +150,7 @@ export class FocusModeDAL implements IFocusModeDAL {
   async listCardsByIds(userId: string, language: string, ids: number[]): Promise<FocusCardRow[]> {
     if (!userId) throw new ValidationError('userId is required');
     if (ids.length === 0) return [];
-    const result = await this.dbManager.executeQuery<{
-      id: number;
-      typedMarkHistory: TypedMarkHistory | null;
-      writingMastery: number | null;
-    }>((client) => client.query(
+    const result = await this.dbManager.executeQuery<CardRowSource>((client) => client.query(
       `SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
          FROM ${vetReadFrom(language)}
         WHERE ve."userId" = $1
@@ -167,6 +163,21 @@ export class FocusModeDAL implements IFocusModeDAL {
   }
 }
 
-function toCardRow(row: { id: number; typedMarkHistory: TypedMarkHistory | null; writingMastery: number | null }): FocusCardRow {
-  return { id: row.id, typedMarkHistory: row.typedMarkHistory ?? undefined, writingMastery: row.writingMastery };
+/** The raw row both card reads return; the ease keys are only selected by listWorldCards. */
+interface CardRowSource {
+  id: number;
+  typedMarkHistory: TypedMarkHistory | null;
+  writingMastery: number | null;
+  difficulty?: number | null;
+  maxCharStrokeCount?: number | null;
+}
+
+function toCardRow(row: CardRowSource): FocusCardRow {
+  return {
+    id: row.id,
+    typedMarkHistory: row.typedMarkHistory ?? undefined,
+    writingMastery: row.writingMastery,
+    difficulty: row.difficulty,
+    maxCharStrokeCount: row.maxCharStrokeCount,
+  };
 }

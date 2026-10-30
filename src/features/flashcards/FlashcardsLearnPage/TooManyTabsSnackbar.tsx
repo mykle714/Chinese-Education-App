@@ -29,7 +29,7 @@ function TooManyTabsSnackbar({ signal }: TooManyTabsSnackbarProps) {
             sx={{ zIndex: 2000 }}
         >
             <Alert severity="info" variant="filled" onClose={() => setOpen(false)} sx={{ fontFamily: FC_FONT }}>
-                {`That's ${MAX_EIP_TABS} words open — close one, or tap off the panel to start fresh.`}
+                {`That's ${MAX_EIP_TABS} words open — go back a few, or tap off the panel to start fresh.`}
             </Alert>
         </Snackbar>
     );

@@ -781,7 +781,7 @@ cooldown.
 
 When a card is selected for the loop (the initial `getDistributedWorkingLoop` build and
 the correct-mark refill `getNextLibraryCardWithFallback`), the service offers it only if
-its **know clock** has run out (`rankFlpEligible` → `rankCardQueue(…, { bar: 'core' })`).
+its **know clock** has run out (`rankFlpEligible` → `rankCardQueue(…, { world: 'core' })`).
 The server no longer stamps anything on the card (`readyMarkTypes` was deleted): with one
 shared clock, both faces are always equally markable.
 
@@ -812,49 +812,62 @@ The client then picks the face from the card's own `typedMarkHistory`
 - **Cooled-tier cards** (served when nothing rested is left) follow the same rule; their
   marks are dropped by the cooldown gate as before.
 
-### Ordering: a queue, longest-waiting first
+### Ordering: a two-tier queue (recent by arrival, stale easiest first)
 
 Eligible cards are ranked by `rankFlpEligible` (`OnDeckVocabService.ts`), which is the
 **single ordering rule for both flp paths** — the initial loop and the refill draw the
 same way, so a loop and its replacements cannot diverge.
 
 > **The rule itself lives in `server/services/cardQueueRanking.ts`** (a pure module:
-> `rankCardQueue`, `rankCardQueueCooled`, `queueArrivalAt`), over the cooldown
+> `rankCardQueue`, `rankCardQueueCooled`, `queueArrivalAt`, `lastMarkOnBar`,
+> `RECENT_MARK_WINDOW_MS`), over the cooldown
 > primitives in **`server/contracts/cooldown.ts`** (`COOLDOWN_MS_BY_CATEGORY`,
 > `lastCorrectOnBar`, `barReadyAt`, `barCooldownRemainingMs`). The primitives live in
 > `contracts/` — mirroring what `contracts/mastery.ts` did for the pbh formula —
 > because the cdp **displays** the remaining cooldown (§ 5) and the client may not
 > import a server service. `cardQueueRanking` re-exports them; the client reaches them
 > through `src/utils/masteryCompute.ts`.
-> The one axis a caller picks is the **bar** (`{ bar: 'core' }` for the flp,
-> `{ bar: 'reading' }` for Memory Map — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md)
-> § 13.1); clock and window follow from it, so no caller can choose a window that
-> disagrees with the mark gate. A third consumer is the collection "Sort by →
-> Cooldown" key (`cooldownKey`, `src/utils/vocabSort.ts`), which is the shown bar's
+> The one axis a caller picks is the **bar** (`{ world: 'core' }` for the flp,
+> `{ world: 'reading' }` for Memory Map — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md)
+> § 13.1); clock, window and ease key follow from it, so no caller can choose a window
+> that disagrees with the mark gate. The same ranker orders focus mode's daily set
+> (`FocusModeService` → `selectFocusSet`, [FOCUS_MODE.md](./FOCUS_MODE.md) § 3). A
+> further consumer of the primitives is the collection "Sort by → Cooldown" key
+> (`cooldownKey`, `src/utils/vocabSort.ts`), which is the shown bar's
 > `barCooldownRemainingMs` — see [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
 
-The sort key is the card's **arrival time in the queue**, i.e. when its clock released
-it:
+Rested cards split on **whether the bar saw any mark — right or wrong — in the last 30
+days** (`lastMarkOnBar`, `RECENT_MARK_WINDOW_MS`; decided 2026-10-28):
 
 ```
-readyAt(card) = lastCorrectOnBar(core) + window(core band)     // queueArrivalAt
-                — -Infinity when neither know track has a correct mark
+lastMark(card) = newest mark of any outcome on the bar's tracks   // lastMarkOnBar
+                 (viaWord fan-out marks skipped, as the clock skips them)
 
-ranked        = [ cards with history, by readyAt ASC ]   // longest-waiting first
-             ++ [ never-marked cards ]                   // always last
+readyAt(card)  = lastCorrectOnBar + window(bar band)            // queueArrivalAt
+                 ?? lastMark            — only wrong marks: no cooldown, back at once
+                 ?? -Infinity           — never marked (always stale; unread)
+
+ranked = [ RECENT: lastMark within 30 d, by readyAt ASC ]           // longest-waiting first
+      ++ [ STALE:  the rest, own before lent, then easiest first ]  // ease key below
 ```
 
-- A card right on only **one** know track has history and queues by it — it does not
-  sink into the never-marked tail.
-- A card scores `-Infinity` only when **neither** know track has a correct mark. That is
-  the definition of "never marked", and those cards sort **last** — so brand-new sorts
-  and lent provisional cards are reached only once genuinely rested cards run out.
+| Bar | Stale tier's ease key (ascending, NULL last) |
+|---|---|
+| core, reading | det `difficulty` (1–6; HSK level for zh) |
+| writing | det `maxCharStrokeCount` — stroke count of the word's **hardest** character (migration 179, from hanzi-writer-data) |
 
-**The never-marked tail needs its own tier, not just a timestamp.** `-Infinity` in an
-*ascending* sort would land at the front, which is the opposite of what we want, so the
-comparator compares the tier before the timestamp. Equal timestamps return `0` rather
-than subtracting (`-Infinity - -Infinity` is `NaN`, which would leave the sort
-undefined); ties keep the SQL order, `createdAt DESC`.
+- **Recent** cards are the ones the learner is actively working, so the cooldown queue
+  still governs them. A card right on only **one** know track queues by that mark; a card
+  answered only **wrongly** queues from its newest wrong mark.
+- **Stale** cards — dormant for a month, or never seen — re-enter easiest first, so a
+  learner coming back to a band meets the words most likely to stick. Because the Mastered
+  window is 180 days, **every rested Mastered card is stale**: the Mastered quota is always
+  filled easiest first. Comfortable cards are recent between 14 and 30 days after their last
+  correct mark.
+- **Own before lent** is an explicit comparator step in the stale tier (it used to be only
+  the SQL tiebreak): without it the ease sort would let a lent HSK 1 word beat the
+  learner's own HSK 3 word into the loop.
+- Ties keep the SQL order — own first, then `createdAt DESC` (`fetchFlpCandidates`).
 
 **The ranking picks WHICH cards, not the play order.** It runs *inside* each utcm quota:
 the 1/2/2/5 Mix distribution still decides how many cards come from each mastery bucket,

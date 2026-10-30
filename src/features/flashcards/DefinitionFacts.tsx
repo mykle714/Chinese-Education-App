@@ -8,6 +8,7 @@ import { resolveCommonality } from "../../utils/definitionUtils";
 import { COLORS } from "../../theme/colors";
 import { WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
+import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
 
 /**
  * `DefinitionFacts` — the design's `.dfx` (artboards 20 and 20b): the three measured
@@ -96,6 +97,7 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    const colors = useEipColors();
 
     const commonality = resolveCommonality(entry, selectedSenseIndex);
     const posList = entry.partsOfSpeech ?? [];
@@ -180,27 +182,30 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         approved={entry.partsOfSpeechApproved}
                         classPrefix={classPrefix}
                     />
-                    {/* Terms joined by a faint middle dot. The dot is its own span so it
-                        takes the label colour rather than the term's ink, and wrapping
-                        happens between terms (each term + its leading dot is one unit). */}
-                    <Box sx={{ display: "flex", flexWrap: "wrap", rowGap: "5px", marginTop: "8px" }}>
-                        {posList.map((pos, index) => (
+                    {/* `.pos` (Tower Tier 2, 2026-10-29): each part of speech is an
+                        outlined pill — 13px semibold in a 1px `edge` ring, 9px radius —
+                        replacing the terms-joined-by-a-middle-dot line. Not tappable, so
+                        the ring is the palette's soft `edge`, not the button outline. */}
+                    <Box
+                        className={`${classPrefix}__definition-facts-pos-list`}
+                        sx={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "7px" }}
+                    >
+                        {posList.map((pos) => (
                             <Typography
                                 component="b"
                                 key={pos}
                                 className={`${classPrefix}__definition-facts-pos-term`}
-                                sx={{ fontSize: 12.5, fontWeight: WEIGHT.semibold, letterSpacing: "-0.012em", color: fc.onSurface, whiteSpace: "nowrap" }}
+                                sx={{
+                                    fontSize: 13,
+                                    fontWeight: WEIGHT.semibold,
+                                    lineHeight: 1.3,
+                                    padding: "4px 10px",
+                                    borderRadius: "9px",
+                                    boxShadow: `inset 0 0 0 1px ${colors.edge}`,
+                                    color: fc.onSurface,
+                                    whiteSpace: "nowrap",
+                                }}
                             >
-                                {index > 0 && (
-                                    <Typography
-                                        component="span"
-                                        aria-hidden
-                                        className={`${classPrefix}__definition-facts-pos-separator`}
-                                        sx={{ font: "inherit", color: COLORS.textFaint, margin: "0 7px" }}
-                                    >
-                                        ·
-                                    </Typography>
-                                )}
                                 {pos}
                             </Typography>
                         ))}
@@ -242,10 +247,11 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                                 classPrefix={classPrefix}
                             />
                             <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
+                                {/* `.dots`: filled and empty dots both ringed in ink2. */}
                                 <FrequencyScoreDots
                                     score={commonalityScore}
-                                    filledColor={fc.onSurface}
-                                    emptyBorderColor={fc.border}
+                                    filledColor={colors.ink2}
+                                    emptyBorderColor={colors.ink2}
                                 />
                                 <Typography
                                     component="em"
@@ -279,7 +285,8 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                             <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
                                 <Typography
                                     component="em"
-                                    sx={{ fontStyle: "normal", fontSize: 12.5, fontWeight: WEIGHT.semibold, color: fc.onSurface, letterSpacing: "-0.01em" }}
+                                    // `.meters em`: the level reads as a figure — 15px bold.
+                                    sx={{ fontStyle: "normal", fontSize: 15, fontWeight: WEIGHT.bold, color: fc.onSurface, letterSpacing: "-0.01em" }}
                                 >
                                     {entry.language === "zh" ? `HSK ${entry.difficulty}` : entry.difficulty}
                                 </Typography>

@@ -35,16 +35,15 @@ import { SHADOW } from "../../../theme/shadows";
  *
  * ── Why its own module ────────────────────────────────────────────────────────
  * The trigger + menu (reading sections, star, per-sense commonality meter, grammar
- * tags, the card-flip stop-propagation) is ~120 lines of behavior that three
- * surfaces now share: the flashcard face (`CardFace.EnglishBlock`, flp + cdp) and
- * the eip definition header (`InfoCardPanelBody`). Duplicating it is how the two
- * pickers drift apart — they must offer the same senses, in the same order, with
- * the same labels.
+ * tags, the card-flip stop-propagation) is ~120 lines of behavior that lives on the
+ * flashcard face (`CardFace.EnglishBlock` — flp + saved-card cdp). (The eip header
+ * used to mount it too; since 2026-10-29 it shows every sense as a dot-separated list instead — EipEntryHeader —
+ * built from the same `sortedSenseClusters` order and `ddt` labels, with the same star
+ * on index 0, so the two still name the senses identically.)
  *
  * The host owns `selectedSenseIndex` (an index into `sortedSenseClusters(entry)`)
- * and decides what a pick MEANS — the card faces and the eip both persist it to the
- * vet row's `selectedSense` (migration 99); a dictionary-only entry with no vet row
- * simply keeps the pick in session state.
+ * and decides what a pick MEANS — the card faces persist it to the vet row's
+ * `selectedSense` (migration 99).
  *
  * Referenced by docs/DEFINITION_CLUSTERS.md.
  */
@@ -66,8 +65,7 @@ export interface SensePickerProps {
     censorReadings?: boolean;
     /**
      * Prefix for every emitted class name, so each host can scope its own styling
-     * ("mobile-demo-flashcard-sense-trigger" on the card, "mobile-demo-eic-sense-…"
-     * in the eip).
+     * ("mobile-demo-flashcard-sense-trigger" on the card).
      */
     classPrefix?: string;
 }
@@ -176,9 +174,10 @@ const SensePicker: React.FC<SensePickerProps> = ({
                 </Typography>
                 {/* The starred DEFAULT — the sense the card falls back to when the
                     learner has never picked one. Marked on the sense itself, not in a
-                    gutter, so it costs no column. */}
+                    gutter, so it costs no column. Text-coloured (`inherit`, the row's
+                    ink) rather than gold, matching the eip header's sense list. */}
                 {index === 0 && (
-                    <Icon name="star" size={13} fill={1} color={COLORS.gld} className={`${classPrefix}-sense-star`} />
+                    <Icon name="star" size={13} fill={1} color="inherit" className={`${classPrefix}-sense-star`} />
                 )}
                 {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency
                     score, migration 139 / docs/DEFINITION_CLUSTERS.md) — the same meter

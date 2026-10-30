@@ -131,7 +131,9 @@ Every map was wiped by migration 173, so no map is over the cap any more and the
 **Which 50: the flp offering priority list.** The same rule the flp uses to decide
 which card to serve next — the utcm category ladder (Target → Unfamiliar → Comfortable
 → Mastered) with the card queue (`server/services/cardQueueRanking.ts`) ordering
-*within* a category (longest-waiting-first; never-marked cards always last). Reusing it
+*within* a category (read in the last 30 days: longest-waiting first; otherwise own
+before lent, easiest `difficulty` first — MASTERY_REWORK.md § 6 "Ordering"). The DAL
+selects `starterPackBucket` and `de."difficulty"` for it (`MemoryMapDAL.getUnplacedCandidates`). Reusing it
 means the map is populated by the same judgement of "what should this learner be
 working on now" as every other surface. See § 13 for the one adaptation it needs.
 
@@ -925,7 +927,8 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 
 1. **The flp priority list is core-track shaped; Memory Map marks reading.** ✅ Resolved
    by EXTRACTION, not duplication. The five private methods on `OnDeckVocabService`
-   that implemented "longest-waiting first, never-marked last" now live in
+   that implemented the queue (then "longest-waiting first, never-marked last"; since
+   2026-10-28 recent-by-arrival then stale-easiest-first) now live in
    `server/services/cardQueueRanking.ts` as a pure module, parameterized on two axes:
    which mark types count as ready, and which utcm category supplies the cooldown
    window. The flp passes recognition+production with the core category (unchanged

@@ -18,8 +18,10 @@ import { SHADOW } from "../../theme/shadows";
  * box is the session's card frame (FlpTowerHost `cardFrameRef`), which is exactly where the
  * camera lands the face.
  *
- *   lifting    rests on the deck for a beat, then slides off to the right (the motion of
- *              taking the top card off a deck), uncovering the session's first card.
+ *   lifting    slides off to the right the moment the camera lands (the motion of taking
+ *              the top card off a deck), uncovering the session's first card. No rest on
+ *              the deck first: the dive's own ease-out already settles the camera, and a
+ *              beat on top of it read as a stall.
  *   returning  slides back on from the right and settles; the scene's own top card takes
  *              over as the camera starts to climb.
  *
@@ -27,20 +29,18 @@ import { SHADOW } from "../../theme/shadows";
  * useTowerStudy reports a `cover`.
  */
 
-/** Rest on the deck this long before the slide starts (lifting only). */
-export const COVER_LIFT_DELAY_MS = 160;
 /** The slide off, and the slide back on. */
-export const COVER_LIFT_MS = 520;
-export const COVER_RETURN_MS = 420;
+export const COVER_LIFT_MS = 340;
+export const COVER_RETURN_MS = 280;
 
 /**
- * The count card's drop shadow grows in over this long as it lifts (no delay: it starts
- * with the rest, so it is already rising off the deck when the slide begins), and shrinks
+ * The count card's drop shadow grows in over this long as it lifts (with the slide, from
+ * its first frame), and shrinks
  * away over the whole COVER_RETURN_MS as it settles back on. It must start and end at
  * nothing: the scene's top card it is handed over from and back to casts no shadow on the
  * card under it, so a shadow there from the first frame snapped a halo on around the card.
  */
-const COVER_SHADOW_IN_MS = 500;
+const COVER_SHADOW_IN_MS = 320;
 const COVER_SHADOW = `drop-shadow(${SHADOW.lifted})`;
 /** The same filter function with nothing in it, so `filter` interpolates (one shadow → one shadow). */
 const NO_COVER_SHADOW = "drop-shadow(0 0 0 transparent)";
@@ -96,8 +96,8 @@ const TowerCoverCard: React.FC<{ cover: TowerCover; deck: TowerDeck; wash: IsoWa
                         // lifts and shrinks as it lands (COVER_SHADOW_IN_MS). (`drop-shadow()`
                         // takes the same offset / blur / colour list as box-shadow.)
                         animation: lifting
-                            ? `deckTowerCoverLift ${COVER_LIFT_MS}ms cubic-bezier(0.45, 0, 0.75, 0.4) ${COVER_LIFT_DELAY_MS}ms both, deckTowerCoverShadowIn ${COVER_SHADOW_IN_MS}ms ease-out both`
-                            : `deckTowerCoverReturn ${COVER_RETURN_MS}ms cubic-bezier(0.2, 0.75, 0.3, 1) both, deckTowerCoverShadowOut ${COVER_RETURN_MS}ms ease-in both`,
+                            ? `deckTowerCoverLift ${COVER_LIFT_MS}ms cubic-bezier(0.3, 0, 0.6, 0.6) both, deckTowerCoverShadowIn ${COVER_SHADOW_IN_MS}ms ease-out both`
+                            : `deckTowerCoverReturn ${COVER_RETURN_MS}ms cubic-bezier(0.25, 0.6, 0.4, 1) both, deckTowerCoverShadowOut ${COVER_RETURN_MS}ms ease-in both`,
                         "@keyframes deckTowerCoverShadowIn": {
                             "0%": { filter: NO_COVER_SHADOW },
                             "100%": { filter: COVER_SHADOW },

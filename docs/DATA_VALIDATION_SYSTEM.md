@@ -339,12 +339,12 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   A per-icon `CircularProgress` shows while its own request is in flight;
   the other icon stays interactive.
 - **est**: `ExampleSentenceList.tsx` renders one `ValidateFlagButtons` per sentence
-  inside the card's **top-right action cluster** (`.example-sentence-actions` — one
-  absolutely-positioned flex row holding the validate pair and then the speaker, so
-  the corner reads as a single group of controls), `field` =
+  inside the card's **top-right corner** (`.example-sentence-actions`, an
+  absolutely-positioned row it shares with the sentence speaker),
+  `field` =
   `exampleSentence${index}` for `index < 3` (the field model's only 3 slots) —
   `EXAMPLE_SENTENCE_FIELDS` lookup array, `alreadyApproved={sentence.humanApproved}`
-  (the same flag that also drives the AI-generated badge/tint on this sentence, so
+  (the same flag that also drives the AI-generated ring + tag on this sentence, so
   the two disappear together). Needs `vocabWord` (word1) + `language`, both
   already-existing props of this component; sentences past index 2, or a list
   rendered without those props, get no buttons.

@@ -1,9 +1,10 @@
 import { Box, Typography } from '@mui/material';
 import type { DictionaryEntry, Language } from '../types';
-import { stripParentheses, resolveSearchRowView } from '../utils/definitionUtils';
+import { joinDefinitionList, resolveSearchRowView } from '../utils/definitionUtils';
 import ForeignText, { isLatinScriptLang } from './ForeignText';
 import Icon from './Icon';
 import { COLORS } from '../theme/colors';
+import SwipeableTextLine from './SwipeableTextLine';
 import { FONTS } from '../theme/fonts';
 
 interface DictionaryEntryRowProps {
@@ -31,7 +32,91 @@ interface DictionaryEntryRowProps {
      * (ForeignText's plain branch has no tap-to-copy).
      */
     headwordTapToCopy?: boolean;
+    /**
+     * `list` (default) — the full-bleed `.dr` row: 22px gutters, a hairline under every
+     *   row, a 12.5px faint gloss. Used by the Compare picker and the community search.
+     * `slab` — the Dictionary page's row since the 2026-10-29 redesign (design project
+     *   "Tower Tier 2 - Time of Day", artboard "Dictionary · search + results"): rows
+     *   grouped on one white slab (DictionaryResultSlab), tighter 16/12px insets, a
+     *   15px gloss in ink2 and a larger chevron. The slab draws the hairline BETWEEN
+     *   rows, so the last row has no rule under it. `inset` is ignored.
+     */
+    variant?: 'list' | 'slab';
+    /**
+     * The row's ink and rules when it sits on a themed surface — the Dictionary page
+     * passes its time-of-day look (src/timeOfDay/tier2Look.ts), which is slate with
+     * light ink at night. Omitted, the row uses the app's day COLORS (every other
+     * caller). The headword's characters take `ink`; the tone-coloured pinyin under them
+     * is never recoloured.
+     */
+    tones?: DictionaryEntryRowTones;
+    /**
+     * Let a gloss that overflows its line be SWIPED sideways to read the senses past the
+     * edge, instead of ellipsizing it (owner's request 2026-10-29). The cut-off edge
+     * fades rather than showing "…". Opt-in, because a touch pan only works when every
+     * ancestor scroller allows `pan-x` — the host page must pass `horizontalPan` to
+     * MobileTabScreen (see the touch-action note on its ScrollArea). The Dictionary page
+     * turns it on; the Compare picker (inside a dragged sheet) and community search do not.
+     */
+    swipeGloss?: boolean;
 }
+
+/** The colours a themed surface lends the row (a structural subset of Tier2Look). */
+export interface DictionaryEntryRowTones {
+    ink: string;
+    ink2: string;
+    muted: string;
+    line: string;
+    pressed: string;
+}
+
+interface DictionaryEntryGlossProps {
+    gloss: string;
+    isSlab: boolean;
+    color: string;
+    swipe: boolean;
+}
+
+/**
+ * `.df` — the gloss. One line.
+ *
+ * Not swipeable: ellipsized, as the artboard draws it.
+ *
+ * Swipeable (`swipeGloss`): a SwipeableTextLine — swiped sideways, clipped at the edges,
+ * rubber-banding at either end. `pan-x pan-y`, so a vertical drag that starts
+ * on the line still scrolls the page; a tap still opens the entry.
+ */
+function DictionaryEntryGloss({ gloss, isSlab, color, swipe }: DictionaryEntryGlossProps) {
+    const textSx = {
+        fontFamily: FONTS.sans,
+        fontSize: isSlab ? '15px' : '12.5px',
+        color,
+    } as const;
+
+    if (!swipe) {
+        return (
+            <Typography className="dictionary-entry-row__definition" sx={{ ...textSx, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {gloss}
+            </Typography>
+        );
+    }
+    return (
+        <SwipeableTextLine
+            className="dictionary-entry-row__definition dictionary-entry-row__definition--swipeable"
+            text={gloss}
+            sx={textSx}
+            touchAction="pan-x pan-y"
+        />
+    );
+}
+
+const DAY_TONES: DictionaryEntryRowTones = {
+    ink: COLORS.onSurface,
+    ink2: COLORS.iconColor,
+    muted: COLORS.textSecondary,
+    line: COLORS.rowBorder,
+    pressed: COLORS.rowHoverBg,
+};
 
 /**
  * `.dr` — one dictionary search hit (docs/SHELF_REDESIGN.md § Part B entry 7).
@@ -60,41 +145,28 @@ interface DictionaryEntryRowProps {
  * Depended on by: docs/SHELF_REDESIGN.md § Part B entry 7,
  * docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md.
  */
-function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapToCopy = false }: DictionaryEntryRowProps) {
+function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapToCopy = false, variant = 'list', tones, swipeGloss = false }: DictionaryEntryRowProps) {
+    const isSlab = variant === 'slab';
+    const t = tones ?? DAY_TONES;
     // The artboard's gloss is a single ellipsized line carrying as many senses as
-    // fit ("time; period"), not just the first one — the row has a fixed height
+    // fit ("time · period"), not just the first one — the row has a fixed height
     // either way, so a second gloss is free information rather than extra space.
     //
     // A hit found through a NON-default sense ("ma2" → 吗's má sense, "row" → 行's háng) shows
     // that sense's pinyin with its glosses leading the line; every other hit renders its
     // default sense exactly as before. See resolveSearchRowView.
     const rowView = resolveSearchRowView(entry);
-    const gloss = rowView.definitions.length > 0
-        ? rowView.definitions.map(stripParentheses).filter(Boolean).join('; ')
-        : 'No definition available';
+    // Every sense on one line, middle-dot separated (definitionUtils → joinDefinitionList).
+    const gloss = joinDefinitionList(rowView.definitions) || 'No definition available';
 
     const isLatin = isLatinScriptLang(language);
 
-    // `.df` — the gloss. One line, ellipsized. Shared by both branches.
-    const glossNode = (
-        <Typography
-            className="dictionary-entry-row__definition"
-            sx={{
-                fontFamily: FONTS.sans,
-                fontSize: '12.5px',
-                color: COLORS.textSecondary,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-            }}
-        >
-            {gloss}
-        </Typography>
-    );
+    // `.df` — the gloss. Shared by both branches; see DictionaryEntryGloss.
+    const glossNode = <DictionaryEntryGloss gloss={gloss} isSlab={isSlab} color={isSlab ? t.ink2 : t.muted} swipe={swipeGloss} />;
 
     return (
         <Box
-            className="dictionary-entry-row"
+            className={`dictionary-entry-row dictionary-entry-row--${variant}`}
             component="button"
             onClick={() => onClick(entry)}
             sx={{
@@ -102,20 +174,25 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapT
                 // keyboard without a role/tabIndex/onKeyDown trio bolted on.
                 display: 'flex',
                 alignItems: 'center',
-                gap: '15px',
+                gap: isSlab ? '14px' : '15px',
                 width: '100%',
+                minHeight: isSlab ? 44 : undefined,
                 textAlign: 'left',
-                padding: `12px ${inset}px`,
+                padding: isSlab ? '10px 12px 10px 16px' : `12px ${inset}px`,
                 border: 'none',
-                borderBottom: `1px solid ${COLORS.rowBorder}`,
+                // Slab rows: the hairline sits on TOP of every row but the first, so the
+                // slab's rounded bottom edge is never crossed by a rule.
+                borderBottom: isSlab ? 'none' : `1px solid ${t.line}`,
+                borderTop: isSlab ? `1px solid ${t.line}` : 'none',
+                '&:first-of-type': isSlab ? { borderTop: 'none' } : {},
                 borderRadius: 0,
                 background: 'transparent',
                 font: 'inherit',
                 color: 'inherit',
                 cursor: 'pointer',
-                '&:active': { backgroundColor: COLORS.rowHoverBg },
+                '&:active': { backgroundColor: t.pressed },
                 '@media (hover: hover)': {
-                    '&:hover': { backgroundColor: COLORS.rowHoverBg },
+                    '&:hover': { backgroundColor: t.pressed },
                 },
             }}
         >
@@ -132,6 +209,7 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapT
                         // is many glyphs wide where its Chinese counterpart is one or two,
                         // and this row gives it a single line.
                         plainFontSize="17px"
+                        characterColor={tones?.ink}
                     />
                     {glossNode}
                 </Box>
@@ -157,9 +235,17 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapT
                             size="sm"
                             bold
                             tapToCopy={headwordTapToCopy}
+                            characterColor={tones?.ink}
                         />
                     </Box>
-                    <Box className="dictionary-entry-row__text" sx={{ flex: 1, minWidth: 0 }}>
+                    {/* Stretched to the row's full height (gloss centred in it) when the gloss
+                        swipes, so the whole body takes the swipe rather than one 15px line. */}
+                    <Box
+                        className="dictionary-entry-row__text"
+                        sx={swipeGloss
+                            ? { flex: 1, minWidth: 0, alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center' }
+                            : { flex: 1, minWidth: 0 }}
+                    >
                         {glossNode}
                     </Box>
                 </>
@@ -167,8 +253,8 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapT
 
             <Icon
                 name="chevron_right"
-                size={16}
-                color={COLORS.textFaint}
+                size={isSlab ? 22 : 16}
+                color={isSlab || tones ? t.muted : COLORS.textFaint}
                 className="dictionary-entry-row__chevron"
                 sx={{ alignSelf: 'center', flexShrink: 0 }}
             />

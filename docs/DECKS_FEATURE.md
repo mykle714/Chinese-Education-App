@@ -1222,7 +1222,7 @@ set) and the scp's on-deck `DraggableCard` all render it. `MiniCard` owns the ti
 ring, elevation, offscreen containment, staggered pop-in) AND its contents: the icon
 slot, the word (ForeignText), the 2-line definition and the optional mastery strip.
 Wrappers pass plain display values plus `children` overlays (corner badges, action
-buttons, the scp's "sorted!" stamp); the conversation-frequency corner badge is the
+buttons, the scp's "SORTED" head band); the conversation-frequency corner badge is the
 shared `MiniCardFrequencyBadge` export. The **mastery strip is opt-in**: a caller passes
 `masteryBar` (only `MiniVocabCard` does, and only while `showMasteryStrip`); omitting it
 also gives the strip's height back to the definition.

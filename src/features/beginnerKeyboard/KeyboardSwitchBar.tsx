@@ -18,8 +18,9 @@
  * both states, and the close chevron came up with it so that dismissing works
  * identically whichever keyboard is on screen.
  *
- * The toggle shows BOTH destinations rather than flipping one label, so the
- * choice is legible before the learner needs it. The active side is filled.
+ * The toggle shows EVERY destination (写 · ā · ABC) rather than flipping one
+ * label, so the choice is legible before the learner needs it. The active
+ * segment is filled.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ THE SLOT CLIPS, AND THAT IS THE WHOLE ANIMATION
@@ -42,8 +43,9 @@
  */
 import { Box } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
+import { FONTS, SIZE, WEIGHT } from '../../theme';
 import { switchBarTransition } from './transition';
+import { KEYBOARD_COLORS } from './keyboardColors';
 
 /**
  * The slot's height in CSS px.
@@ -53,23 +55,36 @@ import { switchBarTransition } from './transition';
  */
 export const KEYBOARD_SWITCH_BAR_HEIGHT = 40;
 
-/** Which keyboard is currently on screen. */
-export type KeyboardSource = 'ours' | 'os';
+/**
+ * Which keyboard is currently on screen.
+ *
+ *   ours    — the 写 handwriting IME (BeginnerKeyboard)
+ *   pinyin  — the ā tone-vowel pad (PinyinToneKeyboard, added 2026-10-29). Vowels
+ *             only: the learner types consonants on ABC and comes here for the
+ *             tone-marked vowel. Suppresses the OS keyboard exactly like `ours`.
+ *   os      — the system keyboard; all that is ours is this bar
+ */
+export type KeyboardSource = 'ours' | 'pinyin' | 'os';
+
+/** The switch bar's segments, left to right: 写 · ā · ABC (artboard "Dictionary · keyboard, pinyin mode"). */
+const SEGMENTS: { source: KeyboardSource; label: string; ariaLabel: string; cjk: boolean; modifier: string }[] = [
+  { source: 'ours', label: '写', ariaLabel: 'Handwriting keyboard', cjk: true, modifier: 'handwriting' },
+  { source: 'pinyin', label: 'ā', ariaLabel: 'Pinyin tone keyboard', cjk: false, modifier: 'pinyin' },
+  { source: 'os', label: 'ABC', ariaLabel: 'System keyboard', cjk: false, modifier: 'abc' },
+];
 
 interface KeyboardSwitchBarProps {
   /** The keyboard the learner is on now; the other segment is the offer. */
   source: KeyboardSource;
   /** False parks the row behind the keyboard; true slides it out. */
   up: boolean;
-  /** Take the handwriting keyboard. No-op when it is already up. */
-  onUseOurs: () => void;
-  /** Hand the field back to the system keyboard. No-op when it is already up. */
-  onUseOs: () => void;
+  /** Switch to another keyboard. Never called for the one already up. */
+  onSelect: (source: KeyboardSource) => void;
   /** Put every keyboard away and leave the field unfocused but intact. */
   onDismiss: () => void;
 }
 
-export default function KeyboardSwitchBar({ source, up, onUseOurs, onUseOs, onDismiss }: KeyboardSwitchBarProps) {
+export default function KeyboardSwitchBar({ source, up, onSelect, onDismiss }: KeyboardSwitchBarProps) {
   return (
     <Box
       className="keyboard-switch-bar__slot"
@@ -93,8 +108,8 @@ export default function KeyboardSwitchBar({ source, up, onUseOurs, onUseOs, onDi
           alignItems: 'center',
           gap: 1,
           px: 1.25,
-          backgroundColor: COLORS.header,
-          borderTop: `1px solid ${COLORS.border}`,
+          backgroundColor: KEYBOARD_COLORS.ground,
+          borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
           // A keyboard is a fixed surface; nothing in this row scrolls or selects.
           touchAction: 'none',
           userSelect: 'none',
@@ -112,27 +127,23 @@ export default function KeyboardSwitchBar({ source, up, onUseOurs, onUseOs, onDi
             p: '2px',
             gap: '2px',
             borderRadius: 2,
-            backgroundColor: COLORS.card,
+            backgroundColor: KEYBOARD_COLORS.well,
           }}
         >
-          <SwitchSegment
-            className="keyboard-switch-bar__segment keyboard-switch-bar__segment--handwriting"
-            label="写"
-            ariaLabel="Handwriting keyboard"
-            // The app's CJK face rather than ForeignText: this is a key CAP, not a
-            // word the learner is being taught, so it must not carry pinyin above it.
-            fontFamily={FONTS.cjk}
-            active={source === 'ours'}
-            onClick={onUseOurs}
-          />
-          <SwitchSegment
-            className="keyboard-switch-bar__segment keyboard-switch-bar__segment--abc"
-            label="ABC"
-            ariaLabel="System keyboard"
-            fontFamily={FONTS.sans}
-            active={source === 'os'}
-            onClick={onUseOs}
-          />
+          {SEGMENTS.map((segment) => (
+            <SwitchSegment
+              key={segment.source}
+              className={`keyboard-switch-bar__segment keyboard-switch-bar__segment--${segment.modifier}`}
+              label={segment.label}
+              ariaLabel={segment.ariaLabel}
+              // 写 takes the app's CJK face rather than ForeignText: this is a key
+              // CAP, not a word the learner is being taught, so it must not carry
+              // pinyin above it.
+              fontFamily={segment.cjk ? FONTS.cjk : FONTS.sans}
+              active={source === segment.source}
+              onClick={() => onSelect(segment.source)}
+            />
+          ))}
         </Box>
 
         {/* Pushes the dismissal to the far edge, away from the switch: the two
@@ -160,7 +171,7 @@ export default function KeyboardSwitchBar({ source, up, onUseOurs, onUseOs, onDi
             borderRadius: 2,
             backgroundColor: 'transparent',
             cursor: 'pointer',
-            color: COLORS.iconColor,
+            color: KEYBOARD_COLORS.ink2,
           }}
         >
           <KeyboardArrowDownIcon sx={{ fontSize: 20 }} />
@@ -203,13 +214,13 @@ function SwitchSegment({
         px: 1.25,
         border: 'none',
         borderRadius: '6px',
-        backgroundColor: active ? COLORS.white : 'transparent',
+        backgroundColor: active ? KEYBOARD_COLORS.key : 'transparent',
         cursor: active ? 'default' : 'pointer',
         fontFamily,
         fontSize: SIZE.caption,
         fontWeight: WEIGHT.semibold,
         lineHeight: 1,
-        color: active ? COLORS.onSurface : COLORS.textSecondary,
+        color: active ? KEYBOARD_COLORS.ink : KEYBOARD_COLORS.muted,
       }}
     >
       {label}

@@ -1,4 +1,4 @@
-// Persisted dictionary browse state — the query, pagination page, and scroll
+// Persisted dictionary browse state — the query and scroll
 // position are kept across a drill-in to a card-detail page and back (SPA back
 // navigation remounts DictionaryPage). In-memory for the session; a full page
 // reload starts fresh. Seeded into useDictionarySearch via its `initial`
@@ -9,11 +9,10 @@
 // that space — the back arrow to Home, a footer-tab tap, or browser back. That
 // reset is driven by the route watcher in components/Layout.tsx using
 // isDictionarySpacePath below, so re-entering the Dictionary later starts fresh.
-export const dictionaryBrowseState = { search: "", page: 1, scrollTop: 0 };
+export const dictionaryBrowseState = { search: "", scrollTop: 0 };
 
 export function resetDictionaryBrowseState(): void {
     dictionaryBrowseState.search = "";
-    dictionaryBrowseState.page = 1;
     dictionaryBrowseState.scrollTop = 0;
 }
 

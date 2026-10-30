@@ -315,7 +315,7 @@ own-animation pages) are neither archetype.
 
 ### Dictionary browse-state persistence
 
-`DictionaryPage`'s query, pagination page, and scroll position are held in an
+`DictionaryPage`'s query and scroll position are held in an
 in-memory singleton, `dictionaryBrowseState` (`src/features/dictionary/dictionaryBrowseState.ts`),
 so the list ⇄ card-detail (cdp) drill-in restores where the user was. The state is
 seeded into `useDictionarySearch` via its `initial` argument and kept in sync by
@@ -393,8 +393,10 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   — fetches the det row via `/api/dictionary/lookup/:word` and adapts it
   (`dictEntryAdapter`). **No edits**: no toolbar/delete, and **no flashcard** — the
   page IS the eip panel, mounted inline (see the table above), so the det's icon is not
-  shown here. The panel's sense chip drives every tab (`selectedSenseIndex`, page state,
-  reset on drill-in along with the tab); its speaker speaks the selected sense's reading.
+  shown here. Every tab follows `selectedSenseIndex` (page state, seeded from the requester's
+  saved pick and reset on drill-in along with the tab); its speaker speaks that sense's
+  reading. With no card face and a display-only header sense list (2026-10-29), the sense
+  can no longer be changed here — this page is slated for deletion.
   The Learning toggle sits under the panel's speaker (`learning`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
   the **bottom of the definition tab**, under Synonyms + Related, through the panel's
   `definitionFooter` slot — there is no card for it to sit above.
@@ -405,9 +407,11 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   Every linked page is itself this read-only cdp, so read-only propagates recursively.
   The one write affordance is the **Learning toggle** (discoverable entries only,
   signed-in users only), stacked **under the speaker**, left-justified with it, in the panel's entry header
-  (2026-10-10; it used to sit in the page title bar). The SAME control rides in the
-  Dictionary page's eip (`EipSheet` `showLearning`), where it tracks whichever word tab
-  is showing:
+  (2026-10-10; it used to sit in the page title bar). The Dictionary page's eip
+  (`EipSheet` `showLearning`) shares the SAME STATE (`useLearningToggle`, tracking whichever
+  word tab is showing) but, since 2026-10-29, draws it as a different control — the raised
+  **Add ⇄ Added!** key in its trail row beside the ✕, no glow (`EipAddKey`;
+  EIP_SHEET_GESTURES.md § Add key). This cdp's control:
   - **Not in Learning** → a compact 24px **"+"** (`learning-toggle--add`) breathing the
     soft green halo from `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE`, 3.6s pulse;
     static at peak under reduced motion), the same "add cards" nudge the fdp's Sort Cards
@@ -421,13 +425,19 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
     or no row = not in). Until it arrives nothing renders, so an added word never flashes
     "+". It is stored with its `entryKey`, so moving to another word refetches. A
     failed status fetch falls back to "+" (adding is idempotent).
+  - **Optimistic** (2026-10-30): a tap flips the control at once and the request is sent
+    only after that frame paints (`afterNextPaint`); there is no in-flight / disabled /
+    spinner state. Taps during a request are serialized per word — one request at a time,
+    always ending on the learner's last tap. A failed request snaps the control back to
+    the server's last accepted state.
   - Success is silent — the toggle is the feedback. Only a failure raises a snackbar
     (the host's: `EipSheet` or the cdp).
-  - The flp eip keeps its own older add-only "+" (`onAddToLibrary`, hidden once added) in
-    the same slot under the speaker.
+  - No other eip host offers an add control: the flp's older add-only "+"
+    (`onAddToLibrary`) was removed 2026-10-29 — adding is a Dictionary-flow action.
 
   *Code:* `src/hooks/useLearningToggle.ts` (state + rules), `src/components/LearningToggle.tsx`
-  (the control), `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (the
+  (the cdp's control), `src/features/flashcards/FlashcardsLearnPage/EipAddKey.tsx` (the
+  Dictionary eip's key), `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (the
   vertical action stack, `learning` prop); `src/utils/vocabApi.ts` (`getLibraryStatus`,
   `removeFromLibrary`, `addToLibrary`); `server/services/VocabEntryService.ts`
   (`getLibraryStatus`, `removeFromLibrary`); `server/dal/implementations/VocabEntryDAL.ts`

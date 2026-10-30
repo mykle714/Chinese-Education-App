@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * generate-tz-coordinates.mjs — writes src/features/deckTower/tzCoordinates.ts, the
+ * generate-tz-coordinates.mjs — writes src/timeOfDay/tzCoordinates.ts, the
  * IANA timezone → representative [lat, lon] table the Deck Tower's time of day uses to
  * compute a sunrise and sunset without asking the device for its location
  * (docs/DECK_TOWER.md § "Time of day").
@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = process.argv[2] ?? "/usr/share/zoneinfo";
-const OUT = "src/features/deckTower/tzCoordinates.ts";
+const OUT = "src/timeOfDay/tzCoordinates.ts";
 
 /** One ISO 6709 component (`+4230`, `-0734512`) → decimal degrees. `degDigits` is 2 for latitude, 3 for longitude. */
 function iso6709(part, degDigits) {
@@ -64,7 +64,7 @@ const out = `/**
  * and sunset (docs/DECK_TOWER.md § "Time of day"). A wide zone collapses to one city —
  * accepted: the sky only needs to be roughly right.
  *
- * Depended on by: src/features/deckTower/sunTimes.ts (\`deviceLocation\`).
+ * Depended on by: src/timeOfDay/sunTimes.ts (\`deviceLocation\`).
  */
 export const TZ_COORDINATES: Readonly<Record<string, readonly [number, number]>> = {
 ${rows.join("\n")}

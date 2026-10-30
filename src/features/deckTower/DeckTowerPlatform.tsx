@@ -11,6 +11,7 @@ import {
     IsoPlatform,
     IsoSmokePuff,
     RAISED_HEIGHT,
+    backToFront,
     depthRankAmong,
     flatPath,
     frontContour,
@@ -54,9 +55,11 @@ import type { StudyDrop } from "./useTowerStudy";
  *             hole is filled with floor, and the climb out reverses it — drawn by
  *             IsoFloorRecess, with any pawn on it riding it down (IsoPawn `opening`);
  *   children  `behind` (sky travellers on the tower's back sides) → the stack and the
- *             focus lever (obstacles 0–1), and the pawns, each pawn
+ *             focus lever (obstacles 0–1, in the CAMERA's back-to-front order —
+ *             `backToFront`: the listed order under the fixed view, the tower last once
+ *             the study camera is over it), and the pawns, each pawn
  *             slotted in front of every obstacle before the first one it stands behind
- *             (`depthRankAmong`)
+ *             (`depthRankAmong`, against that same order)
  *             → `front`.
  *
  * The stack's layer is one of (docs/DECK_TOWER.md § "Tower resizes" — towerResizes.ts is
@@ -156,9 +159,9 @@ interface DeckTowerPlatformProps {
     /** Ease `fadeOpacity`'s changes over PLATFORM_FADE_MS (useTowerStudy `platformFadeEased`). */
     fadeEased?: boolean;
     /**
-     * Keep the deck — the tower of cards — out of the fade: it is drawn over the faded
-     * platform at full opacity (IsoPlatform `overlay`), only its floor shadow fading with
-     * the floor. The study dive still lands on the count card, which still slides off and
+     * Keep the deck — the tower of cards — out of the fade: it stays at full opacity in its
+     * own slot of the draw order while every other layer fades on its own (IsoPlatform
+     * `fadeChildren={false}`), only its floor shadow fading with the floor. The study dive still lands on the count card, which still slides off and
      * back on over the session's own fades (DeckTowerPage, "hide the platform" toggle).
      */
     keepDeck?: boolean;
@@ -376,7 +379,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // A sky drop lands on the standing tower's top (the floor when it has none).
     const drop = stack?.drop ?? null;
     const landingZ = drop ? floor.z + drop.baseCards * CARD_THICKNESS : 0;
-    // The tower's element, kept aside when `keepDeck` draws it over the fade instead.
+    // The tower's element (its layer's slot is held by a placeholder when there is none).
     let deckEl: React.ReactElement | null = null;
     if (stack) {
         deckEl = (
@@ -488,10 +491,9 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             </g>
         );
     }
-    // The stack's slot is held even when there is no tower (or it is kept over the fade),
-    // so each layer's index stays the index of its obstacle in `layout.roam.obstacles`
-    // (the pawn splices in by rank).
-    layers.push(deckEl && !keepDeck ? deckEl : <g key="stack" />);
+    // The stack's slot is held even when there is no tower, so each layer's index stays the
+    // index of its obstacle in `layout.roam.obstacles` (the pawn splices in by rank).
+    layers.push(deckEl ?? <g key="stack" />);
     // The lever: obstacle 1, in front of the tower's front-left face.
     const leverTappable = !lever.busy && lever.sink < 0.05 && lever.skyFall === null;
     const onLeverKey = (e: React.KeyboardEvent<SVGGElement>) => {
@@ -539,7 +541,18 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         </g>
     );
 
-    const fallbackRank = depthRankAmong(layout.pawnAt, layout.roam.obstacles);
+    // The obstacles' layers in the CAMERA's back-to-front order: under the fixed view the
+    // listed order, but as the study camera tips over the tower its top comes to hide the
+    // lever in front of it, so the tower draws last (usePawnMotion.ts → `backToFront`; the
+    // pawns rank themselves against this same order).
+    const obstacleOrder = backToFront(layout.roam.obstacles, proj);
+    const ordered = obstacleOrder.map((i) => layers[i]);
+    layers.splice(0, layers.length, ...ordered);
+    const fallbackRank = depthRankAmong(
+        layout.pawnAt,
+        obstacleOrder.map((i) => layout.roam.obstacles[i]),
+        proj,
+    );
     // Insert from the deepest slot down, so earlier splices don't shift later ones. The sort
     // is stable, and each splice at a slot lands BEFORE what an earlier one put there.
     const placed = pawns
@@ -547,20 +560,32 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         .sort((a, b) => b.rank - a.rank);
     for (const { rank, node } of placed) layers.splice(rank, 0, node);
 
-    // The "hide the platform" fade: everything but the kept deck (IsoPlatform `overlay`). The
-    // deck's floor shadow is the floor's, so it takes the same fade (`--platform-fade`,
-    // PLATFORM_SINK_CSS's kept-deck rule).
+    // The "hide the platform" fade: everything but the kept deck. Normally IsoPlatform fades
+    // the floor and everything on it as one group. With `keepDeck` the deck must stay opaque,
+    // which a faded group cannot allow, so IsoPlatform leaves its children alone
+    // (`fadeChildren`) and each layer here takes the fade itself — all but the deck, whose
+    // floor shadow alone fades, being the floor's (`--platform-fade`, PLATFORM_SINK_CSS's
+    // kept-deck rule). The deck keeps its slot in the draw order: lifting it out over the
+    // faded layers (as it once was) drew it over the pawn and the lever in front of it.
     const fadeTransition = fadeEased ? `opacity ${PLATFORM_FADE_MS}ms ease-in-out` : undefined;
     const fadeStyle: React.CSSProperties = { opacity: fadeOpacity, transition: fadeTransition };
-    const deckOverlay =
-        keepDeck && deckEl ? (
+    const fading = fadeOpacity < 1 || fadeEased;
+    const layerFade = keepDeck && fading ? fadeStyle : undefined;
+    const keptDeckStyle = { "--platform-fade": fadeOpacity, "--platform-fade-transition": fadeTransition ?? "none" } as React.CSSProperties;
+    // Every layer is wrapped the same way whatever the mode, so turning `keepDeck` on or off
+    // re-styles the wrappers without remounting what is inside (the pawn's motion state).
+    const wrapped = layers.map((el) => {
+        const isDeck = el.key === "stack";
+        return (
             <g
-                className="deck-tower-page__kept-deck"
-                style={{ "--platform-fade": fadeOpacity, "--platform-fade-transition": fadeTransition ?? "none" } as React.CSSProperties}
+                key={el.key ?? undefined}
+                className={isDeck && keepDeck ? "deck-tower-page__layer deck-tower-page__kept-deck" : "deck-tower-page__layer"}
+                style={isDeck ? (keepDeck ? keptDeckStyle : undefined) : layerFade}
             >
-                {deckEl}
+                {el}
             </g>
-        ) : null;
+        );
+    });
 
     // A landing drop sinks the platform and everything on it, on top of its bob.
     const sinkStyle = drop
@@ -588,12 +613,16 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 }
                 bodyStyle={sinkStyle}
                 bobPaused={bobPaused}
-                fadeStyle={fadeOpacity < 1 || fadeEased ? fadeStyle : undefined}
-                overlay={deckOverlay}
+                fadeStyle={fading ? fadeStyle : undefined}
+                fadeChildren={!keepDeck}
             >
-                {behind}
-                {layers}
-                {front}
+                <g className="deck-tower-page__layer deck-tower-page__layer--behind" style={layerFade}>
+                    {behind}
+                </g>
+                {wrapped}
+                <g className="deck-tower-page__layer deck-tower-page__layer--front" style={layerFade}>
+                    {front}
+                </g>
             </IsoPlatform>
         </g>
     );

@@ -24,11 +24,6 @@ import { cjkFontStack, ensureCjkFontLoaded, resolveCjkFont } from "../theme/cjkF
  * future lab needs to preview a face on the real pages, it should go through the
  * account setting, or announce itself in settings rather than winning silently.
  *
- * One scoped exception, NOT at :root: the Deck Tower's temporary font trial
- * (src/features/deckTower/DeckTowerPage.tsx → TOWER_FONT_ID) shadows `--cjk-font` on
- * <body> while the tower is mounted, pinning that page to 975 Maru SC. It leaves this
- * hook's :root value alone, so the account face returns the moment the tower unmounts.
- *
  * ── Why this keys on `user?.chineseFont`, not on `user` ──────────────────────
  * The access token rotates every ~15 min and `useAuth()` hands back a NEW user object
  * each refresh. Keying the effect on the object identity would re-run it — and

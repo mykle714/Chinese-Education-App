@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dimetricView, faceAffine, makeCameraProjector, makeProjector } from "../iso";
+import { backToFront, depthRankAmong, dimetricView, faceAffine, makeCameraProjector, makeProjector } from "../iso";
 import { studyCameraView } from "../towerCamera";
 import { CARD_D, CARD_W, TOWER_LAYOUT } from "../towerPlatforms";
 
@@ -72,5 +72,30 @@ describe("studyCameraView (docs/DECK_TOWER.md § Studying the tower)", () => {
         expect(tl.y).toBeGreaterThan(frame.top);
         expect(br.x).toBeLessThan(frame.left + frame.width);
         expect(br.y).toBeLessThan(frame.top + frame.height);
+    });
+
+    // docs/ISO_ART_FRAMEWORK.md § IsoPawn → "Depth sorting": the platform's draw order follows
+    // the camera, so what stood in front of the tower goes behind it as the dive tips over it.
+    it("keeps the fixed view's draw order at e = 0, and puts the tower last at e = 1", () => {
+        const obstacles = TOWER_LAYOUT.roam.obstacles;
+        const at = (e: number) => makeCameraProjector(studyCameraView(e, { unit: UNIT, card, topZ: 3.6, frame, bobY: 0 }));
+        expect(backToFront(obstacles, makeProjector(UNIT))).toEqual([0, 1]);
+        expect(backToFront(obstacles, at(0))).toEqual([0, 1]);
+        expect(backToFront(obstacles, at(1))).toEqual([1, 0]);
+    });
+
+    it("ranks a pawn in front of the tower's front face in front at e = 0, behind it at e = 1", () => {
+        const obstacles = TOWER_LAYOUT.roam.obstacles;
+        const pawn = { x: card.x + card.w + 1, y: card.y + card.d / 2 };
+        const rankAt = (e: number) => {
+            const proj = makeCameraProjector(studyCameraView(e, { unit: UNIT, card, topZ: 3.6, frame, bobY: 0 }));
+            const ordered = backToFront(obstacles, proj).map((i) => obstacles[i]);
+            const tower = ordered.indexOf(card);
+            return { rank: depthRankAmong(pawn, ordered, proj), tower };
+        };
+        const start = rankAt(0);
+        expect(start.rank).toBeGreaterThan(start.tower);
+        const end = rankAt(1);
+        expect(end.rank).toBeLessThanOrEqual(end.tower);
     });
 });

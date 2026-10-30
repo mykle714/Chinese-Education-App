@@ -106,7 +106,8 @@ const SOURCE_STORAGE_KEY = 'beginnerKeyboard.source';
 /** Read the remembered choice; storage can be blocked, so fail to the default. */
 function readStoredSource(): KeyboardSource {
   try {
-    return sessionStorage.getItem(SOURCE_STORAGE_KEY) === 'os' ? 'os' : 'ours';
+    const stored = sessionStorage.getItem(SOURCE_STORAGE_KEY);
+    return stored === 'os' || stored === 'pinyin' ? stored : 'ours';
   } catch {
     return 'ours';
   }

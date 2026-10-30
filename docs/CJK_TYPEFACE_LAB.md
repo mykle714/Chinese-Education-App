@@ -93,7 +93,7 @@ dd uses `FONTS.cjk`, so an English gloss is set in the chosen face's Latin glyph
 as the same text wherever it appears:
 
 - flp card face — `src/features/flashcards/card/CardFace.tsx` (`FC_FONT_CJK`)
-- eip header dd — `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`
+- eip header dd + sense list — `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (`glossSx`)
   (`mobile-demo-eic-header-english`, `FC_FONT_CJK`)
 - sense menu labels (each is a candidate dd) — `src/features/flashcards/card/SensePicker.tsx`
   → `renderSenseItem` (`FONTS.cjk`)

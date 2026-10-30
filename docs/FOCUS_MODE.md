@@ -54,7 +54,10 @@ taken by a background request no page is watching: Home's flp preload (`preloadF
 `FocusModeService` → `selectFocusSet` — the flp working loop's own logic, scaled from 10 to 25:
 
 1. The world's sorted cards (writing world: 1–4-character Han words, the writing flp's rule),
-   off cooldown on that world's bar, ranked as a queue, longest-waiting first (`rankCardQueue`).
+   off cooldown on that world's bar, ranked as the flp's two-tier queue (`rankCardQueue`):
+   marked in the last 30 days → longest-waiting first; the rest → easiest first (det
+   `difficulty`, or `maxCharStrokeCount` on the writing world). The ease keys come from
+   `DICT_JOIN` in `FocusModeDAL.listWorldCards`. See MASTERY_REWORK.md § 6 "Ordering".
 2. Band quotas: Study Mix's 1-2-2-5 ×2.5 → **2 Mastered / 5 Comfortable / 5 Unfamiliar /
    13 Target** (`FOCUS_QUOTAS`, derived from `STUDY_MIX_QUOTAS`). Each scaled share is
    floored and the leftover slot(s) go to bands in `STUDY_MIX_FILL_ORDER` (Target first),

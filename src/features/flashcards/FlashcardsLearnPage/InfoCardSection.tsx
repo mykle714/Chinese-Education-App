@@ -1,6 +1,6 @@
 import { useRef, useEffect, forwardRef } from "react";
 import { Box } from "@mui/material";
-import SheetPanel, { type SheetPanelHandle } from "../../../components/sheet/SheetPanel";
+import SheetPanel, { type SheetPanelHandle, type SheetTelescopeHandle } from "../../../components/sheet/SheetPanel";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
 import CompareWorkspace from "../../../components/CompareWorkspace";
@@ -8,6 +8,12 @@ import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { CompareEipTab } from "./useEipTabs";
 import type { LongDefinitionPart } from "../../../types";
 import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
+import EipUpperPanel from "./EipUpperPanel";
+import EipEntryHeader from "./EipEntryHeader";
+import EipAddKey from "./EipAddKey";
+import { EipPaletteProvider } from "./EipPaletteContext";
+import { useEipPalette } from "./useEipPalette";
+import { InfoSheetGrabber } from "../../../components/sheet/sheetStyled";
 
 interface InfoCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -21,7 +27,7 @@ interface InfoCardSectionProps {
     onClose: () => void;
     initialHeight?: number | null;
     // Open height / resting stop as a fraction of the frame — forwarded to SheetPanel
-    // (`defaultHeightRatio`). Omitted = SheetPanel's 0.6. The Dictionary page passes 0.9.
+    // (`defaultHeightRatio`). Omitted = SheetPanel's 0.6. The Dictionary page passes 0.8.
     defaultHeightRatio?: number;
     onBreakdownItemClick?: (item: BreakdownItem) => void;
     onUsedInItemClick?: (item: UsedInItem) => void;
@@ -30,13 +36,9 @@ interface InfoCardSectionProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
-    // Renders the header's "Add to Learning" (+) button in the 2×2 action grid,
-    // gated on `currentEntry.discoverable`. Wired by the flp so drilled-in words
-    // (breakdown chars / example segments) that aren't yet in the library can be
-    // added; undefined hides the button (see InfoCardPanelBody).
-    onAddToLibrary?: (entry: VocabEntry) => void;
-    // The Learning TOGGLE under the header speaker (supersedes onAddToLibrary). Today:
-    // the Dictionary page's eip, via EipSheet. See EipEntryHeader.
+    // The Learning state for the Dictionary eip's Add key (EipAddKey) — drawn in the
+    // word-trail row beside the ✕, NOT under the header speaker (the cdp's inline panel
+    // keeps that placement). Today: the Dictionary page's eip, via EipSheet.
     learning?: LearningToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
     // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown
@@ -49,13 +51,12 @@ interface InfoCardSectionProps {
     compareTab?: CompareEipTab | null;
     onSetCompareSlot?: (slot: "A" | "B", entry: VocabEntry | null) => void;
     onCompareResult?: (comparison: string | null, comparisonParts?: LongDefinitionPart[] | null) => void;
-    // The definitionClusters sense the panel is showing, and the header picker's
-    // callback (docs/DEFINITION_CLUSTERS.md). Owned by the host page's useEipTabs so the
-    // pick survives entry-tab switches; the host also persists it to the vet row.
+    // The definitionClusters sense the panel is showing (docs/DEFINITION_CLUSTERS.md).
+    // Owned by the host page's useEipTabs, seeded from the entry's persisted pick. The
+    // header only DISPLAYS it (underlined in its sense list); picks happen on the card face.
     selectedSenseIndex?: number;
-    onSelectSense?: (index: number) => void;
-    // Optional content slot rendered above the grabber. Used by the entry-tabs
-    // feature (see EipTabStrip + useEipTabs) — undefined renders nothing extra.
+    // The word trail (EipTabStrip + useEipTabs), drawn in the upper panel's trail row
+    // beside the ✕. Undefined (the saved-card cdp's sheet) leaves the row with just the ✕.
     tabStrip?: React.ReactNode;
     // What the sheet's ✕ does. Hosts WITH a word trail pass the trail's rule (close the
     // showing word; return false on the last one so SheetPanel dismisses); the cdp, which
@@ -77,6 +78,9 @@ interface InfoCardSectionProps {
     // Content pinned to the bottom of the definition tab (InfoCardTabContent
     // `definitionFooter`). Today: the Dictionary page eip's word-tools rail, via EipSheet.
     definitionFooter?: React.ReactNode;
+    // The Dictionary eip's all-definitions mode (EipSheet `showAllDefinitions`): the header
+    // gloss is the whole joined list (EipEntryHeader).
+    showAllDefinitions?: boolean;
     // SUPPRESSES the missing-pinyin warning (see `useMissingPinyinWarning` below). The eip
     // always shows pinyin, so a Chinese entry with none to show is presumed to be a bug in
     // the data or in what the host handed in. A host whose entries GENUINELY have no
@@ -154,13 +158,11 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeak,
     onSpeakSentence,
     speakingKey,
-    onAddToLibrary,
     learning,
     compareTab,
     onSetCompareSlot,
     onCompareResult,
     selectedSenseIndex,
-    onSelectSense,
     tabStrip,
     onCloseX,
     showMinutePoints,
@@ -168,11 +170,19 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     entryTabIndex,
     showSynonymsRelated,
     definitionFooter,
+    showAllDefinitions,
     missingPinyinReason,
 }, ref) => {
     useMissingPinyinWarning(compareTab ? null : currentEntry, selectedSenseIndex, !!missingPinyinReason);
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
     const slideRef = useRef<HTMLDivElement | null>(null);
+    // The entry header lives in the UPPER panel now (EipUpperPanel), so the pager slide
+    // moves it alongside the body below — the trail row between them stays put.
+    const headerSlideRef = useRef<HTMLDivElement | null>(null);
+    // SheetPanel drives the upper panel's height from the sheet's (the telescope).
+    const telescopeRef = useRef<SheetTelescopeHandle | null>(null);
+    // The time-of-day palette (dawn / day / sunset tint, night inverts the panel).
+    const palette = useEipPalette();
     // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
     // from it, and writing it during the effect keeps the comparison to exactly one place.
     const prevEntryTabRef = useRef<{ id: string | undefined; index: number } | null>(null);
@@ -197,8 +207,8 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
         prevEntryTabRef.current = { id: entryTabId, index: entryTabIndex ?? 0 };
         // First render, or a host that doesn't use entry tabs at all: nothing to animate.
         if (!prev || entryTabId === undefined || prev.id === entryTabId) return;
-        const el = slideRef.current;
-        if (!el) return;
+        const els = [headerSlideRef.current, slideRef.current].filter((el): el is HTMLDivElement => el !== null);
+        if (els.length === 0) return;
 
         // Trail order decides the direction: a pushed tab is appended, so a drill-in always
         // enters from the right; tapping a pill to the left of the current one enters from
@@ -206,22 +216,26 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
         const dir = (entryTabIndex ?? 0) >= prev.index ? 1 : -1;
         // Clip only for the duration of the slide: leaving overflow hidden permanently
         // would cut off anything the panel legitimately overhangs with (menus/popovers).
-        el.style.overflow = "hidden";
-        const anim = el.animate(
-            [
-                { transform: `translateX(${dir * ENTRY_SLIDE_TRAVEL_PCT}%)`, opacity: 0 },
-                { transform: "translateX(0)", opacity: 1 },
-            ],
-            { duration: ENTRY_SLIDE_MS, easing: ENTRY_SLIDE_EASING },
-        );
-        const clearClip = () => { el.style.overflow = ""; };
-        anim.addEventListener("finish", clearClip);
-        anim.addEventListener("cancel", clearClip);
+        const anims = els.map((el) => {
+            el.style.overflow = "hidden";
+            const anim = el.animate(
+                [
+                    { transform: `translateX(${dir * ENTRY_SLIDE_TRAVEL_PCT}%)`, opacity: 0 },
+                    { transform: "translateX(0)", opacity: 1 },
+                ],
+                { duration: ENTRY_SLIDE_MS, easing: ENTRY_SLIDE_EASING },
+            );
+            const clearClip = () => { el.style.overflow = ""; };
+            anim.addEventListener("finish", clearClip);
+            anim.addEventListener("cancel", clearClip);
+            return anim;
+        });
         // A second drill-in mid-slide cancels the first, which fires `cancel` → clip cleared.
-        return () => anim.cancel();
+        return () => anims.forEach((anim) => anim.cancel());
     }, [entryTabId, entryTabIndex]);
 
     return (
+        <EipPaletteProvider palette={palette}>
         <SheetPanel
             ref={ref}
             onClose={onClose}
@@ -235,70 +249,132 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             // and SheetPanel captures the scroll element once per bodyKey — so
             // every tab change must re-bind the scroll/resize coupling.
             bodyKey={compareTab ? "compare" : `info-${selectedTab}`}
-            tabStrip={tabStrip}
+            // With no ✕ on the eip, `onCloseX` now drives only the Escape key (desktop):
+            // Escape pops the showing word, and closes the panel from the root.
             onCloseX={onCloseX}
-            showMinutePoints={showMinutePoints}
-            // Title for the panel header, which is up at every height (SheetPanel) and
-            // carries the ✕. Named for the ENTRY POINT rather than the word on
-            // screen — the pill that opens it says "More Info", and the entry header
-            // right below already carries the headword, so repeating it would be the
-            // only thing on screen twice.
-            title={compareTab ? "Compare" : "More Info"}
+            // No SheetPanel title/header and no SheetPanel ✕: the eip draws its own header
+            // in its upper panel (EipUpperPanel) — the title row telescopes in toward max,
+            // and a down caret (SheetPanel's `dismiss`) replaces the ✕.
+            showClose={false}
+            telescopeRef={telescopeRef}
+            surface={palette.ground}
+            // No top grabber: the whole upper panel is the resize handle, and the shelf
+            // below keeps its own small pill.
+            showGrabber={false}
+            // No sheet padding above the upper panel or below the shelf: the ground would
+            // show as a band at both edges, and the telescope measures from the very top.
+            edgePadding={false}
         >
-            {({ bindHeaderDrag }) => (
-                // Slide wrapper for the entry-tab pager (see the effect above). Transparent
-                // to layout: it repeats the body's own flex sizing so the panel measures and
-                // scrolls exactly as it did before.
+            {({ bindHeaderDrag, dismiss }) => (
+                <>
+                <EipUpperPanel
+                    ref={telescopeRef}
+                    // Named for the ENTRY POINT rather than the word on screen — the pill
+                    // that opens it says "More Info", and the header right below already
+                    // carries the headword.
+                    title={compareTab ? "Compare" : "More Info"}
+                    trail={tabStrip}
+                    addKey={learning && !compareTab ? <EipAddKey state={learning} /> : undefined}
+                    header={!compareTab && currentEntry ? (
+                        <Box ref={headerSlideRef} className="eip-entry-slide-header">
+                            <EipEntryHeader
+                                entry={currentEntry}
+                                showPinyinColor={showPinyinColor}
+                                onSpeak={onSpeak}
+                                speakingKey={speakingKey}
+                                selectedSenseIndex={selectedSenseIndex}
+                                showAllDefinitions={showAllDefinitions}
+                                // In the upper panel the band's own rhythm spaces it: no rule
+                                // under it (the shelf's edge is the divide), no side padding.
+                                sx={{ padding: "0 0 17px", borderBottom: "none" }}
+                            />
+                        </Box>
+                    ) : undefined}
+                    // The down caret closes the whole panel (not a pop — see EipUpperPanel).
+                    onClose={dismiss}
+                    showMinutePoints={showMinutePoints}
+                    bindHeaderDrag={bindHeaderDrag}
+                />
+                {/* LOWER panel — the white SHELF (design `.tabw` + `.body`): rounded top,
+                    a solid 3px `edge` lip above it, its own small grabber, then the content
+                    tabs and the tab body. The sheet's ground shows in its corners. */}
                 <Box
-                    ref={slideRef}
-                    className="eip-entry-slide"
-                    sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+                    className="eip-shelf"
+                    sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        flex: 1,
+                        minHeight: 0,
+                        background: palette.shelf,
+                        borderRadius: "24px 24px 0 0",
+                        boxShadow: `0 -3px 0 ${palette.edge}`,
+                        paddingTop: "8px",
+                    }}
                 >
-                {compareTab ? (
-                    <CompareWorkspace
-                        ref={panelRef}
-                        state={compareTab}
-                        onSetSlot={onSetCompareSlot ?? (() => {})}
-                        onResult={onCompareResult ?? (() => {})}
-                        showPinyin
-                        showPinyinColor={showPinyinColor}
-                        onSegmentOpen={onExampleSegmentClick}
-                    />
-                ) : (
-                    <InfoCardPanelBody
-                        ref={panelRef}
-                        currentEntry={currentEntry}
-                        selectedTab={selectedTab}
-                        onTabChange={onTabChange}
-                        breakdownItems={breakdownItems}
-                        showPinyinColor={showPinyinColor}
-                        isFlipped={isFlipped}
-                        onBreakdownItemClick={onBreakdownItemClick}
-                        onUsedInItemClick={onUsedInItemClick}
-                        onExampleSegmentClick={onExampleSegmentClick}
-                        onSpeak={onSpeak}
-                        onSpeakSentence={onSpeakSentence}
-                        speakingKey={speakingKey}
-                        onAddToLibrary={onAddToLibrary}
-                        learning={learning}
-                        selectedSenseIndex={selectedSenseIndex}
-                        onSelectSense={onSelectSense}
-                        showSynonymsRelated={showSynonymsRelated}
-                        definitionFooter={definitionFooter}
-                        // `pan-y`, NOT `none`. SheetPanel decides between growing the sheet
-                        // and scrolling the pane on the gesture's first committed move, and
-                        // it expresses "scroll" by NOT calling preventDefault — the browser
-                        // pans the pane natively. With `none` the browser refuses that pan
-                        // and nothing scrolls once the sheet is at max height (the est tab,
-                        // the only pane tall enough to notice, just froze). Horizontal is
-                        // still ours: `pan-y` leaves the tab-swipe free to preventDefault.
-                        scrollTouchAction="pan-y"
-                        headerDragBind={bindHeaderDrag}
-                    />
-                )}
+                    <Box
+                        className="eip-shelf__drag-zone"
+                        {...bindHeaderDrag()}
+                        sx={{ display: "flex", justifyContent: "center", paddingBottom: "11px", touchAction: "none", flexShrink: 0 }}
+                    >
+                        <InfoSheetGrabber
+                            className="eip-shelf__grabber"
+                            style={{ width: 40, background: palette.shelfGrab }}
+                        />
+                    </Box>
+                    {/* Slide wrapper for the entry-tab pager (see the effect above).
+                        Transparent to layout: it repeats the body's own flex sizing. */}
+                    <Box
+                        ref={slideRef}
+                        className="eip-entry-slide"
+                        sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
+                    >
+                    {compareTab ? (
+                        <CompareWorkspace
+                            ref={panelRef}
+                            state={compareTab}
+                            onSetSlot={onSetCompareSlot ?? (() => {})}
+                            onResult={onCompareResult ?? (() => {})}
+                            showPinyin
+                            showPinyinColor={showPinyinColor}
+                            onSegmentOpen={onExampleSegmentClick}
+                        />
+                    ) : (
+                        <InfoCardPanelBody
+                            ref={panelRef}
+                            currentEntry={currentEntry}
+                            selectedTab={selectedTab}
+                            onTabChange={onTabChange}
+                            breakdownItems={breakdownItems}
+                            showPinyinColor={showPinyinColor}
+                            isFlipped={isFlipped}
+                            onBreakdownItemClick={onBreakdownItemClick}
+                            onUsedInItemClick={onUsedInItemClick}
+                            onExampleSegmentClick={onExampleSegmentClick}
+                            onSpeak={onSpeak}
+                            onSpeakSentence={onSpeakSentence}
+                            speakingKey={speakingKey}
+                            selectedSenseIndex={selectedSenseIndex}
+                            showSynonymsRelated={showSynonymsRelated}
+                            definitionFooter={definitionFooter}
+                            // The entry header is drawn in the upper panel (above).
+                            hideEntryHeader
+                            // `pan-y`, NOT `none`. SheetPanel decides between growing the sheet
+                            // and scrolling the pane on the gesture's first committed move, and
+                            // it expresses "scroll" by NOT calling preventDefault — the browser
+                            // pans the pane natively. With `none` the browser refuses that pan
+                            // and nothing scrolls once the sheet is at max height (the est tab,
+                            // the only pane tall enough to notice, just froze). Horizontal is
+                            // still ours: `pan-y` leaves the tab-swipe free to preventDefault.
+                            scrollTouchAction="pan-y"
+                            headerDragBind={bindHeaderDrag}
+                        />
+                    )}
+                    </Box>
                 </Box>
+                </>
             )}
         </SheetPanel>
+        </EipPaletteProvider>
     );
 });
 

@@ -48,8 +48,7 @@ import { SAFE_TOP } from "../../theme/safeArea";
 // the platform top while every
 // pinned card still unsorted flies from its cell back to its slot; the panel (with the
 // ghosts) unmounts at the same instant, uncovering the real cards exactly beneath them.
-// The ghosts portal to <body> in viewport coordinates (as scp's FallingCardGhost does),
-// so the clip never cuts them off.
+// The ghosts portal to <body> in viewport coordinates, so the clip never cuts them off.
 //
 // LAYER: feature view (features/discover). Its grid state is `useQuickMarkGrid`; every
 // pack-level consequence of a swipe is the HOST's (SortCardsPage), through the callbacks.

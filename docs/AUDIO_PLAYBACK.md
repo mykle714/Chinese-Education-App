@@ -85,10 +85,13 @@ stays the grey header-chip pill. The chip passes `tone="blu"` to `HeaderCycleChi
 every other header toggle keeps the shared ink inversion. On a game ground,
 `gameSurfaceSx` re-inks active header chips but deliberately skips the blu tone
 (`.page-header__toggle--blu`), so the chip looks the same on every game surface.
-**One exception: the Deck Tower study header** passes `tone="bare"` with white `ink` — no
-fill — the glyph and label in plain white in every state, bundled by a thin white pill
-outline it passes through `sx`, so it does not draw the eye off the card (docs/DECK_TOWER.md § Studying the tower → "The audio chip").
-*Code:* `src/components/AudioModeChip.tsx` (`tone`, `ink`, `sx`, `fitLabels`, `iconPx`),
+**One exception: the `outlined` skin**, for scene grounds — no fill, the glyph and label
+in the passed `ink` in every state (12 px type, 15 px glyph), bundled by a thin pill outline
+in that same ink (`AudioModeChip` → `OUTLINED_SX`) and boxed to the longest label, so it does
+not draw the eye off the card. Used by the Deck Tower study header (white on the sky —
+docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the scp (its ground look's
+`ink` — docs/SORT_CARDS_REQUIREMENTS.md).
+*Code:* `src/components/AudioModeChip.tsx` (`outlined`, `tone`, `ink`, `sx`, `fitLabels`, `iconPx`),
 `src/components/PageHeader.tsx` → `HeaderCycleChip` (`tone`, `ink`, `sx`, `fitLabels`, `iconPx`), `src/games/shared/gameSurface.ts` → `gameSurfaceSx`,
 `src/features/flashcards/FlashcardsLearnPage/TowerStudyHeader.tsx`.
 

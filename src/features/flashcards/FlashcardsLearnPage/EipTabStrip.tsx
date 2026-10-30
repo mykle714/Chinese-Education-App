@@ -1,6 +1,8 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { Box } from "@mui/material";
+import Icon from "../../../components/Icon";
 import { EipTabStripContainer, EipEntryTab, EIP_PILL_IN_MS } from "./styled";
+import { useEipColors } from "./useEipPalette";
 import { useDragScroll } from "../../../hooks/useDragScroll";
 import type { EipTab } from "./useEipTabs";
 
@@ -8,44 +10,43 @@ interface EipTabStripProps {
     tabs: EipTab[];
     activeIndex: number;
     onSelect: (index: number) => void;
-    // Latched to true the moment a 2nd tab is first opened; stays true even if
-    // tabs are closed back to 1 so the strip remains visible for the panel's life.
-    isTabbedMode: boolean;
+    // useEipTabs.trailShown — false until the learner first navigates to another word. While
+    // false the strip keeps its (empty) slot so the trail row's caret / Add key do not move.
+    showCrumbs?: boolean;
 }
 
-// The WORD TRAIL (`.wtrail`, artboards 20/24/25): the words opened in this panel, as
-// filled pills. Rendered between the grabber and the entry header.
+// The WORD TRAIL (`.trail`, Tower Tier 2 design): the words opened in this panel as a
+// breadcrumb (`过去 › 去`). Rendered by EipUpperPanel's trail row, which also carries the
+// panel's down caret (close) and (Dictionary eip) the Add key, so the ROW is always there; the crumbs
+// themselves stay hidden until the learner first navigates to another word (`showCrumbs`).
 //
-// ⚠️ THERE IS NO ✕ ON THIS ROW ANY MORE. The strip once drew the panel's only close
-// button; that became SheetPanel's single close cluster (SheetCloseX + the minute-points
-// flame), which for a while SLID DOWN into this row when the strip appeared — so the strip
-// reserved a 41px `CLOSE_COLUMN_PX` on the right to keep the pill list from running under
-// it. The cluster now lives permanently in the panel's header and never moves
-// (2026-09-05), so that reservation is gone and the trail gets the full width back. What
-// the ✕ DOES is still the trail's rule (close the showing word; the last one closes the
-// panel) — the host page passes that in as SheetPanel's `onCloseX`.
+// It is a STACK (useEipTabs): the showing word is always the LAST crumb. Tapping an earlier
+// crumb pops everything above it (`onSelect` = useEipTabs.popTo); Escape pops the top, and
+// popping the root closes the panel — the host passes that in as InfoCardSection's `onCloseX`.
+// Docs: docs/EIP_SHEET_GESTURES.md § The trail is a breadcrumb stack.
 //
-// ⚠️ THE ROW SCROLLS (2026-09-06). It used to be a fixed row that REFUSED any word that
-// would not fit (`fitsNewTab` in useEipTabs, now deleted), because a pill hanging off the
-// edge reads as "scroll for more" on a row that does not scroll. It scrolls now, so that
-// reading is correct and the trail is capped by COUNT instead (`MAX_EIP_TABS` = 50).
-// Touch pans it natively (`touch-action: pan-x`); desktop drags it with the shared
+// ⚠️ THE ROW SCROLLS (2026-09-06). The trail is capped by COUNT (`MAX_EIP_TABS` = 50), not
+// width. Touch pans it natively (`touch-action: pan-x`); desktop drags it with the shared
 // `useDragScroll` mouse-drag hook, the same gesture the card shelves use.
-//
-// Hidden entirely when only the root entry is open — a trail of one is not a trail.
-function EipTabStrip({ tabs, activeIndex, onSelect, isTabbedMode }: EipTabStripProps) {
-    const isVisible = isTabbedMode;
+function EipTabStrip({ tabs, activeIndex, onSelect, showCrumbs = true }: EipTabStripProps) {
+    const colors = useEipColors();
     // The scroller (the pill row), not the padded container: it is what overflows.
     const listRef = useRef<HTMLDivElement | null>(null);
     // Desktop click-and-drag panning. Touch already pans natively via touch-action.
     useDragScroll(listRef);
 
-    // Keep the showing word on screen. A tab is normally APPENDED, so without this the
-    // pill for the word the panel just opened would sit past the right edge — the strip
-    // would look unchanged at the very moment it changed. Also covers selecting a tab
-    // that is only partly visible, and the closing of a tab shifting the active index.
-    // `inline: "nearest"` scrolls the minimum distance, so an already-visible pill does
-    // not move; `block: "nearest"` keeps it from scrolling any ancestor vertically.
+    // Keep the showing word (the last crumb) on screen. A pushed word is APPENDED, so
+    // without this its crumb would sit past the right edge — the strip would look
+    // unchanged at the very moment it changed. A pop needs it too: the new last crumb may
+    // have been scrolled off to the left.
+    // Scrolls the minimum distance, so an already-visible pill does not move.
+    //
+    // ⛔ NOT `scrollIntoView`. That scrolls EVERY scrollable ancestor to reveal the pill —
+    // `block: "nearest"` included, whenever the pill is off-screen vertically. During the
+    // sheet's open slide (SheetPanel "Entry slide") the whole sheet is still below the
+    // frame, so opening Compare (which pushes a second crumb) scrolled the phone frame
+    // itself; the frame is `overflow: hidden`, so nothing ever scrolled it back and the app
+    // stayed shifted (2026-10-30). Only the pill row's own scrollLeft is moved here.
     //
     // Run TWICE: once now, and once after the pill's entrance animation (`eipPillIn`
     // widens it from max-width 0). Scrolling to a pill that is still mid-entrance aims at
@@ -53,29 +54,33 @@ function EipTabStrip({ tabs, activeIndex, onSelect, isTabbedMode }: EipTabStripP
     // what actually finishes the job for a just-pushed tab; for an already-mounted pill
     // it is a no-op (`nearest` on a fully visible target scrolls nothing).
     useEffect(() => {
-        if (!isVisible) return;
         const scrollActiveIntoView = () => {
-            const pill = listRef.current?.children[activeIndex] as HTMLElement | undefined;
-            pill?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+            const list = listRef.current;
+            const pill = list?.querySelector<HTMLElement>(`[data-trail-index="${activeIndex}"]`);
+            if (!list || !pill) return;
+            // Horizontal only, in viewport px (a vertical transform does not change these).
+            const listRect = list.getBoundingClientRect();
+            const pillRect = pill.getBoundingClientRect();
+            const delta = pillRect.left < listRect.left
+                ? pillRect.left - listRect.left
+                : pillRect.right > listRect.right ? pillRect.right - listRect.right : 0;
+            if (delta !== 0) list.scrollBy({ left: delta, behavior: "smooth" });
         };
         scrollActiveIntoView();
         const timer = window.setTimeout(scrollActiveIntoView, EIP_PILL_IN_MS);
         return () => window.clearTimeout(timer);
-    }, [activeIndex, tabs.length, isVisible]);
+    }, [activeIndex, tabs.length, showCrumbs]);
 
     return (
-        <EipTabStripContainer
-            className="eip-entry-tab-strip"
-            sx={isVisible ? undefined : { padding: 0, minHeight: 0 }}
-        >
-            {isVisible && (
+        <EipTabStripContainer className="eip-entry-tab-strip">
+            {(
                 <Box
                     ref={listRef}
                     className="eip-entry-tab-list"
                     sx={{
                         display: "flex",
                         alignItems: "center",
-                        gap: "7px",
+                        gap: "2px",
                         flex: 1,
                         minWidth: 0,
                         overflowX: "auto",
@@ -92,16 +97,30 @@ function EipTabStrip({ tabs, activeIndex, onSelect, isTabbedMode }: EipTabStripP
                         "&::-webkit-scrollbar": { display: "none" },
                     }}
                 >
-                    {tabs.map((tab, i) => (
-                        <EipEntryTab
-                            key={tab.id}
-                            isActive={i === activeIndex}
-                            toneColor={tab.toneColor}
-                            onClick={() => onSelect(i)}
-                            className={`eip-entry-tab eip-entry-tab--${i === activeIndex ? "active" : "inactive"}`}
-                        >
-                            {tab.kind === "compare" ? "Compare" : tab.entry.entryKey}
-                        </EipEntryTab>
+                    {showCrumbs && tabs.map((tab, i) => (
+                        <Fragment key={tab.id}>
+                            {/* `.trail > .ms` — the breadcrumb chevron between words. */}
+                            {i > 0 && (
+                                <Icon
+                                    name="chevron_right"
+                                    className="eip-entry-tab-separator"
+                                    size={16}
+                                    color={colors.muted}
+                                    sx={{ flexShrink: 0 }}
+                                />
+                            )}
+                            <EipEntryTab
+                                data-trail-index={i}
+                                isActive={i === activeIndex}
+                                toneColor={tab.toneColor}
+                                ink={colors.ink}
+                                muted={colors.muted}
+                                onClick={() => onSelect(i)}
+                                className={`eip-entry-tab eip-entry-tab--${i === activeIndex ? "active" : "inactive"}`}
+                            >
+                                {tab.kind === "compare" ? "Compare" : tab.entry.entryKey}
+                            </EipEntryTab>
+                        </Fragment>
                     ))}
                 </Box>
             )}

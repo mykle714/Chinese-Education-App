@@ -49,7 +49,7 @@ function fakeDal(cards: FakeCard[], initialSlots: MemoryMapSlotRow[] = []) {
             entryKey: c.entryKey,
             language: 'zh',
             readingCategory: 'Unfamiliar',
-            isLent: c.lent,
+            starterPackBucket: c.lent ? 'provisional' : null,
             definition: c.definition ?? `def-${c.id}`,
           })
         );

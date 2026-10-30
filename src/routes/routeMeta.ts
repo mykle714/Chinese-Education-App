@@ -95,7 +95,7 @@ export interface RouteMeta {
   footerTab?: FooterTab;
   /**
    * How the footer bar is drawn here. Omit for the app-wide flat `bar`; `slab` is the
-   * floating flashcard slab (Tower Style design), worn only by /deck-tower for now.
+   * floating flashcard slab (Tower Style design), worn by /deck-tower, the Dictionary tab and scp.
    * Meaningless without `footerTab`. See MobileFooter / docs/DECK_TOWER.md § Footer.
    */
   footerStyle?: FooterStyle;
@@ -125,7 +125,15 @@ const PAGE_ROUTES: RouteMeta[] = [
     footerTab: "home",
     note: "Legacy path of the fdp, which became Home (`/`) on 2026-10-10 — redirects there so older links and bookmarks keep working.",
   },
-  { path: "/dictionary", access: "any", shell: "frame", chrome: "tab", footerTab: "dictionary" },
+  {
+    path: "/dictionary",
+    access: "any",
+    shell: "frame",
+    chrome: "tab",
+    footerTab: "dictionary",
+    footerStyle: "slab",
+    note: "Wears the Deck Tower's slab footer since the 2026-10-29 Tier-2 redesign (docs/SHELF_REDESIGN.md § 7b).",
+  },
 
   // ── Node pages (slide from the right) ──
   // Reader, Games, Arena, Friends and Community are reached from Menu, so they keep
@@ -192,12 +200,15 @@ const PAGE_ROUTES: RouteMeta[] = [
 
   // Card-detail pages keep the tab of wherever they were reached from.
   { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary" },
+  { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary", footerStyle: "slab" },
 
   // Sort Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so scp is a
   // drill-in from Home (the decks rail's Sort shortcut) and lights the Home tab. The
   // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
-  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // Wears the floating `slab` footer since its Tower Tier 2 re-skin (2026-10-29): the page
+  // is a tier-2 ground under the Deck Tower, and the slab casts its shadow on that ground
+  // (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
+  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "home", footerStyle: "slab" },
 
   // ── Leaf pages (slide up, no footer) ──
   { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },

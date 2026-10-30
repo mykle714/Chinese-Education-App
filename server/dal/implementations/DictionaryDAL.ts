@@ -1,6 +1,6 @@
 import { IDictionaryDAL } from '../interfaces/IDictionaryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import type { Language, DictionarySearchRanking } from '../../types/index.js';
+import type { Language, DictionarySearchRanking, DictionaryMatchKind } from '../../types/index.js';
 import { DictionaryEntry, DictionaryEntryCreateData, ParticleClassifierEntry, DefinitionCluster } from '../../types/index.js';
 import { ValidationError } from '../../types/dal.js';
 import { generateShortDefinition, resolveLongDefinition, type LongDefinitionValue, type LongDefinitionSense } from '../../utils/definitions.js';
@@ -123,7 +123,8 @@ const RELEVANCE_ORDER_BY = `LENGTH(word1), "frequencyScore" DESC NULLS LAST, wor
  * ⚠️ THIS USED TO BE `definitions->>0` — THE FIRST SENSE ONLY — AND THAT WAS A BUG (fixed
  * 2026-09-09). The justification on record was that the search should only match text the
  * result card actually displays. That stopped being true: `src/components/DictionaryEntryRow.tsx`
- * renders `entry.definitions.map(stripParentheses).join('; ')`, i.e. ALL senses. So the card
+ * renders every sense (`resolveSearchRowView` → `definitions`, through
+ * `src/utils/definitionUtils.ts` → `joinDefinitionList`), i.e. ALL senses. So the card
  * showed 我 as "I; me; my" while a search for "me" could not find it — `definitions[0]` is "I".
  * Worse, the search DID return 咱 "I or me" and 麿 "I, me", whose first gloss happens to carry
  * the word: it found the obscure pronouns and missed the one every learner wants.
@@ -156,6 +157,22 @@ const STRIPPED_ALL_GLOSSES = `regexp_replace(definitions::text, '\\s*\\([^)]*\\)
  * without it those senses would be invisible to the equality.
  */
 function completeGlossMatch(param: string): string {
+  return anyNormalizedSense(`= ${param}`);
+}
+
+/**
+ * Predicate: does ANY single sense of the entry, normalized as in `completeGlossMatch`, START
+ * with the term as a whole word — "long life", "long-term" for "long", but not "longevity"
+ * (`param` is `^<escaped term>\y`). The ladder's "English starts with" bucket (3), added
+ * 2026-10-29: it splits the old partial-English bucket into a sense that LEADS with the term
+ * (ranked above partial pinyin) and one that merely contains it (the "other" tail).
+ */
+function prefixGlossMatch(param: string): string {
+  return anyNormalizedSense(`~ ${param}`);
+}
+
+/** EXISTS over the entry's senses (split on `'; '`, parentheses and a leading marker stripped, lowercased). */
+function anyNormalizedSense(test: string): string {
   return `EXISTS (
               SELECT 1
               FROM jsonb_array_elements_text(definitions) AS d,
@@ -163,7 +180,7 @@ function completeGlossMatch(param: string): string {
               WHERE regexp_replace(
                       btrim(lower(regexp_replace(sense, '\\s*\\([^)]*\\)', '', 'g'))),
                       '${GLOSS_LEADING_MARKER_SQL}', ''
-                    ) = ${param}
+                    ) ${test}
             )`;
 }
 
@@ -340,6 +357,19 @@ const DEFAULT_READING_SQL = `COALESCE((
                           THEN (t.c->>'frequencyScore')::numeric ELSE -1 END DESC, t.i
             LIMIT 1
           ), lower("numberedPinyin"))`;
+
+/**
+ * The ranking ladder's buckets (searchByWord1 → RANKING), by number, as the wire names them.
+ * Keep in step with the ladder's CASE: a reordered bucket must be reordered here too.
+ */
+const LADDER_MATCH_KINDS: readonly DictionaryMatchKind[] = [
+  'meaning-exact',
+  'word-exact',
+  'reading-alternate',
+  'meaning-prefix',
+  'word-prefix',
+  'meaning-partial',
+];
 
 /**
  * Re-anchor a `^`-anchored pinyin regex so it matches ANY one reading inside
@@ -700,17 +730,19 @@ export class DictionaryDAL implements IDictionaryDAL {
                               ("long" → 龙 lóng; es "casa" → casa)
         2  complete alternate another reading of the row IS the term, but not the one it
                               displays ("ma2" → 吗, whose default sense reads "ma"). zh only.
-        3  partial word       the term is a leading prefix     ("long" → 龙头; es → casarse)
-        4  partial English    the term sits inside a sense     ("long" → 寿 "long life")
+        3  English prefix     a sense STARTS with the term as a whole word
+                              ("long" → 寿 "long life"; not "longevity")
+        4  partial word       the term is a leading prefix     ("long" → 龙头; es → casarse)
+        5  partial English    the term sits inside a sense without leading it
+                              ("art" → 美术 "fine arts") — the "Other" tail
 
       "Word" is `word1` in both languages, plus the pronunciation/numberedPinyin regexes for zh.
-      Buckets 1–2 and 3 differ by a single trailing `$`: an anchored match versus a prefix.
+      Buckets 1–2 and 4 differ by a single trailing `$`: an anchored match versus a prefix.
 
-      Every complete match outranks every partial one; English leads the complete pair, pinyin
-      leads the partial pair. The asymmetry is deliberate: someone typing a whole English word
-      usually means it, so an exact gloss is the best answer available — but a PARTIAL pinyin
-      match is usually someone still typing a syllable, which says far more than an English word
-      merely appearing inside a longer definition.
+      Every complete match outranks every partial one, and English leads at each level:
+      complete English, complete word, English starts-with, word starts-with, then the rest
+      (owner's order, 2026-10-29 — it replaced "pinyin leads the partial pair", which put
+      龙头-style prefixes above 寿 "long life"). A sense merely CONTAINING the term ranks last.
 
       WHY THIS REPLACED THE OLD TWO-BUCKET ORDER EVERYWHERE. Before the split, the whole word
       side was ordered by headword length, so a term with many prefix matches buried the exact
@@ -724,7 +756,7 @@ export class DictionaryDAL implements IDictionaryDAL {
       value names predate this convergence and are worth revisiting — see
       `DictionarySearchRanking` in contracts/wire.ts.
 
-      SPANISH USES THE SAME FOUR BUCKETS, with the HEADWORD in pinyin's slot (decided
+      SPANISH USES THE SAME BUCKETS (never 2), with the HEADWORD in pinyin's slot (decided
       2026-09-09; this reverses an earlier two-buckets-for-es call). es has no pronunciation
       column, so "complete pinyin" there means `word1` equals the term and "partial pinyin"
       means it is a prefix — the same complete/partial distinction, read off the only
@@ -774,6 +806,9 @@ export class DictionaryDAL implements IDictionaryDAL {
       // "me" instead of merely a partial one — it IS the word, in its second sense.
       const normalizedTerm = searchTerm.trim().replace(GLOSS_LEADING_MARKER_JS, '');
       const completeEnglishExpr = completeGlossMatch(nextRankParam(normalizedTerm));
+      // English starts-with: a sense that LEADS with the term as a whole word ("long life").
+      const escapedNormalizedTerm = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const prefixEnglishExpr = prefixGlossMatch(nextRankParam(`^${escapedNormalizedTerm}\\y`));
 
       // Complete word side: the same fields as `wordMatchExpr`, matched WHOLE instead of as a
       // prefix. Equality rather than ILIKE, so a term containing `%` or `_` cannot turn the
@@ -819,18 +854,19 @@ export class DictionaryDAL implements IDictionaryDAL {
       }
 
       // A CASE ladder, so precedence needs no extra predicates: a row that is both a complete
-      // English and a complete word match takes 0, and bucket 3 is the ELSE by elimination —
+      // English and a complete word match takes 0, and bucket 5 is the ELSE by elimination —
       // the WHERE guarantees every row matched something, so anything reaching it matched a
-      // gloss without matching the word side.
+      // gloss (not leading any sense) without matching the word side.
       // Buckets: 0 complete English, 1 complete MAIN reading/headword, 2 complete ALTERNATE
-      // reading (zh only — es has no readings, so it never lands here), 3 partial word,
-      // 4 partial English.
+      // reading (zh only — es has no readings, so it never lands here), 3 English starts-with,
+      // 4 partial word, 5 partial English (the rest: the term inside a sense, not leading it).
       rankExpr = `CASE
           WHEN (${completeEnglishExpr}) THEN 0
           WHEN (${primaryWordParts.join(' OR ')}) THEN 1${completeWordParts.length > 0 ? `
           WHEN (${completeWordParts.join(' OR ')}) THEN 2` : ''}
-          WHEN (${wordMatchExpr}) THEN 3
-          ELSE 4
+          WHEN (${prefixEnglishExpr}) THEN 3
+          WHEN (${wordMatchExpr}) THEN 4
+          ELSE 5
         END`;
     }
 
@@ -886,11 +922,11 @@ export class DictionaryDAL implements IDictionaryDAL {
         // both languages.
         //
         // The head samples per HEAD GROUP rather than per bucket: buckets 1 and 2 (main vs
-        // alternate complete reading) share one group, so the head stays the documented
-        // 0,0,1,1,2,2,3,3 shape — the split only decides which complete-word rows fill that
+        // alternate complete reading) share one group, so the head is 0,0,1,1,3,3,4,4,5,5 by
+        // bucket (five groups, two each) — the split only decides which complete-word rows fill that
         // group's two slots. `bucketPos` orders by bucket first, so main readings fill them first.
         return await client.query(`
-          SELECT ${DICTIONARY_COLUMNS}
+          SELECT ${DICTIONARY_COLUMNS}, "rankBucket"
           FROM (
             SELECT bucketed.*,
               ROW_NUMBER() OVER (
@@ -913,11 +949,13 @@ export class DictionaryDAL implements IDictionaryDAL {
 
       // Search with regex for pronunciation (accent-agnostic + word boundaries), LIKE for word1/definitions
       // Exclude results where pronunciation ends in 'g' immediately after the search term
+      // The bucket is SELECTED (not only sorted on) so each row can say how it matched
+      // (`matchKind`, below); ORDER BY then sorts on the output column.
       return await client.query(`
-        SELECT ${dictionaryColumns(language)}
+        SELECT ${dictionaryColumns(language)}, (${rankExpr}) AS "rankBucket"
         FROM ${table}${whereSql}
         ORDER BY
-          ${rankExpr},
+          "rankBucket",
           ${RELEVANCE_ORDER_BY}
         LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
       `, entriesParams);
@@ -928,8 +966,18 @@ export class DictionaryDAL implements IDictionaryDAL {
 
     console.log(`[DICTIONARY-DAL] ✅ Found ${entriesResult.recordset.length}/${total} matches in ${queryTime.toFixed(2)}ms`);
 
+    // Name each row's bucket. The ladder's numbers mean the five kinds; the two-bucket
+    // fallback's 0 is "a word match" whose completeness was never tested (see DictionaryMatchKind).
+    const matchKindOf = (bucket: unknown): DictionaryMatchKind => {
+      if (rankExpr === twoBucketRankExpr) return 'word';
+      return LADDER_MATCH_KINDS[Number(bucket)] ?? 'word';
+    };
+
     return {
-      entries: entriesResult.recordset.map(row => this.mapRowToEntity(row)),
+      entries: entriesResult.recordset.map(row => ({
+        ...this.mapRowToEntity(row),
+        matchKind: matchKindOf(row.rankBucket),
+      })),
       total: total
     };
   }

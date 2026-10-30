@@ -1,8 +1,8 @@
 /**
  * useHorizontalScrollArrows — the "a mouse cannot swipe" problem, solved once.
  *
- * LAYER: shared client logic (`src/hooks/`, per FRONTEND_LAYERING.md — two feature
- * importers: the beginner keyboard's candidate row and the iw composer's hint tray).
+ * LAYER: shared client logic (`src/hooks/`, per FRONTEND_LAYERING.md — importers: the
+ * beginner keyboard's candidate row and the iw composer's hint tray).
  *
  * ── Why this exists ──────────────────────────────────────────────────────────────────
  * The app has several horizontally-overflowing strips of chips. A touch user just swipes

@@ -1,11 +1,9 @@
-import React, { Suspense, lazy, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { FONTS } from "../../theme/fonts";
-import { cjkFontStack, ensureCjkFontLoaded, resolveCjkFont } from "../../theme/cjkFontOptions";
 import { WEIGHT } from "../../theme/scale";
 import MobileTabScreen from "../../components/MobileTabScreen";
 import { SLAB_FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
-import { setFooterSlabFilter } from "../../components/footerCastShadow";
 import {
     BOB_HEIGHT,
     CARD_THICKNESS,
@@ -20,7 +18,6 @@ import {
     projectOutline,
     roundedRectWorld,
     shadowFootprint,
-    washColorMatrix,
     type CloudSky,
     type WindSky,
 } from "./iso";
@@ -113,10 +110,6 @@ const StudySession = lazy(() =>
  * non-scrolling MobileTabScreen and ends with a FooterSpacer: the scene shrinks to fit
  * above the footer bar rather than sliding under it. Still experimental.
  */
-
-/** ⚠️ TEMP font trial: the face the whole tower flow renders in, overriding the account's
- *  typeface setting (a CJK_FONT_CATALOG id — src/theme/cjkFontOptions.ts). */
-const TOWER_FONT_ID = "975-maru";
 
 /** Screen px per world unit before the viewBox scales the scene to the frame. */
 const UNIT = 20;
@@ -386,18 +379,11 @@ const DeckTowerPage: React.FC = () => {
     const light = timeOfDay.light;
     // The page's own white things painted on the sky (title, arrows, speed lines) — lit too.
     const skyInk = light.wash(ISO.white);
-    // The flp session is HTML over the scene, out of the iso kit's reach: it is lit by the
-    // same wash as an SVG colour-matrix filter on its layer (iso/wash.ts → washColorMatrix;
-    // docs/DECK_TOWER.md § "Time of day" → "The wash"). None by day.
-    const studyWashFilterId = `deck-tower-study-wash-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    const studyWashMatrix = useMemo(() => washColorMatrix(light.wash), [light.wash]);
-    // The slab footer is cut from the same card stock as the tower, so it is lit by the same
-    // filter (docs/DECK_TOWER.md § Footer → "Lit by the wash"). It renders outside this page,
-    // so the filter travels as a root CSS custom property; cleared by day and on unmount.
-    useEffect(() => {
-        setFooterSlabFilter(studyWashMatrix ? `url(#${studyWashFilterId})` : null);
-        return () => setFooterSlabFilter(null);
-    }, [studyWashMatrix, studyWashFilterId]);
+    // The flp session (HTML over the scene) and the slab footer are NOT washed. They used to
+    // be, through an SVG feColorMatrix `url()` filter, but WebKit rasterises an SVG filter on
+    // HTML on the CPU: every repaint inside the session (a key press, the eip opening)
+    // re-filtered the whole layer, which made the flp's taps lag at night. Cut 2026-10-30
+    // (docs/DECK_TOWER.md § "Time of day" → "The wash").
     const pan = useWorldPan((id) => ({ sky: light.skyOf(TOWER_WORLDS[id]), space: TOWER_WORLDS[id].space }));
     // The world on screen. One whose goal is switched off while it is up falls back to main.
     const worldId: TowerWorldId = shownWorlds.includes(pan.world) ? pan.world : "core";
@@ -482,22 +468,6 @@ const DeckTowerPage: React.FC = () => {
     });
 
     const world = useMemo(() => litWorld(TOWER_WORLDS[worldId], light), [worldId, light]);
-    // ⚠️ TEMP font trial: re-face the whole tower flow — the flp session and the sheets
-    // and popups it portals to <body> included — in 975 Maru SC, REGARDLESS of the
-    // account's Chinese typeface setting. Done by shadowing `--cjk-font` on <body>: the
-    // account's choice stays on :root (useChineseFont's sole write), and everything under
-    // <body> inherits this override instead, so FONTS.cjk and the `.tower-font-trial`
-    // rule in src/index.css both resolve to 975 Maru while the tower is mounted.
-    useEffect(() => {
-        const towerFont = resolveCjkFont(TOWER_FONT_ID);
-        ensureCjkFontLoaded(towerFont);
-        document.body.style.setProperty("--cjk-font", cjkFontStack(towerFont));
-        document.body.classList.add("tower-font-trial");
-        return () => {
-            document.body.classList.remove("tower-font-trial");
-            document.body.style.removeProperty("--cjk-font");
-        };
-    }, []);
     const worldIndex = shownWorlds.indexOf(worldId);
     const leftWorld = worldIndex > 0 ? shownWorlds[worldIndex - 1] : undefined;
     const rightWorld = worldIndex < shownWorlds.length - 1 ? shownWorlds[worldIndex + 1] : undefined;
@@ -1174,15 +1144,6 @@ const DeckTowerPage: React.FC = () => {
                     moment its tower is tapped — but clipped away to nothing (clip-path also
                     hides its children whatever their own visibility, and takes no hits). The
                     studied one fades in with the dive and takes input once the camera is down. */}
-                {/* The time-of-day wash as a filter for the study layers (see studyWashMatrix).
-                    sRGB interpolation: the wash is defined on sRGB hex, not linear light. */}
-                {studyWashMatrix && (
-                    <svg className="deck-tower-page__study-wash-defs" width={0} height={0} aria-hidden style={{ position: "absolute" }}>
-                        <filter id={studyWashFilterId} colorInterpolationFilters="sRGB">
-                            <feColorMatrix type="matrix" values={studyWashMatrix} />
-                        </filter>
-                    </svg>
-                )}
                 {study.sessions.map(({ key, host }) => (
                     <Box
                         key={key}
@@ -1196,9 +1157,6 @@ const DeckTowerPage: React.FC = () => {
                             flexDirection: "column",
                             opacity: host.parked ? 0 : sessionOpacity,
                             clipPath: host.parked ? "inset(50%)" : undefined,
-                            // Studied layer only: an svg `url()` filter on HTML is drawn on the
-                            // CPU in most browsers, and a parked layer shows nothing to light.
-                            filter: studyWashMatrix && !host.parked ? `url(#${studyWashFilterId})` : undefined,
                             pointerEvents: !host.parked && study.phase === "studying" ? "auto" : "none",
                         }}
                     >

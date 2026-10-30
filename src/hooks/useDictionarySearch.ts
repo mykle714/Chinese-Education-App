@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { API_BASE_URL } from "../constants";
 import { hasChinese } from "../utils/textUtils";
 import { authHeader } from "../utils/authHeader";
@@ -20,10 +20,12 @@ interface UseDictionarySearchResult {
   isSegmentMode: boolean;
   loading: boolean;
   error: string | null;
-  page: number;
-  setPage: (page: number) => void;
   total: number;
-  totalPages: number;
+  // Continuous loading (2026-10-29 — the dictionary replaced pagination with infinite
+  // scroll). Regular search only; segment mode returns everything in one response.
+  hasMore: boolean;                  // another page exists past what `entries` holds
+  loadingMore: boolean;              // a next-page fetch is in flight (results stay on screen)
+  loadMore: () => void;              // append the next page; no-op while loading / at the end
   clearSearch: () => void;
   // AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Only meaningful for a
   // zero-result pinyin query; the community search bar ignores these.
@@ -40,20 +42,22 @@ interface UseDictionarySearchResult {
 /**
  * Shared dictionary-search behavior for DictionaryPage and CommunitySearchBar: a 400ms-debounced
  * query that switches between CJK segment mode (`GET /api/dictionary/segment`, one exact +
- * "starts with" group per sub-word segment) and plain paginated search (`GET
- * /api/dictionary/search`, honors numbered-pinyin queries like "jian4 shen1" — see
+ * "starts with" group per sub-word segment) and plain search (`GET /api/dictionary/search`,
+ * honors numbered-pinyin queries like "jian4 shen1" — see
  * server/dal/implementations/DictionaryDAL.ts `buildNumberedPinyinPattern`) for everything else.
- * `limit` defaults to the dictionary page's page size; callers that don't paginate (e.g. the
- * community search bar) can pass a smaller one and ignore `page`/`totalPages`.
  *
- * `initial` seeds the query + page on mount so a caller can RESTORE prior state (the
- * dictionary page persists these across a drill-in to a cdp and back). The initial
- * debounce pass is skipped from the "new search → reset to page 1" rule so a restored
- * page survives mount.
+ * Plain search loads in pages of `limit` and APPENDS: `loadMore` fetches the next page and
+ * adds it to `entries` (the dictionary page calls it from a scroll sentinel). Callers that
+ * want only the first page (the community search bar, DictionaryWordSearch) pass a smaller
+ * `limit` and never call `loadMore`.
+ *
+ * `initial.search` seeds the query on mount so a caller can RESTORE it (the dictionary page
+ * persists it across leaving and re-entering the page). Only the first page is restored —
+ * appended pages are not, so a restored scroll position past page one clamps to its end.
  */
 export function useDictionarySearch(
   limit: number = 50,
-  initial?: { search?: string; page?: number },
+  initial?: { search?: string },
 ): UseDictionarySearchResult {
   const [searchInput, setSearchInputState] = useState(initial?.search ?? "");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initial?.search ?? "");
@@ -61,7 +65,10 @@ export function useDictionarySearch(
   const [segmentGroups, setSegmentGroups] = useState<SegmentGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(initial?.page ?? 1);
+  // How many pages of the current term are loaded. Page 1 REPLACES the results; any
+  // later page APPENDS to them (see the fetch effect).
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [aiEntry, setAiEntry] = useState<AiDictionaryEntry | null>(null);
@@ -76,25 +83,53 @@ export function useDictionarySearch(
 
   const setSearchInput = (value: string) => setSearchInputState(value);
 
-  // Debounce search input. The first pass (on mount) must NOT reset the page — it
-  // would clobber a restored `initial.page`. Only genuine user edits after mount
-  // reset to page 1.
-  const firstDebounce = useRef(true);
+  // Debounce search input. Both setters run in one timeout callback, so React batches
+  // them into ONE fetch-effect run for (new term, page 1) — never page N of a new term.
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchInput);
-      if (firstDebounce.current) {
-        firstDebounce.current = false;
-        return;
-      }
-      setPage(1); // Reset to first page on new search
+      setPage(1);
     }, 400);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Fetch search results — switches between segment mode (CJK input) and regular paginated search.
+  // Fetch search results — switches between segment mode (CJK input) and regular search.
   useEffect(() => {
     let cancelled = false;
+
+    // ── A later page: APPEND, and leave everything else (AI state, the results
+    // already on screen, the total) alone. Only regular search ever gets here.
+    const fetchNextPage = async () => {
+      setLoadingMore(true);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/dictionary/search?term=${encodeURIComponent(debouncedSearchTerm)}&page=${page}&limit=${limit}`,
+          { headers: authHeader(), credentials: "include" },
+        );
+        if (cancelled) return;
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          setError(errorData.error || "Failed to load more results");
+          return;
+        }
+        const data = await response.json();
+        const next: DictionaryEntry[] = data.entries || [];
+        // De-dupe by id: if the ranking shifted between requests a row can straddle
+        // a page boundary, and a duplicate React key would drop or repeat a row.
+        setEntries((prev) => {
+          const seen = new Set(prev.map((e) => e.id));
+          return [...prev, ...next.filter((e) => !seen.has(e.id))];
+        });
+        setTotal(data.pagination?.total || 0);
+        setTotalPages(data.pagination?.totalPages || 1);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Error loading more dictionary results:", err);
+        setError("An error occurred while loading more results");
+      } finally {
+        if (!cancelled) setLoadingMore(false);
+      }
+    };
 
     const fetchResults = async () => {
       // A new search invalidates any prior AI-fallback state (button + rendered card + notes).
@@ -166,17 +201,28 @@ export function useDictionarySearch(
       }
     };
 
-    fetchResults();
-    return () => { cancelled = true; };
+    if (page > 1) fetchNextPage();
+    else fetchResults();
+    return () => {
+      cancelled = true;
+      // A superseded append must not leave the spinner stuck on.
+      setLoadingMore(false);
+    };
     // `token` intentionally omitted: authHeader() reads it at call time, so a
     // silent refresh (~every 15 min) doesn't re-run the search. See CLAUDE.md
     // "Never reload on token refresh".
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchTerm, page, limit]);
+
+  const hasMore = !isSegmentMode && entries.length > 0 && page < totalPages;
+  const loadMore = () => {
+    if (loading || loadingMore || !hasMore) return;
+    setPage((p) => p + 1);
+  };
 
   const clearSearch = () => {
     setSearchInputState("");
     setDebouncedSearchTerm("");
+    setPage(1);
     setEntries([]);
     setSegmentGroups([]);
     setAiEntry(null);
@@ -239,10 +285,10 @@ export function useDictionarySearch(
     isSegmentMode,
     loading,
     error,
-    page,
-    setPage,
     total,
-    totalPages,
+    hasMore,
+    loadingMore,
+    loadMore,
     clearSearch,
     aiEntry,
     canAskAi,

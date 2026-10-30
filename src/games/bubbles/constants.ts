@@ -15,6 +15,7 @@
  */
 import { alpha } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
+import { INVALID_SHAKE_KEYFRAMES, INVALID_SHAKE_MS } from "../../theme/invalidShake";
 
 // ---- Bubble sizing (px radius) -------------------------------------------
 // Word bubbles hold the foreign headword (char + pinyin); definition bubbles
@@ -195,24 +196,16 @@ export const HELD_OVERDRAG_RADII = 1;
 
 // ---- Match feedback timing (ms) ------------------------------------------
 export const POP_DURATION_MS = 280; // green pop before a correct pair is removed
-export const WRONG_FEEDBACK_MS = 420; // red shake before a wrong pair is released
+export const WRONG_FEEDBACK_MS = INVALID_SHAKE_MS; // red shake before a wrong pair is released (the app's shake length)
 
 /**
- * The app's wrong-match SHAKE, as an MUI `sx` keyframes block: a damped side-to-side
- * wobble, run for WRONG_FEEDBACK_MS. Shared so every "no, not there" reads identically —
- * a wrong bubble (Bubble → `.bubble__inner`) and a wrong Bucket Drop bucket
- * (bucket-drop/DropBucket). Spread into `sx` beside an
- * `animation: \`bubbleShake ${WRONG_FEEDBACK_MS}ms ease-in-out\`` line.
+ * The app's wrong-match SHAKE — now the app-wide invalid-operation shake, which moved to
+ * src/theme/invalidShake.ts so features/ can share it (the sort cards page shakes a
+ * dragged already-sorted card). Kept under this name for the games: a wrong bubble
+ * (Bubble → `.bubble__inner`) and a wrong Bucket Drop bucket (bucket-drop/DropBucket).
+ * Spread into `sx` beside `animation: INVALID_SHAKE_ANIMATION`.
  */
-export const WRONG_SHAKE_KEYFRAMES = {
-    "@keyframes bubbleShake": {
-        "0%, 100%": { transform: "translateX(0)" },
-        "20%": { transform: "translateX(-6px)" },
-        "40%": { transform: "translateX(6px)" },
-        "60%": { transform: "translateX(-4px)" },
-        "80%": { transform: "translateX(4px)" },
-    },
-} as const;
+export const WRONG_SHAKE_KEYFRAMES = INVALID_SHAKE_KEYFRAMES;
 
 // ---- Post-run loop shutdown ----------------------------------------------
 // After a run ends the stage stays mounted behind the popup, but once the field

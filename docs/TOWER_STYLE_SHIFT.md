@@ -56,8 +56,9 @@ own cards:
   The writing flp's face is the exception: `WritingCardFace` pads itself by the rim plus
   `PANEL_CONTENT_GAP` (`insetPad`, never less than its plain-flp padding), so its header,
   cells and hint line all sit inside the panel.
-- **Not themed.** The tower is one lit scene in every theme; the page's study wash filter
-  supplies time-of-day light.
+- **Not themed.** The tower is one lit scene in every theme. Not washed at night either:
+  the study layer's SVG wash filter was cut 2026-10-30 (DECK_TOWER.md § Time of day →
+  "The wash").
 
 Only the tower-hosted flp sets `towerStock`. The routed flp, the cdp hero card and
 `ReadingSwipeGrid` keep the bento face.
@@ -70,10 +71,11 @@ Only the tower-hosted flp sets `towerStock`. The routed flp, the cdp hero card a
 | flp card stock (tower-hosted) | `CardFaceSide` `towerStock` | § Card stock above |
 | flp page buttons: Write it, Compare, More Info (tower-hosted) | `towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
 | flp study header + audio chip (tower-hosted) | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
-| Slab footer (`footerStyle: "slab"`, today only `/deck-tower`) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
+| scp's on-deck cards (rim + panel; keeps the hairline ring, adds a 2px wall and a flat cast shadow on the page ground) | `SortCardsPage.tsx` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5 |
+| Slab footer (`footerStyle: "slab"`: `/deck-tower`, the Dictionary tab, scp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
 
 ## Still bento
 
-Everything else: the hp Menu bento, the Games hub, scp, the cdp, the eip/sheets, the
+Everything else: the hp Menu bento, the Games hub, the rest of scp, the cdp, the eip/sheets, the
 routed flp and every game page. When one of them moves, add a row to the table above and
 say which bento rule it drops.

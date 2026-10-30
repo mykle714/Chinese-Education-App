@@ -68,7 +68,7 @@ import { parseModelJson } from '../shared/lib/json.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
 
-const SCRIPT_VERSION = 4; // bump when this script's logic/prompt changes (v4: rule 7 gains the content-vs-grammatical-function tie test, mirroring zh Stage C.5 rule 3 (shared/lib/tiebreakOrder.js) — "which sense would a learner say the word MEANS?" — with function words learned AS their function (sobre, como, bajo) on the exception side. Order-only intent, but es has no --rescore-only: the whole generate call re-runs, so re-clustering can re-mint labels. v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
+const SCRIPT_VERSION = 5; // bump when this script's logic/prompt changes (v5: OVER-COMPACTION FIX — rule 3 (shared by generator, validator and regenerator) now decides cluster membership by a TRANSLATION TEST with Spanish worked examples (sacar take out vs take off, ir go vs come, hombre man vs mankind), and the validator applies it to every gloss. Mirrors zh v11; rows the 2026-10-29 audit judged fine were re-stamped at v5 without re-running (server/scripts/backfill/shared/restamp-cluster-version.js) — only the flagged rows re-cluster. v4: rule 7 gains the content-vs-grammatical-function tie test, mirroring zh Stage C.5 rule 3 (shared/lib/tiebreakOrder.js) — "which sense would a learner say the word MEANS?" — with function words learned AS their function (sobre, como, bajo) on the exception side. Order-only intent, but es has no --rescore-only: the whole generate call re-runs, so re-clustering can re-mint labels. v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const { stampEntries, staleClause, validatedClause } = initRunLog({
@@ -134,9 +134,25 @@ Hard rules:
 2. PARTITION EVERY GLOSS. Every input gloss must appear in exactly one cluster,
    VERBATIM — do not reword, merge, invent, or drop any gloss.
 
-3. CLUSTER BY SHARED CORE IDEA within a (pos, gender). A part of speech with two
-   unrelated meanings gets two clusters; err toward FINER, precise senses rather
-   than one vague catch-all.
+3. ONE CLUSTER = ONE MEANING A LEARNER LEARNS AS ONE THING, within a (pos, gender).
+   The learner sees each cluster as one line under its "sense" label; a gloss the
+   label does not describe is HIDDEN from them. Decide membership with the
+   TRANSLATION TEST: take a natural Spanish sentence using the word in the gloss's
+   meaning — would you translate the word there with the cluster's label? If yes, it
+   belongs; if the translation needs a different English word or idea, it is a
+   different cluster.
+   KEEP TOGETHER: near-synonyms and paraphrases of one idea (entrar: to enter | to go
+   in | to come in | to step into); one idea with a scope or domain qualifier.
+   SPLIT, even when the meanings are related or one "extends" the other:
+     - a different action or use: sacar "to take out" vs "to take off (clothing)";
+       tomar "to take" vs "to take (transport)" vs "to make (a decision)"; acabar
+       "to finish" vs "to use up / run out of"; quedar "to stay" vs "to be left over";
+     - opposite directions: ir "to go" vs "to come (toward the listener)";
+     - an individual vs a collective: hombre "man" vs "mankind";
+     - a content meaning vs an evaluation or opinion: sentir "feeling" vs "opinion".
+   A shared origin is NOT a reason to merge. Err toward FINER, precise senses rather
+   than one vague catch-all. LABEL CHECK: if the only label that covers a cluster has
+   to join two different ideas with "/" or "or", the cluster is two clusters.
 
 4. ORDER GLOSSES within a cluster from the most prototypical//useful meaning to the
    most peripheral. The first gloss becomes the sense's display definition.
@@ -267,7 +283,9 @@ ${RESPONSE_SHAPE}`;
 
   const response = await anthropic.messages.create({
     model,
-    max_tokens: 2000,
+    // 4096, not 2000: the v5 translation test splits big headwords finer, and ir's
+    // ~30 clusters overflowed 2000 tokens mid-JSON ("no clusters array").
+    max_tokens: 4096,
     system: cachedSystem(systemText),
     messages: [{ role: 'user', content: `Word: ${word}\nSource senses (JSON): ${JSON.stringify(senses)}` }],
   });
@@ -285,7 +303,9 @@ async function validateClusters(word, senses, proposed) {
 ${CLUSTER_RULES}
 
 Check specifically:
-  - Does any cluster mix two genuinely different meanings (rule 3)?
+  - Does any cluster mix two genuinely different meanings (rule 3)? Apply the
+    translation test to EVERY gloss against its cluster's label — a gloss the label
+    would not translate is a hidden meaning and the cluster must be split.
   - Does any pair of clusters say the SAME thing and belong merged (rule 3)?
   - Is any pos/gender boundary violated — different POS, or different-meaning
     genders, sharing one cluster (rule 1)?
@@ -324,7 +344,9 @@ or
 async function regenerateClusters(word, senses, priorAttempt, critique) {
   const response = await anthropic.messages.create({
     model: RETRY_MODEL,
-    max_tokens: 2000,
+    // 4096, not 2000: the v5 translation test splits big headwords finer, and ir's
+    // ~30 clusters overflowed 2000 tokens mid-JSON ("no clusters array").
+    max_tokens: 4096,
     system: 'You are a Spanish lexicographer correcting a flawed sense partition. Respond only with valid JSON.',
     messages: [{
       role: 'user',

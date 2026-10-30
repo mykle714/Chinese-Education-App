@@ -4,7 +4,7 @@
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 16-step zh
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 17-step zh
  * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
  * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
  * to initRunLog (that is the key it stamps into `enrichmentLog`).
@@ -83,6 +83,10 @@ import { MAX_FIRST_GLOSS_LEN } from '../../chinese/lib/orderGlosses.js';
 export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-tones',                     when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-numbered-pinyin',           when: 'always',    version: 1, deterministic: true },
+  // The writing queue's ease key (migration 179, which also stamped every row existing
+  // then at v1). Reads only word1, so it has no ordering constraint; it sits with the
+  // other deterministic steps. NULL is a decided answer — done-ness is the stamp.
+  { id: 'chinese/backfill-max-char-stroke-count',     when: 'always',    version: 1, deterministic: true },
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
   // NOT 'multiDef': this script also owns the ≤20-char lead-gloss synthesis, whose
   // trigger is the LENGTH of definitions[0], not the gloss count. Under 'multiDef' a
@@ -104,7 +108,7 @@ export const REQUIRED_SCRIPTS_ZH = [
   { id: 'chinese/backfill-frequency-score',           when: 'always',    version: 4, validationFields: ['frequencyScore'] },
   // Writes `definitionClusters`, whose per-cluster frequencyScore is reviewable as
   // 'senseFrequencyScore' (migration 139) — mirrors the script's own validatedClause.
-  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 10, validationFields: ['senseFrequencyScore'] },
+  { id: 'chinese/backfill-cluster-definitions',       when: 'always',    version: 11, validationFields: ['senseFrequencyScore'] },
   // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
   // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
@@ -193,7 +197,7 @@ export const REQUIRED_SCRIPTS_ES = [
   // chip protects the row — mirrors the script's own validatedClause.
   { id: 'spanish/backfill-frequency-score',             when: 'always',         version: 5, validationFields: ['frequencyScore', 'difficulty'] },
   // Guards on 'definitions' too (re-clustering re-presents them) — mirrors the script.
-  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 4, validationFields: ['definitions', 'senseFrequencyScore'] },
+  { id: 'spanish/backfill-cluster-definitions',         when: 'always',         version: 5, validationFields: ['definitions', 'senseFrequencyScore'] },
   { id: 'spanish/backfill-long-definitions',            when: 'always',         version: 2, validationFields: ['definitions'] },
   { id: 'spanish/backfill-example-sentences',           when: 'always',         version: 1, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
 ];

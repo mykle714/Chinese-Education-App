@@ -1024,4 +1024,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     );
 };
 
-export default FlashCardSection;
+// Memoised: the flp re-renders for plenty of state the card stack never reads (the eip
+// opening, its tab trail, the More Info hint), and re-rendering the stack on the frame the
+// eip mounts made the More Info tap lag. The flp keeps every prop identity-stable for this
+// (FlashcardsLearnPage → "Stable props for the memoised FlashCardSection"); a new prop
+// must be stable too, or the memo silently stops holding.
+export default React.memo(FlashCardSection);

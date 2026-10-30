@@ -20,8 +20,9 @@ import { ISO, mixHex, type Material, type PlatformTone } from "./palette";
  * on every hue (an sRGB mix of blue toward orange greys out; a hue turn does not).
  *
  * Depends on: palette.ts. Depended on by: IsoScene.tsx, sceneContext.ts, and the Deck
- * Tower's timeOfDay.ts (which builds the wash and the skies) and DeckTowerPage.tsx (which
- * lays `washColorMatrix` over the flp session).
+ * Tower's timeOfDay.ts (which builds the wash and the skies). Only iso-drawn art is
+ * washed: there is no DOM-content form (the old `washColorMatrix` SVG filter was cut
+ * 2026-10-30 — CPU-rasterised in WebKit, it made the flp lag).
  */
 
 /** A colour transform laid over a scene. The identity (`NO_WASH`) leaves it as drawn. */
@@ -106,6 +107,9 @@ export function lightWash(light: WashLight): IsoWash {
  * jumps. Results are memoised (a scene asks for the same few dozen colours every frame).
  */
 export function blendWash(a: IsoWash, b: IsoWash, t: number): IsoWash {
+    // Two unlit phases blend to the identity at every t (e.g. dawn → day), so keep NO_WASH's
+    // identity: DOM layers then take no filter at all, and the scene's palette isn't re-washed.
+    if (a === NO_WASH && b === NO_WASH) return NO_WASH;
     if (t <= 0 && a === NO_WASH) return NO_WASH;
     if (t >= 1 && b === NO_WASH) return NO_WASH;
     const cache = new Map<string, string>();
@@ -138,67 +142,4 @@ export function washPalette(wash: IsoWash): IsoPalette {
         out[key] = typeof value === "string" ? wash(value) : washMaterial(value as Material, wash);
     }
     return out as IsoPalette;
-}
-
-// ── The wash on DOM content ────────────────────────────────────────────────────────
-
-/** SVG's `saturate` matrix (Filter Effects § feColorMatrix): greys are its fixed points. */
-function saturateMatrix(s: number): number[][] {
-    return [
-        [0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
-        [0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
-        [0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s],
-    ];
-}
-
-const hexChannels = (hex: string): number[] => {
-    const n = parseInt(hex.replace("#", ""), 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => c / 255);
-};
-
-/** The fit's sample colours: the sRGB cube at 0, ½ and 1 per channel (27 colours). */
-const FIT_SAMPLES: number[][] = [0, 0.5, 1].flatMap((r) => [0, 0.5, 1].flatMap((g) => [0, 0.5, 1].map((b) => [r, g, b])));
-const toHex = (c: number[]) => `#${c.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
-
-/**
- * A wash as an SVG `feColorMatrix` (`type="matrix"`, its 20 `values`), for content that is
- * not drawn by the iso kit — HTML laid over a washed scene (the Deck Tower's flp session,
- * docs/ISO_ART_FRAMEWORK.md § "Ambient wash" → "DOM content"). `null` for the identity.
- * The filter must run with `color-interpolation-filters="sRGB"` (the wash is defined on
- * sRGB hex, not linear light).
- *
- * A wash is not affine (its dim scales OKLCH lightness, keeping chroma), so the matrix is
- * an approximation, built in two parts:
- *   1. Per channel, the affine map through the wash's own black and white: EXACT on every
- *      grey and near-grey — card stock and ink, which must match the iso cards beside them.
- *   2. Before it, a `saturate(s)`, which leaves greys alone: an affine dim also drains
- *      chroma, which the wash keeps, so `s` (≥ 1) is fitted by least squares over the sRGB
- *      cube to give it back. At night this halves the error on saturated colours (tone
- *      colours, the plate's yellow) against s = 1.
- */
-export function washColorMatrix(wash: IsoWash): string | null {
-    if (wash === NO_WASH) return null;
-    const lo = hexChannels(wash("#000000"));
-    const span = hexChannels(wash("#FFFFFF")).map((hi, i) => hi - lo[i]);
-    const truth = FIT_SAMPLES.map((c) => hexChannels(wash(toHex(c))));
-    const apply = (m: number[][], c: number[]) =>
-        m.map((row, i) => Math.min(1, Math.max(0, lo[i] + span[i] * (row[0] * c[0] + row[1] * c[1] + row[2] * c[2]))));
-    const error = (s: number) => {
-        const m = saturateMatrix(s);
-        return FIT_SAMPLES.reduce((sum, c, k) => sum + apply(m, c).reduce((e, v, i) => e + (v - truth[k][i]) ** 2, 0), 0);
-    };
-    // The error is unimodal in s: a ternary search over [1, 2].
-    let a = 1;
-    let b = 2;
-    for (let i = 0; i < 40; i++) {
-        const m1 = a + (b - a) / 3;
-        const m2 = b - (b - a) / 3;
-        if (error(m1) < error(m2)) b = m2;
-        else a = m1;
-    }
-    const m = saturateMatrix((a + b) / 2);
-    // Each colour row: [R G B A offset] — the saturate row scaled by the channel's span,
-    // no alpha term, the channel's black as the offset. Alpha passes through.
-    const rows = m.map((row, i) => [...row.map((v) => v * span[i]), 0, lo[i]]);
-    return [...rows.flat(), 0, 0, 0, 1, 0].map((v) => +v.toFixed(4)).join(" ");
 }

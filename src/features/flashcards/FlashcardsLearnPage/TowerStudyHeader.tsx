@@ -15,10 +15,11 @@ import type { LastMarkUndoSnapshot } from "../types";
  * names the deck being studied rather than a category: a tower session is always the
  * world's whole Learning deck.
  *
- * Its AUDIO CHIP is the shared AudioModeChip with no fill (`tone="bare"`): its glyph and
- * label in plain white, the same in every audio mode — the label carries the state — held
- * together by a thin white pill OUTLINE (`AUDIO_OUTLINE_SX`) so they read as one button.
- * The box is sized to the longest label (`fitLabels`), so it does not resize as it cycles.
+ * Its AUDIO CHIP is the shared AudioModeChip's `outlined` skin in white: no fill, its glyph
+ * and label in plain white, the same in every audio mode — the label carries the state —
+ * held together by a thin white pill outline so they read as one button. The scp uses the
+ * same skin in its ground's ink. The box is sized to the longest label, so it does not
+ * resize as it cycles.
  * A filled chip (it was a grey floor plate until 2026-10-26) drew the eye off the card.
  *
  * Its PLATFORM TOGGLE (an eye, crossed out while on) hides the tower's whole platform under
@@ -45,24 +46,6 @@ interface TowerStudyHeaderProps {
     platformHidden: boolean;
     onPlatformHiddenChange: (hidden: boolean) => void;
 }
-
-/**
- * The bare audio label's type and glyph, px — a step up from the header chip's 10 px / 13 px
- * now that there is no fill to carry it.
- */
-const AUDIO_TEXT_PX = 12;
-const AUDIO_ICON_PX = 15;
-
-/**
- * The outline that bundles the bare glyph + label into one button. White, like the header
- * ink over the sky, rather than the app's `COLORS.border` (--line2): a grey hairline is
- * built for paper and goes muddy on the sky. Pill ends, like the tower's other plates.
- */
-const AUDIO_OUTLINE_SX = {
-    border: `1px solid ${COLORS.white}`,
-    borderRadius: "999px",
-    padding: "4px 10px",
-} as const;
 
 /** The header's ink over the sky — the tower page header's (DeckTowerPage `headerTitleColor`). */
 const ON_SKY_INK = COLORS.white;
@@ -105,13 +88,8 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
                 />
                 <AudioModeChip
                     className="tower-study-header__audio-chip"
-                    tone="bare"
+                    outlined
                     ink={ON_SKY_INK}
-                    sx={{ ...AUDIO_OUTLINE_SX, fontSize: AUDIO_TEXT_PX }}
-                    // The tower re-faces all text (index.css `.tower-font-trial`), so the
-                    // chip's mono `ch` width would be wrong: size to the real labels.
-                    fitLabels
-                    iconPx={AUDIO_ICON_PX}
                 />
             </>
         }

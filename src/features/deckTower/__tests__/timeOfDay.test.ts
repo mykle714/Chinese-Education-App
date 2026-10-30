@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sunDay } from "../sunTimes";
+import { sunDay } from "../../../timeOfDay/sunTimes";
 import { phaseSky, timeOfDayAt, towerLight } from "../timeOfDay";
-import { TZ_COORDINATES } from "../tzCoordinates";
+import { NO_WASH } from "../iso";
+import { TZ_COORDINATES } from "../../../timeOfDay/tzCoordinates";
 
 const CHICAGO = { lat: 41.9, lon: -87.6 };
 const MIN = 60_000;
@@ -42,7 +43,7 @@ describe("timeOfDayAt", () => {
     });
 
     it("blends night → dawn before sunrise and peaks at it", () => {
-        const half = timeOfDayAt(rise - 30 * MIN, CHICAGO);
+        const half = timeOfDayAt(rise - 15 * MIN, CHICAGO);
         expect(half.from).toBe("night");
         expect(half.to).toBe("dawn");
         expect(half.t).toBeCloseTo(0.5, 2);
@@ -50,7 +51,7 @@ describe("timeOfDayAt", () => {
     });
 
     it("blends sunset → night after sunset", () => {
-        const q = timeOfDayAt(set + 15 * MIN, CHICAGO);
+        const q = timeOfDayAt(set + 7.5 * MIN, CHICAGO);
         expect(q).toMatchObject({ from: "sunset", to: "night" });
         expect(q.t).toBeCloseTo(0.25, 2);
     });
@@ -87,6 +88,14 @@ describe("skies and light", () => {
         expect(towerLight({ from: "sunset", to: "night", t: 0.4 }).shootingStars).toBe(false);
         expect(towerLight({ from: "sunset", to: "night", t: 0.6 }).shootingStars).toBe(true);
         expect(towerLight({ from: "night", to: "dawn", t: 0.6 }).shootingStars).toBe(false);
+    });
+
+    it("washes only at night: dawn, day and sunset leave the scene as drawn", () => {
+        for (const phase of ["dawn", "day", "sunset"] as const) {
+            expect(towerLight({ from: phase, to: phase, t: 0 }).wash).toBe(NO_WASH);
+        }
+        expect(towerLight({ from: "dawn", to: "day", t: 0.5 }).wash).toBe(NO_WASH);
+        expect(towerLight({ from: "night", to: "night", t: 0 }).wash).not.toBe(NO_WASH);
     });
 
     it("is exact at both ends of a blend", () => {

@@ -26,9 +26,11 @@
  * chinese/ and spanish/backfill-cluster-definitions.js; docs/DEFINITION_CLUSTERS.md
  * § "Over-compaction audit (2026-10-29)".
  *
- * Usage (from the backend container, so it sees .env.docker):
+ * Usage (from server/). Dev: the backend container, so it sees .env.docker:
  *   docker exec cow-backend npx tsx scripts/backfill/shared/restamp-cluster-version.js --language=zh --from=10 --to=11 --dry-run
- *   docker exec cow-backend npx tsx scripts/backfill/shared/restamp-cluster-version.js --language=es --from=4 --to=5
+ * PPE: the host checkout via run-ppe.sh — the PPE image does not ship scripts/, and the host
+ * .env.docker carries the dev password:
+ *   scripts/backfill/run-ppe.sh scripts/backfill/shared/restamp-cluster-version.js --language=zh --from=10 --to=11
  *   ... --exclude=scripts/backfill/shared/cluster-overcompaction-2026-10-29.json   # the default
  */
 

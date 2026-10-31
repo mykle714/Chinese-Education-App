@@ -13,10 +13,11 @@ import type { VocabEntry } from "../types";
 import type { IconLayoutItem, TextLayout } from "../../../types";
 import CardIconLayer from "../../../cardIcons/CardIconLayer";
 import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
-import { resolveTextLayout, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
+import { resolveTextLayout, textBlockMaxWidth, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
 import SensePicker from "./SensePicker";
 import { useShrinkWrapWrappedText } from "./useShrinkWrapWrappedText";
+import { useSenseChipPlacement } from "./useSenseChipPlacement";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import { resolveTextColor, DD_TONES } from "../../../utils/cardTextColor";
 import { resolveCardColor } from "../../../utils/cardColor";
@@ -53,8 +54,10 @@ export const ChineseBlock: React.FC<{
     // When true the speaker action is laid out IN-FLOW (a column to the right of
     // the text) instead of absolutely positioned off the text's right edge. In-flow makes the
     // actions part of the block's measured box, so the fie selection outline + on-card clamp
-    // include them (the movable-text case). Default (false) keeps the actions absolute so they
-    // don't shift the centered text in the normal lower-third layout. See docs/CARD_ICON_LAYOUT.md.
+    // include them, and keeps them inside the width the card gives the block, so a long word
+    // can't push them across the Deck Tower stock's clip at the panel edge. Both flp faces
+    // use it; false remains for surfaces that hang the actions outside the box.
+    // See docs/CARD_ICON_LAYOUT.md.
     inlineActions?: boolean;
     // Which sense the card is currently on (index into `sortedSenseClusters`). The
     // pinyin over the characters is per-SENSE for a heteronym (过去 guò qù / guò qu),
@@ -81,49 +84,77 @@ export const ChineseBlock: React.FC<{
             />
         </Box>
     ) : null;
+    // Long words wrap at the width the card gives this block (flexWrap) rather than
+    // running under the panel clip. See docs/CARD_ICON_LAYOUT.md "Movable text".
+    const foreignRow = (
+        <ForeignText
+            size="md"
+            justifyContent="center"
+            flexWrap="wrap"
+            className="mobile-demo-flashcard-cpcd-row"
+            text={entry.entryKey}
+            pronunciation={resolveDisplayPronunciation(entry, selectedSenseIndex)}
+            showPinyin={showPinyin}
+            useToneColor={showPinyinColor}
+            characterColor={characterColor}
+        />
+    );
     return (
         // Outer row fills the width and centers the Chinese text within the card.
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-chinese-block">
-            {/* Inner wrapper shrinks to the whole assembly's width. In the default (non-inline)
-                layout the actions are absolutely positioned off the text's right edge, so they
-                don't affect this wrapper's hugged width at all — centering it centers the row.
-                In inlineActions mode the actions sit in-flow (so the fie selection outline +
-                on-card clamp include them), which would otherwise pull the row's visual center
-                to the left; a same-width HIDDEN spacer mirrors them on the left so the row
-                (cpcd-row) stays the true center of the assembly regardless. */}
-            <Box
-                sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
-                className="mobile-demo-flashcard-chinese-inner"
-            >
-                {inlineActions && actions && (
-                    <Box aria-hidden sx={{ visibility: 'hidden', mr: 1 }}>{actions}</Box>
-                )}
-                <ForeignText
-                    size="md"
-                    justifyContent="center"
-                    className="mobile-demo-flashcard-cpcd-row"
-                    text={entry.entryKey}
-                    pronunciation={resolveDisplayPronunciation(entry, selectedSenseIndex)}
-                    showPinyin={showPinyin}
-                    useToneColor={showPinyinColor}
-                    characterColor={characterColor}
-                />
-                {actions && (
-                    inlineActions ? (
-                        // In-flow: a column to the right of the text, part of the measured box.
-                        // Balanced by the hidden spacer above so the row itself stays centered.
-                        <Box sx={{ ml: 1, display: 'flex' }}>{actions}</Box>
-                    ) : (
-                        // Absolute: hangs off the text's right edge without shifting it.
+            {inlineActions ? (
+                // A [spacer | text | action] grid. `auto` text grows to max-content; the action
+                // column never drops below the speaker; the spacer may collapse to 0. So the
+                // word stays centered while it fits, then borrows the left spacer, and only
+                // wraps once that is spent. A fixed hidden twin would cost the word the
+                // speaker's width twice and wrap four-character words.
+                <Box
+                    sx={{
+                        position: 'relative',
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(min-content, 1fr)',
+                        alignItems: 'center',
+                        width: '100%',
+                    }}
+                    className="mobile-demo-flashcard-chinese-inner"
+                >
+                    {actions && (
+                        <Box
+                            aria-hidden
+                            className="mobile-demo-flashcard-chinese-actions-spacer"
+                            sx={{ gridColumn: 1, visibility: 'hidden', minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}
+                        >
+                            <Box sx={{ mr: 1, display: 'flex', flexShrink: 0 }}>{actions}</Box>
+                        </Box>
+                    )}
+                    <Box className="mobile-demo-flashcard-chinese-row" sx={{ gridColumn: 2, minWidth: 0 }}>
+                        {foreignRow}
+                    </Box>
+                    {actions && (
+                        <Box className="mobile-demo-flashcard-chinese-actions" sx={{ gridColumn: 3, justifySelf: 'start', ml: 1, display: 'flex' }}>{actions}</Box>
+                    )}
+                </Box>
+            ) : (
+                // Shrinks to the row's width. The actions hang off its right edge without
+                // affecting that width, so centering this wrapper centers the row.
+                <Box
+                    sx={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+                    className="mobile-demo-flashcard-chinese-inner"
+                >
+                    {foreignRow}
+                    {actions && (
                         <Box sx={{ position: 'absolute', left: '100%', top: '50%', transform: 'translateY(-50%)', ml: 1 }}>
                             {actions}
                         </Box>
-                    )
-                )}
-            </Box>
+                    )}
+                </Box>
+            )}
         </Box>
     );
 };
+
+// Gap between the gloss and the sense chip beside it, px.
+const SENSE_CHIP_GAP_PX = 10;
 
 // Length-based font scale for the English definition. A fixed 30px overflowed
 // the card for long definitions, so we step the size down as the string grows.
@@ -140,7 +171,7 @@ const englishFontSize = (text: string): number => {
 // English definition Typography reused on both Side 1 (when English) and Side 2.
 // When the entry has zh orthogonal sense clusters (definitionClusters, migration 90 —
 // see docs/DEFINITION_CLUSTERS.md), the shared SensePicker (SensePicker.tsx) renders a
-// small triangle trigger beside the text, opening a menu of the word's other senses —
+// small trigger beside or below the text, opening a menu of the word's other senses —
 // the same picker the eip definition header mounts. Undiscoverable/unclustered entries
 // (definitionClusters null or a single cluster) render exactly as before — no trigger,
 // no picker.
@@ -151,11 +182,9 @@ export const EnglishBlock: React.FC<{
     // the pick resets to the top (starred) sense whenever the card changes.
     selectedSenseIndex?: number;
     onSelectSense?: (index: number) => void;
-    // NOTE: EnglishBlock has no `inlineActions` prop (ChineseBlock still does). Its
-    // sense-trigger is ALWAYS in-flow: the absolute variant hung off the text's right edge
-    // without occupying layout, so a wide gloss pushed it past the card edge, and being in
-    // flow is also what Side 2's movable-text editor needs (it measures the text block's own
-    // width: max-content box for the selection outline + clamp).
+    // NOTE: EnglishBlock has no `inlineActions` prop (ChineseBlock still does). Its sense
+    // trigger is ALWAYS out of flow, so the gloss centers and wraps as if it did not exist;
+    // useSenseChipPlacement then places it beside or below the centered gloss.
     // See docs/CARD_ICON_LAYOUT.md "Movable text".
     // When true, the picker's zh reading headings are replaced by neutral "-pinyin N-"
     // labels. Used on the FRONT/question side, where the card shows only English and the
@@ -185,124 +214,84 @@ export const EnglishBlock: React.FC<{
     // shows immediately, before the persisted `selectedSense` round-trips back.
     const text = resolveDisplayDefinition(entry, selectedSenseIndex);
 
-    // Multi-line dd centering: once the gloss wraps, its box would stay as wide as the
-    // whole text track (which has already absorbed the collapsed left spacer), leaving the
-    // lines off-center. Shrink-wrapping the text to its wrapped width lets the grid's `1fr`
-    // sides re-center it. See useShrinkWrapWrappedText.
+    // Once the gloss wraps, its box would stay as wide as the block. Shrink-wrapping it to
+    // its wrapped width lets the row hug the lines, so the chip sits beside the text rather
+    // than beside the empty width. See useShrinkWrapWrappedText.
     const englishBlockRef = React.useRef<HTMLDivElement>(null);
     const englishTextRef = React.useRef<HTMLParagraphElement>(null);
     useShrinkWrapWrappedText(englishTextRef, englishBlockRef, text);
 
-    // The sense-picker trigger, structured exactly like ChineseBlock's `actions`
-    // (writing + speaker buttons): a small column Box, so the two blocks stay
-    // visually/structurally consistent even though English currently has only
-    // one action. The trigger + menu themselves are the shared SensePicker, which
-    // the eip definition header mounts too (see SensePicker.tsx). The
-    // `sortedClusters` gate is duplicated here — not to decide whether the picker
-    // renders (SensePicker self-hides) but because the whole `actions` column, and
-    // the hidden spacer twin that pads the grid's left column, must collapse when
-    // there is no choice.
-    const actions = sortedClusters ? (
-        <Box
-            className="mobile-demo-flashcard-actions"
-            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}
-        >
-            <SensePicker
-                entry={entry}
-                selectedSenseIndex={selectedSenseIndex}
-                onSelectSense={onSelectSense}
-                color={englishColor}
-                censorReadings={censorReadings}
-            />
-        </Box>
-    ) : null;
+    // Runs after the shrink-wrap above, so it reads the gloss's final width.
+    const englishRowRef = React.useRef<HTMLDivElement>(null);
+    const senseChipRef = React.useRef<HTMLDivElement>(null);
+    useSenseChipPlacement(englishTextRef, englishRowRef, senseChipRef, englishBlockRef, SENSE_CHIP_GAP_PX);
+
+    // Shared by the gloss and the chip's wrapper, so the wrapper's line box matches the
+    // gloss's first line (see the "right" placement below).
+    const glossLineMetrics = {
+        fontSize: englishFontSize(text),
+        fontFamily: FC_FONT_CJK,
+        lineHeight: 1.25,
+    };
 
     return (
-        // Outer row fills the width; the grid inside does the centering (see "-inner").
+        // Outer row fills the width and centers the text row inside it.
         // Class name kept parallel to ChineseBlock's outer row.
         <Box ref={englishBlockRef} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} className="mobile-demo-flashcard-english-block">
-            {/* Inner wrapper — a 3-column grid: [spacer | text | chip].
-
-                Goal: the TEXT is centered on the card whenever it fits, and only borrows the
-                left-hand space a centered layout would reserve when it is too wide for that.
-                The track list does this with no measuring:
-
-                  - text  `auto`                    → grows to its max-content, capped by what's
-                                                      left after the chip column's minimum.
-                  - chip  `minmax(min-content, 1fr)` → never narrower than the chip itself, so the
-                                                      chip can never be squeezed or pushed off-card.
-                  - spacer `minmax(0, 1fr)`         → may collapse all the way to 0.
-
-                The two `1fr` columns split the leftover space equally, so the text sits dead-
-                center while each half is at least a chip wide. Once the gloss is wider than
-                that, the chip column holds at its min-content and the spacer column absorbs
-                the whole squeeze — the text slides LEFT into that space instead of wrapping.
-                If it wraps anyway, `useShrinkWrapWrappedText` narrows the text to its wrapped
-                (balanced) width, so the `auto` track shrinks and the `1fr` sides re-center
-                the multi-line gloss whenever it fits beside the chip.
-                Only when the spacer has hit 0 does the text column itself shrink (and wrap,
-                via the text's `overflowWrap`). No chip → both sides are empty `1fr` tracks
-                and the text simply centers across the full width.
-
-                History: the chip used to hang off the text absolutely (left:100%), invisible to
-                layout, so a wide gloss pushed it past the card's — and on the large card view the
-                viewport's — right edge. Then it moved in-flow in a `nowrap` flex row with a
-                fixed-width hidden twin on the left; that kept the text centered but cost it the
-                chip's width twice (~48px of a ~235px front / ~271px back face), splitting
-                single long words mid-word. The shrinkable spacer column keeps the centering
-                and gives that width back on demand. */}
-            <Box
-                sx={{
-                    position: 'relative',
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) auto minmax(min-content, 1fr)',
-                    alignItems: 'center',
-                    width: '100%',
-                }}
-                className="mobile-demo-flashcard-english-inner"
-            >
-                {/* Hidden twin of the chip in the collapsible spacer column. It does no layout
-                    work on a definite-width face (the `1fr` split does the centering), but on the
-                    back face the text block is `width: max-content`, and the twin is what makes
-                    that intrinsic width text + 2×chip — without it the block would hug text+chip
-                    and the text would sit half a chip left of the block's center. `minWidth: 0`
-                    + `overflow: hidden` let it be clipped as its column collapses. */}
-                {actions && (
+            {/* Hugs the gloss (`minWidth: 0` lets it shrink so long text wraps, and
+                `overflowWrap` breaks a single word wider than the block). It is also the
+                chip's positioning box. */}
+            <Box ref={englishRowRef} className="mobile-demo-flashcard-english-row" sx={{ position: 'relative', minWidth: 0 }}>
+                <Typography ref={englishTextRef} className="mobile-demo-flashcard-english-text" sx={{
+                    ...glossLineMetrics,
+                    margin: '0 auto',
+                    fontWeight: WEIGHT.regular,
+                    color: englishColor,
+                    textAlign: 'center',
+                    overflowWrap: 'break-word',
+                }}>
+                    {text}
+                </Typography>
+                {/* Out of flow in both placements: it must never move or narrow the gloss.
+                    The `sortedClusters` gate stops an empty box being measured; SensePicker
+                    hides itself by the same test. */}
+                {sortedClusters && (
                     <Box
-                        aria-hidden
-                        className="mobile-demo-flashcard-english-actions-spacer"
-                        sx={{ gridColumn: 1, visibility: 'hidden', minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}
+                        ref={senseChipRef}
+                        className="mobile-demo-flashcard-english-actions"
+                        data-placement="right"
+                        sx={{
+                            ...glossLineMetrics,
+                            position: 'absolute',
+                            // Beside the FIRST line, centered on its lowercase letters. This
+                            // wrapper reproduces that line box, and `vertical-align: middle`
+                            // is by definition the baseline + half the font's x-height, so no
+                            // font metrics need measuring.
+                            '&[data-placement="right"]': {
+                                display: 'block',
+                                whiteSpace: 'nowrap',
+                                left: '100%',
+                                top: 0,
+                                ml: `${SENSE_CHIP_GAP_PX}px`,
+                                '& > .mobile-demo-flashcard-sense-trigger': { verticalAlign: 'middle' },
+                            },
+                            '&[data-placement="below"]': {
+                                display: 'flex',
+                                top: '100%',
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                mt: '6px',
+                            },
+                        }}
                     >
-                        <Box sx={{ mr: 1, display: 'flex', flexShrink: 0 }}>{actions}</Box>
+                        <SensePicker
+                            entry={entry}
+                            selectedSenseIndex={selectedSenseIndex}
+                            onSelectSense={onSelectSense}
+                            color={englishColor}
+                            censorReadings={censorReadings}
+                        />
                     </Box>
-                )}
-                {/* Dedicated row layer around just the text — mirrors CPCDRow's own root Box
-                    (position:relative). Keeps English structurally parallel to Chinese: a plain
-                    text/glyph layer as one sibling, the actions box as another.
-
-                    `minWidth: 0` lets the `auto` text track shrink below the gloss's min-content
-                    once the spacer column is spent, and `overflowWrap: break-word` on the text
-                    catches the last case — a single word wider than everything left beside the
-                    chip breaks instead of spilling over the card's edge. */}
-                <Box className="mobile-demo-flashcard-english-row" sx={{ gridColumn: 2, position: 'relative', minWidth: 0 }}>
-                    <Typography ref={englishTextRef} className="mobile-demo-flashcard-english-text" sx={{
-                        margin: '0 auto',
-                        fontSize: englishFontSize(text),
-                        fontWeight: WEIGHT.regular,
-                        color: englishColor,
-                        fontFamily: FC_FONT_CJK,
-                        textAlign: 'center',
-                        lineHeight: 1.25,
-                        overflowWrap: 'break-word',
-                    }}>
-                        {text}
-                    </Typography>
-                </Box>
-                {/* Always in flow: part of the measured box, so the fie selection outline +
-                    on-card clamp include it (what `inlineActions` used to opt into on Side 2),
-                    and so it can never be laid out past the card's edge. */}
-                {actions && (
-                    <Box className="mobile-demo-flashcard-english-actions" sx={{ gridColumn: 3, justifySelf: 'start', ml: 1, display: 'flex' }}>{actions}</Box>
                 )}
             </Box>
         </Box>
@@ -400,8 +389,9 @@ export const CardFaceSide: React.FC<{
     // The Deck Tower's CARD STOCK (the tower-hosted flp, FlashCard `towerStock`): the face is
     // the tower's IsoCard — a cream rim (`COLORS.cardFace`) around a beige printed panel
     // (`COLORS.cardBeige`), no hairline. A custom `cardColor` fills the PANEL (the rim stays
-    // cream), and icons are clipped to the panel (`--card-icon-clip`, read by CardIconLayer
-    // and the fie canvas). The rim's width and the panel's corner come from the card frame's
+    // cream), and everything printed on the face is clipped to the panel (`--card-panel-clip`,
+    // read by the inner clip box and the fie canvas's icon layer) and wraps at its width
+    // (`--card-panel-width`, read by `textBlockMaxWidth`). The rim's width and the panel's corner come from the card frame's
     // `--card-stock-inset` / `--card-panel-radius` (FlashCardSection `TOWER_STOCK_VARS`).
     // Fixed tokens, not the theme's `flashCard`: the tower is one lit scene in every theme,
     // and its time-of-day wash is applied over the study layer by the page.
@@ -435,7 +425,7 @@ export const CardFaceSide: React.FC<{
         // canvas's selection overlay (outline + resize handle) overflow the card edge into
         // the surrounding padding (see docs/CARD_ICON_LAYOUT.md). The card-boundary clipping
         // is done by the INNER box below, not here.
-        <Box sx={{
+        <Box className="card-face" sx={{
             position: "absolute",
             top: 0, left: 0, width: "100%", height: "100%",
             backfaceVisibility: "hidden",
@@ -455,8 +445,11 @@ export const CardFaceSide: React.FC<{
             border: towerStock ? "none" : CARD_SURFACE.border,
             borderRadius: CARD_SURFACE.borderRadius,
             boxSizing: "border-box",
-            // Icons on tower stock are cut at the panel's edge, not the card's.
-            ...(towerStock && { "--card-icon-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))" }),
+            // On tower stock the card's content stops at the panel's edge, not the card's.
+            ...(towerStock && {
+                "--card-panel-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))",
+                "--card-panel-width": "calc(100% - 2 * var(--card-stock-inset))",
+            }),
             // NOT clipped here — see the inner clip box. The edit canvas (a child of this
             // outer box) needs overflow:visible so its selection indicators can poke past
             // the card edge into the surrounding padding.
@@ -491,6 +484,14 @@ export const CardFaceSide: React.FC<{
                     }}
                 />
             )}
+            {/* The area content may occupy, as a measurable box: the printed panel on tower
+                stock, the whole face elsewhere. Read by useSenseChipPlacement, because
+                `--card-stock-inset` is a container-unit calc() script can't read as a number. */}
+            <Box
+                aria-hidden
+                className="card-face__panel-bounds"
+                sx={{ position: "absolute", inset: "var(--card-stock-inset, 0px)", visibility: "hidden", pointerEvents: "none" }}
+            />
             {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection
                 overlay can escape the card boundary. The canvas clips its OWN icons to the
                 card internally, so partially-off-card icons are still cut off. */}
@@ -514,6 +515,9 @@ export const CardFaceSide: React.FC<{
                 // sits inside — one less pixel of radius, or the icon layer shows a sliver
                 // of square corner outside the border.
                 borderRadius: CARD_SURFACE_CLIP_RADIUS,
+                // Tower stock narrows the clip to the printed panel, so no icon, gloss or
+                // sense chip can paint on the cream rim. Unset elsewhere → `none`.
+                clipPath: "var(--card-panel-clip, none)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: CARD_FACE_JUSTIFY,
@@ -574,7 +578,7 @@ export const CardFaceSide: React.FC<{
                                             // Hug the content (inner blocks are width:100%),
                                             // centered + scaled + rotated about the center.
                                             width: "max-content",
-                                            maxWidth: "92%",
+                                            maxWidth: textBlockMaxWidth(it.scale),
                                             transform: isDefaultEnglish ? defaultEnglishTopAnchorTransform(it) : textItemTransform(it),
                                             transformOrigin: "center center",
                                             // english paints above foreign if they overlap.
@@ -594,7 +598,9 @@ export const CardFaceSide: React.FC<{
                         sx={{
                             width: "100%",
                             height: "100%",
-                            padding: "clamp(16px, 7%, 72px) 30px",
+                            // Sideways the content reaches the tower stock's panel edge, so
+                            // the front wraps where the back does; the plain card keeps 30px.
+                            padding: "clamp(16px, 7%, 72px) var(--card-stock-inset, 30px)",
                             boxSizing: "border-box",
                             // Content sits above the icon layer.
                             position: "relative",

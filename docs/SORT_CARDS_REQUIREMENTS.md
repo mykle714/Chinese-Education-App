@@ -497,7 +497,7 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 | Zone | What | Code |
 |---|---|---|
 | Header | NodePage header: back + "Sort Cards" in the look's `ink`; `SoftIntroToggle` (feature testers), `AudioModeChip` in the Deck Tower study header's `outlined` skin (pill outline + label) in the same ink, the flame | `SortCardsPage` → `groundChrome`, `headerExtraActions` |
-| Bins | The two drop targets as iso decks on floating platforms (§5.3), in the spare height and **pinned to its bottom** (`preserveAspectRatio="xMidYMax meet"`), then lowered a further `BINS_LOWER_PX` (20 viewBox px ≈ screen px) past that bottom edge (the scene is `overflow: visible`), so the platforms sit close above the cards and any extra height opens up under the toolbar | `BinsArea`, `SortBins.tsx` |
+| Bins | The two drop targets as iso decks on floating platforms (§5.3), in the spare height and **pinned to its bottom** (`preserveAspectRatio="xMidYMax meet"`), then lowered a further `BINS_LOWER_PX` (9 viewBox px ≈ screen px) past that bottom edge (the scene is `overflow: visible`), so the platforms sit close above the cards and any extra height opens up under the toolbar | `BinsArea`, `SortBins.tsx` |
 | Toolbar | Level pill · undo · skip, keycaps in a row at the top-right over the bins (Undo moved here from the header) | `SortToolbar`, `keycapSx` |
 | On deck | The pack's levitating cards (§4.5), their action glyphs sitting right on the slab footer (`ON_DECK_FOOTER_GAP_PX` 0 — the glyphs are inset 4px in their 36px targets; the section's negative margin hands back the ScrollArea's **slab** reservation, `SLAB_FOOTER_TOTAL_CLEARANCE`), `SLOT_ACTIONS_GAP_PX` (12px) below the card | `OnDeckSection` |
 | Footer | The floating **slab** footer (`footerStyle: "slab"` on the route), casting its shadow on the ground | `src/routes/routeMeta.ts`, `setFooterCastShadow` |
@@ -520,18 +520,26 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
   and the **ink drawn on it** change through dawn, day and sunset; night also turns the
   platforms grey and the keycaps slate. The **cards never change** — cream stock in
   every phase.
+- **Night sky.** At night the ground is the Deck Tower's own night sky, not a tint of it:
+  `PHASE_LOOK.night.ground` is `phaseSky(TOWER_WORLDS.core, "night")`, so the colour follows
+  the tower's recipe rather than copying a hex. scp has no world, so it is always the main
+  world's sky. The stars and meteors are the tower's components (`StarField`,
+  `ShootingStars`) in the same `ISO.star` white, at the tower's own from-the-ground opacity
+  and on the same rule (`SortLook.stars` and `.shootingStars`, both read from `towerLight`).
+  They are mounted through `NodePage`'s `backdrop`, so they sit behind the header and
+  content on every branch of the page. There is no parallax: the page does not scroll.
 
   | Phase | Ground | Platforms | Ink on ground | Keycaps |
   |---|---|---|---|---|
   | Dawn | `#FAE9EE` | white | ink / ink2 | cream (`cardFace` / `cardWall`) |
   | Day | `#E4F2FC` | white | ink / ink2 | cream |
   | Sunset | `#FBEADB` | white | ink / ink2 | cream |
-  | Night | `#1E2735` | `#E4E5E9` | `#EEF0F6` / `#C3C8D6` | `#2A3446` on `#121822` |
+  | Night | main world's night sky (`#113A5F`) | `#E4E5E9` | `#EEF0F6` / `#C3C8D6` | `#2A3446` on `#121822` |
 
   `groundShadow` is the iso shadow rule on the ground (`shadowTone`, one `shadeHex` step).
   The ground also becomes the status-bar `theme-color` (`useThemeColor`), and every branch
   (spinner, set-mode done, no cards) paints it, so the page never flashes paper.
-  ⚠️ **Outside the colour framework:** the four grounds, night's platform and night's slate
+  ⚠️ **Outside the colour framework:** the dawn, day and sunset grounds, night's platform and night's slate
   keycap/ink tones are design-picked hexes that live only in `sortTimeOfDay.ts`.
 - **Footer at night.** The slab footer stays **cream** at night, as on the Deck Tower; the
   artboard's night CSS paints it slate, but its own note says the footer keeps its day

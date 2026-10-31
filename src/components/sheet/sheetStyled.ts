@@ -18,6 +18,10 @@ import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx } from "../scrollE
  * and know nothing about flashcards, compare, or any other feature.
  */
 
+// The slide shared by a sheet's tab selector chip and its content panes, on swipe release
+// and tap alike, so the two always feel identical and arrive together.
+export const TAB_SWIPE_TRANSITION = "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)";
+
 // Scrim overlay behind the modal info sheet — tap to close.
 export const EicScrim = styled(Box)(({ theme }) => ({
     position: "absolute",

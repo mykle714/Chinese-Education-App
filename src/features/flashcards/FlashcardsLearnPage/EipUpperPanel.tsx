@@ -3,15 +3,18 @@ import { Box } from "@mui/material";
 import type { useDrag } from "@use-gesture/react";
 import Icon from "../../../components/Icon";
 import PageHeader from "../../../components/PageHeader";
+import { SPEAKER_BUTTON_SIZE } from "../../../components/SpeakerButton";
 import type { SheetTelescopeHandle } from "../../../components/sheet/SheetPanel";
+import { HEADWORD_TILE_MIN } from "./EipEntryHeader";
+import { EIP_PANEL_GUTTER as PANEL_GUTTER, EIP_TRAIL_WORD_PAD } from "./styled";
 import { useEipColors } from "./useEipPalette";
 
 /**
  * EipUpperPanel — the eip's UPPER panel (Tower Tier 2 design): the tinted band above the
  * white tab shelf. Three rows, top to bottom:
  *
- *   TITLE  ⌄ "More Info" / "Compare" · flame   (a real leaf PageHeader; maximized only)
- *   TRAIL  ⌄ · the word trail · [Add key]       (the ⌄ fades out as the title arrives)
+ *   TITLE  "More Info" / "Compare" · flame      (a real leaf PageHeader; maximized only)
+ *   TRAIL  speaker · the word trail · [Add key]
  *   HEADER the entry header (headword tile, gloss, sense chip) (`.ehd`; absent on Compare)
  *
  * It is SheetPanel's TELESCOPE (SheetTelescopeHandle; docs/EIP_SHEET_GESTURES.md
@@ -23,20 +26,32 @@ import { useEipColors } from "./useEipPalette";
  *
  * CLOSE IS A DOWN CARET (⌄), not a ✕ (2026-10-29). It sits where a page header's back
  * chevron sits and closes the whole panel (SheetPanel's `dismiss` — it does NOT pop a word;
- * tapping an earlier crumb does that). It is shown at every height:
- *   - at and below the open height, at the LEFT of the trail row;
- *   - toward max, the title row telescopes in carrying its own caret, and the trail-row
- *     caret collapses and fades out over the same travel (`--sheet-telescope-t`, written by
- *     SheetPanel's writeTelescope), so the one control reads as moving up into the header.
+ * tapping an earlier crumb does that). THERE IS ONE CARET at every height, and it belongs
+ * to the panel rather than to a row: it is pinned to the frame's top-left, so it rides the
+ * top of the panel up the screen and never arrives from anywhere. Its small offset from
+ * the frame's top eases from the trail row's line to the page header's line over the same
+ * travel that reveals the title (`--sheet-telescope-t`, written by SheetPanel's
+ * writeTelescope). The rows only keep room for it: the trail row its leading cluster
+ * (below), the title row a hidden chevron, so the title starts where a page's does.
  *
- * The TITLE ROW IS A REAL PageHeader (leaf size, down chevron, `safeAreaTop={false}`), so a
- * maximized panel's caret, title and flame land on exactly the pixels a drill-in page's
- * would: SheetPanel's merged top padding supplies the status-bar inset, PageHeader adds the
+ * The TITLE ROW IS A REAL PageHeader (leaf size, `safeAreaTop={false}`), so a maximized
+ * panel's title and flame land on exactly the pixels a drill-in page's would, with the
+ * pinned caret on the chevron's: SheetPanel's merged top padding supplies the status-bar inset, PageHeader adds the
  * leaf's own 27px, and its 18px side padding is the panel's own gutter. The flame shows only
  * toward max with it; the page header it stands in for is covered by the sheet.
  *
- * The whole panel is a resize handle (`bindHeaderDrag`; filterTaps keeps the ✕, the Add
- * key and the trail words tappable). The trail row's own word list pans sideways
+ * THE SPEAKER CLUSTER (2026-10-31) leads the trail row: the speaker is dead centre between
+ * the caret and the trail. Toward max the cluster slides left until the speaker is under
+ * the caret, and the trail moves with it. The cluster keeps its width on Compare, which has
+ * no speaker, so the trail does not jump between crumbs.
+ *
+ * THE TRAIL AND THE GLOSS SHARE BOUNDARIES (2026-10-31). At the open height both start at
+ * the right edge of a one-character headword keycap and run off the screen's right edge
+ * (EipEntryHeader's `glossToScreenEdge`). A wider keycap pushes only the gloss. The Add key,
+ * where there is one, still ends the trail at the gutter.
+ *
+ * The whole panel is a resize handle (`bindHeaderDrag`; filterTaps keeps the caret, the
+ * speaker, the Add key and the trail words tappable). The trail row's own word list pans sideways
  * (`touch-action: pan-x`, EipTabStrip).
  *
  * Layer: feature component (src/features/flashcards). Depended on by: InfoCardSection.
@@ -48,7 +63,9 @@ interface EipUpperPanelProps {
     title: string;
     /** The word trail (EipTabStrip). Optional: the saved-card cdp's sheet has no trail. */
     trail?: React.ReactNode;
-    /** The Dictionary eip's Add key (EipAddKey), just left of the ✕. */
+    /** The showing word's SpeakerButton, leading the trail row. Absent on Compare. */
+    speaker?: React.ReactNode;
+    /** The Dictionary eip's Add key (EipAddKey), at the trail row's right end. */
     addKey?: React.ReactNode;
     /** The entry header (EipEntryHeader). Absent on the Compare tab. */
     header?: React.ReactNode;
@@ -69,12 +86,26 @@ const HEADER_GAP = 6;
 // The trail row is as tall as the design's 36px round buttons, so the caret and the Add
 // key sit on one line whatever the trail holds.
 const TRAIL_ROW_HEIGHT = 36;
-// The trail-row caret's slot: PageHeader's 22px leaf chevron + its 9px gap to the title,
-// so the first crumb starts where the page title would. Collapses to 0 toward max.
-const TRAIL_CARET_SLOT = 31;
+// The pinned caret. Its glyph's top sits this far below the frame's top: centred on the
+// trail row at the open height, and on PageHeader's leaf `padTop` (27) at max.
+const CARET_GLYPH_PX = 22;
+const CARET_OPEN_TOP = TRAIL_TOP_PAD + TRAIL_ROW_HEIGHT / 2 - CARET_GLYPH_PX / 2;
+const CARET_TRAVEL = 27 - CARET_OPEN_TOP;
+// The tap target around the glyph, and how far it overhangs the glyph on each side.
+const CARET_HIT_PX = 40;
+const CARET_HIT_OVERHANG = (CARET_HIT_PX - CARET_GLYPH_PX) / 2;
+// The trail row's leading cluster, in px from the panel gutter. The gaps are measured between
+// the INK of each neighbour, because the caret and crumb glyphs both have side bearing.
+const TRAIL_ROW_GAP = 6;
+const TRAIL_LEFT = HEADWORD_TILE_MIN;                    // The crumb list's left boundary.
+const TRAIL_INK_LEFT = TRAIL_LEFT + EIP_TRAIL_WORD_PAD;
+const CARET_INK_RIGHT = CARET_GLYPH_PX - 5;             // keyboard_arrow_down's side bearing.
+const SPEAKER_CENTER = (CARET_INK_RIGHT + TRAIL_INK_LEFT) / 2;
+// How far the cluster and the trail travel toward max: speaker centre → caret centre.
+const CLUSTER_TRAVEL = SPEAKER_CENTER - CARET_GLYPH_PX / 2;
 
 const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(function EipUpperPanel(
-    { title, trail, addKey, header, onClose, showMinutePoints, bindHeaderDrag },
+    { title, trail, speaker, addKey, header, onClose, showMinutePoints, bindHeaderDrag },
     ref,
 ) {
     const colors = useEipColors();
@@ -93,6 +124,8 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
             className="eip-upper"
             {...bindHeaderDrag()}
             sx={{
+                // Positioning context for the pinned caret.
+                position: "relative",
                 flexShrink: 0,
                 // Height is owned by SheetPanel (writeTelescope); starts closed.
                 height: 0,
@@ -106,18 +139,46 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                 userSelect: "none",
             }}
         >
+            {/* THE caret — the only one, pinned to the frame (see the header comment). */}
+            <Box
+                className="eip-upper__caret"
+                role="button"
+                aria-label="Close"
+                onClick={onClose}
+                sx={{
+                    position: "absolute",
+                    zIndex: 1,
+                    left: PANEL_GUTTER - CARET_HIT_OVERHANG,
+                    top: CARET_OPEN_TOP - CARET_HIT_OVERHANG,
+                    width: CARET_HIT_PX,
+                    height: CARET_HIT_PX,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    transform: `translateY(calc(${CARET_TRAVEL}px * var(--sheet-telescope-t, 0)))`,
+                    transition: "transform var(--sheet-telescope-transition, 0ms) ease-out",
+                }}
+            >
+                <Icon name="keyboard_arrow_down" size={CARET_GLYPH_PX} color={colors.ink} />
+            </Box>
             <Box
                 ref={contentRef}
                 className="eip-upper__content"
-                sx={{ flexShrink: 0, display: "flex", flexDirection: "column", padding: "0 18px" }}
+                sx={{ flexShrink: 0, display: "flex", flexDirection: "column", padding: `0 ${PANEL_GUTTER}px` }}
             >
                 {/* TITLE — a real leaf PageHeader (see the header comment). It brings its own
                     18px side padding, so it cancels the content's gutter, and its own 8px
-                    bottom padding, which `extra` measures as part of the row it adds. */}
+                    bottom padding, which `extra` measures as part of the row it adds. Its
+                    chevron is hidden, not removed: it holds the title on the page's column,
+                    and the pinned caret draws over it. */}
                 <Box
                     ref={extraRef}
                     className="eip-upper__title-row"
-                    sx={{ margin: "0 -18px" }}
+                    sx={{
+                        margin: `0 -${PANEL_GUTTER}px`,
+                        "& .page-header__back-icon": { visibility: "hidden" },
+                    }}
                 >
                     <PageHeader
                         title={title}
@@ -129,7 +190,7 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                     />
                 </Box>
 
-                {/* TRAIL — `.trail`: the caret, the words, then the Add key at the right. */}
+                {/* TRAIL — `.trail`: room for the caret, the speaker, the words, the Add key. */}
                 <Box
                     className="eip-upper__trail-row"
                     sx={{
@@ -138,37 +199,41 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                         paddingTop: `${TRAIL_TOP_PAD}px`,
                         display: "flex",
                         alignItems: "center",
-                        gap: "6px",
+                        gap: `${TRAIL_ROW_GAP}px`,
+                        // The crumbs run off the screen edge. The Add key stays on the gutter,
+                        // and when it is present the crumbs stop beside it, with no end inset.
+                        marginRight: `-${PANEL_GUTTER}px`,
+                        "& .eip-add-key": { marginRight: `${PANEL_GUTTER}px` },
+                        "& .eip-entry-tab-list": { paddingRight: addKey ? 0 : `${PANEL_GUTTER}px` },
                     }}
                 >
-                    {/* The caret's slot narrows and fades as the title row (and ITS caret)
-                        telescopes in — width, not just opacity, so the crumbs slide left
-                        into the space rather than leaving a hole. Hit target is the full
-                        row height; at max its width is 0, so it cannot be hit. */}
+                    {/* The cluster's width places the trail; its margin slides both left
+                        toward max. The speaker is absolute, centred on the row. */}
                     <Box
-                        className="eip-upper__trail-caret"
-                        role="button"
-                        aria-label="Close"
-                        onClick={onClose}
+                        className="eip-upper__speaker-cluster"
                         sx={{
+                            position: "relative",
                             flexShrink: 0,
                             alignSelf: "stretch",
-                            display: "flex",
-                            alignItems: "center",
-                            overflow: "hidden",
-                            cursor: "pointer",
-                            // `6px` cancels the row gap so the first crumb sits at exactly
-                            // the chevron-to-title gap a page header has.
-                            width: `calc(${TRAIL_CARET_SLOT - 6}px * (1 - var(--sheet-telescope-t, 0)))`,
-                            marginRight: `calc(-6px * var(--sheet-telescope-t, 0))`,
-                            opacity: "calc(1 - var(--sheet-telescope-t, 0))",
-                            transition:
-                                "width var(--sheet-telescope-transition, 0ms) ease-out, " +
-                                "margin-right var(--sheet-telescope-transition, 0ms) ease-out, " +
-                                "opacity var(--sheet-telescope-transition, 0ms) ease-out",
+                            width: TRAIL_LEFT - TRAIL_ROW_GAP,
+                            marginLeft: `calc(${-CLUSTER_TRAVEL}px * var(--sheet-telescope-t, 0))`,
+                            transition: "margin-left var(--sheet-telescope-transition, 0ms) ease-out",
                         }}
                     >
-                        <Icon name="keyboard_arrow_down" size={22} color={colors.ink} />
+                        {speaker && (
+                            <Box
+                                className="eip-upper__speaker"
+                                sx={{
+                                    position: "absolute",
+                                    top: "50%",
+                                    left: SPEAKER_CENTER - SPEAKER_BUTTON_SIZE / 2,
+                                    marginTop: `${-SPEAKER_BUTTON_SIZE / 2}px`,
+                                    display: "flex",
+                                }}
+                            >
+                                {speaker}
+                            </Box>
+                        )}
                     </Box>
                     {trail ?? <Box sx={{ flex: 1 }} />}
                     {addKey}

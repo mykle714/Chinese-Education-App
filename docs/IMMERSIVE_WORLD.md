@@ -1,6 +1,6 @@
 # Immersive World (AI-driven NPCs in a walkable scene)
 
-> 🚩 **Behind a feature flag — currently ON.** `immersiveWorld` in
+> 🚩 **Behind a feature flag — currently OFF (since 2026-10-30).** `immersiveWorld` in
 > `server/contracts/featureFlags.ts` ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2e). One
 > mount gates BOTH halves of the feature — the phase-1 authoring endpoints and the phase-2
 > learner runtime share `immersiveWorldRoutes.ts` — plus the three `/immersive-world*`

@@ -64,8 +64,8 @@ interface WritingUsedInBubblesProps {
     /** The front card's element (FlashCardSection's `cardRef`) — the bubbles sit on its top edge. */
     cardRef: RefObject<HTMLElement | null>;
     /**
-     * The card is not on screen (Deck Tower: the session is parked, or the count card /
-     * a respawn drop hides the cards — FlpTowerHost `parked`, `cardsCovered`, `cardsHidden`).
+     * The card is not on screen (Deck Tower: the session is parked, or the count card
+     * hides the cards — FlpTowerHost `parked`, `cardsCovered`).
      * The bubbles vanish at once (no pop — the card they sit on is gone too) and the set
      * is cleared, so they GROW IN fresh once the card is seen. Without this, the first
      * card of a parked session played its grow-in unseen and was simply there on the dive.

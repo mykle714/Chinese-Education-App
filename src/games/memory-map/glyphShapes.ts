@@ -178,8 +178,8 @@ export function shapeFromMeasure(measured: MeasuredWord, scale: number): ShapePa
  * loaded. Returns null until then — the caller must not lay the map out with guessed
  * shapes, or every word would jump the moment the real ones arrived.
  *
- * Re-measures when the word set or the face changes (`fontKey` — the account's
- * `chineseFont` id). The face's web-font slices load per unicode range, so it asks
+ * Re-measures when the word set or the face changes (`fontKey` — the app's Chinese
+ * typeface id). The face's web-font slices load per unicode range, so it asks
  * `document.fonts.load` for exactly the characters on the map rather than the face in
  * general; if loading fails it measures anyway, with whatever the browser fell back to,
  * which is still what it will draw.

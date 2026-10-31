@@ -30,3 +30,15 @@ export function flpBreakGameFor(gameId: string): FlpBreakGame<any> | null {
 export function flpBreakCandidatesFor(world: FlpWorld, language: Language): FlpBreakCandidate[] {
     return flpBreakCandidates(GAME_REGISTRY, (id) => id in FLP_BREAK_GAMES, world, language);
 }
+
+/**
+ * The world's whole game suite, adapted or not: `playable` is false for a game whose Stage
+ * has not been extracted yet. For the Deck Tower's tester picker (ForcedBreakPicker), which
+ * lists every game of the world.
+ */
+export function flpBreakSuiteFor(world: FlpWorld, language: Language): { candidate: FlpBreakCandidate; playable: boolean }[] {
+    return flpBreakCandidates(GAME_REGISTRY, () => true, world, language).map((candidate) => ({
+        candidate,
+        playable: candidate.game.gameId in FLP_BREAK_GAMES,
+    }));
+}

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bandMaterial, CARD_THICKNESS, frozenBobOffsetPx, type CameraView, type WorldRect } from "./iso";
-import { STUDY_CAMERA_HEIGHT, easeDive, studyCameraView, type StudyFrame } from "./towerCamera";
-import { IMPACT_MS, SKY_DROP } from "./towerResizes";
+import { easeDive, studyCameraView, type StudyFrame } from "./towerCamera";
 import { CARD_D, CARD_W, FLOOR_Z } from "./towerPlatforms";
 import type { TowerWorldId } from "./towerWorlds";
 import { COLORS } from "../../theme/colors";
@@ -35,16 +34,15 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  *   uncovering the count card is handed to its own layer over the session (TowerCoverCard,
  *              `cover`), which rests a beat and slides it off the deck — uncovering the
  *              session's first card where it lay. Like taking the top card off a real deck.
- *   studying   the camera stands over the top card, at the tower's current height:
- *                - a CORRECT mark takes a card off — the camera follows the top down
- *                  once the flown card has cleared the screen (CARD_DROP_DELAY_MS, then
- *                  CARD_DROP_MS);
+ *   studying   the platform is gone and the camera stands still over the top card:
+ *                - a CORRECT mark takes a card off;
  *                - an INCORRECT mark changes nothing here (the flp tucks the card back
  *                  into the deck: FlashCardSection `towerStack`);
- *                - undoing a correct mark puts the card back (UNDO_RISE_MS);
+ *                - undoing a correct mark puts the card back;
+ *                - a game break's cleared cards are tallied while it runs and come off
+ *                  together as it ends;
  *                - the tower running OUT while the session still deals (incorrect cards
- *                  coming round again, lent cards) spawns the session's cards back in
- *                  with the sky drop, re-drawn for this camera (`spawn`);
+ *                  coming round again, lent cards) simply stands at the session's size again;
  *                - the session running DRY (nothing left to deal) climbs out.
  *   covering   the count card slides back onto the deck (at the session's tally), covering
  *              the session's card; skipped when the tower has run out (no top card).
@@ -59,22 +57,19 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  * a session parked longer than PARKED_LOOP_FRESH_MS is re-dealt (remounted) on its next
  * tap instead, since cards come off cooldown meanwhile. `sessions` lists them for the page.
  *
- * Hiding the platform (docs/DECK_TOWER.md § "Studying the tower" → "Hiding the platform"):
- * with the study header's toggle on (`platformHidden`), the page fades the whole platform
- * out ON THE DIVE and back in on the climb (`platformOpacity`, on the dive's eased `e`) —
- * the cards float on the sky. The deck itself does NOT fade: the page keeps it drawn over
- * the fade (DeckTowerPlatform `keepDeck`), so the dive still lands on the count card, it
- * still slides off and back on, and the session's own fade stays hidden under it. The
- * camera then stops following the tower: a correct mark's drop, an undo's rise and a
- * spawn's sky drop are all skipped (the count still changes), and the camera snaps back
- * onto the tower's real top when the platform comes back (the toggle turned off, or the
- * climb-out's own settle in `climbOut`).
+ * The platform fades (docs/DECK_TOWER.md § "Studying the tower" → "The platform fades"):
+ * the page fades the whole platform out ON THE DIVE and back in on the climb
+ * (`platformOpacity`, on the dive's eased `e`) — the cards float on the sky. The deck itself
+ * does NOT fade: the page keeps it drawn over the fade (DeckTowerPlatform `keepDeck`), so
+ * the dive still lands on the count card, it still slides off and back on, and the
+ * session's own fade stays hidden under it. The camera does not follow the tower: only the
+ * count changes, and `climbOut` settles the camera on the tower's real top.
  *
  * The study surface earns minute points while `studying` (the page claims it —
  * src/minutePoints/studySurface.ts).
  *
- * Depended on by: DeckTowerPage.tsx. Depends on: towerCamera.ts, towerResizes.ts
- * (`SKY_DROP`'s timing, reused), TowerCoverCard.tsx (its timings), flpTowerHost.ts.
+ * Depended on by: DeckTowerPage.tsx. Depends on: towerCamera.ts, TowerCoverCard.tsx (its
+ * timings), flpTowerHost.ts.
  */
 
 export type TowerStudyPhase = "idle" | "preparing" | "diving" | "uncovering" | "studying" | "covering" | "climbing";
@@ -82,16 +77,6 @@ export type TowerStudyPhase = "idle" | "preparing" | "diving" | "uncovering" | "
 /** The dive onto the card, and the climb back out. */
 const DIVE_MS = 550;
 const CLIMB_MS = 480;
-/** The camera following the tower's top down one card (a correct mark), and back up (its undo). */
-const CARD_DROP_MS = 240;
-const UNDO_RISE_MS = 380;
-/**
- * A correct mark's camera drop waits this long after the swipe, so the zoom plays as the
- * flown card has fully left the screen rather than underneath it — the whole fly-out
- * (CARD_FLY_OUT_MS), so the two stay in step if the fly-out is retuned.
- * The drop is short (CARD_DROP_MS) so the one-card zoom reads as a punch, not a drift.
- */
-const CARD_DROP_DELAY_MS = CARD_FLY_OUT_MS;
 /** The session running dry: how long its last card has to fly off before the camera climbs out. */
 const DRY_CLIMB_DELAY_MS = 700;
 /** Give up waiting for the session's card to measure after this, and dive onto the fallback frame. */
@@ -102,26 +87,6 @@ const PREPARE_TIMEOUT_MS = 5000;
  * flpLaunch.ts's preloaded loops (`LOOP_FRESH_MS`).
  */
 const PARKED_LOOP_FRESH_MS = 5 * 60_000;
-/**
- * A spawn's drop starts this far above its landing, as a share of the camera's height over
- * the top: just short of the camera, so the falling stack swells past the screen's edges
- * as it starts (iso/camera.ts clamps anything closer).
- */
-const SPAWN_LIFT_SHARE = 0.85;
-/** World units the platform sinks under a spawn's landing (DeckTowerPlatform's `IMPACT_SINK`). */
-const SPAWN_IMPACT_SINK = 0.55;
-
-/** A spawn's sky drop, as the page draws it. */
-export interface StudyDrop {
-    key: number;
-    /** Cards in the falling stack. */
-    cards: number;
-    /** World z of its underside right now; null once it has landed (the tower stands at `cards` then). */
-    baseZ: number | null;
-    /** Bumped when it lands — the page keys the landing's smoke on it. */
-    landedKey: number | null;
-}
-
 export interface TowerStudy {
     phase: TowerStudyPhase;
     /** Anything other than idle: the tower page is handed over to the session. */
@@ -140,7 +105,6 @@ export interface TowerStudy {
     cameraZ: number;
     /** The viewBox y on the tower's axis where the screen's middle stood at the tap (the sky's altitude then). */
     startMidY: number;
-    drop: StudyDrop | null;
     /**
      * Every mounted flp session (one per visited world), with its host contract; the one
      * being studied has `host.parked` false. `key` changes when a stale session is re-dealt
@@ -157,16 +121,12 @@ export interface TowerStudy {
     /** The count card as its own layer (TowerCoverCard), while it slides off or back on. */
     cover: TowerCover | null;
     /**
-     * The studied platform's opacity, for the "hide the platform" toggle: 1 with the toggle
-     * off; on, it tracks the camera — out on the dive (1 − `e`), 0 while down, back in on the
-     * climb. The camera does not follow the tower while it is hidden.
+     * The studied platform's opacity: it tracks the camera — out on the dive (1 − `e`), 0
+     * while down, back in on the climb.
      */
     platformOpacity: number;
-    /**
-     * Ease `platformOpacity`'s changes (a CSS transition): only while the camera is down,
-     * where it changes by the toggle. On the dive and the climb it is per frame already.
-     */
-    platformFadeEased: boolean;
+    /** The deck's own opacity (it stays out of the platform's fade): 0 for a game drawn on the bare ground, which clears everything. */
+    deckOpacity: number;
     /** Start a session on `world`'s tower of `cards` cards (the stack tap). */
     start: (args: { world: TowerWorldId; cards: number; svg: SVGSVGElement; viewBox: SceneBox; startMidY: number }) => void;
 }
@@ -185,6 +145,8 @@ interface WorldHandles {
     onExit: () => void;
     onMarked: (isCorrect: boolean) => void;
     onUndone: (wasCorrect: boolean) => void;
+    onGameCardCleared: () => void;
+    onGameBreakChange: (up: boolean, onGround: boolean) => void;
     onLoopChange: (loop: LoopReport) => void;
     cardFrameRef: (el: HTMLDivElement | null) => void;
 }
@@ -204,28 +166,8 @@ export interface SceneBox {
 const STUDY_PLATE_TONES = bandMaterial(COLORS.white);
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const easeOutCubic = (u: number) => 1 - Math.pow(1 - clamp01(u), 3);
 /** World z of the top face of a tower of `cards` cards (the floor when empty). */
 const topZOf = (cards: number) => FLOOR_Z + Math.max(0, cards) * CARD_THICKNESS;
-
-/**
- * The landing's blow, as a share of SPAWN_IMPACT_SINK over the impact's 0 → 1: down fast,
- * back up past rest, a small settle — DeckTowerPlatform's `deck-tower-platform-sink`
- * keyframes, as a function (this camera cannot use a screen-y CSS slide).
- */
-function impactSink(u: number): number {
-    const keys: [number, number][] = [[0, 0], [0.16, 1], [0.46, -0.28], [0.72, 0.08], [1, 0]];
-    const t = clamp01(u);
-    for (let i = 1; i < keys.length; i++) {
-        const [t1, v1] = keys[i];
-        const [t0, v0] = keys[i - 1];
-        if (t <= t1) {
-            const k = (t - t0) / (t1 - t0);
-            return v0 + (v1 - v0) * (0.5 - Math.cos(k * Math.PI) / 2);
-        }
-    }
-    return 0;
-}
 
 /** Where the card lands when the session's own card could not be measured: centred, phone-card sized. */
 function fallbackFrame(svg: SVGSVGElement, box: SceneBox): StudyFrame {
@@ -260,9 +202,6 @@ export function useTowerStudy(opts: {
     visitedWorld: TowerWorldId | null;
     /** The study header's title for a world. */
     titleFor: (world: TowerWorldId) => string;
-    /** The study header's "hide the platform" toggle (studyPlatformStore.ts), and its setter. */
-    platformHidden: boolean;
-    onPlatformHiddenChange: (hidden: boolean) => void;
     /** The climb has ended: the tower stands at `cards` again in the tower view. */
     onClimbedOut: (world: TowerWorldId, cards: number) => void;
 }): TowerStudy {
@@ -276,8 +215,6 @@ export function useTowerStudy(opts: {
     const [frame, setFrame] = useState<StudyFrame | null>(null);
     const [bobY, setBobY] = useState(0);
     const [startMidY, setStartMidY] = useState(0);
-    const [drop, setDrop] = useState<StudyDrop | null>(null);
-    const [cardsHidden, setCardsHidden] = useState(false);
     const [dealReady, setDealReady] = useState(false);
     // The count card's slide (TowerCoverCard), and the card frame's screen box it lies on.
     const [coverMode, setCoverMode] = useState<TowerCover["mode"] | null>(null);
@@ -302,30 +239,17 @@ export function useTowerStudy(opts: {
         return (w && loops.current.get(w)) || { size: 0, loading: true, hasCard: false };
     };
     const timers = useRef<number[]>([]);
-    const zFrame = useRef(0);
-    const dropFrame = useRef(0);
-    const nextKey = useRef(1);
+    // The game break in progress, and the cards it has cleared so far (still on the tower).
+    const gameBreakUp = useRef(false);
+    const gameCleared = useRef(0);
+    // A game drawn on the bare ground is up: the deck is faded for it.
+    const [breakOnGround, setBreakOnGround] = useState(false);
 
     const clearClocks = useCallback(() => {
         for (const t of timers.current) window.clearTimeout(t);
         timers.current = [];
-        cancelAnimationFrame(zFrame.current);
-        cancelAnimationFrame(dropFrame.current);
     }, []);
     useEffect(() => clearClocks, [clearClocks]);
-
-    /** Ease the camera's height to `to` over `ms` (cancelling any height move in flight). */
-    const moveCameraZ = useCallback((to: number, ms: number) => {
-        cancelAnimationFrame(zFrame.current);
-        const from = latest.current.cameraZ;
-        const t0 = performance.now();
-        const tick = (now: number) => {
-            const k = (now - t0) / ms;
-            setCameraZ(from + (to - from) * easeOutCubic(k));
-            if (k < 1) zFrame.current = requestAnimationFrame(tick);
-        };
-        zFrame.current = requestAnimationFrame(tick);
-    }, []);
 
     // ── Parked sessions: mount each world's on its first visit ─────────────────
     const { visitedWorld } = opts;
@@ -361,11 +285,12 @@ export function useTowerStudy(opts: {
             setCameraZ(topZOf(n));
             setU(0);
             setFrame(null);
-            setDrop(null);
-            setCardsHidden(false);
             setStartMidY(midY);
             setDealReady(false);
             setCoverMode(null);
+            gameBreakUp.current = false;
+            setBreakOnGround(false);
+            gameCleared.current = 0;
             setPhase("preparing");
             // A parked session already dealt dives at once; one still loading (or just
             // re-dealt) is waited for — its `onLoopChange` sets this.
@@ -479,8 +404,6 @@ export function useTowerStudy(opts: {
             }
             setPhase("idle");
             setWorld(null);
-            setDrop(null);
-            setCardsHidden(false);
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
@@ -493,11 +416,16 @@ export function useTowerStudy(opts: {
         const p = latest.current.phase;
         if (p !== "studying" && p !== "uncovering" && p !== "diving" && p !== "preparing") return;
         clearClocks();
-        setDrop(null);
-        setCardsHidden(false);
         setCoverMode(null);
+        // Leaving mid-game: its cleared cards come off now, unseen, so the reconcile
+        // starts from the right height.
+        const cardsLeft = Math.max(0, latest.current.cards - gameCleared.current);
+        gameCleared.current = 0;
+        gameBreakUp.current = false;
+        setBreakOnGround(false);
+        setCards(cardsLeft);
         // Settle the camera on the tower's real top before flying out.
-        setCameraZ(topZOf(latest.current.cards));
+        setCameraZ(topZOf(cardsLeft));
         if (p === "preparing") {
             setPhase("idle");
             setWorld(null);
@@ -505,69 +433,23 @@ export function useTowerStudy(opts: {
         }
         // Down on the deck: put the count card back on it first (there is none to put back
         // on a tower that has run out). Mid-dive the count card never came off.
-        if (p !== "diving" && latest.current.cards > 0) {
+        if (p !== "diving" && cardsLeft > 0) {
             setPhase("covering");
             if (slideCover("returning", COVER_RETURN_MS, "climbing")) return;
         }
         setPhase("climbing");
     }, [clearClocks, slideCover]);
 
-    // ── A spawn: the tower ran out while the session still deals ──────────────
-    // The session's cards drop back onto the empty floor — the sky drop, re-drawn for this
-    // camera: the stack is re-projected every frame (it falls TOWARD the floor, away from a
-    // camera looking straight down, so it shrinks rather than slides), the platform's sink
-    // is a bump of the camera's height, and the cards stay hidden until it has landed.
-    const spawn = useCallback(
-        (n: number) => {
-            // The platform hidden: no drop to watch — the tower simply stands at `n` again,
-            // and the cards stay up.
-            if (latest.current.opts.platformHidden) {
-                setCards(n);
-                return;
-            }
-            const lift = STUDY_CAMERA_HEIGHT * SPAWN_LIFT_SHARE;
-            const plan = SKY_DROP.plan({ fromCards: 0, toCards: n, skyAbove: lift, cameraMs: 0 });
-            if (plan.kind !== "sky-drop") return;
-            const { fallMs } = plan.drop;
-            const key = nextKey.current++;
-            const landing = topZOf(n);
-            setCardsHidden(true);
-            cancelAnimationFrame(zFrame.current);
-            setCameraZ(landing);
-            const t0 = performance.now();
-            const tick = (now: number) => {
-                const t = now - t0;
-                if (t < fallMs) {
-                    // Free fall from rest: the height lost grows with t².
-                    const k = t / fallMs;
-                    setDrop({ key, cards: n, baseZ: FLOOR_Z + lift * (1 - k * k), landedKey: null });
-                } else if (t < fallMs + IMPACT_MS) {
-                    if (latest.current.cards !== n) setCards(n);
-                    setDrop({ key, cards: n, baseZ: null, landedKey: key });
-                    setCameraZ(landing + SPAWN_IMPACT_SINK * impactSink((t - fallMs) / IMPACT_MS));
-                } else {
-                    setCameraZ(landing);
-                    setDrop(null);
-                    setCardsHidden(false);
-                    return;
-                }
-                dropFrame.current = requestAnimationFrame(tick);
-            };
-            dropFrame.current = requestAnimationFrame(tick);
-        },
-        []
-    );
-
-    /** After the last card on the tower went: spawn what the session still deals, or leave. */
+    /** After the last card on the tower went: stand at what the session still deals, or leave. */
     const afterTowerEmptied = useCallback(() => {
         const t = window.setTimeout(() => {
             if (latest.current.phase !== "studying" || latest.current.cards > 0) return;
             const loop = studiedLoop();
-            if (loop.hasCard) spawn(Math.max(1, loop.size));
+            if (loop.hasCard) setCards(Math.max(1, loop.size));
             else if (!loop.loading) climbOut();
         }, CARD_FLY_OUT_MS);
         timers.current.push(t);
-    }, [spawn, climbOut]);
+    }, [climbOut]);
 
     // ── The flp's reports ─────────────────────────────────────────────────────
     // Each session reports through its own world's handles; only the studied session's
@@ -578,28 +460,40 @@ export function useTowerStudy(opts: {
         (isCorrect: boolean) => {
             if (latest.current.phase !== "studying" || !isCorrect) return;
             const next = Math.max(0, latest.current.cards - 1);
-            // The count drops at the swipe (undo and the empty-tower check read it); only the
-            // camera waits for the card to leave. The target is read when the timer fires,
-            // so an undo or a second swipe inside the delay lands on the tower as it stands.
             setCards(next);
-            const t = window.setTimeout(() => {
-                // No zoom with the platform hidden: nothing on screen to follow down.
-                if (latest.current.phase !== "studying" || latest.current.opts.platformHidden) return;
-                moveCameraZ(topZOf(latest.current.cards), CARD_DROP_MS);
-            }, CARD_DROP_DELAY_MS);
-            timers.current.push(t);
             if (next === 0) afterTowerEmptied();
         },
-        [moveCameraZ, afterTowerEmptied]
+        [afterTowerEmptied]
     );
     const onUndone = useCallback(
         (wasCorrect: boolean) => {
             if (latest.current.phase !== "studying" || !wasCorrect) return;
-            const next = latest.current.cards + 1;
-            setCards(next);
-            if (!latest.current.opts.platformHidden) moveCameraZ(topZOf(next), UNDO_RISE_MS);
+            setCards(latest.current.cards + 1);
         },
-        [moveCameraZ]
+        []
+    );
+    /** Take the game's tallied cards off the tower. */
+    const settleGameCards = useCallback(() => {
+        const cleared = gameCleared.current;
+        if (cleared === 0 || latest.current.phase !== "studying") return;
+        gameCleared.current = 0;
+        const next = Math.max(0, latest.current.cards - cleared);
+        setCards(next);
+        if (next === 0) afterTowerEmptied();
+    }, [afterTowerEmptied]);
+    const onGameCardCleared = useCallback(() => {
+        if (latest.current.phase !== "studying") return;
+        gameCleared.current += 1;
+        // A mark's answer can land after the game has gone: it comes off on its own.
+        if (!gameBreakUp.current) settleGameCards();
+    }, [settleGameCards]);
+    const onGameBreakChange = useCallback(
+        (up: boolean, onGround: boolean) => {
+            gameBreakUp.current = up;
+            setBreakOnGround(up && onGround);
+            if (!up) settleGameCards();
+        },
+        [settleGameCards]
     );
     const onStudiedLoopChange = useCallback(
         (loop: LoopReport) => {
@@ -628,6 +522,8 @@ export function useTowerStudy(opts: {
             onExit: () => { if (isStudied(w)) climbOut(); },
             onMarked: (isCorrect) => { if (isStudied(w)) onMarked(isCorrect); },
             onUndone: (wasCorrect) => { if (isStudied(w)) onUndone(wasCorrect); },
+            onGameCardCleared: () => { if (isStudied(w)) onGameCardCleared(); },
+            onGameBreakChange: (up, onGround) => { if (isStudied(w)) onGameBreakChange(up, onGround); },
             onLoopChange: (loop) => {
                 loops.current.set(w, loop);
                 if (isStudied(w)) onStudiedLoopChange(loop);
@@ -655,16 +551,6 @@ export function useTowerStudy(opts: {
         for (const ro of frameObservers.current.values()) ro.disconnect();
     }, []);
 
-    // The platform coming back mid-session (the toggle turned off): the camera has stood
-    // still since it was hidden, so put it back on the tower's real top — while the fade-in
-    // is still at nothing. (Leaving brings it back through climbOut's own settle.)
-    const { platformHidden } = opts;
-    useEffect(() => {
-        if (platformHidden || latest.current.phase !== "studying") return;
-        cancelAnimationFrame(zFrame.current);
-        setCameraZ(topZOf(latest.current.cards));
-    }, [platformHidden]);
-
     // A session that ran dry before the camera was down (every card resting from the start)
     // climbs straight back out once it is.
     useEffect(() => {
@@ -682,7 +568,7 @@ export function useTowerStudy(opts: {
     const parkedHostFor = (w: TowerWorldId): FlpTowerHost => {
         let h = parkedHosts.current.get(w);
         if (h) return h;
-        const { onExit, onMarked: marked, onUndone: undone, onLoopChange, cardFrameRef } = handlesFor(w);
+        const { onExit, onMarked: marked, onUndone: undone, onGameCardCleared: gameCardCleared, onGameBreakChange: gameBreakChange, onLoopChange, cardFrameRef } = handlesFor(w);
         h = {
             world: w,
             parked: true,
@@ -690,12 +576,9 @@ export function useTowerStudy(opts: {
             onExit,
             onMarked: marked,
             onUndone: undone,
+            onGameCardCleared: gameCardCleared,
+            onGameBreakChange: gameBreakChange,
             onLoopChange,
-            cardsHidden: false,
-            // A parked session draws no header and flips nothing; the studied host carries
-            // the live toggle (this one is cached by identity, so it would only go stale).
-            platformHidden: false,
-            onPlatformHiddenChange: latest.current.opts.onPlatformHiddenChange,
             // Hidden at once, like under the count card (the page also hides the layer).
             cardsCovered: true,
             cardFrameRef,
@@ -705,13 +588,12 @@ export function useTowerStudy(opts: {
         return h;
     };
 
-    const { onPlatformHiddenChange } = opts;
     const sessions: TowerStudySession[] = useMemo(
         () =>
             mountedWorlds.map((w) => {
                 const key = `${w}:${dealKeys[w] ?? 0}`;
                 if (w !== world) return { world: w, key, host: parkedHostFor(w) };
-                const { onExit, onMarked: marked, onUndone: undone, onLoopChange, cardFrameRef } = handlesFor(w);
+                const { onExit, onMarked: marked, onUndone: undone, onGameCardCleared: gameCardCleared, onGameBreakChange: gameBreakChange, onLoopChange, cardFrameRef } = handlesFor(w);
                 const host: FlpTowerHost = {
                     world: w,
                     parked: false,
@@ -719,10 +601,9 @@ export function useTowerStudy(opts: {
                     onExit,
                     onMarked: marked,
                     onUndone: undone,
+                    onGameCardCleared: gameCardCleared,
+                    onGameBreakChange: gameBreakChange,
                     onLoopChange,
-                    cardsHidden,
-                    platformHidden,
-                    onPlatformHiddenChange,
                     // Under the count card: the dive (it has not come off yet), the climb
                     // (it is back on) — and before both, while the session is measured.
                     cardsCovered: phase === "preparing" || phase === "diving" || phase === "climbing",
@@ -733,7 +614,7 @@ export function useTowerStudy(opts: {
             }),
         // `handlesFor` / `parkedHostFor` read refs and stable callbacks only.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [mountedWorlds, dealKeys, world, phase, cardsHidden, platformHidden, onPlatformHiddenChange]
+        [mountedWorlds, dealKeys, world, phase]
     );
 
     const e = easeDive(u);
@@ -770,13 +651,12 @@ export function useTowerStudy(opts: {
         e: showCamera ? e : 0,
         cameraZ,
         startMidY,
-        drop,
         sessions,
         cameraDown,
         towerPrintShown: !cameraDown,
         cover,
-        platformOpacity: !platformHidden ? 1 : cameraDown ? 0 : phase === "diving" || phase === "climbing" ? 1 - e : 1,
-        platformFadeEased: cameraDown,
+        platformOpacity: cameraDown ? 0 : phase === "diving" || phase === "climbing" ? 1 - e : 1,
+        deckOpacity: breakOnGround ? 0 : 1,
         start,
     };
 }

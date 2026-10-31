@@ -19,11 +19,16 @@ export const BREAK_INTERVAL = 10;
 /**
  * Where the session is relative to a break.
  *   cards    — studying; a break may be DUE (the front card is the last before it).
- *   title    — the break's title card is up (Skip / Play).
+ *   title    — the break's card is the top card of the stack (Skip / Play).
+ *   skipping — Skip: the break's card is flying off, the next card already under it.
+ *   growing  — Play: the card is growing into the game's panel.
  *   playing  — the game's Stage is mounted; its own results card ends with "Back to cards".
  *   leaving  — the game area is sliding away; the stack is still hidden behind it.
  */
-export type GameBreakPhase = "cards" | "title" | "playing" | "leaving";
+export type GameBreakPhase = "cards" | "title" | "skipping" | "growing" | "playing" | "leaving";
+
+/** How the page brings the flp back: the word tools only, or the whole stack too. */
+export type BreakReturnMotion = "tools" | "full";
 
 /** A break that has been decided on: which game, and the board it will be dealt. */
 interface PlannedBreak {
@@ -41,22 +46,28 @@ export interface UseGameBreakReturn {
     /** The front card is the last before a break: render no card behind it. */
     due: boolean;
     /** The stack's hold for FlashCardSection's `gameBreak` prop. */
-    stackHold: "due" | "active" | null;
+    stackHold: "due" | "title" | "skipping" | "active" | null;
     /** The decided break, from the moment it fell due until it ends. */
     planned: PlannedBreak | null;
     /** True while Play waits for the prefetched board. */
     playPending: boolean;
+    /** The game area is on screen: growing out of the card, playing, or falling away. */
+    areaMounted: boolean;
     /** The game's Stage is (still) mounted — playing, or falling away after it. */
     stageMounted: boolean;
-    /** Bumped each time a break ends, so the page can play the return choreography. */
+    /** Bumped each time the flp's tools should come back, for the return choreography. */
     returnNonce: number;
+    /** Which return `returnNonce` asks for. */
+    returnMotion: BreakReturnMotion;
     /** useWorkingLoop's `onDismissed` / `onUndone`. */
     noteDismissed: () => void;
     noteUndone: () => void;
     play: () => void;
-    /** Skip, or the results card's "Back to cards": start the game area's exit. */
+    /** The card finished growing into the game's panel: mount the game. */
+    finishGrow: () => void;
+    /** Skip, or the results card's "Back to cards": start the exit. */
     beginLeave: () => void;
-    /** The exit animation finished: the stack comes back, the counter starts over. */
+    /** The exit animation finished: the break is over, the counter starts over. */
     finishLeave: () => void;
     /** Counter back to 0, no break in progress (a Deck Tower visit ended). */
     reset: () => void;
@@ -83,16 +94,21 @@ export function useGameBreak(args: {
     workingLoop: readonly VocabEntry[];
     /** Suppress breaks entirely (e.g. while the card editor is open). */
     disabled?: boolean;
+    /**
+     * A tester's pinned candidate key (forcedBreak.ts): every next card is a break of this
+     * game, instead of every BREAK_INTERVAL cards a random one. Ignored when it is not a
+     * candidate here (docs/FLP_GAME_BREAKS.md § 10).
+     */
+    forcedKey?: string | null;
 }): UseGameBreakReturn {
-    const { world, language, studyMode, collection, workingLoop, disabled = false } = args;
+    const { world, language, studyMode, collection, workingLoop, disabled = false, forcedKey = null } = args;
 
     const [cardsSinceBreak, setCardsSinceBreak] = useState(0);
     const [phase, setPhase] = useState<GameBreakPhase>("cards");
     const [planned, setPlanned] = useState<PlannedBreak | null>(null);
     const [playRequested, setPlayRequested] = useState(false);
     const [returnNonce, setReturnNonce] = useState(0);
-    // Which body the area is falling away WITH (`leaving` keeps it on screen).
-    const [leftFromPlaying, setLeftFromPlaying] = useState(false);
+    const [returnMotion, setReturnMotion] = useState<BreakReturnMotion>("full");
     // The previous break's (game, mode), so the next one differs when it can (§ 3).
     const previousKeyRef = useRef<string | null>(null);
     // Source of PlannedBreak.id.
@@ -106,6 +122,7 @@ export function useGameBreak(args: {
 
     // Derived from the registry — enabled, language-gated, on this bar, with an adapter.
     const candidates = useMemo(() => flpBreakCandidatesFor(world, language), [world, language]);
+    const forced = useMemo(() => candidates.find((c) => c.key === forcedKey) ?? null, [candidates, forcedKey]);
 
     // DUE: the front card is the last before the break. Gated on there being a game to
     // offer and on the loop not winding down (a 1-card loop is about to run dry; § 1).
@@ -115,7 +132,7 @@ export function useGameBreak(args: {
         && workingLoop.length >= 2
         // Modulo, so a break skipped for being disabled (the editor was open) or for a
         // winding-down loop comes round again a full interval later instead of never.
-        && cardsSinceBreak % BREAK_INTERVAL === BREAK_INTERVAL - 1;
+        && (forced !== null || cardsSinceBreak % BREAK_INTERVAL === BREAK_INTERVAL - 1);
 
     // Decide the break the moment it falls due, and prefetch its board while the last
     // card is still being studied — so Play has no spinner (§ 1). The seed is the loop
@@ -153,10 +170,12 @@ export function useGameBreak(args: {
 
     useEffect(() => {
         if (!due || planned || !focusRead) return;
+        // A tester's pin narrows the pool to its one game (§ 10); the focus rule still holds.
+        const pool = forced ? [forced] : candidates;
         // Only games today's focus set can fill; none → the break is skipped (§ 5).
         const playable = focusRemaining == null
-            ? candidates
-            : candidates.filter((c) => focusRemaining >= focusGameMinimum(c.game.gameId));
+            ? pool
+            : pool.filter((c) => focusRemaining >= focusGameMinimum(c.game.gameId));
         const candidate = pickBreakCandidate(playable, previousKeyRef.current);
         const adapter = candidate ? flpBreakGameFor(candidate.game.gameId) : null;
         if (!candidate || !adapter) return;
@@ -210,6 +229,7 @@ export function useGameBreak(args: {
         // playing, so only the title phase lands here.
         if (phase === "title") {
             setPhase("cards");
+            setReturnMotion("tools");
             setReturnNonce((n) => n + 1);
         }
     }, [phase]);
@@ -219,24 +239,38 @@ export function useGameBreak(args: {
     useEffect(() => {
         if (playRequested && phase === "title" && planned?.prefetchSettled) {
             setPlayRequested(false);
-            setPhase("playing");
+            setPhase("growing");
         }
     }, [playRequested, phase, planned?.prefetchSettled]);
 
+    const finishGrow = useCallback(() => {
+        setPhase((p) => (p === "growing" ? "playing" : p));
+    }, []);
+
     const beginLeave = useCallback(() => {
         setPlayRequested(false);
-        setLeftFromPlaying(phase === "playing");
-        setPhase((p) => (p === "title" || p === "playing" ? "leaving" : p));
+        if (phase === "title") {
+            // Skip: the tools return WITH the card's fly-off — the next card is already there.
+            setPhase("skipping");
+            setReturnMotion("tools");
+            setReturnNonce((n) => n + 1);
+        } else if (phase === "playing") {
+            setPhase("leaving");
+        }
     }, [phase]);
 
     const finishLeave = useCallback(() => {
+        // Only the game's exit still owes a return; Skip played its own in `beginLeave`.
+        if (phase === "leaving") {
+            setReturnMotion("full");
+            setReturnNonce((n) => n + 1);
+        }
         previousKeyRef.current = planned?.candidate.key ?? previousKeyRef.current;
         setPlanned(null);
         // Played or skipped, the next break is BREAK_INTERVAL cards away (§ 1).
         setCardsSinceBreak(0);
         setPhase("cards");
-        setReturnNonce((n) => n + 1);
-    }, [planned]);
+    }, [planned, phase]);
 
     /**
      * Start the counter over with no break in progress — a Deck Tower visit ended and the
@@ -252,7 +286,10 @@ export function useGameBreak(args: {
         setPhase("cards");
     }, [phase]);
 
-    const stackHold: "due" | "active" | null = phase !== "cards" ? "active" : due ? "due" : null;
+    const stackHold: UseGameBreakReturn["stackHold"] =
+        phase === "cards" ? (due ? "due" : null)
+        : phase === "title" || phase === "skipping" ? phase
+        : "active";
 
     return {
         phase,
@@ -260,11 +297,14 @@ export function useGameBreak(args: {
         stackHold,
         planned,
         playPending: playRequested && !planned?.prefetchSettled,
-        stageMounted: phase === "playing" || (phase === "leaving" && leftFromPlaying),
+        areaMounted: phase === "growing" || phase === "playing" || phase === "leaving",
+        stageMounted: phase === "playing" || phase === "leaving",
         returnNonce,
+        returnMotion,
         noteDismissed,
         noteUndone,
         play,
+        finishGrow,
         beginLeave,
         finishLeave,
         reset,

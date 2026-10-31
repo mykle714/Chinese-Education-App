@@ -22,6 +22,7 @@ import {
     sanitizeTextRotation,
     clampTextCenterFully,
     snapTextScale,
+    textBlockMaxWidth,
     textItemTransform,
     TEXT_BLOCKS,
 } from "../cardTextLayout";
@@ -537,6 +538,10 @@ const CardIconCanvas: React.FC<{
     // Live DOM refs to each text wrapper so the on-release clamp can measure the rendered
     // (scaled + rotated) bounding box and keep the WHOLE block on-card.
     const textRefs = useRef<Record<TextBlock, HTMLDivElement | null>>({ foreign: null, english: null });
+    // Invisible box filling the area text may occupy: the printed panel on Deck Tower stock,
+    // the whole card elsewhere. Measured because `--card-stock-inset` is a container-unit
+    // calc() that script can't read as a number.
+    const textBoundsRef = useRef<HTMLDivElement | null>(null);
     // Denied-gesture shake for a LOCKED text block (mirrors the icon shake), keyed by block.
     const [textShake, setTextShake] = useState<{ block: TextBlock; nonce: number } | null>(null);
     const triggerTextShake = (block: TextBlock) =>
@@ -548,8 +553,9 @@ const CardIconCanvas: React.FC<{
     const updateText = (block: TextBlock, patch: Partial<TextLayoutItem>) =>
         onTextChange({ ...textLayout, [block]: { ...textLayout[block], ...patch } });
 
-    // Clamp a text block's center on release so the whole rendered box stays on-card. Measures
-    // the wrapper's AABB (already includes scale + rotation) and converts px → fractions.
+    // Clamp a text block's center on release so the whole rendered box stays inside the text
+    // bounds. Measures the wrapper's AABB (already includes scale + rotation) and converts
+    // px → fractions.
     const clampTextRelease = (block: TextBlock, x: number, y: number): { x: number; y: number } => {
         const r = rect();
         const el = textRefs.current[block];
@@ -557,7 +563,10 @@ const CardIconCanvas: React.FC<{
         const box = el.getBoundingClientRect();
         const halfWFrac = box.width / 2 / r.width;
         const halfHFrac = box.height / 2 / r.height;
-        return clampTextCenterFully(x, y, halfWFrac, halfHFrac);
+        const bounds = textBoundsRef.current?.getBoundingClientRect();
+        const insetXFrac = bounds ? (1 - bounds.width / r.width) / 2 : 0;
+        const insetYFrac = bounds ? (1 - bounds.height / r.height) / 2 : 0;
+        return clampTextCenterFully(x, y, halfWFrac, halfHFrac, insetXFrac, insetYFrac);
     };
 
     // mx0/my0 baseline the pre-recognition movement — same first-frame-jump fix as the icon
@@ -724,10 +733,10 @@ const CardIconCanvas: React.FC<{
                     // so an icon dragged into a corner is cut off exactly where it
                     // would be once the layout is saved and rendered read-only.
                     borderRadius: CARD_SURFACE_CLIP_RADIUS,
-                    // Same narrower clip the read-only layer takes (CardIconLayer): on the
-                    // Deck Tower's card stock an icon is cut at the printed panel, so the
-                    // editor shows exactly what the saved card will.
-                    clipPath: "var(--card-icon-clip, none)",
+                    // Same narrower clip the read-only card takes (CardFaceSide's inner clip
+                    // box): on the Deck Tower's card stock an icon is cut at the printed
+                    // panel, so the editor shows exactly what the saved card will.
+                    clipPath: "var(--card-panel-clip, none)",
                     zIndex: 0,
                 }}
             >
@@ -819,8 +828,10 @@ const CardIconCanvas: React.FC<{
 
             {/* Text layer — holds the two movable text blocks. Sits ABOVE the icon clip layer
                 (text always paints over icons) but below the icon selection overlay. Clipped to
-                the card so text dragged toward the edge is cut at the boundary (it is also
-                clamped fully on-card on release). Its explicit zIndex establishes a stacking
+                the card, NOT to the Deck Tower panel: the selected block's outline and corner
+                handle sit just outside its box and must stay visible with the block against
+                the panel edge. The panel is enforced by the release clamp instead (clampTextRelease,
+                measuring `card-icon-canvas__text-bounds`). Its explicit zIndex establishes a stacking
                 context that confines each block's float-to-front below the overlay. */}
             <Box
                 className="card-icon-canvas__text-layer"
@@ -839,6 +850,12 @@ const CardIconCanvas: React.FC<{
                     pointerEvents: "none",
                 }}
             >
+                <Box
+                    ref={textBoundsRef}
+                    aria-hidden
+                    className="card-icon-canvas__text-bounds"
+                    sx={{ position: "absolute", inset: "var(--card-stock-inset, 0px)", visibility: "hidden" }}
+                />
                 {TEXT_BLOCKS.map((block) => {
                     const item = textLayout[block];
                     const isSel = selectedText === block;
@@ -871,7 +888,7 @@ const CardIconCanvas: React.FC<{
                                 // instead of overflowing). Centered + scaled + rotated about its
                                 // center, matching the static renderer's textItemTransform.
                                 width: "max-content",
-                                maxWidth: "92%",
+                                maxWidth: textBlockMaxWidth(item.scale),
                                 transform: baseTransform,
                                 transformOrigin: "center center",
                                 ...(isShaking ? {

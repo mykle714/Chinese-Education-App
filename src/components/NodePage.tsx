@@ -42,6 +42,8 @@ interface NodePageProps {
     // today scp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
     headerTitleColor?: string;
     surfaceColor?: string;
+    // Decoration behind the header and content. See MobileTabScreen.backdrop.
+    backdrop?: ReactNode;
     contentSx?: SxProps<Theme>;
     contentClassName?: string;
     // Fixed, non-scrolling node pages set this false so content is clipped (not
@@ -83,6 +85,7 @@ const NodePage: React.FC<NodePageProps> = ({
     headerSize,
     headerTitleColor,
     surfaceColor,
+    backdrop,
     contentSx,
     contentClassName,
     scrollable,
@@ -111,6 +114,7 @@ const NodePage: React.FC<NodePageProps> = ({
                 headerSize={headerSize}
                 headerTitleColor={headerTitleColor}
                 surfaceColor={surfaceColor}
+                backdrop={backdrop}
                 contentSx={contentSx}
                 contentClassName={contentClassName}
                 scrollable={scrollable}

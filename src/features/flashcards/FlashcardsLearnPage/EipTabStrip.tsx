@@ -61,9 +61,12 @@ function EipTabStrip({ tabs, activeIndex, onSelect, showCrumbs = true }: EipTabS
             // Horizontal only, in viewport px (a vertical transform does not change these).
             const listRect = list.getBoundingClientRect();
             const pillRect = pill.getBoundingClientRect();
+            // The list may run to the screen edge with an end padding (EipUpperPanel); the
+            // showing word rests inside that padding, not against the edge.
+            const listRight = listRect.right - (parseFloat(getComputedStyle(list).paddingRight) || 0);
             const delta = pillRect.left < listRect.left
                 ? pillRect.left - listRect.left
-                : pillRect.right > listRect.right ? pillRect.right - listRect.right : 0;
+                : pillRect.right > listRight ? pillRect.right - listRight : 0;
             if (delta !== 0) list.scrollBy({ left: delta, behavior: "smooth" });
         };
         scrollActiveIntoView();

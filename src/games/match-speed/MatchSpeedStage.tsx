@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Box, Button, Typography, useTheme } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
@@ -12,9 +12,12 @@ import { collectionTitle, type CollectionRef } from "../../features/flashcards/c
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import { matchSpeedPoolRequest } from "./poolRequest";
 import { COLORS } from "../../theme/colors";
+import { GROUND_PAINT, GROUND_PRINT } from "../../theme/groundPaint";
+import { TowerWashContext, useDayWash } from "../../timeOfDay/useDayWash";
 import type { Language, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
 import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
+import MatchSpeedPlateButton from "./MatchSpeedPlateButton";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import PersonalBestLine from "../shared/PersonalBestLine";
 import MatchSpeedTimerBar from "./MatchSpeedTimerBar";
@@ -44,7 +47,7 @@ import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
-import { provisionalWords } from "../../utils/provisionalCards";
+import { isProvisional, provisionalWords } from "../../utils/provisionalCards";
 import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
@@ -53,6 +56,13 @@ import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 
 /** How often the run clock re-renders. Fine enough for a smooth `m:ss`. */
 const CLOCK_INTERVAL_MS = 200;
+
+/**
+ * Nothing in this game is bold, shared parts included (the plates' print, the personal-best
+ * line). `!important` over a wildcard because those set their own weight, and because a tower
+ * session's stage is bold and would otherwise pass that on to anything unset.
+ */
+const NOTHING_BOLD = { "&, & *": { fontWeight: `${WEIGHT.regular} !important` } } as const;
 
 export interface MatchSpeedStageProps {
     /** Who is hosting this run (docs/FLP_GAME_BREAKS.md § 6). */
@@ -76,6 +86,8 @@ export interface MatchSpeedStageProps {
     prefetchedPool?: GamePoolResponse | null;
     /** The results card's way out — "Back to Games" (page) / "Back to cards" (break). */
     onDone: () => void;
+    /** flp break only: FlpBreakStageProps `onCardCleared`. */
+    onCardCleared?: () => void;
 }
 
 /**
@@ -126,15 +138,16 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     seedIds,
     prefetchedPool,
     onDone,
+    onCardCleared,
 }) => {
     const isBreak = host === "flpBreak";
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
+    // Read through a ref: `markCard` is deliberately stable.
+    const onCardClearedRef = useRef(onCardCleared);
+    onCardClearedRef.current = onCardCleared;
     const { user } = useAuth();
     const tts = useTTS();
     // Only the colour setting is read here; `showPinyin` is the host's call (prop).
-    const { settings } = useFlashcardLearnSettings();
-    const { showPinyinColor } = settings;
+    const { showPinyinColor } = useFlashcardLearnSettings().settings;
     const { recordWin } = useGameWins(GAME_KEY);
 
     // `baseModeConfig` is a module constant (MODE_CONFIGS), so its identity is stable
@@ -187,7 +200,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     } = useMarkedLentWords();
 
     // `useBlockEdgeSwipe(true)` is the HOST's job (the page, or the flp break area):
-    // it must hold for the whole time the game is on screen, title card included.
+    // it must hold for the whole time the game is on screen.
 
     const language = (user?.selectedLanguage ?? "zh") as Language;
 
@@ -555,6 +568,9 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             // as Bubble Match. excludeIds defaults to []: the game doesn't use the
             // replacement card the endpoint returns.
             markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "match-speed" })
+                .then((result) => {
+                    if (isCorrect && !result.suppressed && !isProvisional(entry)) onCardClearedRef.current?.();
+                })
                 .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
             // Feeds the end-of-run "keep these cards?" offer. Recorded on the ATTEMPT,
             // so a miss and a cooldown-suppressed mark both count, and never on the
@@ -632,6 +648,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // refills, no marks, and tapping a card reveals its partner. Derived rather
     // than a separate phase value so the two can never disagree.
     const cleanupMode = phase === "ended" && popupMinimized;
+    // The tower's night light on everything the game paints (one clock for the whole Stage).
+    const wash = useDayWash();
     const medal = medalForScore(score);
     const accuracy = attempts > 0 ? Math.round((score / attempts) * 100) : 0;
 
@@ -652,7 +670,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     return (
         // The host's `Frame` supplies the chrome: a LEAF PAGE on the route
         // (docs/LEAF_NODE_PAGES.md), the game area's header in an flp break.
-        <>
+        <TowerWashContext.Provider value={wash}>
         {/* Generic (non-itemized) notice: Match Speed deals from a rolling buffer, so
             the set of lent cards isn't known before the run starts. */}
         <ProvisionalCardsNotice
@@ -678,6 +696,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                     userSelect: "none",
                     WebkitUserSelect: "none",
                     WebkitTouchCallout: "none",
+                    ...NOTHING_BOLD,
                 }}
             >
                 {phase === "loading" && renderCentered(<DelayedCircularProgress className="match-speed__spinner" />)}
@@ -691,18 +710,14 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             >
                                 {blockMessage}
                             </Typography>
-                            <Button
-                                className="match-speed__block-back"
-                                variant="contained"
-                                onClick={onDone}
-                            >
+                            <MatchSpeedPlateButton className="match-speed__block-back" onClick={onDone}>
                                 {isBreak ? "Back to cards" : "Back to Games"}
-                            </Button>
+                            </MatchSpeedPlateButton>
                         </>
                     )}
 
                 {showBoard && (
-                    <GameFrame className="match-speed__frame">
+                    <GameFrame className="match-speed__frame" tone="ground">
                         {/* Top of the PLAY AREA, not the header — the clock is game
                             state and belongs where the player is already looking.
                             Shown from the countdown on (at a full bar) so the board
@@ -716,13 +731,17 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             anywhere else once the run starts — without this strip a
                             player who launched the wrong mode only finds out from the
                             cards. `divider={false}`: the timer above already draws the
-                            hairline. */}
-                        <GameHud className="match-speed__hud" divider={false}>
-                            <GameHudLabel className="match-speed__hud-mode">
-                                {modeConfig.label} · {launchCollection ? collectionTitle(launchCollection) : "All cards"}
-                            </GameHudLabel>
-                            <GameHudLabel className="match-speed__hud-score">{score} matched</GameHudLabel>
-                        </GameHud>
+                            hairline. Page host only: an flp break shows no labels on
+                            the panel — the session already picked the mode and deck
+                            (docs/MATCH_SPEED_GAME.md § The HUD strip and the hint line). */}
+                        {!isBreak && (
+                            <GameHud className="match-speed__hud" divider={false}>
+                                <GameHudLabel className="match-speed__hud-mode">
+                                    {modeConfig.label} · {launchCollection ? collectionTitle(launchCollection) : "All cards"}
+                                </GameHudLabel>
+                                <GameHudLabel className="match-speed__hud-score">{score} matched</GameHudLabel>
+                            </GameHud>
+                        )}
 
                         <MatchSpeedBoard
                             // Remounting per run is what resets the board; the buffer
@@ -741,6 +760,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             // into cleanup mode.
                             frozen={phase === "countdown" || (phase === "ended" && !cleanupMode)}
                             onSpeak={tts.autoplay ? tts.autoSpeak : undefined}
+                            evenGaps={isBreak}
+                            dimmed={phase === "countdown"}
                         />
 
                         {/* 3·2·1·Go, over a readable board. */}
@@ -753,7 +774,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    backgroundColor: COLORS.scrim,
                                     pointerEvents: "none",
                                     zIndex: 5,
                                 }}
@@ -764,10 +784,10 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                                     // each tick rather than only on mount.
                                     key={countdownStep}
                                     sx={{
-                                        fontSize: "72px",
-                                        fontWeight: WEIGHT.bold,
-                                        color: COLORS.white,
-                                        textShadow: "0 2px 12px rgba(0,0,0,0.4)",
+                                        ...GROUND_PRINT,
+                                        color: wash(GROUND_PAINT),
+                                        fontSize: "76px",
+                                        lineHeight: 1,
                                         animation: "match-speed-countdown-pop 400ms ease-out",
                                         "@keyframes match-speed-countdown-pop": {
                                             from: { opacity: 0, transform: "scale(0.5)" },
@@ -780,7 +800,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             </Box>
                         )}
 
-                        <GameHint className="match-speed__hint">tap a word, then its meaning</GameHint>
+                        {!isBreak && <GameHint className="match-speed__hint">tap a word, then its meaning</GameHint>}
                     </GameFrame>
                 )}
 
@@ -800,20 +820,20 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                     >
                         <Typography
                             className="match-speed__popup-title"
-                            sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}
+                            sx={{ fontSize: SIZE.heading, color: COLORS.onSurface }}
                         >
                             {medal ? `${medal.emoji} ${medal.medal[0].toUpperCase()}${medal.medal.slice(1)}!` : "Time!"}
                         </Typography>
                         <Typography
                             className="match-speed__popup-score"
-                            sx={{ fontSize: SIZE.bodyLg, color: fc.onSurface, fontWeight: WEIGHT.bold }}
+                            sx={{ fontSize: SIZE.bodyLg, color: COLORS.onSurface }}
                         >
                             {score} {score === 1 ? "pair" : "pairs"} matched
                         </Typography>
                         {/* Information only — accuracy never gates a medal. */}
                         <Typography
                             className="match-speed__popup-accuracy"
-                            sx={{ fontSize: SIZE.body, color: fc.textSecondary }}
+                            sx={{ fontSize: SIZE.body, color: COLORS.textSecondary }}
                         >
                             Accuracy {score}/{attempts} ({accuracy}%)
                         </Typography>
@@ -830,52 +850,29 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             {/* An flp break is one run between cards: its only way on is
                                 back to the session (docs/FLP_GAME_BREAKS.md § 2). */}
                             {isBreak ? (
-                            <Button
-                                className="match-speed__replay-btn match-speed__replay-btn--back-to-cards"
-                                variant="contained"
-                                onClick={onDone}
-                                sx={{
-                                    py: 1.25,
-                                    borderRadius: "14px",
-                                    textTransform: "none",
-                                    fontSize: SIZE.bodyLg,
-                                    fontWeight: WEIGHT.bold,
-                                    lineHeight: LEADING.tight,
-                                }}
-                            >
-                                Back to cards
-                            </Button>
+                                <MatchSpeedPlateButton
+                                    className="match-speed__replay-btn match-speed__replay-btn--back-to-cards"
+                                    primary
+                                    onClick={onDone}
+                                >
+                                    Back to cards
+                                </MatchSpeedPlateButton>
                             ) : (
-                            <>
-                            <Button
-                                className="match-speed__replay-btn match-speed__replay-btn--play-again"
-                                variant="contained"
-                                onClick={playAgain}
-                                sx={{
-                                    py: 1.25,
-                                    borderRadius: "14px",
-                                    textTransform: "none",
-                                    fontSize: SIZE.bodyLg,
-                                    fontWeight: WEIGHT.bold,
-                                    lineHeight: LEADING.tight,
-                                }}
-                            >
-                                Play Again
-                            </Button>
-                            <Button
-                                className="match-speed__replay-btn match-speed__replay-btn--back"
-                                variant="outlined"
-                                onClick={onDone}
-                                sx={{
-                                    py: 1,
-                                    borderRadius: "14px",
-                                    textTransform: "none",
-                                    fontWeight: WEIGHT.medium,
-                                }}
-                            >
-                                Back to Games
-                            </Button>
-                            </>
+                                <>
+                                    <MatchSpeedPlateButton
+                                        className="match-speed__replay-btn match-speed__replay-btn--play-again"
+                                        primary
+                                        onClick={playAgain}
+                                    >
+                                        Play Again
+                                    </MatchSpeedPlateButton>
+                                    <MatchSpeedPlateButton
+                                        className="match-speed__replay-btn match-speed__replay-btn--back"
+                                        onClick={onDone}
+                                    >
+                                        Back to Games
+                                    </MatchSpeedPlateButton>
+                                </>
                             )}
                         </Box>
                     </MatchSpeedEndPopup>
@@ -903,13 +900,15 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                 the board, like GameEndPopup, so the layout does not change shape when
                 paused; it covers the board so the pause cannot be used as a free look
                 at it, and the clock only restarts when the player taps Resume. */}
-            <GamePausedOverlay
-                open={backgroundPaused}
-                onResume={resumeFromBackground}
-                classPrefix="match-speed"
-            />
+            <Box className="match-speed__paused" sx={{ display: "contents", ...NOTHING_BOLD }}>
+                <GamePausedOverlay
+                    open={backgroundPaused}
+                    onResume={resumeFromBackground}
+                    classPrefix="match-speed"
+                />
+            </Box>
         </Frame>
-        </>
+        </TowerWashContext.Provider>
     );
 };
 

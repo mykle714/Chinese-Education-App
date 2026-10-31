@@ -26,8 +26,8 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "./dayPhase";
  * the larger share (`dark`), the same rule as the eip's ink (eipPalette.ts).
  *
  * The ground values are the eip's upper-panel `--g` family (eipPalette.ts carries the same
- * hexes for its own panel); the Sort Cards page uses the design's separate `--gr` ground
- * (features/discover/sortTimeOfDay.ts). Three readers, two grounds — keep them apart.
+ * hexes for its own panel); the Sort Cards page uses the design's separate `--gr` ground by day and
+ * the tower's night sky at night (features/discover/sortTimeOfDay.ts). Keep them apart.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (like the tower's `PHASE_SKY`): the
  * framework has no dawn, sunset or night tiers, so the phase grounds and every night

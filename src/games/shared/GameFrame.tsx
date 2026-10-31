@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
@@ -8,6 +9,22 @@ import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface"
 import TimerEyeToggle from "./TimerEyeToggle";
 import { useGameFrameExit, type GameFrameExit } from "./gameFrameExit";
 import Icon from "../../components/Icon";
+import { GROUND_PAINT, GROUND_PAINT_FAINT, GROUND_PRINT } from "../../theme/groundPaint";
+import { TOWER_PLATE_PRINT, towerPlateSx } from "../../theme/towerPlate";
+import { CREAM_PLATE_TONES, TOWER_SLAB, TOWER_SLAB_WALL_PX, washPlateTones } from "../../theme/towerSlab";
+import { useTowerWash } from "../../timeOfDay/useDayWash";
+
+/**
+ * The panel's material. `tower` draws it as the Deck Tower's gold platform: the strips lose
+ * their tint and hairline, the labels take the plate's print, and the clock's track becomes
+ * a groove (docs/TOWER_STYLE_SHIFT.md § "The play slab"). Set once on `GameFrame`; its parts
+ * read it from this context. `ground` draws no panel at all: the game is flat white paint on
+ * whatever is behind it, like the tower's Tap to Start (docs/TOWER_STYLE_SHIFT.md § "Ground
+ * paint"). Match Speed is the only `ground` game and nothing uses `tower` now; every other
+ * game stays `bento`.
+ */
+export type GameFrameTone = "bento" | "tower" | "ground";
+const GameFrameToneContext = createContext<GameFrameTone>("bento");
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -48,6 +65,8 @@ export interface GameFrameProps {
     children: React.ReactNode;
     className?: string;
     sx?: SxProps<Theme>;
+    /** The panel's material. Default `bento`, the white panel. */
+    tone?: GameFrameTone;
 }
 
 /**
@@ -59,12 +78,15 @@ export interface GameFrameProps {
  * the CSS is the artboard's header height plus its gap, not a number the app should
  * hardcode.
  */
-export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => {
+export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, tone = "bento" }) => {
     const hue = useGameSurfaceHue();
     // A host-provided exit (an flp game break's Leave — gameFrameExit.ts). Null on a
     // game's own route, where the page header's Back is the way out.
     const exit = useGameFrameExit();
+    const tower = tone === "tower";
+    const wash = useTowerWash();
     return (
+    <GameFrameToneContext.Provider value={tone}>
     <Box
         className={className ? `game-frame ${className}` : "game-frame"}
         sx={[
@@ -84,13 +106,30 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
+                ...(tower && {
+                    backgroundColor: wash(TOWER_SLAB.top),
+                    border: "none",
+                    marginBottom: `${14 + TOWER_SLAB_WALL_PX}px`,
+                    // The bevel round the top edge, then the wall.
+                    boxShadow: `inset 0 0 0 2px ${wash(TOWER_SLAB.rim)}, 0 ${TOWER_SLAB_WALL_PX}px 0 ${wash(TOWER_SLAB.right)}`,
+                }),
+                ...(tone === "ground" && {
+                    backgroundColor: "transparent",
+                    border: "none",
+                    borderRadius: 0,
+                    // Paint has no entrance of its own: it comes up as the card and platform go.
+                    animation: "game-frame-ground-in 320ms ease-out both",
+                    "@keyframes game-frame-ground-in": { from: { opacity: 0 }, to: { opacity: 1 } },
+                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }),
             },
             ...(Array.isArray(sx) ? sx : [sx]),
         ]}
     >
         {children}
-        {exit && <GameFrameExitButton label={exit.label} onExit={exit.onExit} />}
+        {exit && <GameFrameExitButton label={exit.label} onExit={exit.onExit} tone={tone} />}
     </Box>
+    </GameFrameToneContext.Provider>
     );
 };
 
@@ -105,11 +144,13 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
  * (Writing Grid's phase label). Such a game must make room before it is offered as an
  * flp break.
  *
- * Above any in-panel overlay (Match Speed's countdown scrim is zIndex 5), so the
+ * Above any in-panel overlay (Match Speed's countdown is zIndex 5), so the
  * player can always leave. Ink on white with the `--line2` outline (CLAUDE.md
- * § "Buttons & cards").
+ * § "Buttons & cards"), on `ground` too; on a `tower` panel, a cream plate instead.
  */
-const GameFrameExitButton: React.FC<GameFrameExit> = ({ label, onExit }) => (
+const GameFrameExitButton: React.FC<GameFrameExit & { tone: GameFrameTone }> = ({ label, onExit, tone }) => {
+    const wash = useTowerWash();
+    return (
     <Box
         component="button"
         type="button"
@@ -132,12 +173,15 @@ const GameFrameExitButton: React.FC<GameFrameExit> = ({ label, onExit }) => (
             fontSize: SIZE.caption,
             lineHeight: 1,
             cursor: "pointer",
+            ...(tone === "tower" && towerPlateSx(washPlateTones(CREAM_PLATE_TONES, wash))),
+            ...(tone === "ground" && { ...GROUND_PRINT, backgroundColor: wash(COLORS.white) }),
         }}
     >
         <Icon name="logout" size={13} color={COLORS.onSurface} />
         {label}
     </Box>
-);
+    );
+};
 
 export interface GameHudProps {
     /** Typically two or three `GameHudLabel`s. Spread apart, first left, last right. */
@@ -170,6 +214,7 @@ export interface GameHudProps {
  */
 export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className, sx }) => {
     const hue = useGameSurfaceHue();
+    const flat = useContext(GameFrameToneContext) !== "bento";
     return (
     <Box
         className={className ? `game-hud ${className}` : "game-hud"}
@@ -190,6 +235,7 @@ export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, clas
             // faint to close the shape.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
             borderBottom: divider ? `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}` : "none",
+            ...(flat && { backgroundColor: "transparent", borderBottom: "none" }),
         }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
         {children}
@@ -223,11 +269,19 @@ export interface GameHudLabelProps {
 }
 
 /** `.hud .lab` — one fact. A `Label` that refuses to wrap; the strip is one line. */
-export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color = COLORS.onSurface, className, sx }) => (
-    <Label className={className} color={color} sx={[{ whiteSpace: "nowrap" }, ...(Array.isArray(sx) ? sx : [sx])]}>
-        {children}
-    </Label>
-);
+export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color = COLORS.onSurface, className, sx }) => {
+    const tone = useContext(GameFrameToneContext);
+    const wash = useTowerWash();
+    return (
+        <Label
+            className={className}
+            color={tone === "ground" ? wash(GROUND_PAINT) : color}
+            sx={[{ whiteSpace: "nowrap", ...(tone === "tower" && TOWER_PLATE_PRINT), ...(tone === "ground" && GROUND_PRINT) }, ...(Array.isArray(sx) ? sx : [sx])]}
+        >
+            {children}
+        </Label>
+    );
+};
 
 export interface GameHudBarProps {
     /** 0…1. Clamped here — a caller dividing by a total that can be 0 must not NaN the bar. */
@@ -288,14 +342,20 @@ export interface GameHintProps {
  *
  * `flexShrink: 0` so it survives a board that wants all the height.
  */
-export const GameHint: React.FC<GameHintProps> = ({ children, className }) => (
-    <Label
-        className={className ? `game-hint ${className}` : "game-hint"}
-        sx={{ flexShrink: 0, display: "block", textAlign: "center", padding: "8px 12px 11px" }}
-    >
-        {children}
-    </Label>
-);
+export const GameHint: React.FC<GameHintProps> = ({ children, className }) => {
+    // The faint label ink turns muddy on the gold slab.
+    const tone = useContext(GameFrameToneContext);
+    const wash = useTowerWash();
+    return (
+        <Label
+            className={className ? `game-hint ${className}` : "game-hint"}
+            color={tone === "tower" ? COLORS.onSurface : tone === "ground" ? wash(GROUND_PAINT) : undefined}
+            sx={{ flexShrink: 0, display: "block", textAlign: "center", padding: "8px 12px 11px", ...(tone === "ground" && GROUND_PRINT) }}
+        >
+            {children}
+        </Label>
+    );
+};
 
 export interface GameTimerProps {
     /** The clock, already formatted — "0:24", "18s", "3 / 20". The frame does no math. */
@@ -369,6 +429,10 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     className,
 }) => {
     const hue = useGameSurfaceHue();
+    const tone = useContext(GameFrameToneContext);
+    const tower = tone === "tower";
+    const ground = tone === "ground";
+    const wash = useTowerWash();
     return (
     <Box
         className={className ? `game-timer ${className}` : "game-timer"}
@@ -383,6 +447,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             // stack on one panel and have to read as one band of chrome.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
             borderBottom: `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}`,
+            ...((tower || ground) && { backgroundColor: "transparent", borderBottom: "none" }),
             opacity: dimmed ? 0.35 : 1,
             transition: "opacity 200ms linear",
         }}
@@ -400,7 +465,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
                 letterSpacing: TRACKING.normal,
                 fontVariantNumeric: "tabular-nums",
                 lineHeight: 1.2,
-                color: valueColor,
+                color: ground ? wash(GROUND_PAINT) : valueColor,
+                ...(ground && GROUND_PRINT),
                 transition: "color 300ms linear",
                 animation: pulse ? "game-timer-pulse 1s ease-in-out infinite" : "none",
                 visibility: valueShown ? "visible" : "hidden",
@@ -429,9 +495,9 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         <Box
             className="game-timer__track"
             sx={{
-                height: "4px",
-                borderRadius: "2px",
-                backgroundColor: COLORS.card,
+                height: tower || ground ? "8px" : "4px",
+                borderRadius: tower || ground ? "4px" : "2px",
+                backgroundColor: ground ? GROUND_PAINT_FAINT : tower ? wash(TOWER_SLAB.right) : COLORS.card,
                 marginTop: "7px",
                 overflow: "hidden",
             }}

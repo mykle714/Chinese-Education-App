@@ -49,9 +49,10 @@ import { useTowerStudy } from "./useTowerStudy";
 import { litWorld } from "./timeOfDay";
 import { useTimeOfDay } from "./useTimeOfDay";
 import TimeOfDayToggle from "./TimeOfDayToggle";
+import ForcedBreakPicker from "./ForcedBreakPicker";
+import type { Language } from "../../types";
 import TowerCoverCard from "./TowerCoverCard";
 import { readTowerHeight, writeTowerHeight } from "./towerHeightStore";
-import { useStudyPlatformHidden } from "./studyPlatformStore";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { useThemeColor } from "../../hooks/useThemeColor";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
@@ -180,36 +181,22 @@ const TOWER_UI_GONE_AT = 0.4;
 const SESSION_FADE_FROM = 0.6;
 /** Clouds and wind are gone this far into the dive: their drifts are planned in the fixed view. */
 const SKY_TRAFFIC_GONE_AT = 0.3;
-/**
- * Ms after the dive starts (and after the climb starts) before the floor fixtures — the
- * plate and the focus lever — begin to stow (or come back), so the camera is visibly under
- * way first rather than everything starting on the tap (docs/DECK_TOWER.md § "Studying the
- * tower" → "The floor fixtures").
- */
-const FIXTURE_STOW_DELAY_MS = 150;
-
-/** `value`, but each change lands `ms` later (a change back within the wait cancels it). */
-function useDelayedFlag(value: boolean, ms: number): boolean {
-    const [delayed, setDelayed] = useState(value);
-    useEffect(() => {
-        if (value === delayed) return;
-        const timer = window.setTimeout(() => setDelayed(value), ms);
-        return () => window.clearTimeout(timer);
-    }, [value, delayed, ms]);
-    return delayed;
-}
-
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-/** A world swipe commits past this fraction of the stage's width (or on a flick)… */
+/**
+ * A world swipe commits past this fraction of the stage's width (or on a flick)…
+ * Measured in FINGER travel, so `DRAG_FOLLOW` changes how far the scene has moved by
+ * then, not how far the finger has to go.
+ */
 const WORLD_SWIPE_FRACTION = 0.18;
 /** …but never less than this many px. */
 const WORLD_SWIPE_MIN_PX = 48;
 /**
- * How much of the finger's travel the scene follows while a world swipe is held:
- * toward a neighbour, and toward an edge with none (a stiff rubber band).
+ * How far the scene moves per px of finger travel while a world swipe is held: toward a
+ * neighbour (slightly MORE than the finger, so the world feels light to throw), and
+ * toward an edge with none (a stiff rubber band).
  */
-const DRAG_FOLLOW = 0.4;
+const DRAG_FOLLOW = 1.15;
 const DRAG_FOLLOW_EDGE = 0.12;
 /** The scene springing back after a released swipe that did not commit. */
 const DRAG_SNAP_BACK = "translate 220ms ease-out";
@@ -321,7 +308,7 @@ function fitScene(proj: Projector, towerCount: number, skyCards: number) {
     // its top (or the platform's back corner, which stands above the pawn's head, when
     // the tower is short) to the scene's bottom edge — the scroller's bottom, since a
     // plate tap scrolls there first.
-    const fallDistance = Math.max(0, (maxY - Math.min(slab.minY, tower.minY)) / UNIT) + FALL_CLEARANCE;
+    const fallDistance = Math.max(0, (maxY - Math.min(slab.minY, tower.minY)) / proj.heightUnit) + FALL_CLEARANCE;
     return {
         viewBox: `${centreX - halfWidth} ${minY} ${width} ${height}`,
         aspectRatio: `${width} / ${height}`,
@@ -398,8 +385,6 @@ const DeckTowerPage: React.FC = () => {
     // the flp's host contract; this page draws the scene through its camera and hands the
     // tower back when it has climbed out (`climbedOut`, defined with the framing below).
     const climbedOut = useRef<(world: TowerWorldId, cards: number) => void>(() => {});
-    // The study header's "hide the platform" toggle (§ "Hiding the platform"), per device.
-    const [platformHidden, setPlatformHidden] = useStudyPlatformHidden();
     const study = useTowerStudy({
         unit: UNIT,
         card: LAYOUT.card,
@@ -408,45 +393,9 @@ const DeckTowerPage: React.FC = () => {
         // Not before sign-in: the session deals for the account.
         visitedWorld: user?.id !== undefined ? worldId : null,
         titleFor: studyTitleFor,
-        platformHidden,
-        onPlatformHiddenChange: setPlatformHidden,
         onClimbedOut: (w, n) => climbedOut.current(w, n),
     });
     const studying = (id: TowerWorldId) => study.active && study.world === id;
-    // The studied world's floor fixtures — its plate and its focus lever — are put away into
-    // the platform as the camera dives and come back as it climbs out (docs/DECK_TOWER.md
-    // § "Studying the tower" → "The floor fixtures"): from the dive's start until the climb's.
-    // Not while preparing: the camera has not moved yet, and a tap that times out never dives.
-    // Each change lands FIXTURE_STOW_DELAY_MS after the phase change, once the camera is moving.
-    // Not at all for a dive made with the platform hidden (§ "Hiding the platform"): the
-    // fixtures fade out with the rest of it instead. Read once per dive, so flipping the
-    // toggle mid-session never plays a recess.
-    const [stowSkipped, setStowSkipped] = useState(platformHidden);
-    // A hidden dive's platform coming back while the camera is down (the toggle turned off
-    // mid-session) returns with its fixtures already put away, as if the dive had stowed
-    // them: they are stowed the moment it starts to fade in — still invisible — with no
-    // recess and no FIXTURE_STOW_DELAY_MS wait (`snapFixtures`). The climb then brings them
-    // back the usual way. Latched until the next dive; it only matters while the camera is down.
-    const [stowSnapped, setStowSnapped] = useState(false);
-    useEffect(() => {
-        if (study.phase !== "diving") return;
-        setStowSkipped(platformHidden);
-        setStowSnapped(false);
-    // Only the dive's start reads the toggle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [study.phase]);
-    // Layout effect: the stow lands before the fade-in's first frame is painted.
-    useLayoutEffect(() => {
-        if (platformHidden || !stowSkipped || !study.cameraDown) return;
-        setStowSkipped(false);
-        setStowSnapped(true);
-    }, [platformHidden, stowSkipped, study.cameraDown]);
-    const stowWanted = !stowSkipped && (study.phase === "diving" || study.cameraDown);
-    const stowDelayed = useDelayedFlag(stowWanted, FIXTURE_STOW_DELAY_MS);
-    const snapFixtures = stowSnapped && study.cameraDown;
-    const stowFixtures = snapFixtures ? stowWanted : stowDelayed;
-    const fixturesStowed = (id: TowerWorldId) => stowFixtures && studying(id);
-    const fixturesSnapped = (id: TowerWorldId) => snapFixtures && studying(id);
     // While a session is up the footer slides away, the edge swipe is blocked (a game-like
     // surface — docs/UX_AND_NAVIGATION.md), and the page earns minute points as a study
     // surface (src/minutePoints/studySurface.ts) — only once the camera is down, so the
@@ -668,8 +617,7 @@ const DeckTowerPage: React.FC = () => {
             ready: readyCounts[id],
             learningShown,
             busy: s.busy || pan.busy || resizes[id].busy || study.active,
-            stowed: fixturesStowed(id),
-            hideInstantly: s.busy || fixturesSnapped(id),
+            hideInstantly: s.busy,
             skyEntrance,
             // Hold the tower where it stands until the flipped counts land (`resolveRecount`).
             onRecount: () => {
@@ -688,10 +636,14 @@ const DeckTowerPage: React.FC = () => {
     // (`resolveRecount`).
     // Where a grow's camera move ends (scrollTop), set as it is planned.
     const cameraTarget = useRef(0);
-    const startResize = (fromCards: number, toCards: number) => {
-        // The frame the resize refits to keeps the altitude (see `keepClimbFor`).
-        const toScene = fitScene(proj, toCards, skyCardsFor(toCards));
+    // The frame a tower of `cards` refits to keeps the altitude (see `keepClimbFor`).
+    const keepClimbThroughRefit = (cards: number) => {
+        const toScene = fitScene(proj, cards, skyCardsFor(cards));
         keepClimbFor.current = toScene.viewBox !== scene.viewBox ? toScene.viewBox : null;
+        return toScene;
+    };
+    const startResize = (fromCards: number, toCards: number) => {
+        const toScene = keepClimbThroughRefit(toCards);
         if (toCards <= fromCards) {
             resize.play(pickTowerShrink().plan({ fromCards, toCards }));
             return;
@@ -721,7 +673,7 @@ const DeckTowerPage: React.FC = () => {
         // The new cards start with their underside just over the screen's top edge (at the
         // camera's end), so the whole drop falls in from out of sight.
         const screenTopY = toScene.minY + (target - svgTop) / scale;
-        const screenTopZ = (toScene.axisYAtZ(FLOOR_Z) - screenTopY) / UNIT;
+        const screenTopZ = (toScene.axisYAtZ(FLOOR_Z) - screenTopY) / proj.heightUnit;
         resize.play(
             grow.plan({
                 fromCards,
@@ -741,6 +693,13 @@ const DeckTowerPage: React.FC = () => {
         if (r.holdVersion === null || r.holdVersion === readyCounts[id].version) return;
         const toCards = learningCount(id);
         if (id !== worldId || toCards === undefined || swaps[id].towerDeck !== "learn-now") {
+            r.release();
+            return;
+        }
+        // Cards the learner cleared by marking them are progress, not an event: the tower
+        // just stands at its new height, with no collapse (§ "Tower resizes").
+        if (r.holdQuietShrink && toCards < (r.heldCards ?? 0)) {
+            keepClimbThroughRefit(toCards);
             r.release();
             return;
         }
@@ -791,7 +750,7 @@ const DeckTowerPage: React.FC = () => {
     const swipeTarget = (direction: SwipeDirection) => (direction === "left" ? rightWorld : leftWorld);
     // A horizontal swipe on the scene: LEFT brings the right-hand world in (the camera
     // moves right), RIGHT the left-hand one. Axis-locked, so a vertical drag still climbs
-    // the tower. While held, the scene follows the finger a little — stiffly toward an
+    // the tower. While held, the scene runs slightly ahead of the finger — stiffly toward an
     // edge with no world beyond it — and springs back if the swipe does not commit. A
     // committed swipe hands its offset and release speed to the pan (`PanCarry`), which
     // carries the scene on from there: the drag's `translate` is dropped in the same frame
@@ -875,22 +834,22 @@ const DeckTowerPage: React.FC = () => {
     // The climb has ended: the tower stands at the session's count (`cards`) — the local
     // tally of correct marks, which can be off the server's (a correct mark dropped on
     // cooldown, an Unfamiliar card's 5-minute rest running out mid-session). So it is held
-    // there and the bar's counts re-read; when they land, `resolveRecount` plays a shrink
-    // or a grow to the real figure — the focus lever's path. Every world reconciles; the
-    // refit from the frozen session frame to the tower's new height keeps the altitude.
+    // there and the bar's counts re-read; when they land, `resolveRecount` plays a grow to
+    // the real figure — the focus lever's path — or, for a lower figure, quietly stands
+    // there. Every world reconciles; the refit from the frozen session frame to the
+    // tower's new height keeps the altitude.
     climbedOut.current = (w, n) => {
-        const toScene = fitScene(proj, n, skyCardsFor(n));
-        keepClimbFor.current = toScene.viewBox !== scene.viewBox ? toScene.viewBox : null;
-        resizes[w].hold(n, readyCounts[w].version);
+        keepClimbThroughRefit(n);
+        resizes[w].hold(n, readyCounts[w].version, { quietShrink: true });
         readyCounts[w].reload();
     };
 
     // ── Opening at the last height (docs/DECK_TOWER.md § "Opening at the last height") ──
     // Main's Learning tower only. On arrival it stands at the height it had when the
     // learner last saw it on this device (towerHeightStore.ts), held there until the bar's
-    // counts land; then `resolveRecount` plays the grow (cards came off cooldown) or the
-    // shrink (cards went on cooldown elsewhere) to today's figure. Nothing stored: it just
-    // stands at its height. Taken once per account + language.
+    // counts land; then `resolveRecount` plays the grow (cards came off cooldown) to today's
+    // figure. A lower figure (cards marked in the games) just shows. Nothing stored: it
+    // just stands at its height. Taken once per account + language.
     const userId = user?.id;
     const language = user?.selectedLanguage ?? "zh";
     const openedAtHeightFor = useRef<string | null>(null);
@@ -901,7 +860,7 @@ const DeckTowerPage: React.FC = () => {
         openedAtHeightFor.current = key;
         if (readyCounts.core.loaded) return; // the counts beat us here: nothing to animate from
         const stored = readTowerHeight(userId, language, "core", "learn-now");
-        if (stored !== null) resizes.core.hold(stored, readyCounts.core.version);
+        if (stored !== null) resizes.core.hold(stored, readyCounts.core.version, { quietShrink: true });
     // Taken once per account + language; the hold's own version check does the rest.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId, language]);
@@ -940,6 +899,7 @@ const DeckTowerPage: React.FC = () => {
                     >
                         {header}
                         {isFeatureTester && <TimeOfDayToggle value={timeOfDay.override} onChange={timeOfDay.setOverride} />}
+                        {isFeatureTester && <ForcedBreakPicker world={worldId} language={language as Language} />}
                     </Box>
                 )
             }
@@ -1090,16 +1050,15 @@ const DeckTowerPage: React.FC = () => {
                                       }
                                     : null
                             }
-                            studyDrop={studying(worldId) ? study.drop : null}
                             fadeOpacity={studying(worldId) ? study.platformOpacity : 1}
-                            fadeEased={study.platformFadeEased}
-                            // The deck itself never fades (§ "Hiding the platform").
-                            keepDeck={studying(worldId) && platformHidden}
+                            // The deck itself never fades (§ "The platform fades").
+                            keepDeck={studying(worldId)}
+                            deckOpacity={studying(worldId) ? study.deckOpacity : 1}
                             bobPaused={study.active}
                             // Not while the count is loading: it reads as 0 then (towerCount's `?? 0`).
                             showImprint={towerCounts[worldId] !== undefined}
                             stackFalling={swap.outgoing !== null}
-                            dropPx={(swap.outgoing?.drop ?? 0) * UNIT}
+                            dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
                             pawns={swap.pawns}
                             cardsOnTower={cardsOnTower}
                             swapOutgoing={swap.outgoing !== null}
@@ -1108,8 +1067,6 @@ const DeckTowerPage: React.FC = () => {
                                 ariaLabel: `Show ${TOWER_DECKS[otherTowerDeck(swap.titleDeck)].title}`,
                                 onTap: onPlateTap,
                                 busy: swap.busy || pan.busy || resize.busy || study.active,
-                                stowed: fixturesStowed(worldId),
-                                stowInstantly: fixturesSnapped(worldId),
                             }}
                             lever={focusLevers[worldId].lever}
                             // Clouds and wind on the tower's BACK sides (under it) and FRONT

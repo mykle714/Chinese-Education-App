@@ -458,9 +458,11 @@ stayed white with every mask disabled, and with the masks turned hot pink.
 
 **Its tint comes from `body`'s background, but the overlay itself remains.** A device probe
 (2026-10-30, Deck Tower) showed that painting `body` recolours the fade; the blur stays.
-`useThemeColor` → `applyTopClaim` therefore paints `body` too, which matches the tint to the
-ground and hides the fade over flat colour only. Before any claim, `body` is paper
-(`ThemeContext` → `MuiCssBaseline`). **Any surface that paints its own ground to the top of
+So on mobile (below MUI's `md`) `body` takes the claimed ground from `--surface-ground`
+(`ThemeContext` → `MuiCssBaseline`; `useThemeColor` → `applyTopClaim` writes the variable),
+which matches the tint to the ground and hides the fade over flat colour only. Before any
+claim, it is paper. On desktop `body` is the backdrop around the phone card, so it stays
+the palette's default and never follows a claim. **Any surface that paints its own ground to the top of
 the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `SortCardsPage`,
 `useTier2Look`, `MasteryCenterPage`, `DivisionBanner`, and `SheetPanel` while fully merged
 (`writeMergeChrome` → `claimThemeColor`).

@@ -1432,6 +1432,9 @@ export interface TextLayout {
  * Every selectable Chinese typeface id — the allow-list for `users."chineseFont"`
  * (migration 157) and the validator behind PUT /api/users/displaySettings.
  *
+ * The client no longer offers a choice or reads the column: every account renders in
+ * DEFAULT_CHINESE_FONT_ID (src/hooks/useChineseFont.ts). See docs/DEFERRED_WORK.md.
+ *
  * IDS, NOT FAMILY NAMES, are stored. A stored CSS family name would strand every row
  * the day a face is renamed or re-sourced; an id is a stable key the client maps to a
  * family + stylesheet URL.
@@ -1447,8 +1450,8 @@ export interface TextLayout {
  * never ship, and keeping it as a lab benchmark was a standing temptation with no
  * payoff. `lxgw-wenkai` is the free kai that replaced it.
  *
- * ORDER MATTERS: DEFAULT_CHINESE_FONT_ID leads the list, because Settings shows the
- * default first and badges it. See docs/CJK_TYPEFACE_LAB.md.
+ * ORDER MATTERS: DEFAULT_CHINESE_FONT_ID leads the list, matching the client catalog.
+ * See docs/CJK_TYPEFACE_LAB.md.
  */
 export const CHINESE_FONT_IDS: readonly string[] = [
   '975-maru',

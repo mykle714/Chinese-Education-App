@@ -8,6 +8,7 @@ import { useLaunchCollection } from "../../features/flashcards/useLaunchCollecti
 import { GameLeafPage } from "../shared/GameSurface";
 import type { GameStageFrameProps } from "../types";
 import type { Language } from "../../types";
+import { RAMP } from "../../theme/colors";
 // The game's accent hue — one constant drives its hub row and its own ground (§ A6b).
 import { GAME_HUE, modeConfigFor } from "./constants";
 import MatchSpeedHeaderControls from "./MatchSpeedHeader";
@@ -21,7 +22,9 @@ import MatchSpeedStage from "./MatchSpeedStage";
  * the whole stage).
  */
 const MatchSpeedPageFrame: React.FC<GameStageFrameProps> = ({ title, onExitRequest, headerRight, children }) => (
-    <GameLeafPage hue={GAME_HUE} title={title} onBack={onExitRequest} rightContent={headerRight}>
+    // The Mark tier, not the default Mid: it is the main world's day sky, and the board's
+    // white paint is unreadable on Mid (docs/MATCH_SPEED_GAME.md § Page shell).
+    <GameLeafPage hue={GAME_HUE} ground={RAMP[GAME_HUE].mark} title={title} onBack={onExitRequest} rightContent={headerRight}>
         {children}
     </GameLeafPage>
 );

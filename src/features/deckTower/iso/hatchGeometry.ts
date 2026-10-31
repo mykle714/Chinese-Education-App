@@ -7,8 +7,7 @@ import { convexHull, projectOutline, roundedRectWorld, toPath, type Projector, t
  * and so layouts (towerPlatforms.ts) can use a footprint as a pawn obstacle without
  * importing a component.
  *
- * Also the one clip every floor opening shares (`openingSweepPath`): IsoHatch, IsoFloorRecess
- * and IsoPawn's `opening` all hide what has sunk below the floor with it.
+ * Also the clip IsoHatch hides what has sunk below the floor with (`openingSweepPath`).
  */
 
 /** The focus lever's square opening (world units). */
@@ -41,7 +40,7 @@ export function modeSwitchFootprint(at: { x: number; y: number }): WorldRect {
  * sunk into the opening can still be seen. Anything under the floor projects BELOW the
  * opening's outline (world −z is screen +y), so clipping to this cuts off exactly what the
  * floor in front of the opening hides, while what shows through the opening and everything
- * standing above it stays visible. Used by IsoHatch, IsoFloorRecess and IsoPawn (`opening`).
+ * standing above it stays visible. Used by IsoHatch.
  */
 export function openingSweepPath(proj: Projector, opening: WorldRect, floorZ: number): string {
     const outline = projectOutline(proj, roundedRectWorld(opening), floorZ);

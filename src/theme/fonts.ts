@@ -25,10 +25,9 @@ export const FONTS = {
     //
     // Routed through the `--cjk-font` custom property so the face can be swapped at
     // runtime by any ancestor element (or `:root`) without touching this token or the
-    // 11 call sites that read it. The var()'s FALLBACK is the real default stack, so
-    // when nothing defines `--cjk-font` — which is the case everywhere in the shipping
-    // app — this resolves to exactly the string it always was. There is no way for an
-    // undefined variable to blank the family.
+    // 11 call sites that read it. src/hooks/useChineseFont.ts sets it on `:root` to the
+    // app's one face (975 Maru SC); the var()'s FALLBACK is what renders before that
+    // first effect runs. There is no way for an undefined variable to blank the family.
     //
     // The override is INHERITED, so setting `--cjk-font` on a container re-faces every
     // descendant, and CPCDRow's pinyin-shift measurement (a Range over its own in-DOM

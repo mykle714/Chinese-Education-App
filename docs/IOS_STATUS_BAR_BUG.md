@@ -231,7 +231,10 @@ Open as Web App on. These are copies, not app changes, and vanish on a container
 - **Concluded:** the fade's tint is `body`'s background. Every flat probe painted `body`;
   the app's stayed at `CssBaseline`'s pale colour because `useThemeColor` only wrote
   `documentElement`.
-- **Fix:** `useThemeColor` → `applyTopClaim` also writes `document.body`.
+- **Fix:** `body` follows the claim on mobile only: a media query in `ThemeContext` →
+  `MuiCssBaseline` reads the `--surface-ground` that `useThemeColor` → `applyTopClaim`
+  writes. (First shipped as a `document.body` write in `applyTopClaim`, which also
+  repainted the desktop backdrop around the phone card.)
 - **Correction:** ~~painting `body` removes the fade~~. On a closer look the blur stays and
   only changes colour. The Cow Lab "removed" reports, and every flat probe's "no fade",
   were a fade tinted the same as its ground, so those probes do NOT show the overlay is

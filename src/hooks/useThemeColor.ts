@@ -35,10 +35,11 @@ import { COLORS } from "../theme/colors";
  * The `<meta>` tag itself is declared in index.html with the paper default; this hook
  * only ever rewrites its `content`, and creates the tag only if it has gone missing.
  *
- * A claim writes FIVE places, all describing the same ground: the meta tag (browser
- * chrome), `documentElement`'s background (Safari's overscroll area), `body`'s background
- * (the tint of the iOS home-screen app's status-bar fade), the `--surface-ground` variable
- * (MobileDemoFrame's frame ground), and `documentElement`'s `color-scheme` (see `schemeFor`).
+ * A claim writes FOUR places, all describing the same ground: the meta tag (browser
+ * chrome), `documentElement`'s background (Safari's overscroll area), the
+ * `--surface-ground` variable (MobileDemoFrame's frame ground, and on mobile `body`'s
+ * background, the tint of the iOS home-screen app's status-bar fade), and
+ * `documentElement`'s `color-scheme` (see `schemeFor`).
  *
  * Layer: presentational (a document-level side effect, like `usePageTitle`).
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
@@ -85,7 +86,7 @@ function relativeLuminance(color: string): number | null {
  * the clock/battery colour directly. This was shipped to turn the white status-bar fade
  * dark over a night sky, and it did NOT: forcing `color-scheme` on device (dark or normal)
  * left the fade white (2026-10-30). The fade's tint is `body`'s background — see
- * `applyTopClaim`. Whether this still changes the GLYPHS is untested.
+ * `applyTopClaim`'s `--surface-ground` note. Whether this still changes the GLYPHS is untested.
  *
  * Side effect, by design limited to while a dark ground is claimed: native form
  * controls and scrollbars render dark. Text is unaffected — `:root` sets `color`
@@ -122,6 +123,14 @@ function applyTopClaim(): void {
     // variable rather than pushed through React state because the frame is a styled
     // component far above every claimant, and this way a claim repaints it without
     // re-rendering the tree.
+    //
+    // `body` reads this variable too, on mobile only: in the iOS home-screen app the fade
+    // behind the clock (which stays; this only recolours it) takes its tint from body's
+    // background, even though the shell covers body completely. Every flooded ground wore
+    // a pale fade until body followed (device probes, 2026-10-30,
+    // docs/IOS_STATUS_BAR_BUG.md round 8). Desktop body is the backdrop around the phone
+    // card and must not follow, so the rule is a media query in ThemeContext's
+    // `MuiCssBaseline` override, not a write here.
     document.documentElement.style.setProperty("--surface-ground", color);
 
     // Safari also uses the DOCUMENT background for the overscroll/rubber-band area at
@@ -129,12 +138,6 @@ function applyTopClaim(): void {
     // keeps a bounce from flashing paper under a saturated game ground. The app shell
     // itself never scrolls (see index.css), so this only ever shows during a bounce.
     document.documentElement.style.backgroundColor = color;
-
-    // `body` must follow too: in the iOS home-screen app the fade behind the clock (which
-    // stays; this only recolours it) takes its tint from body's background, even though the shell covers body completely.
-    // MUI's CssBaseline paints body pale, so every flooded ground wore a pale fade until
-    // this write (device probes, 2026-10-30, docs/IOS_STATUS_BAR_BUG.md round 8).
-    document.body.style.backgroundColor = color;
 
     // Status-bar glyph scheme; see `schemeFor`. Cleared, not set to "light", when unclaimed, so index.css's
     // `:root { color-scheme: light }` stays the one source of the default.

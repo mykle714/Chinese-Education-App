@@ -17,6 +17,7 @@ import { HeaderIconButton } from "../../components/PageHeader";
 import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useGameExit } from "../runtime/gameExit";
 import { useAuth } from "../../AuthContext";
+import { DEFAULT_CHINESE_FONT_ID } from "../../types";
 import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
@@ -370,7 +371,7 @@ const MemoryMapPage: React.FC = () => {
                         slots={run.slots}
                         words={run.words}
                         language={language}
-                        fontKey={user?.chineseFont}
+                        fontKey={DEFAULT_CHINESE_FONT_ID}
                         outcomes={run.outcomes}
                         pulsingId={run.promptPhase === "failed" ? run.target?.vocabEntryId ?? null : null}
                         selectedId={selectedId}

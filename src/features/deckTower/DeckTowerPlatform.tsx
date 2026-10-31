@@ -5,7 +5,6 @@ import {
     IsoCardRuns,
     IsoCardStack,
     IsoFloorLabel,
-    IsoFloorRecess,
     IsoLever,
     IsoPawn,
     IsoPlatform,
@@ -28,10 +27,8 @@ import { PLATFORM_THICKNESS, TOWER_LAYOUT as layout } from "./towerPlatforms";
 import type { TowerWorld } from "./towerWorlds";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
-import { usePlateRecess } from "./usePlateRecess";
 import { IMPACT_MS, type TowerDrop } from "./towerResizes";
 import type { TowerCollapse } from "./useTowerResize";
-import type { StudyDrop } from "./useTowerStudy";
 
 /**
  * DeckTowerPlatform — the Deck Tower's floating platform with everything on it: its
@@ -50,10 +47,7 @@ import type { StudyDrop } from "./useTowerStudy";
  *             already there; `showImprint`), then
  *             the floor plate (part of the floor, slightly raised as a push button —
  *             usePlatePress.ts — so it swings with the trap door; pawns step up onto it,
- *             IsoPawn `steps`, and sink with it when it is pressed). While the tower is
- *             studied it is STOWED (usePlateRecess.ts): it recedes into the platform, the
- *             hole is filled with floor, and the climb out reverses it — drawn by
- *             IsoFloorRecess, with any pawn on it riding it down (IsoPawn `opening`);
+ *             IsoPawn `steps`, and sink with it when it is pressed);
  *   children  `behind` (sky travellers on the tower's back sides) → the stack and the
  *             focus lever (obstacles 0–1, in the CAMERA's back-to-front order —
  *             `backToFront`: the listed order under the fixed view, the tower last once
@@ -69,19 +63,14 @@ import type { StudyDrop } from "./useTowerStudy";
  *   - the standing tower with a SKY DROP grow on top: a tower of the new cards
  *     falling onto it (CSS free fall), with the landing's smoke ring around the join
  *     (IsoSmokePuff, its back half under the drop and its front half over it) and the
- *     whole loaded platform sinking under the blow (`PLATFORM_SINK_CSS`);
- *   - while the tower is being STUDIED (useTowerStudy.ts), a spawn's sky drop re-drawn
- *     for the study camera (`studyDrop`): the falling stack is drawn at the height the
- *     page hands in every frame — re-projected, not slid, because seen from straight
- *     above a fall is a shrink — with the same smoke ring on landing. The platform's sink
- *     is the camera's job there (a bump of its height), so none is drawn here.
+ *     whole loaded platform sinking under the blow (`PLATFORM_SINK_CSS`).
  */
 
 /** World units the platform sinks when a dropped tower lands on it. */
 const IMPACT_SINK = 0.55;
 /** The landing's blow: down fast, back up past rest, a small settle. Fits inside IMPACT_MS. */
 const PLATFORM_SINK_CSS = `
-.deck-tower-page__kept-deck .iso-card-stack__shadow { opacity: var(--platform-fade); transition: var(--platform-fade-transition); }
+.deck-tower-page__kept-deck .iso-card-stack__shadow { opacity: var(--platform-fade); }
 @keyframes deck-tower-platform-sink {
     0% { transform: translateY(0); }
     16% { transform: translateY(var(--sink)); }
@@ -109,8 +98,8 @@ function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
  */
 const STARTLE_AT_CARDS = 50;
 
-/** The platform's fade when the toggle flips while the camera is down (`fadeEased`). */
-const PLATFORM_FADE_MS = 360;
+/** A kept deck's own fade (`deckOpacity`): a game drawn on the bare ground coming up or going. */
+const DECK_FADE_MS = 360;
 
 export interface PlateFace {
     text: string;
@@ -145,26 +134,24 @@ interface DeckTowerPlatformProps {
         /** The top card's print opacity (IsoCard `printOpacity`) — 0 while the study camera is down on the card (TowerCoverCard has the print then). */
         printOpacity?: number;
     } | null;
-    /** A spawn's sky drop while the tower is studied (see the header), or null. */
-    studyDrop?: StudyDrop | null;
     /** Freeze the platform's bob (IsoPlatform `bobPaused`) — while the study camera is away from the fixed view. */
     bobPaused?: boolean;
     /**
-     * The whole platform's and everything on it's opacity — the study header's "hide the
-     * platform" toggle, fading on the camera's dive and climb (useTowerStudy
-     * `platformOpacity`; docs/DECK_TOWER.md § "Studying the tower" → "Hiding the platform").
-     * Default 1.
+     * The whole platform's and everything on it's opacity, fading on the study camera's
+     * dive and climb (useTowerStudy `platformOpacity`; docs/DECK_TOWER.md § "Studying the
+     * tower" → "The platform fades"). Default 1.
      */
     fadeOpacity?: number;
-    /** Ease `fadeOpacity`'s changes over PLATFORM_FADE_MS (useTowerStudy `platformFadeEased`). */
-    fadeEased?: boolean;
     /**
      * Keep the deck — the tower of cards — out of the fade: it stays at full opacity in its
      * own slot of the draw order while every other layer fades on its own (IsoPlatform
-     * `fadeChildren={false}`), only its floor shadow fading with the floor. The study dive still lands on the count card, which still slides off and
-     * back on over the session's own fades (DeckTowerPage, "hide the platform" toggle).
+     * `fadeChildren={false}`), only its floor shadow fading with the floor. The study dive
+     * still lands on the count card, which still slides off and back on over the session's
+     * own fades (DeckTowerPage).
      */
     keepDeck?: boolean;
+    /** A kept deck's own opacity (useTowerStudy `deckOpacity`), eased. Default 1. */
+    deckOpacity?: number;
     /**
      * Draw the cards' imprint (IsoCardImprint) under the stack. False while the deck's count
      * is still loading: it reads as 0 then, and "0 cards" would be a lie.
@@ -188,13 +175,6 @@ interface DeckTowerPlatformProps {
         onTap: () => void;
         /** Taps are ignored (a swap is running): no pointer cursor, and it will not press. */
         busy: boolean;
-        /**
-         * Sunk out of the floor, the hole filled flush (usePlateRecess) — while the study
-         * camera dives, studies and covers. Turning it on or off plays the recess.
-         */
-        stowed: boolean;
-        /** A change of `stowed` jumps instead of playing the recess (usePlateRecess `instant`). */
-        stowInstantly?: boolean;
     };
     /**
      * The focus lever in the floor's left corner (IsoLever, docs/FOCUS_MODE.md § 5): its
@@ -232,11 +212,10 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     lever,
     behind,
     front,
-    studyDrop = null,
     bobPaused = false,
     fadeOpacity = 1,
-    fadeEased = false,
     keepDeck = false,
+    deckOpacity = 1,
 }) => {
     const proj = useIsoProjector();
     // The world arrives already lit for the time of day (timeOfDay.ts `litWorld`); the
@@ -272,10 +251,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
 
     // The plate is a push button: raised at rest, flush while held, and the deck switch
     // fires on RELEASE — its face cuts straight to the other deck as it pops back up.
-    const recess = usePlateRecess(plate.stowed, plate.stowInstantly);
-    // The plate as the button it normally is: standing at rest, not stowed.
-    const plateUp = recess.atRest && recess.plug === "plate";
-    const platePress = usePlatePress({ enabled: !plate.busy && plateUp, onRelease: plate.onTap });
+    const platePress = usePlatePress({ enabled: !plate.busy, onRelease: plate.onTap });
     const plateButton = (
         <g
             className="deck-tower-page__plate-button"
@@ -295,39 +271,9 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             />
         </g>
     );
-    // Mid-recess: the plate (or the floor plug that replaces it) moving in its own hole. A
-    // plate plug stands on its base; on the button's spring past rest its base stays on the
-    // floor and the slab grows, as usePlatePress's `raised` > 1 does.
-    const plateBase = Math.min(0, recess.top - RAISED_HEIGHT);
-    const plateRecess = (
-        <IsoFloorRecess
-            className="deck-tower-page__plate-recess"
-            rect={layout.labelPlate}
-            surface={floor}
-            // Lined with the platform's own wall tones: the hole is cut into the platform.
-            inside={world.platform.material}
-            plugTop={recess.top}
-            plugBase={plateBase}
-            floorPlug={recess.plug === "floor"}
-        >
-            {(standZ) => (
-                <IsoFloorLabel
-                    rect={layout.labelPlate}
-                    surface={{ ...floor, z: standZ }}
-                    text={plate.face.text}
-                    bandColor={plateBand}
-                    raised={(recess.top - plateBase) / RAISED_HEIGHT}
-                />
-            )}
-        </IsoFloorRecess>
-    );
-    // Stowed and settled, the floor is flush: nothing is drawn.
-    const plateDecal = plateUp ? plateButton : recess.atRest ? null : plateRecess;
-
     // The same plate as a pawn's shadow darkens it — at the same height, so the shaded
-    // copy lines up with the slab it covers. Only while it stands as the button: a pawn's
-    // shadow over the moving recess just falls at the pawn's own height for that second.
-    const plateShade = !plateUp ? undefined : (
+    // copy lines up with the slab it covers.
+    const plateShade = (
         <IsoFloorLabel
             rect={layout.labelPlate}
             surface={floor}
@@ -339,15 +285,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     );
 
     // The plate as a step the pawns walk up onto, at its live height (sinking when pressed,
-    // springing back past RAISED_HEIGHT as it pops up). Mid-recess it is the plug's top,
-    // below the floor while sunk, so a pawn on it rides it down into the hole and back up
-    // with the floor plug (it launches off the rise, like off a released press). Stowed, the
-    // floor is flush: no step.
-    const plateStep: PawnStep[] = plateUp
-        ? [{ rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT }]
-        : recess.atRest
-          ? []
-          : [{ rect: layout.labelPlate, height: recess.top }];
+    // springing back past RAISED_HEIGHT as it pops up).
+    const plateStep: PawnStep[] = [{ rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT }];
 
     const renderPawn = (p: SwapPawn) => (
         <g key={`pawn-${pawnKey(p)}`} className={p.outgoing && dropPx > 0 ? "deck-tower-page__falling" : "deck-tower-page__standing"}>
@@ -358,14 +297,13 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 startledBy={layout.card}
                 // The trap door's drop, in world units: the old pawn falls with it on its own,
                 // out of the air if the plate just launched it.
-                floorDrop={p.outgoing ? dropPx / proj.unit : 0}
+                floorDrop={p.outgoing ? dropPx / proj.heightUnit : 0}
                 onDepthRankChange={reportRank(pawnKey(p))}
                 // The incoming pawn is only startled by the NEW tower: never while the old
                 // one is still on screen (it is in the air then anyway).
                 startled={(p.outgoing || !swapOutgoing) && cardsOnTower >= STARTLE_AT_CARDS}
                 decals={plateShade}
                 steps={plateStep}
-                opening={recess.atRest ? undefined : layout.labelPlate}
                 entrance={p.entrance}
             />
         </g>
@@ -418,28 +356,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                         printOpacity={stack.printOpacity}
                     />
                 )}
-                {studyDrop && (
-                    <g className="deck-tower-page__study-drop">
-                        {studyDrop.landedKey !== null && (
-                            <IsoSmokePuff key={`study-smoke-behind-${studyDrop.landedKey}`} rect={layout.card} z={floor.z} side="behind" />
-                        )}
-                        {studyDrop.baseZ !== null && (
-                            // In the air: no floor shadow (the falling class hides it).
-                            <g className="deck-tower-page__falling deck-tower-page__study-drop-stack">
-                                <IsoCardStack
-                                    rect={layout.card}
-                                    count={studyDrop.cards}
-                                    surface={{ z: studyDrop.baseZ, color: palette.card.top }}
-                                    label={stack.label}
-                                    bandColor={stackBand}
-                                />
-                            </g>
-                        )}
-                        {studyDrop.landedKey !== null && (
-                            <IsoSmokePuff key={`study-smoke-front-${studyDrop.landedKey}`} rect={layout.card} z={floor.z} side="front" />
-                        )}
-                    </g>
-                )}
                 {drop && (
                     // Keyed per drop, so its CSS fall (and the puffs' delays) start on mount.
                     <g key={`drop-${drop.key}`} className="deck-tower-page__mode-drop">
@@ -458,7 +374,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                             className="deck-tower-page__falling deck-tower-page__mode-drop-stack"
                             style={
                                 {
-                                    "--lift": `${(drop.lift * proj.unit).toFixed(2)}px`,
+                                    "--lift": `${(drop.lift * proj.heightUnit).toFixed(2)}px`,
                                     animation: `deck-tower-drop-fall ${drop.fallMs.toFixed(0)}ms ${FREE_FALL} both`,
                                 } as React.CSSProperties
                             }
@@ -560,19 +476,22 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         .sort((a, b) => b.rank - a.rank);
     for (const { rank, node } of placed) layers.splice(rank, 0, node);
 
-    // The "hide the platform" fade: everything but the kept deck. Normally IsoPlatform fades
-    // the floor and everything on it as one group. With `keepDeck` the deck must stay opaque,
-    // which a faded group cannot allow, so IsoPlatform leaves its children alone
-    // (`fadeChildren`) and each layer here takes the fade itself — all but the deck, whose
-    // floor shadow alone fades, being the floor's (`--platform-fade`, PLATFORM_SINK_CSS's
-    // kept-deck rule). The deck keeps its slot in the draw order: lifting it out over the
-    // faded layers (as it once was) drew it over the pawn and the lever in front of it.
-    const fadeTransition = fadeEased ? `opacity ${PLATFORM_FADE_MS}ms ease-in-out` : undefined;
-    const fadeStyle: React.CSSProperties = { opacity: fadeOpacity, transition: fadeTransition };
-    const fading = fadeOpacity < 1 || fadeEased;
+    // The study fade: everything but the kept deck. Normally IsoPlatform fades the floor and
+    // everything on it as one group. With `keepDeck` the deck must stay opaque, which a faded
+    // group cannot allow, so IsoPlatform leaves its children alone (`fadeChildren`) and each
+    // layer here takes the fade itself — all but the deck, whose floor shadow alone fades,
+    // being the floor's (`--platform-fade`, PLATFORM_SINK_CSS's kept-deck rule). The deck
+    // keeps its slot in the draw order: lifting it out over the faded layers (as it once
+    // was) drew it over the pawn and the lever in front of it.
+    const fadeStyle: React.CSSProperties = { opacity: fadeOpacity };
+    const fading = fadeOpacity < 1;
     const layerFade = keepDeck && fading ? fadeStyle : undefined;
-    const keptDeckStyle = { "--platform-fade": fadeOpacity, "--platform-fade-transition": fadeTransition ?? "none" } as React.CSSProperties;
-    // Every layer is wrapped the same way whatever the mode, so turning `keepDeck` on or off
+    const keptDeckStyle = {
+        "--platform-fade": fadeOpacity,
+        opacity: deckOpacity,
+        transition: `opacity ${DECK_FADE_MS}ms ease-in-out`,
+    } as React.CSSProperties;
+    // Every layer is wrapped the same way whatever the mode, so a session starting or ending
     // re-styles the wrappers without remounting what is inside (the pawn's motion state).
     const wrapped = layers.map((el) => {
         const isDeck = el.key === "stack";
@@ -590,7 +509,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // A landing drop sinks the platform and everything on it, on top of its bob.
     const sinkStyle = drop
         ? ({
-              "--sink": `${(IMPACT_SINK * proj.unit).toFixed(2)}px`,
+              "--sink": `${(IMPACT_SINK * proj.heightUnit).toFixed(2)}px`,
               animation: `deck-tower-platform-sink ${IMPACT_MS}ms ease-out ${drop.fallMs.toFixed(0)}ms both`,
           } as React.CSSProperties)
         : undefined;
@@ -608,7 +527,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 decals={
                     <>
                         {showImprint && <IsoCardImprint rect={layout.card} surface={floor} />}
-                        {plateDecal}
+                        {plateButton}
                     </>
                 }
                 bodyStyle={sinkStyle}

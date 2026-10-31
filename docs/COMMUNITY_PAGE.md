@@ -1,12 +1,12 @@
 # Community Page — Shareable Advanced Card-Icon Layouts
 
-> Status: **implemented and ON**, behind a feature flag (2026-09-19). Backed by
+> Status: **implemented but switched OFF** (2026-10-30), behind a feature flag (2026-09-19). Backed by
 > migration 86 (`community_layout_votes`), the `/api/community/*` endpoints, and the
 > `src/features/community/` UI. Reached from the Menu hub (`/menu` → `/community`).
 
 🚩 **The flag is `FEATURE_FLAGS.community` in `server/contracts/featureFlags.ts`, currently
-`true`** — the feature behaves exactly as described below; this section documents what would
-switch off if it were set to `false`. See
+`false`** — everything below describes the feature as it behaves when the flag is on; none of
+it is reachable while the flag is off. See
 [FEATURE_FLAGS.md](./FEATURE_FLAGS.md). It gates **sharing**, not **authoring**: the
 `/api/community/*` endpoints (both feeds, the search bar's per-entry feed, vote/unvote and
 `applyDesign`), the `/community` route and its Menu tile, the tip in `src/data/tips.ts`, and

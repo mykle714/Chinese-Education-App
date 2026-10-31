@@ -174,7 +174,8 @@ imperative").
 > **The eip does not use it (2026-10-29).** `InfoCardSection` passes no `title` and
 > `showClose={false}`: the eip draws its own title row and close control (a down caret, not
 > a ✕) in its UPPER panel, and the title row telescopes in only toward max — see **§ Telescope** below. Everything in
-> this section still holds for every OTHER titled sheet (decks, compare, account, notebook).
+> this section still holds for every OTHER titled sheet (decks, compare, notebook). The
+> account sheet also has no `title`: see **§ Page-style sheet header**.
 
 The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`), not a
 lookalike, so the header a panel wears is the app's one header. It lives in
@@ -279,7 +280,7 @@ Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTab
 
 ### The trail scrolls, holds up to 50 words, and outlives the panel
 
-**Its row is always present** — it carries the down caret and the Dictionary eip's Add key
+**Its row is always present** — it carries the down caret, the speaker and the Dictionary eip's Add key
 (§ Telescope) — but the **crumbs are hidden until the learner first navigates to another
 word**: a panel opened on a word shows an empty trail slot, not a lone crumb repeating the
 headword. The first push (a drill-in, or Compare) latches the crumbs on for that trail's
@@ -300,7 +301,9 @@ Three rules, all changed on **2026-09-06**:
   (`showAllDefinitions`) the header gloss is a `SwipeableTwoLineText`
   (`src/components/SwipeableTwoLineText.tsx`), also `touch-action: pan-x` so vertical drags
   stay with the sheet's resize, with its own rubber band at the ends
-  (`src/hooks/useEdgeRubberBand.ts`). See docs/SHELF_REDESIGN.md § 7b.
+  (`src/hooks/useEdgeRubberBand.ts`). See docs/SHELF_REDESIGN.md § 7b. When a list breaks
+  between two entries, line 1 ends in the list's dot and line 2 starts with one, so a new entry reads differently from a
+  single entry that wrapped (that wrap has no dots).
 - **It is capped by COUNT, not by width** — `MAX_EIP_TABS` (50) in `useEipTabs`. It used to
   be a width gate (`fitsNewTab`, which measured a candidate pill off-DOM and refused any
   word that would not fit the row entirely) because a half-pill reads as "scroll for more"
@@ -333,14 +336,14 @@ The eip is two stacked panels (design file "Tower Tier 2 - Time of Day", EIP art
 
 | Panel | Rows | Component |
 |---|---|---|
-| **Upper** — the tinted `ground` | TITLE (⌄ "More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (⌄ · words · Add key) · HEADER (headword tile, gloss — a multi-sense word lists every sense, chosen one underlined) | `EipUpperPanel` |
+| **Upper** — the tinted `ground` | TITLE ("More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (speaker · words · Add key) · HEADER (headword tile, gloss — a multi-sense word lists every sense, chosen one underlined) | `EipUpperPanel` |
 | **Lower** — the white SHELF | its own small grabber · content tabs (sunken segmented track) · tab body | `InfoCardSection` (`.eip-shelf`) + `InfoCardPanelBody` (`hideEntryHeader`) |
 
 The shelf has a 24px top radius and a solid 3px `edge` lip above it; the sheet's `surface`
 (the upper panel's ground) shows in its corners.
 
 The content tabs' selected state is ONE white chip that **slides** between the three
-segments (`styled.ts` → `InfoSheetTabIndicator`, driven by `selectedTab`), on the same
+segments (`SheetSegmentedTabs`, driven by `selectedTab`), on the same
 280 ms easing as the content panes below (`TAB_SWIPE_TRANSITION`), so chip and pane arrive
 together whether the tab was tapped or swiped.
 
@@ -368,12 +371,36 @@ are off for the eip (`showClose={false}`, no `title`); the caret calls SheetPane
 `dismiss` (handed out by the `children` render function), which closes the whole panel —
 it does NOT run `onCloseX`, so it never pops a word.
 
-- **At and below the open height** the caret is the first thing in the TRAIL row.
-- **Toward max** the TITLE row telescopes in with its own caret, and the trail-row caret's
-  slot narrows to 0 and fades over the same travel, so the crumbs slide left into its
-  place. It reads `--sheet-telescope-t` (0 at the open height → 1 at max) and
+There is **one caret at every height (2026-10-31)**, pinned to the upper frame's top-left
+(`.eip-upper__caret`), so it rides the top of the panel and no second caret ever comes on
+screen. It replaced a handover in which the trail row's caret faded out as the title row
+brought in its own.
+
+- **At and below the open height** it sits on the TRAIL row's line, and the row's speaker
+  cluster keeps clear of it.
+- **Toward max** it eases 10px down onto the page header's line while the TITLE row is
+  revealed under it. That row's own chevron is `visibility: hidden`, which keeps the title
+  on the page's column. The speaker cluster and the crumbs slide left over the same travel. Both read `--sheet-telescope-t` (0 at the open height → 1 at max) and
   `--sheet-telescope-transition` (the snap's duration, or `0ms` while dragging), which
   `writeTelescope` sets on the frame alongside its height.
+
+**The speaker cluster leads the trail row (2026-10-31)** (`.eip-upper__speaker-cluster`; the
+`SpeakerButton` comes from `InfoCardSection` as `speaker`). The speaker is dead centre between
+the caret's ink and the first crumb's ink. Toward max the cluster slides left by
+`CLUSTER_TRAVEL` until the speaker is directly under the caret, and the trail moves with it.
+
+- The cluster's width places the trail's left boundary on the right edge of a one-character
+  headword keycap (`HEADWORD_TILE_MIN`), as if the keycap's edge ran up through the row. The
+  crumb list then runs off the screen's right edge, unless the Add key ends it at the gutter.
+- The gloss shares those boundaries (`EipEntryHeader` → `glossToScreenEdge`): its box runs
+  from the keycap's right edge to the screen edge, so swiped text clips at both. At rest the
+  text stays inside the box: its left inset (`GLOSS_KEYCAP_CLEARANCE`) keeps it off the
+  keycap and scrolls away with the text, and its right inset is `EIP_PANEL_GUTTER`. A multi-character keycap pushes the gloss right; the
+  trail does not move. The cdps' inline panels keep the header's normal gap and padding.
+- The cluster keeps its width on Compare, which has no speaker, so the trail does not jump
+  when the learner moves between a word and a Compare crumb.
+- The speaker speaks the showing word. The entry header gets no `onSpeak` here, so that
+  header only draws a speaker in the cdps' inline panels.
 
 **The title row is a real `PageHeader`** (leaf size, `arrowDirection="down"`,
 `safeAreaTop={false}`, `titleColor` = the palette ink, flame only with
@@ -394,11 +421,39 @@ takes the status-bar inset (`writeMergeChrome`).
 
 Code: `src/components/sheet/SheetPanel.tsx` → `SheetTelescopeHandle`, `writeTelescope`,
 `measureTelescope`, `surface` / `showGrabber` / `edgePadding` props;
-`src/features/flashcards/FlashcardsLearnPage/EipUpperPanel.tsx`, `InfoCardSection.tsx`.
+`src/features/flashcards/FlashcardsLearnPage/EipUpperPanel.tsx`, `EipEntryHeader.tsx`, `EipTabStrip.tsx`, `InfoCardSection.tsx`; `src/components/SwipeableTwoLineText.tsx` (`insetStart` / `insetEnd`).
 
 **Removed with it:** SheetPanel's `tabStrip` slot and its "grow the sheet for the strip"
 ResizeObserver. The trail was the slot's only user, and an always-present trail inside the
 telescope never appears mid-session, so there is nothing to grow for.
+
+### Page-style sheet header — the account sheet (2026-10-31)
+
+`SheetPageHeader` is the eip's close control and page-like max without its two panels: a
+leaf `PageHeader` (⌄ + title, no flame) shown at every height, for a sheet that should be
+indistinguishable from a drill-in page once maximized. `AccountSheet` is its one host.
+
+- **The host turns SheetPanel's own chrome off:** no `title`, `showClose={false}`,
+  `showGrabber={false}`, `edgePadding={false}`, and it passes `telescopeRef`. The caret
+  calls `dismiss`; the whole header is a resize handle.
+- **The caret lines up with the eip's at both ends.** At the open height it is on the eip's
+  trail-row line (`OPEN_HEADER_TOP_PX`); at max it is on a leaf page's. The telescope's
+  `extra` is a 10px spacer (`MAX_EXTRA_TOP_PX`) rather than a title row, so the frame
+  reveals the difference over the same open → max travel.
+- **Ground:** `AccountSheet` passes `surface={COLORS.background}`, the paper a page sits on,
+  at every height, so the sheet never changes colour mid-drag and its white rows stay
+  raised off the ground as they do on a page.
+
+The panel also has three tabs (Account · Friends · Settings) on the eip's selector,
+`SheetSegmentedTabs`. The eip passes its time-of-day colours; the account panel takes the
+defaults, which are framework tokens for a paper ground. As in the eip each pane is its own
+scroller and `selected` is folded into `bodyKey`, so SheetPanel re-binds to the shown pane.
+The strip is a resize handle too. Panes change by tap only: the eip's swipe pager is not used
+here. A pane mounts on first visit, so opening the panel does not fetch the leaderboard.
+
+Code: `src/components/sheet/SheetPageHeader.tsx` → `SheetPageHeader`;
+`src/components/sheet/SheetSegmentedTabs.tsx` → `SheetSegmentedTabs`;
+`src/pages/AccountSheet.tsx` → `AccountSheet`, `AccountSheetPanes`.
 
 ### Time of day — the eip's palette (2026-10-29)
 
@@ -812,7 +867,8 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
   already own the tap (flip the card, select a segment); the eip header is the one place
   the headword is shown purely as a reference, so a tap there has nothing else to mean.
 - **The headword sits in a pressable KEYCAP (2026-10-29).** The raised tile around it
-  (`.mobile-demo-eic-headword-tile`, a `ButtonBase`) sinks onto its 4px lip while held with
+  (`.mobile-demo-eic-headword-tile`, a `ButtonBase`) is at least `HEADWORD_TILE_MIN` (81px)
+  both ways, so a one-character word is a true square, and sinks onto its 4px lip while held with
   the app's raised-key press (`keycapPressSx`, § Add key), and the WHOLE tile copies: a tap on its padding is forwarded as a click on
   the cpcd row (`EipEntryHeader` → `copyFromTile`), so CPCDRow stays the one copy
   implementation (alternation and caption included).
@@ -856,6 +912,8 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
 ## Referenced code
 
 - `src/components/sheet/SheetPanel.tsx` — everything above
+- `src/components/sheet/SheetPageHeader.tsx` — the page-style header (§ Page-style sheet header)
+- `src/components/sheet/SheetSegmentedTabs.tsx` — the sunken tab selector, shared by the eip and the account panel
   (the scrim portal host, constants block, `computeSnapTarget`, `writeHeight`/`freezeHeight`/`applyResize`,
   the open slide: `playEntrySlide`/`endEntrySlide`/`entrySlideOffset`,
   `settle`/`dismiss`, `bindHeaderDrag`, the wheel + touch effect, `startMomentum`,
@@ -883,8 +941,7 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   entry-jump layout effect (`entryJumpRef`)
 - `src/components/OverlayScrollbar.tsx` — the pane scrollbar thumb (§ Pane scrollbar)
 - `src/features/flashcards/FlashcardsLearnPage/styled.ts` — `EipEntryTab` + the
-  `eipPillIn` entrance keyframes; `InfoSheetTabStrip` / `InfoSheetTab` (the segmented
-  content tabs)
+  `eipPillIn` entrance keyframes
 - `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail breadcrumb
   (always shown; rendered inside EipUpperPanel's trail row)
 - `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants

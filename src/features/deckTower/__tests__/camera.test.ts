@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backToFront, depthRankAmong, dimetricView, faceAffine, makeCameraProjector, makeProjector } from "../iso";
+import { VIEW_PITCH, VIEW_RAY_Z, backToFront, depthRankAmong, dimetricView, faceAffine, makeCameraProjector, makeProjector } from "../iso";
 import { studyCameraView } from "../towerCamera";
 import { CARD_D, CARD_W, TOWER_LAYOUT } from "../towerPlatforms";
 
@@ -12,6 +12,17 @@ const SAMPLES = [
     { x: 3.1, y: 2.2, z: 0.12 },
 ];
 
+describe("the fixed view (docs/ISO_ART_FRAMEWORK.md § Geometry)", () => {
+    it("reports its height scale, and the ray that lands on one screen point", () => {
+        const fixed = makeProjector(UNIT);
+        const base = fixed.project(3, 4, 1);
+        expect(base.y - fixed.project(3, 4, 2).y).toBeCloseTo(fixed.heightUnit, 9);
+        const along = fixed.project(3 + 2, 4 + 2, 1 + 2 * VIEW_RAY_Z);
+        expect(along.x).toBeCloseTo(base.x, 9);
+        expect(along.y).toBeCloseTo(base.y, 9);
+    });
+});
+
 describe("makeCameraProjector (docs/ISO_ART_FRAMEWORK.md § The camera)", () => {
     it("reproduces the fixed dimetric projector exactly at dimetricView", () => {
         const fixed = makeProjector(UNIT);
@@ -21,18 +32,19 @@ describe("makeCameraProjector (docs/ISO_ART_FRAMEWORK.md § The camera)", () => 
             const b = camera.project(p.x, p.y, p.z);
             expect(b.x).toBeCloseTo(a.x, 6);
             expect(b.y).toBeCloseTo(a.y, 6);
-            expect(camera.scaleAt(p.x, p.y, p.z)).toBeCloseTo(UNIT, 6);
+            expect(camera.scaleAt(p.x, p.y, p.z)).toBeCloseTo(fixed.unit, 6);
         }
-        expect(camera.unit).toBeCloseTo(UNIT, 6);
+        expect(camera.unit).toBeCloseTo(fixed.unit, 6);
     });
 
-    it("keeps faceAffine identical to the old hard-coded fixed-view matrix", () => {
+    it("keeps faceAffine on the fixed view's floor axes", () => {
         const m = faceAffine(makeProjector(UNIT), 2, { x: 4, y: 7 });
         const o = makeProjector(UNIT).project(0, 0, 2);
+        const slope = Math.cos(VIEW_PITCH);
         expect(m.a).toBeCloseTo(UNIT, 9);
-        expect(m.b).toBeCloseTo(UNIT / 2, 9);
+        expect(m.b).toBeCloseTo(UNIT * slope, 9);
         expect(m.c).toBeCloseTo(-UNIT, 9);
-        expect(m.d).toBeCloseTo(UNIT / 2, 9);
+        expect(m.d).toBeCloseTo(UNIT * slope, 9);
         expect(m.e).toBeCloseTo(o.x, 9);
         expect(m.f).toBeCloseTo(o.y, 9);
     });

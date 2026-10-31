@@ -1,7 +1,7 @@
 import React, { useId, useMemo } from "react";
 import IsoShadow from "./IsoShadow";
 import IsoCard from "./IsoCard";
-import { CARD_THICKNESS, isDrawnSeam } from "./cardStackMetrics";
+import { CARD_THICKNESS, seamHeights } from "./cardStackMetrics";
 import { GHOST_FADE_MS, GHOST_WIRE_FADE_MS, LAND_HOP, LAND_HOP_MS, shadowLandTiming, type CardCollapsePlan } from "./cardCollapse";
 import { flatPath, frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
@@ -72,18 +72,15 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
     const pieces = useMemo(() => {
         const solid = (z: number, cards: number, lid: boolean) => {
             const body = lid ? cards - 1 : cards;
-            // Every-other-card seams (cardStackMetrics.ts → `isDrawnSeam`, by LANDED position and
+            // Evenly spaced seams (cardStackMetrics.ts → `seamHeights`, by LANDED position and
             // phased by `plan.remaining`, so they match the settled IsoCardStack once the runs land) plus the piece's own
             // boundaries: its base when it is off the floor, so two runs that land on each
             // other still read as separate, and the lid's underside. One path per piece.
-            const seams: string[] = [];
             const firstCard = Math.round((z - baseZ) / t);
-            const lastSeam = lid ? body : body - 1;
-            for (let j = 0; j <= lastSeam; j++) {
-                const below = firstCard + j;
-                const boundary = (j === 0 && below > 0) || (lid && j === body);
-                if (boundary || isDrawnSeam(below, plan.remaining)) seams.push(toOpenPath(frontContour(proj, rect, z + j * t)));
-            }
+            const seamCards = new Set(seamHeights(firstCard, firstCard + body, plan.remaining));
+            if (firstCard > 0) seamCards.add(firstCard);
+            if (lid) seamCards.add(firstCard + body);
+            const seams = [...seamCards].map((h) => toOpenPath(frontContour(proj, rect, baseZ + h * t)));
             const geometry = body > 0 ? prism(proj, rect, z, z + body * t) : null;
             return (
                 <>
@@ -105,14 +102,13 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
             if (p.kind === "ghost") {
                 const g = p.ghost;
                 // The wireframe: the chunk's top and bottom outlines and one at each drawn seam
-                // inside it (every other card) (full outlines, back edges too — the gap is open once the solid has
+                // inside it (every 2.5 cards) (full outlines, back edges too — the gap is open once the solid has
                 // gone), plus the chunk's silhouette for its vertical edges. Not one per card:
                 // at CARD_THICKNESS they would be ~2px apart and merge into a white slab.
                 const z0 = baseZ + g.from * t;
                 const wire = [prism(proj, rect, z0, z0 + g.count * t).hull];
-                for (let j = 0; j <= g.count; j++) {
-                    if (j === 0 || j === g.count || isDrawnSeam(g.from + j, plan.remaining)) wire.push(flatPath(proj, rect, z0 + j * t));
-                }
+                const wireCards = new Set([g.from, g.from + g.count, ...seamHeights(g.from, g.from + g.count, plan.remaining)]);
+                for (const h of wireCards) wire.push(flatPath(proj, rect, baseZ + h * t));
                 return {
                     key: `g${g.from}`,
                     wire: wire.join(" "),
@@ -122,7 +118,7 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                     lidZ: g.hasLid ? baseZ + (g.from + g.count - 1) * t : null,
                     className: "iso-card-runs__ghost",
                     style: {
-                        "--ghost-lift": `${GHOST_LIFT * proj.unit}px`,
+                        "--ghost-lift": `${GHOST_LIFT * proj.heightUnit}px`,
                         animation: `iso-card-runs-ghost ${GHOST_FADE_MS}ms ease-in ${g.fadeDelayMs.toFixed(0)}ms both`,
                     } as React.CSSProperties,
                     body: solid(baseZ + g.from * t, g.count, g.hasLid),
@@ -140,8 +136,8 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                 className: "iso-card-runs__run",
                 style: falls
                     ? ({
-                          "--drop": `${(r.dropCards * t * proj.unit).toFixed(2)}px`,
-                          "--hop": `${(LAND_HOP * proj.unit).toFixed(2)}px`,
+                          "--drop": `${(r.dropCards * t * proj.heightUnit).toFixed(2)}px`,
+                          "--hop": `${(LAND_HOP * proj.heightUnit).toFixed(2)}px`,
                           animation:
                               `iso-card-runs-fall ${r.fallMs.toFixed(0)}ms ${FREE_FALL} ${plan.fallStartMs.toFixed(0)}ms both, ` +
                               `iso-card-runs-hop ${LAND_HOP_MS}ms ease-out ${(plan.fallStartMs + r.fallMs).toFixed(0)}ms`,

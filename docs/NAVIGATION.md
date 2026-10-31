@@ -72,7 +72,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      - the learner's **profile picture** as a round 32px button in the far-right corner
        (`src/minutePoints/dailyBanking/BankingAvatarButton.tsx` wrapping
        `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
-       (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` over Home. It shows
+       (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` over Home with three
+       tabs: Account, Friends and Settings (the last two are the `/friends` and
+       `/settings` bodies; their drill-ins leave the sheet and return to those routes). It shows
        the icons8 `avatarIconId`, falling back to the name's initial on `COLORS.bluM`,
        matching the sheet's own avatar row.
 

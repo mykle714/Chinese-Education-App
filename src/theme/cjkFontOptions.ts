@@ -1,9 +1,13 @@
 // The Chinese typeface catalog — the single source of truth for every face the app can
 // render, both the ones users can pick and the exploration-only extras.
 //
+// THE PICKER IS DISABLED: every account renders in DEFAULT_CHINESE_FONT_ID (applied by
+// src/hooks/useChineseFont.ts) and Settings no longer offers a choice. `selectable` now
+// only marks the legal stored values; it is kept so the choice can be restored.
+//
 // TWO AUDIENCES, ONE LIST:
-//   • `selectable: true`  → offered in account settings, and a legal value of
-//                           `users."chineseFont"` (migration 157). These ids MUST equal
+//   • `selectable: true`  → a legal value of `users."chineseFont"` (migration 157),
+//                           formerly offered in account settings. These ids MUST equal
 //                           CHINESE_FONT_IDS in server/contracts/wire.ts — asserted by
 //                           src/__tests__/chineseFont.test.ts, not synced on trust.
 //   • `selectable: false` → visible only in /font-lab, for comparison. Never reaches a
@@ -13,8 +17,8 @@
 // and stylesheet URLs the moment either changed, and the family string has to be exact
 // (case and spaces) or the face silently falls back.
 //
-// Consumed by: src/pages/SettingsPage.tsx (the picker), src/hooks/useChineseFont.ts
-// (applies the choice), src/pages/fontLab/* (the compare grid).
+// Consumed by: src/hooks/useChineseFont.ts (applies the default face),
+// src/pages/fontLab/* (the compare grid).
 // See docs/CJK_TYPEFACE_LAB.md.
 
 import { DEFAULT_CHINESE_FONT_ID } from "../../server/contracts/wire";
@@ -54,14 +58,12 @@ export interface CjkFontOption {
 const JSDELIVR = (pkg: string) => `https://cdn.jsdelivr.net/npm/cn-fontsource-${pkg}/font.css`;
 
 /**
- * THE DEFAULT FACE COMES FIRST — it leads both the settings picker and the lab, and
- * carries a "Default" badge in settings derived from DEFAULT_CHINESE_FONT_ID (never
- * hardcoded, so the badge follows the constant). `chineseFont.test.ts` asserts this
+ * THE DEFAULT FACE COMES FIRST — it leads the lab. `chineseFont.test.ts` asserts this
  * ordering, so a future reshuffle cannot silently bury it.
  *
  * Everything after it reads as a spectrum: the incumbent, then gothic → serif → kai →
  * rounded → display. Selectable faces are not contiguous on purpose — the order is
- * about reading the list, and settings filters rather than slices.
+ * about reading the list.
  *
  * NO `license: "restricted"` FACE MAY BE ADDED HERE AS SELECTABLE, and as of
  * 2026-09-04 there are none at all: FZKai-Z03 (方正楷体) was removed outright rather
@@ -205,7 +207,7 @@ export const CJK_FONT_CATALOG: readonly CjkFontOption[] = [
     },
 ];
 
-/** The faces offered to users in account settings. */
+/** The legal stored values of `users."chineseFont"`; no UI offers them while the picker is disabled. */
 export const CJK_FONT_OPTIONS: readonly CjkFontOption[] = CJK_FONT_CATALOG.filter((f) => f.selectable);
 
 /**
@@ -227,7 +229,7 @@ export function resolveCjkFont(id: string | null | undefined): CjkFontOption {
  * than to the OS font or tofu.
  *
  * This is the ONE place the stack is built; `--cjk-font` is set from it everywhere
- * (the settings picker's previews, the runtime application, and the lab's columns).
+ * (the runtime application and the lab's columns).
  */
 export function cjkFontStack(option: CjkFontOption): string {
     return `"${option.family}", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`;

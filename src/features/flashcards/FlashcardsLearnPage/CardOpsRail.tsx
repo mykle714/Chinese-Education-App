@@ -75,6 +75,12 @@ export interface CardOpsRailProps {
      */
     disabled?: boolean;
     className?: string;
+    /**
+     * The cells' label face, over CARD_OPS_CELL_LABEL_SX's. Set on the rail rather than
+     * per cell so it reaches the `add to deck` cell, which AddToDeckMenu renders.
+     * Only the Deck Tower session passes it (`TOWER_STUDY_FONT`).
+     */
+    labelFontFamily?: string;
 }
 
 export const CardOpsRail: React.FC<CardOpsRailProps> = ({
@@ -83,6 +89,7 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
     onEditNote,
     disabled = false,
     className,
+    labelFontFamily,
 }) => {
     const [open, setOpen] = useState(false);
 
@@ -148,6 +155,8 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
                 borderRadius: "999px",
                 boxShadow: SHADOW.float,
                 padding: "5px",
+                // `em` is every cell's label; root class + element outranks the label's sx.
+                ...(labelFontFamily ? { "& em": { fontFamily: labelFontFamily } } : {}),
             }}
         >
             <Box

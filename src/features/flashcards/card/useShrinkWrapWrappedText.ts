@@ -6,11 +6,9 @@ import React from "react";
  * ── Why ───────────────────────────────────────────────────────────────────────────────
  * CSS cannot shrink-wrap wrapped text: once a gloss breaks onto two lines its box stays
  * as wide as the space it was given, not as wide as its longest line. On the card face
- * (`CardFace.EnglishBlock`) that space is the grid's `auto` text track, which — once the
- * gloss no longer fits on one line — has already eaten the collapsible left spacer column,
- * so the track (and the centered lines inside it) sits off-center to the left of the
- * sense chip. Giving the text an explicit width equal to its wrapped content width turns
- * the track back into "max-content", and the grid's two `1fr` side columns re-center it.
+ * (`CardFace.EnglishBlock`) the sense chip sits against that box, so without this it would
+ * sit beside empty width rather than beside the text. Giving the text an explicit width
+ * equal to its wrapped content width makes the text row hug the lines.
  *
  * ── How ───────────────────────────────────────────────────────────────────────────────
  * Clear the width, read the natural wrap's height, and if it is more than one line, binary

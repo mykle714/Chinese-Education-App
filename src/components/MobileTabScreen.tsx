@@ -195,6 +195,11 @@ interface MobileTabScreenProps {
     // Painted behind the whole scroll surface (header + content + the padding
     // that clears the floating footer), so short pages have no color seams.
     surfaceColor?: string;
+    // Decoration painted over `surfaceColor` and BEHIND the header and content (scp's night
+    // sky). Non-interactive and fills the screen. Passing it makes the scroll area a
+    // positioned box, so it paints over this layer — and so becomes the containing block
+    // for any absolutely-positioned content that had none nearer.
+    backdrop?: ReactNode;
     // Per-page styling for the content column (padding, alignItems, nested
     // selectors). The header is excluded so it always stays flush + full-width.
     contentSx?: SxProps<Theme>;
@@ -242,6 +247,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     headerTitleColor,
     headerSize,
     surfaceColor = COLORS.background,
+    backdrop,
     contentSx,
     contentClassName,
     className,
@@ -257,6 +263,11 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     const footerStyle = routeFooterStyle(useLocation().pathname);
     return (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
+        {backdrop && (
+            <Box className="mobile-tab-screen__backdrop" sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+                {backdrop}
+            </Box>
+        )}
         <ScrollArea
             // Feeds the scroll-aware edge-fade bands (see EDGE_FADE_BOTTOM_START).
             // Harmless on a non-scrollable page: it wears no mask to read the vars.
@@ -267,6 +278,7 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
             bottomFadeBand={bottomFadeBand}
             horizontalPan={horizontalPan}
             footerStyle={footerStyle}
+            sx={backdrop ? { position: "relative" } : undefined}
         >
             {(() => {
                 const header = (

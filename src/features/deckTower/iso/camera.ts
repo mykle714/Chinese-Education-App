@@ -1,10 +1,10 @@
-import type { Projector, Pt, Pt3 } from "./geometry";
+import { DIMETRIC_Z_SCALE, VIEW_PITCH, makeProjector, type Projector, type Pt, type Pt3 } from "./geometry";
 
 /**
  * camera.ts — a moving camera for the iso art framework (docs/ISO_ART_FRAMEWORK.md
  * § "The camera").
  *
- * The framework's default view is a FIXED 2:1 dimetric projection (geometry.ts →
+ * The framework's default view is a FIXED dimetric projection (geometry.ts →
  * `makeProjector`). This file generalises it into an orbit camera with optional
  * perspective, so a scene can fly its viewpoint somewhere else and back — the Deck
  * Tower's dive from its iso view straight down onto the tower's top card
@@ -16,7 +16,7 @@ import type { Projector, Pt, Pt3 } from "./geometry";
  * Relative to the camera's `target` (world), a point is
  *   1. turned about world z by `yaw` (in the floor plane),
  *   2. its height scaled by `zScale` (the dimetric view's √(2/3) foreshortening of z),
- *   3. tilted by `pitch` about the screen's horizontal axis (π/3 = the iso tilt,
+ *   3. tilted by `pitch` about the screen's horizontal axis (VIEW_PITCH = the iso tilt,
  *      0 = looking straight down),
  *   4. scaled by `scale` px per unit and, with `perspective` > 0, divided by
  *      (1 − depth · perspective) — depth toward the viewer is positive, so things nearer
@@ -32,7 +32,7 @@ import type { Projector, Pt, Pt3 } from "./geometry";
 export interface CameraView {
     /** Radians the floor is turned about world z. π/4 = the dimetric view's diagonal. */
     yaw: number;
-    /** Radians of tilt. π/3 = the dimetric view; 0 = straight down onto the floor. */
+    /** Radians of tilt. VIEW_PITCH = the dimetric view; 0 = straight down onto the floor. */
     pitch: number;
     /** World z foreshortening before the tilt. √(2/3) = dimetric; 1 = true height. */
     zScale: number;
@@ -53,24 +53,22 @@ export interface CameraView {
  */
 const MIN_DEPTH_FACTOR = 0.05;
 
-/** The dimetric foreshortening of z: with yaw π/4 and pitch π/3 it makes 1 unit of z = `unit` px. */
-export const DIMETRIC_Z_SCALE = Math.sqrt(2 / 3);
-
 /**
  * The camera setting that reproduces `makeProjector(unit)` exactly, looking at `target`.
  * (Yaw π/4 turns world (x − y) onto screen x with a 1/√2 factor, which `scale` = unit·√2
- * undoes; pitch π/3 then halves screen y and, with `zScale`, maps 1 unit of z to `unit` px.)
+ * undoes; the pitch then foreshortens screen y by cos(pitch) and heights by zScale·sin(pitch).)
  */
 export function dimetricView(unit: number, target: Pt3): CameraView {
+    // Where the fixed projector (origin 0) puts the target.
+    const origin = makeProjector(unit).project(target.x, target.y, target.z);
     return {
         yaw: Math.PI / 4,
-        pitch: Math.PI / 3,
+        pitch: VIEW_PITCH,
         zScale: DIMETRIC_Z_SCALE,
         scale: unit * Math.SQRT2,
         perspective: 0,
         target,
-        // Where the fixed projector (origin 0) puts the target.
-        screen: { x: (target.x - target.y) * unit, y: ((target.x + target.y) * unit) / 2 - target.z * unit },
+        screen: origin,
     };
 }
 
@@ -124,5 +122,6 @@ export function makeCameraProjector(view: CameraView): Projector {
         const from = axis === "x" ? target.x : target.y;
         return dir + perspective * (from - at) >= 0;
     };
-    return { unit: scaleAt(target.x, target.y, target.z), project, scaleAt, facingScaleAt, seesHighSide };
+    const unit = scaleAt(target.x, target.y, target.z);
+    return { unit, heightUnit: unit, project, scaleAt, facingScaleAt, seesHighSide };
 }

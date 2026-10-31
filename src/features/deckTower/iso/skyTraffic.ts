@@ -49,7 +49,7 @@ export const rand = (min: number, max: number) => min + Math.random() * (max - m
  * units out from it, long enough to run from `margin` world units past one edge of
  * `region.screenSpan` to `margin` past the other — so the traveller enters and leaves
  * the screen rather than popping in mid-sky. On screen it crosses diagonally at the
- * grid's 2:1 slope.
+ * floor grid's slope.
  *
  * `depth` is the traveller's extent ACROSS the path, from its origin toward +x/+y (0 for
  * a flat traveller like a gust, the footprint's short side for a cloud). The origin is pushed out by it on the
@@ -58,7 +58,8 @@ export const rand = (min: number, max: number) => min + Math.random() * (max - m
  */
 export function planSidePath(proj: Projector, region: SkyRegion, gap: number, margin: number, depth = 0): SidePath {
     const { around: r, screenSpan } = region;
-    const u = proj.unit;
+    // Screen px per world x: a floor axis's x run, which `unit` (its area scale) is not.
+    const u = proj.project(1, 0, 0).x - proj.project(0, 0, 0).x;
     // The four sides: two run along world x (fixed y), two along world y (fixed x).
     //   y = r.y + r.d (+gap)  the front-LEFT wall (faces +y)   → front
     //   x = r.x + r.w (+gap)  the front-RIGHT wall (faces +x)  → front

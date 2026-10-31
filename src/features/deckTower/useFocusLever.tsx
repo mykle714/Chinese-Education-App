@@ -23,11 +23,6 @@ import { useLeverMotion, type LeverMotion } from "./useLeverMotion";
  *              goes on and it STAYS pulled.
  *   Tap, on    opens "Turn off focus mode?". Yes → it springs back; if the pile is now under
  *              the threshold it then recedes into the platform and the hatch shuts.
- *   Stowed     while its world's tower is being studied (DeckTowerPage `fixturesStowed`): it
- *              recedes and its hatch shuts as the camera dives, and rises back out as it
- *              climbs (docs/DECK_TOWER.md § "Studying the tower" → "The floor fixtures").
- *              A hidden platform brought back mid-session puts it away instantly instead
- *              (`hideInstantly` ← DeckTowerPage `fixturesSnapped`; § "Hiding the platform").
  *
  * After a flip the world's ready counts are re-read, so the tower stands the new figure.
  * `onRecount` fires just before that re-read: the page holds the tower at its height and,
@@ -51,7 +46,6 @@ export function useFocusLever({
     ready,
     learningShown,
     busy,
-    stowed = false,
     hideInstantly = false,
     skyEntrance,
     onRecount,
@@ -62,8 +56,6 @@ export function useFocusLever({
     learningShown: boolean;
     /** A swap, pan or tower resize is running: taps are ignored. */
     busy: boolean;
-    /** Put away into the platform whatever else holds (a study dive — see the header). */
-    stowed?: boolean;
     /** Show / hide without animating (the lever just fell away with a trap-door swap; useLeverMotion `instant`). */
     hideInstantly?: boolean;
     /** Arrive by falling from the sky on this cue (a deck swap's incoming pawn's; useLeverMotion `skyEntrance`). */
@@ -88,7 +80,7 @@ export function useFocusLever({
     // a just-confirmed flip's re-read lands (`confirmedOn` non-null): turning focus off
     // then either leaves it standing — a plain spring back, no sink-and-rise — or, if the
     // full pile is under the threshold, sinks it.
-    const visible = !stowed && ready.loaded && learningShown && (focusOn || confirmedOn !== null || readyTotal >= FOCUS_LEVER_THRESHOLD);
+    const visible = ready.loaded && learningShown && (focusOn || confirmedOn !== null || readyTotal >= FOCUS_LEVER_THRESHOLD);
     // Held pulled while its own popup is up, as well as while focus is on.
     const motion = useLeverMotion({ visible, pulled: focusOn || dialog !== null, instant: hideInstantly, skyEntrance });
 

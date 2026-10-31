@@ -37,10 +37,12 @@ function MenuPage() {
     usePageTitle("Menu");
     const { user } = useAuth();
 
-    // HUES: one tile per ramp hue — the six live main tiles (Games, Arena, Immersive
+    // HUES: one tile per ramp hue — the six non-hero main tiles (Games, Arena, Immersive
     // World, Reader, Friends, Community) wear the six tile hues (blu, yel, red, pur, grn,
     // org) exactly once, so no two destinations read as the same feature. The warm hues
-    // (yel / red / org) are CHECKERBOARDED on the 2-column grid so no two share an edge:
+    // (yel / red / org) are CHECKERBOARDED on the 2-column grid so no two share an edge
+    // (shown with every flag on; Immersive World and Community are currently flagged off,
+    // leaving Games | Arena over Reader | Friends):
     //     Games  blu | Arena   yel
     //     IW     red | Reader  pur
     //     Friends grn| Comm.   org

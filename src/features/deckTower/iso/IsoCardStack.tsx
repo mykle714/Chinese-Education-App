@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
 import IsoShadow from "./IsoShadow";
 import IsoCard from "./IsoCard";
-import { CARD_THICKNESS, cardStackMetrics, isDrawnSeam } from "./cardStackMetrics";
+import { CARD_THICKNESS, cardStackMetrics, seamHeights } from "./cardStackMetrics";
 import { frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
@@ -15,7 +15,7 @@ import { useIsoPalette, useIsoProjector } from "./sceneContext";
  * solids: a deck can run to several hundred cards, and drawing each as two filled paths
  * would cost hundreds of nodes for walls nobody can tell apart. The individual cards are
  * suggested instead by SEAMS — the front contour of the footprint stroked under every
- * other card (`SEAM_EVERY`), plus one under the top card. Cards keep one fixed thickness (cardStackMetrics.ts), so a big deck grows tall
+ * 2.5 cards (`seamHeights`), plus one under the top card. Cards keep one fixed thickness (cardStackMetrics.ts), so a big deck grows tall
  * rather than thin.
  */
 interface IsoCardStackProps {
@@ -55,7 +55,7 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
         [proj, rect, bodyHeight, baseZ]
     );
 
-    // Seams sit on a fixed grid of every other card (cardStackMetrics.ts → `isDrawnSeam`,
+    // Seams sit on a fixed, evenly spaced grid (cardStackMetrics.ts → `seamHeights`,
     // phased by the SETTLED count so the top card's seam lands on it), so during the
     // build-up the placed seams stay where they are and new ones appear as the body grows upward. One extra seam
     // always sits at the top card's underside — without it the top card merges with the
@@ -66,8 +66,8 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
     const seams = useMemo(() => {
         if (bodyHeight <= 0.001) return null;
         const out: string[] = [];
-        for (let k = 1; k * CARD_THICKNESS < bodyHeight - CARD_THICKNESS * 0.25; k++) {
-            if (isDrawnSeam(k, count)) out.push(toOpenPath(frontContour(proj, rect, baseZ + k * CARD_THICKNESS)));
+        for (const h of seamHeights(0, bodyHeight / CARD_THICKNESS - 0.25, count)) {
+            out.push(toOpenPath(frontContour(proj, rect, baseZ + h * CARD_THICKNESS)));
         }
         out.push(toOpenPath(frontContour(proj, rect, baseZ + bodyHeight)));
         return out.join(" ");

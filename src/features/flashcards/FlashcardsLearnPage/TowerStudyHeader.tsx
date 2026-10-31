@@ -2,6 +2,7 @@ import React from "react";
 import PageHeader, { HeaderIconButton } from "../../../components/PageHeader";
 import AudioModeChip from "../../../components/AudioModeChip";
 import { COLORS } from "../../../theme/colors";
+import { TOWER_STUDY_FONT } from "../../../theme/towerPlate";
 import type { LastMarkUndoSnapshot } from "../types";
 
 /**
@@ -22,10 +23,6 @@ import type { LastMarkUndoSnapshot } from "../types";
  * resize as it cycles.
  * A filled chip (it was a grey floor plate until 2026-10-26) drew the eye off the card.
  *
- * Its PLATFORM TOGGLE (an eye, crossed out while on) hides the tower's whole platform under
- * the cards (FlpTowerHost `platformHidden`; docs/DECK_TOWER.md § "Studying the tower" →
- * "Hiding the platform"). The icon shows the platform's state: open eye = seen.
- *
  * Kept separate from FlashcardsLearnHeader (rather than a `tone` flag on it) because the
  * two headers stand on different grounds and are expected to diverge — this one belongs
  * to the tower's look.
@@ -42,13 +39,13 @@ interface TowerStudyHeaderProps {
     onUndo: () => void;
     /** The icon-layout editor is open: undo is meaningless then (see FlashcardsLearnHeader). */
     editMode: boolean;
-    /** The tower's platform is faded out under the cards (FlpTowerHost `platformHidden`). */
-    platformHidden: boolean;
-    onPlatformHiddenChange: (hidden: boolean) => void;
 }
 
 /** The header's ink over the sky — the tower page header's (DeckTowerPage `headerTitleColor`). */
 const ON_SKY_INK = COLORS.white;
+
+/** The chip's label face, layered over its mono default. `outlined` fits the box to it. */
+const AUDIO_CHIP_FONT_SX = { fontFamily: TOWER_STUDY_FONT };
 
 const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     title,
@@ -58,8 +55,6 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     onBack,
     onUndo,
     editMode,
-    platformHidden,
-    onPlatformHiddenChange,
 }) => (
     <PageHeader
         title={title}
@@ -79,17 +74,11 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
                     onClick={onUndo}
                     disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing || editMode}
                 />
-                <HeaderIconButton
-                    className="tower-study-header__platform-toggle"
-                    icon={platformHidden ? "visibility_off" : "visibility"}
-                    label={platformHidden ? "Show the platform" : "Hide the platform"}
-                    color={ON_SKY_INK}
-                    onClick={() => onPlatformHiddenChange(!platformHidden)}
-                />
                 <AudioModeChip
                     className="tower-study-header__audio-chip"
                     outlined
                     ink={ON_SKY_INK}
+                    sx={AUDIO_CHIP_FONT_SX}
                 />
             </>
         }

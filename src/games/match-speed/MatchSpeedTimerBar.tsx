@@ -3,6 +3,8 @@ import { GameTimer } from "../shared/GameFrame";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { RUN_DURATION_MS } from "./constants";
 import { COLORS } from "../../theme/colors";
+import { GROUND_PAINT } from "../../theme/groundPaint";
+import { useTowerWash } from "../../timeOfDay/useDayWash";
 
 /** Below this the clock turns red and pulses. */
 const URGENT_MS = 10_000;
@@ -33,6 +35,7 @@ interface MatchSpeedTimerBarProps {
  * See docs/MATCH_SPEED_GAME.md § Page shell, header, and chrome.
  */
 const MatchSpeedTimerBar: React.FC<MatchSpeedTimerBarProps> = ({ remainingMs, dimmed = false }) => {
+    const wash = useTowerWash();
     const urgent = remainingMs <= URGENT_MS;
     // Clamped at the low end here as well as in GameTimer: this fraction also has to be
     // a sane number if anything else ever reads it.
@@ -43,12 +46,8 @@ const MatchSpeedTimerBar: React.FC<MatchSpeedTimerBarProps> = ({ remainingMs, di
             className={`match-speed__timer-bar${urgent ? " match-speed__timer-bar--urgent" : ""}`}
             value={formatTimeMs(remainingMs)}
             fraction={fraction}
-            // v2 draws the clock and its drain bar in ink, and the urgent state in
-            // `--danger`, which v2 also sets to ink — so urgency is carried by the PULSE
-            // alone. (The caption still says "red and pulsing under ten seconds"; the
-            // tokens say ink. The tokens win: docs/SHELF_REDESIGN.md § A1b.)
-            valueColor={urgent ? COLORS.dangerInk : COLORS.onSurface}
-            fillColor={urgent ? COLORS.dangerInk : COLORS.onSurface}
+            // A painted bar; the last ten seconds also turn it red and pulse the numerals.
+            fillColor={wash(urgent ? COLORS.redMk : GROUND_PAINT)}
             dimmed={dimmed}
             pulse={urgent}
         />

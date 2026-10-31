@@ -51,8 +51,8 @@ const IsoLevitate: React.FC<IsoLevitateProps> = ({ shadow, children, paused = fa
     // The rise in px, from the scene's unit — but frozen with the bob: a moving camera
     // changes `unit` every frame, and the paused animation's offset is a share of this
     // var, so letting it follow would slide the frozen object off where it stopped.
-    const bobPx = useRef(BOB_HEIGHT * proj.unit);
-    if (!paused) bobPx.current = BOB_HEIGHT * proj.unit;
+    const bobPx = useRef(BOB_HEIGHT * proj.heightUnit);
+    if (!paused) bobPx.current = BOB_HEIGHT * proj.heightUnit;
     return (
         <g className={paused ? "iso-levitate iso-levitate--paused" : "iso-levitate"}>
             <style>{LEVITATE_CSS}</style>

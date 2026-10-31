@@ -88,22 +88,20 @@ interface OutPlan {
     accel: number;
 }
 
-/** The carried drag never counts as more than this much of the way off screen. */
-const MAX_CARRIED_SHIFT = 0.8;
-
 /**
  * Fit the out phase to a carry. The time is what an ease-in from rest would take over the
  * remaining distance, cut short if the carried speed alone covers it sooner — so `accel`
- * is never negative and the scene never slows down on its way out.
+ * is never negative and the scene never slows down on its way out. A drag that already
+ * took the scene fully off screen (the drag can outrun the finger) has no out phase left.
  */
 function outPlan(direction: -1 | 1, carry: PanCarry | undefined): OutPlan {
     // Only motion TOWARD the exit counts; a finger flicking back the other way carries nothing.
-    const start = Math.min(MAX_CARRIED_SHIFT, Math.max(0, -direction * (carry?.shift ?? 0)));
+    const start = Math.min(1, Math.max(0, -direction * (carry?.shift ?? 0)));
     const v0 = Math.max(0, -direction * (carry?.velocity ?? 0));
     const remaining = 1 - start;
     let ms = OUT_MS * Math.sqrt(remaining);
     if (v0 * ms > remaining) ms = remaining / v0;
-    return { ms, start, v0, accel: (remaining - v0 * ms) / (ms * ms) };
+    return { ms, start, v0, accel: ms > 0 ? (remaining - v0 * ms) / (ms * ms) : 0 };
 }
 
 interface PanPlan {

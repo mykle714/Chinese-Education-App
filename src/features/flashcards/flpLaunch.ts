@@ -148,8 +148,8 @@ const FDP_ENTER: readonly ChoreographyStep[] = [
 ];
 
 // ── The flp game break (docs/FLP_GAME_BREAKS.md § 2) ──
-// Root: the flp's ContentArea. The game area itself is not in these tables — it is the
-// one element that rises from the bottom, and `GameBreakArea` animates its own box.
+// Root: the flp's ContentArea. The game area is not in these tables: `GameBreakArea`
+// animates its own box (the card growing into the panel, the fall on exit).
 
 /** Into a break: More Info fades, the word tools leave through the top. */
 const BREAK_ENTER_MS = 300;
@@ -166,6 +166,11 @@ const BREAK_RETURN: readonly ChoreographyStep[] = [
     { selector: ".mobile-demo-more-info-pill", edge: "fade", delayMs: 260, durationMs: 320 },
 ];
 
+/** Skip / undo off the break's card: the stack never left, so only the tools come back. */
+const BREAK_TOOLS_RETURN: readonly ChoreographyStep[] = BREAK_RETURN.filter(
+    (step) => step.selector !== ".mobile-demo-card-slot",
+);
+
 /** Play `BREAK_AWAY` on the flp's ContentArea. Holds the end state (fill forwards). */
 export function playBreakAway(contentArea: Element): Promise<void> {
     return playChoreography(contentArea, BREAK_AWAY, "out");
@@ -180,17 +185,20 @@ export function playBreakReturn(contentArea: Element): Promise<void> {
     return playChoreography(contentArea, BREAK_RETURN, "in");
 }
 
+/** Play `BREAK_TOOLS_RETURN` on the flp's ContentArea (see `playBreakReturn`). */
+export function playBreakToolsReturn(contentArea: Element): Promise<void> {
+    return playChoreography(contentArea, BREAK_TOOLS_RETURN, "in");
+}
+
 /**
- * The game area's own motion: it FADES IN (opacity, in place — changed from a rise on
- * 2026-10-18) and falls away through the bottom on exit. The fade waits ~half the
- * card's fly-out (`CARD_FLY_OUT_MS`, 450) so the panel appears into the space the card
- * is vacating rather than under it.
+ * The game area's own motion: on Play the card GROWS into the game's panel, the plate then
+ * fades off the mounted game; on exit the area falls away through the bottom.
  */
 export const BREAK_AREA_MOTION = {
-    enterMs: 320,
-    enterDelayMs: 200,
+    growMs: 420,
+    growEasing: "cubic-bezier(0.3, 0, 0.15, 1)",
+    plateFadeMs: 200,
     exitMs: BREAK_ENTER_MS,
-    enterEasing: "ease-out",
     exitEasing: "cubic-bezier(0.4, 0, 1, 1)",
 } as const;
 

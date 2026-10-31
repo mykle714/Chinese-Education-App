@@ -67,13 +67,19 @@ poke past the card boundary into the surrounding card padding while ordinary ico
 clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx`;
 `FlashCardSection.tsx` re-exports it.)
 
-**Narrower clip on the Deck Tower's card stock (`--card-icon-clip`).** Both icon clip
-layers — `CardIconLayer` and the canvas's `card-icon-canvas__clip` — also take
-`clipPath: var(--card-icon-clip, none)`. Only `CardFaceSide` `towerStock` sets it (to
+**Narrower clip on the Deck Tower's card stock (`--card-panel-clip`).** The inner clip box
+and the canvas's `card-icon-canvas__clip` take `clipPath: var(--card-panel-clip, none)`.
+Only `CardFaceSide` `towerStock` sets it (to
 `inset(var(--card-stock-inset) round var(--card-panel-radius))`), so on the tower-hosted
-flp icons are cut at the beige printed panel rather than the card edge, and the editor shows
-the same cut the saved card will. Everywhere else it is unset → `none`. Text blocks are not
-narrowed. The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
+flp everything in the inner box (icons, text blocks, sense chip, speaker) is cut at the beige
+printed panel rather than the card edge. Everywhere else it is unset → `none`. Text also
+**wraps** at the panel: `textBlockMaxWidth` (`src/cardIcons/cardTextLayout.ts`) caps a block at
+`--card-panel-width` ÷ its scale (scale is a transform, so it happens after layout), and the
+front face's horizontal padding is `--card-stock-inset`. The canvas's text layer is **not**
+narrowed, because the selected block's outline and handle sit outside its box; there the
+panel is enforced by the release clamp (`clampTextRelease` measuring
+`card-icon-canvas__text-bounds`). `topRail` and `noteSlot` sit outside the inner box and keep
+inside the panel through `--card-chrome-inset`. The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
 canvas, icons and text paint over it, and `contentHidden` spares it (it is surface).
 See [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower" → "The card stock".
 
@@ -1054,7 +1060,7 @@ new nullable **`textLayout` jsonb** column on both vet tables
 - **Back face only.** Side 1 always uses the default centered layout; only Side 2 (the face
   the editor decorates) honors `textLayout`.
 - **Fully on-card.** Unlike icons (which keep only 15% on-card), text is clamped so the
-  **whole** rendered box stays on the card — the editor measures the block's rendered
+  **whole** rendered box stays on the card, or on the printed panel on Deck Tower stock — the editor measures the block's rendered
   (scaled + rotated) bounding box and clamps the center so no part can leave (`clampTextCenterFully`).
 - **Resize floor.** Font scale is clamped to `[TEXT_SCALE_MIN=0.5, TEXT_SCALE_MAX=3]` so text
   can't shrink to unreadable.
@@ -1133,24 +1139,24 @@ column that changes a box's height. A measured center within `MEASURED_CENTER_EP
   are laid out **in-flow** (`ChineseBlock inlineActions`) instead of absolutely off the text's
   right edge, so they're **part of the block's measured box** — the selection outline frames
   them and the on-card clamp keeps them on-card. The static back-face render uses
-  `inlineActions` too (default and custom), so it matches the fie 1:1; only the **front face /
-  Side 1** keeps the absolute-button flex column (its text stays centered). The ENGLISH block's
-  sense trigger (`CardFace.EnglishBlock` → `SensePicker`) has no such switch any more — it is
-  **always in-flow**, on every face: the absolute variant occupied no layout,
-  so a wide gloss pushed the trigger past the card's (and on the large card view the viewport's)
-  right edge. The block is a **3-column grid** — `minmax(0,1fr) | auto | minmax(min-content,1fr)`
-  (hidden spacer twin | gloss | trigger): the two `1fr` sides keep the gloss centered while it
-  fits, and when it's too wide the spacer column collapses first, so the gloss slides left into
-  that space instead of wrapping; the trigger column never drops below the chip's width. (A
-  fixed-width hidden twin in a `nowrap` flex row used to do the centering, but it cost the text
-  the chip's width twice and split long single words mid-word.) The twin also gives the
-  `max-content` back-face block its symmetric intrinsic width. Overflow the spacer can't absorb is taken inside the text — `minWidth: 0` on the text row plus
-  `overflowWrap: break-word` on the gloss. **Multi-line glosses stay centered too**: CSS can't
-  shrink-wrap wrapped text (a wrapped gloss's box stays as wide as the whole `auto` track, which
-  has already absorbed the collapsed spacer, so its lines sat left of center), so
+  `inlineActions` too (default and custom), so it matches the fie 1:1, and so does the flp's
+  **front face**. In-flow mode is a 3-column grid, `minmax(0,1fr) | auto | minmax(min-content,1fr)`
+  (hidden spacer twin | word | speaker; the spacer collapses before the word wraps), and the word itself wraps (`ForeignText
+  flexWrap="wrap"`) at the block's width. The ENGLISH block's
+  sense trigger (`CardFace.EnglishBlock` → `SensePicker`) is **always out of flow**, on every
+  face: the gloss centers and wraps as if the trigger did not exist, so it is not part of the
+  block's measured box or the on-card clamp. `useSenseChipPlacement`
+  (`src/features/flashcards/card/useSenseChipPlacement.ts`) then places it: **right** of the
+  gloss when it fits before `.card-face__panel-bounds` (the printed panel on Deck Tower stock,
+  the whole face elsewhere; hosts with no card face use the block's own width), otherwise
+  centered **below** it. On the right it sits beside the first line, centered on that line's
+  lowercase letters (`vertical-align: middle` inside a wrapper with the gloss's font metrics).
+  It accounts for the block's center and scale, not its rotation. Only
+  when "below" would run past the panel's bottom is the text row lifted by the overrun.
+  **Multi-line glosses stay centered**: CSS can't shrink-wrap wrapped text, so
   `useShrinkWrapWrappedText` (`src/features/flashcards/card/useShrinkWrapWrappedText.ts`) binary-
   searches the narrowest width that keeps the line count and writes it to the gloss's
-  `style.width`; the track shrinks to it and the `1fr` sides re-center the block. It measures with
+  `style.width`, which the text row then hugs, so the chip sits beside the lines. It measures with
   `offsetWidth`/`offsetHeight` only (the faces are flipped/scaled/rotated), is a no-op on single-
   line text, and re-runs on text change, block resize and font load. A side effect is balanced
   line lengths (like `text-wrap: balance`). A **separate,

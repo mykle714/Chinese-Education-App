@@ -1,9 +1,18 @@
-import { SHADOW } from "../../../theme/shadows";
-import { COLORS } from "../../../theme/colors";
-import { WEIGHT } from "../../../theme/scale";
-import { FONTS } from "../../../theme/fonts";
-import { keycapPressSx } from "../../../theme/keycapPress";
-import type { PlateTones } from "./flpTowerHost";
+import { SHADOW } from "./shadows";
+import { COLORS } from "./colors";
+import { WEIGHT } from "./scale";
+import { FONTS } from "./fonts";
+import { keycapPressSx } from "./keycapPress";
+
+/**
+ * The three tones of the tower's floor plate (iso palette `bandMaterial`): its face and
+ * its two walls. A plain shape here so a consumer does not import the iso kit.
+ */
+export interface PlateTones {
+    top: string;
+    left: string;
+    right: string;
+}
 
 /**
  * towerPlate — the Deck Tower's floor-plate push button, redrawn in HTML for the flp's
@@ -31,15 +40,29 @@ import type { PlateTones } from "./flpTowerHost";
  * No 1px `COLORS.border` outline (the CLAUDE.md "Buttons & cards" rule): like the scene's
  * plate, its edge is its wall and shadow.
  *
- * Layer: feature style (src/features/flashcards). `towerPlateSx` is used by
- * FlashcardsLearnPage.tsx (passed to WordToolsRail `pillSx`) and styled.ts →
- * `MoreInfoPill` (`plate`). `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
+ * Layer: shared theme style — in theme/ because the games draw plates too and may not
+ * import features/. `towerPlateSx` is used by FlashcardsLearnPage.tsx (passed to
+ * WordToolsRail `pillSx`), styled.ts → `MoreInfoPill` (`plate`), GameBreakCard.tsx,
+ * games/shared/GameFrame.tsx (Leave) and games/match-speed/MatchSpeedPlateButton.tsx. `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
  * exported for a control that wants only one of them (none does today — the study
  * header's audio chip used both until it became bare text, 2026-10-26).
  */
 
 /** The slab's visible wall, px — the scene plate's RAISED_HEIGHT at the tower's scale. */
 export const PLATE_WALL_PX = 5;
+
+/**
+ * The Deck Tower study session's UI lettering: 975 Maru SC, the rounded face of the
+ * app's Chinese text, reached through `FONTS.cjk` (useChineseFont owns which face that
+ * is, and its slices cover Latin). Applied to the study header's audio chip and the
+ * session's button labels — and ONLY there, so the header title stays in the UI sans and
+ * plates on game surfaces keep `TOWER_PLATE_PRINT`'s. The face ships one weight: anything
+ * heavier is browser-synthesised bold.
+ *
+ * Used by: TowerStudyHeader.tsx, FlashcardsLearnPage.tsx.
+ * Documented in: docs/DECK_TOWER.md § "Studying the tower" → "The lettering".
+ */
+export const TOWER_STUDY_FONT = FONTS.cjk;
 
 
 /** Rest: the wall under the face, then the contact shadow. Pressed: flush, no wall, no shadow. */

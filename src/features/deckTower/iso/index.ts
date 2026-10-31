@@ -24,7 +24,6 @@ export { default as IsoCardImprint } from "./IsoCardImprint";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
 export { default as IsoHatch } from "./IsoHatch";
-export { default as IsoFloorRecess } from "./IsoFloorRecess";
 export { default as IsoModeSwitch } from "./IsoModeSwitch";
 export {
     hatchFootprint,
@@ -54,7 +53,7 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 
 // Rules + math
 export * from "./geometry";
-export { dimetricView, makeCameraProjector, DIMETRIC_Z_SCALE, type CameraView } from "./camera";
+export { dimetricView, makeCameraProjector, type CameraView } from "./camera";
 export { bandMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
 export { shadowFootprint, shadowTone, type IsoSurface } from "./light";
 export {

@@ -3,12 +3,13 @@
  * (docs/ISO_ART_FRAMEWORK.md § "Geometry").
  *
  * ── The projection ────────────────────────────────────────────────────────────
- * 2:1 dimetric, the same flavour the Night Market grid uses (docs/NIGHT_MARKET_FEATURE.md
- * § Coordinate System): world +x runs down-RIGHT on screen, world +y runs down-LEFT, and
- * +z is straight UP. One world unit is `unit` screen px along each axis:
+ * Dimetric, tilted VIEW_PITCH from straight down: world +x runs down-RIGHT on screen, world
+ * +y runs down-LEFT, and +z is straight UP. Slightly more top-down than the Night Market's
+ * 2:1 grid (docs/NIGHT_MARKET_FEATURE.md § Coordinate System), which was this kit's view
+ * until 2026-10-31 and is pitch 60°:
  *
  *     sx = (x − y) · unit
- *     sy = (x + y) · unit / 2 − z · unit
+ *     sy = (x + y) · unit · FLOOR_SLOPE − z · unit · HEIGHT_FACTOR
  *
  * ── Why everything is an EXTRUDED ROUNDED RECT ────────────────────────────────
  * The art style is built from chunky, softly bevelled boxes with no outlines — edges are
@@ -48,17 +49,39 @@ export interface WorldRect {
     r: number;
 }
 
+/** The fixed view's tilt from straight down (iso/camera.ts → `CameraView.pitch`). */
+export const VIEW_PITCH = (55 * Math.PI) / 180;
+/** The fixed view's foreshortening of z before the tilt (`CameraView.zScale`). */
+export const DIMETRIC_Z_SCALE = Math.sqrt(2 / 3);
+/** Screen y per screen x along a floor axis. 0.5 would be the 2:1 grid. */
+const FLOOR_SLOPE = Math.cos(VIEW_PITCH);
+/** Screen px of one unit of z, in `unit`s of the fixed view. */
+const HEIGHT_FACTOR = Math.SQRT2 * DIMETRIC_Z_SCALE * Math.sin(VIEW_PITCH);
 /**
- * World → screen. Two kinds exist: the fixed 2:1 dimetric one below (`makeProjector`, the
+ * The z of the fixed view's ray: every world point along (1, 1, VIEW_RAY_Z) lands on the same
+ * screen point, so x + y + z · VIEW_RAY_Z orders things by depth along it.
+ */
+export const VIEW_RAY_Z = (2 * FLOOR_SLOPE) / HEIGHT_FACTOR;
+
+/**
+ * World → screen. Two kinds exist: the fixed dimetric one below (`makeProjector`, the
  * framework's default view) and the moving camera of camera.ts (`makeCameraProjector`,
  * the Deck Tower's dive onto its top card — docs/DECK_TOWER.md § "Studying the tower").
  * Every object draws through `project`, so it works under either; anything that sizes
  * itself in screen px should prefer `scaleAt` over `unit`, which is exact only for the
- * fixed view.
+ * fixed view, and anything that moves up the screen by a world height uses `heightUnit`.
  */
 export interface Projector {
-    /** Screen px per world unit at the view's centre (the fixed view: everywhere). */
+    /** Screen px per world unit of FLOOR at the view's centre (the fixed view: everywhere). */
     unit: number;
+    /**
+     * Screen px per world unit of height, for a move drawn as a screen-y offset (a CSS
+     * translate, not a re-projection). The floor's `unit` is not this: the tilt stretches the
+     * floor and shortens heights. A camera reports its floor `unit` here (camera.ts →
+     * `makeCameraProjector`), because looking straight down a height has no screen length
+     * and those moves still have to read.
+     */
+    heightUnit: number;
     project: (x: number, y: number, z: number) => Pt;
     /**
      * Screen px per world unit AT a point: the square root of the floor plane's area scale
@@ -86,14 +109,19 @@ export interface Projector {
     seesHighSide: (axis: "x" | "y", at: number) => boolean;
 }
 
+/** `unit` is the screen px per world unit of x − y, i.e. across the screen. */
 export function makeProjector(unit: number, originX = 0, originY = 0): Projector {
+    // |det| of the screen images of a world x and y step, as in camera.ts → `scaleAt`.
+    const floorUnit = unit * Math.sqrt(2 * FLOOR_SLOPE);
+    const heightUnit = unit * HEIGHT_FACTOR;
     return {
-        unit,
+        unit: floorUnit,
+        heightUnit,
         project: (x, y, z) => ({
             x: originX + (x - y) * unit,
-            y: originY + ((x + y) * unit) / 2 - z * unit,
+            y: originY + (x + y) * unit * FLOOR_SLOPE - z * heightUnit,
         }),
-        scaleAt: () => unit,
+        scaleAt: () => floorUnit,
         // The fixed view is camera.ts's `dimetricView`, whose `scale` is unit·√2.
         facingScaleAt: () => unit * Math.SQRT2,
         seesHighSide: () => true,

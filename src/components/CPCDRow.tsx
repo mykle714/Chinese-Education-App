@@ -120,6 +120,11 @@ const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", md:
 const COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", md: "1.875rem", lg: "2.25rem", xl: "2.8rem" };
 const COMPACT_PINYIN_FONT: Record<CPCDSize, string> = { xs: "9px", sm: "11px", md: "0.875rem", lg: "1rem", xl: "1.15rem" };
 const VERTICAL_PADDING: Record<CPCDSize, string> = { xs: "2px", sm: "4px", md: "8px", lg: "8px", xl: "10px" };
+// How far the glyph is painted below its line box, tightening the glyph-to-pinyin gap. A
+// paint offset (position: relative), NOT padding: positionPinyins() hangs the pinyin off
+// the cell's height, so padding would push the pinyin down by the same amount and grow the
+// cell. This moves the glyph alone; cell size and cpcdNaturalSize are unchanged.
+const GLYPH_DROP_PX: Record<CPCDSize, number> = { xs: 0, sm: 0, md: 3, lg: 0, xl: 0 };
 // Negative left-margin per child to overlap cells, preserving the prior visual density.
 const OVERLAP_BY_SIZE: Record<CPCDSize, number> = { xs: -4, sm: -6, md: -4, lg: -2, xl: -2 };
 // Minimum breathing space (unscaled px) kept between adjacent pinyin texts when
@@ -571,6 +576,11 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
                                 color: characterColor ?? "text.primary",
                                 lineHeight: CHAR_LINE_HEIGHT,
+                                // Covers the masked mark too, which stands in for the glyph.
+                                "& .char-pinyin-display__character, & .char-pinyin-display__mask": {
+                                    position: "relative",
+                                    top: `${GLYPH_DROP_PX[size]}px`,
+                                },
                             }}
                         >
                             {item.masked ? (

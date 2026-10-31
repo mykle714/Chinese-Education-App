@@ -22,6 +22,9 @@ import { WEIGHT } from "../../theme/scale";
  * ignores pointer events: the tap is the STACK's (DeckTowerPlatform `stack.onTap`),
  * never the hint's.
  *
+ * Its look is the app's "ground paint"; HTML drawn the same way reads theme/groundPaint.ts
+ * (Match Speed). Retune the two together.
+ *
  * Depends on: iso (`useIsoPalette().white`), theme/fonts + theme/scale.
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start".
  */

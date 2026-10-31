@@ -1,8 +1,9 @@
 import React, { useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
-import { ISO, mixHex, shadeHex } from "./iso";
+import { mixHex, shadeHex } from "./iso";
 import { setFooterCastShadow } from "../../components/footerCastShadow";
 import ShootingStars from "./ShootingStars";
+import StarField, { STAR_LAYERS, starLayerTransform } from "./StarField";
 
 /**
  * SpaceBackdrop — the Deck Tower's sky, which darkens into star-filled space as the
@@ -39,7 +40,7 @@ import ShootingStars from "./ShootingStars";
  * same z-index, but earlier in the DOM, so the scroller (and the svg in it) paints over
  * it, and whatever covers the scroller covers it too.
  *
- * Depends on: iso/palette.ts (`ISO.star`, `mixHex`); ShootingStars.tsx; towerWorlds.ts (the palettes, via the page).
+ * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; ShootingStars.tsx; towerWorlds.ts (the palettes, via the page).
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space".
  */
 
@@ -84,63 +85,11 @@ interface SpaceBackdropProps {
 /** Stars only start to show once the blend is this far along, so they never sit on a light sky. */
 const STARS_FADE_FROM = 0.35;
 
-/**
- * The star field: two tiled layers of different tile sizes (so the repeat is hard to
- * spot) that drift at different fractions of the scroll — slow parallax, so space reads
- * as far away rather than as a wallpaper glued to the screen.
- */
-const STAR_LAYERS = [
-    { tile: 233, count: 9, rMin: 0.5, rMax: 0.9, parallax: 0.004, seed: 7 },
-    { tile: 317, count: 7, rMin: 0.9, rMax: 1.5, parallax: 0.008, seed: 23 },
-] as const;
-
 /** Hermite smoothstep of `x` between `edge0` and `edge1`. */
 function smoothstep(edge0: number, edge1: number, x: number): number {
     const u = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
     return u * u * (3 - 2 * u);
 }
-
-/** A small deterministic PRNG (mulberry32), so the star field is the same on every visit. */
-function seededRandom(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let r = Math.imul(a ^ (a >>> 15), 1 | a);
-        r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
-        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-/**
- * One star tile as an SVG data URI: `count` round stars of radius rMin–rMax at random
- * brightness. Flat dots, no glow — the iso style has no gradients.
- */
-function starTile(tile: number, count: number, rMin: number, rMax: number, seed: number): string {
-    const rand = seededRandom(seed);
-    let dots = "";
-    for (let i = 0; i < count; i++) {
-        const x = (rand() * tile).toFixed(1);
-        const y = (rand() * tile).toFixed(1);
-        const r = (rMin + rand() * (rMax - rMin)).toFixed(2);
-        const o = (0.55 + rand() * 0.45).toFixed(2);
-        dots += `<circle cx="${x}" cy="${y}" r="${r}" fill="${ISO.star}" fill-opacity="${o}"/>`;
-    }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}">${dots}</svg>`;
-    return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-}
-
-/** Built once at module load: the tiles never change. One image per layer. */
-const STAR_IMAGES = STAR_LAYERS.map((l) => starTile(l.tile, l.count, l.rMin, l.rMax, l.seed));
-
-/**
- * A star layer's parallax as a vertical TRANSFORM, not a `background-position`: moving a
- * background repaints the whole full-screen layer on every scroll frame, while a transform
- * on its own compositor layer (`will-change`) just moves the already-painted pixels. The
- * tile repeats every `tile` px, so the offset is taken modulo it, and the layer extends one
- * tile above the backdrop so a shift of up to a tile never uncovers its top.
- */
-const starLayerTransform = (climbed: number, layer: (typeof STAR_LAYERS)[number]) =>
-    `translate3d(0, ${((climbed * layer.parallax) % layer.tile).toFixed(1)}px, 0)`;
 
 const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false }) => {
     const backdropRef = useRef<HTMLDivElement>(null);
@@ -244,32 +193,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             className="deck-tower-page__space-backdrop"
             sx={{ position: "absolute", zIndex: 1, top: 0, left: 0, right: 0, bottom, backgroundColor: palette.sky, pointerEvents: "none" }}
         >
-            <Box
-                ref={starsRef}
-                className="deck-tower-page__space-stars"
-                sx={{ position: "absolute", inset: 0, opacity: 0, overflow: "hidden" }}
-            >
-                {STAR_LAYERS.map((l, i) => (
-                    <Box
-                        key={l.seed}
-                        ref={(el: HTMLDivElement | null) => {
-                            starLayerRefs.current[i] = el;
-                        }}
-                        className="deck-tower-page__space-star-layer"
-                        sx={{
-                            position: "absolute",
-                            top: -l.tile,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundImage: STAR_IMAGES[i],
-                            backgroundSize: `${l.tile}px ${l.tile}px`,
-                            backgroundRepeat: "repeat",
-                            willChange: "transform",
-                        }}
-                    />
-                ))}
-            </Box>
+            <StarField fieldRef={starsRef} layerRefs={starLayerRefs} opacity={0} />
             <ShootingStars active={shootingStars} />
         </Box>
     );

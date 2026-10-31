@@ -78,6 +78,9 @@ ScreenRoot            position: relative
 - `headerSize` forwards a title-size override to `PageHeader`. In practice the only
   value worth passing is `"dense"` — see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header sizes.
+- `backdrop` (also on `NodePage`) is non-interactive decoration painted over `surfaceColor`
+  and behind the header and content; scp's night sky is the only user. Passing it makes the
+  scroll area `position: relative`, which is why it is opt-in rather than always on.
 - `surfaceColor` paints `ScreenRoot` behind everything (header + content + the
   footer-clearance padding) so short pages have no color seams.
 
@@ -89,8 +92,9 @@ ScreenRoot            position: relative
   > Centers used to pass the grey `COLORS.header` and did exactly that; both now use
   > the default. If a page needs to feel tinted, tint an INNER surface — a card, a
   > sheet, a section — not the page ground. The two card-detail pages used to pass
-  > `COLORS.yellowAccent` (harmless — within ~1% of paper) and now pass nothing at all:
-  > **no page sets `surfaceColor` today.**
+  > `COLORS.yellowAccent` (harmless — within ~1% of paper) and now pass nothing at all.
+  > Pages that set it today: the Deck Tower, scp, the Dictionary and its card page, and
+  > the Mastery Centers.
 - `contentSx` styles only the content column (padding, `alignItems`, nested
   selectors). The header is intentionally excluded so it always stays flush and
   full-width regardless of content centering.

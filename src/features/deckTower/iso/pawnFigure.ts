@@ -13,10 +13,10 @@ import type { Projector, Pt } from "./geometry";
  * body peeking out on the side away from the camera's centre, instead of a 2D pill
  * sheared flat onto the floor.
  *
- * Calibrated to the fixed dimetric view: there the figure is pixel-for-pixel the old
- * screen-space pill (BODY_WIDTH × BODY_HEIGHT, rx = half the width) and ball, and the
- * pose's `lean` is the same screen rotation about the feet. Heights are in world z (one z
- * unit = `unit` px in that view); radii are camera-facing world units, which that view
+ * Calibrated to the 2:1 view this kit used until 2026-10-31: there the figure was
+ * pixel-for-pixel the old screen-space pill (BODY_WIDTH × BODY_HEIGHT, rx = half the width)
+ * and ball, and the pose's `lean` the same screen rotation about the feet. Today's view
+ * shortens its heights a little (`Projector.heightUnit`). Heights are in world z; radii are camera-facing world units, which that view
  * draws at unit·√2 (geometry.ts → `Projector.facingScaleAt`) — hence the √2 below.
  *
  * Pure: no React, no DOM. Depended on by: iso/usePawnMotion.ts (writes it every frame),
@@ -24,13 +24,13 @@ import type { Projector, Pt } from "./geometry";
  * § "IsoPawn".
  */
 
-/** The fixed view's screen sizes, in `unit`s — what the pawn looked like as a 2D pill. */
+/** The 2:1 view's screen sizes, in `unit`s — what the pawn looked like as a 2D pill. */
 const BODY_WIDTH = 0.78;
 const BODY_HEIGHT = 1.5;
 const HEAD_SCREEN_RADIUS = 0.44;
 /** The head's centre sits this far (in head radii) above the body's top: it overlaps the body a little. */
 const HEAD_RISE = 0.55;
-/** Gap between the head's top and the "!" bubble's tail tip, in `unit`s of the fixed view. */
+/** Gap between the head's top and the "!" bubble's tail tip, in `unit`s of the 2:1 view. */
 const EMOTE_SCREEN_GAP = 0.3;
 
 /** World radius of the body's end spheres (camera-facing units). */

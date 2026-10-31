@@ -276,30 +276,41 @@ export const DEF_MAX_LINES = 3;
 //   grn  = matched, or the cleanup partner hint
 //   red  = a wrong attempt
 //
-// Every fill below is a PASTEL carrying ink text, per the redesign's fill rule
-// (docs/SHELF_REDESIGN.md § A1) — never saturated ink behind white letters.
-//
-// v2 (artboard 14, `#msp`): every resting card is WHITE (`.msc{background:var(--white)}`)
-// — the foreign column no longer sits on the paper ground, so the columns are told apart
-// by type alone. State fills are the SURFACE tier (caption "Surface: picked cards"): a
-// card is a large fill, not a Mid-tier chip.
-export const FOREIGN_CARD_BG = COLORS.white;
-export const ENGLISH_CARD_BG = COLORS.white;
-/** Both columns rest on the same hairline, so selecting a card cannot change its
- *  border WIDTH and re-wrap a three-line gloss mid-tap. State swaps the colour only. */
-export const CARD_BORDER = COLORS.rowBorder;
-/** Selected card (`.msc.pick{background:var(--blu);border:2px solid var(--ink)}`) — the
- *  blue SURFACE fill with an INK edge. The edge is drawn as the 1px border in ink PLUS a
- *  1px inset ring (see MatchSpeedCard), which is the design's 2px without changing the
- *  border width — the rule above that keeps a tap from re-wrapping a gloss. */
-export const SELECTED_CARD_BG = COLORS.blu;
-export const SELECTED_CARD_BORDER = COLORS.onSurface;
+// Ground paint (docs/TOWER_STYLE_SHIFT.md § "Ground paint"): everything else on the board is
+// paint, but a card is a white button with the app's outline. A state replaces the white, so
+// any colour on the board means something just happened. All Mid tiers, for ink on top.
+/** A resting card. */
+export const CARD_PANEL = COLORS.white;
+/** The one visible space between tiles on an even-gaps board (below), px. */
+const EVEN_GAP_PX = 8;
+/** The least visible margin round the grid, px (`GameTimer`'s side inset). A locked card
+ *  rarely fills the box exactly, so the tighter axis sits at this and the other at more. */
+const EVEN_GAP_EDGE_PX = 15;
+/** `GameTimer`'s bottom padding, which already sits above the board. */
+const TIMER_STRIP_PAD_PX = 12;
+/**
+ * An flp break's board metrics: every space the eye sees between tiles, across rows and
+ * columns alike, is EVEN_GAP_PX, inside a wider EVEN_GAP_EDGE_PX margin round the grid.
+ * See docs/MATCH_SPEED_GAME.md § Card sizing. Read by: MatchSpeedBoard → `evenGaps`.
+ */
+export const EVEN_GAP_BOARD = {
+    cardAspect: 2,
+    colGap: EVEN_GAP_PX,
+    rowGap: EVEN_GAP_PX,
+    paddingTop: EVEN_GAP_EDGE_PX - TIMER_STRIP_PAD_PX,
+    paddingBottom: EVEN_GAP_EDGE_PX,
+    paddingX: EVEN_GAP_EDGE_PX,
+} as const;
+/**
+ * Picked card, one colour per column, so with a word picked the eye can tell at a glance which
+ * column it needs next. Yellow and purple because blue is the sky, and red and green are the
+ * answer colours below.
+ */
+export const SELECTED_CARD_PANEL = { foreign: COLORS.yelM, english: COLORS.purM } as const;
 /** Correct-match pop AND the cleanup-mode partner hint. */
-export const CORRECT_CARD_BG = COLORS.grn;
-/** Wrong-attempt flash. Ink-on-pastel like the rest, so the flash reads as the same
- *  system as the other two rather than as an error dialog dropped onto the board. */
-export const WRONG_CARD_BG = COLORS.red;
-export const WRONG_CARD_INK = COLORS.dangerInk;
+export const CORRECT_CARD_PANEL = COLORS.grnM;
+/** Wrong-attempt flash, with a sideways shake. */
+export const WRONG_CARD_PANEL = COLORS.redM;
 
 /**
  * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
@@ -310,11 +321,7 @@ export const WRONG_CARD_INK = COLORS.dangerInk;
  * `GameSurfaceProvider`. Tapping a blue row must open a blue screen.
  *
  * Blue since v2 (artboard 14, `#msp` on `--bluM`); it was green until the hub hues were
- * brought in line with the artboards. The state fills above were checked against the
- * move: the picked card's `--blu` Surface now shares the ground's hue, which is the
- * design's own pairing (`#msp .msc.pick{background:var(--blu)}` on a `--bluM` ground),
- * and it stays distinct because the cards sit on the white `.play` panel, not on the
- * ground, and the pick carries the ink edge. The green "matched" fill no longer shares
- * the game's hue at all, which only helps it read as feedback.
+ * brought in line with the artboards. The route's ground is this hue's Mark tier, not its
+ * Mid (MatchSpeedPage), because the board is white paint.
  */
 export const GAME_HUE: RampHue = "blu";

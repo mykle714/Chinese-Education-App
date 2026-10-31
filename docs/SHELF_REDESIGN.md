@@ -219,15 +219,14 @@ real ramp entry to build from.
 - **`FONTS.serif` carries TWO faces on purpose** — `"Instrument Serif", "Noto Serif SC"`.
   Instrument Serif has no CJK coverage, so a Chinese headword falls through per glyph
   and stays a serif. Dropping the second face silently un-serifs every CJK hero.
-- **`FONTS.cjk` is no longer a fixed stack — the Chinese face is an ACCOUNT SETTING.**
-  It resolves to `var(--cjk-font, <the same default stack>)`, and
-  `users."chineseFont"` (migration 157) decides what writes that property. Six
-  selectable faces; new accounts default to 975 Maru SC, accounts predating the
-  migration stay on Noto Sans SC. The var's fallback is still the original stack, so
-  anything rendered before the preference loads (and every signed-out screen) looks
-  exactly as it did. Setting `--cjk-font` on any element re-faces every Chinese glyph
+- **`FONTS.cjk` is a runtime stack, and the Chinese face is always 975 Maru SC.**
+  It resolves to `var(--cjk-font, <the original default stack>)`, and
+  `useChineseFont` writes that property for every account and every signed-out screen.
+  The account choice (`users."chineseFont"`, migration 157) is disabled: the column
+  remains but nothing reads it. The var's fallback only renders before that first
+  effect runs. Setting `--cjk-font` on any element re-faces every Chinese glyph
   beneath it without touching the token or its 11 call sites.
-  → [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) (the setting's full path, the
+  → [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) (the disabled setting's path, the
   `/font-lab` compare page, and the 1em han-advance constraint cpcd imposes).
 - **Material Symbols loads with `display=block`, not `swap`** — it renders ligatures,
   so a swap period would flash the literal string `nights_stay`.
@@ -1872,6 +1871,8 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 > `SheetPanel` raised from the Home header avatar — and, since 2026-10-24, from the Deck
 > Tower's header avatar too (`src/features/deckTower/DeckTowerAvatar.tsx`,
 > docs/DECK_TOWER.md § Layers). The gear moved out to the Home header.
+> **Since 2026-10-31** this body is the sheet's Account tab (`src/pages/account/AccountPane.tsx`),
+> beside Friends and Settings tabs.
 > The artboard notes below still describe the body's contents.
 > **Off-artboard addition (2026-10-10):** a `StatCard` minute bank (`BankBanner`) sits
 > directly under the profile row. See [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 6.

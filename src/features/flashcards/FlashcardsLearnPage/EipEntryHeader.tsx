@@ -5,7 +5,7 @@ import SwipeableTwoLineText, { type TwoLineSegment } from "../../../components/S
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import Icon from "../../../components/Icon";
 import { ddTextColor } from "../../../utils/cardTextColor";
-import { InfoSheetEntryHeader } from "./styled";
+import { EIP_PANEL_GUTTER, InfoSheetEntryHeader } from "./styled";
 import { FC_FONT_CJK } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "../../../components/SpeakerButton";
@@ -25,8 +25,8 @@ import { useEipColors } from "./useEipPalette";
 // cdps' inline panels.
 //
 // Tower Tier 2 styling (2026-10-29), layout unchanged: the headword sits in a RAISED TILE
-// (the palette's `face` on a 4px `edge` lip, 14px radius, at least 76px square — design
-// `.ehd > .cp`), the gloss is 18px. (The sense chip that sat beside the gloss
+// (the palette's `face` on a 4px `edge` lip, 14px radius, at least HEADWORD_TILE_MIN square
+// — design `.ehd > .cp`), the gloss is 18px. (The sense chip that sat beside the gloss
 // was replaced by the sense list, 2026-10-29.)
 // The design also flips the tile's pinyin BELOW the character; that is a layout change and
 // was not taken.
@@ -40,7 +40,8 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     showPinyinColor?: boolean;
     // Headword cpcd size — "md" for the bottom sheet, "sm" for the centered popup.
     cpcdSize?: CPCDSize;
-    // Speaker; undefined hides it.
+    // Speaker; undefined hides it. Only the cdps' inline panels pass it: the eip SHEET draws
+    // its speaker in the trail row instead (EipUpperPanel).
     onSpeak?: (entry: VocabEntry) => void;
     // Text currently narrated by useTTS — the speaker spins when it is this entry.
     speakingKey?: string | null;
@@ -62,10 +63,34 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     // reading (resolveDefaultPronunciation, as on the search row). Falls back to the dd when
     // the entry carries no list (a vet row). Docs: docs/SHELF_REDESIGN.md § 7b.
     showAllDefinitions?: boolean;
+    // The eip SHEET: the gloss box takes the trail's boundaries, keycap edge → screen edge, so
+    // swiped text clips at the keycap and runs off the screen. At rest the text keeps insets:
+    // GLOSS_KEYCAP_CLEARANCE off the keycap on the left, the gutter on the right.
+    // Needs the header's own gap removed and its side padding at 0 (InfoCardSection does both).
+    // Docs: docs/EIP_SHEET_GESTURES.md § Telescope.
+    glossToScreenEdge?: boolean;
 }
 
 // The headword keycap's lip, and how far it sinks when pressed.
 const TILE_LIP = 4;
+
+// The headword keycap's minimum size, both ways, so a one-character word is a true square.
+// It is the height the md cpcd needs: 76px cell - HEADWORD_CPCD_TOP_TRIM + the 8px bottom of
+// HEADWORD_TILE_PADDING. Keep the three in step — a floor below that height leaves a
+// one-character tile taller than wide.
+export const HEADWORD_TILE_MIN = 81;
+// No top padding: the md cpcd cell already carries about 17px of air above the glyph (its
+// own padding + line box) but only about 5px below the pinyin, so the bottom's 8px is what
+// centers the ink in the tile. 10px sides are only felt by multi-character words.
+const HEADWORD_TILE_PADDING = "0 10px 8px";
+// Pulls the cpcd up into its own top air, so the tile gives back the room md's
+// GLYPH_DROP_PX (CPCDRow) opened above the glyph. The pinyin rises with the row; the
+// glyph lands where it was before the drop.
+const HEADWORD_CPCD_TOP_TRIM = 3;
+
+// The whitespace between the keycap and the gloss's first letter when the sheet's gloss is at
+// rest (`glossToScreenEdge`). It scrolls away with the text, which then clips at the keycap.
+const GLOSS_KEYCAP_CLEARANCE = 10;
 
 // The starred default's icon (the SensePicker's star, same size) and the gap after it —
 // the star LEADS the gloss here (owner's call 2026-10-30). Their sum is the `leadingWidth` SwipeableTwoLineText adds when it measures a line.
@@ -86,6 +111,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     learning,
     selectedSenseIndex,
     showAllDefinitions = false,
+    glossToScreenEdge = false,
     className,
     ...rest
 }) => {
@@ -159,12 +185,16 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
         // follows the card theme only, not the per-card override.)
         color: ddTextColor(entry?.language, undefined, fc),
         // FC_FONT_CJK (FONTS.cjk → `var(--cjk-font)`), not FC_FONT: the dd
-        // follows the account's Chinese typeface (users."chineseFont",
+        // follows the app's Chinese typeface (--cjk-font,
         // written by useChineseFont) exactly like the flp card face's dd
         // in card/CardFace.tsx, so the two glosses read as the same text.
         fontFamily: FC_FONT_CJK,
         lineHeight: 1.25,
     } as const;
+
+    // The resting insets inside the screen-edge gloss box (see `glossToScreenEdge`).
+    const glossInsetStart = glossToScreenEdge ? GLOSS_KEYCAP_CLEARANCE : 0;
+    const glossInsetEnd = glossToScreenEdge ? EIP_PANEL_GUTTER : 0;
 
     return (
         <InfoSheetEntryHeader
@@ -199,9 +229,10 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         onClick={copyFromTile}
                         sx={{
                             boxSizing: "border-box",
-                            minWidth: 76,
-                            minHeight: 76,
-                            padding: "8px 10px",
+                            minWidth: HEADWORD_TILE_MIN,
+                            minHeight: HEADWORD_TILE_MIN,
+                            padding: HEADWORD_TILE_PADDING,
+                            "& .cpcd-row": { marginTop: `-${HEADWORD_CPCD_TOP_TRIM}px` },
                             marginBottom: "4px",
                             display: "flex",
                             alignItems: "center",
@@ -289,7 +320,14 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
             {entry && (
                 <Box
                     className="mobile-demo-eic-header-english-row"
-                    sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        flex: 1,
+                        minWidth: 0,
+                        marginRight: glossToScreenEdge ? `-${EIP_PANEL_GUTTER}px` : 0,
+                    }}
                 >
                 {allDefinitions !== null ? (
                     <SwipeableTwoLineText
@@ -302,6 +340,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         touchAction="pan-x"
                         // Centered while it fits, start-first once it overflows.
                         align="center"
+                        insetStart={glossInsetStart}
+                        insetEnd={glossInsetEnd}
                         sx={glossSx}
                     />
                 ) : senseSegments !== null ? (
@@ -311,6 +351,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         separator={DEFINITION_LIST_SEPARATOR}
                         touchAction="pan-x"
                         align="center"
+                        insetStart={glossInsetStart}
+                        insetEnd={glossInsetEnd}
                         sx={{
                             ...glossSx,
                             // The chosen sense: underlined in the palette's muted ink, quieter
@@ -327,7 +369,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                 ) : (
                 <Typography
                     className="mobile-demo-eic-header-english"
-                    sx={glossSx}
+                    sx={{ ...glossSx, paddingLeft: `${glossInsetStart}px`, paddingRight: `${glossInsetEnd}px` }}
                 >
                     {/* The eip header gloss is a dd: it must agree with the flashcard face,
                         so it resolves through the shared resolver (chosen sense →

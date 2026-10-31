@@ -1,7 +1,7 @@
 # flp Game Breaks
 
 > **Status: PHASE 1 BUILT (dev, not on PPE), no migration.** The break mechanism, the
-> title card, the server `seedIds` seed and the timer-eye move are built; **Match Speed is
+> break's card, the server `seedIds` seed and the timer-eye move are built; **Match Speed is
 > the only game with a break adapter**, so today only the **core** flp offers breaks (the
 > reading and writing flps have no adapted game yet and simply never fall due). The other
 > seven games join as their Stages are extracted (§ 6).
@@ -9,8 +9,9 @@
 Every 10 cards in an flp session (core, reading and writing alike), the learner is
 offered a **game break**: one randomly chosen game whose mark type matches the flp's
 bar, played on the cards just studied (topped up from the server to the game's
-baseline). The break takes a position in the card sequence, so card 10 has **no card
-behind it**. Swiping card 10 away reveals the break instead of a next card.
+baseline). The break takes a position in the card sequence: the card behind card 10 is the
+**break's card** (§ 5), a normal flashcard offering the game. Swiping card 10 away reveals
+it. Only Play grows it into the game; Skip sends it off like any card.
 
 Related docs: [GAMES_FEATURE.md](./GAMES_FEATURE.md) (game framework; § "Routes" covers
 the page/Stage split), [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md) (the first Stage),
@@ -24,7 +25,7 @@ the page/Stage split), [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md) (the first S
 ## 1. Session sequence
 
 ```
-card 1 … card 9 │ card 10 (back slot EMPTY) │ BREAK │ card 11 … card 20 (back slot EMPTY) │ BREAK │ …
+card 1 … card 9 │ card 10 │ BREAK CARD │ (game) │ card 11 … card 20 │ BREAK CARD │ (game) │ …
 ```
 
 - **Counter.** `cardsSinceBreak` counts every dismiss: left, right, the wflp tap, and
@@ -37,9 +38,10 @@ card 1 … card 9 │ card 10 (back slot EMPTY) │ BREAK │ card 11 … card 2
   holds ≥ 2 cards (a 1-card loop is about to run dry), **and** the card editor is
   closed. The modulo means a break missed for one of those reasons comes round a full
   interval later rather than never. While due:
-  - the page passes `nextEntry: null` and `gameBreak="due"` to `FlashCardSection`, so
-    nothing peeks behind card 10, and the card that flies out keeps its own content
-    (`holdOutgoing` — otherwise, with an empty back slot, it would vanish on release);
+  - the page passes `nextEntry: null`, `gameBreak="due"` and `breakCard` to
+    `FlashCardSection`, so the break's card sits behind card 10, and the card that flies
+    out keeps its own content (`holdOutgoing` — its back slot is empty, so it would
+    otherwise vanish on release);
   - the game is **picked**, and its opening board **prefetched** with the loop as the
     seed (§ 4), so Play has no spinner.
 - **The break is virtual** — a position in the sequence, never an element of
@@ -54,21 +56,23 @@ Code: `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` �
 
 ## 2. Phases & choreography
 
-`useGameBreak` phases: `cards → title → playing → leaving → cards` (Skip goes
-`title → leaving`). Results are not a hook phase: they are the Stage's own end card.
+`useGameBreak` phases: `cards → title → growing → playing → leaving → cards`, and Skip goes
+`title → skipping → cards`. Results are not a hook phase: they are the Stage's own end card.
 
 | Moment | What moves |
 |---|---|
-| **card 10 dismissed** | Card 10 flies out as usual (`CARD_FLY_OUT_MS`). In parallel the **More Info pill fades out** and the **word tools (`WordToolsRail`: Write it / Compare) slide up off screen** (`playBreakAway`); the game's **play panel (`GameFrame`) fades in** where the card was, on the flp's own ground (`GameBreakArea` — a transparent layer; `BREAK_AREA_MOTION`, delayed ~200 ms so the card is mostly off first). The flp header (back / undo) stays; there is no second header. |
-| **title** | The panel, filled with the game's `RAMP[hue].mid`, carries the summary and Skip / Play (§ 5). Play waits for the prefetch to settle (spinner on the button if it hasn't). |
-| **playing** | The game's own `GameFrame` takes the same place (the Stage, in `GameBreakFrame`). **Leave** sits on the panel's top strip, top-right (`GameFrameExitContext` → `GameFrame`'s exit button). Leave on a live run ENDS it into its results card (the partial run is judged like a natural end); from any other phase it closes the break. |
+| **card 10 dismissed** | Card 10 flies out as usual (`CARD_FLY_OUT_MS`), revealing the break's card under it. In parallel the **More Info pill fades out** (and disables) and the **word tools (`WordToolsRail`: Write it / Compare) slide up off screen** (`playBreakAway`): the break's card has no word for them. The flp header (back / undo) stays. |
+| **title** | The break's card is on top (§ 5). The next word card is already the front slot under it, unseen and not narrated. Play waits for the prefetch to settle (spinner on the button if it hasn't). |
+| **skipping** | Skip: the break's card flies off to the right, uncovering the next word card, while the word tools and More Info come back (`playBreakToolsReturn`). No swap, no rise, no mark. |
+| **growing** | Play: `GameBreakArea`'s grow plate starts exactly on the card and takes the card-shaped play panel's box (`BREAK_AREA_MOTION.growMs`), its cream rim thinning to nothing and its panel turning the game panel's colour (`FlpBreakGame.panelFill`). The plate lives in the area because the card slot clips. A game drawn on the ground (`panelFill: null`, Match Speed) has no panel: the plate fades on the spot over the same time, and in a tower session the deck fades with it and comes back when the game starts to fall (`FlpTowerHost.onGameBreakChange`'s `onGround`; DECK_TOWER.md § "The platform fades"). On the routed flp the area paints the game's `RAMP[hue].mark`, because white paint needs a mid-tone ground. The word cards under it are hidden by opacity (`FlashCardSection` → `hiddenForBreak`), because `CardFace`'s facing side sets its own `visibility: visible` and would show through bare ground. |
+| **playing** | The Stage mounts under the plate, which fades off it. The game's own `GameFrame` takes the same place (the Stage, in `GameBreakFrame`). **Leave** sits on the panel's top strip, top-right (`GameFrameExitContext` → `GameFrame`'s exit button). Leave on a live run ENDS it into its results card (the partial run is judged like a natural end); from any other phase it closes the break. |
 | **results** | The Stage's own end card, whose only action is **Back to cards**. |
-| **leaving** | The game area falls away through the bottom with its content still on it; then the stack comes back and the page plays `playBreakReturn`: the next card rises, the word tools drop back in, More Info fades up. |
+| **leaving** | After a game only. The game area falls away through the bottom with its content still on it; then the stack comes back and the page plays `playBreakReturn`: the next card rises, the word tools drop back in, More Info fades up. |
 
 - **Back** (flp header) leaves the whole session, even mid-break.
-- **Undo:** live on the title card — it cancels the break (card 10 returns on Side 2,
-  the counter goes back to 9, the plan is kept since card 10 is due again, and the
-  return choreography runs). Locked while playing / leaving. The wflp has no undo.
+- **Undo:** live on the break's card — it cancels the break (card 10 returns on Side 2,
+  the counter goes back to 9, the plan is kept since card 10 is due again, and the tools
+  return). Locked in every later phase. The wflp has no undo.
 - **Mechanism:** the flp's Web Animations API choreography in
   `src/features/flashcards/flpLaunch.ts` — selector tables animating the CSS
   `translate` property, plus a `fade` step (opacity, to/from the element's own resting
@@ -76,10 +80,10 @@ Code: `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` �
   animation still holding its element (the break's `out` holds with fill forwards).
   No animation library.
 
-Code: `flpLaunch.ts` → `BREAK_AWAY`, `BREAK_RETURN`, `playBreakAway`,
-`playBreakReturn`, `BREAK_AREA_MOTION`, `playChoreography`;
-`gameBreak/GameBreakArea.tsx`; `FlashcardsLearnPage.tsx` (the `returnNonce` layout
-effect).
+Code: `flpLaunch.ts` → `BREAK_AWAY`, `BREAK_RETURN`, `BREAK_TOOLS_RETURN`, `playBreakAway`,
+`playBreakReturn`, `playBreakToolsReturn`, `BREAK_AREA_MOTION`, `playChoreography`;
+`gameBreak/GameBreakArea.tsx`, `BreakCardLayer.tsx`; `FlashcardsLearnPage.tsx`
+(`breakCardOnTop`, the `returnNonce` layout effect, `breakUp`).
 
 ## 3. Which game
 
@@ -159,23 +163,34 @@ Code: `server/controllers/OnDeckVocabController.ts` → `getGamePool` (`seedIds`
 (`opts.seedIds`, tiers 0 and 2b), `fetchRowsByIds`, `isCardGameEligible`;
 `src/api/gamePool.ts` → `GamePoolRequest.seedIds`, `gamePoolParams`.
 
-## 5. Title card
+## 5. The break's card
 
-`GameBreakTitleCard` (`src/games/shared/`, no flp knowledge) is drawn **as the game's
-play panel** — the same `GameFrame` every game draws its board in, filled with the
-game's mid tier (`RAMP[hue].mid`, the hub tile's fill), with CardShell's ghost-glyph
-treatment scaled up. Info sits low in the panel, buttons at the foot (thumb reach):
+The break's opening is **a card in the stack**, one-sided and never swiped. It only becomes
+a game when the learner taps Play.
 
-- eyebrow **"Game break"** (`BREAK_EYEBROW` in `GameBreakArea`);
-- the game's name (`GameDef.title`) and ghost glyph (`GameDef.glyph`) on its ramp hue
-  (`GameDef.hue`, a RAMP key);
+`BreakCardLayer` holds it over the two card slots in the card frame, in the session's own
+stock (`CardFaceSide` `towerStock`, so a tower-hosted flp gets the cream rim and beige
+panel). It is a layer, not a third slot, because the slots hold `VocabEntry`s and the break
+is never one (§ 1). `GameBreakCard` is its face. The game's colour is held back to two
+raised objects, so the card still reads as one of the deck's:
+
+- the **glyph token** (`GameDef.glyph`): a thick slab built like a tower plate, its face
+  `RAMP[hue].mid`, its wall that colour shaded down;
+- the game's name (`GameDef.title`);
 - the adapter's **one-line rule** (`FlpBreakGame.rulesLine`) — on the adapter rather
   than `GameDef`, so copy exists only for games that can actually be offered;
-- **medal targets** (`FlpBreakGame.medalLine`) and the **personal best**
-  (`FlpBreakGame.personalBest` → `usePersonalBest` + `PersonalBestLine`, same key as the
-  standalone game, so break runs and hub runs compete for one best per mode);
-- **Skip** (outlined, `COLORS.border`) and **Play** (contained) — the same button
-  language as the games' own end popups.
+- **Skip** (a cream plate) and **Play** (a plate in the game's hue): `towerPlateSx`, so
+  their edge is their wall, with no `COLORS.border` outline (TOWER_STYLE_SHIFT.md).
+
+It behaves as a card in the session too: undo works on it, and in a tower session a tap off
+it is Back through the same `handleTowerOffCardTap` as any card (`stackIsCards`). Leaving
+that way drops the break, and the next visit counts its own interval.
+
+While a flip leaves the front card edge-on, the card's content blanks as a back word card's
+does, so the game isn't given away early.
+
+Code: `gameBreak/BreakCardLayer.tsx`, `gameBreak/GameBreakCard.tsx`;
+`FlashCardSection.tsx` → `breakCard`, `onBreakCardGone`.
 
 ### 5a. Per-game settings during a break
 
@@ -203,9 +218,12 @@ A break-capable game is split into:
   run, else close), and the results actions (Play Again on the page only).
 
 The flp side is an **adapter** per game (`FlpBreakGame`, `src/games/flpBreak/`):
-`rulesLine`, `medalLine`, `personalBest`, `prefetch(candidate, context)`, and a lazy
+`rulesLine`, `panelFill`, `prefetch(candidate, context)`, and a lazy
 `Stage` taking `FlpBreakStageProps` (`candidate`, `context`, `prefetched`, `Frame`,
-`onDone`). A game joins the rotation by getting an entry in `FLP_BREAK_GAMES`.
+`onDone`, `onCardCleared`). `onCardCleared` fires off a mark's response for a correct,
+recorded mark on an owned card; a tower-hosted flp tallies them and the tower drops by the
+lot in one zoom when the game ends (DECK_TOWER.md § "Studying the tower"), so a new Stage
+must call it from its mark path or its cards stay on the tower until the climb-out. A game joins the rotation by getting an entry in `FLP_BREAK_GAMES`.
 
 The break's `Frame` is `GameBreakFrame` (`gameBreakFrameFor(hue)`, memoized per hue so a
 re-render never remounts the Stage), and it is deliberately almost nothing — in a break
@@ -222,7 +240,7 @@ the game IS its play panel:
   `GameSurfaceContext` provided directly — never `GameSurfaceProvider`, whose
   `useThemeColor` would repaint the browser chrome.
 
-The area holds `useBlockEdgeSwipe(true)` from the title card on.
+The area holds `useBlockEdgeSwipe(true)` from the grow on.
 
 This is not a generic game shell (GAMES_FEATURE.md still holds: each game owns its
 page and its Stage).
@@ -265,13 +283,14 @@ WORD_SEARCH_GAME.md § HUD, WRITING_PRACTICE_REWORK.md § 2.
 | Layer | Piece | Location |
 |---|---|---|
 | Client feature (flp) | `useGameBreak` — counter, due flag, pick, prefetch, phases | `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` |
-| Client feature (flp) | `GameBreakArea` — the transparent rising layer; title panel / Stage host | `…/gameBreak/GameBreakArea.tsx` |
+| Client feature (flp) | `BreakCardLayer` + `GameBreakCard` — the break's card in the stack | `…/gameBreak/BreakCardLayer.tsx`, `GameBreakCard.tsx` |
+| Client feature (flp) | `GameBreakArea` — the transparent layer; grow plate, Stage host | `…/gameBreak/GameBreakArea.tsx` |
 | Client feature (flp) | `GameBreakFrame` — hue + Leave contexts for the Stage | `…/gameBreak/GameBreakFrame.tsx` |
 | Games engine | `GameFrame`'s host exit button + `GameFrameExitContext` | `src/games/shared/GameFrame.tsx`, `gameFrameExit.ts` |
 | Client feature (flp) | Break choreography tables | `src/features/flashcards/flpLaunch.ts` |
 | Games engine | Stage host contract, `noPinyinMarkType` | `src/games/types.ts`, `src/games/registry.ts` |
 | Games engine | Adapters, candidate derivation, pick | `src/games/flpBreak/` |
-| Games engine | `<X>Stage` per game, `GameBreakTitleCard` | `src/games/<game>/`, `src/games/shared/` |
+| Games engine | `<X>Stage` per game | `src/games/<game>/` |
 | API client | `seedIds` on the pool request | `src/api/gamePool.ts` |
 | Server | `seedIds` partition + fill tiers | `OnDeckVocabController.getGamePool`, `OnDeckVocabService.getGameVocabPool` |
 
@@ -290,9 +309,33 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
   plan (`PlannedBreak.id`), not to the `due` effect's lifetime — the swipe that opens the
   break is what ends `due`.
 - Pinyin follows the bar; Bubble Match is level 2, level 1 when ≥ 50% Unfamiliar (§ 5a).
-- User-facing name: "Game break" (§ 5).
+- The break's card names the game only; it has no "Game break" label, medal targets or
+  personal best, so it fits a smaller space (§ 5, changed 2026-10-31).
 - Long / endless games are included as is; Leave ends them (§ 3).
 - The timer eye sits on the left in every game (§ 7).
-- What appears is the game's play panel (`GameFrame`), fading in, not a full-screen layer: filled with
-  `RAMP[hue].mid` for the title, on the flp's own ground, with Leave on its top strip and
-  no extra header bar (§ 2, § 6).
+- In a break the play panel keeps the flp card's aspect ratio (`FLP_CARD_ASPECT`), as large
+  as fits with the slab's wall under it, and centred (`GameBreakFrame.tsx` → `breakPanelBox`); on its own route a game
+  fills the page as before.
+- The game is its play panel (`GameFrame`), not a full-screen layer: on the flp's own
+  ground, with Leave on its top strip and no extra header bar (§ 2, § 6).
+- **2026-10-31:** the break opens as a normal flashcard behind card 10, in the Deck Tower
+  style, one-sided, with Skip / Play buttons and no swipe. It grows into the panel only on
+  Play. This replaced the panel-coloured title panel that faded in (§ 2, § 5).
+
+## 10. Forced breaks (feature testers)
+
+The Deck Tower's `ForcedBreakPicker` ([DECK_TOWER.md](./DECK_TOWER.md) § "Forced game
+breaks") pins one candidate per world. While a studied tower session of that world has a
+pin, `useGameBreak` (`forcedKey`):
+
+- falls **due on every card**, not every `BREAK_INTERVAL` cards. The other due gates still
+  apply: no card editor, and at least 2 cards in the loop;
+- **plans the pinned game** instead of a random pick. The focus rule of § 3 still applies,
+  so a pinned game today's focus set cannot fill is skipped;
+- ignores a pin that is not a candidate here (no adapter, or set in another language).
+
+A parked session reads no pin, so nothing plans or prefetches a break for a session
+nobody is looking at. The routed flp never reads one.
+
+Code: `gameBreak/forcedBreak.ts` → `setForcedBreak`, `useForcedBreak`;
+`gameBreak/useGameBreak.ts` → `forcedKey`; `FlashcardsLearnPage.tsx` → `forcedBreakKey`.

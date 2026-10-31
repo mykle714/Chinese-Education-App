@@ -184,6 +184,7 @@ use the low-level `items` API, which `ForeignText` passes through untouched.
 | `OVERLAP_BY_SIZE` | Negative inter-cell margin (visual density of the glyphs). |
 | `BIG_PINYIN_SCALE` | Multiplier applied to the pinyin font **and** the reserved pinyin band when the `bigPinyin` prop is on (1.2 → ~15.6px at `sm`). |
 | `CHAR_LINE_HEIGHT` | Line-height of both the glyph and the pinyin text (1.21). Shared by the render and by `cpcdNaturalSize`, so a measured cell and a rendered one cannot disagree. |
+| `GLYPH_DROP_PX` | Per-size paint offset of the glyph below its line box (`md`: 3px, the rest 0). A `position: relative` offset rather than padding, because the pinyin's y is derived from the cell's height: padding would move the pinyin with the glyph. Cell size and `cpcdNaturalSize` are unaffected. |
 
 ### `cpcdNaturalSize(size, opts)` — the cell's box, without measuring the DOM
 

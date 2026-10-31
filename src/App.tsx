@@ -41,16 +41,6 @@ function renderRoute(route: AppRoute) {
   return <Route key={route.path} path={route.path} element={element} />;
 }
 
-/**
- * Applies the signed-in account's Chinese typeface preference to :root. Renders
- * nothing — it exists only because the hook needs `useAuth()`, so it must sit INSIDE
- * AuthProvider, where `App` itself is not. See src/hooks/useChineseFont.ts.
- */
-function ChineseFontApplier() {
-  useChineseFont();
-  return null;
-}
-
 function App() {
   // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
   // wanted). Complements the viewport meta in index.html, which iOS ignores.
@@ -63,10 +53,12 @@ function App() {
   // on those routes.
   useAppHeight();
 
+  // App-wide: apply the app's Chinese typeface to :root (docs/CJK_TYPEFACE_LAB.md).
+  useChineseFont();
+
   return (
     <ThemeContextProvider>
       <AuthProvider>
-        <ChineseFontApplier />
         <VocabularyUpdateProvider>
           <ConfirmationProvider>
             {/*

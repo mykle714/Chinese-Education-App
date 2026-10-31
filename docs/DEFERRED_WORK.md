@@ -32,6 +32,18 @@ Delete an item when it is done; this file is a queue, not a history.
 
 ## Open items
 
+### Remove the dormant `users."chineseFont"` setting
+
+**What:** the app always renders in 975 Maru SC (`src/hooks/useChineseFont.ts`) and the
+Settings picker is gone, but the rest of the path is still live: the column (migration
+157), `server/contracts/wire.ts` → `CHINESE_FONT_IDS` / `UserProfile.chineseFont`,
+`server/services/UserService.ts` → `updateDisplaySettings`, the `UserDAL` select list, and
+`selectable` / `CJK_FONT_OPTIONS` in `src/theme/cjkFontOptions.ts`.
+**Why deferred:** the choice was disabled, not retired, so it stays cheap to restore, and
+dropping the column is a contract migration that must follow the new code onto PPE.
+**Cost to leave:** one unread column and an accepted-but-ignored API field.
+**Trigger:** the decision that users will not choose a typeface again.
+
 ### 1. Tell the learner when a card is resting and earning nothing
 
 *Added 2026-08-18 with Hydra Bubbles; narrowed 2026-08-20 when lending moved to the
@@ -363,18 +375,16 @@ scale) once a day per language, on the app's landing screen.
 code: `src/features/deckTower/useTowerStudy.ts`.*
 
 **What.** Tapping a Learning tower always plays the 1.25 s camera dive onto the top
-card, the 1.05 s climb back out, the camera following the tower down per correct card,
-and the spawn's sky drop (a stack swelling past the screen's edges). None of it checks
+card and the 1.05 s climb back out. Neither checks
 the OS reduced-motion setting, unlike the rest of the page (the build-up, the pan and the
 resizes are instant under it). The likely fallback: cross-fade between the tower view and
-the session (no camera move), step the tower's count without the camera easing, and land
-a spawn without the fall.
+the session (no camera move).
 
 **Why deferred.** The owner chose to build the motion first and account for the setting
 later.
 
 **Cost to leave.** A motion-sensitive learner gets a large perspective fly-in and fly-out
-on every study session, and a looming drop each time the tower runs out mid-session.
+on every study session.
 
 **Trigger.** Once the in-place study's design is settled (it is still being tuned), or
 any accessibility pass.
@@ -456,6 +466,17 @@ The likely shape then: the page always takes a host, and the route-only pieces
 | **Cost of leaving it** | A fix to one (clamping, short hex, alpha) silently misses the other two |
 | **Trigger** | Item 28 (the iso kit move), or the next touch of any of the three |
 | **References** | the three symbols above |
+
+### 30. Analyse how long sense names run, starting with 明 (ming2)
+
+| | |
+|---|---|
+| **What** | Measure the sense text learners actually read across the discoverable zh and es corpus, then decide whether long entries need a cap, a backfill or a display rule. Report the length distribution, the worst words, how many carry `[pinyin]` or `\|` residue, and how many are rare senses of common words |
+| **What to measure** | `ddt(cluster)`, which is what the eip header's sense list and the `SensePicker` show, not the cluster's `sense` field. 明's longest `sense` is 29 characters ("Ming, legendary Flame Emperor"), but that cluster's `glosses[0]` is a raw dictionary line of about 120: "Ming (c. 2000 BC), fourth of the legendary Flame Emperors, 炎帝[Yan2 di4] descended from Shennong 神農\|神农[Shen2 nong2] Farmer God". The `sense` field is short across the corpus (dev, 2026-10-31: 16,479 discoverable zh clusters, median 17, p99 35, max 66); the `ddt` distribution is the number still missing |
+| **Why deferred** | Raised while tuning the eip header's gloss layout. The layout swipes a long list rather than breaking, so nothing is blocked |
+| **Cost of leaving it** | A word like 明 shows an encyclopedic line in its sense list, and a long list takes more swiping to read |
+| **Trigger** | The next definition-cluster backfill or `ddt` change, or the next report of a long sense on a card |
+| **References** | `src/utils/definitionUtils.ts` → `ddt`, `sortedSenseClusters`; `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx`; `src/features/flashcards/card/SensePicker.tsx`; [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) |
 
 ## Recently closed
 

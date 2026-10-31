@@ -194,8 +194,8 @@ is split into its **page** (the route: `GameLeafPage`, `useBlockEdgeSwipe`, laun
 `Frame` (`GameStageFrameProps`, `GameStageHost` in `src/games/types.ts`). This is NOT a
 generic shell: there is no shared stage, each game keeps its own, and the page stays the
 standalone experience unchanged. Match Speed is split (`MatchSpeedStage`); the rest
-follow one at a time. The flp side — adapters, candidate derivation, the title card —
-is `src/games/flpBreak/` + `src/games/shared/GameBreakTitleCard.tsx`; see
+follow one at a time. The flp side — adapters and candidate derivation — is
+`src/games/flpBreak/`; the break's opening card is an flp card, not a game surface; see
 [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
 ## Launching a game with one collection of cards
@@ -584,8 +584,9 @@ Presentational only; nothing here holds state.
   bounds. Under a `GameFrameExitContext` provider (`gameFrameExit.ts`) it also draws a
   host's exit button top-right on its top strip — only the flp game break provides one
   (its Leave; docs/FLP_GAME_BREAKS.md § 6), so on a game's own route nothing extra shows.
-  The flp break's title card (`GameBreakTitleCard`) is itself a `GameFrame`, filled with
-  the game's `RAMP[hue].mid`.
+  `tone="tower"` draws the panel as the tower's gold slab and restyles its strips through
+  context; no game uses it today (TOWER_STYLE_SHIFT.md § The play slab). `tone="ground"` draws
+  no panel: the game is white paint on the ground, Match Speed only (§ Ground paint).
 - **`GameHud`** (`.hud`) + **`GameHudLabel`** (`.hud .lab`) — the bordered strip of mono
   facts across the panel's top. `space-between`, so the child count is load-bearing: two
   children pin to the edges, three put one in the middle — and so is the ORDER: only a

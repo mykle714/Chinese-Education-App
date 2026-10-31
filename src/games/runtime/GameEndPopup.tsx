@@ -1,4 +1,5 @@
 import React from "react";
+import type { SxProps, Theme } from "@mui/material/styles";
 import MinimizablePopup from "../../components/MinimizablePopup";
 
 interface GameEndPopupProps {
@@ -17,6 +18,12 @@ interface GameEndPopupProps {
     classPrefix: string;
     /** Render in place rather than at the frame — see MinimizablePopup's `inPlace`. Speed Reading only. */
     inPlace?: boolean;
+    /** Overrides for the card's look (MinimizablePopup `cardSx`). */
+    cardSx?: SxProps<Theme>;
+    /** Puck fill (MinimizablePopup `puckColor`). */
+    puckColor?: string;
+    /** Puck and minimize-icon colour (MinimizablePopup `accentContrast`). */
+    accentContrast?: string;
     /** Card body (title / message / actions) supplied by the page. */
     children: React.ReactNode;
 }

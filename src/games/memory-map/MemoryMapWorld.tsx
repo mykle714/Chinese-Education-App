@@ -71,7 +71,7 @@ interface MemoryMapWorldProps {
     /** The map's language — sizes an EMPTY slot, which has no word to take it from. */
     language: string;
     /**
-     * The account's Chinese typeface id (`users."chineseFont"`). The glyphs are
+     * The app's Chinese typeface id (`DEFAULT_CHINESE_FONT_ID`). The glyphs are
      * re-measured when it changes, because ink — and therefore every touching
      * distance — differs face by face.
      */

@@ -36,6 +36,8 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
 import SoftIntroToggle from "../../softIntro/SoftIntroToggle";
 import { COLORS } from "../../theme/colors";
 import { shadeHex } from "../deckTower/iso";
+import ShootingStars from "../deckTower/ShootingStars";
+import StarField from "../deckTower/StarField";
 import { INVALID_SHAKE_ANIMATION, INVALID_SHAKE_KEYFRAMES } from "../../theme/invalidShake";
 import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
 import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
@@ -1055,6 +1057,14 @@ const SortCardsPage: React.FC = () => {
     // hour the tower does.
     const { time: dayTime } = useDayClock(user?.isFeatureTester === true);
     const look = useMemo(() => sortLookAt(dayTime), [dayTime]);
+    // The tower's night sky behind the page. Memoised because this page re-renders on every
+    // drag move and TTS flip; the sky only changes with the clock.
+    const nightSky = useMemo(() => (
+        <>
+            <StarField opacity={look.stars} />
+            <ShootingStars active={look.shootingStars} />
+        </>
+    ), [look.stars, look.shootingStars]);
     // The status-bar band and the home-screen app's glyph scheme follow the ground.
     useThemeColor(look.ground);
     // The slab footer casts its shadow onto this page's ground.
@@ -1637,7 +1647,7 @@ const SortCardsPage: React.FC = () => {
 
     // Every branch paints the same ground and header ink, so the page never flashes the
     // app's paper between the spinner and the board.
-    const groundChrome = { surfaceColor: look.ground, headerTitleColor: look.ink, scrollable: false } as const;
+    const groundChrome = { surfaceColor: look.ground, backdrop: nightSky, headerTitleColor: look.ink, scrollable: false } as const;
 
     if (loading) {
         return (

@@ -21,8 +21,10 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
  * past an empty first line. So in layout 3 the break is re-chosen to EQUALIZE the two
  * lines (minimize the longer one), which also minimizes how far the learner has to swipe.
  *
- * Lines only ever break BETWEEN segments, so a separator never dangles at a line's end or
- * start. A single segment too long for one line falls back to breaking between its words.
+ * Lines only ever break BETWEEN segments. The break shows the separator's mark on both sides,
+ * ending line 1 and starting line 2 (a dot, in the eip), so a reader can tell a new segment
+ * from one that wrapped. A single segment too long for one line falls back to breaking between
+ * its words, and that break carries no mark, because the segment continues.
  *
  * Measurement is DOM-based, in the line's own font (a hidden nowrap probe inside the
  * component), re-run when the segments change, when the box resizes, and once web fonts
@@ -44,6 +46,10 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
  * overflow off the unscrollable left edge (see SwipeableTextLine). An overflowing block
  * starts at its start (auto margins resolve to 0 when there is no free space), lines
  * left-aligned.
+ *
+ * Insets (`insetStart` / `insetEnd`): for a box that runs past where its text should rest
+ * (the eip sheet's gloss runs off the screen). The box still clips at its own edges, but
+ * the text fits, centers and finishes scrolling inside the insets.
  *
  * Layer: shared component (`src/components/`). Used by:
  * features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx (`showAllDefinitions`, and
@@ -69,13 +75,17 @@ export interface TwoLineSegment {
 
 interface SwipeableTwoLineTextProps {
     segments: readonly (string | TwoLineSegment)[];
-    /** Placed between segments on a line, never at a line break. */
+    /** Placed between segments on a line. At a line break its mark ends line 1 and starts line 2. */
     separator: string;
     className?: string;
     /** Typography for the text (font, size, colour, line height). */
     sx?: SxProps<Theme>;
     align?: 'start' | 'center';
     touchAction?: 'pan-x' | 'pan-x pan-y';
+    /** Space kept before the text at rest, in px. It scrolls away with the text. */
+    insetStart?: number;
+    /** Space kept after the text at rest and at the end of a swipe, in px. */
+    insetEnd?: number;
 }
 
 interface Layout {
@@ -88,7 +98,7 @@ interface Layout {
 /** Sub-pixel rounding: treat a line this close to the box width as fitting. */
 const FIT_EPSILON_PX = 0.5;
 
-function SwipeableTwoLineText({ segments, separator, className, sx, align = 'start', touchAction = 'pan-x' }: SwipeableTwoLineTextProps) {
+function SwipeableTwoLineText({ segments, separator, className, sx, align = 'start', touchAction = 'pan-x', insetStart = 0, insetEnd = 0 }: SwipeableTwoLineTextProps) {
     const scrollerRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLSpanElement | null>(null);
     const probeRef = useRef<HTMLSpanElement | null>(null);
@@ -101,6 +111,10 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
     // words. In word mode the lone segment's decoration covers every word on a line, its
     // leading node rides before the FIRST word and its trailing node after the LAST.
     const wordMode = items.length < 2;
+    // A break between segments: line 1 ends in the separator without its trailing space, and
+    // line 2 starts with it without its leading space.
+    const lineEndMark = wordMode ? '' : separator.trimEnd();
+    const lineStartMark = wordMode ? '' : separator.trimStart();
     const units = useMemo(
         () => (wordMode ? (items[0]?.text ?? '').split(' ').filter(Boolean) : items.map((it) => it.text)),
         [items, wordMode],
@@ -113,7 +127,7 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
         const scroller = scrollerRef.current;
         const probe = probeRef.current;
         if (!scroller || !probe) return;
-        const boxWidth = scroller.clientWidth;
+        const boxWidth = scroller.clientWidth - insetStart - insetEnd;
         const joiner = wordMode ? ' ' : separator;
         // Leading/trailing nodes are not in the probe's text, so their declared widths are
         // added for every segment (segment mode), or the first/last word (word mode), the
@@ -128,7 +142,10 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
             return total;
         };
         const widthOf = (from: number, to: number) => {
-            probe.textContent = units.slice(from, to).join(joiner);
+            // The marks a break adds are part of the line, so they must fit too.
+            probe.textContent = (from > 0 ? lineStartMark : '')
+                + units.slice(from, to).join(joiner)
+                + (to < units.length ? lineEndMark : '');
             return probe.getBoundingClientRect().width + decorationIn(from, to);
         };
         const fits = (from: number, to: number) => widthOf(from, to) <= boxWidth + FIT_EPSILON_PX;
@@ -167,7 +184,7 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
                 ? prev
                 : next,
         );
-    }, [items, units, wordMode, separator]);
+    }, [items, units, wordMode, separator, lineEndMark, lineStartMark, insetStart, insetEnd]);
 
     useLayoutEffect(() => {
         measure();
@@ -206,10 +223,11 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
         }
         return items.slice(from, end).map((seg, i) => (
             <Fragment key={from + i}>
-                {i > 0 && separator}
+                {i > 0 ? separator : from > 0 && lineStartMark}
                 {seg.leading}
                 <span className={seg.className}>{seg.text}</span>
                 {seg.trailing}
+                {from + i === end - 1 && end < units.length && lineEndMark}
             </Fragment>
         ));
     };
@@ -243,6 +261,8 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
                     flexDirection: 'column',
                     flexShrink: 0,
                     marginInline: align === 'center' ? 'auto' : 0,
+                    paddingLeft: `${insetStart}px`,
+                    paddingRight: `${insetEnd}px`,
                     textAlign: lineAlign,
                 }}
             >

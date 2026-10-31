@@ -75,7 +75,7 @@ export const FEATURE_FLAGS = {
    * off still resolves or expires on schedule, instead of hanging mid-week and
    * reappearing as a stale row if the flag is turned back on.
    *
-   * ⚠️ CURRENTLY OFF (alongside `nightMarket`).
+   * ⚠️ CURRENTLY OFF.
    */
   studyChallenge: false,
 
@@ -91,8 +91,10 @@ export const FEATURE_FLAGS = {
    * editor, `CardIconLayer`/`cardIconLayout.ts`, `VocabEntryService.updateIconLayout`
    * and the `author` column (docs/CARD_ICON_LAYOUT.md) all stay live. This flag
    * switches off SHARING, not authoring.
+   *
+   * ⚠️ CURRENTLY OFF (switched off 2026-10-30).
    */
-  community: true,
+  community: false,
 
   /**
    * Arena — the weekly global division leaderboard (docs/ARENA_FEATURE.md).
@@ -142,8 +144,10 @@ export const FEATURE_FLAGS = {
    * NOT gated: the TTS voice plumbing. `useTTS`'s per-call `voice` parameter exists for
    * iw alone (docs/IMMERSIVE_WORLD.md § 6.4a) but is an ordinary optional argument that
    * every other caller already omits, so there is nothing to switch off.
+   *
+   * ⚠️ CURRENTLY OFF (switched off 2026-10-30).
    */
-  immersiveWorld: true,
+  immersiveWorld: false,
 
   /**
    * Writing Notebook — endless per-word handwriting practice sheets

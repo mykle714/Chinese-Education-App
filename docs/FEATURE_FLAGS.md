@@ -9,14 +9,14 @@ One registry file switches whole features, and individual games, on and off:
 | Flag | Gates | State |
 |---|---|---|
 | `studyChallenge` | Weekly head-to-head between friends ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)) | **OFF** |
-| `community` | **Sharing** card designs with other learners ([COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)) | ON |
+| `community` | **Sharing** card designs with other learners ([COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)) | **OFF** (since 2026-10-30) |
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
 | `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
-| `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | ON |
+| `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | **OFF** (since 2026-10-30) |
 | `writingNotebook` | The Writing Notebook page and its Writing Center belt card ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
-**`studyChallenge` and `nightMarket` are the only things currently switched off.** Every other
+**`studyChallenge`, `community`, `nightMarket` and `immersiveWorld` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.
 
 Before this, the app had no flag mechanism at all — CLAUDE.md records the previous house
@@ -69,7 +69,7 @@ Referenced by: `server/contracts/featureFlags.ts` (the file's own header points 
 a challenge that was already live still resolves or expires on schedule instead of hanging
 mid-week. No `study_challenges` row or generated preset deck is touched.
 
-### 2b. `community` — ON
+### 2b. `community` — OFF
 
 Gates **sharing**, not **authoring**.
 
@@ -143,7 +143,7 @@ for what is meant to be a temporary state.
   finds nothing to do.
 - **Origin-hub seeding on registration** (`UserController.seedNightMarketHub`) — same reason.
 
-### 2e. `immersiveWorld` — ON
+### 2e. `immersiveWorld` — OFF
 
 | Layer | Site |
 |---|---|

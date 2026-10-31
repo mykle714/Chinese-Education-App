@@ -1,6 +1,6 @@
 import { lazy } from "react";
 import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
-import { MEDAL_THRESHOLDS, modeConfigFor } from "../match-speed/constants";
+import { modeConfigFor } from "../match-speed/constants";
 import { matchSpeedPoolRequest } from "../match-speed/poolRequest";
 import type { FlpBreakGame } from "./types";
 
@@ -15,14 +15,7 @@ import type { FlpBreakGame } from "./types";
 export const MATCH_SPEED_BREAK: FlpBreakGame<GamePoolResponse> = {
     gameId: "match-speed",
     rulesLine: "Match each word to its meaning — as many pairs as you can in 30 seconds.",
-    medalLine: () => `${MEDAL_THRESHOLDS.map((t) => `${t.emoji} ${t.minPairs}`).join(" · ")} pairs`,
-    // Same key the standalone game uses, so a break run and a hub run compete for one
-    // best per mode (docs/MATCH_SPEED_GAME.md § Personal best).
-    personalBest: (_candidate, context) => ({
-        game: "match-speed",
-        mode: modeConfigFor(context.studyMode).mode,
-        unitLabel: "pairs",
-    }),
+    panelFill: null,
     prefetch: (_candidate, context) =>
         fetchGamePool(matchSpeedPoolRequest({
             distribution: modeConfigFor(context.studyMode).poolDistribution,

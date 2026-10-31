@@ -28,8 +28,8 @@ import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneCont
  * resizes"). `fadeStyle` fades steps 1–5. A group's opacity cannot be undone by a child, so
  * a scene that must keep one of its `children` opaque through the fade passes
  * `fadeChildren={false}` and fades the others itself, one by one — keeping every child in
- * its place in the draw order (the Deck Tower keeps its deck: docs/DECK_TOWER.md § "Hiding
- * the platform"). Lifting the kept child out over the faded group instead drew it over
+ * its place in the draw order (the Deck Tower keeps its deck: docs/DECK_TOWER.md § "The platform
+ * fades"). Lifting the kept child out over the faded group instead drew it over
  * everything that stands in front of it.
  *
  * `hingeAngle` swings the slab open like a TRAP DOOR on its back-left top edge (the

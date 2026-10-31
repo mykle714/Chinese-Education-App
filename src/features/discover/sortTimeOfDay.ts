@@ -5,24 +5,29 @@
  * Layer: page logic (feature module `src/features/discover`). Pure; no React.
  *
  * scp is a "tier 2" page under the Deck Tower: it follows the same clock
- * (`src/timeOfDay/useDayClock`, docs/DECK_TOWER.md § "Time of day") but has no sky. Its ground is a
- * pale tint of the tower's sky at that hour; only the ground, the shadows cast on it,
- * and the ink drawn straight on it change between dawn, day and sunset. Night is the
- * exception: the ground goes deep slate, the ink on it goes light, and the page's
- * keycaps (level pill, undo, skip) go slate with it. The cards themselves never change —
- * they are the same cream stock in every phase.
+ * (`src/timeOfDay/useDayClock`, docs/DECK_TOWER.md § "Time of day"). By day it has no sky:
+ * its ground is a pale tint of the tower's sky at that hour, and only the ground, the
+ * shadows cast on it, and the ink drawn straight on it change between dawn, day and sunset.
+ * Night is the exception: the ground IS the main world's night sky, derived from the
+ * tower's own recipe so the two cannot drift, with the tower's stars and shooting stars
+ * on it (`stars`, `shootingStars`). The ink goes light and the page's keycaps (level pill,
+ * undo, skip) go slate. The cards themselves never change — they are the same cream stock
+ * in every phase.
  *
  * Source: Claude Design project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards
  * per phase (`GR` and the `.t2n .sx-sort` overrides).
  *
- * ⚠️ Outside the colour framework (like the tower's derived skies): the four grounds,
- * night's platform and night's slate keycap tones are design-picked hexes with no
- * `COLORS` / `RAMP` token. They live only here.
+ * ⚠️ Outside the colour framework (like the tower's derived skies): dawn, day and
+ * sunset's grounds, night's platform and night's slate keycap tones are design-picked hexes
+ * with no `COLORS` / `RAMP` token. They live only here.
  *
  * Depends on: src/timeOfDay/dayPhase.ts (`DayPhase`, `TimeOfDay`), deckTower/iso (`mixHex`,
- * `shadowTone`). Depended on by: SortCardsPage.tsx, SortBins.tsx.
+ * `shadowTone`), deckTower/timeOfDay.ts (`phaseSky`, `towerLight`), deckTower/towerWorlds.ts
+ * (`TOWER_WORLDS`). Depended on by: SortCardsPage.tsx, SortBins.tsx.
  */
 import { mixHex, shadowTone } from "../deckTower/iso";
+import { phaseSky, towerLight } from "../deckTower/timeOfDay";
+import { TOWER_WORLDS } from "../deckTower/towerWorlds";
 import type { DayPhase, TimeOfDay } from "../../timeOfDay/dayPhase";
 import { COLORS } from "../../theme/colors";
 
@@ -52,6 +57,10 @@ export interface SortLook {
      * yellow footprint that reads on a white day platform all but vanishes on it.
      */
     footprintShade: number;
+    /** The star field's opacity: the tower's own from-the-ground value at this hour. */
+    stars: number;
+    /** Whether meteors fly: the tower's own rule, so both skies turn them on together. */
+    shootingStars: boolean;
 }
 
 /** The day keycaps: card stock, the same cream as the slab footer and the cards. */
@@ -60,7 +69,7 @@ const DAY_KEYS = { keyFace: COLORS.cardFace, keyWall: COLORS.cardWall, keyInk: C
 /** Ink on a pale ground. */
 const DAY_INK = { ink: COLORS.onSurface, inkSoft: COLORS.iconColor, countEmpty: COLORS.textSecondary } as const;
 
-type PhaseLook = Omit<SortLook, "groundShadow" | "footprintShade">;
+type PhaseLook = Omit<SortLook, "groundShadow" | "footprintShade" | "stars" | "shootingStars">;
 
 /** `SortLook.footprintShade` per phase — a number, so blended apart from the hexes. */
 const FOOTPRINT_SHADE: Record<DayPhase, number> = { dawn: 0.18, day: 0.18, sunset: 0.18, night: 0.45 };
@@ -72,9 +81,10 @@ const PHASE_LOOK: Record<DayPhase, PhaseLook> = {
     day: { ground: "#E4F2FC", platform: COLORS.white, ...DAY_INK, ...DAY_KEYS },
     // Pale tint of the sunset sky (hue ≈ 37, coral).
     sunset: { ground: "#FBEADB", platform: COLORS.white, ...DAY_INK, ...DAY_KEYS },
-    // Deep slate below the tower's night sky (hue ≈ 249); light ink, slate keycaps.
+    // The tower's main-world night sky, so the page reads as the same sky; light ink, slate
+    // keycaps. scp has no world of its own, so reading/writing's night skies do not apply.
     night: {
-        ground: "#1E2735",
+        ground: phaseSky(TOWER_WORLDS.core, "night"),
         platform: "#E4E5E9",
         ink: "#EEF0F6",
         inkSoft: "#C3C8D6",
@@ -99,5 +109,6 @@ export function sortLookAt(time: TimeOfDay): SortLook {
     for (const key of LOOK_KEYS) mixed[key] = time.t <= 0 ? from[key] : mixHex(from[key], to[key], time.t);
     const t = Math.max(0, time.t);
     const footprintShade = FOOTPRINT_SHADE[time.from] + (FOOTPRINT_SHADE[time.to] - FOOTPRINT_SHADE[time.from]) * t;
-    return { ...mixed, groundShadow: shadowTone(mixed.ground), footprintShade };
+    const { groundStars, shootingStars } = towerLight(time);
+    return { ...mixed, groundShadow: shadowTone(mixed.ground), footprintShade, stars: groundStars, shootingStars };
 }

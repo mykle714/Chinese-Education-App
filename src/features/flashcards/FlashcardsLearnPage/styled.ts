@@ -1,11 +1,10 @@
 import { Box, Card, Typography } from "@mui/material";
 import { styled, alpha, keyframes } from "@mui/material/styles";
-import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT, TAB_SWIPE_TRANSITION } from "../constants";
+import { CORRECT_LABEL, INCORRECT_LABEL, FC_FONT } from "../constants";
 import { FONTS } from "../../../theme/fonts";
 import { SIZE, WEIGHT } from "../../../theme/scale";
-import { SHADOW } from "../../../theme/shadows";
 import { SAFE_BOTTOM } from "../../../theme/safeArea";
-import { towerPlateSx } from "./towerPlate";
+import { towerPlateSx } from "../../../theme/towerPlate";
 import type { PlateTones } from "./flpTowerHost";
 
 // IPhoneFrame removed — phone-frame sizing comes from MobileDemoFrame via Layout.tsx.
@@ -36,11 +35,17 @@ export const InfoSheetEntryHeader = styled(Box)(({ theme }) => ({
     flexShrink: 0,
 }));
 
+// The eip sheet's upper panel side gutter, which is also PageHeader's leaf side padding. The
+// trail and the gloss run past it to the screen edge and rest this far short of it.
+export const EIP_PANEL_GUTTER = 18;
+// A trail word's side padding.
+export const EIP_TRAIL_WORD_PAD = 4;
+
 // `.trail` — the WORD TRAIL (Tower Tier 2 design): the words opened in this panel as a
 // breadcrumb, `过去 › 去`, the showing word in ink and the rest muted. It is ALWAYS shown,
 // even with one word (2026-10-29; it used to hide until a second word opened), because the
-// row is also where the panel's ✕ and the Dictionary eip's Add key live (EipTrailRow in
-// EipUpperPanel). The strip itself is only the word list; it takes the row's free width.
+// row is also where the speaker and the Dictionary eip's Add key live (EipUpperPanel's
+// trail row). The strip itself is only the word list; it takes the row's free width.
 //
 // Bare words, not pills (the shelf system's filled `.wtrail` pills were retired by the
 // same design): the content tabs right below are now the filled shape (a sunken segmented
@@ -76,7 +81,7 @@ export const EipEntryTab = styled(Box, {
 })<{ isActive: boolean; toneColor: string; ink: string; muted: string }>(({ isActive, ink, muted }) => ({
     display: "inline-flex",
     alignItems: "center",
-    padding: "4px 4px 5px",
+    padding: `4px ${EIP_TRAIL_WORD_PAD}px 5px`,
     borderRadius: 9,
     color: isActive ? ink : muted,
     cursor: "pointer",
@@ -93,85 +98,6 @@ export const EipEntryTab = styled(Box, {
     // already on the strip are pushed aside rather than jumped aside, in step with the
     // panel slide that shows the same word's content (InfoCardSection).
     animation: `${eipPillIn} ${EIP_PILL_IN_MS}ms cubic-bezier(0.22, 1, 0.36, 1) both`,
-}));
-
-// `.tabs` — the eip's CONTENT tabs (definition / examples / breakdown), as the Tower Tier 2
-// design draws them: a SUNKEN SEGMENTED TRACK — a well with a 2px inner top lip — in which
-// the selected tab is a raised chip. Replaced the shelf system's underlined `.tabs2`
-// (2026-10-29). The word trail above is now bare breadcrumb text, so this is the panel's
-// one filled control and the two still cannot read as one two-row strip.
-//
-// Track colours come from the eip palette (`tabWell` / `tabWellShadow`, the time-of-day
-// well mixed into white), passed in by InfoCardPanelBody.
-export const InfoSheetTabStrip = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "trackColor" && prop !== "trackShadow",
-})<{ trackColor: string; trackShadow: string }>(({ trackColor, trackShadow }) => ({
-    // Positioning context for the sliding chip (InfoSheetTabIndicator).
-    position: "relative",
-    display: "flex",
-    gap: EIP_TAB_GAP,
-    padding: EIP_TAB_TRACK_PAD,
-    margin: "0 18px",
-    borderRadius: 12,
-    background: trackColor,
-    boxShadow: `inset 0 2px 0 ${trackShadow}`,
-    flexShrink: 0,
-}));
-
-// The track's inner padding and the gap between segments — shared by the track and the
-// sliding chip, whose width and travel are computed from them.
-const EIP_TAB_TRACK_PAD = 3;
-const EIP_TAB_GAP = 2;
-
-// The SELECTED-TAB CHIP (design `.tabs b.on`: white, 9px radius, a hairline drop) — ONE
-// element that SLIDES between segments (2026-10-29) rather than a fill that jumps from tab
-// to tab. Absolutely positioned inside the track, one segment wide, moved by
-// translateX(index × (segment + gap)); `100%` in a translate is the chip's OWN width, i.e.
-// one segment. Same duration/easing as the content panes' slide (TAB_SWIPE_TRANSITION), so
-// the chip and the pane below arrive together.
-export const InfoSheetTabIndicator = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "index" && prop !== "count" && prop !== "chipColor",
-})<{ index: number; count: number; chipColor: string }>(({ index, count, chipColor }) => ({
-    position: "absolute",
-    top: EIP_TAB_TRACK_PAD,
-    bottom: EIP_TAB_TRACK_PAD,
-    left: EIP_TAB_TRACK_PAD,
-    width: `calc((100% - ${2 * EIP_TAB_TRACK_PAD}px - ${(count - 1) * EIP_TAB_GAP}px) / ${count})`,
-    borderRadius: 9,
-    background: chipColor,
-    // Design `0 1px 2px rgba(23,22,26,.12)` → SHADOW.rest (same geometry, 0.05 alpha).
-    boxShadow: SHADOW.rest,
-    transform: `translateX(calc(${index} * (100% + ${EIP_TAB_GAP}px)))`,
-    transition: TAB_SWIPE_TRANSITION,
-    pointerEvents: "none",
-    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
-}));
-
-// One content tab — a transparent segment over the track; the selected one is marked by
-// the sliding chip under it (InfoSheetTabIndicator) and by its ink label.
-//
-// No outline ring on these (CLAUDE.md § Buttons & cards): they are segments of one
-// control, not separate buttons, and the selected chip is already set off by its fill.
-//
-// An EMPTY tab (no examples, no breakdown) stays legible but is dimmed — it is still a
-// real destination that says "nothing here for this word", which is an answer.
-export const InfoSheetTab = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isActive" && prop !== "isEmpty",
-})<{ isActive: boolean; isEmpty?: boolean }>(({ isActive, isEmpty }) => ({
-    // Above the sliding chip.
-    position: "relative",
-    zIndex: 1,
-    flex: 1,
-    textAlign: "center",
-    padding: "7px 2px",
-    borderRadius: 9,
-    border: "none",
-    cursor: "pointer",
-    fontFamily: FC_FONT,
-    userSelect: "none",
-    opacity: isEmpty && !isActive ? 0.4 : 1,
-    background: "transparent",
-    transition: "opacity 0.2s ease",
 }));
 
 export const ArrowIndicator = styled(Box)(({ theme }) => ({

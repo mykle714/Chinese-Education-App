@@ -11,6 +11,9 @@ import { COLORS } from '../theme/colors';
 import { SHADOW } from '../theme/shadows';
 import { dialogContainer } from '../components/overlayHost';
 
+// The default theme's `md` split: full-bleed below it, the desktop phone card above it.
+const MOBILE_MEDIA_QUERY = createTheme().breakpoints.down('md');
+
 // Per-surface color tokens for the flashcard learn page.
 // All 19 fields must be defined for every theme — no optional fields.
 export interface FlashcardPalette {
@@ -153,10 +156,20 @@ const createAppTheme = (mode: ThemeMode): Theme => {
             //     scrollbar-compensation padding would otherwise be written onto the frame.
             // A dialog that renders its own backdrop (`hideBackdrop`) or restyles it keeps
             // that override; `BackdropComponent` replacements bypass the `backdrop` slot.
-            // Before any `useThemeColor` claim runs, body must already be the paper ground:
-            // the iOS status-bar fade takes its tint from it (src/hooks/useThemeColor.ts).
+            // MOBILE ONLY, body follows the claimed ground (paper before any claim): the iOS
+            // status-bar fade takes its tint from it (src/hooks/useThemeColor.ts). Done here
+            // rather than in the hook because on desktop body is the backdrop AROUND the
+            // phone card, which keeps the palette's default whatever the page claims. Same
+            // breakpoint as MobileDemoFrame's `isMobile`.
+            // Docs: docs/UX_AND_NAVIGATION.md § The status-bar scrim.
             MuiCssBaseline: {
-                styleOverrides: { body: { backgroundColor: COLORS.background } },
+                styleOverrides: {
+                    body: {
+                        [MOBILE_MEDIA_QUERY]: {
+                            backgroundColor: `var(--surface-ground, ${COLORS.background})`,
+                        },
+                    },
+                },
             },
             MuiDialog: {
                 defaultProps: {

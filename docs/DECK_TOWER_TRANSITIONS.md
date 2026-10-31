@@ -169,9 +169,9 @@ or while the camera pans between worlds. A horizontal drag that starts on the pl
 a world swipe: the scroller captures the pointer, so the plate lets go without firing.
 If the page ignores the tap (counts not loaded) the plate simply pops back up. Under
 prefers-reduced-motion the height jumps instead of easing.
-While the tower is studied the plate is stowed in the platform and is no button at all
-(`DeckTowerPlatform` → `plateUp`, `usePlateRecess`; [DECK_TOWER.md](./DECK_TOWER.md)
-§ Studying the tower → "The floor fixtures").
+While the tower is studied the plate fades away with the platform and ignores taps
+(`DeckTowerPlatform` → `plate.busy`; [DECK_TOWER.md](./DECK_TOWER.md)
+§ Studying the tower → "The platform fades").
 
 **The face change is a hard cut.** On release the plate's band and label switch to the
 other deck in a single frame — no flip, fade or colour blend (`useDeckSwap` →

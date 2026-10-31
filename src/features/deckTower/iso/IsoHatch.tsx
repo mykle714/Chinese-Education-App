@@ -125,7 +125,7 @@ const IsoHatch: React.FC<IsoHatchProps> = ({ at, w, d = w, surface, inside, sink
     // The entrance pose: lifted `hop` units (straight up the screen) and scaled about the feet.
     const feet = proj.project(at.x, at.y, floorZ);
     const airTransform = air
-        ? `translate(${feet.x.toFixed(2)} ${(feet.y - air.hop * proj.unit).toFixed(2)}) scale(${air.sx.toFixed(4)} ${air.sy.toFixed(4)}) translate(${(-feet.x).toFixed(2)} ${(-feet.y).toFixed(2)})`
+        ? `translate(${feet.x.toFixed(2)} ${(feet.y - air.hop * proj.heightUnit).toFixed(2)}) scale(${air.sx.toFixed(4)} ${air.sy.toFixed(4)}) translate(${(-feet.x).toFixed(2)} ${(-feet.y).toFixed(2)})`
         : undefined;
     // Its floor shadow stays under the landing spot, shrunk and faded while it is high.
     const shadowStyle: React.CSSProperties | undefined = air

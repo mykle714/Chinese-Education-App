@@ -31,6 +31,10 @@ export const FC_FONT_CJK = FONTS.cjk;
 // and the CSS transform transition (FlashCardSection) MUST stay in lock-step,
 // so both derive from this single constant. Changing it here changes both.
 export const CARD_FLY_OUT_MS = 450;
+// How far off-screen to throw a card (px). 900px safely clears the 402px frame on all viewports.
+export const FLY_OUT_X = 900;
+// Rotation (deg) applied when a card flies off — more dramatic than the gentle drag tilt.
+export const FLY_OUT_ROTATION = 30;
 
 /**
  * The flp card's proportions (width : height), the `aspect-ratio` FlashCardSection's card
@@ -85,10 +89,8 @@ export const CARD_FLIP_MS = 250;
 // at CARD_FLIP_MS / 2, so the hide fires precisely at edge-on — no flash.
 export const cardFlipTransition = (flipMs: number): string => `transform ${flipMs}ms linear`;
 
-// The Deck Tower's flip (FlashCardSection `towerStack`) is slower: there the card is
-// LIFTED off the deck as it turns (FlashCardSection → FLIP_LIFT_KEYFRAMES), and the lift
-// needs the time to read. Every place that times off the flip takes the duration as a
-// parameter (`flipMs`) so the tower's lockout and mid-flip face hide stay in lock-step
+// The Deck Tower's flip (FlashCardSection `towerStack`) is slower. Every place that times
+// off the flip takes the duration as a parameter (`flipMs`) so the tower's lockout and mid-flip face hide stay in lock-step
 // with its own rotation. Docs: docs/DECK_TOWER.md § "Studying the tower".
 export const TOWER_CARD_FLIP_MS = 350;
 
@@ -148,8 +150,8 @@ export const TAB_SWIPE_COMMIT_RATIO = 0.22;
 // overscroll can never read as a committed swipe.
 export const TAB_SWIPE_EDGE_RUBBER_RATIO = 0.25;
 export const TAB_SWIPE_EDGE_RUBBER_MAX_PX = 40;
-// Shared by both swipe-release and tap-triggered slides so the two feel identical.
-export const TAB_SWIPE_TRANSITION = "transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)";
+// (TAB_SWIPE_TRANSITION, the slide itself, lives with the shared selector in
+// src/components/sheet/sheetStyled.ts.)
 
 // Max sheet height as a fraction of ContentArea height. The sheet at
 // translateY=0 occupies this much of the container — i.e. how close the

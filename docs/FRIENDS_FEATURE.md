@@ -16,7 +16,7 @@ mutations (send, answer, unfriend) has its own screen behind a top-row button.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/friends` | `src/features/friends/FriendsPage.tsx` | The friends **leaderboard** (§ 1a), read-only. Three buttons across the top — **Send** / **Accept** / **Remove** → the three action screens. Shows the viewer's own friend ID with a Copy button. |
+| `/friends` | `src/features/friends/FriendsPage.tsx` (shell) + `FriendsBody.tsx` (content, also the AccountSheet's Friends tab) | The friends **leaderboard** (§ 1a), read-only. Three buttons across the top — **Send** / **Accept** / **Remove** → the three action screens. Shows the viewer's own friend ID with a Copy button. |
 | `/friends/sent` | `src/features/friends/SentRequestsPage.tsx` | Reached by **Send**. Pending **outgoing** requests, each with **Revoke**. Also holds the compose field — the only place a friendship is created. |
 | `/friends/requests` | `src/features/friends/IncomingRequestsPage.tsx` | Reached by **Accept**. Pending **incoming** requests, each with **Accept** / **Decline**. |
 | `/friends/remove` | `src/features/friends/RemoveFriendsPage.tsx` | Reached by **Remove**. The plain friend list ("Friends since …"), each row with **Remove** (unfriend). The board deliberately has no per-row Remove: a destructive control on a ranking row invites a mis-tap while reading scores. |
@@ -65,7 +65,7 @@ person pastes it into `/friends/sent`. If a username is ever added, that field
 becomes the lookup and this section is what changes.
 
 The **Requests** button carries a red count badge when incoming requests exist —
-`FriendsPage` fetches the incoming list alongside the friend list purely for that
+`FriendsBody` fetches the incoming list alongside the friend list purely for that
 count.
 
 ### 1b. Challenges (`/friends/challenges`) — BUILT (page 2026-08-17, playable rounds 2026-08-22)
@@ -99,7 +99,7 @@ Menu Friends tile  →  Challenges button  →  the individual friend's row
 ```
 
 This reuses the existing pattern exactly: the count rides along with the friends payload
-`FriendsPage` already fetches, the way the incoming-requests count does today.
+`FriendsBody` already fetches, the way the incoming-requests count does today.
 
 ⚠️ **The badge must NOT be language-scoped, even though the page is.** Everything else
 about vocabulary is scoped to the learner's active language, and the Challenges *page*
@@ -115,7 +115,9 @@ challenge's**. Anyone "fixing" this inconsistency later re-breaks the case it ex
 ### 1a. The leaderboard (`/friends`)
 
 `/friends` is a **leaderboard ranked by velocity** — utcm band-steps climbed in the
-last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. One row per person:
+last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. The board has no section
+heading: it starts directly under the friend ID card (`src/features/friends/FriendsBody.tsx`
+→ `FriendsBody`). One row per person:
 
 ```
 [2] (avatar)  Bob                            12

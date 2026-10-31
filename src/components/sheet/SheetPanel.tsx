@@ -38,8 +38,8 @@ export interface SheetPanelBodyHandle {
 // ResizeObserver, never read in the per-frame write.
 //
 // The same write publishes the reveal on `frame` as two CSS custom properties, for content
-// that must CROSSFADE with the `extra` row rather than just be clipped by it (the eip's
-// trail-row caret, which hands over to the title row's caret as the title arrives):
+// that must MOVE with the `extra` row's reveal rather than just be clipped by it (the eip's
+// pinned caret, which eases onto the page header's line as the title arrives):
 //   --sheet-telescope-t           0 at/below the open height → 1 at max (extra's reveal)
 //   --sheet-telescope-transition  the write's own duration ("0ms" while dragging), so a
 //                                 `transition: … var(--sheet-telescope-transition)` rides
@@ -166,10 +166,11 @@ interface SheetPanelProps {
     // Omitting it is allowed but discouraged for a modal sheet: with no header there is no
     // ✕ either, so the only way out is a downward drag.
     title?: string;
-    // Opt-in telescope (see SheetTelescopeHandle). Today: the eip (InfoCardSection).
+    // Opt-in telescope (see SheetTelescopeHandle). Today: the eip (InfoCardSection) and
+    // SheetPageHeader's hosts (AccountSheet).
     telescopeRef?: React.RefObject<SheetTelescopeHandle | null>;
     // Override for the sheet's own background. The eip passes its time-of-day ground
-    // (eipPalette.ts); every other sheet stays white.
+    // (eipPalette.ts) and AccountSheet the page ground; every other sheet stays white.
     surface?: string;
     // Draw the top grabber row (default true). The eip turns it off (2026-10-29): its
     // whole upper panel is the resize handle, and the shelf carries its own small pill.

@@ -1,8 +1,5 @@
 import React from "react";
-import { Box, ButtonBase } from "@mui/material";
-import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import TesterChipRow from "./TesterChipRow";
 import type { TimeOfDayOverride } from "./useTimeOfDay";
 
 /**
@@ -14,11 +11,7 @@ import type { TimeOfDayOverride } from "./useTimeOfDay";
  * reports taps; useTimeOfDay owns the override and its per-device storage. The page
  * mounts it only for `users.isFeatureTester` accounts (migration 178).
  *
- * Chips are the framework's frosted chip on a hued fill (`COLORS.frost`, the sky behind)
- * with the app's outline (`COLORS.border`); the chosen one is solid ink — the
- * "solid-ink control" exception to the outline rule (CLAUDE.md § Buttons & cards).
- *
- * Depended on by: DeckTowerPage.tsx.
+ * Depends on: TesterChipRow.tsx. Depended on by: DeckTowerPage.tsx.
  */
 
 const OPTIONS: readonly { value: TimeOfDayOverride; label: string }[] = [
@@ -35,38 +28,13 @@ interface TimeOfDayToggleProps {
 }
 
 const TimeOfDayToggle: React.FC<TimeOfDayToggleProps> = ({ value, onChange }) => (
-    <Box
-        className="deck-tower-page__time-of-day-toggle"
-        role="radiogroup"
-        aria-label="Time of day (feature testing)"
-        sx={{ display: "flex", justifyContent: "center", gap: 0.75, px: 2, pb: 1, flexWrap: "wrap" }}
-    >
-        {OPTIONS.map((o) => {
-            const selected = o.value === value;
-            return (
-                <ButtonBase
-                    key={o.value}
-                    className={`deck-tower-page__time-of-day-chip${selected ? " deck-tower-page__time-of-day-chip--selected" : ""}`}
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => onChange(o.value)}
-                    sx={{
-                        px: 1.25,
-                        py: 0.5,
-                        borderRadius: 999,
-                        fontFamily: FONTS.cjk,
-                        fontSize: SIZE.caption,
-                        fontWeight: WEIGHT.bold,
-                        color: selected ? COLORS.white : COLORS.onSurface,
-                        backgroundColor: selected ? COLORS.onSurface : COLORS.frost,
-                        border: selected ? `1px solid ${COLORS.onSurface}` : `1px solid ${COLORS.border}`,
-                    }}
-                >
-                    {o.label}
-                </ButtonBase>
-            );
-        })}
-    </Box>
+    <TesterChipRow
+        classBase="deck-tower-page__time-of-day"
+        ariaLabel="Time of day (feature testing)"
+        options={OPTIONS}
+        value={value}
+        onChange={onChange}
+    />
 );
 
 export default TimeOfDayToggle;

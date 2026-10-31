@@ -1,8 +1,11 @@
 # Chinese Typeface — the setting, and the lab behind it
 
-**Status: SHIPPED (migration 157, not yet on PPE as of 2026-09-04).** Accounts choose
-their own Chinese face in Settings → Display. `/font-lab` is the dev tool the shortlist
-was chosen with, and remains the place new candidates are evaluated.
+**Status: THE ACCOUNT CHOICE IS DISABLED.** The whole app renders in 975 Maru SC
+(`DEFAULT_CHINESE_FONT_ID`), signed in or out, and Settings offers no picker.
+`users."chineseFont"` (migration 157) and its write path still exist but nothing on the
+client reads the value; removing them is tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+`/font-lab` is the dev tool the shortlist was chosen with, and remains the place new
+candidates are evaluated.
 
 Referenced by [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) (§ "Notes for whoever picks up
 A2", where the app's typography decisions live).
@@ -18,8 +21,8 @@ face can be renamed or re-sourced without stranding rows. `text NOT NULL DEFAULT
 '975-maru'`.
 
 * **New accounts** get `975-maru` (975 Maru SC).
-* **Accounts predating the migration** were explicitly backfilled to `noto-sans-sc`, so
-  nobody's app changed typeface under them. They opt in from Settings.
+* **Accounts predating the migration** were backfilled to `noto-sans-sc`. That stored
+  value is now ignored: they render in 975 Maru SC like everyone else.
 
 ### Path, layer by layer
 
@@ -32,16 +35,17 @@ face can be renamed or re-sourced without stranding rows. `text NOT NULL DEFAULT
 | Controller | `server/controllers/UserController.ts` → `updateDisplaySettings` (`PUT /api/users/displaySettings`) |
 | Client context | `src/AuthContext.tsx` → `updateDisplaySettings` |
 | Client catalog | `src/theme/cjkFontOptions.ts` → `CJK_FONT_CATALOG` / `CJK_FONT_OPTIONS` |
-| Applied | `src/hooks/useChineseFont.ts`, mounted by `ChineseFontApplier` in `src/App.tsx` |
-| UI | `src/pages/SettingsPage.tsx` → the Display section's typeface picker |
+| Applied | `src/hooks/useChineseFont.ts` (always the default; ignores the column), called by `App` in `src/App.tsx` |
+| UI | None. The Settings picker was removed, so nothing calls the write path with `chineseFont` |
 | Drift guard | `src/__tests__/chineseFont.test.ts` |
 
-This is the same shape as `showSegmentSpaces` (migration 129), which it sits beside.
+This is the same shape as `showSegmentSpaces` (migration 129).
 
-### Why account-level and not device-local
+### Why the column was account-level and not device-local
 
 A learner who picks a kai face is choosing which **stroke forms they study against**
 (see § 4), not just a look. That must not differ between their phone and their laptop.
+This still applies if the choice is ever restored.
 
 ### The allow-list is duplicated on purpose, and guarded
 
@@ -62,10 +66,10 @@ to compare against instead. The guard stays live for the next non-OFL candidate.
 ### Fonts are loaded on demand
 
 `ensureCjkFontLoaded()` injects a face's stylesheet the first time it is needed, once.
-Only Noto Sans SC / Noto Serif SC are in `index.html`; the rest are fetched when a user
-selects one, or when the Settings picker renders its previews. Five of the six
-selectable faces come from `cdn.jsdelivr.net` — a third-party origin on the critical
-path, permitted by the existing nginx CSP. `cjkFontStack()` keeps the default stack as
+Only Noto Sans SC / Noto Serif SC are in `index.html`; 975 Maru SC is injected by
+`useChineseFont` on app mount, and the rest only when `/font-lab` compares them. Maru
+comes from `cdn.jsdelivr.net` — a third-party origin on the critical path, permitted by
+the existing nginx CSP. `cjkFontStack()` keeps the default stack as
 a **tail fallback**, so a CDN failure or a missing glyph degrades per-glyph to Noto
 Sans SC rather than to tofu.
 
@@ -79,17 +83,16 @@ Sans SC rather than to tofu.
 var(--cjk-font, "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)
 ```
 
-The `var()` **fallback is the real default stack**, so with `--cjk-font` undefined this
-resolves to exactly the string it was before. An undefined custom property cannot blank
-the family — which is what makes it safe for signed-out screens and for any render
-before the preference has loaded.
+The `var()` **fallback is the original Noto stack**, so with `--cjk-font` undefined this
+still resolves to a real family. An undefined custom property cannot blank the family —
+which is what makes it safe for any render before `useChineseFont`'s first effect runs.
 
 Setting `--cjk-font` on any element re-faces every Chinese glyph beneath it, because
 every `FONTS.cjk` call site (`FC_FONT_CJK` in `src/features/flashcards/constants.ts` is an
 alias) reads the same token. No component takes a font prop.
 
-**The dd follows the setting too, not just Chinese glyphs.** Every surface that prints a
-dd uses `FONTS.cjk`, so an English gloss is set in the chosen face's Latin glyphs and reads
+**The dd follows the face too, not just Chinese glyphs.** Every surface that prints a
+dd uses `FONTS.cjk`, so an English gloss is set in the face's Latin glyphs and reads
 as the same text wherever it appears:
 
 - flp card face — `src/features/flashcards/card/CardFace.tsx` (`FC_FONT_CJK`)
@@ -103,9 +106,9 @@ its UI faces.
 
 **One writer, and one fallback:**
 
-1. `src/hooks/useChineseFont.ts` — the signed-in account's preference. The only code
+1. `src/hooks/useChineseFont.ts` — always `DEFAULT_CHINESE_FONT_ID`. The only code
    anywhere that sets `--cjk-font` on `:root`.
-2. Nothing — the `var()` fallback. Signed out, or before the user loads.
+2. Nothing — the `var()` fallback. Only before that hook's first effect runs.
 
 > ⚠️ **There used to be a second writer, and it was a bug.** `src/theme/cjkFontOverride.ts`
 > backed the lab's dev-only "Use app-wide" control and **outranked** the account
@@ -225,9 +228,9 @@ This section used to describe a second control, **Use app-wide**, which set `--c
 on `:root` and re-faced the whole app. The two shared the word "pin" and were a standing
 source of misunderstanding; the app-wide half was deleted on 2026-09-05 (see the callout
 in § "the `--cjk-font` token" above). **The lab can no longer change what the app renders
-in** — the face is chosen only in account settings. The practical consequence is that a
-`selectable: false` face can be judged only on these specimens, never on flp or a game,
-which is an acceptable trade for a control that could silently break the real setting.
+in** — the face comes only from `DEFAULT_CHINESE_FONT_ID`. The practical consequence is
+that a candidate face can be judged only on these specimens, never on flp or a game,
+which is an acceptable trade for a control that could silently override the app's face.
 
 **Pin** persists a shortlist. The toolbar's **📌 Show pinned (n)** opens every pinned
 face as a column in the shortlist's own order, and the page seeds its columns from the
@@ -283,7 +286,8 @@ stylesheet's declared `font-family` exactly (case and spaces), or the face silen
 falls back. Nothing else needs touching for a **lab-only** face: the picker, loader and
 metric probe all derive from that array.
 
-To make a face **user-selectable**, three more things, all required together:
+To make a face a legal **stored value** (or to use it if the Settings picker is ever
+restored), three more things, all required together:
 
 1. Set `selectable: true`, and confirm its `license` is `ofl`/`apache`. A `restricted`
    face may never be selectable — `chineseFont.test.ts` fails the build if it is.

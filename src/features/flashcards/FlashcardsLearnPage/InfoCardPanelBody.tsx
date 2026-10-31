@@ -1,26 +1,19 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import { type CPCDSize } from "../../../components/ForeignText";
-import { sheetEdgeFadeSx } from "../../../components/sheet/sheetStyled";
+import { sheetEdgeFadeSx, TAB_SWIPE_TRANSITION } from "../../../components/sheet/sheetStyled";
 import { trackScrollEdgeFade } from "../../../components/scrollEdgeFade";
 import OverlayScrollbar, { hiddenNativeScrollbarSx } from "../../../components/OverlayScrollbar";
 import InfoCardTabContent from "./InfoCardTabContent";
 import { tabAvailability } from "./infoCardTabAvailability";
-import {
-    InfoSheetTabStrip,
-    InfoSheetTab,
-    InfoSheetTabIndicator,
-} from "./styled";
+import SheetSegmentedTabs from "../../../components/sheet/SheetSegmentedTabs";
 import {
     TAB_LABELS,
-    FC_FONT,
     TAB_SWIPE_AXIS_LOCK_PX,
     TAB_SWIPE_COMMIT_RATIO,
     TAB_SWIPE_EDGE_RUBBER_MAX_PX,
     TAB_SWIPE_EDGE_RUBBER_RATIO,
-    TAB_SWIPE_TRANSITION,
 } from "../constants";
-import { WEIGHT } from "../../../theme/scale";
 import EipEntryHeader from "./EipEntryHeader";
 import { useEipColors } from "./useEipPalette";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
@@ -527,49 +520,28 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 on the tabs resizes the sheet on desktop too — on touch the
                 root's raw resize listeners already cover it. useDrag's
                 filterTaps keeps tab-selection taps working. */}
-            <InfoSheetTabStrip
+            <SheetSegmentedTabs
                 className="mobile-demo-tabs"
-                trackColor={colors.tabWell}
-                trackShadow={colors.tabWellShadow}
-                {...(headerDragBind ? headerDragBind() : {})}
-                sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
-            >
-                {/* The selected tab's white chip — slides between segments. */}
-                <InfoSheetTabIndicator
-                    className="mobile-demo-tab-indicator"
-                    index={selectedTab}
-                    count={TAB_LABELS.length}
-                    chipColor={colors.tabOn}
-                />
-                {TAB_LABELS.map((label, index) => {
+                tabs={TAB_LABELS.map((label, index) => {
                     // Tab index 2 is the breakdown slot — relabeled to "Used In" for single-char zh.
                     const displayLabel = index === 2 ? breakdownTabLabel : label;
-                    return (
-                        <InfoSheetTab
-                            key={index}
-                            isActive={selectedTab === index}
-                            isEmpty={tabIsEmpty[index]}
-                            onClick={() => onTabChange(index)}
-                            className={`mobile-demo-tab mobile-demo-tab-${displayLabel.replace(/\s+/g, '-')}`}
-                        >
-                            {/* Lower case, as the artboards set it: these are three words
-                                in a strip, not three headings, and Title Case here made
-                                them compete with the gloss directly above. */}
-                            <Typography sx={{
-                                // Design `.tabs b`: 14px semibold, ink when selected.
-                                fontSize: 14,
-                                fontWeight: WEIGHT.semibold,
-                                color: selectedTab === index ? colors.ink : colors.muted,
-                                fontFamily: FC_FONT,
-                                userSelect: "none",
-                                lineHeight: 1,
-                            }}>
-                                {displayLabel}
-                            </Typography>
-                        </InfoSheetTab>
-                    );
+                    return {
+                        label: displayLabel,
+                        isEmpty: tabIsEmpty[index],
+                        className: `mobile-demo-tab mobile-demo-tab-${displayLabel.replace(/\s+/g, '-')}`,
+                    };
                 })}
-            </InfoSheetTabStrip>
+                selected={selectedTab}
+                onSelect={onTabChange}
+                colors={{
+                    track: colors.tabWell,
+                    trackShadow: colors.tabWellShadow,
+                    chip: colors.tabOn,
+                    ink: colors.ink,
+                    muted: colors.muted,
+                }}
+                dragBind={headerDragBind}
+            />
 
             {/* Tab body: a clipping viewport over a permanent 3-pane track.
                 Every pane's scroller is always mounted (its content is deferred

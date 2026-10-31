@@ -3,7 +3,6 @@ import type { Language, MarkType } from "../../types";
 import type { GameDef, GameStageFrameProps } from "../types";
 import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import type { FlpWorld, StudyMode } from "../../../server/contracts/studyMode";
-import type { PersonalBestGame } from "../../../server/contracts/personalBests";
 
 /**
  * flp game breaks — the engine-side contract (docs/FLP_GAME_BREAKS.md).
@@ -51,14 +50,12 @@ export interface FlpBreakStageProps<P> {
     Frame: ComponentType<GameStageFrameProps>;
     /** "Back to cards" — the break is over. */
     onDone: () => void;
-}
-
-/** The title card's personal-best row (`usePersonalBest` + `PersonalBestLine`). */
-export interface FlpBreakPersonalBest {
-    game: PersonalBestGame;
-    mode: string | number | null;
-    /** Count games: the unit after the number ("pairs"). */
-    unitLabel?: string;
+    /**
+     * A correct mark the server RECORDED on a card the learner owns: that card has left
+     * the Deck Tower. Not a suppressed mark (the card was resting, so it was not on the
+     * tower) and not a lent card (never counted on it). Fired off the mark's response.
+     */
+    onCardCleared?: () => void;
 }
 
 /**
@@ -67,12 +64,14 @@ export interface FlpBreakPersonalBest {
  */
 export interface FlpBreakGame<P = unknown> {
     gameId: string;
-    /** The title card's one-line rule (§ 5). */
+    /** The break card's one-line rule (§ 5). */
     rulesLine: string;
-    /** The title card's medal targets, e.g. "🥇 9 · 🥈 6 · 🥉 3 pairs". Null = none. */
-    medalLine: (candidate: FlpBreakCandidate, context: FlpBreakContext) => string | null;
-    /** The title card's personal best, or null for a game that keeps none. */
-    personalBest: (candidate: FlpBreakCandidate, context: FlpBreakContext) => FlpBreakPersonalBest | null;
+    /**
+     * The game's play panel fill: what the card's grow plate turns into (§ 2). Null for a
+     * game drawn straight on the ground (Match Speed): nothing grows, the card fades where
+     * it is, and a tower session fades its platform and deck for the game's length.
+     */
+    panelFill: string | null;
     /**
      * Fetch the opening board while the last card before the break is still on screen,
      * so Play has no spinner (§ 1). Must not throw into the flp: the host catches and

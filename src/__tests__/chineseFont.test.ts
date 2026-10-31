@@ -12,12 +12,13 @@ import { CHINESE_FONT_IDS, DEFAULT_CHINESE_FONT_ID } from "../types";
  *
  * `CHINESE_FONT_IDS` (server/contracts/wire.ts) is what PUT /api/users/displaySettings
  * will accept into `users."chineseFont"` (migration 157). `CJK_FONT_OPTIONS`
- * (src/theme/cjkFontOptions.ts) is what Settings offers, and it carries presentation
+ * (src/theme/cjkFontOptions.ts) is the matching client list, and it carries presentation
  * — labels, native names, stylesheet URLs — that the server has no business knowing,
  * which is why it cannot simply BE the id list.
  *
- * If the two drift, a typeface the user can tap is rejected by the server with a 400
- * and the setting silently refuses to change. This test makes that drift a red build.
+ * The Settings picker is disabled for now (every account renders in the default), but
+ * if it returns and the two have drifted, a typeface the user can tap would be rejected
+ * by the server with a 400. This test makes that drift a red build.
  * Same guard `cardColor.test.ts` provides for CARD_COLOR_VALUES.
  *
  * See docs/CJK_TYPEFACE_LAB.md.
@@ -35,7 +36,7 @@ describe("Chinese typeface catalog", () => {
     });
 
     it("lists the default first", () => {
-        // Settings leads with the default and badges it, so it must actually BE first.
+        // The lab leads with the default, so it must actually BE first.
         // Asserted rather than trusted to comment, so a future reshuffle of the
         // catalog cannot silently bury it mid-list.
         expect(CJK_FONT_OPTIONS[0]?.id).toBe(DEFAULT_CHINESE_FONT_ID);

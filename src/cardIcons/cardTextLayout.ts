@@ -97,17 +97,23 @@ const clampRange = (v: number, lo: number, hi: number) => Math.min(Math.max(v, l
  * even partially off-card" rule — stricter than the icon 15%-overhang clamp). `halfWFrac` /
  * `halfHFrac` are the block's axis-aligned bounding-box HALF-extents as fractions of card
  * width / height (the caller measures the rendered, scaled, rotated box and converts px →
- * fractions). When a block is wider/taller than the card on an axis the bound collapses to the
- * card center (0.5), so it's centered rather than thrown off one side.
+ * fractions). `insetXFrac` / `insetYFrac` narrow the allowed area on every side (the Deck
+ * Tower stock's rim; 0 on a plain card). When a block is wider/taller than that area on an
+ * axis the bound collapses to the card center (0.5), so it's centered rather than thrown off
+ * one side.
  */
 export function clampTextCenterFully(
   x: number,
   y: number,
   halfWFrac: number,
   halfHFrac: number,
+  insetXFrac = 0,
+  insetYFrac = 0,
 ): { x: number; y: number } {
-  const cx = halfWFrac >= 0.5 ? 0.5 : clampRange(x, halfWFrac, 1 - halfWFrac);
-  const cy = halfHFrac >= 0.5 ? 0.5 : clampRange(y, halfHFrac, 1 - halfHFrac);
+  const reachX = halfWFrac + insetXFrac;
+  const reachY = halfHFrac + insetYFrac;
+  const cx = reachX >= 0.5 ? 0.5 : clampRange(x, reachX, 1 - reachX);
+  const cy = reachY >= 0.5 ? 0.5 : clampRange(y, reachY, 1 - reachY);
   return { x: cx, y: cy };
 }
 
@@ -125,6 +131,19 @@ export const TEXT_BLOCKS: TextBlock[] = ["foreign", "english"];
  */
 export function hasCustomTextLayout(saved: TextLayout | null | undefined): boolean {
   return !!saved && (!!saved.foreign || !!saved.english);
+}
+
+/**
+ * Layout `max-width` of a placed text block, shared by the static back face and the fie so
+ * both wrap identically. 92% of the card on a plain face. On Deck Tower stock it also stops
+ * at the printed panel (`--card-panel-width`, set by CardFaceSide `towerStock`), divided by
+ * the block's scale because `transform: scale()` happens after layout: a block at scale 1.5
+ * must lay out at 1/1.5 of the panel to wrap at the panel's edge on screen. The huge fallback
+ * makes `min()` resolve to 92% wherever the variable is unset.
+ */
+export function textBlockMaxWidth(scale: number): string {
+  const safeScale = scale > 0 ? scale : 1;
+  return `min(92%, calc(var(--card-panel-width, 10000%) / ${safeScale}))`;
 }
 
 /** CSS transform for a placed text block, positioned by its center via percentages of the

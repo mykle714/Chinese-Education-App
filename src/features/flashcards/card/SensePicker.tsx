@@ -165,7 +165,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         letterSpacing: "-0.008em",
                         whiteSpace: "normal",
                         // Each label is a candidate dd, so it wears the dd's face: FONTS.cjk
-                        // (`var(--cjk-font)`, the account's Chinese typeface) — the same
+                        // (`var(--cjk-font)`, the app's Chinese typeface) — the same
                         // token the flp card face and eip header dd use.
                         fontFamily: FONTS.cjk,
                     }}
@@ -217,8 +217,8 @@ const SensePicker: React.FC<SensePickerProps> = ({
                 learner actually needs at rest: this word has N meanings, and you are on
                 the first. That makes it a set-and-forget control — it never asks for
                 attention again on a word whose sense is already settled — which is why
-                it can afford to be this small and sit directly under the gloss on every
-                surface (card, card detail, info panel). */}
+                it can afford to be this small. Its host places it (beside or below the
+                gloss on the card face, CardFace.EnglishBlock). */}
             <Box
                 component="button"
                 type="button"

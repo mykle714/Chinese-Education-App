@@ -116,9 +116,11 @@ const VIEW_BOX = "0 -64 390 196";
 /**
  * How far both bins are lowered below the box's bottom-pinned position, viewBox px. They
  * hang past the box's bottom edge (the scene is `overflow: visible`), closer to the
- * on-deck cards — moved down by user request 2026-10-29.
+ * on-deck cards — moved down by user request 2026-10-29. 9 rather than the 20 it was: the
+ * iso kit's 55° view (2026-10-31) draws the platform deeper, and its front corner reaches
+ * 11px further down, so this keeps that corner where the user placed it.
  */
-const BINS_LOWER_PX = 20;
+const BINS_LOWER_PX = 9;
 
 /**
  * PLACING a card: when a bin's count goes UP, its new top card (with the count printed on

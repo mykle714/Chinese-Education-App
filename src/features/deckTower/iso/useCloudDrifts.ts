@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { Projector } from "./geometry";
+import { VIEW_RAY_Z, type Projector } from "./geometry";
 import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraffic, type AltitudeWander, type AltitudeWanderConfig, type Pt2, type SkyRegion, type SkySide } from "./skyTraffic";
 
 /**
@@ -104,11 +104,11 @@ const waitMs = () => rand(WAIT_MIN_MS, WAIT_MAX_MS);
 
 /**
  * A shape scaled and turned to its path (along y swaps x ↔ y), sorted BACK-TO-FRONT by
- * view depth. The view ray of the 2:1 projection is (1, 1, 1) — sx and sy are unchanged
- * moving along it — so a puff is nearer the viewer the larger the x + y + z of its centre.
+ * view depth. The view ray is (1, 1, VIEW_RAY_Z) — sx and sy are unchanged
+ * moving along it — so a puff is nearer the viewer the larger the x + y + z · VIEW_RAY_Z of its centre.
  */
 function orientPuffs(shape: CloudPuff[], scale: number, alongX: boolean): CloudPuff[] {
-    const viewDepth = (p: CloudPuff) => p.x + p.w / 2 + p.y + p.d / 2 + p.z + p.h / 2;
+    const viewDepth = (p: CloudPuff) => p.x + p.w / 2 + p.y + p.d / 2 + (p.z + p.h / 2) * VIEW_RAY_Z;
     return shape
         .map((p) => {
             const s = { x: p.x * scale, y: p.y * scale, z: p.z * scale, w: p.w * scale, d: p.d * scale, h: p.h * scale };
@@ -152,7 +152,7 @@ function planDrift(id: number, opener: boolean, proj: Projector, sky: CloudSky, 
  * perpendicular sides change order as they move, which a static sort cannot follow.
  */
 export function sortCloudsBackToFront(clouds: CloudDrift[]): CloudDrift[] {
-    const depth = (c: CloudDrift) => (c.from.x + c.to.x) / 2 + (c.from.y + c.to.y) / 2 + c.z;
+    const depth = (c: CloudDrift) => (c.from.x + c.to.x) / 2 + (c.from.y + c.to.y) / 2 + c.z * VIEW_RAY_Z;
     return [...clouds].sort((a, b) => depth(a) - depth(b));
 }
 

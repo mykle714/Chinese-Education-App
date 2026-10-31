@@ -1,5 +1,6 @@
-import { blendWash, hexToOklch, hueTurn, lightWash, mixHex, oklchToHex, washTone, type IsoWash, type WashLight } from "./iso";
+import { hexToOklch, hueTurn, mixHex, oklchToHex, washTone, type IsoWash } from "./iso";
 import { phaseShare, type DayPhase, type TimeOfDay } from "../../timeOfDay/dayPhase";
+import { phaseWash } from "../../timeOfDay/wash";
 import type { TowerWorld } from "./towerWorlds";
 
 /**
@@ -21,8 +22,8 @@ import type { TowerWorld } from "./towerWorlds";
  *     world keeps a tint of its own hue at every hour. ⚠️ Derived colours, outside the
  *     colour framework (the same divergence as `spaceOver`): the framework has no dawn,
  *     sunset or night tiers.
- *   - WASH (night only; `NIGHT_WASH_ENABLED`): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
- *     plates, the page's white text and arrows) is lit by night's light (`PHASE_LIGHT`, the iso
+ *   - WASH (night only; `phaseWash`, src/timeOfDay/wash.ts): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
+ *     plates, the page's white text and arrows) is lit by night's light (the iso
  *     framework's ambient wash); dawn, day and sunset leave it as drawn. The sky itself is
  *     never washed — it IS the light. HTML over the tower (the flp session, the slab
  *     footer) is NOT washed: its SVG-filter wash was cut 2026-10-30 (CPU-rasterised, laggy).
@@ -64,28 +65,6 @@ const PHASE_SKY: Record<Exclude<DayPhase, "day">, SkyRecipe> = {
     night: { hue: 270, hueBy: 0.35, L: 0.34, C: 0.08 },
 };
 
-/**
- * Each phase's light over the scene (iso `WashLight`: a cast toward `toward`, then a dim).
- * Only NIGHT washes: a cool blue cast (7% toward `bluMk`) dimmed 4%, so cream card stock reads cool
- * at night, and the clouds with it. Dawn and sunset carry their colour in the SKY alone and
- * draw the scene as day does (their pink / orange washes were removed 2026-10-28). The
- * `toward` colour is a COLORS token; the dimmed result is derived.
- */
-const UNLIT: WashLight = { toward: "#FFFFFF", amount: 0, dim: 0 };
-/**
- * Night's light. Tint cut from 14% to 7% on 2026-10-28 (read too blue); dim cut from 0.22
- * on 2026-10-25 (read too dark). `NIGHT_WASH_ENABLED = false` turns night UNLIT (no scene
- * wash, no flp/footer filter) while keeping the sky, stars and shooting stars.
- */
-const NIGHT_WASH_ENABLED = true;
-const NIGHT_LIGHT: WashLight = { toward: "#59BFFF", amount: 0.07, dim: 0.04 }; // COLORS.bluMk
-const PHASE_LIGHT: Record<DayPhase, WashLight> = {
-    dawn: UNLIT,
-    day: UNLIT,
-    sunset: UNLIT,
-    night: NIGHT_WASH_ENABLED ? NIGHT_LIGHT : UNLIT,
-};
-
 /** The star field's opacity from the ground, per phase (SpaceBackdrop `groundStars`). */
 const PHASE_STARS: Record<DayPhase, number> = { dawn: 0.08, day: 0, sunset: 0, night: 0.55 };
 
@@ -122,7 +101,7 @@ export function towerLight(time: TimeOfDay): TowerLight {
     const skies = new WeakMap<SkyWorld, string>();
     return {
         time,
-        wash: blendWash(lightWash(PHASE_LIGHT[from]), lightWash(PHASE_LIGHT[to]), t),
+        wash: phaseWash(time),
         groundStars: lerp(PHASE_STARS[from], PHASE_STARS[to], t),
         // Night's share of the blend: 1 holding night, 1 − t leaving it, t entering it.
         shootingStars: phaseShare(time, "night") >= 0.5,

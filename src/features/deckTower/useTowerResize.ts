@@ -23,7 +23,9 @@ import { IMPACT_MS, type TowerDrop, type TowerResizePlan } from "./towerResizes"
  * HOLD. The focus lever's new count arrives from the server some time after the tap, so
  * it first `hold`s the tower at the height it stands at — tagged with the counts' fetch
  * `version` it is waiting to see change — and the page `play`s (or `release`s) once the
- * re-read lands. Holding counts as busy.
+ * re-read lands. Holding counts as busy. A hold taken with `quietShrink` is one whose
+ * shrink is the learner's own progress (marks, in a session or a game), not an action to
+ * show: the page `release`s it instead of playing the collapse.
  *
  * The clock is a rAF loop that only re-renders when what it shows changes (the counted-down
  * figure, the drop phase): the motion itself is CSS (IsoCardRuns, the drop's fall, the
@@ -55,6 +57,8 @@ export interface TowerResizeView {
     toCards: number | null;
     /** A hold waiting for the counts' fetch `version` to move past this. */
     holdVersion: number | null;
+    /** The hold's shrink, if it turns out to be one, just shows (see HOLD above). */
+    holdQuietShrink: boolean;
     busy: boolean;
     /** A resize has been asked for at least once (the page stops animating build-ups for count changes). */
     everResized: boolean;
@@ -62,7 +66,7 @@ export interface TowerResizeView {
 
 export interface TowerResizeControls {
     /** Freeze the tower at `cards` until the counts' fetch `version` changes (then `play` or `release`). */
-    hold: (cards: number, version: number) => void;
+    hold: (cards: number, version: number, opts?: { quietShrink?: boolean }) => void;
     /** Drop a hold without animating: the new count just shows. */
     release: () => void;
     /** Play a planned resize (a no-op under reduced motion, or when the counts do not change). */
@@ -78,7 +82,7 @@ const DROP_LANDED = 2;
 
 export function useTowerResize(): TowerResizeView & TowerResizeControls {
     const [playing, setPlaying] = useState<Playing | null>(null);
-    const [held, setHeld] = useState<{ cards: number; version: number } | null>(null);
+    const [held, setHeld] = useState<{ cards: number; version: number; quietShrink: boolean } | null>(null);
     const [everResized, setEverResized] = useState(false);
     // Collapse: the figure showing. Drop: DROP_CAMERA → DROP_FALLING (the drop is mounted) →
     // DROP_LANDED (it has hit the tower: the impact plays).
@@ -88,10 +92,10 @@ export function useTowerResize(): TowerResizeView & TowerResizeControls {
     const busyRef = useRef(false);
     busyRef.current = playing !== null;
 
-    const hold = useCallback((cards: number, version: number) => {
+    const hold = useCallback((cards: number, version: number, opts?: { quietShrink?: boolean }) => {
         if (busyRef.current) return;
         setEverResized(true);
-        setHeld({ cards, version });
+        setHeld({ cards, version, quietShrink: opts?.quietShrink ?? false });
     }, []);
 
     const release = useCallback(() => setHeld(null), []);
@@ -148,6 +152,7 @@ export function useTowerResize(): TowerResizeView & TowerResizeControls {
         heldCards: plan ? plan.fromCards : held ? held.cards : null,
         toCards: plan ? plan.toCards : null,
         holdVersion: held && !plan ? held.version : null,
+        holdQuietShrink: held?.quietShrink ?? false,
         busy: playing !== null || held !== null,
         everResized,
         hold,

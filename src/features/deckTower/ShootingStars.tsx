@@ -4,11 +4,12 @@ import { keyframes } from "@mui/material/styles";
 import { ISO } from "./iso";
 
 /**
- * ShootingStars — occasional meteors streaking across the Deck Tower's night sky
- * (docs/DECK_TOWER.md § "Time of day" → "Shooting stars").
+ * ShootingStars — occasional meteors streaking across the night sky of the Deck Tower and
+ * of the Sort Cards page (docs/DECK_TOWER.md § "Time of day" → "Shooting stars").
  *
- * Layer: page-private component (feature module `src/features/deckTower`). Drawn in
- * SCREEN space inside SpaceBackdrop, over its star field and behind the scene's svg, so
+ * Layer: feature component (feature module `src/features/deckTower`), also mounted by
+ * features/discover/SortCardsPage.tsx. Drawn in SCREEN space behind its page's content:
+ * inside SpaceBackdrop on the tower, over the star field and behind the scene's svg, so
  * the tower and platform pass in front of a meteor rather than under it.
  *
  * How it works:
@@ -27,7 +28,8 @@ import { ISO } from "./iso";
  * State lives HERE, not in SpaceBackdrop, so a burst re-renders only this small layer —
  * never the backdrop's scroll-driven DOM writes or the scene.
  *
- * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx.
+ * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx,
+ * features/discover/SortCardsPage.tsx. Fills its nearest positioned ancestor.
  */
 
 /** Mean gap between bursts, and its ± fraction of jitter (uniform): 15 s ± 40%. */
@@ -130,13 +132,13 @@ const ShootingStars: React.FC<{ active: boolean }> = ({ active }) => {
     const remove = (id: number) => setMeteors((m) => m.filter((x) => x.id !== id));
 
     return (
-        <Box className="deck-tower-page__shooting-stars" sx={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        <Box className="shooting-stars" sx={{ position: "absolute", inset: 0, overflow: "hidden" }}>
             {meteors.map((m) => (
                 // A zero-size anchor at the head, rotated to the heading; the streak is drawn
                 // pointing +x with its tail trailing back along -x.
                 <Box
                     key={m.id}
-                    className="deck-tower-page__shooting-star"
+                    className="shooting-stars__meteor"
                     onAnimationEnd={() => remove(m.id)}
                     style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, ["--angle" as string]: `${m.angle}deg`, ["--travel" as string]: `${m.travel}px`, animationDuration: `${m.duration}ms` }}
                     sx={{ position: "absolute", width: 0, height: 0, opacity: 0, animation: `${streak} linear forwards` }}

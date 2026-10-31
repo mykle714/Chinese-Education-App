@@ -102,7 +102,7 @@ const waitMs = () => rand(WAIT_MIN_MS, WAIT_MAX_MS);
 
 /**
  * A straight run from s0 to s1 at height h0 — just its two ends. It projects to a straight
- * line at the grid's 2:1 slope, so it reads as an iso edge rather than a hand-drawn squiggle.
+ * line at the floor grid's slope, so it reads as an iso edge rather than a hand-drawn squiggle.
  */
 function streak(s0: number, s1: number, h0: number): WindPt[] {
     return [

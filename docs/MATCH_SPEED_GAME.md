@@ -234,10 +234,9 @@ the natural fast gesture for this game and half-allowing it is harder to explain
 #### Selection outranks every other visual state
 
 `visualState` (`MatchSpeedBoard.tsx`) resolves `selected` **before** `wrong`. The
-`wrong` style overrides background, border *and* the selection lift, so with the
-opposite precedence a card re-tapped during its own 400ms flash was genuinely
-selected while drawing as an ordinary card — no border, no lift, no
-acknowledgement. Input was never blocked there; the *feedback* was, which is
+A wrong card draws raised and red, so with the opposite precedence a card re-tapped
+during its own 400ms flash was genuinely selected while drawing as unselected, with
+no acknowledgement. Input was never blocked there; the *feedback* was, which is
 indistinguishable from a lockout to the player. A player who has moved on to
 their next guess is owed feedback about that guess, not a replay of the mistake.
 
@@ -329,6 +328,13 @@ would restart every card's fade-in). Cell height is fixed per row rather than
 shared via `1fr`, so an **empty slot holds its row open** and surviving cards
 never slide when a pair pops.
 
+**An flp break uses different numbers in the same fit** (`MatchSpeedBoard` → `evenGaps`,
+`EVEN_GAP_BOARD` in `constants.ts`): a locked **2:1** card, 8px between rows and between
+columns, and at least 15px of margin round the grid. The tighter axis sits at that margin
+and the other takes the slack, as above.
+
+The outlined box is the whole tap target.
+
 ---
 
 ## The 3-second refill tick
@@ -380,7 +386,7 @@ where they do, and it's the reason the refill is not per-hole.
 
 ## Board cleared celebration
 
-When the **last pair leaves the board**, a green **"Board Cleared!"** banner pops
+When the **last pair leaves the board**, a painted white **"Board Cleared!"** pops
 in over the centre of the grid, drifts up and fades
 (`MatchSpeedClearBanner.tsx`, `CLEAR_BANNER_MS` = 1400ms).
 
@@ -919,11 +925,14 @@ plus a clock consumed roughly half the bar:
 | **pinyin toggle** | the cog, then **back to the header** (2026-08-28) | With the other two rows gone the sheet held one row — and NOTHING at all for a Latin-script language, since every row was script-gated. A cog opening an empty dialog is worse than a chip. |
 | **tone-color toggle** | the cog, then **`/settings` → Display** (2026-08-28) | It is not Match Speed's setting, or any page's: it applies to every reading the app renders. `/settings` is now the ONLY place it is edited. |
 | **autoplay toggle** | the cog, then **back to the header** (2026-08-28) | It stopped being a game pref: it is now the app-wide narration setting ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)), and it is the one control here a player changes mid-session. Every surface that offers it offers it in the header. |
-| **Countdown timer** | `MatchSpeedTimerBar`, pinned to the top of the **play area** | The clock is game state, not page chrome. A countdown the player has to look away from the board to read is a countdown they stop reading. |
+| **Countdown timer** | `MatchSpeedTimerBar`, at the top of the **play area** | The clock is game state, not page chrome. A countdown the player has to look away from the board to read is a countdown they stop reading. |
 
 ### The HUD strip and the hint line
 
-Inside the play panel, under the clock (shelf redesign entry 14):
+Inside the play panel, under the clock (shelf redesign entry 14). **Page host only:**
+an flp game break (`host="flpBreak"`, `MatchSpeedStage` → `isBreak`) renders neither, so
+its panel holds just the clock, the board and Leave; the session already chose the mode
+and deck, and the score is on the results card.
 
 | Element | Content | Notes |
 |---|---|---|
@@ -1000,39 +1009,47 @@ Card size stays **fixed at 2.4:1 and equal across all ten cards** throughout —
 [Card sizing](#card-sizing-locked-to-241) for why this is a correctness
 constraint.
 
-### The two columns are told apart by TYPE, not colour
+### Drawn on the ground
 
-*(Shelf redesign entry 14, class `.msc` — `docs/SHELF_REDESIGN.md`.)*
+The game has no panel: it is flat white paint straight on the ground, the same
+look as the Deck Tower's Tap to Start (`src/features/deckTower/TapToStartHint.tsx`;
+`src/theme/groundPaint.ts` → `GROUND_PAINT`, `GROUND_PRINT`; [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md)
+§ Ground paint). `GameFrame tone="ground"` draws no box, and the clock, the 3·2·1 and "Board
+Cleared!" are paint. The only things not painted are the buttons: every card, and Leave, is a
+white button with the app's outline. The ground itself:
 
-The columns used to be colour-coded: pale blue for the foreign word, cream for its
-meaning. That spent the board's strongest signal on a distinction the player can already
-see — one column is Chinese, the other is English. The design separates them
-typographically instead:
+| Host | Ground |
+|---|---|
+| flp break, tower session | the tower's sky at this hour. The card fades where it is and the platform and deck fade with it ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 2) |
+| flp break, routed flp | `RAMP[hue].mark` on the break area, since white paint vanishes on the flp's pale ground |
+| the game's route | `RAMP[GAME_HUE].mark` (`bluMk`, the main world's day sky), not the default Mid tier, which white paint does not read on |
 
-| Column | Face | Ground |
-|---|---|---|
-| foreign (`.msc.zh`) | cjk, 19px, 700 | `COLORS.background` (paper) |
-| english (`.msc`) | sans, length-scaled, 500, `iconColor` | `COLORS.white` |
+The columns are told apart by content alone (one is Chinese, one is English). **Nothing in the
+game is bold**, unlike the hint itself: `GROUND_PRINT` is regular weight, and `NOTHING_BOLD`
+(`MatchSpeedStage.tsx`) forces it over the shared parts too (plates, personal best, overlays)
+and over the bold a tower session's stage would pass down.
 
-Which frees every fill to mean **state and only state**. That is what makes the feedback
-colours unambiguous — a filled card is always saying something about what just happened.
+**Tone colours follow the learner's setting** (`showPinyinColor`).
+
+⚠️ White on `bluMk` is about 2:1 contrast, so the white paint is only for large or secondary
+text: the clock and the numerals. Words sit on the white buttons, in ink.
 
 ### Card visual states
 
+A card rests on white with the app's 1px `COLORS.border` outline (inset, so it cannot change the
+box). A state replaces the white, so any colour on the board means something just happened.
+Type is always `COLORS.onSurface`.
+
 | State | Treatment |
 |---|---|
-| idle | white (both columns since v2, `.msc`), hairline border |
-| selected | `COLORS.blu` fill with a 2px **ink** edge (`.msc.pick`, v2): the 1px border in ink plus a 1px inset ring, so the border box never changes (`SELECTED_CARD_BORDER`, `src/games/match-speed/constants.ts`; `MatchSpeedCard.tsx`) |
-| wrong | `COLORS.red` fill + `dangerInk` text, ~400ms, **board stays live** |
-| partner-hint (cleanup only) | `COLORS.grn` — the same green a correct match pops |
+| idle | `CARD_PANEL` (white) |
+| selected | `SELECTED_CARD_PANEL[side]`: `yelM` in the foreign column, `purM` in the english one |
+| wrong | `COLORS.redM` swatch + a sideways shake, ~400ms, **board stays live** |
+| partner-hint (cleanup only) | `COLORS.grnM` — the same green a correct match pops |
 
-Every fill is a **pastel carrying ink text**, per the redesign's fill rule
-(`docs/SHELF_REDESIGN.md` § A1) — never saturated ink behind white letters. The wrong
-flash in particular used to be white on `#F44336`, which read as an error dialog dropped
-onto the board rather than as part of the game.
-
-Selection **fills** rather than outlines, and the blue glow shadow that used to
-accompany the outline is gone with it: a filled card does not need help being noticed.
+Selection fires on `pointerdown`, so the swatch lands with the finger. The wrong shake
+animates `translate`, because the exit pop owns `transform` and a card can be matched
+mid-shake.
 
 The first four are the `CardVisualState` union the board resolves and passes in.
 The remaining two are **not** union members, because they aren't mutually exclusive
@@ -1040,20 +1057,17 @@ with a selection — they ride on the card itself:
 
 | State | Driven by | Treatment |
 |---|---|---|
-| correct | `BoardCard.exiting` | green pop (`POP_DURATION_MS`), then the board removes it |
+| correct | `BoardCard.exiting` | green panel, rises and fades (`POP_DURATION_MS`), then the board removes it |
 | entering | `BoardCard.fadeDelayMs` | CSS fade-in on a **wrapper** element, keyed by card id, `fadeDelayMs` stagger up to 500ms |
 
-Border width is deliberately constant across every state (1px): a width swap on selection
-would re-wrap a 3-line gloss mid-tap. This is why a state that FILLS the card blends its
-border into the fill rather than removing it.
+A card has no border in any state, so no state can change the box and re-wrap a 3-line gloss
+mid-tap.
 
 **The entry fade-in must live on a wrapper element, never on the card itself.** A
 CSS animation with `both` fill keeps overriding the properties it animates for as
 long as the element lives. A fade-in declared on the card animates `opacity` and
-`transform`, and therefore permanently beat the card's own `scale(1.04)` selection
-lift and its `scale(1.14)` + `opacity: 0` exit pop — both were silently dead until
-the split. Wrapper animates *arrival*; card animates *state*; neither touches the
-other's properties.
+`transform`, and therefore permanently beat the card's own exit pop. Wrapper animates
+*arrival*; card animates *state*; neither touches the other's properties.
 
 All class names BEM-style under `match-speed__` (`match-speed__cell`,
 `match-speed__card--selected`, `match-speed__column--foreign`, …).
@@ -1161,7 +1175,7 @@ All steps complete — kept as the build order a similar game should follow.
 
 | Question | Decision |
 |---|---|
-| **Timer start** (was #1, #2) | A **3·2·1·Go countdown**, `COUNTDOWN_STEPS` at `COUNTDOWN_STEP_MS` each. The board is primed and fully readable behind a dimming scrim during it, so the opening board gets a beat to be read and the clock starts from an identical state every run — nobody is billed for reading time. The board is `frozen` (renders, ignores taps, no refill tick) until the last step clears. |
+| **Timer start** (was #1, #2) | A **3·2·1·Go countdown**, `COUNTDOWN_STEPS` at `COUNTDOWN_STEP_MS` each. The board is primed and readable during it, dimmed to 40% (`MatchSpeedBoard` `dimmed`; there is no scrim on bare ground, and the numeral is plain paint), so the opening board gets a beat to be read and the clock starts from an identical state every run — nobody is billed for reading time. The board is `frozen` (renders, ignores taps, no refill tick) until the last step clears. |
 | **Buffer under-supply mid-run** (was #3) | **Just gaps**, no placeholder. `takePairs` short-returns, the tick fills what it can, and the rest wait for the next tick. A placeholder would advertise a network problem the player can do nothing about, and the hole is already the game's normal resting state right after a match. |
 | **Tap on an empty slot** (was #4) | **No-op**; the selection is preserved. An empty slot has no `MatchSpeedCard` to receive the tap, so this is the natural behavior rather than a coded rule. Clearing the selection would punish a near-miss on a card that had just popped out. |
 | **Bubble Match's pinyin toggles** (was #5) | **Fixed in the same pass.** `BubbleMatchHeader` now takes `language` and hides the toggle for Latin-script languages, same as `MatchSpeedHeader`. Both import `isLatinScriptLang` from `ForeignText` rather than re-testing `=== "es"`. |
@@ -1185,7 +1199,7 @@ it reads from.
 | Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx` (reads the hub's `state.mode`), `MatchSpeedStage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
-| Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |
+| Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`); `src/theme/groundPaint.ts`; `src/games/shared/GameFrame.tsx` (`tone="ground"`); `src/games/match-speed/MatchSpeedCard.tsx`, `MatchSpeedPage.tsx` (`ground`) |
 | Lent-card badge | `src/components/LentCardBadge.tsx` (`LentCardBadge`, `LENT_ICON_ID`) |
 | Lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
 | Medals | `src/games/match-speed/constants.ts` (`MEDAL_THRESHOLDS`, `medalForScore`); shape modeled on `src/games/word-search/constants.ts` (`medalForTime`) |

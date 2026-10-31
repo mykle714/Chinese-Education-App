@@ -60,11 +60,6 @@ import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
  *   speed, flies off, and lands in a couple of shrinking bounces (BOUNCE_RESTITUTION) with
  *   a squash on each impact. While airborne this way it doesn't walk, waddle or set off.
  *
- * OPENING: a step may sink BELOW the floor (the Deck Tower's plate receding into the
- * platform for a study dive, IsoFloorRecess), and a pawn on it rides it down. While its feet
- * are below the floor the whole pawn is clipped to `openingClip`, the opening swept up the
- * screen, so the floor in front of the hole hides its lower part.
- *
  * FLOOR DROP: `floorDrop` > 0 means the floor itself is falling away (the Deck Tower's trap
  * door, docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). The pawn has no surface
  * then, and falls on its own: a launch still in flight carries on to its apex first, and
@@ -440,8 +435,6 @@ export interface PawnMotionRefs {
     shadow: React.RefObject<SVGGElement | null>;
     /** The shaded-decal copy: fades with the shadow. */
     decalShade: React.RefObject<SVGGElement | null>;
-    /** Wraps the whole pawn: clipped to `openingClip` while its feet are below the floor (see the header's OPENING). */
-    opening: React.RefObject<SVGGElement | null>;
     /** The shadow outline the decal copy is clipped to: shrinks with the shadow. */
     decalClip: React.RefObject<SVGPathElement | null>;
     /** Undoes `travel` on the decal copy, so the decals stay put on the floor. */
@@ -483,12 +476,6 @@ export function usePawnMotion(opts: {
     floorDrop?: number;
     /** Raised floor the pawn steps up onto (see the header's STEPS). Read live: may be a new array each render. */
     steps?: PawnStep[];
-    /**
-     * A `url(#…)` clip — a floor opening swept up the screen (hatchGeometry.ts →
-     * `openingSweepPath`) — applied to the whole pawn while its feet are below the floor
-     * (see the header's OPENING). Read live.
-     */
-    openingClip?: string;
     /** World z of the surface the pawn stands on (its feet are drawn in absolute world space). */
     surfaceZ: number;
 }): { refs: PawnMotionRefs; emote: PawnEmote | null } {
@@ -505,7 +492,6 @@ export function usePawnMotion(opts: {
         shadow: useRef<SVGGElement>(null),
         decalShade: useRef<SVGGElement>(null),
         decalClip: useRef<SVGPathElement>(null),
-        opening: useRef<SVGGElement>(null),
         decalAnchor: useRef<SVGGElement>(null),
     };
     const [emote, setEmote] = useState<PawnEmote | null>(null);
@@ -570,15 +556,11 @@ export function usePawnMotion(opts: {
     // Latest floor drop (animates every frame of a swap), read by the loop.
     const floorDropRef = useRef(opts.floorDrop ?? 0);
     floorDropRef.current = opts.floorDrop ?? 0;
-    // Latest opening clip (only set while a step can sink below the floor), read by `applyFrame`.
-    const openingClipRef = useRef(opts.openingClip);
-    openingClipRef.current = opts.openingClip;
     // What `applyFrame` last wrote to the DOM, so the loop can skip a frame that would
     // write the same thing (see IDLE FRAMES in `applyFrame`). Null until the first draw.
     const drawn = useRef<{
         proj: Projector;
         z0: number;
-        clip: string | undefined;
         x: number;
         y: number;
         lift: number;
@@ -612,14 +594,12 @@ export function usePawnMotion(opts: {
         // compositor layers of their own. So the loop skips the write when nothing it
         // draws from has changed. A render always draws (`force`): it may have mounted a
         // node (the "!" bubble's anchor) that has never been placed.
-        const clip = openingClipRef.current;
         const d = drawn.current;
         if (
             !force &&
             d !== null &&
             d.proj === p &&
             d.z0 === z0 &&
-            d.clip === clip &&
             d.x === s.pos.x &&
             d.y === s.pos.y &&
             d.lift === s.lift &&
@@ -637,7 +617,6 @@ export function usePawnMotion(opts: {
         drawn.current = {
             proj: p,
             z0,
-            clip,
             x: s.pos.x,
             y: s.pos.y,
             lift: s.lift,
@@ -664,13 +643,6 @@ export function usePawnMotion(opts: {
         // VIEW (header): the figure in true 3D, its feet `hop` above the surface.
         const feet = { x: s.pos.x, y: s.pos.y, z: z0 + s.lift + hop };
         const fig = pawnFigure(p, feet, { lean, sx, sy });
-        // OPENING (header): feet below the floor means the pawn is down a hole — the floor in
-        // front of the hole hides its lower part. Clipped only then: standing or in the air
-        // over the floor it may overhang the opening's column, and must not be cut.
-        if (refs.opening.current) {
-            if (clip && s.lift + hop < -1e-3) refs.opening.current.setAttribute("clip-path", clip);
-            else refs.opening.current.removeAttribute("clip-path");
-        }
         refs.body.current?.setAttribute("d", fig.bodyPath);
         if (refs.head.current) {
             refs.head.current.setAttribute("cx", String(fig.head.cx));

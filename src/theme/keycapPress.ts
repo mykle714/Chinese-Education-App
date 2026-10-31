@@ -13,8 +13,9 @@
 // Consumers: towerPlate.ts → `towerPlatePressSx` (the flp's tower plates), the eip's
 // keycaps — EipEntryHeader (the headword tile) and EipAddKey — scp's toolbar keycaps
 // (features/discover/SortCardsPage.tsx → `keycapSx`), the Dictionary page's keycaps
-// (features/dictionary/DictionaryPageParts.tsx → `Keycap`) and the beginner keyboard's
-// keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`). A new raised key
+// (features/dictionary/DictionaryPageParts.tsx → `Keycap`), the beginner keyboard's
+// keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`) and Match Speed's
+// cards (games/match-speed/MatchSpeedCard.tsx → `cardKeySx`). A new raised key
 // should spread `keycapPressSx`, not re-type the press.
 //
 // NOT covered: the Deck Tower's in-scene plates (usePlatePress, rAF-animated iso art, not

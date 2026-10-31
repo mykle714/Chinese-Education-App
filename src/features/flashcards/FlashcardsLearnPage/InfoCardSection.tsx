@@ -9,6 +9,7 @@ import type { CompareEipTab } from "./useEipTabs";
 import type { LongDefinitionPart } from "../../../types";
 import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import EipUpperPanel from "./EipUpperPanel";
+import { SpeakerButton } from "../../../components/SpeakerButton";
 import EipEntryHeader from "./EipEntryHeader";
 import EipAddKey from "./EipAddKey";
 import { EipPaletteProvider } from "./EipPaletteContext";
@@ -37,7 +38,7 @@ interface InfoCardSectionProps {
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
     // The Learning state for the Dictionary eip's Add key (EipAddKey) — drawn in the
-    // word-trail row beside the ✕, NOT under the header speaker (the cdp's inline panel
+    // word-trail row's right end, NOT under the header speaker (the cdp's inline panel
     // keeps that placement). Today: the Dictionary page's eip, via EipSheet.
     learning?: LearningToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
@@ -274,19 +275,27 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                     // carries the headword.
                     title={compareTab ? "Compare" : "More Info"}
                     trail={tabStrip}
+                    // The speaker leads the trail row, beside the caret. The header below
+                    // therefore gets no onSpeak (only the cdps' inline panels draw it there).
+                    speaker={!compareTab && currentEntry && onSpeak ? (
+                        <SpeakerButton
+                            onClick={() => onSpeak(currentEntry)}
+                            isLoading={speakingKey === currentEntry.entryKey}
+                        />
+                    ) : undefined}
                     addKey={learning && !compareTab ? <EipAddKey state={learning} /> : undefined}
                     header={!compareTab && currentEntry ? (
                         <Box ref={headerSlideRef} className="eip-entry-slide-header">
                             <EipEntryHeader
                                 entry={currentEntry}
                                 showPinyinColor={showPinyinColor}
-                                onSpeak={onSpeak}
-                                speakingKey={speakingKey}
                                 selectedSenseIndex={selectedSenseIndex}
                                 showAllDefinitions={showAllDefinitions}
+                                glossToScreenEdge
                                 // In the upper panel the band's own rhythm spaces it: no rule
-                                // under it (the shelf's edge is the divide), no side padding.
-                                sx={{ padding: "0 0 17px", borderBottom: "none" }}
+                                // under it (the shelf's edge is the divide), no side padding,
+                                // and no gap, so the gloss box starts at the keycap's edge.
+                                sx={{ padding: "0 0 17px", borderBottom: "none", gap: 0 }}
                             />
                         </Box>
                     ) : undefined}
@@ -350,7 +359,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                             onBreakdownItemClick={onBreakdownItemClick}
                             onUsedInItemClick={onUsedInItemClick}
                             onExampleSegmentClick={onExampleSegmentClick}
-                            onSpeak={onSpeak}
                             onSpeakSentence={onSpeakSentence}
                             speakingKey={speakingKey}
                             selectedSenseIndex={selectedSenseIndex}

@@ -35,15 +35,17 @@ import { COLORS } from "../theme/colors";
  * The `<meta>` tag itself is declared in index.html with the paper default; this hook
  * only ever rewrites its `content`, and creates the tag only if it has gone missing.
  *
- * A claim writes FOUR places, all describing the same ground: the meta tag (browser
- * chrome), `documentElement`'s background (Safari's overscroll area), the
- * `--surface-ground` variable (MobileDemoFrame's frame ground), and `documentElement`'s
- * `color-scheme` (the iOS home-screen app's status-bar glyphs — see `schemeFor`).
+ * A claim writes FIVE places, all describing the same ground: the meta tag (browser
+ * chrome), `documentElement`'s background (Safari's overscroll area), `body`'s background
+ * (the tint of the iOS home-screen app's status-bar fade), the `--surface-ground` variable
+ * (MobileDemoFrame's frame ground), and `documentElement`'s `color-scheme` (see `schemeFor`).
  *
  * Layer: presentational (a document-level side effect, like `usePageTitle`).
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
  * gets this for free through `GameLeafPage`, which is what makes the header and the
  * status bar impossible to leave out of sync.
+ * `MasteryCenterPage` and `DivisionBanner` claim the ground they paint under the clock;
+ * `SheetPanel` claims its own surface while fully merged (`claimThemeColor`).
  * `DeckTowerPage` (src/features/deckTower) claims its world's sky, so iOS Safari's
  * top scroll-edge effect is tinted sky rather than paper, and a night sky flips the
  * home-screen app's clock to white (docs/DECK_TOWER.md § "Status-bar band").
@@ -80,14 +82,10 @@ function relativeLuminance(color: string): number | null {
  * than black ones (WCAG contrast; the two are equal at luminance ≈ 0.179).
  *
  * WHY: in the iOS home-screen app (`black-translucent`, index.html) the app cannot pick
- * the clock/battery colour — iOS follows the colour scheme — and iOS 26 lays a
- * legibility fade behind those glyphs in the band: a WHITE fade behind dark glyphs. Over
- * a dark ground (the Deck Tower's night sky) that read as a white smear across the top
- * of the screen, and `theme-color` cannot reach it (verified on device 2026-10-28: the
- * fade turns dark when the PHONE is switched to dark mode). Claiming `dark` for a dark
- * ground asks for light glyphs and so a dark fade.
- * ⚠️ That the PAGE's `color-scheme` (rather than only the system setting) drives the
- * glyphs is the hypothesis this ships to test — unverified on device as of 2026-10-28.
+ * the clock/battery colour directly. This was shipped to turn the white status-bar fade
+ * dark over a night sky, and it did NOT: forcing `color-scheme` on device (dark or normal)
+ * left the fade white (2026-10-30). The fade's tint is `body`'s background — see
+ * `applyTopClaim`. Whether this still changes the GLYPHS is untested.
  *
  * Side effect, by design limited to while a dark ground is claimed: native form
  * controls and scrollbars render dark. Text is unaffected — `:root` sets `color`
@@ -132,12 +130,33 @@ function applyTopClaim(): void {
     // itself never scrolls (see index.css), so this only ever shows during a bounce.
     document.documentElement.style.backgroundColor = color;
 
-    // The status-bar glyphs (and iOS 26's legibility fade behind them) follow the scheme;
-    // see `schemeFor`. Cleared, not set to "light", when unclaimed, so index.css's
+    // `body` must follow too: in the iOS home-screen app the fade behind the clock (which
+    // stays; this only recolours it) takes its tint from body's background, even though the shell covers body completely.
+    // MUI's CssBaseline paints body pale, so every flooded ground wore a pale fade until
+    // this write (device probes, 2026-10-30, docs/IOS_STATUS_BAR_BUG.md round 8).
+    document.body.style.backgroundColor = color;
+
+    // Status-bar glyph scheme; see `schemeFor`. Cleared, not set to "light", when unclaimed, so index.css's
     // `:root { color-scheme: light }` stays the one source of the default.
     const scheme = claims.length > 0 ? schemeFor(color) : null;
     if (scheme === "dark") document.documentElement.style.colorScheme = "dark";
     else document.documentElement.style.removeProperty("color-scheme");
+}
+
+/**
+ * Claim `color` outside React's lifecycle; returns the release. For a surface whose
+ * ownership of the top of the screen changes mid-gesture with no re-render: SheetPanel's
+ * merge. Everything else should use `useThemeColor`.
+ */
+export function claimThemeColor(color: string): () => void {
+    const claim: ThemeColorClaim = { color };
+    claims.push(claim);
+    applyTopClaim();
+    return () => {
+        const i = claims.indexOf(claim);
+        if (i !== -1) claims.splice(i, 1);
+        applyTopClaim();
+    };
 }
 
 /**
@@ -150,15 +169,6 @@ function applyTopClaim(): void {
 export function useThemeColor(color: string | null): void {
     useEffect(() => {
         if (color === null) return;
-
-        const claim: ThemeColorClaim = { color };
-        claims.push(claim);
-        applyTopClaim();
-
-        return () => {
-            const i = claims.indexOf(claim);
-            if (i !== -1) claims.splice(i, 1);
-            applyTopClaim();
-        };
+        return claimThemeColor(color);
     }, [color]);
 }

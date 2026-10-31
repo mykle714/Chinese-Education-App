@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
+import { CpcdPopupTonesCtx, type CpcdPopupTones } from "../../../components/CpcdPopup";
 import type { EipPalette } from "./eipPalette";
 import { EipPaletteCtx } from "./useEipPalette";
 
@@ -46,6 +47,18 @@ export const EipPaletteProvider: React.FC<{ palette: EipPalette; children: React
             },
         });
     }, [outer, palette]);
-    const content = <EipPaletteCtx.Provider value={palette}>{children}</EipPaletteCtx.Provider>;
+    // CpcdPopup paints from these rather than the theme: its fill is not a flashcard token.
+    const popupTones = useMemo<CpcdPopupTones | null>(() => palette.dark ? {
+        surface: palette.card,
+        pressed: palette.shelf,
+        outline: palette.line,
+        ink: palette.ink,
+        muted: palette.muted,
+    } : null, [palette]);
+    const content = (
+        <EipPaletteCtx.Provider value={palette}>
+            <CpcdPopupTonesCtx.Provider value={popupTones}>{children}</CpcdPopupTonesCtx.Provider>
+        </EipPaletteCtx.Provider>
+    );
     return theme ? <ThemeProvider theme={theme}>{content}</ThemeProvider> : content;
 };

@@ -153,6 +153,11 @@ const createAppTheme = (mode: ThemeMode): Theme => {
             //     scrollbar-compensation padding would otherwise be written onto the frame.
             // A dialog that renders its own backdrop (`hideBackdrop`) or restyles it keeps
             // that override; `BackdropComponent` replacements bypass the `backdrop` slot.
+            // Before any `useThemeColor` claim runs, body must already be the paper ground:
+            // the iOS status-bar fade takes its tint from it (src/hooks/useThemeColor.ts).
+            MuiCssBaseline: {
+                styleOverrides: { body: { backgroundColor: COLORS.background } },
+            },
             MuiDialog: {
                 defaultProps: {
                     container: dialogContainer,

@@ -7,6 +7,7 @@ import PageHeader from "../PageHeader";
 import SheetCloseX from "./SheetCloseX";
 import MinutePointsFireBadge from "../../minutePoints/MinutePointsFireBadge";
 import { SAFE_TOP } from "../../theme/safeArea";
+import { claimThemeColor } from "../../hooks/useThemeColor";
 import { frameOverlayHost, nearestOverlayHost } from "../overlayHost";
 import { useKeyboardInset } from "../../features/beginnerKeyboard/useKeyboardInset";
 
@@ -340,6 +341,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const headerRef = useRef<HTMLDivElement | null>(null);
     // Last merge ratio written, so a frame that does not change it writes no styles.
     const lastMergeRef = useRef(-1);
+    // Release for the theme-colour claim held while fully merged (writeMergeChrome).
+    const mergeClaimRef = useRef<(() => void) | null>(null);
     // The "unmerged" top padding, read through a ref so writeMergeChrome stays stable.
     const restTopPaddingRef = useRef(SHEET_TOP_PADDING_PX);
     restTopPaddingRef.current = edgePadding ? SHEET_TOP_PADDING_PX : 0;
@@ -457,6 +460,15 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // the merge zone (t stays 0) down to a single style write per frame.
         if (t === lastMergeRef.current) return;
         lastMergeRef.current = t;
+        // A fully merged sheet IS the page, so the status-bar fade takes the sheet's ground
+        // rather than the host page's. Read from the element so a `surface` override and
+        // the eip's time-of-day palette are both covered.
+        if (t >= 1 && !mergeClaimRef.current) {
+            mergeClaimRef.current = claimThemeColor(getComputedStyle(el).backgroundColor);
+        } else if (t < 1 && mergeClaimRef.current) {
+            mergeClaimRef.current();
+            mergeClaimRef.current = null;
+        }
         const transition = animate
             ? `border-radius ${SNAP_DURATION_MS}ms ease-out, padding-top ${SNAP_DURATION_MS}ms ease-out`
             : "none";
@@ -766,6 +778,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     // Cancel in-flight work if the panel is unmounted from the outside (e.g.
     // scrim tap, parent state change) while a fling or dismiss is running.
+    // Unmounting while merged must not strand the claim.
+    useEffect(() => () => {
+        mergeClaimRef.current?.();
+        mergeClaimRef.current = null;
+    }, []);
+
     useEffect(() => () => {
         stopMomentum();
         if (dismissTimerRef.current !== null) window.clearTimeout(dismissTimerRef.current);

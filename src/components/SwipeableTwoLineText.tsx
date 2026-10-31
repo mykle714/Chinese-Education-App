@@ -39,10 +39,11 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
  * layout is therefore stored as unit RANGES, not joined strings — rendering needs to know
  * which segment each piece of a line belongs to.
  *
- * Alignment while it fits (`align="end"`): an auto left margin, and each line right-aligned
- * — never `text-align: right` on the scroller, which in Blink pushes overflow off the
- * unscrollable left edge (see SwipeableTextLine). An overflowing block starts at its start,
- * lines left-aligned.
+ * Alignment while it fits (`align="center"`): auto side margins on the lines block, and
+ * each line centered within it — never `text-align` on the scroller, which in Blink pushes
+ * overflow off the unscrollable left edge (see SwipeableTextLine). An overflowing block
+ * starts at its start (auto margins resolve to 0 when there is no free space), lines
+ * left-aligned.
  *
  * Layer: shared component (`src/components/`). Used by:
  * features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx (`showAllDefinitions`, and
@@ -73,7 +74,7 @@ interface SwipeableTwoLineTextProps {
     className?: string;
     /** Typography for the text (font, size, colour, line height). */
     sx?: SxProps<Theme>;
-    align?: 'start' | 'end';
+    align?: 'start' | 'center';
     touchAction?: 'pan-x' | 'pan-x pan-y';
 }
 
@@ -185,7 +186,7 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
         };
     }, [measure]);
 
-    const lineAlign = align === 'end' && !layout.overflows ? 'right' : 'left';
+    const lineAlign = align === 'center' && !layout.overflows ? 'center' : 'left';
 
     // One line's content. Segment mode: each segment in its own span, its leading/trailing
     // nodes glued around it, the separator only BETWEEN segments. Word mode: the lone
@@ -241,7 +242,7 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
                     display: 'flex',
                     flexDirection: 'column',
                     flexShrink: 0,
-                    marginLeft: align === 'end' ? 'auto' : 0,
+                    marginInline: align === 'center' ? 'auto' : 0,
                     textAlign: lineAlign,
                 }}
             >

@@ -1,6 +1,7 @@
 import { Box, Typography } from "@mui/material";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { useThemeColor } from "../../hooks/useThemeColor";
 import { DIVISION_NAMES, divisionName } from "./arenaStyles";
 
 /**
@@ -91,6 +92,8 @@ function clampDivision(division: number): number {
 }
 
 const DivisionBanner: React.FC<DivisionBannerProps> = ({ division, header, className }) => {
+    // The banner is what sits under the clock at rest, so the status-bar fade matches it.
+    useThemeColor(RAMP.grey.surface);
     const rung = clampDivision(division);
 
     return (

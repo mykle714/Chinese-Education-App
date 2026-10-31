@@ -7,7 +7,7 @@ import Icon from "../../../components/Icon";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import { InfoSheetEntryHeader } from "./styled";
 import { FC_FONT_CJK } from "../constants";
-import { WEIGHT } from "../../../theme/scale";
+import { SIZE, WEIGHT } from "../../../theme/scale";
 import { SpeakerButton } from "../../../components/SpeakerButton";
 import LearningToggle from "../../../components/LearningToggle";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
@@ -26,7 +26,7 @@ import { useEipColors } from "./useEipPalette";
 //
 // Tower Tier 2 styling (2026-10-29), layout unchanged: the headword sits in a RAISED TILE
 // (the palette's `face` on a 4px `edge` lip, 14px radius, at least 76px square — design
-// `.ehd > .cp`), the gloss is 17px. (The sense chip that sat beside the gloss
+// `.ehd > .cp`), the gloss is 18px. (The sense chip that sat beside the gloss
 // was replaced by the sense list, 2026-10-29.)
 // The design also flips the tile's pinyin BELOW the character; that is a layout change and
 // was not taken.
@@ -142,12 +142,14 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     const glossSx = {
         flex: 1,
         minWidth: 0,
-        textAlign: "right",
+        // Centered in the space beside the headword (owner's call 2026-10-30; was right-aligned).
+        textAlign: "center",
         // The gloss is the header's payload, not a caption: 12.5 → 14.5
         // (2026-09-04) → SIZE.bodyLg/16px → SIZE.subtitle/18px → SIZE.title/22px
         // (2026-10-10) → 17px (2026-10-29, Tower Tier 2 `.ehd .gl`, which pairs it
-        // with the raised headword tile instead of out-sizing it).
-        fontSize: 17,
+        // with the raised headword tile instead of out-sizing it) → SIZE.subtitle/18px
+        // (2026-10-30).
+        fontSize: SIZE.subtitle,
         letterSpacing: "-0.008em",
         fontWeight: WEIGHT.regular,
         // Matches the flp card face via the shared dd color helper: zh
@@ -277,7 +279,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                     </Box>
                 )}
             </Box>
-            {/* `.eid` — the gloss, right-aligned into the space beside the headword.
+            {/* `.eid` — the gloss, centered in the space beside the headword.
                 Three forms: the Dictionary eip's whole flat `definitions` list; the
                 per-sense list (every sense's dd, dot-separated, the chosen one
                 underlined and the default starred — the same senses, order and star the
@@ -287,7 +289,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
             {entry && (
                 <Box
                     className="mobile-demo-eic-header-english-row"
-                    sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0, justifyContent: "flex-end" }}
+                    sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}
                 >
                 {allDefinitions !== null ? (
                     <SwipeableTwoLineText
@@ -298,8 +300,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         // (EipUpperPanel), so only the sideways pan is the text's — as for the
                         // word trail.
                         touchAction="pan-x"
-                        // Right-aligned while it fits, start-first once it overflows.
-                        align="end"
+                        // Centered while it fits, start-first once it overflows.
+                        align="center"
                         sx={glossSx}
                     />
                 ) : senseSegments !== null ? (
@@ -308,7 +310,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         segments={senseSegments}
                         separator={DEFINITION_LIST_SEPARATOR}
                         touchAction="pan-x"
-                        align="end"
+                        align="center"
                         sx={{
                             ...glossSx,
                             // The chosen sense: underlined in the palette's muted ink, quieter

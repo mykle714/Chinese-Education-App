@@ -18,7 +18,7 @@ import type { Tier2Look } from "./tier2Look";
  * claims on mount, and the variables are removed only when the last claim is released.
  *
  * Layer: shared module (`src/timeOfDay/`). Depended on by: useTier2Look.ts (writer);
- * components/MobileFooter.tsx, features/beginnerKeyboard/* (readers).
+ * components/MobileFooter.tsx, components/CpcdPopup.tsx, features/beginnerKeyboard/* (readers).
  * Docs: docs/SHELF_REDESIGN.md § 7b "Time of day".
  */
 

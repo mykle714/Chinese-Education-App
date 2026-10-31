@@ -176,15 +176,12 @@ far taller than the screen. The page never zooms out to fit it:
   world's sky (`useThemeColor(light.skyOf(…))`, `src/hooks/useThemeColor.ts`), so the
   tint matches the sky. It follows the world and the time of day, not the sky → space
   darkening, so high up a tall tower the band can still read lighter than space.
-  That covers a Safari TAB only. The **home-screen app** ignores `theme-color`: there iOS 26
-  lays its own legibility fade behind the clock, white behind dark glyphs, and the glyphs
-  follow the colour scheme (confirmed on device 2026-10-28: switching the phone to dark
-  mode turns the fade dark). So the same claim also sets `documentElement`'s
-  `color-scheme` to `dark` when white glyphs contrast better with the ground
-  (`useThemeColor.ts` → `schemeFor`) — only the night skies (`#113a5f`, `#004443`,
-  `#4f274a`); dawn, day and sunset skies and every RAMP mid game ground stay light.
-  ⚠️ Whether iOS honours the PAGE's scheme for the glyphs (not only the system's) is
-  unverified as of 2026-10-28.
+  That covers a Safari TAB only. In the **home-screen app** the fade (an overlay that remains) takes its tint from
+  `body`'s background, so the same claim paints `body` too (`useThemeColor.ts` →
+  `applyTopClaim`; device probes, 2026-10-30, [IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md)
+  round 8). The claim also sets `documentElement`'s `color-scheme` to `dark` on night skies
+  (`useThemeColor.ts` → `schemeFor`). That was an earlier attempt at this fade and did not
+  affect it; its effect on the clock glyphs is untested.
 - **Shadow.** It is fitted (above), so the platform's shadow ends above the footer
   spacer rather than running under the slab.
 

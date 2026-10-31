@@ -198,6 +198,54 @@ the page is failing to paint at all.
   phone. If the slicing disappears, the tag snapshot was the cause.
 - **Observed:** _pending_.
 
+### Round 8 — the white scrim: device probes — **IN PROGRESS 2026-10-30**
+Static probes copied into PPE's `cow-frontend` per § 6, each added as its own icon with
+Open as Web App on. These are copies, not app changes, and vanish on a container rebuild.
+- **Prompt:** `useThemeColor` → `schemeFor` (`color-scheme: dark` on night skies) did not
+  remove the white fade. It shows on every Deck Tower surface, including flp and eip, and
+  on the dictionary.
+- **Observed:**
+  | Probe | White fade? |
+  |---|---|
+  | Flat navy page, full-bleed `position: fixed` ground (Fade Probe) | No |
+  | Launches paper + `color-scheme: light`, repaints navy (Fade A) | No |
+  | Same without `color-scheme: light` (Fade B) | No |
+  | Navy with a tall scroller at the top (Fade C) | No |
+  | Flat navy in normal flow, nothing fixed at the top (Fade D) | No |
+  | Real app, new icon + manifest with `scope: "/"` (Cow Plain) | **Yes** |
+  | Real app, every CSS mask disabled (Cow No Mask) | **Yes** |
+  | Real app + opaque fixed strip over the inset, top z-index (Cow Band) | **Yes** |
+  | Real app, edge-fade bands 120px and hot pink (Cow Pink) | **Yes, still white**; the dictionary's band went pink (`masks: 1`) |
+- **Also observed:** some new icons drop to a compact Safari UI after login even with Open
+  as Web App on, cause unknown. The app has no web app manifest; the login form does not
+  hard-navigate.
+- **Concluded:** the white fade is not the edge-fade mask (`scrollEdgeFade.ts`), and is
+  not a fresh-vs-old icon effect. ~~It is an unconditional iOS overlay on `black-translucent`
+  pages~~ — flat probes under the same tags do not show it, so something in the real app
+  triggers or draws it. Cow Band suggests it sits above page content, if that strip fully
+  covered it.
+- **Cow Lab (live toggles in the real app, Deck Tower):** removing `#root` and painting
+  `html, body` navy removed the fade. `overflow`, `#root` scrolling, height, transforms,
+  filters and forced `color-scheme` (dark and normal) did not. **Painting `body` alone,
+  navy or the page's ground, removed it with the app still on screen.**
+- **Concluded:** the fade's tint is `body`'s background. Every flat probe painted `body`;
+  the app's stayed at `CssBaseline`'s pale colour because `useThemeColor` only wrote
+  `documentElement`.
+- **Fix:** `useThemeColor` → `applyTopClaim` also writes `document.body`.
+- **Correction:** ~~painting `body` removes the fade~~. On a closer look the blur stays and
+  only changes colour. The Cow Lab "removed" reports, and every flat probe's "no fade",
+  were a fade tinted the same as its ground, so those probes do NOT show the overlay is
+  absent, and the "something in the real app triggers it" conclusion above is unsupported.
+  The overlay is probably iOS's own on `black-translucent`. `body` only controls its tint.
+- **Cow Opaque (real app, status-bar tag removed), observed:** the tower is cut off at an
+  opaque block, and a blur remains, both the colour of the ground. So dropping the tag does
+  not remove the blur on this device, and it costs the page running under the clock.
+- **Coverage:** every surface painting its own ground to the top of the screen now claims
+  it (list: UX_AND_NAVIGATION.md § The status-bar scrim). Removing the blur itself is a
+  Capacitor demand (REACT_NATIVE_MIGRATION.md).
+- **Probes removed from PPE:** 2026-10-30.
+- **Observed on the deployed build:** _pending_.
+
 ## 4. What is actually established
 
 Only these, and only these, are safe to build on:
@@ -229,8 +277,8 @@ Only these, and only these, are safe to build on:
   **white overlay fading out downward** — ~68% white at `y=0`, reaching zero at ~77pt,
   over a ground that is exactly `RAMP.red.ink`. Nothing in `src/` draws it; the falloff
   is linear in all three channels, which is what an OS-composited alpha ramp looks like.
-  Working theory: an iOS legibility scrim over `black-translucent` in light appearance.
-  If so no CSS removes it — the page only chooses what it fades *into*.
+  ~~Working theory: an iOS legibility scrim that no CSS removes.~~ **ANSWERED (round 8):**
+  the page controls its TINT through `body`'s background. The overlay itself remains.
 
 ## 6. The diagnostic — RUN, and how to run it again
 

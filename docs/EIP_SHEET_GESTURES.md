@@ -416,6 +416,8 @@ outside a provider — the cdps' inline panels).
   light ink, cards a lifted slate. The provider also **re-themes the subtree** — the
   flashcard palette's ink/border tokens are swapped — so everything that reads
   `theme.palette.flashcard.*` (cpcd, dd, synonyms, compare) follows without knowing.
+- **Popups:** `src/components/CpcdPopup.tsx` (the copy toast and the est's definition popup)
+  turns #2A3446 at night. Portalled, but the provider's `CpcdPopupTonesCtx` still reaches it.
 - Phases **blend** across the 30-minute twilights (`eipPaletteAt` mixes the fills). Ink cannot
   blend; it flips to night's once night is the larger share (`phaseShare`).
 

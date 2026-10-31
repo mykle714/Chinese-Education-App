@@ -1,12 +1,30 @@
-import React from "react";
+import React, { createContext, useContext } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import type { PopperProps } from "@mui/material";
 import { FONTS } from "../theme/fonts";
 import { SIZE } from "../theme/scale";
 import { COLORS } from "../theme/colors";
+import { tier2Var } from "../timeOfDay/tier2Chrome";
 
 /**
- * The small white caption card that floats above a cpcd run.
+ * The colours a night-themed surface lends the popup. Null (the default) leaves it on the
+ * Tier 2 variables below; EipPaletteProvider publishes tones at night because an eip can
+ * open over a page with no Tier 2 claim (the Deck Tower), where those variables are unset.
+ */
+export interface CpcdPopupTones {
+    surface: string;
+    pressed: string;
+    outline: string;
+    ink: string;
+    muted: string;
+}
+
+export const CpcdPopupTonesCtx = createContext<CpcdPopupTones | null>(null);
+
+/**
+ * The small caption card that floats above a cpcd run: white, or the lighter night slate
+ * (#2A3446) on a night-themed surface. Docs: docs/EIP_SHEET_GESTURES.md § Time of day,
+ * docs/SHELF_REDESIGN.md § 7b "Time of day".
  *
  * Extracted from SegmentedSentenceDisplay (where it is the est's tapped-segment
  * definition box) so a second surface can reuse the SAME visual affordance rather
@@ -65,7 +83,11 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
     onPointerUp,
     onPointerLeave,
     onPointerCancel,
-}) => (
+}) => {
+    // Tier 2 variables are unset away from a Tier 2 page, so each falls back to the day look.
+    const tones = useContext(CpcdPopupTonesCtx);
+    const surface = tones?.surface ?? tier2Var("surface", COLORS.white);
+    return (
     // Rendered into a portal via Popper so the card escapes any ancestor's
     // overflow:auto/hidden (e.g. the EIP scroll container) and is never clipped.
     <Popper
@@ -90,9 +112,9 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
             onPointerLeave={onPointerLeave}
             onPointerCancel={onPointerCancel}
             sx={{
-                backgroundColor: COLORS.white,
+                backgroundColor: surface,
                 border: "1px solid",
-                borderColor: "divider",
+                borderColor: (theme) => tones?.outline ?? tier2Var("outline", theme.palette.divider),
                 borderRadius: "8px",
                 boxShadow: 2,
                 px: 1.25,
@@ -105,7 +127,9 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
                     gap: 0.5,
                     // Grey the whole card while pressed so a registered tap is obvious.
                     transition: "background-color 100ms ease",
-                    backgroundColor: pressed ? "action.selected" : COLORS.white,
+                    backgroundColor: (theme) => pressed
+                        ? tones?.pressed ?? tier2Var("pressed", theme.palette.action.selected)
+                        : surface,
                 }),
             }}
         >
@@ -114,7 +138,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
                 sx={{
                     fontSize: SIZE.caption,
                     lineHeight: 1.3,
-                    color: "text.primary",
+                    color: (theme) => tones?.ink ?? tier2Var("ink", theme.palette.text.primary),
                     fontFamily: FONTS.sans,
                     textAlign: "center",
                     wordBreak: "break-word",
@@ -133,7 +157,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
                         flexShrink: 0,
                         fontSize: SIZE.body,
                         lineHeight: 1,
-                        color: "text.secondary",
+                        color: (theme) => tones?.muted ?? tier2Var("muted", theme.palette.text.secondary),
                         fontFamily: FONTS.sans,
                     }}
                 >
@@ -142,6 +166,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
             )}
         </Box>
     </Popper>
-);
+    );
+};
 
 export default CpcdPopup;

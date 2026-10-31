@@ -5,6 +5,7 @@ import NodePage from "../../components/NodePage";
 import { ScrollPastSpacer, FOOTER_CLEARANCE, FOOTER_HEIGHT } from "../../components/MobileFooter";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useThemeColor } from "../../hooks/useThemeColor";
 import DecksSheets, { DECKS_SHEET_PILL_BAND, type DecksSheetsHandle } from "./DecksSheets";
 import { useDecksPanel } from "./useDecksPanel";
 import { withLens } from "./collectionRef";
@@ -148,6 +149,9 @@ const MasteryCenterPage: React.FC = () => {
     // "Reading Cards" / "Writing Decks" — the sheet names carry the skill so a sheet
     // pulled to full height still says whose cards these are. The pills stay short.
     const skill = world === "reading" ? "Reading" : "Writing";
+
+    // The page's ground reaches the top of the screen, so the status-bar fade must match it.
+    useThemeColor(MASTERY_CENTER_GROUNDS[world]);
 
     return (
         <NodePage

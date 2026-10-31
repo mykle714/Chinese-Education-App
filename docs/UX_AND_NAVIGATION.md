@@ -449,16 +449,24 @@ There is **one** height, not a paint height and a shorter layout height.
 added** — an installed icon has to be deleted and re-added before a *tag* change takes
 effect. CSS and JS changes ship with a normal reload.
 
-### The status-bar scrim (open)
+### The status-bar scrim
 
-Also observed 2026-09-05, on the same screenshot: the band behind the clock is not the
-flat page ground it was expected to be, but a **white overlay fading out downward** —
-~68% white at `y=0`, reaching zero at ~77pt (measured; the page ground below it is
-exactly `RAMP.red.ink`). Nothing in `src/` draws it: there is no gradient in `LeafPage`,
-`GameFrame`, `gameSurfaceSx` or the shell, and the falloff is linear in all three
-channels, which is what an alpha ramp composited by the OS looks like. The working
-theory is an iOS legibility scrim drawn over `black-translucent` in light appearance.
-If so, no CSS can remove it — the page can only choose what it fades *into*.
+Observed 2026-09-05: the band behind the clock is not the flat page ground but an
+overlay fading out downward — ~68% white at `y=0`, reaching zero at ~77pt, over a ground
+of exactly `RAMP.red.ink`. Nothing in `src/` draws it: it is not the edge-fade mask: it
+stayed white with every mask disabled, and with the masks turned hot pink.
+
+**Its tint comes from `body`'s background, but the overlay itself remains.** A device probe
+(2026-10-30, Deck Tower) showed that painting `body` recolours the fade; the blur stays.
+`useThemeColor` → `applyTopClaim` therefore paints `body` too, which matches the tint to the
+ground and hides the fade over flat colour only. Before any claim, `body` is paper
+(`ThemeContext` → `MuiCssBaseline`). **Any surface that paints its own ground to the top of
+the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `SortCardsPage`,
+`useTier2Look`, `MasteryCenterPage`, `DivisionBanner`, and `SheetPanel` while fully merged
+(`writeMergeChrome` → `claimThemeColor`).
+Other projects report the overlay on `black-translucent` home-screen apps since iOS 26.1,
+with removing the tag as the only known way to lose it. Details:
+[IOS_STATUS_BAR_BUG.md](./IOS_STATUS_BAR_BUG.md) round 8.
 
 ### Who absorbs the insets
 

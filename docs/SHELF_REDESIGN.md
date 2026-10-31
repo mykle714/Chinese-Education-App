@@ -2075,8 +2075,9 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
     one line if it fits; else two lines broken greedily between glosses; and only if two
     lines still overflow, two lines re-split to EQUAL length that swipe sideways together
     (clipped, rubber-banded, `touch-action: pan-x` since vertical drags on the header resize
-    the sheet). Right-aligned while it fits — by an auto margin, not `text-align: right`,
-    which in Blink pushed overflow off the unscrollable LEFT edge. No sense is
+    the sheet). Centered in the space beside the headword while it fits (2026-10-30) — by
+    auto margins on the lines block, not `text-align` on the scroller, which in Blink pushed
+    overflow off the unscrollable LEFT edge. No sense is
     marked (it is the flat list, not the sense list below) and the pinyin is the default reading
     (`resolveDefaultPronunciation`), as on the search row. `EipEntryHeader` →
     `showAllDefinitions`.
@@ -2194,6 +2195,8 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     #121822 lip, light ink (#EEF0F6 / #C3C8D6 / #8F97AA) — the slab footer and the
     beginner keyboard's keys included. The owner chose the design's CSS over its artboard
     note ("keycaps, cards and footer keep their day colours"), which the CSS contradicts.
+  - **`CpcdPopup`** (`src/components/CpcdPopup.tsx`, the copy toast and definition popup)
+    reads the `tier2Var` surface / ink / outline, so it turns #2A3446 at night too.
   - Grounds **blend** across the 30-minute twilights; surfaces and ink **flip** together
     once night holds the larger share (`dark`), as the eip's ink does.
   - **Outside the framework** on purpose, like the tower's skies: the phase grounds and

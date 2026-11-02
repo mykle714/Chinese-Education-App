@@ -153,6 +153,7 @@ export async function loadDecompositionEntries({ refresh = false } = {}) {
                 map.set(entry.character, {
                     ids: entry.decomposition,
                     matches: Array.isArray(entry.matches) ? entry.matches : null,
+                    radical: entry.radical ?? null,
                 });
             }
         } catch {

@@ -33,6 +33,14 @@ export interface WritingGridCharacter {
    * have no shadow preview (levels above WRITING_GRID_SHADOW_MAX_LEVEL on the client).
    */
   definition: string | null;
+  /**
+   * The cell's row is a card the learner holds, not a hidden provisional one. A correct,
+   * recorded mark on it takes that card off a Deck Tower; a mark on a hidden row never
+   * does, because the tower never counted it (docs/FLP_GAME_BREAKS.md § 6).
+   */
+  ownCard: boolean;
+  /** A focused break's cell from outside today's set, so it was never on the tower. */
+  outsideFocus?: boolean;
 }
 
 /** A candidate before sampling. */
@@ -42,12 +50,19 @@ export interface WritingGridCandidate {
   writingMastery: number;
   /** The character's own writing clock is still running (its marks would be dropped). */
   cooled: boolean;
+  /**
+   * Draw this character ahead of the rest at the same cooldown state: on an flp break, a
+   * character of the working loop's words, or on a focused break, one outside today's set.
+   */
+  preferred?: boolean;
 }
 
 /**
  * Pick `count` distinct characters, weighting each band by the Study Mix quota
  * (Target 5 · Unfamiliar 2 · Comfortable 2 · Mastered 1). Off-cooldown characters are
- * drawn first; cooled ones only fill what is left. `random` is injectable for tests.
+ * drawn first; cooled ones only fill what is left. Within each, `preferred` characters go
+ * first, the same ladder as an flp break's card pools (docs/FLP_GAME_BREAKS.md § 4).
+ * `random` is injectable for tests.
  */
 export function sampleWritingGridCharacters(
   candidates: readonly WritingGridCandidate[],
@@ -73,8 +88,10 @@ export function sampleWritingGridCharacters(
     }
   };
 
-  drawFrom(candidates.filter((c) => !c.cooled));
-  drawFrom(candidates.filter((c) => c.cooled));
+  drawFrom(candidates.filter((c) => !c.cooled && c.preferred));
+  drawFrom(candidates.filter((c) => !c.cooled && !c.preferred));
+  drawFrom(candidates.filter((c) => c.cooled && c.preferred));
+  drawFrom(candidates.filter((c) => c.cooled && !c.preferred));
   return picked;
 }
 

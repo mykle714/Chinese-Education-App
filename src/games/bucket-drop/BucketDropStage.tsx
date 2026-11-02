@@ -1,390 +1,523 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Box } from "@mui/material";
-import ForeignText from "../../components/ForeignText";
-import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../utils/definitionUtils";
-import type { VocabEntry } from "../../types";
-import DropBucket from "./DropBucket";
-import StackWord, { type DropVerdict } from "./StackWord";
-import { layoutPerimeter, type PerimeterSlot } from "./perimeterLayout";
-import { dealQueue, resizeQueue, resolveDrop, type BucketQueueState } from "./bucketQueue";
+import React, { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Box, Button, Typography } from "@mui/material";
+import DelayedCircularProgress from "../../components/DelayedCircularProgress";
+import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
+import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
+import AudioModeChip from "../../components/AudioModeChip";
+import { useAuth } from "../../AuthContext";
+import { useTTS } from "../../hooks/useTTS";
+import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
+import { useGameWins } from "../../hooks/useGameWins";
+import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
+import { markFlashcard } from "../../api/flashcards";
+import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
+import type { CollectionRef } from "../../features/flashcards/collectionRef";
+import { isProvisional, provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
+import { formatTimeMs } from "../../utils/timeUtils";
+import type { Language, MarkType, VocabEntry } from "../../types";
+import { SIZE, LEADING } from "../../theme/scale";
+import type { FlpBreakResults } from "../flpBreak/types";
+import { GameCentered, GameFrame } from "../shared/GameFrame";
+import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
+import { usePersonalBest } from "../shared/usePersonalBest";
+import GamePausedOverlay from "../runtime/GamePausedOverlay";
+import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { useChallengeRound } from "../runtime/useChallengeRound";
+import { useGameBack } from "../runtime/useGameBack";
+import type { GameStageFrameProps, GameStageHost } from "../types";
+import BucketDropBoard from "./BucketDropBoard";
+import BucketDropEndPopup from "./BucketDropEndPopup";
+import { bucketDropPoolRequest } from "./poolRequest";
 import {
-    BUCKET_EXIT_MS,
-    DROP_FALL_END_SCALE,
     DROP_FALL_MS,
-    HELD_OPACITY,
-    HELD_SCALE,
-    PILE_JITTER_X,
-    PILE_JITTER_Y,
-    SNAP_BACK_MS,
-    WRONG_SHAKE_MS,
+    GAME_ID,
+    GAME_KEY,
+    TOTAL_WORDS,
+    WIN_LEVEL,
+    medalFor,
+    runResultDetail,
+    runResultTitle,
+    runTrackFor,
+    type BucketDropModeConfig,
 } from "./constants";
 
-/**
- * BucketDropStage — the play field: the perimeter of buckets, every word of the run, and
- * every drop (docs/BUCKET_DROP_GAME.md § 2–5).
- *
- * Owns the RUN MODEL (bucketQueue) and the field GEOMETRY (perimeterLayout); the page
- * owns everything that is not on the board — clock, marks, challenge scoring, popups.
- * The page remounts this per run (`key={runId}`), so a new run is a fresh deal.
- *
- * ── The deal ─────────────────────────────────────────────────────────────────
- * Once the field is first measured, every word is dealt as a PILE in the open centre —
- * a small random jitter around the centre point so it reads as a heap — with a word
- * whose bucket is showing on top. From then on each word owns its own resting spot
- * (StackWord): it stays wherever it was last let go, clamped inside the field.
- *
- * ── Hit-testing is against slot GEOMETRY, never DOM rects ─────────────────────
- * A bucket's position is a pure function of the field size, so a drop is resolved by
- * converting the pointer into field coordinates and testing the slot squares.
- *
- * ── Correct drop ─────────────────────────────────────────────────────────────
- * Resolved IMMEDIATELY: the queue retires the word and refills the slot. Two short-lived
- * ghosts carry the animation so the player never waits on it — the word falling into its
- * hole (`FallingWord`) and the emptied bucket fading out (`DropBucket leaving`) while the
- * slot's new bucket fades in beneath it after BUCKET_EXIT_MS.
- *
- * ── Wrong drop ───────────────────────────────────────────────────────────────
- * Released over ANOTHER word's bucket: the word springs back to where the drag started,
- * the bucket's outline goes red and it shakes, and input is LOCKED for
- * max(SNAP_BACK_MS, WRONG_SHAKE_MS). No time penalty.
- *
- * Released anywhere else (open field, an empty slot) is a MOVE, not a drop: no mark.
- */
+type Phase = "loading" | "blocked" | "playing" | "ended";
 
 interface BucketDropStageProps {
-    pool: VocabEntry[];
-    showPinyin: boolean;
-    showPinyinColor: boolean;
-    /** No pickup while the run is paused (a popup, or backgrounding). */
-    paused: boolean;
-    /** A word was picked up — the page narrates it unless it is a reading run. */
-    onPickUp: (entry: VocabEntry) => void;
-    /** A drop landed in a bucket: `correct` is whether it was the word's own. */
-    onDrop: (entry: VocabEntry, correct: boolean) => void;
-    /** The last word was dropped. Fires in the same tick as its `onDrop`. */
-    onComplete: () => void;
-}
-
-/** A bucket fading out after its word fell in — drawn over its slot for BUCKET_EXIT_MS. */
-interface LeavingGhost {
-    key: string;
-    slot: PerimeterSlot;
-    text: string;
-}
-
-/** A correctly-dropped word falling into its hole, in FIELD coordinates. */
-interface FallingGhost {
-    key: string;
-    entry: VocabEntry;
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-}
-
-/** Forgiveness around a bucket for a release just outside its edge (px). */
-const HIT_SLOP = 4;
-/** How long input stays locked after a wrong drop. */
-const WRONG_LOCK_MS = Math.max(SNAP_BACK_MS, WRONG_SHAKE_MS);
-
-/** The bucket whose slot holds the field point, or -1. */
-function slotAt(slots: readonly PerimeterSlot[], x: number, y: number): number {
-    return slots.findIndex((s) =>
-        x >= s.x - HIT_SLOP && x <= s.x + s.width + HIT_SLOP && y >= s.y - HIT_SLOP && y <= s.y + s.height + HIT_SLOP,
-    );
-}
-
-/** A dropped word's fall into its hole, played once on mount (Web Animations API). */
-const FallingWord: React.FC<{ ghost: FallingGhost; showPinyin: boolean; showPinyinColor: boolean; onDone: (key: string) => void }> = ({ ghost, showPinyin, showPinyinColor, onDone }) => {
-    const ref = useRef<HTMLDivElement | null>(null);
-    useLayoutEffect(() => {
-        const node = ref.current;
-        if (!node) return;
-        // Starts exactly where the held word was let go (its lift and fade included),
-        // homes in on the bucket's centre and shrinks away, as if into the recess —
-        // the sort flow's drop "fall" (SortCardsPage → DROP_FALL_MS).
-        const at = (x: number, y: number, scale: number) => `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale})`;
-        const animation = node.animate(
-            [
-                { transform: at(ghost.fromX, ghost.fromY, HELD_SCALE), opacity: HELD_OPACITY },
-                { transform: at(ghost.toX, ghost.toY, DROP_FALL_END_SCALE), opacity: 0 },
-            ],
-            { duration: DROP_FALL_MS, easing: "cubic-bezier(0.4, 0, 0.6, 1)", fill: "forwards" },
-        );
-        animation.onfinish = () => onDone(ghost.key);
-        return () => animation.cancel();
-        // One animation per ghost, on mount.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-    return (
-        <Box
-            ref={ref}
-            className="bucket-drop__falling-word"
-            sx={{ position: "absolute", left: 0, top: 0, padding: "6px 8px", whiteSpace: "nowrap", pointerEvents: "none", zIndex: 2000 }}
-        >
-            <ForeignText
-                size="sm"
-                justifyContent="center"
-                text={ghost.entry.entryKey}
-                pronunciation={resolveDisplayPronunciation(ghost.entry)}
-                showPinyin={showPinyin}
-                useToneColor={showPinyinColor}
-                pinyinShift
-            />
-        </Box>
-    );
-};
-
-/** One word's spot in the opening pile: centre (field px) and stacking order. */
-interface PileSpot {
-    x: number;
-    y: number;
-    z: number;
+    host: GameStageHost;
+    /** The host's chrome — `GameLeafPage` on the route, `GameBreakFrame` in the flp. */
+    Frame: ComponentType<GameStageFrameProps>;
+    modeConfig: BucketDropModeConfig;
+    /**
+     * The run's track when the host has already decided it: an flp break's candidate, so
+     * the marks land on the bar being studied whatever the language. Omitted on the route,
+     * where it is `runTrackFor(language, modeConfig)`.
+     */
+    track?: MarkType;
+    /** The launch's deck/collection; rides the pool request. */
+    collection: CollectionRef | null;
+    /** An flp break's working loop, seeding the board (docs/FLP_GAME_BREAKS.md § 4). */
+    seedIds?: number[];
+    /** An flp break's board, fetched while the card before it was up, so Play has no spinner. */
+    prefetchedPool?: GamePoolResponse | null;
+    /** Close with no results to show: "Back to …" (page), or a break that never dealt. */
+    onDone: () => void;
+    /** Names `onDone`'s destination: "Back to {doneLabel}". */
+    doneLabel: string;
+    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
+    onRunEnded?: (results: FlpBreakResults) => void;
+    /** flp break only: FlpBreakStageProps `onCardCleared`. */
+    onCardCleared?: () => void;
 }
 
 /**
- * Deal the opening pile around (cx, cy): random order, small random jitter, and a word
- * whose bucket is SHOWING on top — the first word the player sees can always be placed.
+ * BucketDropStage — one Bucket Drop run, whichever host it is in: drag each word from the
+ * pile into the bucket holding its meaning, against a count-up clock
+ * (docs/BUCKET_DROP_GAME.md). Hosted by BucketDropPage on the route and by the flp's game
+ * break (src/games/flpBreak/bucketDropBreak.ts, docs/FLP_GAME_BREAKS.md § 6).
+ *
+ * Flow: loading → (blocked) → playing → ended → (Play Again, page only) loading …
+ *
+ * ── Layers ───────────────────────────────────────────────────────────────────
+ *   page   BucketDropPage    the route's title, launch state and exit.
+ *   stage  (this file)       pool fetch, the run's track, the stopwatch, marks, challenge
+ *                            scoring, personal best, wins, every popup.
+ *   board  BucketDropBoard   perimeter geometry, the queue, hit-testing and the drop
+ *                            animations. Remounted per run (`key={runId}`).
+ *   pure   perimeterLayout,  geometry and the run model, unit-tested without React.
+ *          bucketQueue
+ *
+ * ── What differs by host ─────────────────────────────────────────────────────
+ *   - the chrome (`Frame`);
+ *   - the opening board (a break seeds it with the working loop, prefetched);
+ *   - the track (a break's comes off its candidate, § "The run's track" below);
+ *   - the results: the page shows its end popup, a break hands them to the flp's card
+ *     (`onRunEnded`);
+ *   - the way out: the page's Back is `useGameBack` (with the challenge confirm); a
+ *     break's Leave ENDS a live run into its results card, unmedalled.
+ *
+ * ── The run's track ──────────────────────────────────────────────────────────
+ * Latched at the first pool fetch, because the pool is bucketed and cooled on that track,
+ * so the marks must name the same one. Route: `runTrackFor(language, mode)` (Pinyin ⇒
+ * production, No Pinyin ⇒ reading). Break: `track`.
+ *
+ * ── The clock is ACCUMULATED ACTIVE TIME, and never on screen during play ─────
+ * Nothing ticks on the board; the time is only read at the end, for the medal, the personal
+ * best and the challenge score. It starts when the board is dealt and the provisional notice (if any) is closed, and
+ * freezes for the notice and for backgrounding (docs/GAMES_FEATURE.md § Popups pause
+ * the clock / § Backgrounding pauses the clock). It is banked into `activeMsRef` at each
+ * pause, never derived from `now − startedAt`, so a pause can never be billed.
+ *
+ * ── Marks ────────────────────────────────────────────────────────────────────
+ * One mark per word, ever: a word's FIRST wrong drop writes a negative mark, and its
+ * correct drop writes a positive one only if it was never missed. A word missed and then
+ * placed ends the run with just its negative — the same once-per-word rule as the
+ * challenge spec's `missChargedOncePerWord`.
  */
-function dealPile(words: readonly number[], shown: ReadonlySet<number>, cx: number, cy: number): Map<number, PileSpot> {
-    const order = [...words].sort(() => Math.random() - 0.5);
-    const topIndex = order.findIndex((id) => shown.has(id));
-    if (topIndex >= 0) order.push(order.splice(topIndex, 1)[0]);
-    const jitter = (span: number) => (Math.random() * 2 - 1) * span;
-    return new Map(order.map((id, i) => [id, { x: cx + jitter(PILE_JITTER_X), y: cy + jitter(PILE_JITTER_Y), z: i + 1 }]));
-}
+const BucketDropStage: React.FC<BucketDropStageProps> = ({
+    host,
+    Frame,
+    modeConfig,
+    track,
+    collection,
+    seedIds,
+    prefetchedPool,
+    onDone,
+    doneLabel,
+    onRunEnded,
+    onCardCleared,
+}) => {
+    const isBreak = host === "flpBreak";
+    const onCardClearedRef = useRef(onCardCleared);
+    onCardClearedRef.current = onCardCleared;
+    const { user } = useAuth();
+    const tts = useTTS();
+    const { settings } = useFlashcardLearnSettings();
+    const { recordWin } = useGameWins(GAME_KEY);
 
-const BucketDropStage: React.FC<BucketDropStageProps> = ({ pool, showPinyin, showPinyinColor, paused, onPickUp, onDrop, onComplete }) => {
-    const entryById = useMemo(() => new Map(pool.map((e) => [e.id, e])), [pool]);
+    const language = (user?.selectedLanguage ?? "zh") as Language;
 
-    // ── Field geometry ───────────────────────────────────────────────────────
-    const fieldRef = useRef<HTMLDivElement | null>(null);
-    const [fieldSize, setFieldSize] = useState({ width: 0, height: 0 });
-    useLayoutEffect(() => {
-        const node = fieldRef.current;
-        if (!node) return;
-        const measure = () => setFieldSize({ width: node.clientWidth, height: node.clientHeight });
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(node);
-        return () => observer.disconnect();
-    }, []);
-    const layout = useMemo(() => layoutPerimeter(fieldSize.width, fieldSize.height), [fieldSize]);
-    const layoutRef = useRef(layout);
-    layoutRef.current = layout;
-    const fieldSizeRef = useRef(fieldSize);
-    fieldSizeRef.current = fieldSize;
+    const [phase, setPhase] = useState<Phase>("loading");
+    const [blockMessage, setBlockMessage] = useState("");
+    const [pool, setPool] = useState<VocabEntry[]>([]);
+    const [runId, setRunId] = useState(0);
+    const [noticeOpen, setNoticeOpen] = useState(false);
+    const [misses, setMisses] = useState(0);
+    /** Every word was placed. False on a run a break's Leave cut short. */
+    const [finished, setFinished] = useState(false);
+    /**
+     * The run's result is final: the end popup opens, or a break reports. A beat after the
+     * last drop, so its fall is seen.
+     */
+    const [resultsReady, setResultsReady] = useState(false);
 
-    // ── Run model ────────────────────────────────────────────────────────────
-    // Dealt into 0 slots, then sized by the effect below once the field is measured.
-    // The ref is the source of truth for the synchronous release handler (a release must
-    // be judged against the queue as it is NOW, not as of the last render).
-    const [queue, setQueueState] = useState<BucketQueueState>(() => dealQueue(pool.map((e) => e.id), 0));
-    const queueRef = useRef(queue);
-    const setQueue = useCallback((next: BucketQueueState) => {
-        queueRef.current = next;
-        setQueueState(next);
-    }, []);
-    const slotCount = layout.slots.length;
+    // ── The run's track, latched at the first fetch (see the header) ────────────
+    const runTrackRef = useRef<MarkType | null>(null);
+    const [runTrack, setRunTrack] = useState<MarkType>(track ?? modeConfig.markType);
+    const lockRunTrack = useCallback((): MarkType => {
+        if (!runTrackRef.current) {
+            runTrackRef.current = track ?? runTrackFor(language, modeConfig);
+            setRunTrack(runTrackRef.current);
+        }
+        return runTrackRef.current;
+    }, [language, modeConfig, track]);
+    // What the board draws follows the locked track, so display and marks agree: only a
+    // READING run hides the pinyin.
+    const boardShowPinyin = runTrack !== "reading";
 
-    // The opening pile, dealt ONCE — the first time the field has slots. After that each
-    // word owns its own position (StackWord), so a resize never re-deals.
-    const [pile, setPile] = useState<Map<number, PileSpot> | null>(null);
+    // ── Pause sources → one boolean ─────────────────────────────────────────────
+    const { paused: backgroundPaused, resume: resumeFromBackground } = useBackgroundPause(phase === "playing");
+    const clockPaused = noticeOpen || backgroundPaused;
+
+    // ── Study Challenge round (inert for an ordinary launch, and so for a break) ─
+    const challengeRound = useChallengeRound({
+        gameId: GAME_ID,
+        mode: modeConfig.mode,
+        paused: clockPaused,
+        running: phase === "playing",
+    });
+    const onBack = useGameBack(challengeRound);
+    // Read through refs inside callbacks whose identity must survive a token refresh.
+    const challengeParamsRef = useRef("");
+    challengeParamsRef.current = challengeRound.poolParams;
+    const challengeRef = useRef(challengeRound);
+    challengeRef.current = challengeRound;
+
+    // ── Pool ────────────────────────────────────────────────────────────────────
+    const fetchPool = useCallback(async (): Promise<VocabEntry[] | null> => {
+        try {
+            const data = await fetchGamePool(bucketDropPoolRequest({
+                markType: lockRunTrack(),
+                collection,
+                challengeParams: challengeParamsRef.current,
+                seedIds,
+                flpBreak: isBreak,
+            }));
+            // NO CARD-COUNT GATE: the server has already lent cards up to the baseline
+            // (docs/PROVISIONAL_CARDS.md). Only an empty pool cannot be played.
+            if (!data.cards.length) {
+                setBlockMessage("No cards are playable right now. Sort a few words in Discover and try again.");
+                setPhase("blocked");
+                return null;
+            }
+            if (runTrackRef.current !== "reading") data.cards.forEach((c) => tts.prefetch(c));
+            return data.cards;
+        } catch {
+            setBlockMessage("Couldn't load the game. Please try again.");
+            setPhase("blocked");
+            return null;
+        }
+        // `collection`, `seedIds` and `isBreak` are fixed for the Stage's lifetime (the
+        // page's URL; the break's dealt loop); `tts` is read at call time. No token
+        // anywhere (CLAUDE.md ⛔).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lockRunTrack]);
+
+    // ── Stopwatch: accumulated active time ──────────────────────────────────────
+    const activeMsRef = useRef(0);
+    /** `Date.now()` the current running segment began, or null while stopped. */
+    const segmentStartRef = useRef<number | null>(null);
+    /** The banked total, as of the last pause or the run's end. Not a live reading. */
+    const [elapsedMs, setElapsedMs] = useState(0);
+    const clockRunning = phase === "playing" && !clockPaused;
     useEffect(() => {
-        if (queueRef.current.slots.length !== slotCount) setQueue(resizeQueue(queueRef.current, slotCount));
-        if (slotCount > 0 && !pile) {
-            const { stack } = layoutRef.current;
-            const shown = new Set(queueRef.current.slots.filter((id): id is number => id !== null));
-            setPile(dealPile(queueRef.current.remaining, shown, stack.x + stack.width / 2, stack.y + stack.height / 2));
-        }
-    }, [slotCount, setQueue, pile]);
+        if (!clockRunning) return;
+        segmentStartRef.current = Date.now();
+        return () => {
+            // Bank the segment. Runs on pause, on run end and on unmount alike.
+            if (segmentStartRef.current !== null) activeMsRef.current += Date.now() - segmentStartRef.current;
+            segmentStartRef.current = null;
+            setElapsedMs(activeMsRef.current);
+        };
+    }, [clockRunning]);
 
-    // Buckets that arrived by REFILL fade in; the dealt board appears at once.
-    const refillKeysRef = useRef<Set<string>>(new Set());
-    const bucketKey = (slotIndex: number, id: number) => `${slotIndex}-${id}`;
-
-    // ── Feedback state ───────────────────────────────────────────────────────
-    const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
-    const hoveredRef = useRef<number | null>(null);
-    const [wrong, setWrong] = useState<{ slotIndex: number; nonce: number } | null>(null);
-    const [locked, setLocked] = useState(false);
-    const [leaving, setLeaving] = useState<LeavingGhost[]>([]);
-    const [falling, setFalling] = useState<FallingGhost[]>([]);
-    const ghostSeqRef = useRef(0);
-    /** The next resting z-index — every word put down goes on top of the others. */
-    const zCounterRef = useRef(pool.length + 1);
-
-    // Every pending timer, cleared on unmount so none fires into a dead run.
-    const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-    const later = useCallback((ms: number, fn: () => void) => {
-        const id = setTimeout(() => {
-            timersRef.current.delete(id);
-            fn();
-        }, ms);
-        timersRef.current.add(id);
+    // ── Run lifecycle ───────────────────────────────────────────────────────────
+    const missedIdsRef = useRef<Set<number>>(new Set());
+    /** Words placed this run: the headline of a run left early. */
+    const placedRef = useRef(0);
+    const beginRun = useCallback((cards: VocabEntry[]) => {
+        missedIdsRef.current = new Set();
+        placedRef.current = 0;
+        activeMsRef.current = 0;
+        segmentStartRef.current = null;
+        setElapsedMs(0);
+        setMisses(0);
+        setFinished(false);
+        setResultsReady(false);
+        setPool(cards);
+        setNoticeOpen(provisionalWords(cards).length > 0);
+        setRunId((n) => n + 1);
+        setPhase("playing");
     }, []);
+
+    // A challenge round that cannot be played says so instead of dealing a board.
     useEffect(() => {
-        const timers = timersRef.current;
-        return () => timers.forEach(clearTimeout);
+        if (challengeRound.error) {
+            setBlockMessage(challengeRound.error);
+            setPhase("blocked");
+        }
+    }, [challengeRound.error]);
+
+    useEffect(() => {
+        if (!user) {
+            setBlockMessage("Sign in to play Bucket Drop.");
+            setPhase("blocked");
+            return;
+        }
+        // Wait for the challenge payload: a board dealt before it lands would score
+        // every word as filler (docs/GAMES_FEATURE.md § Challenge-eligible games).
+        if (challengeRound.active && !challengeRound.ready) return;
+        let cancelled = false;
+        void (async () => {
+            // A break's prefetched board, when it landed with cards; Play Again never
+            // comes through here, so it is only ever the opening deal.
+            const handedOver = prefetchedPool?.cards.length ? prefetchedPool.cards : null;
+            if (handedOver) {
+                if (lockRunTrack() !== "reading") handedOver.forEach((c) => tts.prefetch(c));
+            }
+            const cards = handedOver ?? await fetchPool();
+            if (!cancelled && cards) beginRun(cards);
+        })();
+        return () => { cancelled = true; };
+        // Keyed on the STABLE auth identity, never `token` (CLAUDE.md ⛔).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, challengeRound.active, challengeRound.ready]);
+
+    // Fastest FULL run per mode (docs/BUCKET_DROP_GAME.md § 6); recorded below.
+    const { best: personalBestMs, isNewBest, record: recordPersonalBest, reset: resetPersonalBest } =
+        usePersonalBest(GAME_ID, modeConfig.mode);
+    /** This run's `recordPersonalBest`: whether it set a best. Read by the break's results. */
+    const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
+
+    const playAgain = useCallback(async () => {
+        tts.unlockAudio();
+        setPhase("loading");
+        resetPersonalBest();
+        newBestRef.current = Promise.resolve(false);
+        const cards = await fetchPool();
+        if (cards) beginRun(cards);
+    }, [tts, fetchPool, beginRun, resetPersonalBest]);
+
+    // ── Board callbacks ─────────────────────────────────────────────────────────
+    const onPickUp = useCallback((entry: VocabEntry) => {
+        // Narrate on pickup, like Bubble Match's word bubbles — but never on a READING
+        // run, where the sound would hand over the reading being tested. A production run
+        // already shows the pinyin, and the sound names only the word in hand, never the
+        // bucket it belongs in.
+        if (runTrackRef.current !== "reading") void tts.autoSpeak(entry);
+    }, [tts]);
+
+    const onDrop = useCallback((entry: VocabEntry, correct: boolean) => {
+        const firstMiss = !correct && !missedIdsRef.current.has(entry.id);
+        if (correct) {
+            placedRef.current += 1;
+        } else {
+            missedIdsRef.current.add(entry.id);
+            setMisses((n) => n + 1);
+        }
+        // One mark per word (see the header): the first miss, or a clean placement.
+        if (firstMiss || (correct && !missedIdsRef.current.has(entry.id))) {
+            markFlashcard({ cardId: entry.id, isCorrect: correct, type: runTrackRef.current ?? modeConfig.markType, surface: GAME_ID })
+                .then((result) => {
+                    // The Deck Tower's tally: a recorded correct mark on a card that was on it.
+                    if (correct && !result.suppressed && !isProvisional(entry) && !entry.outsideFocus) onCardClearedRef.current?.();
+                })
+                .catch((err) => console.error(`[BucketDrop] mark failed → card ${entry.id}:`, err));
+        }
+        // Every drop is a scored event; the spec charges a word's misses once.
+        const round = challengeRef.current;
+        round.emit({ kind: correct ? "hit" : "miss", word: entry.entryKey, contested: round.isContested(entry.entryKey) });
+    }, [modeConfig.markType]);
+
+    const resultsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (resultsTimerRef.current) clearTimeout(resultsTimerRef.current); }, []);
+    const onComplete = useCallback(() => {
+        // The clock stops on the drop itself (the phase change banks the segment); only
+        // the results wait, so the last word's fall is seen.
+        setFinished(true);
+        setPhase("ended");
+        challengeRef.current.finish(true);
+        resultsTimerRef.current = setTimeout(() => setResultsReady(true), DROP_FALL_MS);
     }, []);
 
-    // Callbacks the page passes are read through a ref so the handlers below keep a
-    // STABLE identity — StackWord is memoized, and re-rendering it mid-drag would
-    // re-run its CPCDRow layout pass (see StackWord's header).
-    const propsRef = useRef({ onPickUp, onDrop, onComplete });
-    propsRef.current = { onPickUp, onDrop, onComplete };
+    // ── Result ──────────────────────────────────────────────────────────────────
+    const finalMs = elapsedMs;
+    /**
+     * A medal and a personal best need a FULL, FINISHED run. A pool the dictionary could
+     * not fill to TOTAL_WORDS is still playable, but its short time is not comparable, and
+     * a run left early has no finish time.
+     */
+    const fullRun = pool.length >= TOTAL_WORDS;
+    const earnsResult = finished && fullRun;
+    const medal = phase === "ended" && earnsResult ? medalFor(finalMs) : null;
 
-    /** Client point → field point. */
-    const toField = useCallback((x: number, y: number) => {
-        const rect = fieldRef.current?.getBoundingClientRect();
-        return rect ? { x: x - rect.left, y: y - rect.top } : null;
-    }, []);
+    // Once per run, when the result is final (`resultsReady` means the clock has been
+    // banked). A challenge round is not a free-play best, like Word Search.
+    const resultRecordedRef = useRef(-1);
+    useEffect(() => {
+        if (!resultsReady || resultRecordedRef.current === runId) return;
+        resultRecordedRef.current = runId;
+        if (medal) recordWin(WIN_LEVEL);
+        if (earnsResult && !challengeRound.active) newBestRef.current = recordPersonalBest(finalMs);
+    }, [resultsReady, runId, medal, earnsResult, finalMs, recordWin, recordPersonalBest, challengeRound.active]);
 
-    const handlePickUp = useCallback((entry: VocabEntry): number => {
-        propsRef.current.onPickUp(entry);
-        zCounterRef.current += 1;
-        return zCounterRef.current;
-    }, []);
+    const lentWords = provisionalWords(pool);
+    const sortOffer = useProvisionalSortOffer(resultsReady, lentWords);
+    const dismissSortOffer = sortOffer.dismiss;
 
-    const handleHover = useCallback((clientX: number, clientY: number) => {
-        const point = toField(clientX, clientY);
-        const index = point ? slotAt(layoutRef.current.slots, point.x, point.y) : -1;
-        // Only an occupied slot is a target worth cueing.
-        const next = index >= 0 && queueRef.current.slots[index] !== null ? index : null;
-        if (next !== hoveredRef.current) {
-            hoveredRef.current = next;
-            setHoveredSlot(next);
+    /**
+     * The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends with what it
+     * managed: no finish time, so no medal, win or personal best. From every other phase
+     * there is nothing to show, so the break closes.
+     */
+    const leaveBreak = useCallback(() => {
+        if (phase === "playing") {
+            setPhase("ended");
+            setResultsReady(true);
+            return;
         }
-    }, [toField]);
-
-    const handleRelease = useCallback((entry: VocabEntry, point: { x: number; y: number } | null, wordRect: DOMRect): DropVerdict => {
-        hoveredRef.current = null;
-        setHoveredSlot(null);
-        const fieldRect = fieldRef.current?.getBoundingClientRect();
-        if (!point || !fieldRect) return { kind: "wrong" }; // cancelled → back to the drag start
-        const current = queueRef.current;
-        const { onDrop: drop, onComplete: complete } = propsRef.current;
-        const fieldPoint = { x: point.x - fieldRect.left, y: point.y - fieldRect.top };
-        // Where the word's CENTRE is now, in field px — its new resting spot on a move.
-        const centre = { x: wordRect.left + wordRect.width / 2 - fieldRect.left, y: wordRect.top + wordRect.height / 2 - fieldRect.top };
-
-        const slots = layoutRef.current.slots;
-        const slotIndex = slotAt(slots, fieldPoint.x, fieldPoint.y);
-        const occupant = slotIndex >= 0 ? current.slots[slotIndex] : null;
-
-        // ── A move: open field, or an empty slot ─────────────────────────────
-        if (occupant === null || occupant === undefined) {
-            // Keep the whole word inside the field (its resting box is the unscaled size).
-            const { width, height } = fieldSizeRef.current;
-            const halfW = Math.min(width / 2, wordRect.width / HELD_SCALE / 2);
-            const halfH = Math.min(height / 2, wordRect.height / HELD_SCALE / 2);
-            return {
-                kind: "moved",
-                x: Math.min(Math.max(centre.x, halfW), width - halfW),
-                y: Math.min(Math.max(centre.y, halfH), height - halfH),
-            };
+        // An ended run is only ever still here for the sort offer: Leave is its "not now".
+        if (phase === "ended") {
+            dismissSortOffer();
+            return;
         }
+        onDone();
+        // `dismissSortOffer` is a fresh closure over stable setters.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, onDone]);
+    const onExitRequest = isBreak ? leaveBreak : onBack;
 
-        // ── Wrong bucket ─────────────────────────────────────────────────────
-        const next = resolveDrop(current, slotIndex, entry.id);
-        if (next === current) {
-            setWrong({ slotIndex, nonce: Date.now() });
-            setLocked(true);
-            later(WRONG_LOCK_MS, () => {
-                setLocked(false);
-                setWrong(null);
-            });
-            drop(entry, false);
-            return { kind: "wrong" };
-        }
+    // A break's run reports to the flp instead of showing the end popup, which is what
+    // starts the shrink back to the card. A lent-card offer holds it: the offer lives over
+    // this board, so it has to be answered before the board goes.
+    const sortOfferPending = lentWords.length > 0 && !sortOffer.dismissed;
+    useEffect(() => {
+        if (!isBreak || !resultsReady || sortOfferPending) return;
+        const bestBefore = personalBestMs;
+        onRunEnded?.({
+            title: runResultTitle(finished, medal),
+            score: finished ? formatTimeMs(finalMs) : `${placedRef.current} of ${pool.length} words`,
+            details: [runResultDetail(pool.length, misses, fullRun)],
+            personalBest: newBestRef.current.then((isNew) => {
+                const best = isNew ? finalMs : bestBefore;
+                return best === null ? null : { game: GAME_ID, best, isNewBest: isNew };
+            }),
+        });
+        // Once per run: nothing on the board can move after the run ends.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isBreak, resultsReady, sortOfferPending]);
 
-        // ── Its own bucket ───────────────────────────────────────────────────
-        const slot = slots[slotIndex];
-        const seq = ++ghostSeqRef.current;
-        setFalling((prev) => [...prev, {
-            key: `fall-${seq}`,
-            entry,
-            fromX: centre.x,
-            fromY: centre.y,
-            toX: slot.x + slot.width / 2,
-            toY: slot.y + slot.height / 2,
-        }]);
-        const leavingKey = `leave-${seq}`;
-        setLeaving((prev) => [...prev, { key: leavingKey, slot, text: resolveDisplayDefinition(entry) }]);
-        later(BUCKET_EXIT_MS, () => setLeaving((prev) => prev.filter((g) => g.key !== leavingKey)));
-
-        const refilled = next.slots[slotIndex];
-        if (refilled !== null) refillKeysRef.current.add(bucketKey(slotIndex, refilled));
-        setQueue(next);
-        drop(entry, true);
-        if (next.remaining.length === 0) complete();
-        return { kind: "correct" };
-    }, [later, setQueue]);
-
-    const removeFalling = useCallback((key: string) => setFalling((prev) => prev.filter((g) => g.key !== key)), []);
-
+    // ── Render ──────────────────────────────────────────────────────────────────
     return (
-        <Box
-            ref={fieldRef}
-            className="bucket-drop__field"
-            sx={{ position: "relative", flex: 1, minHeight: 0, width: "100%", overflow: "hidden", touchAction: "none" }}
+        <>
+        <ProvisionalCardsNotice
+            open={noticeOpen}
+            onDismiss={() => setNoticeOpen(false)}
+            surfaceName="Bucket Drop"
+            entries={provisionalEntries(pool)}
+            language={language}
+        />
+        <Frame
+            title="Bucket Drop"
+            onExitRequest={onExitRequest}
+            // The app-wide narration chip, the same self-contained `AudioModeChip` as Bubble
+            // Match / Word Search / Match Speed (docs/AUDIO_PLAYBACK.md). Offered only when
+            // the run narrates (`onPickUp`): a READING run is silent, since hearing the word
+            // would hand over the reading being tested — Bubble Match's `showAudioChip` rule.
+            // A break's frame ignores it.
+            headerRight={runTrack !== "reading" ? <AudioModeChip className="bucket-drop__audio-chip" /> : undefined}
         >
-            {layout.slots.map((slot) => {
-                const id = queue.slots[slot.index];
-                const entry = id === null || id === undefined ? undefined : entryById.get(id);
-                if (!entry) return null;
-                const key = bucketKey(slot.index, entry.id);
-                return (
-                    <DropBucket
-                        key={key}
-                        slot={slot}
-                        text={resolveDisplayDefinition(entry)}
-                        hovered={hoveredSlot === slot.index}
-                        wrong={wrong?.slotIndex === slot.index}
-                        shakeKey={wrong?.slotIndex === slot.index ? wrong.nonce : 0}
-                        enter={refillKeysRef.current.has(key)}
+            <Box
+                className="bucket-drop__content"
+                sx={{
+                    position: "relative",
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    touchAction: "none",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
+                }}
+            >
+                {phase === "loading" && (
+                    <GameCentered className="bucket-drop__overlay">
+                        <DelayedCircularProgress className="bucket-drop__spinner" />
+                    </GameCentered>
+                )}
+
+                {phase === "blocked" && (
+                    <GameCentered className="bucket-drop__overlay">
+                        <Typography className="bucket-drop__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
+                            {blockMessage}
+                        </Typography>
+                        <Button className="bucket-drop__block-back" variant="contained" onClick={onDone}>
+                            Back to {doneLabel}
+                        </Button>
+                    </GameCentered>
+                )}
+
+                {(phase === "playing" || phase === "ended") && (
+                    <GameFrame className="bucket-drop__frame">
+                        {/* No clock on the board. A break's bare screen keeps the buckets clear
+                            of Leave's arrow at the top-left. */}
+                        {isBreak && (
+                            <Box className="bucket-drop__exit-clearance" sx={{ flexShrink: 0, height: GAME_FRAME_EXIT_CLEARANCE_PX }} />
+                        )}
+                        <BucketDropBoard
+                            key={runId}
+                            pool={pool}
+                            showPinyin={boardShowPinyin}
+                            showPinyinColor={settings.showPinyinColor}
+                            paused={clockPaused || phase !== "playing"}
+                            onPickUp={onPickUp}
+                            onDrop={onDrop}
+                            onComplete={onComplete}
+                        />
+                    </GameFrame>
+                )}
+
+                {/* A challenge round ends on the scoreboard, never on the game's own card. */}
+                {resultsReady && challengeRound.active && (
+                    <ChallengeRoundScoreboard round={challengeRound} classPrefix="bucket-drop" />
+                )}
+
+                {/* An flp break has no end popup: its results land on the break's card
+                    (docs/FLP_GAME_BREAKS.md § 5b). */}
+                {resultsReady && !challengeRound.active && !isBreak && (
+                    <BucketDropEndPopup
+                        medal={medal}
+                        finalMs={finalMs}
+                        total={pool.length}
+                        misses={misses}
+                        fullRun={fullRun}
+                        personalBestMs={personalBestMs}
+                        isNewBest={isNewBest}
+                        exitLabel={doneLabel}
+                        onPlayAgain={() => void playAgain()}
+                        onLeave={onDone}
                     />
-                );
-            })}
+                )}
 
-            {/* Emptied buckets fading out, drawn OVER their slot's replacement. */}
-            {leaving.map((ghost) => (
-                <DropBucket key={ghost.key} slot={ghost.slot} text={ghost.text} leaving />
-            ))}
-
-            {/* Every word still in play. Keyed by id: a word keeps its node (and so its
-                resting spot) for the whole run, and unmounts when it is placed. */}
-            {pile && queue.remaining.map((id) => {
-                const entry = entryById.get(id);
-                const spot = pile.get(id);
-                if (!entry || !spot) return null;
-                return (
-                    <StackWord
-                        key={id}
-                        entry={entry}
-                        initialX={spot.x}
-                        initialY={spot.y}
-                        initialZ={spot.z}
-                        showPinyin={showPinyin}
-                        showPinyinColor={showPinyinColor}
-                        disabled={paused || locked}
-                        onPickUp={handlePickUp}
-                        onHover={handleHover}
-                        onRelease={handleRelease}
-                    />
-                );
-            })}
-
-            {falling.map((ghost) => (
-                <FallingWord
-                    key={ghost.key}
-                    ghost={ghost}
-                    showPinyin={showPinyin}
-                    showPinyinColor={showPinyinColor}
-                    onDone={removeFalling}
+                <ProvisionalSortOffer
+                    open={sortOffer.open}
+                    words={lentWords}
+                    language={language}
+                    onDismiss={sortOffer.dismiss}
+                    onNothingToOffer={sortOffer.dismiss}
+                    minimized={sortOffer.minimized}
+                    onMinimize={sortOffer.onMinimize}
+                    onRestore={sortOffer.onRestore}
                 />
-            ))}
-        </Box>
+            </Box>
+
+            {/* Backgrounding paused the run — covers the board until Resume. */}
+            <GamePausedOverlay open={backgroundPaused} onResume={resumeFromBackground} classPrefix="bucket-drop" />
+        </Frame>
+        </>
     );
 };
 

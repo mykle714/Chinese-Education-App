@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { OnDeckVocabService, parseStudyMode, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
-import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
+import { MAX_SEED_IDS, parseIdCsv, requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
 import {
@@ -19,7 +19,7 @@ import { isFeatureEnabled } from '../contracts/featureFlags.js';
 import type { FocusModeService } from '../services/FocusModeService.js';
 import { FOCUS_ENDED_HEADER } from '../contracts/focusMode.js';
 import { worldForMarkType } from '../contracts/mastery.js';
-import type { MasteryWorldId } from '../contracts/wire.js';
+import { WORD_SEARCH_BOARDS, type MasteryWorldId, type WordSearchBoardId } from '../contracts/wire.js';
 
 /**
  * OnDeck Vocabulary Controller
@@ -58,17 +58,25 @@ export class OnDeckVocabController {
    *     The caller must then SKIP its baseline top-up: a focused round never lends.
    *   - unrestricted, not focused    → null (an ordinary round). If resolving is what
    *     just switched focus off, FOCUS_ENDED_HEADER tells the client to show the popup.
+   *
+   * `flpBreak` turns the second case inside out (§ 4a): `{ kind: 'outside-focus', … }`,
+   * every card but today's set, with the remaining set as the fallback.
    */
   private async applyFocus(
     res: Response,
     userId: string,
     language: string,
     world: MasteryWorldId,
-    collection: CollectionFilter | null
+    collection: CollectionFilter | null,
+    flpBreak = false
   ): Promise<CollectionFilter | null> {
     if (collection) return collection;
     const focus = await this.focusModeService.resolveWorld(userId, language, world);
-    if (focus.active) return { kind: 'focus', ids: focus.ids };
+    if (focus.active) {
+      return flpBreak
+        ? { kind: 'outside-focus', setIds: focus.setIds, remainingIds: focus.ids }
+        : { kind: 'focus', ids: focus.ids };
+    }
     if ('ended' in focus && focus.ended) res.setHeader(FOCUS_ENDED_HEADER, world);
     return null;
   }
@@ -329,11 +337,6 @@ export class OnDeckVocabController {
   // Categories the game pool may request counts for (mirrors the SR buckets).
   private static readonly GAME_POOL_CATEGORIES = ['Unfamiliar', 'Target', 'Comfortable', 'Mastered'];
 
-  // Upper bound on `?seedIds=` (docs/FLP_GAME_BREAKS.md § 4). A seed is an flp working
-  // loop (~10 cards); 40 leaves room for a grown loop without letting one request
-  // address an unbounded id list.
-  private static readonly MAX_SEED_IDS = 40;
-
   /**
    * Build a game's card pool.
    * GET /api/onDeck/gamePool?markType=recognition&Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
@@ -381,11 +384,6 @@ export class OnDeckVocabController {
       //   avoid   — csv of ids to treat as cooled (just cleared this session), only
       //             drawn if the library can't fill the board otherwise
       //   need    — how many cards to return
-      const parseIdCsv = (raw: unknown): number[] =>
-        String(raw ?? '')
-          .split(',')
-          .map((part) => parseInt(part, 10))
-          .filter((n) => Number.isInteger(n) && n > 0);
       const excludeIds = parseIdCsv(req.query.exclude);
       const avoidIds = parseIdCsv(req.query.avoid);
       //   seedIds — csv of vet ids the caller wants ON the board if they can take this
@@ -393,7 +391,7 @@ export class OnDeckVocabController {
       //             docs/FLP_GAME_BREAKS.md § 4). Partitioned server-side by
       //             `isCardGameEligible`; the ineligible ones are a fallback only.
       //             Capped at a board's worth so a malformed request can't fan out.
-      const seedIds = parseIdCsv(req.query.seedIds).slice(0, OnDeckVocabController.MAX_SEED_IDS);
+      const seedIds = parseIdCsv(req.query.seedIds).slice(0, MAX_SEED_IDS);
       const rawNeed = parseInt(String(req.query.need ?? ''), 10);
       const need = Number.isFinite(rawNeed) && rawNeed >= 0 ? rawNeed : undefined;
 
@@ -446,9 +444,10 @@ export class OnDeckVocabController {
       // Optional collection restriction. Resolved BEFORE the top-up so a bad deck
       // id 404s without first lending the user cards for a round that won't happen.
       // A focused world narrows an unrestricted pool to today's set (the game's world is
-      // the one its marks land in).
+      // the one its marks land in); an flp break (`?flpBreak=1`) draws from outside it.
       const collection = await this.applyFocus(
-        res, userId, language, worldForMarkType(markType), await this.resolveCollection(req, userId)
+        res, userId, language, worldForMarkType(markType), await this.resolveCollection(req, userId),
+        String(req.query.flpBreak ?? '') === '1'
       );
 
       // Top up to the surface's baseline BEFORE assembling the pool, so the selection
@@ -461,8 +460,9 @@ export class OnDeckVocabController {
       // sorted-only, so a lent card that is not named cannot appear in the round
       // (docs/PROVISIONAL_CARDS.md § 4b).
       let lentIds: number[] = [];
-      // Never for a focused pool: it plays the day's set or a smaller board.
-      if (need === undefined && collection?.kind !== 'focus') {
+      // Never for a focused pool: it plays the day's set or a smaller board. The same
+      // goes for a focused break, which has the learner's whole pile to draw on.
+      if (need === undefined && collection?.kind !== 'focus' && collection?.kind !== 'outside-focus') {
         const surface = OnDeckVocabController.parseSurface(req.query.surface);
         const baseline = surface
           ? CARD_BASELINES[surface]
@@ -510,6 +510,11 @@ export class OnDeckVocabController {
    * Same requested distribution + fallback semantics as the bubble-match pool,
    * plus a substring de-dup pass and snaking grid generation. Returns
    * { grid, words, rows, cols, total, available, sufficient, reason? }.
+   *
+   * An flp game break adds `&seedIds=` (its working loop) and `&flpBreak=1`, with the
+   * same meaning as on gamePool (docs/FLP_GAME_BREAKS.md § 4, docs/FOCUS_MODE.md § 4a).
+   * A Deck Tower break also sends `&board=compact` (WORD_SEARCH_BOARDS). A challenge
+   * round ignores it: it always plays the standard board.
    */
   getWordSearchGrid = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -524,17 +529,12 @@ export class OnDeckVocabController {
           if (Number.isFinite(n) && n > 0) distribution[cat] = n;
         }
       }
+      // `compact` is the Deck Tower break's smaller board; anything else is the standard one.
+      const board: WordSearchBoardId = req.query.board === 'compact' ? 'compact' : 'standard';
+      // A defensive fallback for a query missing all four category params: the app
+      // always sends them, so this only fires on a manual/raw API call.
       if (Object.keys(distribution).length === 0) {
-        // Mirrors word-search/constants.ts's GAME_DISTRIBUTION (1/5/2/1 = 9), NOT
-        // bubble-match's 2/10/6/2 — this is a defensive fallback for a query missing
-        // all four category params; the app always sends them (GRID_QUERY), so this
-        // only fires on a manual/raw API call. (Was already wrong before 2026-08-24 —
-        // it matched bubble-match's fallback, not word-search's own, even when this
-        // board was 10 words.)
-        distribution.Unfamiliar = 1;
-        distribution.Target = 5;
-        distribution.Comfortable = 2;
-        distribution.Mastered = 1;
+        Object.assign(distribution, WORD_SEARCH_BOARDS[board].distribution);
       }
 
       const language = await getUserLanguage(userId);
@@ -586,8 +586,10 @@ export class OnDeckVocabController {
       }
 
       const collection = await this.applyFocus(
-        res, userId, language, worldForMarkType(gameMarkType), await this.resolveCollection(req, userId)
+        res, userId, language, worldForMarkType(gameMarkType), await this.resolveCollection(req, userId),
+        String(req.query.flpBreak ?? '') === '1'
       );
+      const seedIds = parseIdCsv(req.query.seedIds).slice(0, MAX_SEED_IDS);
 
       // Word Search is the one surface where meeting the baseline does NOT guarantee a
       // playable round: its ten words must have mutually DISTINCT characters, which a
@@ -599,10 +601,11 @@ export class OnDeckVocabController {
       // dropped from this list is a card the grid can no longer see.
       const lentIds: number[] = [];
       let result = await this.onDeckVocabService.getWordSearchGrid(
-        userId, language, distribution, gameMarkType, collection, lentIds
+        userId, language, distribution, gameMarkType, collection, lentIds, null, seedIds, board
       );
-      // A focused grid never escalates: lending cannot add to the day's set.
-      const mayEscalate = collection?.kind !== 'focus';
+      // A focused grid never escalates: lending cannot add to the day's set. A focused
+      // break does not lend either, as on gamePool: it has the learner's whole pile.
+      const mayEscalate = collection?.kind !== 'focus' && collection?.kind !== 'outside-focus';
       for (let multiplier = 1; mayEscalate && multiplier <= PROVISION_RETRY_FACTOR && !result.sufficient; multiplier++) {
         // 'language' means the game is zh-only and this user isn't studying zh —
         // no amount of lending fixes that.
@@ -624,7 +627,7 @@ export class OnDeckVocabController {
         if (fresh.length === 0) continue;
         lentIds.push(...fresh);
         result = await this.onDeckVocabService.getWordSearchGrid(
-          userId, language, distribution, gameMarkType, collection, lentIds
+          userId, language, distribution, gameMarkType, collection, lentIds, null, seedIds, board
         );
       }
       res.json(result);

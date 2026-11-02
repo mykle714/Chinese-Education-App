@@ -33,8 +33,6 @@ Every column in `dictionaryentries_zh` and the script responsible for populating
 | `segmentMetadata` | *Not stored — computed at runtime* | Deterministic via `DictionaryDAL.enrichExampleSentencesMetadataBatch()` | — | zh |
 | `breakdown` | `backfill/chinese/backfill-dictionary-breakdown.js` | Deterministic | **Yes** | zh (multi-char only) |
 | `classifier` | `backfill/chinese/backfill-classifier.js` | AI (Claude Sonnet) | **Yes** | zh |
-| `expansion` | `backfill/chinese/backfill-expansion-claude.js` | AI (Claude Sonnet) | **Yes** | zh |
-| `expansionLiteralTranslation` | `backfill/chinese/backfill-expansion-claude.js` | AI (Claude Sonnet) | **Yes** | zh |
 | `createdAt` | DB auto-set | — | — | all |
 
 **Note on runtime-computed fields:** `shortDefinition`, `synonymsMetadata`, and `segmentMetadata` (per-sentence pronunciation/definition/particle data for example sentences) are **never stored in the database**. They are computed on-the-fly at the service layer for every API response.
@@ -53,7 +51,7 @@ Use the `/mark-discoverable` skill to handle the full flow — it sets `discover
 
 **Step 1 — Tones**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-tones.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-tones.js --words=word1,word2
 ```
 Populates: `tone`
 Reads: `pronunciation`
@@ -63,7 +61,7 @@ Filter: `language = 'zh' AND pronunciation IS NOT NULL AND tone IS NULL`
 
 **Step 2 — Numbered Pinyin**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-numbered-pinyin.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=word1,word2
 ```
 Populates: `numberedPinyin`
 Reads: `pronunciation`
@@ -74,7 +72,7 @@ Format: Numbered tone notation (e.g. "gan1 huo4"), ü → v, neutral tone gets n
 
 **Step 3 — Character Breakdown**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=word1,word2
 ```
 Populates: `breakdown`
 Reads: `word1`, `language`
@@ -87,7 +85,7 @@ Note: Only applies to multi-character Chinese entries.
 
 **Step 4 — HSK Level**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-hsk-level.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-hsk-level.js --words=word1,word2
 ```
 Populates: `difficulty` (smallint 1..6)
 Note: the script name still says "hsk-level" but the column is **`difficulty`** — migration
@@ -99,7 +97,7 @@ badge. Assigns one level per entry. Use `--spot-check` to preview 5 entries firs
 
 **Step 5 — Long Definitions**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-long-definitions.js --words=word1,word2
 ```
 Populates: `longDefinition` — one definition per SENSE, read from `definitionClusters`,
 so **run `backfill-cluster-definitions.js` first** (see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)).
@@ -109,7 +107,7 @@ Filter: `language = 'zh' AND discoverable = TRUE AND longDefinition IS NULL AND 
 
 **Step 5b — Long-Definition Citations**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-longdef-citations.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-longdef-citations.js --words=word1,word2
 ```
 Populates: `longDefinitionCitations` — one `{zh, en}` per Chinese run quoted inside the long
 definition, so the client can highlight the whole cited phrase and show its translation
@@ -124,7 +122,7 @@ Note: `shortDefinition` is no longer stored — it is computed at runtime from `
 
 **Step 7 — Example Sentences**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-example-sentences.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-example-sentences.js --words=word1,word2
 ```
 Populates: `exampleSentences`
 Filter: `language = 'zh' AND discoverable = TRUE AND exampleSentences IS NULL`
@@ -134,21 +132,11 @@ Note: Generates 3 sentences per entry. Each sentence contains `chinese`, `englis
 
 **Step 8 — Classifier (量词)**
 ```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-classifier.js --words=word1,word2
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-classifier.js --words=word1,word2
 ```
 Populates: `classifier`
 Filter: `language = 'zh' AND discoverable = TRUE AND classifier IS NULL`
 Note: Determines measure words for count nouns. Sets `[]` (not a count noun) or a non-empty array (e.g. `["辆"]`). NULL means not yet processed. Use `--spot-check` flag to preview 5 entries first.
-
----
-
-**Step 9 — Expansion + Literal Translation**
-```bash
-docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-expansion-claude.js --words=word1,word2
-```
-Populates: `expansion`, `expansionLiteralTranslation`
-Filter: `language = 'zh' AND discoverable = TRUE AND (expansion IS NULL OR (expansion != '' AND "expansionLiteralTranslation" IS NULL))`
-Note: Runs **last** — it segments the accepted expansion and looks up each segment's `definitions`, so it benefits from neighboring words already being enriched. Multi-agent generator → deterministic checks → validator → one retry. Writes the sentinel `''` (empty string) when no valid expansion exists — this is a legitimate terminal state, not a coverage gap, so many discoverable words will have a blank `expansion`. `expansionSegments`/`expansionMetadata` are computed at runtime, not stored here.
 
 ---
 

@@ -14,13 +14,13 @@ import type { FlpBreakGame } from "./types";
  */
 export const MATCH_SPEED_BREAK: FlpBreakGame<GamePoolResponse> = {
     gameId: "match-speed",
-    rulesLine: "Match each word to its meaning — as many pairs as you can in 30 seconds.",
-    panelFill: null,
+    rulesLine: "Match each word to its meaning — finish all 30 pairs as fast as you can.",
     prefetch: (_candidate, context) =>
         fetchGamePool(matchSpeedPoolRequest({
             distribution: modeConfigFor(context.studyMode).poolDistribution,
             collection: context.collection,
             seedIds: context.seedIds,
+            flpBreak: true,
         })),
     Stage: lazy(() => import("./MatchSpeedBreakStage")),
 };

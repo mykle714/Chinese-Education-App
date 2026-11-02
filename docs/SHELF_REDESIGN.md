@@ -1331,7 +1331,8 @@ the app should hardcode.
 **One deliberate departure: `GameTimer` keeps a `pulse` prop.** The design draws no pulse.
 But a colour change plus a nearly-drained track is easy to miss in peripheral vision, which
 is exactly where a clock gets read mid-game, so Match Speed's ten-second pulse survived the
-port as an opt-in rather than being dropped silently.
+port as an opt-in rather than being dropped silently. (Match Speed itself stopped using it
+when the run became 30 pairs on a count-up clock.)
 
 **What the frame deliberately does NOT do:** `useBlockEdgeSwipe(true)` and
 `touchAction: "none"` stay the page's job. The edge-swipe block is a document-level touch
@@ -1345,7 +1346,7 @@ swipe out of this game" invisible to whoever reads the page.
 | Match Speed | Framed. `MatchSpeedTimerBar` now **delegates to `GameTimer`** and keeps only what is Match-Speed-specific: `RUN_DURATION_MS`, the 10s urgency threshold, its colours. ~60 lines of duplicated clock styling gone. |
 | Bubble Match | Framed. `BubbleStage` measures its own container, so this just re-bounds the field — no constant changed. |
 | Hydra Bubbles | Framed, same as Bubble Match. |
-| Word Search | Framed, and its HUD **is** `GameHud` as of entry 13. Since 2026-09-25 it holds only the clock, centred (the mode label and found count were removed), plus — since 2026-09-30 — the eye toggle that shows/hides it; the strip is always rendered — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
+| Word Search | Framed, with no HUD since 2026-11-01: the clock runs out of sight — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
 | Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
 | Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
 
@@ -2052,10 +2053,10 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   `CPCDSize` is a fixed five-step scale shared by every foreign-text surface in the app;
   adding a sixth step for one row would be a worse trade than 5px. `sm`'s pinyin (13px)
   is within half a pixel of the artboard's anyway.
-- **The gloss carries every sense, joined with a spaced middle dot, not just the first.** The artboard
-  shows "time; period" for 时间; the middle dot, with two (non-breaking) spaces either side,
+- **The gloss lists every sense's dd, joined with a spaced middle dot, not just the first** (the same list as the eip header; `resolveSearchRowView`). The artboard
+  shows "time; period" for 时间; the middle dot, with two plain spaces either side (rendered with `white-space: pre`; never NBSP, which iOS draws about 1em wide in the sliced CJK face),
   replaced the semicolon (owner's call 2026-10-29; `src/utils/definitionUtils.ts` →
-  `joinDefinitionList` / `DEFINITION_LIST_SEPARATOR`, shared with the Dictionary eip's
+  `joinDefinitionList` / `DEFINITION_LIST_SEPARATOR`, shared with the eip
   header). The row height is fixed either way, so the extra senses are free information.
 - **On the Dictionary page the gloss swipes** (owner's request 2026-10-29). A gloss that
   overflows its line is not ellipsized; the line is a horizontal scroller the learner swipes
@@ -2069,28 +2070,25 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   per row (`swipeGloss`); the Compare picker and community search keep the ellipsis. Code:
   `src/components/DictionaryEntryRow.tsx` → `DictionaryEntryGloss`, `swipeGloss`; the line
   itself is the shared `src/components/SwipeableTextLine.tsx`.
-- **The Dictionary eip shows every meaning** (owner's call 2026-10-29; EipSheet
-  `showAllDefinitions`, set only by DictionaryPage). A lookup is not a card, so:
-  - the header gloss is the WHOLE flat `definitions` list (`definitionListItems`, joined by
-    `DEFINITION_LIST_SEPARATOR`) on **up to two lines** — `src/components/SwipeableTwoLineText.tsx`:
-    one line if it fits; else two lines broken greedily between glosses; and only if two
-    lines still overflow, two lines re-split to EQUAL length that swipe sideways together
-    (clipped, rubber-banded, `touch-action: pan-x` since vertical drags on the header resize
-    the sheet). Centered in the space beside the headword while it fits (2026-10-30) — by
-    auto margins on the lines block, not `text-align` on the scroller, which in Blink pushed
-    overflow off the unscrollable LEFT edge. No sense is
-    marked (it is the flat list, not the sense list below) and the pinyin is the default reading
-    (`resolveDefaultPronunciation`), as on the search row. `EipEntryHeader` →
-    `showAllDefinitions`.
-  - the entries carry the list because the eip's tabs come from `lookupVocabEntry`, whose
-    adapter (`src/utils/dictEntryAdapter.ts`) copies det's `definitions` onto the client-only
-    `VocabEntry.definitions` (`src/types.ts`; vet rows never carry it, so the flag falls back
-    to the dd there).
-  - the definition tab is unchanged (a two-column all-definitions list there was tried and
-    removed the same day). Its long definition and facts still follow the tab's
-    `selectedSenseIndex` (a word with a saved card opens on its saved sense) — with the
-    picker hidden that sense can no longer be changed from this eip.
-- **Every other eip lists the senses too** (owner's call 2026-10-29). For a word with ≥2
+- **The Dictionary lists senses, as the flp eip does** (owner's call 2026-10-31, reversing the
+  2026-10-29 flat-`definitions` list). The search row and the Dictionary eip header show the same
+  list as every other eip: each sense's dd (`ddt`, the first gloss of each displayable cluster), in
+  `sortedSenseClusters` order, or the plain dd for a word with fewer than two displayable clusters.
+  - **The eip header** goes through `EipEntryHeader` → `senseSegments`, with no Dictionary-specific
+    mode; it underlines the chosen sense, stars the default and shows that sense's reading. A hit
+    through a non-default sense opens on it (`DictionaryPage` → `handleEntryClick`).
+  - **The search row** goes through `src/utils/definitionUtils.ts` → `resolveSearchRowView`, then
+    `joinDefinitionList`. A `matchedSense` moves that sense's dd to the front and supplies the
+    pinyin. Compare slot B shares the row; `CommunitySearchBar` prints the list's first item.
+  - **Search still reads every gloss** (`server/dal/implementations/DictionaryDAL.ts` →
+    `STRIPPED_ALL_GLOSSES`), so a hit on a later gloss can show a row that does not print the
+    searched word: "pretty" finds 漂亮, whose row reads "beautiful".
+  - **The full glosses are not on screen in the Dictionary.** The 2026-10-31 analysis found
+    first-gloss lists drop real meanings on common words (看 "to read"/"to watch", 我 "me"/"my").
+  - The definition tab is unchanged. Its long definition and facts follow the tab's
+    `selectedSenseIndex` (a word with a saved card opens on its saved sense); the pick is made on
+    the card face, so it cannot be changed from this eip.
+- **Every eip lists the senses** (owner's call 2026-10-29; the Dictionary eip joined on 2026-10-31). For a word with ≥2
   displayable clusters (the SensePicker's gate, `sortedSenseClusters`) the header gloss is
   each sense's dd (`ddt`), in the picker's order, through the same `SwipeableTwoLineText`
   layout. The chosen sense (`selectedSenseIndex`, falling back to the persisted pick) is

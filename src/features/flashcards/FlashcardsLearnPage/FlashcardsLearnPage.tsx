@@ -33,10 +33,10 @@ import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import { useGameBreak } from "./gameBreak/useGameBreak";
-import { flpBreakGameFor } from "../../../games/flpBreak";
 import { useForcedBreak } from "./gameBreak/forcedBreak";
 import GameBreakArea from "./gameBreak/GameBreakArea";
 import GameBreakCard from "./gameBreak/GameBreakCard";
+import GameBreakResultCard from "./gameBreak/GameBreakResultCard";
 import { useWritingFlashcard } from "./useWritingFlashcard";
 import WritingUsedInBubbles, { WritingUsedInBand } from "./WritingUsedInBubbles";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
@@ -311,6 +311,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         studyMode: selectedMode,
         collection: launchCollection,
         workingLoop,
+        towerSession: tower !== undefined,
         disabled: editMode,
         forcedKey: forcedBreakKey,
     });
@@ -321,14 +322,12 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // around a card (undo, a tap off it) carries on until Play or Skip takes it away.
     const stackIsCards = gameBreak.phase === "cards" || gameBreak.phase === "title";
     const breakLocksUndo = !stackIsCards;
-    // A tower session's host takes the game's cleared cards off as the game falls away.
+    // A tower session's host takes the game's cleared cards off as the game goes away.
     const breakGameUp = gameBreak.phase === "growing" || gameBreak.phase === "playing";
-    // A game drawn on the ground also has the host clear the platform off that ground.
-    const breakOnGround = !!gameBreak.planned && flpBreakGameFor(gameBreak.planned.candidate.game.gameId)?.panelFill === null;
     const onTowerGameBreakChange = tower?.onGameBreakChange;
     useEffect(() => {
-        onTowerGameBreakChange?.(breakGameUp, breakOnGround);
-    }, [onTowerGameBreakChange, breakGameUp, breakOnGround]);
+        onTowerGameBreakChange?.(breakGameUp);
+    }, [onTowerGameBreakChange, breakGameUp]);
 
     // ── Leaving the session ──────────────────────────────────────────────────
     // flp accumulates lent cards for the whole session (the working loop refills as
@@ -404,7 +403,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // Off during an icon edit (its own off-canvas tap deselects) and once a game break has
     // left the stack; its card counts as a card, and is excluded the same way as any other.
     const towerOffCardPress = useRef<{ x: number; y: number } | null>(null);
-    const towerOffCardLive = tower !== undefined && !parked && !editMode && stackIsCards;
+    // The results card counts too, though undo stays locked on it: a played game can't be undone.
+    const towerOffCardLive = tower !== undefined && !parked && !editMode && (stackIsCards || gameBreak.phase === "results");
     const isTowerOffCardTarget = (e: React.SyntheticEvent): boolean => {
         const el = e.target as HTMLElement;
         return e.currentTarget.contains(el) && el.matches(TOWER_OFF_CARD_SELECTOR);
@@ -735,9 +735,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     }, [gameBreak.returnNonce]);
 
     // Memoized for FlashCardSection's memo: it only changes with the plan or the buttons.
-    const { planned: plannedBreak, playPending: breakPlayPending, play: playBreak, beginLeave: leaveBreak } = gameBreak;
+    const { planned: plannedBreak, results: breakResults, playPending: breakPlayPending, play: playBreak, beginLeave: leaveBreak } = gameBreak;
     const breakCard = useMemo(
-        () => (plannedBreak ? (
+        () => (breakResults ? (
+            <GameBreakResultCard results={breakResults} />
+        ) : plannedBreak ? (
             <GameBreakCard
                 candidate={plannedBreak.candidate}
                 onSkip={leaveBreak}
@@ -745,7 +747,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 playPending={breakPlayPending}
             />
         ) : null),
-        [plannedBreak?.candidate, leaveBreak, playBreak, breakPlayPending], // eslint-disable-line react-hooks/exhaustive-deps
+        [breakResults, plannedBreak?.candidate, leaveBreak, playBreak, breakPlayPending], // eslint-disable-line react-hooks/exhaustive-deps
     );
 
     // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
@@ -989,6 +991,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     gameBreak={gameBreak.stackHold}
                     breakCard={breakCard}
                     onBreakCardGone={gameBreak.finishLeave}
+                    onBreakCardSwiped={leaveBreak}
                     activeFrontSlot={activeFrontSlot}
                     flyOut={flyOut}
                     cardRef={cardRef}
@@ -1094,9 +1097,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     <WritingUsedInBubbles
                         entry={displayCurrentEntry ?? null}
                         cardRef={cardRef}
-                        // Tower: grow in only once the card is actually seen (parked, or under
-                        // the count card, it is not).
-                        unseen={parked || !!tower?.cardsCovered}
+                        // Grow in only once the card is actually seen: not parked, under the
+                        // tower's count card, or under the break's card. Skip uncovers it,
+                        // so the bubbles grow in as that card flies off.
+                        unseen={parked || !!tower?.cardsCovered || (breakUp && gameBreak.phase !== "skipping")}
                     />
                 )}
                 {/* Centered pill button — ghosted before flip, full opacity after. While
@@ -1209,10 +1213,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     );
                 })()}
                 {/* THE GAME BREAK, once Play is tapped (until then it is a card in the
-                    stack) — over the whole ContentArea, under the flp header, which
-                    stays (its Back still leaves the session). docs/FLP_GAME_BREAKS.md § 2. */}
+                    stack). It portals to the phone frame, over the flp header and the
+                    footer, so its own back arrow is the way out. docs/FLP_GAME_BREAKS.md § 2. */}
                 {gameBreak.areaMounted && (
-                    <GameBreakArea gameBreak={gameBreak} contentAreaRef={contentAreaRef} onCardCleared={tower?.onGameCardCleared} onSky={!!tower} />
+                    <GameBreakArea gameBreak={gameBreak} onCardCleared={tower?.onGameCardCleared} />
                 )}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
                 {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).

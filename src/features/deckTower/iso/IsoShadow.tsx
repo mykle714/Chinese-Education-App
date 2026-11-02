@@ -1,6 +1,6 @@
 import React from "react";
 import { convexHull, flatPath, toPath, type Pt3, type WorldRect } from "./geometry";
-import { shadowFootprint, shadowSlide, shadowTone, type IsoSurface } from "./light";
+import { SHADOW_GLAZE_OPACITY, shadowFootprint, shadowSlide, shadowTone, type IsoSurface } from "./light";
 import { useIsoProjector } from "./sceneContext";
 
 /**
@@ -24,6 +24,12 @@ type IsoShadowProps = {
     /** The surface the shadow falls on. */
     receiver: IsoSurface;
     className?: string;
+    /**
+     * Paint it as a see-through glaze of this colour rather than the opaque tone, for a
+     * receiver with something printed on it (the top card's label and count). The pawn's
+     * floor shadow keeps the decal copy instead: a floor decal has a shaded version to draw.
+     */
+    glaze?: string;
 } & (
     | {
           /** The caster's underside outline, in world units. */
@@ -42,7 +48,7 @@ type IsoShadowProps = {
 
 const IsoShadow: React.FC<IsoShadowProps> = (props) => {
     const proj = useIsoProjector();
-    const { receiver, className } = props;
+    const { receiver, className, glaze } = props;
     let d: string;
     if (props.solid) {
         const landed = props.solid.map((p) => {
@@ -53,7 +59,14 @@ const IsoShadow: React.FC<IsoShadowProps> = (props) => {
     } else {
         d = flatPath(proj, shadowFootprint(props.footprint, props.casterZ, receiver), receiver.z);
     }
-    return <path className={className ?? "iso-shadow"} d={d} fill={shadowTone(receiver.color)} />;
+    return (
+        <path
+            className={className ?? "iso-shadow"}
+            d={d}
+            fill={glaze ?? shadowTone(receiver.color)}
+            fillOpacity={glaze ? SHADOW_GLAZE_OPACITY : undefined}
+        />
+    );
 };
 
 export default IsoShadow;

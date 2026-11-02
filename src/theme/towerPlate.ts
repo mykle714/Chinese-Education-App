@@ -43,7 +43,7 @@ export interface PlateTones {
  * Layer: shared theme style — in theme/ because the games draw plates too and may not
  * import features/. `towerPlateSx` is used by FlashcardsLearnPage.tsx (passed to
  * WordToolsRail `pillSx`), styled.ts → `MoreInfoPill` (`plate`), GameBreakCard.tsx,
- * games/shared/GameFrame.tsx (Leave) and games/match-speed/MatchSpeedPlateButton.tsx. `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
+ * games/shared/GameFrame.tsx (Leave, tower tone). `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
  * exported for a control that wants only one of them (none does today — the study
  * header's audio chip used both until it became bare text, 2026-10-26).
  */

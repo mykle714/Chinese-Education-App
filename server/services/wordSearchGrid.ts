@@ -9,7 +9,7 @@
  * Referenced by docs/WORD_SEARCH_GAME.md §2 (grid generation).
  */
 
-import { WORD_SEARCH_TEMPLATES, WORD_SEARCH_TEMPLATE_ROWS, WORD_SEARCH_TEMPLATE_COLS } from './wordSearchTemplates.js';
+import { WORD_SEARCH_TEMPLATE_SETS, type WordSearchTemplateSet } from './wordSearchTemplates.js';
 import type { SegmentDrillRung } from '../dal/shared/segmentString.js';
 
 export type Rng = () => number;
@@ -81,7 +81,7 @@ export interface WordSearchGrid {
   cols: number;
   grid: GridCell[][]; // grid[row][col]
   words: PlacedWord[];
-  /** Index into WORD_SEARCH_TEMPLATES if template mode placed this grid, else null (random snaking). */
+  /** Index into its board's template set if template mode placed this grid, else null (random snaking). */
   templateIndex: number | null;
 }
 
@@ -154,8 +154,8 @@ export const MAX_GRID_ATTEMPTS = 100;
 
 /**
  * Whole-grid regenerations that use random snaking placement before falling
- * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). 9 words all
- * at the 4-character cap can wall each other off badly enough that random
+ * back to a fixed template (see docs/WORD_SEARCH_TEMPLATES.md). A board of words
+ * at the 4-character cap can wall itself off badly enough that random
  * retries burn through many attempts on bad luck; a template guarantees a fit
  * instead of continuing to gamble. Attempts `RANDOM_GRID_ATTEMPTS` and above
  * (up to MAX_GRID_ATTEMPTS) use template mode when it applies (§ below).
@@ -185,24 +185,20 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 }
 
 /**
- * Template mode (docs/WORD_SEARCH_TEMPLATES.md) only applies to the shape this
- * game actually ships: a board matching WORD_SEARCH_TEMPLATE_ROWS/COLS with
- * exactly 9 words, each <= 4 characters (one word per template slot, no
- * leftover words or slots). Any other shape (e.g. a differently-sized test
- * board) keeps retrying random placement for the full MAX_GRID_ATTEMPTS
- * instead.
+ * The template set for this board, or null when template mode does not apply
+ * (docs/WORD_SEARCH_TEMPLATES.md). It applies only to the shapes the game ships: a
+ * board matching a set's rows/cols, with exactly one word per slot, each <= 4
+ * characters. Any other shape (e.g. a differently-sized test board) keeps retrying
+ * random placement for the full MAX_GRID_ATTEMPTS instead.
  */
-function templateModeApplicable(
+function templateSetFor(
   prepared: { chars: string[] }[],
   rows: number,
   cols: number
-): boolean {
-  return (
-    rows === WORD_SEARCH_TEMPLATE_ROWS &&
-    cols === WORD_SEARCH_TEMPLATE_COLS &&
-    prepared.length === WORD_SEARCH_TEMPLATES[0]?.slots.length &&
-    prepared.every((p) => p.chars.length >= 1 && p.chars.length <= 4)
-  );
+): WordSearchTemplateSet | null {
+  const set = WORD_SEARCH_TEMPLATE_SETS.find((s) => s.rows === rows && s.cols === cols);
+  if (!set || prepared.length !== set.templates[0]?.slots.length) return null;
+  return prepared.every((p) => p.chars.length >= 1 && p.chars.length <= 4) ? set : null;
 }
 
 /** Coordinate-list equality (order matters). */
@@ -347,7 +343,7 @@ export function generateWordSearchGrid(
   // Longest-first placement order minimizes dead-end restarts on a sparsely-
   // filled board.
   const ordered = [...prepared].sort((a, b) => b.chars.length - a.chars.length);
-  const canUseTemplates = templateModeApplicable(prepared, rows, cols);
+  const templateSet = templateSetFor(prepared, rows, cols);
 
   for (let gridAttempt = 0; gridAttempt < MAX_GRID_ATTEMPTS; gridAttempt++) {
     const occupied: boolean[][] = Array.from({ length: rows }, () =>
@@ -358,20 +354,20 @@ export function generateWordSearchGrid(
     );
     const placed: PlacedWord[] = [];
 
-    const useTemplate = canUseTemplates && gridAttempt >= RANDOM_GRID_ATTEMPTS;
+    const useTemplate = templateSet !== null && gridAttempt >= RANDOM_GRID_ATTEMPTS;
     let allPlaced = true;
     let templateIndex: number | null = null;
 
     if (useTemplate) {
-      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed 7x6
-      // layout, shuffle words across its 9 four-cell slots, and for any word
+      // Template mode (docs/WORD_SEARCH_TEMPLATES.md): pick a random fixed layout
+      // for this board, shuffle words across its four-cell slots, and for any word
       // shorter than 4 characters take a random contiguous run within its
       // slot — the rest of that slot is left null and picked up by the normal
       // filler flood below, same as every other empty cell. Cell-count-wise
       // this can never fail (every word is <= 4 chars, every slot is 4 cells),
       // so `allPlaced` stays true here.
-      templateIndex = randInt(rng, WORD_SEARCH_TEMPLATES.length);
-      const template = WORD_SEARCH_TEMPLATES[templateIndex];
+      templateIndex = randInt(rng, templateSet.templates.length);
+      const template = templateSet.templates[templateIndex];
       const shuffled = shuffle(prepared, rng);
 
       shuffled.forEach(({ word, chars, syllables, charSenses }, i) => {

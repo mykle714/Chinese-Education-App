@@ -147,6 +147,22 @@ export class FocusModeDAL implements IFocusModeDAL {
     return result.recordset.map(toCardRow);
   }
 
+  async countWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<number> {
+    if (!userId) throw new ValidationError('userId is required');
+    // Keep this population identical to listWorldCards. DICT_JOIN is here because
+    // WRITING_FLP_WORD_CLAUSE reads the det.
+    const result = await this.dbManager.executeQuery<{ count: number }>((client) => client.query(
+      `SELECT COUNT(*)::int AS count
+         FROM ${vetReadFrom(language)} ${DICT_JOIN}
+        WHERE ve."userId" = $1
+          AND ve."language" = $2
+          ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
+          AND ${vetSortedClause()}`,
+      [userId, language]
+    ));
+    return result.recordset[0]?.count ?? 0;
+  }
+
   async listCardsByIds(userId: string, language: string, ids: number[]): Promise<FocusCardRow[]> {
     if (!userId) throw new ValidationError('userId is required');
     if (ids.length === 0) return [];

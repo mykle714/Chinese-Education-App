@@ -2,8 +2,8 @@ import { useSyncExternalStore } from "react";
 import type { FlpWorld } from "../../../../../server/contracts/studyMode";
 
 /**
- * forcedBreak — the feature-tester pin that makes every next card of a Deck Tower session
- * a game break, one pin per world (docs/FLP_GAME_BREAKS.md § 10).
+ * forcedBreak — the feature-tester pin that opens a Deck Tower visit on a game break and
+ * makes every next card one too, one pin per world (docs/FLP_GAME_BREAKS.md § 10).
  *
  * Layer: feature store (features/flashcards). The Deck Tower's ForcedBreakPicker writes a
  * pin; FlashcardsLearnPage reads it and hands it to useGameBreak as `forcedKey`.

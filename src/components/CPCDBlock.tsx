@@ -32,14 +32,14 @@ interface CPCDBlockProps {
 // in a 2D arrangement, not a line), so pinyin is a plain centered line rather
 // than CPCDRow's per-column collision-avoided overlay: one row beneath the
 // triangle (3-char), or one row beneath each char of the 2x2 (4-char).
-const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
-const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", md: "1rem", lg: "1.05rem", xl: "1.3rem" };
+const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "18px", sm: "26px", smd: "32px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
+const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "13px", smd: "16px", md: "1rem", lg: "1.05rem", xl: "1.3rem" };
 // Fixed 2px between glyphs at every size. The glyph boxes shrink-wrap the
 // character (no padding around the glyph), so this gap IS the visible spacing
 // between characters — they sit 2px from touching.
 const GRID_GAP_PX = 2;
-const PINYIN_ROW_GAP: Record<CPCDSize, number> = { xs: 4, sm: 5, md: 6, lg: 6, xl: 8 };
-const PINYIN_TOP_MARGIN: Record<CPCDSize, number> = { xs: 2, sm: 3, md: 4, lg: 4, xl: 5 };
+const PINYIN_ROW_GAP: Record<CPCDSize, number> = { xs: 4, sm: 5, smd: 6, md: 6, lg: 6, xl: 8 };
+const PINYIN_TOP_MARGIN: Record<CPCDSize, number> = { xs: 2, sm: 3, smd: 4, md: 4, lg: 4, xl: 5 };
 
 const CPCDBlock: React.FC<CPCDBlockProps> = ({
     items,

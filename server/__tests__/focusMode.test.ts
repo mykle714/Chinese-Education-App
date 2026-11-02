@@ -110,6 +110,7 @@ class FakeFocusDAL implements IFocusModeDAL {
     return snap;
   }
   async listWorldCards() { return [...this.cards.values()]; }
+  async countWorldCards() { return this.cards.size; }
   async listCardsByIds(_u: string, _l: string, ids: number[]) {
     return ids.map((id) => this.cards.get(id)).filter((c): c is FocusCardRow => !!c);
   }
@@ -156,6 +157,21 @@ describe('FocusModeService.resolveWorld', () => {
     expect(after.ids).toHaveLength(FOCUS_DAILY_CARDS - 1);
   });
 
+  it('keeps a card marked correct in setIds, so a break cannot serve it as outside', async () => {
+    const { service, dal } = setup(many('Target', 60));
+    const first = await service.resolveWorld('u', 'zh', 'core');
+    if (!first.active) throw new Error('expected active');
+    const [right] = first.ids;
+    const h = dal.cards.get(right)!.typedMarkHistory!;
+    h.recognition = [{ isCorrect: true, timestamp: new Date(NOW - MINUTE).toISOString() } as ReviewMark, ...h.recognition!];
+
+    const after = await service.resolveWorld('u', 'zh', 'core');
+    if (!after.active) throw new Error('expected active');
+    expect(after.ids).not.toContain(right);
+    expect(after.setIds).toContain(right);
+    expect(after.setIds).toHaveLength(FOCUS_DAILY_CARDS);
+  });
+
   it('re-snapshots on a new streak day', async () => {
     const { service, dal, setNow } = setup(many('Target', 60));
     await service.resolveWorld('u', 'zh', 'core');
@@ -176,9 +192,15 @@ describe('FocusModeService.getStatus / setFocus', () => {
   it('reports remaining counts for focused worlds and owed notices', async () => {
     const { service } = setup(many('Target', 60));
     const status = await service.getStatus('u', 'zh');
-    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS });
-    expect(status.worlds.reading).toEqual({ on: false, remaining: null });
+    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS, breakCards: 60 });
+    expect(status.worlds.reading).toEqual({ on: false, remaining: null, breakCards: null });
     expect(status.endedNotices).toEqual([]);
+  });
+
+  it('breakCards counts the cards outside the set plus the remaining set', async () => {
+    const { service } = setup(many('Target', 60));
+    const status = await service.getStatus('u', 'zh');
+    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS, breakCards: 60 });
   });
 
   it('turning a world back on clears its owed notice', async () => {

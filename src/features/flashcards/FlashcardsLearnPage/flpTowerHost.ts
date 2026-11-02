@@ -51,11 +51,9 @@ export interface FlpTowerHost {
      */
     onGameCardCleared: () => void;
     /**
-     * A break's game came up (true), or ended and started falling away (false). `onGround`:
-     * it is drawn on the bare ground, so the deck fades for it too
-     * (docs/DECK_TOWER.md § "Studying the tower" → "The platform fades").
+     * A break's game came up (true), or ended and started falling away (false).
      */
-    onGameBreakChange: (up: boolean, onGround: boolean) => void;
+    onGameBreakChange: (up: boolean) => void;
     /**
      * The session's deal changed: how many cards the working loop holds, whether it is
      * still loading, and whether there is a card on top. `hasCard: false` once loaded

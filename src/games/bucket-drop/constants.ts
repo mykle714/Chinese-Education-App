@@ -11,8 +11,9 @@ import type { MarkType } from "../../types";
  * (or leaves it anywhere on the field). The run is 20 words; the clock stops when the
  * last one is dropped.
  *
- * Referenced by: BucketDropPage, BucketDropStage, BucketDropEndPopup, DropBucket,
- * StackWord, perimeterLayout, games/registry.ts, runtime/challengeLaunch.ts,
+ * Referenced by: BucketDropPage, BucketDropStage, BucketDropBoard, BucketDropEndPopup,
+ * DropBucket, StackWord, perimeterLayout, poolRequest, games/registry.ts,
+ * runtime/challengeLaunch.ts, flpBreak/bucketDropBreak.ts,
  * features/flashcards/centers/ReadingGamesCarousel.
  */
 
@@ -29,14 +30,6 @@ export const GAME_HUE: RampHue = "red";
 /** Key under which medalled runs are logged in the shared `wins` table (useGameWins). */
 export const GAME_KEY = "bucketDrop";
 
-/** localStorage key for Bucket Drop's own device-local preferences (useLocalGameSettings). */
-export const SETTINGS_STORAGE_KEY = "bucketDrop.settings";
-/**
- * `showTimer` — whether the stopwatch's numerals are visible (the eye in `GameTimer`).
- * The clock keeps running either way, and the end popup always shows the final time.
- * docs/BUCKET_DROP_GAME.md § 6.
- */
-export const DEFAULT_SETTINGS = { showTimer: true };
 /** Every medalled run logs under level 1 — the game has no levels, only modes. */
 export const WIN_LEVEL = 1;
 
@@ -83,7 +76,7 @@ export function modeConfigFor(mode: unknown): BucketDropModeConfig {
  * language: production, whatever the mode (see the block comment above) — only a zh
  * board can hide a reading.
  *
- * Referenced by: BucketDropPage (`lockRunTrack`). Doc: docs/BUCKET_DROP_GAME.md § 1.
+ * Referenced by: BucketDropStage (`lockRunTrack`). Doc: docs/BUCKET_DROP_GAME.md § 1.
  */
 export function runTrackFor(language: string | null | undefined, config: BucketDropModeConfig): MarkType {
     return language === "zh" ? config.markType : "production";
@@ -127,6 +120,23 @@ export const MEDAL_LABEL: Record<Medal, string> = {
     silver: "🥈 Silver",
     bronze: "🥉 Bronze",
 };
+
+/**
+ * The run's result lines, shared by the end popup (route) and the break's results card, so
+ * the two hosts cannot word a run differently. `finished` = every word was placed; only an
+ * flp break's Leave can end a run without it.
+ *
+ * Referenced by: BucketDropEndPopup, BucketDropStage. Doc: docs/FLP_GAME_BREAKS.md § 5b.
+ */
+export function runResultTitle(finished: boolean, medal: Medal | null): string {
+    if (!finished) return "Run ended";
+    return medal ? `${MEDAL_LABEL[medal]}!` : "Finished!";
+}
+
+/** "20 words · 2 misses", with the reason a full-length-only medal was not on offer. */
+export function runResultDetail(total: number, misses: number, fullRun: boolean): string {
+    return `${total} words · ${misses} ${misses === 1 ? "miss" : "misses"}${fullRun ? "" : " · short run, no medal"}`;
+}
 
 // ── Perimeter geometry (perimeterLayout.ts) ───────────────────────────────────
 

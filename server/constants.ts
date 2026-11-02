@@ -55,6 +55,8 @@ export const KNOWN_GAME_IDS = [
   'writing-grid',
   // Drag the stack's top word into its meaning's bucket (docs/BUCKET_DROP_GAME.md).
   'bucket-drop',
+  // Stack scrambled stroke tiles back into characters (docs/SUPERPOSITION_GAME.md).
+  'superposition',
 ] as const;
 
 export function isKnownGameId(value: unknown): value is (typeof KNOWN_GAME_IDS)[number] {

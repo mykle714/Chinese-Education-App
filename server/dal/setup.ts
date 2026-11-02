@@ -51,6 +51,8 @@ import { PersonalBestController } from '../controllers/PersonalBestController.js
 import { WritingGridDAL } from './implementations/WritingGridDAL.js';
 import { WritingGridService } from '../services/WritingGridService.js';
 import { WritingGridController } from '../controllers/WritingGridController.js';
+import { SuperpositionService } from '../services/SuperpositionService.js';
+import { SuperpositionController } from '../controllers/SuperpositionController.js';
 import { WritingNotebookDAL } from './implementations/WritingNotebookDAL.js';
 import { WritingNotebookService } from '../services/WritingNotebookService.js';
 import { WritingNotebookController } from '../controllers/WritingNotebookController.js';
@@ -284,7 +286,9 @@ const personalBestController = new PersonalBestController(personalBestService);
 // Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2): deals 8 characters, lending when short.
 const writingGridDAL = new WritingGridDAL();
 const writingGridService = new WritingGridService(writingGridDAL, provisionalCardService);
-const writingGridController = new WritingGridController(writingGridService);
+const writingGridController = new WritingGridController(writingGridService, focusModeService);
+const superpositionService = new SuperpositionService(writingGridDAL, provisionalCardService);
+const superpositionController = new SuperpositionController(superpositionService, focusModeService);
 // Writing Notebook (migration 174, docs/WRITING_NOTEBOOK.md): endless per-word practice
 // sheets; the service runs the handwriting recogniser on each saved cell.
 const writingNotebookDAL = new WritingNotebookDAL();
@@ -386,6 +390,7 @@ export {
   winsController,
   personalBestController,
   writingGridController,
+  superpositionController,
   writingNotebookController,
   categoryPromotionDAL,
   flashcardMarkService,

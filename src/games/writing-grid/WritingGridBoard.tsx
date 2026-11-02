@@ -9,7 +9,7 @@ import { WRITING_GRID_COLUMNS, type WritingGridCharacter } from "../../../server
 import { WRITING_LEVELS, modeOfLevel } from "../../../server/contracts/writingLevels";
 import { levelPreview, type LevelPreview } from "../../components/handwriting/levelBehavior";
 import { COLORS } from "../../theme";
-import { SIZE } from "../../theme/scale";
+import { SIZE, WEIGHT } from "../../theme/scale";
 import { CANVAS_SIZE, CELL_GAP, CELL_GAP_MAX, DRAG_SLOP_PX, SHADOW_PREVIEW_MAX_LEVEL } from "./constants";
 import { moveItem } from "./gridOrder";
 
@@ -29,13 +29,16 @@ export type BoardPhase = "countdown" | "arrange" | "write" | "ended";
  *   tall    — 4 rows × 2 columns (WRITING_GRID_COLUMNS), difficulty labels in the side
  *             columns. The normal phone layout.
  *   compact — 3 rows × 3 columns (3 + 3 + 2), for a vertically tight frame (a short
- *             phone, landscape, the keyboard up). No side columns: "Easiest" sits in a
- *             band above the first slot and "Hardest" in a band above the last slot.
+ *             phone, landscape, the keyboard up). No side columns: "Hardest" sits in a
+ *             band above the first slot and "Easiest" in a band above the last slot.
+ *
+ * The arrange instruction (`ARRANGE_HINT`) has a place in each: a band under the grid in
+ * the tall layout, the empty ninth slot in the compact one.
  *
  * POSITION carries the level: cell i (reading order) is Level i + 1. The level's NAME is
  * written in a band under each slot (it belongs to the slot, so it never moves with a
  * drag); there is no per-cell "L1"…"L8" badge. The two ends are labelled in the side
- * columns: "Easiest" (green) beside the first slot, "Hardest" (red) beside the last, each centred in its column, so the direction of the handicap reads without decoding the level names.
+ * columns: "Hardest word" (red) beside the first slot, "Easiest word" (green) beside the last, each centred in its column, so the direction of the handicap reads without decoding the level names.
  *
  *   arrange (Phase 1) — every character shown as its full, still SHADOW (outline) with
  *                       tone-coloured pinyin at the cell's bottom centre; press-and-drag MOVES a character to another slot
@@ -84,8 +87,9 @@ const LEVEL_NAME_OFFSET = 5;
 const LEVEL_NAME_ROW = LEVEL_NAME_OFFSET + LEVEL_NAME_BAND;
 /**
  * Width (px) of the gutter kept free on EACH side of the grid for the difficulty
- * labels — "Easiest" beside the first slot (L1, the most help) and "Hardest" beside
- * the last (L8, the least). Reserved in the cell-size fit, so on a narrow phone the
+ * labels — "Hardest word" beside the first slot (L1, the most help) and "Easiest word"
+ * beside the last (L8, the least): they say which word to put there, so the word you
+ * find hardest gets the most help. Reserved in the cell-size fit, so on a narrow phone the
  * cells shrink to make room rather than the labels overlapping them.
  *
  * The frame runs to the screen edge (WritingGridPage gives the board area no side
@@ -97,11 +101,22 @@ const DIFFICULTY_GUTTER = 58 + 16;
 /** Screen-edge padding (px) each side of the compact layout, which has no side columns. */
 const COMPACT_EDGE_PAD = 16;
 
+/** The difficulty labels: which WORD belongs at that end, not how hard the slot is. */
+const HARDEST_LABEL = "Hardest word";
+const EASIEST_LABEL = "Easiest word";
+
+/** Phase 1's instruction, shown from the countdown so nothing appears as it ends. */
+const ARRANGE_HINT = "Drag cells to rearrange";
+/** Height (px) of the tall layout's band for ARRANGE_HINT, under the last level name. */
+const ARRANGE_HINT_BAND = 44;
+
 /**
  * One grid arrangement. `sideGutter` is reserved on EACH side of the grid (the tall
  * layout's label columns); `topBand` is reserved above the first row and `lastRowBand`
- * above the last row (the compact layout's "Easiest" / "Hardest" bands — "Hardest" needs
+ * above the last row (the compact layout's "Hardest" / "Easiest" bands — "Easiest" needs
  * its own band because the row above the last cell already holds a level name).
+ * `bottomBand` is reserved under the last row, for a layout with no free slot to hold the
+ * arrange instruction. It stays reserved in Phase 2, so the cells never resize.
  */
 interface GridLayout {
     name: "tall" | "compact";
@@ -109,11 +124,12 @@ interface GridLayout {
     sideGutter: number;
     topBand: number;
     lastRowBand: number;
+    bottomBand: number;
 }
 
 const GRID_LAYOUTS: readonly [tall: GridLayout, compact: GridLayout] = [
-    { name: "tall", columns: WRITING_GRID_COLUMNS, sideGutter: DIFFICULTY_GUTTER, topBand: 0, lastRowBand: 0 },
-    { name: "compact", columns: 3, sideGutter: COMPACT_EDGE_PAD, topBand: LEVEL_NAME_BAND, lastRowBand: LEVEL_NAME_BAND },
+    { name: "tall", columns: WRITING_GRID_COLUMNS, sideGutter: DIFFICULTY_GUTTER, topBand: 0, lastRowBand: 0, bottomBand: ARRANGE_HINT_BAND },
+    { name: "compact", columns: 3, sideGutter: COMPACT_EDGE_PAD, topBand: LEVEL_NAME_BAND, lastRowBand: LEVEL_NAME_BAND, bottomBand: 0 },
 ];
 
 /** The square cell size (px) `layout` would give `count` cells in a `width` × `height` frame. */
@@ -121,7 +137,7 @@ function cellSizeFor(layout: GridLayout, count: number, width: number, height: n
     if (width <= 0 || height <= 0) return 0;
     const rows = Math.ceil(count / layout.columns) || 1;
     const fromWidth = (width - layout.sideGutter * 2 - CELL_GAP * (layout.columns - 1)) / layout.columns;
-    const fromHeight = (height - layout.topBand - layout.lastRowBand - CELL_GAP * (rows - 1) - LEVEL_NAME_ROW * rows) / rows;
+    const fromHeight = (height - layout.topBand - layout.lastRowBand - layout.bottomBand - CELL_GAP * (rows - 1) - LEVEL_NAME_ROW * rows) / rows;
     return Math.max(0, Math.min(fromWidth, fromHeight));
 }
 
@@ -151,6 +167,26 @@ const difficultyLabelSx = {
     pointerEvents: "none",
 } as const;
 
+/** Tall layout only: the two-word labels outgrow a side column, so they stack. */
+const sideColumnLabelSx = { whiteSpace: "normal", textAlign: "center", lineHeight: 1.2 } as const;
+
+/**
+ * The arrange instruction's shared box and type. It is the only instruction on the board,
+ * so it is set well above the level names. Each layout picks its own size: the tall band
+ * is one line, and the compact slot has to wrap inside a single cell.
+ */
+const arrangeHintSx = {
+    position: "absolute",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    lineHeight: 1.15,
+    fontWeight: WEIGHT.semibold,
+    color: COLORS.textSecondary,
+    pointerEvents: "none",
+} as const;
+
 interface DragState {
     from: number;
     over: number;
@@ -176,7 +212,7 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     }, []);
 
     const layout = pickLayout(cells.length, frame.width, frame.height);
-    const { columns, sideGutter, topBand, lastRowBand } = layout;
+    const { columns, sideGutter, topBand, lastRowBand, bottomBand } = layout;
     const rows = Math.ceil(cells.length / columns) || 1;
     // Cells are square — the cell is the writing surface, so it matches the square canvas.
     const cell = cellSizeFor(layout, cells.length, frame.width, frame.height);
@@ -186,7 +222,7 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     // widening a gap never eats into any of them; whatever the cap leaves over stays in the
     // side columns (horizontal) or below the board (vertical, which is top-aligned).
     const slackX = frame.width - sideGutter * 2 - cell * columns - CELL_GAP * (columns - 1);
-    const slackY = frame.height - topBand - lastRowBand - (cell + LEVEL_NAME_ROW) * rows - CELL_GAP * (rows - 1);
+    const slackY = frame.height - topBand - lastRowBand - bottomBand - (cell + LEVEL_NAME_ROW) * rows - CELL_GAP * (rows - 1);
     const gapX = spreadGap(slackX, columns);
     const gapY = spreadGap(slackY, rows);
     const colPitch = cell + gapX;
@@ -198,9 +234,9 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     // reserved minimum strip against the grid.
     const sideColumn = Math.max(sideGutter, (frame.width - boardWidth) / 2);
     // Each row is the cell plus the level-name row beneath it; the compact layout's
-    // "Easiest" band sits above the first row.
+    // "Hardest" band sits above the first row.
     const rowPitch = cell + LEVEL_NAME_ROW + gapY;
-    // Top of row `row`; the last row is pushed down by the compact layout's "Hardest" band.
+    // Top of row `row`; the last row is pushed down by the compact layout's "Easiest" band.
     const rowY = (row: number) => topBand + row * rowPitch + (row === rows - 1 ? lastRowBand : 0);
     const slotY = (i: number) => rowY(Math.floor(i / columns));
 
@@ -212,7 +248,7 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     const slotAt = (x: number, y: number): number => {
         const col = Math.max(0, Math.min(columns - 1, Math.floor(x / colPitch)));
         // The last row whose top is at or above the pointer (rows are not evenly pitched
-        // once the compact layout's "Hardest" band shifts the last one down).
+        // once the compact layout's "Easiest" band shifts the last one down).
         let row = 0;
         while (row < rows - 1 && y >= rowY(row + 1)) row++;
         // Over the compact layout's empty ninth slot, this clamps to the last cell.
@@ -248,9 +284,13 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
     const preview = drag ? moveItem(order, drag.from, drag.over) : order;
     const slotOf = new Map(preview.map((cellIndex, slot) => [cellIndex, slot]));
 
-    // The Easiest / Hardest labels guide the ARRANGING; Phase 2 (write) drops them. Their
+    // The Hardest / Easiest labels guide the ARRANGING; Phase 2 (write) drops them. Their
     // gutters / bands stay reserved, so the cells do not resize when the phase changes.
     const showDifficulty = cells.length > 0 && phase !== "write";
+    const showArrangeHint = cells.length > 0 && (phase === "countdown" || phase === "arrange");
+    // The first free slot of the last row. A short deal can fill its last row, and then
+    // the compact layout has nowhere for the instruction.
+    const hintHasSlot = cells.length % columns !== 0;
 
     return (
         <Box
@@ -267,7 +307,7 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
             sx={{
                 position: "relative",
                 width: boardWidth,
-                height: topBand + lastRowBand + rows * rowPitch - gapY,
+                height: topBand + lastRowBand + bottomBand + rows * rowPitch - gapY,
                 touchAction: "none",
                 userSelect: "none",
                 WebkitUserSelect: "none",
@@ -318,40 +358,59 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                 Mark tier — the deepest green and red in the palette, which has no ink tier
                 for hues (theme/colors.ts).
                 Tall: beside the slots, each centred in its side column.
-                Compact: each in its own band above its slot — "Easiest" above the first,
-                "Hardest" above the last (the lastRowBand, clear of the level name of the
+                Compact: each in its own band above its slot — "Hardest" above the first,
+                "Easiest" above the last (the lastRowBand, clear of the level name of the
                 cell above it). */}
             {showDifficulty && layout.name === "compact" && (
                 <>
                     <Box
-                        className="writing-grid-board__difficulty writing-grid-board__difficulty--easiest"
-                        sx={{ ...difficultyLabelSx, left: slotX(0), width: cell, top: 0, height: topBand, color: COLORS.grnMk }}
+                        className="writing-grid-board__difficulty writing-grid-board__difficulty--hardest"
+                        sx={{ ...difficultyLabelSx, left: slotX(0), width: cell, top: 0, height: topBand, color: COLORS.redMk }}
                     >
-                        Easiest
+                        {HARDEST_LABEL}
                     </Box>
                     <Box
-                        className="writing-grid-board__difficulty writing-grid-board__difficulty--hardest"
-                        sx={{ ...difficultyLabelSx, left: slotX(cells.length - 1), width: cell, top: slotY(cells.length - 1) - lastRowBand, height: lastRowBand, color: COLORS.redMk }}
+                        className="writing-grid-board__difficulty writing-grid-board__difficulty--easiest"
+                        sx={{ ...difficultyLabelSx, left: slotX(cells.length - 1), width: cell, top: slotY(cells.length - 1) - lastRowBand, height: lastRowBand, color: COLORS.grnMk }}
                     >
-                        Hardest
+                        {EASIEST_LABEL}
                     </Box>
                 </>
             )}
             {showDifficulty && layout.name === "tall" && (
                 <>
                     <Box
-                        className="writing-grid-board__difficulty writing-grid-board__difficulty--easiest"
-                        sx={{ ...difficultyLabelSx, left: -sideColumn, width: sideColumn, top: slotY(0), height: cell, color: COLORS.grnMk }}
+                        className="writing-grid-board__difficulty writing-grid-board__difficulty--hardest"
+                        sx={{ ...difficultyLabelSx, ...sideColumnLabelSx, left: -sideColumn, width: sideColumn, top: slotY(0), height: cell, color: COLORS.redMk }}
                     >
-                        Easiest
+                        {HARDEST_LABEL}
                     </Box>
                     <Box
-                        className="writing-grid-board__difficulty writing-grid-board__difficulty--hardest"
-                        sx={{ ...difficultyLabelSx, left: boardWidth, width: sideColumn, top: slotY(cells.length - 1), height: cell, color: COLORS.redMk }}
+                        className="writing-grid-board__difficulty writing-grid-board__difficulty--easiest"
+                        sx={{ ...difficultyLabelSx, ...sideColumnLabelSx, left: boardWidth, width: sideColumn, top: slotY(cells.length - 1), height: cell, color: COLORS.grnMk }}
                     >
-                        Hardest
+                        {EASIEST_LABEL}
                     </Box>
                 </>
+            )}
+
+            {showArrangeHint && layout.name === "tall" && (
+                <Box
+                    className="writing-grid-board__arrange-hint"
+                    // Wider than the board on a phone: the centred nowrap line overflows
+                    // evenly into the side columns, which are empty at this height.
+                    sx={{ ...arrangeHintSx, fontSize: SIZE.title, left: 0, width: boardWidth, top: rowY(rows - 1) + cell + LEVEL_NAME_ROW, height: bottomBand, whiteSpace: "nowrap" }}
+                >
+                    {ARRANGE_HINT}
+                </Box>
+            )}
+            {showArrangeHint && layout.name === "compact" && hintHasSlot && (
+                <Box
+                    className="writing-grid-board__arrange-hint"
+                    sx={{ ...arrangeHintSx, fontSize: SIZE.subtitle, left: slotX(cells.length), width: cell, top: slotY(cells.length), height: cell, p: 0.5 }}
+                >
+                    {ARRANGE_HINT}
+                </Box>
             )}
 
             {cells.map((c, i) => {

@@ -297,8 +297,8 @@ Three rules, all changed on **2026-09-06**:
   trail does not rubber-band the sheet), and desktop drags it with the shared
   `useDragScroll` mouse-drag hook — the same gesture the card shelves use. No scrollbar is
   drawn; the pill cut off at the edge IS the affordance.
-  The trail is no longer the upper panel's only sideways scroller: in the Dictionary eip
-  (`showAllDefinitions`) the header gloss is a `SwipeableTwoLineText`
+  The trail is no longer the upper panel's only sideways scroller: for a word with a sense
+  list the header gloss is a `SwipeableTwoLineText`
   (`src/components/SwipeableTwoLineText.tsx`), also `touch-action: pan-x` so vertical drags
   stay with the sheet's resize, with its own rubber band at the ends
   (`src/hooks/useEdgeRubberBand.ts`). See docs/SHELF_REDESIGN.md § 7b. When a list breaks

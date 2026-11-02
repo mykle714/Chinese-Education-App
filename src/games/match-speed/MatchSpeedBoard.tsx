@@ -8,7 +8,6 @@ import type { BoardCard, CardPair, CardVisualState, Slot } from "./types";
 import {
     CARD_ASPECT,
     COL_GAP_PX,
-    EVEN_GAP_BOARD,
     FADE_IN_MAX_DELAY_MS,
     POP_DURATION_MS,
     REFILL_TICK_MS,
@@ -25,7 +24,8 @@ interface MatchSpeedBoardProps {
      *  when the buffer is starved; the board leaves those slots empty for the next
      *  tick rather than stalling. */
     drawPairs: (count: number) => CardPair[];
-    /** Fired after each refill tick so the page can top the buffer back up. */
+    /** Fired after each tick that found a hole, so the page can top the buffer back
+     *  up. Fires even if the tick placed nothing: that is how a starved buffer retries. */
     onRefilled: () => void;
     /** A correct match: score it and mark the entry correct. */
     onMatch: (entry: VocabEntry) => void;
@@ -38,11 +38,10 @@ interface MatchSpeedBoardProps {
     frozen: boolean;
     /** Speak a foreign word on tap (autoplay enabled), else undefined. */
     onSpeak?: (entry: VocabEntry) => void;
-    /** flp break: one equal visible space between tiles and a 2:1 card (EVEN_GAP_BOARD),
-     *  instead of the ROW_GAP_PX grid of CARD_ASPECT cards. */
-    evenGaps?: boolean;
-    /** Fade the board back so the 3·2·1 can stand on it: there is no scrim on bare ground. */
-    dimmed?: boolean;
+    /** The cards' locked width ÷ height. An flp break passes BREAK_CARD_ASPECT. */
+    cardAspect?: number;
+    /** Share of the fitted size the cards take. An flp break passes BREAK_CARD_SCALE. */
+    cardScale?: number;
 }
 
 /** Both columns of slots, mutated as one atomic unit (see the state comment). */
@@ -97,8 +96,8 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     cleanupMode,
     frozen,
     onSpeak,
-    evenGaps = false,
-    dimmed = false,
+    cardAspect = CARD_ASPECT,
+    cardScale = 1,
 }) => {
     // BOTH columns live in ONE state object on purpose. Every mutation the board
     // makes (refill, pop-out removal, marking a pair as exiting) touches both
@@ -130,17 +129,14 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         return next;
     }, []);
     // ---- Card sizing --------------------------------------------------------
-    // Cards are locked to CARD_ASPECT (2.4:1; an flp break's 2:1, EVEN_GAP_BOARD). CSS alone can't satisfy a fixed ratio
+    // Cards are locked to `cardAspect` (2.4:1; an flp break's 2:1). CSS alone can't satisfy a fixed ratio
     // against BOTH a width and a height constraint — `aspect-ratio` derives the
     // second dimension from the first, and a max-* clamp on the derived side
     // silently breaks the ratio rather than re-deriving it. So the board measures
     // its own box and picks the one card height that fits in both directions;
     // whichever axis is tighter wins, and the grid is centered in the slack.
     const gridElRef = useRef<HTMLDivElement | null>(null);
-    const aspect = evenGaps ? EVEN_GAP_BOARD.cardAspect : CARD_ASPECT;
-    const rowGap = evenGaps ? EVEN_GAP_BOARD.rowGap : ROW_GAP_PX;
-    const colGap = evenGaps ? EVEN_GAP_BOARD.colGap : COL_GAP_PX;
-    const [cardHeight, setCardHeight] = useState<number | null>(null);
+    const [cardSize, setCardSize] = useState<{ width: number; height: number } | null>(null);
     useLayoutEffect(() => {
         const el = gridElRef.current;
         if (!el) return;
@@ -148,17 +144,17 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // clientWidth/Height, not getBoundingClientRect: this element carries no
             // padding or border, and these ignore any transform an entry animation
             // on an ancestor might be mid-way through applying.
-            const fromHeight = (el.clientHeight - (ROWS - 1) * rowGap) / ROWS;
-            const fromWidth = (el.clientWidth - colGap) / 2 / aspect;
-            setCardHeight(Math.max(0, Math.min(fromHeight, fromWidth)));
+            const fromHeight = (el.clientHeight - (ROWS - 1) * ROW_GAP_PX) / ROWS;
+            const fromWidth = (el.clientWidth - COL_GAP_PX) / 2 / cardAspect;
+            const height = Math.max(0, Math.min(fromHeight, fromWidth)) * cardScale;
+            setCardSize({ width: height * cardAspect, height });
         };
         measure();
         // Re-measure on rotation, keyboard, or the leaf page's slide-in settling.
         const observer = new ResizeObserver(measure);
         observer.observe(el);
         return () => observer.disconnect();
-    }, [aspect, rowGap, colGap]);
-    const cardWidth = cardHeight === null ? 0 : cardHeight * aspect;
+    }, [cardAspect, cardScale]);
 
     /** The currently selected card's id, or null. */
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -246,9 +242,9 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
      * slot — so vertical alignment never hints at which cards pair up.
      */
     const refill = useCallback(() => {
-        // How many pairs this tick actually placed. Set inside the transform and
-        // read straight after it, which is sound because updateBoard is synchronous.
-        let placed = 0;
+        // Whether this tick found anything to fill. Set inside the transform and read
+        // straight after it, which is sound because updateBoard is synchronous.
+        let hadHoles = false;
 
         updateBoard((prev) => {
             const foreignHoles = emptyIndices(prev.foreign);
@@ -265,10 +261,10 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
 
             const count = Math.min(foreignHoles.length, englishHoles.length);
             if (count === 0) return prev;
+            hadHoles = true;
 
             const pairs = drawPairsRef.current(count);
             if (pairs.length === 0) return prev;
-            placed = pairs.length;
 
             // Scatter the batch across the vacated rows independently per column,
             // so a pair's two rows are uncorrelated.
@@ -299,9 +295,10 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             return { foreign: nextForeign, english: nextEnglish };
         });
 
-        // Fire the buffer top-up for what this tick consumed. NEVER awaited — the
-        // tick must not be able to stall on the network.
-        if (placed > 0) onRefilledRef.current();
+        // Fire the buffer top-up. NEVER awaited — the tick must not be able to stall on
+        // the network. Keyed on the holes, not on what was placed: there is no clock to
+        // end a run any more, so an empty buffer has to keep retrying or the run hangs.
+        if (hadHoles) onRefilledRef.current();
     }, [updateBoard]);
 
     // Prime the opening board immediately on mount, so the player has something to
@@ -335,7 +332,9 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // banner on mount. A removal is the only way a board becomes empty, so
             // this is the one place the transition is unambiguous.
             const isEmpty = [...next.foreign, ...next.english].every((s) => s === null);
-            if (isEmpty) setClearId((n) => n + 1);
+            // Not when the run itself just ended: the last pair of a finished run is
+            // still popping behind the end popup, and that card is the celebration.
+            if (isEmpty && !frozenRef.current) setClearId((n) => n + 1);
         },
         [updateBoard]
     );
@@ -548,9 +547,10 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     /** Resolve one card's visual state; the card component renders it and nothing more. */
     const visualState = (card: BoardCard): CardVisualState => {
         // SELECTION OUTRANKS THE WRONG FLASH, and that order is load-bearing.
-        // A wrong card draws raised and red, so with the old precedence a card
-        // re-tapped during its own 400ms flash was genuinely selected but drew as
-        // unselected, with no acknowledgement. The player reads that as the board being locked during
+        // The `wrong` style overrides background, border AND the selection lift, so
+        // with the old precedence a card re-tapped during its own 400ms flash was
+        // genuinely selected but drew as an ordinary card — no border, no lift, no
+        // acknowledgement. The player reads that as the board being locked during
         // the flash-fade, which is the one thing this game promises never happens
         // (docs/MATCH_SPEED_GAME.md § Selection is never locked). A player who has
         // moved on to their next guess is owed feedback about THAT guess, not a
@@ -567,10 +567,10 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             sx={{
                 display: "flex",
                 flexDirection: "column",
-                gap: `${rowGap}px`,
+                gap: `${ROW_GAP_PX}px`,
                 // Width comes from the measured card size, not from a flex share, so
                 // every card is the same CARD_ASPECT rectangle. See the sizing block above.
-                width: `${cardWidth}px`,
+                width: `${cardSize?.width ?? 0}px`,
             }}
         >
             {slots.map((slot, row) => (
@@ -580,7 +580,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
                     // Height is fixed per cell rather than shared via 1fr: an empty
                     // slot must hold its row open, or surviving cards would slide
                     // around whenever a pair pops.
-                    sx={{ height: `${cardHeight ?? 0}px`, width: "100%", display: "flex" }}
+                    sx={{ height: `${cardSize?.height ?? 0}px`, width: "100%", display: "flex" }}
                 >
                     {slot && (
                         <MatchSpeedCard
@@ -613,15 +613,8 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             sx={{
                 flex: 1,
                 minHeight: 0,
-                opacity: dimmed ? 0.4 : 1,
-                transition: "opacity 200ms linear",
-                ...(evenGaps
-                    ? {
-                          px: `${EVEN_GAP_BOARD.paddingX}px`,
-                          pt: `${EVEN_GAP_BOARD.paddingTop}px`,
-                          pb: `${EVEN_GAP_BOARD.paddingBottom}px`,
-                      }
-                    : { px: 1.5, py: 1.5 }),
+                px: 1.5,
+                py: 1.5,
                 // Taps only — the board never scrolls (project-wide default).
                 touchAction: "none",
             }}
@@ -633,7 +626,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
                     height: "100%",
                     width: "100%",
                     display: "flex",
-                    gap: `${colGap}px`,
+                    gap: `${COL_GAP_PX}px`,
                     // Centered in whatever slack the tighter axis left over.
                     alignItems: "center",
                     justifyContent: "center",
@@ -645,7 +638,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             >
                 {/* Rendered only once measured — a pre-measure paint would flash
                     zero-height cards and restart every card's fade-in. */}
-                {cardHeight !== null && (
+                {cardSize !== null && (
                     <>
                         {renderColumn(foreignSlots, "foreign")}
                         {renderColumn(englishSlots, "english")}

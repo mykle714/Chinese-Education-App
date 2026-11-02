@@ -70,10 +70,11 @@ const INDEX_MAGIC = 'HWLK';
 const WORDS_MAGIC = 'HWWD';
 /**
  * The two files version independently: v2 of the index added the per-character
- * reading and the COMMON flag bit (the § 6z-4 hint bubble); the word pool did not
- * change, so bumping it would force a pointless client parser change.
+ * reading and the COMMON flag bit (the § 6z-4 hint bubble); v3 widened that bit
+ * into the 0–5 hint tier; the word pool did not change, so bumping it would force
+ * a pointless client parser change.
  */
-const INDEX_FORMAT_VERSION = 2;
+const INDEX_FORMAT_VERSION = 3;
 const WORDS_FORMAT_VERSION = 1;
 
 /**
@@ -81,13 +82,16 @@ const WORDS_FORMAT_VERSION = 1;
  * src/components/handwriting/glyphLookup.ts — change both together.
  */
 const FLAG_DISCOVERABLE = 1;
-const FLAG_COMMON = 2;
+/** Bits 1–3 of the flags byte hold the hint tier, 0–5. */
+const HINT_TIER_SHIFT = 1;
 
 /**
- * A character is COMMON when it appears in any zh headword — itself as a one-
- * character word included — whose `frequencyScore` is at least this. Only common
- * characters may appear in a § 6z-4 hint bubble: a hint that suggests an obscure
- * character teaches nothing and misleads the learner about what they are writing.
+ * A character's HINT TIER is the highest `frequencyScore` of any zh headword
+ * containing it — itself as a one-character word included — or 0 when none is
+ * scored. Tier 4+ is COMMON, the default § 6z-4 hint pool (`COMMON_TIER` on the
+ * client); tiers 3–1 are only reached when the displayed row has no COMMON hint.
+ * Tier 0 never appears in a bubble: a hint that suggests an obscure character
+ * teaches nothing and misleads the learner about what they are writing.
  */
 const COMMON_FREQ_THRESHOLD = 4;
 
@@ -122,12 +126,17 @@ async function loadCharacters(client) {
         ) x
        GROUP BY ch
     ),
-    -- § 6z-4: every character of every word scored ${COMMON_FREQ_THRESHOLD}+ (single-character
-    -- words included, so a character common in its own right qualifies too).
-    common AS (
-      SELECT DISTINCT regexp_split_to_table(word1, '') AS ch
-        FROM dictionaryentries_zh
-       WHERE language = 'zh' AND "frequencyScore" >= ${COMMON_FREQ_THRESHOLD}
+    -- § 6z-4: every character's best score across the words containing it
+    -- (single-character words included, so a character common in its own right
+    -- qualifies too).
+    tiers AS (
+      SELECT ch, max(score)::int AS tier
+        FROM (
+          SELECT regexp_split_to_table(word1, '') AS ch, "frequencyScore" AS score
+            FROM dictionaryentries_zh
+           WHERE language = 'zh' AND "frequencyScore" IS NOT NULL
+        ) x
+       GROUP BY ch
     )
     SELECT d.word1,
            d.components,
@@ -135,10 +144,10 @@ async function loadCharacters(client) {
            d.discoverable,
            COALESCE(u.n, 0) AS usage,
            d.pronunciation,
-           (c.ch IS NOT NULL) AS common
+           COALESCE(t.tier, 0) AS tier
       FROM dictionaryentries_zh d
       LEFT JOIN usage u ON u.ch = d.word1
-      LEFT JOIN common c ON c.ch = d.word1
+      LEFT JOIN tiers t ON t.ch = d.word1
      WHERE d.language = 'zh'
        AND char_length(d.word1) = 1
      ORDER BY d.word1
@@ -158,7 +167,8 @@ async function loadCharacters(client) {
       freq: row.freq == null ? 0 : Math.max(0, Math.min(255, row.freq)),
       usage: Math.min(65535, row.usage),
       discoverable: row.discoverable === true,
-      common: row.common === true,
+      // Clamped so an out-of-range score can never overflow the 3-bit flags field.
+      tier: Math.max(0, Math.min(5, row.tier)),
       // The row's default reading — context-naive by design (§ 6p "Cell content"):
       // a keyboard cell has no sentence to disambiguate a heteronym with.
       pronunciation: typeof row.pronunciation === 'string' ? row.pronunciation.trim() : '',
@@ -194,7 +204,7 @@ async function loadWords(client) {
  *   then, per character:
  *     codepoint    u32
  *     freq         u8   (0 = NULL, else 1–5)
- *     flags        u8   (bit 0 = discoverable, bit 1 = common — § 6z-4)
+ *     flags        u8   (bit 0 = discoverable, bits 1–3 = hint tier 0–5 — § 6z-4)
  *     usage        u16
  *     nComponents  u8
  *     componentIds u16 × nComponents
@@ -243,7 +253,7 @@ function serializeIndex(components, characters) {
     buffer.writeUInt32LE(c.char.codePointAt(0), offset);
     offset += 4;
     buffer.writeUInt8(c.freq, offset++);
-    buffer.writeUInt8((c.discoverable ? FLAG_DISCOVERABLE : 0) | (c.common ? FLAG_COMMON : 0), offset++);
+    buffer.writeUInt8((c.discoverable ? FLAG_DISCOVERABLE : 0) | (c.tier << HINT_TIER_SHIFT), offset++);
     buffer.writeUInt16LE(c.usage, offset);
     offset += 2;
     buffer.writeUInt8(c.components.length, offset++);
@@ -351,7 +361,8 @@ async function generateHandwritingLookup() {
   const atomic = characters.length - decomposable.length;
   const scored = characters.filter((c) => c.freq > 0).length;
   const used = characters.filter((c) => c.usage > 0).length;
-  const common = characters.filter((c) => c.common).length;
+  const common = characters.filter((c) => c.tier >= COMMON_FREQ_THRESHOLD).length;
+  const fallback = characters.filter((c) => c.tier > 0 && c.tier < COMMON_FREQ_THRESHOLD).length;
   const unread = characters.filter((c) => c.pronunciation === '').length;
 
   console.log(`  components:    ${components.length.toLocaleString()}`);
@@ -362,6 +373,7 @@ async function generateHandwritingLookup() {
   console.log(`    freqScore:   ${scored.toLocaleString()} scored, ${(characters.length - scored).toLocaleString()} NULL`);
   console.log(`    usage > 0:   ${used.toLocaleString()} (${((used / characters.length) * 100).toFixed(1)}%)`);
   console.log(`    common:      ${common.toLocaleString()} (in a freq ${COMMON_FREQ_THRESHOLD}+ word; § 6z-4 hint pool)`);
+  console.log(`    fallback:    ${fallback.toLocaleString()} (tiers 1–${COMMON_FREQ_THRESHOLD - 1}; § 6z-4 row fallback only)`);
   console.log(`    no reading:  ${unread.toLocaleString()}`);
   console.log(`  words (2-${MAX_WORD_LENGTH}):   ${words.length.toLocaleString()}`);
   console.log(`    bag derivable: ${derivable.toLocaleString()} (${((derivable / words.length) * 100).toFixed(1)}%)`);

@@ -167,8 +167,8 @@ a **different** sense, the search response names it, and the row shows that sens
   keeps it from leading.
 - **Client.** `resolveSearchRowView` (`src/utils/definitionUtils.ts`) returns the row's pinyin
   (the matched cluster's reading via `clusterReadingOrColumn`, else `resolveDefaultPronunciation`)
-  and its gloss list (the matched cluster's `glosses` first, then the rest of the flat
-  `definitions`, de-duplicated). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
+  and its sense list (each sense's dd, as the eip header shows it, with the matched cluster's dd
+  moved to the front; the plain dd when there is no choice of sense). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
   and Compare slot B), `src/features/community/CommunitySearchBar.tsx` and
   `src/features/immersiveworld/play/IWLookupResults.tsx`.
 - **Click-through.** `DictionaryPage` → `handleEntryClick` looks the word up and opens the eip
@@ -279,7 +279,7 @@ surfaces as a broken request rather than quietly-wrong ordering.
 |---|---|---|
 | Parsing + SQL | `server/dal/implementations/DictionaryDAL.ts` (`buildNumberedPinyinPattern`, `anyReadingPattern`, used in `searchByWord1`) | token → regex, `~*` match against `"numberedPinyin"` and `"searchReadings"` |
 | Default reading | `server/dal/implementations/DictionaryDAL.ts` → `DEFAULT_READING_SQL`; query parsing in `server/utils/searchSenseMatch.ts` → `parsePinyinQuery`, `pinyinQueryTokens` | bucket 1 vs 2 (main vs alternate complete reading) |
-| Sense matching | `server/utils/searchSenseMatch.ts` → `resolveMatchedSense` (called from `DictionaryService.searchDictionary`); client `src/utils/definitionUtils.ts` → `resolveSearchRowView` | `matchedSense` on each hit; the row's pinyin + gloss order; cdp `?sense=` |
+| Sense matching | `server/utils/searchSenseMatch.ts` → `resolveMatchedSense` (called from `DictionaryService.searchDictionary`); client `src/utils/definitionUtils.ts` → `resolveSearchRowView` | `matchedSense` on each hit; the row's pinyin + sense order; cdp `?sense=` |
 | English clause | `server/dal/implementations/DictionaryDAL.ts` → `STRIPPED_ALL_GLOSSES` | all-senses `~*` match; see the section above for why it is not `definitions[0]` |
 | Ranking | `server/dal/implementations/DictionaryDAL.ts` → `searchByWord1` (`rankExpr`, `completeGlossMatch`, `GLOSS_LEADING_MARKERS`) | builds the bucket ladder from `rankBy`; its params are kept in a separate `rankParams` list because only the entries query has an `ORDER BY` |
 | Controller/Service | `server/controllers/DictionaryController.ts` → `search`, `server/services/DictionaryService.ts` → `searchDictionary` | the pinyin parsing is entirely inside the DAL query; `rankBy` is validated in the controller against `DICTIONARY_SEARCH_RANKINGS` and passed straight through |

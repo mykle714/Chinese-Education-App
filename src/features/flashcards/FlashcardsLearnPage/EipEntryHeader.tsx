@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { Box, ButtonBase, Typography, useTheme, type BoxProps } from "@mui/material";
-import { DEFINITION_LIST_SEPARATOR, ddt, definitionListItems, resolveDefaultPronunciation, resolveDisplayDefinition, resolveDisplayPronunciation, resolveSelectedSenseIndex, sortedSenseClusters } from "../../../utils/definitionUtils";
+import { DEFINITION_LIST_SEPARATOR, ddt, resolveDisplayDefinition, resolveDisplayPronunciation, resolveSelectedSenseIndex, sortedSenseClusters } from "../../../utils/definitionUtils";
 import SwipeableTwoLineText, { type TwoLineSegment } from "../../../components/SwipeableTwoLineText";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import Icon from "../../../components/Icon";
@@ -54,15 +54,6 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     // sense list, and which item of the sense list is underlined. The list is DISPLAY-ONLY
     // (owner's call 2026-10-29): the pick is made on the card face's SensePicker.
     selectedSenseIndex?: number;
-    // The Dictionary eip (EipSheet `showAllDefinitions`, owner's call 2026-10-29): the gloss
-    // is the WHOLE flat `definitions` list joined with spaced middle dots — a lookup, not a
-    // card, so every meaning is shown — on up to TWO lines, swiping sideways (both lines
-    // together, rubber-banding at the ends) only when two lines overflow
-    // (SwipeableTwoLineText). With every sense on screen there is
-    // no chosen sense to mark, so the pinyin is the default
-    // reading (resolveDefaultPronunciation, as on the search row). Falls back to the dd when
-    // the entry carries no list (a vet row). Docs: docs/SHELF_REDESIGN.md § 7b.
-    showAllDefinitions?: boolean;
     // The eip SHEET: the gloss box takes the trail's boundaries, keycap edge → screen edge, so
     // swiped text clips at the keycap and runs off the screen. At rest the text keeps insets:
     // GLOSS_KEYCAP_CLEARANCE off the keycap on the left, the gutter on the right.
@@ -110,7 +101,6 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     speakingKey,
     learning,
     selectedSenseIndex,
-    showAllDefinitions = false,
     glossToScreenEdge = false,
     className,
     ...rest
@@ -118,23 +108,15 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const colors = useEipColors();
-    // `showAllDefinitions`: the glosses to lay out, or null when there are none (a vet row
-    // falls back to the dd). Memoized: SwipeableTwoLineText re-measures when it changes.
-    const allDefinitions = useMemo(() => {
-        if (!showAllDefinitions) return null;
-        const items = definitionListItems(entry?.definitions);
-        return items.length > 0 ? items : null;
-    }, [showAllDefinitions, entry?.definitions]);
-    // Every other host: a word with a real choice of sense (≥2 displayable clusters, the
+    // A word with a real choice of sense (≥2 displayable clusters, the
     // SensePicker's own gate) lists each sense's dd, in the picker's order, so index 0 is
     // the starred default and `selectedSenseIndex` addresses the same item the card face's
     // picker chose. The chosen sense is underlined; the default carries the star, drawn in
     // the gloss's own colour (`inherit`) so it follows the dd colour and the night palette.
     // Null for a single-sense / unclustered word, which keeps the plain dd.
-    const senseClusters = useMemo(
-        () => (showAllDefinitions || !entry ? null : sortedSenseClusters(entry)),
-        [showAllDefinitions, entry],
-    );
+    // Every host shows this list, the Dictionary eip included (owner's call 2026-10-31).
+    // Memoized: SwipeableTwoLineText re-measures when its segments change.
+    const senseClusters = useMemo(() => (entry ? sortedSenseClusters(entry) : null), [entry]);
     // No override → the persisted pick, exactly as the dd/pinyin resolvers fall back.
     const underlinedSenseIndex = selectedSenseIndex ?? (entry ? resolveSelectedSenseIndex(entry) : 0);
     const senseSegments = useMemo<TwoLineSegment[] | null>(() => senseClusters?.map((cluster, index) => ({
@@ -164,7 +146,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
         if ((e.target as Element).closest(".cpcd-row")) return;
         e.currentTarget.querySelector<HTMLElement>(".cpcd-row")?.click();
     };
-    // `.eid` — the gloss's type, shared by the dd and the all-definitions line.
+    // `.eid` — the gloss's type, shared by the dd and the sense list.
     const glossSx = {
         flex: 1,
         minWidth: 0,
@@ -257,7 +239,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         // Sense-resolved, like the dd printed beside it. The panel's own live
                         // pick is the override so the reading changes on the tap, ahead of the
                         // persisted `selectedSense` round-tripping back (useEipTabs.syncEntry).
-                        pronunciation={allDefinitions !== null ? resolveDefaultPronunciation(entry) : resolveDisplayPronunciation(entry, selectedSenseIndex)}
+                        pronunciation={resolveDisplayPronunciation(entry, selectedSenseIndex)}
                         useToneColor={showPinyinColor}
                         showPinyin
                         // Tap the headword to copy it: first tap the characters, next
@@ -311,12 +293,10 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                 )}
             </Box>
             {/* `.eid` — the gloss, centered in the space beside the headword.
-                Three forms: the Dictionary eip's whole flat `definitions` list; the
-                per-sense list (every sense's dd, dot-separated, the chosen one
+                Two forms: the per-sense list (every sense's dd, dot-separated, the chosen one
                 underlined and the default starred — the same senses, order and star the
                 card face's SensePicker offers, so the panel names the pick without being
-                a second place to make it); or, for a single-sense word, the plain dd.
-                Both lists share SwipeableTwoLineText's two-line / swipe layout. */}
+                a second place to make it); or, for a single-sense word, the plain dd. */}
             {entry && (
                 <Box
                     className="mobile-demo-eic-header-english-row"
@@ -329,27 +309,16 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         marginRight: glossToScreenEdge ? `-${EIP_PANEL_GUTTER}px` : 0,
                     }}
                 >
-                {allDefinitions !== null ? (
+                {senseSegments !== null ? (
                     <SwipeableTwoLineText
-                        className="mobile-demo-eic-header-english mobile-demo-eic-header-english--all-definitions"
-                        segments={allDefinitions}
+                        className="mobile-demo-eic-header-english mobile-demo-eic-header-english--senses"
+                        segments={senseSegments}
                         separator={DEFINITION_LIST_SEPARATOR}
                         // Vertical drags on the header belong to the sheet's resize gesture
                         // (EipUpperPanel), so only the sideways pan is the text's — as for the
                         // word trail.
                         touchAction="pan-x"
                         // Centered while it fits, start-first once it overflows.
-                        align="center"
-                        insetStart={glossInsetStart}
-                        insetEnd={glossInsetEnd}
-                        sx={glossSx}
-                    />
-                ) : senseSegments !== null ? (
-                    <SwipeableTwoLineText
-                        className="mobile-demo-eic-header-english mobile-demo-eic-header-english--senses"
-                        segments={senseSegments}
-                        separator={DEFINITION_LIST_SEPARATOR}
-                        touchAction="pan-x"
                         align="center"
                         insetStart={glossInsetStart}
                         insetEnd={glossInsetEnd}

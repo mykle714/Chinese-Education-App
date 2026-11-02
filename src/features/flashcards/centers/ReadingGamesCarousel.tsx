@@ -91,7 +91,7 @@ const ReadingGamesCarousel: React.FC<ReadingGamesCarouselProps> = ({ className, 
     const { clearedLevels, totalWins: bubbleWins } = useGameWins(BUBBLE_MATCH_GAME_KEY);
     // Speed Reading logs a win per MEDALLED run (SpeedReadingPage → recordWin).
     const { totalWins: speedReadingWins } = useGameWins(SPEED_READING_GAME_KEY);
-    // Bucket Drop logs a win per MEDALLED run, across both modes (BucketDropPage).
+    // Bucket Drop logs a win per MEDALLED run, across both modes (BucketDropStage).
     const { totalWins: bucketDropWins } = useGameWins(BUCKET_DROP_GAME_KEY);
 
     // Same gating as the Games hub (`isGameAvailable`): auth-only games hide from

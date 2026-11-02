@@ -95,7 +95,7 @@ function DictionaryEntryGloss({ gloss, isSlab, color, swipe }: DictionaryEntryGl
 
     if (!swipe) {
         return (
-            <Typography className="dictionary-entry-row__definition" sx={{ ...textSx, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Typography className="dictionary-entry-row__definition" sx={{ ...textSx, whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {gloss}
             </Typography>
         );
@@ -149,12 +149,13 @@ function DictionaryEntryRow({ entry, onClick, language, inset = 22, headwordTapT
     const isSlab = variant === 'slab';
     const t = tones ?? DAY_TONES;
     // The artboard's gloss is a single ellipsized line carrying as many senses as
-    // fit ("time · period"), not just the first one — the row has a fixed height
-    // either way, so a second gloss is free information rather than extra space.
+    // fit, not just the first one — the row has a fixed height either way, so a second
+    // sense is free information rather than extra space. It is the SAME list the eip
+    // header shows: each sense's dd (owner's call 2026-10-31).
     //
     // A hit found through a NON-default sense ("ma2" → 吗's má sense, "row" → 行's háng) shows
-    // that sense's pinyin with its glosses leading the line; every other hit renders its
-    // default sense exactly as before. See resolveSearchRowView.
+    // that sense's pinyin with its dd leading the line; every other hit renders its default
+    // sense exactly as before. See resolveSearchRowView.
     const rowView = resolveSearchRowView(entry);
     // Every sense on one line, middle-dot separated (definitionUtils → joinDefinitionList).
     const gloss = joinDefinitionList(rowView.definitions) || 'No definition available';

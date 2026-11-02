@@ -1,20 +1,25 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
-import { cpcdNaturalSize } from "../../components/CPCDRow";
+import { cpcdNaturalSize, GLYPH_DROP_PX, type CPCDSize } from "../../components/CPCDRow";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { getToneColor } from "../../utils/toneColors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
 import {
-    CELL_SIZE,
     CELL_GAP,
+    CELL_RADIUS,
+    GRID_BOX_PADDING,
     GRID_MARGIN,
     MISS_FLASH_MS,
+    REVIEW_OUTLINE_OUTSET,
+    REVIEW_OUTLINE_WIDTH,
 } from "./constants";
 import type { BonusWord, Coord, GridCell, PlacedWord } from "./types";
 import { pickDrillRung } from "../../utils/segmentDrill";
+import { wordOutlinePath } from "./wordOutlinePath";
+import { boardCellSide, boardNaturalHeight } from "./boardMetrics";
 
 /**
  * An open review of a found word, narrowed to the drill rung the player has tapped
@@ -88,6 +93,8 @@ interface WordSearchGridProps {
      * provider cancels the previous play before starting its own.
      */
     silence?: () => void;
+    /** cpcd size of every cell (`BOARD_CELL_SIZE`). It sets the tile size. */
+    cellSize: CPCDSize;
 }
 
 const key = (r: number, c: number) => `${r},${c}`;
@@ -212,6 +219,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     onBonusFound,
     onFirstInteraction,
     speak,
+    cellSize,
     silence,
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -237,10 +245,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
      * pinyin BAND is reserved in both modes (No Pinyin hides the syllable but
      * keeps its space), so `reservePinyin` stays true.
      */
-    const cellSide = useMemo(() => {
-        const natural = cpcdNaturalSize(CELL_SIZE, { bigPinyin: showPinyin, reservePinyin: true });
-        return Math.ceil(Math.max(natural.width, natural.height));
-    }, [showPinyin]);
+    const cellSide = boardCellSide(cellSize, showPinyin);
 
     /**
      * No Pinyin mode: how far (px) to drop the glyph so it sits at the tile's
@@ -254,10 +259,11 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
      */
     const hiddenPinyinGlyphOffset = useMemo(() => {
         if (showPinyin) return 0;
-        const withBand = cpcdNaturalSize(CELL_SIZE, { bigPinyin: false, reservePinyin: true }).height;
-        const withoutBand = cpcdNaturalSize(CELL_SIZE, { bigPinyin: false, reservePinyin: false }).height;
-        return (withBand - withoutBand) / 2;
-    }, [showPinyin]);
+        const withBand = cpcdNaturalSize(cellSize, { bigPinyin: false, reservePinyin: true }).height;
+        const withoutBand = cpcdNaturalSize(cellSize, { bigPinyin: false, reservePinyin: false }).height;
+        // The cell paints its glyph GLYPH_DROP_PX low, with or without pinyin.
+        return (withBand - withoutBand) / 2 - GLYPH_DROP_PX[cellSize];
+    }, [cellSize, showPinyin]);
 
     const scale = useFitScale(containerRef, innerRef, [grid, showPinyin, cellSide], GRID_MARGIN);
 
@@ -376,7 +382,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         reviewRef.current = review;
     }, [review]);
 
-    // Cells covered by the CURRENT review rung — the reviewing ring shrinks with the
+    // Cells covered by the CURRENT review rung — the reviewing outline shrinks with the
     // drill, from the whole found word down to the single tapped tile.
     const reviewedCells = useMemo(() => {
         const set = new Set<string>();
@@ -385,6 +391,21 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         }
         return set;
     }, [review]);
+
+    // One continuous line around the current rung, in addition to the tiles' own
+    // rings. Both radii keep it concentric with the tile corner it turns around: the
+    // word's own tile at an outer turn, the neighbouring tile at an inner one.
+    const reviewOutlinePath = useMemo(() => {
+        if (!review) return "";
+        return wordOutlinePath(review.word.cells.slice(review.start, review.end + 1), {
+            cellSide,
+            gap: CELL_GAP,
+            origin: GRID_BOX_PADDING,
+            outset: REVIEW_OUTLINE_OUTSET,
+            radius: CELL_RADIUS + REVIEW_OUTLINE_OUTSET,
+            concaveRadius: CELL_RADIUS + CELL_GAP - REVIEW_OUTLINE_OUTSET,
+        });
+    }, [review, cellSide]);
 
 
     // DOM refs for each cell, keyed the same as `key()`, so bridge geometry can be
@@ -789,12 +810,17 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
 
     const inPath = (r: number, c: number) => path.some((p) => eq(p, [r, c]));
 
+    // The container asks for the board's natural height and no more, so the spare height
+    // goes to the gloss band above it (WordSearchStage). It may still shrink: on a short
+    // screen `useFitScale` scales the board down to whatever it is left with.
+    const naturalHeight = boardNaturalHeight(grid.length, cellSize, showPinyin);
+
     return (
         <Box
             ref={containerRef}
             className="word-search__grid-container"
             sx={{
-                flex: 1,
+                flex: `0 1 ${naturalHeight}px`,
                 minHeight: 0,
                 display: "flex",
                 alignItems: "center",
@@ -824,7 +850,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     // cells themselves, the cell IS the unit and a square cell is all
                     // the evenness the board needs.
                     gap: `${CELL_GAP}px`,
-                    p: "4px",
+                    p: `${GRID_BOX_PADDING}px`,
                     // NO BOARD GROUND (2026-08-24). The cells sit DIRECTLY on the white
                     // `.play` panel — the grid box draws nothing at all.
                     //
@@ -877,10 +903,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                     row.map((cell, c) => {
                         const selected = inPath(r, c);
                         const isFound = foundCells.has(key(r, c));
-                        // Cells of the found word whose gloss popup is open — ringed
-                        // so it reads as the actively-reviewed word.
-                        // Only the cells of the CURRENT rung carry the reviewing ring, so
-                        // drilling visibly shrinks the ring from the whole word down to one tile.
+                        // Cells of the found word whose gloss popup is open. Only the cells
+                        // of the CURRENT rung count, so drilling visibly shrinks the
+                        // outline from the whole word down to one tile.
                         const isPopup = reviewedCells.has(key(r, c));
                         // The RED miss flash + shake. A single-character bonus match is
                         // deliberately excluded (see `invalid` above): no shake, just its
@@ -931,7 +956,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // (`cellSide`), which the cell stretches into — NOT
                                     // from `aspect-ratio: 1`, which cost the board a
                                     // Safari-only right-overflow (see `cellSide`).
-                                    borderRadius: "8px",
+                                    borderRadius: `${CELL_RADIUS}px`,
                                     // THE SELECTION SYSTEM. Every highlight — resting,
                                     // tracing, found, hinted, missed — is a fill on the
                                     // CELL, from the design's `.wsg span` / `.hit` /
@@ -983,13 +1008,9 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // A FOUND cell replaces it with a 1.5px INK ring
                                     // (`#ws .wsg span.hit{box-shadow:inset 0 0 0 1.5px
                                     // var(--ink)}` in v2), rather than stacking a second one.
-                                    // The reviewed word (its gloss popup is open) is a found
-                                    // word too, so it needs one more step to stay distinct:
-                                    // a 2.5px ink ring. (The design has no reviewed state;
-                                    // the heavier ring is this app's addition.)
-                                    boxShadow: isPopup
-                                        ? `inset 0 0 0 2.5px ${COLORS.onSurface}`
-                                        : isFound
+                                    // The reviewed word keeps these rings: its outline is a
+                                    // separate line in the gutters (`reviewOutlinePath`).
+                                    boxShadow: isFound
                                         ? `inset 0 0 0 1.5px ${COLORS.onSurface}`
                                         : `inset 0 0 0 1px ${COLORS.markOutline}`,
                                     // A lit cell darkens its glyph to full ink so the
@@ -1048,15 +1069,15 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     }}
                                 >
                                 <ForeignText
-                                    size={CELL_SIZE}
+                                    size={cellSize}
                                     justifyContent="center"
                                     text={cell.char}
                                     pronunciation={cell.pinyin}
                                     showPinyin={showPinyin}
                                     useToneColor={showPinyinColor}
                                     // The Pinyin board renders big pinyin (see
-                                    // CPCDRow.bigPinyin): at `sm` the default 13px
-                                    // syllable is too small to scan mid-drag. Gated on
+                                    // CPCDRow.bigPinyin): the default pinyin at this
+                                    // tile size is too small to scan mid-drag. Gated on
                                     // `showPinyin` rather than passed unconditionally
                                     // because the reserved pinyin band is kept even when
                                     // the syllable is hidden — enlarging it in No Pinyin
@@ -1067,6 +1088,22 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                             </Box>
                         );
                     })
+                )}
+
+                {/* The reviewing outline, ABOVE the tiles, in the selection orange's
+                    MARK tier: the line sits on the white panel, where the tracing
+                    fill's surface tier (`COLORS.org`) is only ~1.29:1 and `orgMk` is
+                    ~2.16:1. Never takes a tap: taps fall through to the cells.
+                    See docs/WORD_SEARCH_GAME.md § The selection system. */}
+                {reviewOutlinePath && (
+                    <Box
+                        component="svg"
+                        className="word-search__review-outline"
+                        aria-hidden
+                        sx={{ position: "absolute", inset: 0, width: "100%", height: "100%", zIndex: 2, pointerEvents: "none", overflow: "visible" }}
+                    >
+                        <path d={reviewOutlinePath} fill="none" stroke={COLORS.orgMk} strokeWidth={REVIEW_OUTLINE_WIDTH} />
+                    </Box>
                 )}
             </Box>
 

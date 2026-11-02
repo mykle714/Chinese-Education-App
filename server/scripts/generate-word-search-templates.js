@@ -2,22 +2,30 @@
  * ONE-OFF GENERATOR for server/services/wordSearchTemplates.ts.
  *
  * Not run at runtime and not imported by anything — it exists so a future board
- * resize does not have to re-derive the tiling by hand. Edit ROWS/COLS/HOLES,
- * run it, and paste the output between the `WORD_SEARCH_TEMPLATES = [` and `];`
- * lines of the service file (then update that file's header + the ROWS/COLS/HOLES
- * constants to match, and re-run server/__tests__/wordSearchTemplates.test.ts,
- * which re-checks every invariant listed below).
+ * resize does not have to re-derive the tiling by hand. Pick (or add) an entry in
+ * BOARDS, run it, and paste the output into that board's template list in the
+ * service file (then re-run server/__tests__/wordSearchTemplates.test.ts, which
+ * re-checks every invariant listed below for every board).
  *
- *   node server/scripts/generate-word-search-templates.js [count]
+ *   node server/scripts/generate-word-search-templates.js <7x6|6x5> [count]
  *
  * See docs/WORD_SEARCH_TEMPLATES.md for what a template is and when the grid
  * generator falls back to one.
  */
-// One-off backtracking tiler: cut a 7x6 board (minus 6 holes) into 9 disjoint
-// 4-cell PATHS (each consecutive pair orthogonally adjacent, and no cell adjacent
-// to more than 2 same-piece cells -> rules out T/plus pieces that can't be walked).
-const ROWS = 7, COLS = 6;
-const HOLES = [[0,0],[0,5],[3,2],[3,3],[6,0],[6,5]];
+// One-off backtracking tiler: cut a board (minus its holes) into disjoint 4-cell
+// PATHS (each consecutive pair orthogonally adjacent, and no cell adjacent to more
+// than 2 same-piece cells -> rules out T/plus pieces that can't be walked).
+//
+// Every 4-cell path covers two cells of each checkerboard colour, so the holes must
+// balance the colours or the board has no tiling at all. 6x5's two holes are DIAGONAL
+// corners: (0,0) and (5,4) are opposite colours; (0,0) and (0,4) are not.
+const BOARDS = {
+  '7x6': { rows: 7, cols: 6, holes: [[0,0],[0,5],[3,2],[3,3],[6,0],[6,5]] },
+  '6x5': { rows: 6, cols: 5, holes: [[0,0],[5,4]] },
+};
+const board = BOARDS[process.argv[2]];
+if (!board) throw new Error('usage: generate-word-search-templates.js <' + Object.keys(BOARDS).join('|') + '> [count]');
+const { rows: ROWS, cols: COLS, holes: HOLES } = board;
 const SIZE = 4;
 const holeSet = new Set(HOLES.map(([r,c]) => r*COLS+c));
 const cells = [];
@@ -65,8 +73,6 @@ function solve() {
     // reject closed loops (2x2 squares): head and tail adjacent makes the path
     // a cycle, so the same 4 cells read as a word in several directions.
     if (nbrs.get(path[0]).includes(path[path.length-1])) return false;
-    {
-    }
     return true;
   }
   function extend(path) {
@@ -113,7 +119,7 @@ function solve() {
 }
 
 // Collect N distinct templates.
-const N = Number(process.argv[2] || 11);
+const N = Number(process.argv[3] || 11);
 const out = [];
 const seen = new Set();
 for (let i = 0; i < 400000 && out.length < N; i++) {

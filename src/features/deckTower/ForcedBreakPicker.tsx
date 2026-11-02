@@ -7,7 +7,7 @@ import type { Language } from "../../types";
 
 /**
  * ForcedBreakPicker — the FEATURE-TESTER row of chips under the time-of-day row that pins
- * this world's next card to one game: Auto · <the world's suite>
+ * this world's breaks to one game, opening each visit on one: Auto · <the world's suite>
  * (docs/DECK_TOWER.md § "Forced game breaks", docs/FLP_GAME_BREAKS.md § 10).
  *
  * Layer: page-private component (feature module `src/features/deckTower`). The pin lives in

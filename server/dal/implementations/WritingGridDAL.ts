@@ -1,4 +1,4 @@
-import type { IWritingGridDAL, WritingGridCharacterRow } from '../interfaces/IWritingGridDAL.js';
+import type { IWritingGridDAL, WritingCandidateWordRow, WritingGridCharacterRow } from '../interfaces/IWritingGridDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
 import { vetSortedClause } from '../shared/vetTable.js';
@@ -27,6 +27,7 @@ export class WritingGridDAL implements IWritingGridDAL {
         -- The character's most frequent det row supplies BOTH its pinyin and its dd
         -- inputs, so the service resolves them against the same sense.
         SELECT c.ch AS char, r.id AS "cardId", r."typedMarkHistory", r."selectedSense",
+               COALESCE(${vetSortedClause('r')}, FALSE) AS "ownCard",
                d.pronunciation AS pinyin, d.definitions->>0 AS definition, d."definitionClusters"
           FROM chars c
           CROSS JOIN LATERAL (
@@ -49,8 +50,54 @@ export class WritingGridDAL implements IWritingGridDAL {
       definitionClusters: row.definitionClusters ?? null,
       selectedSense: row.selectedSense ?? null,
       cardId: row.cardId ?? null,
+      ownCard: row.ownCard === true,
       typedMarkHistory: row.typedMarkHistory ?? null,
     }));
+  }
+
+  async findCandidateWords(userId: string, extraIds: number[]): Promise<WritingCandidateWordRow[]> {
+    if (!userId) throw new ValidationError('userId is required');
+    const result = await this.dbManager.executeQuery(async (client) =>
+      client.query(
+        `
+        SELECT ve.id, ve."entryKey", ve."selectedSense",
+               d.pronunciation AS pinyin, d.definitions->>0 AS definition, d."definitionClusters"
+          FROM vocabentries_zh ve
+          CROSS JOIN LATERAL (
+            SELECT pronunciation, definitions, "definitionClusters"
+              FROM dictionaryentries_zh
+             WHERE word1 = ve."entryKey"
+             ORDER BY "frequencyScore" DESC NULLS LAST
+             LIMIT 1
+          ) d
+         WHERE ve."userId" = $1
+           AND ve.language = 'zh'
+           AND (${vetSortedClause('ve')} OR ve.id = ANY($2::int[]))
+           AND ve."entryKey" ~ '^[\\u3400-\\u9fff]{1,4}$'
+        `,
+        [userId, extraIds]
+      )
+    );
+    return result.recordset.map((row: any) => ({
+      id: row.id,
+      entryKey: row.entryKey,
+      pinyin: row.pinyin ?? null,
+      definition: row.definition ?? null,
+      definitionClusters: row.definitionClusters ?? null,
+      selectedSense: row.selectedSense ?? null,
+    }));
+  }
+
+  async findEntryKeys(userId: string, ids: number[]): Promise<string[]> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (ids.length === 0) return [];
+    const result = await this.dbManager.executeQuery(async (client) =>
+      client.query(
+        `SELECT "entryKey" FROM vocabentries_zh WHERE "userId" = $1 AND id = ANY($2::int[])`,
+        [userId, ids]
+      )
+    );
+    return result.recordset.map((row: any) => row.entryKey as string);
   }
 
   async ensureCharacterRows(userId: string, chars: string[]): Promise<Map<string, number>> {

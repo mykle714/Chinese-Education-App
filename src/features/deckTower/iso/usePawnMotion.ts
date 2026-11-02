@@ -80,8 +80,27 @@ import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
  * loop nor resets the pawn's walk; the page re-rendering with a new camera redraws the
  * figure at once (a layout effect) rather than a frame late.
  *
- * Under prefers-reduced-motion nothing runs: the pawn stands at `at` and the startle is
- * skipped.
+ * POKE: `poke()` (IsoPawn `tappable`) pops the "!" bubble and throws the feet straight up
+ * (POKE_JUMP_SPEED) through the same feet physics a plate launch uses, so it lands in the
+ * same shrinking bounces. Every poke counts, in the air too: it re-throws the feet from
+ * wherever they are, so quick taps climb higher and GRAVITY brings the pawn back down once
+ * they stop. A poked walk stops where it is, and the pawn stands until the bubble has gone
+ * (EMOTE_MS). A poke is ignored during an entrance or an edge hop (they place the body
+ * themselves, with no feet physics to throw) and while the floor is dropping.
+ *
+ * SUMMIT: a step marked `summit` (the Deck Tower's tower top) is a surface no walk reaches.
+ * A poke while the feet are above it throws the pawn onto it instead of jumping (the `flight`
+ * mode: the feet fly under the feet physics, the ground position glides to a random spot
+ * over the time that takes). There it wanders that step, under `walkRoam`, and draws in
+ * front of every obstacle. As with any step its height is live, so height changes need no
+ * code of their own: a shrink leaves the pawn to fall onto the new top, and a sudden rise
+ * (SUMMIT_JOLT_RISE, a sky drop landing) throws it up. When the summit `closed`s, the pawn
+ * flies back down to `at`; while it is `held` the pawn finishes its step and stands still,
+ * so the Deck Tower's cover card can carry it off (`summitSpot`). It ignores startles up
+ * there (there is nothing to leap away from).
+ *
+ * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle and
+ * the poke are skipped.
  *
  * Referenced by: docs/ISO_ART_FRAMEWORK.md § "IsoPawn", docs/DECK_TOWER.md § "The scene",
  * docs/DECK_TOWER_TRANSITIONS.md § "Pawn entrances".
@@ -108,6 +127,13 @@ export interface PawnRoam {
 export interface PawnStep {
     rect: WorldRect;
     height: number;
+    /** Makes this the summit (see the header's SUMMIT). At most one per pawn. */
+    summit?: {
+        /** It may not be stood on: a pawn up there flies down, and a poke will not throw one up. */
+        closed: boolean;
+        /** A pawn up there stands still, and a poke will not throw one up. */
+        held: boolean;
+    };
 }
 
 /**
@@ -128,8 +154,8 @@ const STEP_RATE = 3.4;
 const STEP_HOP = 0.13;
 /** Side-to-side waddle, alternating per step. */
 const WADDLE_DEG = 4;
-const PAUSE_MIN_MS = 700;
-const PAUSE_MAX_MS = 2600;
+const PAUSE_MIN_MS = 900;
+const PAUSE_MAX_MS = 3300;
 /**
  * The first pause after the scene mounts. Longer than an ordinary pause so the pawn
  * stands still while the page settles in, instead of setting off the instant it appears.
@@ -220,6 +246,22 @@ const RECOVER_MS = 450;
 const LANDED_AT = LEAN_MS + LEAP_MS;
 const RECOVER_AT = LANDED_AT + LOOK_HOLD_MS;
 const STARTLE_END = RECOVER_AT + RECOVER_MS;
+
+/** Poke (see the header's POKE): how high the jump clears its surface, and the speed that gets it there. */
+const POKE_JUMP_HEIGHT = 2.6;
+const POKE_JUMP_SPEED = Math.sqrt(2 * GRAVITY * POKE_JUMP_HEIGHT);
+/**
+ * Radius of the pawn's invisible tap target, in camera-facing world units. Roughly the
+ * figure's half height: the body alone is only a few px wide and never stops moving.
+ */
+const PAWN_HIT_RADIUS = 1.1;
+/**
+ * A summit rising this far in one frame jolts the pawn up (see the header's SUMMIT). It
+ * tells a landing sky drop from a build-up's steady climb, about 0.1 units a frame.
+ */
+const SUMMIT_JOLT_RISE = 0.5;
+/** A throw lands at least this far further in from the summit's edge than the pawn could stand. */
+const SUMMIT_LANDING_INSET = 0.8;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
@@ -363,17 +405,19 @@ function pathClear(a: Pt2, b: Pt2, obstacles: WorldRect[]): boolean {
 }
 
 /** A random reachable walk target, or null when none turned up (the pawn just waits longer). */
-function pickTarget(from: Pt2, roam: PawnRoam): Pt2 | null {
+function pickTarget(from: Pt2, roam: PawnRoam, minDist = WALK_MIN, maxDist = WALK_MAX): Pt2 | null {
     const box = feetBox(roam);
     for (let i = 0; i < PICK_TRIES; i++) {
         const p = { x: box.x + Math.random() * box.w, y: box.y + Math.random() * box.d };
         if (!onFloor(p, roam)) continue;
         const dist = Math.hypot(p.x - from.x, p.y - from.y);
-        if (dist < WALK_MIN || dist > WALK_MAX) continue;
+        if (dist < minDist || dist > maxDist) continue;
         if (pathClear(from, p, roam.obstacles)) return p;
     }
     return null;
 }
+
+const rectCentre = (r: WorldRect): Pt2 => ({ x: r.x + r.w / 2, y: r.y + r.d / 2 });
 
 /** Where a leap away from `source` lands: along the line from its nearest point, kept on the floor. */
 function leapLanding(from: Pt2, source: WorldRect | undefined, roam: PawnRoam | undefined): Pt2 {
@@ -397,6 +441,8 @@ type Mode =
     | { kind: "land" }
     | { kind: "startle"; t0: number; from: Pt2; to: Pt2; leanSign: 1 | -1 }
     | { kind: "entrance"; t0: number; anim: PawnEntrance }
+    /** A throw onto or off the summit: the ground position glides `from` → `to` over `ms`. */
+    | { kind: "flight"; t0: number; from: Pt2; to: Pt2; ms: number }
     | EdgeHopMode;
 
 /**
@@ -431,6 +477,12 @@ export interface PawnMotionRefs {
     head: React.RefObject<SVGCircleElement | null>;
     /** Places the "!" bubble (drawn round its tail tip at the origin, EMOTE_DRAW_SCALE px per unit) over the head. */
     emoteAnchor: React.RefObject<SVGGElement | null>;
+    /** The invisible tap target (IsoPawn `tappable`), centred on the figure every frame. */
+    hit: React.RefObject<SVGCircleElement | null>;
+    /** The shadow on the floor; hidden on the summit. */
+    floorShadow: React.RefObject<SVGGElement | null>;
+    /** The see-through shadow; shown only on the summit. */
+    summitShadow: React.RefObject<SVGGElement | null>;
     /** Shrinks the shadow while airborne. */
     shadow: React.RefObject<SVGGElement | null>;
     /** The shaded-decal copy: fades with the shadow. */
@@ -452,6 +504,8 @@ export interface PawnEmote {
  * scale rather than 1, so the bubble's text is never laid out at a sub-pixel font size.
  */
 export const EMOTE_DRAW_SCALE = 100;
+/** The "!" bubble's one-shot (IsoPawn's CSS); a poked pawn stands this long. */
+export const EMOTE_MS = 2000;
 
 /** An entrance to play on mount, and when to start it (a `performance.now()` timestamp). */
 export interface PawnEntranceCue {
@@ -476,9 +530,13 @@ export function usePawnMotion(opts: {
     floorDrop?: number;
     /** Raised floor the pawn steps up onto (see the header's STEPS). Read live: may be a new array each render. */
     steps?: PawnStep[];
+    /** Called when the pawn gets onto, or leaves, the summit. */
+    onSummitChange?: (onSummit: boolean) => void;
+    /** Kept at where the pawn stands on the summit (null when it is not there), every frame. */
+    summitSpot?: React.MutableRefObject<Pt2 | null>;
     /** World z of the surface the pawn stands on (its feet are drawn in absolute world space). */
     surfaceZ: number;
-}): { refs: PawnMotionRefs; emote: PawnEmote | null } {
+}): { refs: PawnMotionRefs; emote: PawnEmote | null; poke: () => void } {
     const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
     // pinned in a ref and a later prop change never replays it.
@@ -488,6 +546,9 @@ export function usePawnMotion(opts: {
         presence: useRef<SVGGElement>(null),
         body: useRef<SVGPathElement>(null),
         head: useRef<SVGCircleElement>(null),
+        hit: useRef<SVGCircleElement>(null),
+        floorShadow: useRef<SVGGElement>(null),
+        summitShadow: useRef<SVGGElement>(null),
         emoteAnchor: useRef<SVGGElement>(null),
         shadow: useRef<SVGGElement>(null),
         decalShade: useRef<SVGGElement>(null),
@@ -508,6 +569,7 @@ export function usePawnMotion(opts: {
             ? { kind: "entrance", t0: opts.entrance.startAt, anim: opts.entrance.animation }
             : { kind: "pause", until: 0 }) as Mode,
         rank: -1,
+        onSummit: false,
         // Step-up state: which step the feet were on last frame, the current lift (world
         // units), and the edge-crossing ease in progress (lift it started from, start time).
         // `stepIdx` is the surface the pawn stands on — or, mid edge hop, is hopping onto.
@@ -550,6 +612,10 @@ export function usePawnMotion(opts: {
     // The latest callback, so a new inline function from the page doesn't restart the loop.
     const onRank = useRef(onDepthRankChange);
     onRank.current = onDepthRankChange;
+    const onSummitRef = useRef(opts.onSummitChange);
+    onSummitRef.current = opts.onSummitChange;
+    const summitSpotRef = useRef(opts.summitSpot);
+    summitSpotRef.current = opts.summitSpot;
     // Latest steps (their heights animate while the plate is pressed), read by the loop.
     const stepsRef = useRef(opts.steps ?? []);
     stepsRef.current = opts.steps ?? [];
@@ -649,6 +715,12 @@ export function usePawnMotion(opts: {
             refs.head.current.setAttribute("cy", String(fig.head.cy));
             refs.head.current.setAttribute("r", String(fig.head.r));
         }
+        if (refs.hit.current) {
+            const feetAt = p.project(feet.x, feet.y, feet.z);
+            refs.hit.current.setAttribute("cx", String((feetAt.x + fig.head.cx) / 2));
+            refs.hit.current.setAttribute("cy", String((feetAt.y + fig.head.cy) / 2));
+            refs.hit.current.setAttribute("r", String(PAWN_HIT_RADIUS * fig.headScale));
+        }
         if (refs.emoteAnchor.current) {
             // Billboard: upright on screen, its tail tip just over the head's top, not
             // squashed or waddling with the body (an unsquashed figure at the look-up lean).
@@ -658,6 +730,9 @@ export function usePawnMotion(opts: {
             const f = k / EMOTE_DRAW_SCALE;
             refs.emoteAnchor.current.style.transform = `translate(${still.head.cx}px, ${tipY}px) scale(${f})`;
         }
+        const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
+        if (refs.floorShadow.current) refs.floorShadow.current.style.visibility = onSummit ? "hidden" : "";
+        if (refs.summitShadow.current) refs.summitShadow.current.style.visibility = onSummit ? "" : "hidden";
         if (refs.shadow.current) {
             // Clamped at 0: falling BELOW its surface (FLOOR DROP) doesn't grow the shadow.
             const air = clamp01(hop / LEAP_HOP_HEIGHT);
@@ -688,8 +763,9 @@ export function usePawnMotion(opts: {
         wasStartled.current = startled;
         if (!rose || reduced) return;
         const s = state.current;
-        // In the air arriving: no startle.
-        if (s.mode.kind === "entrance") return;
+        // In the air arriving, or up on the summit: no startle.
+        if (s.mode.kind === "entrance" || s.mode.kind === "flight") return;
+        if (stepsRef.current[s.stepIdx]?.summit) return;
         // Cut a hop short: ease the lift from wherever the arc had it (see the step code).
         if (s.mode.kind === "edgeHop") {
             s.liftFrom = s.lift;
@@ -704,6 +780,42 @@ export function usePawnMotion(opts: {
         s.mode = { kind: "startle", t0: performance.now(), from: { ...s.pos }, to: leapLanding(s.pos, startledBy, roam), leanSign };
         setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
     }, [startled, reduced, startledBy, roam]);
+
+    /** Throws the pawn to `to`, on a surface `toZ` high: the time is what the feet will take to land there. */
+    const startFlight = (to: Pt2, toZ: number, now: number) => {
+        const s = state.current;
+        const v = POKE_JUMP_SPEED;
+        const seconds = (v + Math.sqrt(v * v + 2 * GRAVITY * Math.max(0, s.feetZ - toZ))) / GRAVITY;
+        s.feetV = v;
+        s.stepPhase = 0;
+        s.mode = { kind: "flight", t0: now, from: { ...s.pos }, to, ms: seconds * 1000 };
+    };
+
+    // A tap on the pawn: see the header's POKE. Works on the motion state directly, as the
+    // startle effect does; the loop picks the jump up on its next frame.
+    const poke = () => {
+        if (reduced || floorDropRef.current > 0) return;
+        const s = state.current;
+        const m = s.mode;
+        if (m.kind === "entrance" || m.kind === "edgeHop" || m.kind === "flight") return;
+        const steps = stepsRef.current;
+        const summit = steps.findIndex((st) => st.summit);
+        const top = steps[summit];
+        if (top?.summit && !top.summit.closed && !top.summit.held && s.stepIdx !== summit && m.kind !== "startle" && s.feetZ > top.height + FEET_EPS) {
+            const landing = { area: insetRect(top.rect, SUMMIT_LANDING_INSET), obstacles: [] };
+            startFlight(pickTarget(s.pos, landing, 0, Infinity) ?? rectCentre(top.rect), top.height, performance.now());
+            setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
+            return;
+        }
+        // A startle keeps its own timeline: the jump rides on top of its leap or stare.
+        if (m.kind !== "startle") {
+            s.stepPhase = 0;
+            s.mode = { kind: "pause", until: performance.now() + EMOTE_MS };
+        }
+        // Re-thrown from wherever the feet are.
+        s.feetV = POKE_JUMP_SPEED;
+        setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
+    };
 
     useEffect(() => {
         if (reduced) return;
@@ -720,6 +832,11 @@ export function usePawnMotion(opts: {
         let last = performance.now();
         // The feet are off their surface, or still moving (launched, mid-bounce).
         const feetAirborne = () => s.feetV !== 0 || s.feetZ > s.lift + FEET_EPS;
+        // The floor to wander: the summit's top once it stands there.
+        const walkRoam = (): PawnRoam | undefined => {
+            const under = stepsRef.current[s.stepIdx];
+            return under?.summit ? { area: under.rect, obstacles: [] } : roam;
+        };
 
         const tick = (now: number) => {
             const dt = Math.min(0.05, (now - last) / 1000);
@@ -731,6 +848,10 @@ export function usePawnMotion(opts: {
             // Set only by an entrance; otherwise the shadow follows `hop` (see Apply).
             let shadowOverride: { scale: number; opacity: number } | null = null;
             let hidden = false;
+            // The summit closed under it: fly down (see the header's SUMMIT).
+            const under = stepsRef.current[s.stepIdx];
+            if (under?.summit?.closed && s.mode.kind !== "flight" && floorDropRef.current <= 0) startFlight(at, 0, now);
+            if (under?.summit?.held && s.mode.kind === "walk") s.mode = { kind: "land" };
             const m = s.mode;
 
             if (m.kind === "entrance") {
@@ -749,8 +870,9 @@ export function usePawnMotion(opts: {
                 }
             } else if (m.kind === "pause") {
                 // Never set off mid-air (thrown up by the plate): wait for the feet.
-                if (now >= m.until && !feetAirborne()) {
-                    const target = roam ? pickTarget(s.pos, roam) : null;
+                if (now >= m.until && !feetAirborne() && !stepsRef.current[s.stepIdx]?.summit?.held) {
+                    const here = walkRoam();
+                    const target = here ? pickTarget(s.pos, here) : null;
                     s.mode = target ? { kind: "walk", target } : { kind: "pause", until: now + PAUSE_MIN_MS };
                 }
             } else if (m.kind === "walk" || m.kind === "land") {
@@ -810,6 +932,11 @@ export function usePawnMotion(opts: {
                 }
                 // Just stopped to hop: this frame still shows the walk's pose; the hop's
                 // timeline (below, next frame on) eases it out from here.
+            } else if (m.kind === "flight") {
+                // The height is the feet physics' (below); this only carries it across.
+                const u = clamp01((now - m.t0) / m.ms);
+                s.pos = { x: m.from.x + (m.to.x - m.from.x) * u, y: m.from.y + (m.to.y - m.from.y) * u };
+                if (u >= 1) s.mode = { kind: "pause", until: now + PAUSE_MIN_MS };
             } else if (m.kind === "edgeHop") {
                 const t = now - m.t0;
                 if (t < HOP_PREP_END) {
@@ -965,10 +1092,13 @@ export function usePawnMotion(opts: {
                 const touching = s.feetZ <= s.lift + FEET_EPS;
                 if (s.stepIdx >= 0 && s.stepIdx === s.prevStepIdx) {
                     const dh = stepH - s.prevStepH;
-                    if (dh < -FEET_EPS) s.launchArmed = true;
+                    const summit = !!steps[s.stepIdx]?.summit;
+                    if (dh < -FEET_EPS && !summit) s.launchArmed = true;
                     else if (dh > FEET_EPS && s.launchArmed && touching) {
                         s.launchArmed = false;
                         s.feetV = PLATE_LAUNCH_SPEED;
+                    } else if (summit && dh >= SUMMIT_JOLT_RISE && touching) {
+                        s.feetV = POKE_JUMP_SPEED;
                     }
                 } else {
                     s.launchArmed = false;
@@ -1020,15 +1150,25 @@ export function usePawnMotion(opts: {
             s.pose = { hop, lean, sx, sy, emoteLean: s.mode.kind === "startle" ? lean : 0, shadowOverride, hidden };
             applyRef.current(false);
 
+            const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
+            if (summitSpotRef.current) summitSpotRef.current.current = onSummit ? s.pos : null;
+            if (onSummit !== s.onSummit) {
+                s.onSummit = onSummit;
+                onSummitRef.current?.(onSummit);
+            }
+
             if (roam) {
                 // Ranked among the obstacles in the CAMERA's back-to-front order (it changes
                 // as the study camera dives), the same order DeckTowerPlatform draws them in.
                 const p = projRef.current;
-                const rank = depthRankAmong(
-                    s.pos,
-                    backToFront(roam.obstacles, p).map((i) => roam.obstacles[i]),
-                    p,
-                );
+                // On the summit it stands on top of an obstacle, so in front of them all.
+                const rank = stepsRef.current[s.stepIdx]?.summit
+                    ? roam.obstacles.length
+                    : depthRankAmong(
+                          s.pos,
+                          backToFront(roam.obstacles, p).map((i) => roam.obstacles[i]),
+                          p,
+                      );
                 if (rank !== s.rank) {
                     s.rank = rank;
                     onRank.current?.(rank);
@@ -1042,5 +1182,5 @@ export function usePawnMotion(opts: {
         // reached through `applyRef` (see VIEW in the header), so a new camera never restarts it.
     }, [reduced, at, roam]);
 
-    return { refs, emote };
+    return { refs, emote, poke };
 }

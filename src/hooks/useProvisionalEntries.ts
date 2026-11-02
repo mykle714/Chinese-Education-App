@@ -42,7 +42,10 @@ export function useProvisionalEntries(
 ): { entries: VocabEntry[]; loading: boolean } {
     const hasLocal = Array.isArray(localEntries) && localEntries.length > 0;
     const [fetched, setFetched] = useState<VocabEntry[]>([]);
-    const [loading, setLoading] = useState(false);
+    // The words the last lookup answered for. `loading` is derived from it rather than set
+    // in the effect, so the commit that enables a lookup already reads as loading: a caller
+    // acting on "no entries, not loading" must not fire before the fetch has even started.
+    const [settledKey, setSettledKey] = useState<string | null>(null);
 
     // Stable dependency: the effect must re-run when the WORDS change, not when the
     // caller happens to hand over a new array with the same contents.
@@ -51,10 +54,10 @@ export function useProvisionalEntries(
     useEffect(() => {
         if (!enabled || hasLocal || wordsKey.length === 0) {
             setFetched([]);
+            setSettledKey(null);
             return;
         }
         let cancelled = false;
-        setLoading(true);
         fetchProvisionalSortSet(language, wordsKey.split(","))
             .then((res) => {
                 if (cancelled) return;
@@ -66,12 +69,13 @@ export function useProvisionalEntries(
                 if (!cancelled) setFetched([]);
             })
             .finally(() => {
-                if (!cancelled) setLoading(false);
+                if (!cancelled) setSettledKey(wordsKey);
             });
         return () => {
             cancelled = true;
         };
     }, [enabled, hasLocal, wordsKey, language]);
 
+    const loading = enabled && !hasLocal && wordsKey.length > 0 && settledKey !== wordsKey;
     return { entries: hasLocal ? localEntries! : fetched, loading };
 }

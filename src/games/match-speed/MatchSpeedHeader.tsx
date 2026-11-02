@@ -18,7 +18,7 @@ interface MatchSpeedHeaderProps {
  * These toggles used to live here inline with the run clock beside them; they moved
  * into a `MatchSpeedSettingsDialog` behind a cog, and the clock moved to a bar above
  * the board — it belongs to the play area, where the player is already looking, not
- * to the page chrome (see MatchSpeedTimerBar).
+ * to the page chrome.
  *
  * BOTH CAME BACK on 2026-08-28 and the dialog and its cog were deleted, because
  * neither setting is Match Speed's any more:

@@ -1,6 +1,6 @@
 import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
-import type { MasteryWorldId } from '../contracts/wire.js';
+import { WORD_SEARCH_BOARDS, type MasteryWorldId, type WordSearchBoardId } from '../contracts/wire.js';
 import { isFlpOnlyMark } from '../contracts/mastery.js';
 import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER } from '../contracts/studyMix.js';
 import type { StudyMode, FlpWorld } from '../contracts/studyMode.js';
@@ -56,7 +56,21 @@ export type CollectionFilter =
    * narrows to `ids`, and every lend tier is skipped (`canLendProvisional`, the game
    * pool's `!opts.collection` gate), so nothing outside the day's set can appear.
    */
-  | { kind: 'focus'; ids: number[] };
+  | { kind: 'focus'; ids: number[] }
+  /**
+   * FOCUS MODE, flp game break (docs/FOCUS_MODE.md § 4a): a break is a change of scene
+   * from the day's set, so it draws from every card OUTSIDE today's snapshot and falls
+   * back to the remaining set only when those run out. Also server-substituted, never
+   * sent by the client.
+   *
+   *   setIds       — the whole snapshot, cards already marked correct today included:
+   *                  those are gone from the set, not "outside" it.
+   *   remainingIds — the fallback. `getGameVocabPool` deals them through its seed tiers,
+   *                  after the fresh outside cards.
+   *
+   * Rides the collection slot for the same reason as `focus`: no lend tier can fire.
+   */
+  | { kind: 'outside-focus'; setIds: number[]; remainingIds: number[] };
 
 interface ModeLoopConfig {
   // Ordered initial fetch quotas (summing to the loop total).
@@ -79,6 +93,7 @@ interface ModeLoopConfig {
 // learner has never seen is not a review session. Provisioned cards start with an
 // empty mark history, so lending can fill Challenge but can never fill Review.
 // See docs/PROVISIONAL_CARDS.md § 6.
+/** @deprecated With `StudyMode` (docs/DEFERRED_WORK.md § 31); `DEFAULT_LOOP_CONFIG` stays. */
 export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
   // Review: ease the learner with cards they mostly know.
   review: {
@@ -704,6 +719,10 @@ export class OnDeckVocabService {
       // Bound as one int[] parameter. Strict membership, no provisional escape hatch:
       // a focused round never lends, so there is no lent card it would need to admit.
       return { clause: `AND ve.id = ANY($${nextParamIndex}::int[])`, params: [collection.ids] };
+    }
+
+    if (collection.kind === 'outside-focus') {
+      return { clause: `AND NOT (ve.id = ANY($${nextParamIndex}::int[]))`, params: [collection.setIds] };
     }
 
     if (collection.kind === 'builtin') {
@@ -1665,7 +1684,9 @@ export class OnDeckVocabService {
           loop (docs/FLP_GAME_BREAKS.md § 4). Partitioned by `isCardGameEligible`: the
           seeds that can take this game's marks fill the board before any bucket
           quota; the ones that cannot (cooling, or flp-only at core pbh ≥ 6) are a
-          FALLBACK drawn only after every fresh card, ahead of the cooled tier. */
+          FALLBACK drawn only after every fresh card, ahead of the cooled tier. Ignored
+          on an `outside-focus` collection, which supplies its own (docs/FOCUS_MODE.md
+          § 4a). */
       seedIds?: number[];
     } = {}
   ): Promise<{
@@ -1707,8 +1728,14 @@ export class OnDeckVocabService {
       // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so BOTH halves
       // come back, then split on the same test the candidate query uses. Seeds that are
       // already excluded (on the caller's board) are dropped — exclude always wins.
+      //
+      // A FOCUSED BREAK SWAPS THE SEED (docs/FOCUS_MODE.md § 4a). The caller's seed is the
+      // working loop, which is exactly the set the break is meant to get away from, so it
+      // is replaced by the day's remaining cards and dealt AFTER the outside cards.
+      const focusBreak = opts.collection?.kind === 'outside-focus' ? opts.collection : null;
       const excludeSet = new Set(excludeIds);
-      const seedIds = (opts.seedIds ?? []).filter((id) => !excludeSet.has(id));
+      const seedIds = (focusBreak ? focusBreak.remainingIds : opts.seedIds ?? [])
+        .filter((id) => !excludeSet.has(id));
       const seedRows = await this.fetchRowsByIds(
         client, userId, language, seedIds, gameMarkType, now, undefined, true
       );
@@ -1823,7 +1850,8 @@ export class OnDeckVocabService {
       //    mix still shapes what the top-up adds rather than being overfilled on top.
       const quotaLeft: Record<string, number> = { ...scaled };
       const beforeSeed = cards.length;
-      drain(seedMarkable, target);
+      // A focused break holds its markable seeds back to tier 2a.
+      if (!focusBreak) drain(seedMarkable, target);
       for (const card of cards.slice(beforeSeed)) {
         const bucket = card.gameCategory;
         if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
@@ -1880,6 +1908,10 @@ export class OnDeckVocabService {
         if (cards.length >= target) break;
         drain(eligible[category] ?? [], target - cards.length);
       }
+      // 2a. FOCUSED BREAK ONLY: the outside cards ran out → the day's remaining focus
+      //     cards. Ahead of the cooling tier on purpose: a focus card takes the game's
+      //     marks, and a mark on a cooling outside card would be dropped.
+      if (focusBreak && cards.length < target) drain(seedMarkable, target - cards.length);
       // 2b. Still short → the UNMARKABLE seeds (cooling, or flp-only at pbh ≥ 6). Every
       //     fresh card has been tried, so nothing markable is being displaced; and a
       //     card the learner just studied is a better fill than a random cooling one.
@@ -1962,10 +1994,16 @@ export class OnDeckVocabService {
       // the word, its pinyin, and the flashcard definition.
       const enriched = await this.enrichEntriesPipeline(cards, language);
       const withAudio = await this.prewarmAudio(enriched);
+      // Tell the Stage which cards are not on the focused tower, so clearing one drops
+      // nothing (docs/FLP_GAME_BREAKS.md § 6). Every card that is not a seed is outside.
+      const seedSet = new Set(seedIds);
+      const dealt = focusBreak
+        ? withAudio.map((card) => (seedSet.has(card.id) ? card : { ...card, outsideFocus: true }))
+        : withAudio;
 
       // `total` stays the full board size (what the client's "you need N Learn
       // Now cards" message quotes); `needed` is what THIS call had to return.
-      return { cards: withAudio, requested: { ...scaled }, available, total, needed: target, sufficient };
+      return { cards: dealt, requested: { ...scaled }, available, total, needed: target, sufficient };
     } finally {
       client.release();
     }
@@ -1973,26 +2011,16 @@ export class OnDeckVocabService {
 
   // ---- Word Search game ----------------------------------------------------
 
-  // Grid dimensions: 6 columns wide × 7 rows tall (portrait play area).
-  // See docs/WORD_SEARCH_GAME.md §2.
-  //
-  // ONE BOARD SIZE FOR EVERY MODE. A Study Challenge round used to get its own
-  // roomier 8×8 grid; that split was removed on 2026-08-28 (with the 12 → 9 word
-  // drop) because two sizes meant two densities, two tunings, and — since
-  // `templateModeApplicable` gates on these exact dimensions — a challenge board
-  // that could never reach template mode. Challenge and ordinary boards now read
-  // the SAME constants and therefore share the placement fallback.
-  static readonly WORD_SEARCH_ROWS = 7;
-  static readonly WORD_SEARCH_COLS = 6;
   // Cap on how many library candidates we pull per category up front. Word Search
   // needs a working set to run the substring de-dup / replacement loop against;
   // this bounds memory for users with very large libraries.
   private static readonly WORD_SEARCH_CANDIDATE_CAP = 500;
 
   /**
-   * Build the Word Search game payload: a clean 9-word set (no word's Chinese
-   * text is a substring of another's) hidden as snaking paths in a 7×6 grid of
-   * filler characters.
+   * Build the Word Search game payload: a clean word set (no word's Chinese text is a
+   * substring of another's) hidden as snaking paths in a grid of filler characters.
+   * `board` picks the grid (WORD_SEARCH_BOARDS): 9 words on 7×6, or 7 on 6×5 for a Deck
+   * Tower break.
    *
    * Selection reuses the bubble-match pool shape (requested distribution + the
    * same fallback top-up order), restricted to `entryKey` <= 4 characters (the
@@ -2045,8 +2073,8 @@ export class OnDeckVocabService {
     /**
      * STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5.2). When present the board
      * is not a band mix at all: the contested words ARE the target list and filler
-     * comes from the `mastered-first` ladder. The grid is the SAME size as an
-     * ordinary board (see WORD_SEARCH_ROWS) — both hold 9 words.
+     * comes from the `mastered-first` ladder. It always plays the standard board,
+     * the same one as an ordinary game: a challenge round's nine words need it.
      */
     challenge?: {
       contestedIds: number[];
@@ -2057,7 +2085,14 @@ export class OnDeckVocabService {
           loop, since there is no baseline to lend against here: the contested nine
           are fixed, so a bigger spare filler queue is the only lever. */
       fillerMultiplier?: number;
-    } | null
+    } | null,
+    /** An flp game break's working loop, wanted on the grid first; same tiers as
+        `getGameVocabPool`'s `seedIds` (docs/FLP_GAME_BREAKS.md § 4). Ignored on an
+        `outside-focus` collection, which supplies its own (docs/FOCUS_MODE.md § 4a). */
+    seedIds: number[] = [],
+    /** The grid to deal on. The controller only ever pairs `compact` with a non-challenge
+        round. */
+    board: WordSearchBoardId = 'standard'
   ): Promise<{
     grid: GridCell[][] | null;
     words: WordSearchGrid['words'];
@@ -2070,25 +2105,29 @@ export class OnDeckVocabService {
     reason?: string;
     /** Grid words that were LENT to reach the baseline (docs/PROVISIONAL_CARDS.md). */
     provisionalWords?: string[];
+    /** A focused break's words that are not on the Deck Tower (docs/FLP_GAME_BREAKS.md § 6). */
+    outsideFocusWords?: string[];
     templateIndex?: number | null;
   }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
 
-    // ONE GRID SIZE, challenge or not (see WORD_SEARCH_ROWS). Both boards hold 9
-    // words — TOTAL_WORDS and CHALLENGE_WORD_COUNT are separately-declared 9s, not
-    // one derived from the other — in 7x6 (42 cells), so 36-of-42 cells (86%) are
-    // word cells either way, and both boards are eligible for TEMPLATE MODE
-    // (`templateModeApplicable` gates on exactly these dimensions).
-    const rows = OnDeckVocabService.WORD_SEARCH_ROWS;
-    const cols = OnDeckVocabService.WORD_SEARCH_COLS;
+    // A challenge board and an ordinary one share the standard grid, so both are
+    // eligible for TEMPLATE MODE. CHALLENGE_WORD_COUNT and the standard board's `words`
+    // are separately-declared 9s, not one derived from the other.
+    const { rows, cols, words: boardWords } = WORD_SEARCH_BOARDS[board];
     // The challenge's own set is the target list — never the requested
     // distribution. Even though both sum to 9, the challenge set is the
     // SPECIFIC contested word ids (§ 5.2), unrelated to a band distribution.
     const total = challenge
       ? challenge.contestedIds.length
       : Object.values(distribution).reduce((sum, n) => sum + n, 0);
+    // More words than the board has slots cannot be promised a fit, and would burn every
+    // placement attempt before failing as a 500.
+    if (total > boardWords) {
+      throw new ValidationError(`The ${board} board holds ${boardWords} words, not ${total}`);
+    }
 
     const countCategories = Array.from(
       new Set([...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER])
@@ -2105,13 +2144,29 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const now = Date.now();
+      // SEED (docs/FLP_GAME_BREAKS.md § 4), split on the test the candidate query uses,
+      // as in `getGameVocabPool`. A focused break swaps the seed for the day's remaining
+      // cards, dealt after the outside cards (docs/FOCUS_MODE.md § 4a). Words over 4
+      // characters are dropped: the grid cannot place them.
+      const focusBreak = collection?.kind === 'outside-focus' ? collection : null;
+      const seedPool = challenge ? [] : focusBreak ? focusBreak.remainingIds : seedIds;
+      const seedRows = await this.fetchRowsByIds(
+        client, userId, language, seedPool, gameMarkType, now, 4, true
+      );
+      const seedMarkable: VocabEntry[] = [];
+      const seedFallback: VocabEntry[] = [];
+      for (const row of seedRows) {
+        (this.isCardGameEligible(row, gameMarkType, now) ? seedMarkable : seedFallback).push(row);
+      }
+
       // Per-category candidates split fresh (mode's mark type off cooldown) vs
       // cooled, capped to short (<= 4 char) words the grid can place. We pop from
       // these both for the initial selection and for substring replacements, so a
-      // card is never reused across passes.
+      // card is never reused across passes. Seeds stay out of this query so they can
+      // only enter through their own tiers below.
       const { eligible, cooled } = await this.fetchGameCandidates(
         client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, [], collection, lentIds
+        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, seedPool, collection, lentIds
       );
 
       const selectedIds = new Set<number>();
@@ -2143,7 +2198,7 @@ export class OnDeckVocabService {
         const found = await this.fetchGroupIds(client, missing);
         for (const [key, groupId] of found) glossKeyToGroup.set(key, groupId);
       };
-      await loadGroupsFor([...Object.values(eligible).flat(), ...Object.values(cooled).flat()]);
+      await loadGroupsFor([...Object.values(eligible).flat(), ...Object.values(cooled).flat(), ...seedRows]);
       const takenGroups = new Set<number>();
       const groupGuardHard = !collection;
 
@@ -2164,20 +2219,32 @@ export class OnDeckVocabService {
         }
       };
 
-      // Pull ONE replacement for a dropped word, preferring FRESH cards
-      // (preferred category → fallback order), then COOLED cards (same order)
-      // only if no fresh card is left. Returns the added card, or null if the
-      // whole library is exhausted.
+      // One card off one queue into `selected`, or null if the queue gave none.
+      const takeOne = (queue: VocabEntry[]): VocabEntry | null => {
+        const before = selected.length;
+        drain(queue, 1);
+        return selected.length > before ? selected[selected.length - 1] : null;
+      };
+
+      // Pull ONE replacement for a dropped word, in the order the board itself fills:
+      // markable seeds (a focused break holds them until the fresh cards are spent),
+      // FRESH cards (preferred category → fallback order), unmarkable seeds, then
+      // COOLED cards (same order) only if nothing else is left. Returns the added
+      // card, or null if the whole library is exhausted.
       const pullReplacement = (preferredCategory: string): VocabEntry | null => {
         const order = [preferredCategory, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
-        for (const source of [eligible, cooled]) {
+        const fromBuckets = (source: Record<string, VocabEntry[]>): VocabEntry | null => {
           for (const category of order) {
-            const before = selected.length;
-            drain(source[category] ?? [], 1);
-            if (selected.length > before) return selected[selected.length - 1];
+            const card = takeOne(source[category] ?? []);
+            if (card) return card;
           }
-        }
-        return null;
+          return null;
+        };
+        return (focusBreak ? null : takeOne(seedMarkable))
+          ?? fromBuckets(eligible)
+          ?? (focusBreak ? takeOne(seedMarkable) : null)
+          ?? takeOne(seedFallback)
+          ?? fromBuckets(cooled);
       };
 
       // ── CHALLENGE SELECTION (§ 5.2) ──
@@ -2217,14 +2284,28 @@ export class OnDeckVocabService {
       // 1. Fill each requested bucket up to its quota from FRESH cards, then
       //    2. top up to `total` with FRESH fallback cards, then 3. backfill with
       //    COOLED cards (requested buckets → fallback), and only then 4. LEND.
+      //    Markable seeds go first, each charged to its bucket's quota, so the mix still
+      //    shapes what the top-up adds.
       if (!challenge) {
-        for (const [category, count] of Object.entries(distribution)) drain(eligible[category] ?? [], count);
+        if (!focusBreak) drain(seedMarkable, total);
+        const quotaLeft: Record<string, number> = { ...distribution };
+        for (const card of selected) {
+          const bucket = card.gameCategory;
+          if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
+        }
+        for (const [category, count] of Object.entries(quotaLeft)) {
+          drain(eligible[category] ?? [], Math.min(count, total - selected.length));
+        }
       }
 
       for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
         if (selected.length >= total) break;
         drain(eligible[category] ?? [], total - selected.length);
       }
+      // Seed tiers 2a + 2b of `getGameVocabPool`: a focused break's remaining set, then
+      // the unmarkable seeds, ahead of any cooling card.
+      if (focusBreak && selected.length < total) drain(seedMarkable, total - selected.length);
+      if (selected.length < total) drain(seedFallback, total - selected.length);
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
         if (selected.length >= total) break;
         drain(cooled[category] ?? [], total - selected.length);
@@ -2288,7 +2369,9 @@ export class OnDeckVocabService {
         const victimGroupId = victimDd ? glossKeyToGroup.get(victimDd) : undefined;
         if (victimGroupId !== undefined) takenGroups.delete(victimGroupId);
 
-        const replacement = pullReplacement(victim.category);
+        // The bucket the victim was drawn from, on this game's track, so the replacement
+        // keeps the board's mix. `category` is the core bar's band, a different question.
+        const replacement = pullReplacement(victim.gameCategory ?? victim.category);
         if (!replacement) break; // library exhausted — can't reach a clean `total`
       }
 
@@ -2524,6 +2607,12 @@ export class OnDeckVocabService {
         provisionalWords: withAudio
           .filter((card) => card.starterPackBucket === 'provisional')
           .map((card) => card.entryKey),
+        // Same flat form, same reason. Every word that is not a seed is outside the set.
+        ...(focusBreak && {
+          outsideFocusWords: withAudio
+            .filter((card) => !seedPool.includes(card.id))
+            .map((card) => card.entryKey),
+        }),
       };
     } finally {
       client.release();

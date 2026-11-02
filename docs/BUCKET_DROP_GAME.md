@@ -21,15 +21,18 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). Hub/launch: [READING_WRITING_CEN
 | Contract | `server/contracts/wire.ts` → `CARD_BASELINES`, `CARD_BASELINE_ITEMIZED`, `CHALLENGE_GAMES` (`bucket-drop` / `pinyin`) | provisioning baseline (20), itemized notice, challenge spec |
 | Contract | `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES['bucket-drop']` | lower-is-better ms, per mode |
 | Registry | `src/games/registry.ts` (entry + `modes`), `src/games/runtime/challengeLaunch.ts` → `LAUNCHES['bucket-drop']` | hub tile, router, challenge launch |
-| Page | `src/games/bucket-drop/BucketDropPage.tsx` | pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups |
-| Page | `src/games/bucket-drop/BucketDropEndPopup.tsx` | end card (modal, not minimizable) |
-| Stage | `src/games/bucket-drop/BucketDropStage.tsx` | field measuring, queue state, hit-testing, drop/fall/leave animations |
+| Page | `src/games/bucket-drop/BucketDropPage.tsx` | the route: title, edge-swipe block, launch mode + collection, exit |
+| Stage | `src/games/bucket-drop/BucketDropStage.tsx` | the run, on either host: pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups, break results |
+| Stage | `src/games/bucket-drop/BucketDropEndPopup.tsx` | end card (modal, not minimizable); route only |
+| Board | `src/games/bucket-drop/BucketDropBoard.tsx` | field measuring, queue state, hit-testing, drop/fall/leave animations |
 | Components | `src/games/bucket-drop/DropBucket.tsx`, `StackWord.tsx` | one bucket; one draggable word |
 | Pure | `src/games/bucket-drop/perimeterLayout.ts` → `layoutPerimeter` | slot geometry from field size |
 | Pure | `src/games/bucket-drop/bucketQueue.ts` → `dealQueue`, `resolveDrop`, `resizeQueue` | run model: remaining words + which bucket is in each slot |
-| Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, medals, geometry, timing |
-| Launch | `src/games/GamesPage.tsx` (plain tile → Pinyin), `src/features/flashcards/centers/ReadingGamesCarousel.tsx` (No Pinyin, zh only) | the two entry points |
-| Tests | `src/__tests__/bucketDropPerimeter.test.ts`, `src/__tests__/bucketDropQueue.test.ts`, `src/games/__tests__/challengePool.test.ts` | geometry (squares, no overlap), the queue over full runs, eligibility |
+| Pure | `src/games/bucket-drop/poolRequest.ts` → `bucketDropPoolRequest` | the pool request, for the Stage and the break's prefetch |
+| Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, medals, result lines (`runResultTitle`, `runResultDetail`), geometry, timing |
+| Launch | `src/games/GamesPage.tsx` (plain tile → Pinyin), `src/features/flashcards/centers/ReadingGamesCarousel.tsx` (No Pinyin, zh only) | the two route entry points |
+| Break | `src/games/flpBreak/bucketDropBreak.ts` → `BUCKET_DROP_BREAK`, `BucketDropBreakStage.tsx` | the flp game break adapter (§ 8) |
+| Tests | `src/__tests__/bucketDropPerimeter.test.ts`, `src/__tests__/bucketDropQueue.test.ts`, `src/games/__tests__/challengePool.test.ts`, `src/games/flpBreak/__tests__/bucketDropBreak.test.ts` | geometry (squares, no overlap), the queue over full runs, eligibility |
 
 The server needs no Bucket-Drop-specific code: the pool is `GET /api/onDeck/gamePool`
 (`surface=bucket-drop`, `markType=` the run's track, Bubble Match's 2/10/6/2 distribution),
@@ -50,7 +53,7 @@ Chosen by the launch surface, never in-game — the Word Search pattern.
 Pinyin mode is **production**, not the recognition Bubble Match's pinyin rule would give: the
 English bucket is the prompt and the foreign word is the answer the learner finds (the same
 track Word Search's Pinyin mode marks). The run's track is `runTrackFor(language, mode)`
-(`constants.ts`), latched at the first pool fetch (`BucketDropPage` → `lockRunTrack`), because
+(`constants.ts`), latched at the first pool fetch (`BucketDropStage` → `lockRunTrack`), because
 the pool is bucketed and cooled on that track. The board hides pinyin only on a reading run.
 Spanish is always production (it has no reading to hide), which is why the Reading
 Center card is gated to zh in the carousel rather than by `GameDef.languages` — the hub's
@@ -118,10 +121,10 @@ emptied would point at an answer.
   a thin 6×8px invisible grab margin (thin so an upper word in the pile does not steal grabs
   from the one beneath). Dealt at load as a pile around the open centre
   (`PILE_JITTER_X/Y` 14/10px of random offset), with a word whose bucket is showing on top
-  (`BucketDropStage` → `dealPile`). On pickup a word jumps to the front, scales to
+  (`BucketDropBoard` → `dealPile`). On pickup a word jumps to the front, scales to
   `HELD_SCALE` (1.12, Bubble Match's `SCALE_HELD`) and fades to `HELD_OPACITY` (0.75), held
   for the whole drag; put down, it stays in front of the others.
-- **No HUD row, no hint.** The panel is the stopwatch (`GameTimer`, with its show/hide eye — § 6) over the field — nothing
+- **No HUD row, no clock, no hint.** The panel is the field — nothing
   else. The words-left count, progress bar, miss counter and the foot `GameHint` were all
   removed on request; misses still appear on the end card.
 - Hue `red` (`GAME_HUE`), shared with Bubble Match.
@@ -145,23 +148,19 @@ memoized with stable callbacks (the stage reads page callbacks through `propsRef
 change never re-renders a word's CPCDRow mid-drag ([GAMES_FEATURE.md](./GAMES_FEATURE.md)
 § Grab latency). On a production run the word is narrated on pickup (`tts.autoSpeak`),
 never on a reading run. The header carries the app-wide narration chip
-(`AudioModeChip`, `BucketDropPage` → `GameLeafPage` `rightContent`) so it can be muted
+(`AudioModeChip`, `BucketDropStage` → `Frame` `headerRight`) so it can be muted
 mid-run — shown only when `runTrack !== "reading"`, mirroring Bubble Match's
 `showAudioChip` (a reading run has nothing to narrate).
 
 ## 6. Clock, medals, personal best
 
-- **Accumulated active time** (`BucketDropPage` → `activeMsRef`, `segmentStartRef`,
+- **Accumulated active time** (`BucketDropStage` → `activeMsRef`, `segmentStartRef`,
   `clockRunning`): runs while `phase === "playing"` and not `clockPaused`
   (provisional notice OR backgrounding — `useBackgroundPause` + `GamePausedOverlay`). Each
   running segment is banked on pause / end / unmount.
-- **Show/hide eye** — the stopwatch is a bare `GameTimer` with Word Search's eye
-  (`TimerEyeToggle`, via `GameTimer`'s `valueShown` / `onToggleValueShown`), the same as
-  Writing Grid. Hiding keeps the numerals' height (`visibility`, so the field never
-  reflows) and never pauses the clock; the end popup always shows the final time. The
-  preference is device-local under this game's own key (`constants.ts` →
-  `SETTINGS_STORAGE_KEY` = `bucketDrop.settings`, `DEFAULT_SETTINGS`; read in
-  `BucketDropPage` via `useLocalGameSettings`).
+- **Never on screen during play.** The clock runs in the background with no `GameTimer` and no
+  tick: `elapsedMs` only updates when a segment is banked. The time first appears on the end
+  popup or the break's results card.
 - The clock stops on the last drop; the end popup opens `DROP_FALL_MS` later so the fall
   is seen.
 - **Medals** (`MEDAL_THRESHOLDS`): gold ≤ 45 s, silver ≤ 70 s, bronze ≤ 100 s, else none.
@@ -178,10 +177,35 @@ filler +20 / −20, `missChargedOncePerWord`, and an `elapsedPenalty` of −10 p
 active time after a **45 s grace** (the gold line — keep the two together). Launch state
 `{ mode: "pinyin" }` (`challengeLaunch.ts`).
 
-The page follows the shared contract (GAMES_FEATURE.md § Challenge-eligible games):
+The Stage follows the shared contract (GAMES_FEATURE.md § Challenge-eligible games):
 `useChallengeRound({ gameId, mode, paused: clockPaused, running })`, `poolParams` on the
 pool request, wait for `ready`, `emit` hit/miss per drop, `finish(true)` on the last drop,
 `ChallengeRoundScoreboard` in place of the end card (no Play Again), Back via `useGameBack`.
+
+## 8. flp game break
+
+**Switched off:** `BUCKET_DROP_BREAK` is built but has no entry in `FLP_BREAK_GAMES`
+(`src/games/flpBreak/index.ts`), so no flp offers it. Adding the entry turns on what follows.
+
+Bucket Drop can run as an flp break through the page + Stage split
+([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6): Pinyin on the core flp, No Pinyin on the
+reading flp, the same 20-word board as the route, with no tower-sized board.
+
+- **Pool:** the break prefetches through `bucketDropPoolRequest` with the working loop as
+  `seedIds` and `flpBreak`. The flp's study mode does not reach it (the game has no such modes).
+- **Track:** the candidate's (`BucketDropStage` → `track`), not `runTrackFor`, so the marks land
+  on the session's bar. On a Spanish reading flp the route's rule would mark production.
+- **Leave** ends a live run with what it placed: "Run ended", "n of 20 words", no medal, win or
+  personal best (`finished` false).
+- **A finished run** still earns its win and best, and reports through `onRunEnded`
+  `DROP_FALL_MS` after the last drop, so the fall is seen. A lent-card offer holds the report.
+- **Tower:** a recorded correct mark on an owned card calls `onCardCleared`. A word missed first
+  writes only its negative mark, so it stays on the tower.
+- **Top of the screen:** with no clock, the board keeps `GAME_FRAME_EXIT_CLEARANCE_PX` clear
+  under Leave's arrow.
+
+Code: `BucketDropStage.tsx` → `leaveBreak`, `earnsResult`, `sortOfferPending`;
+`src/games/flpBreak/bucketDropBreak.ts`, `BucketDropBreakStage.tsx`.
 
 ## Open questions / flags
 

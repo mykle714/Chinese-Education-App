@@ -20,6 +20,9 @@ import {
   lookupWords,
   lookupBuffer,
   findHintCharacter,
+  makeHintFinder,
+  hintTierOf,
+  COMMON_TIER,
   expandGlyph,
 } from '../components/handwriting/glyphLookup';
 
@@ -264,11 +267,17 @@ describe('lookupBuffer — the fallback trigger', () => {
 });
 
 describe('§ 6z-4 hint search', () => {
-  it('carries index v2: the COMMON flag and a reading per character', () => {
+  it('carries index v3: the hint tier and a reading per character', () => {
     let common = 0;
-    for (let i = 0; i < index.flags.length; i++) if (index.flags[i] & 2) common++;
-    // Measured on dev 2026-09-24: characters in a zh headword scored 4–5.
-    expect(common).toBe(763);
+    let fallback = 0;
+    for (let i = 0; i < index.flags.length; i++) {
+      const tier = hintTierOf(i, index);
+      if (tier >= COMMON_TIER) common++;
+      else if (tier > 0) fallback++;
+    }
+    // Measured on dev 2026-10-31: characters in a zh headword scored 4–5, and 1–3.
+    expect(common).toBe(978);
+    expect(fallback).toBe(56);
     expect(index.readings.length).toBe(index.chars.length);
     expect(index.readings[index.charIndex.get('是')!]).toBe('shì');
   });
@@ -291,8 +300,29 @@ describe('§ 6z-4 hint search', () => {
   it('only ever suggests COMMON characters', () => {
     for (const [buffer, glyph] of [[['日'], '疋'], [['口'], '口'], [['氵'], '口'], [['木'], '木']] as const) {
       const hint = findHintCharacter(buffer, glyph, index);
-      if (hint) expect(index.flags[index.charIndex.get(hint.text)!] & 2).toBe(2);
+      if (hint) expect(hintTierOf(index.charIndex.get(hint.text)!, index)).toBeGreaterThanOrEqual(COMMON_TIER);
     }
+  });
+
+  it('reaches a below-COMMON character only when the tier is lowered', () => {
+    // Any tier-3 character with a bag: its own components, split into buffer +
+    // glyph, spell it — but only once the search is allowed down to tier 3.
+    let record = -1;
+    for (let i = 0; i < index.chars.length; i++) {
+      if (hintTierOf(i, index) === 3 && index.bagSizes[i] >= 2) {
+        record = i;
+        break;
+      }
+    }
+    expect(record).toBeGreaterThanOrEqual(0);
+    const offset = index.bagOffsets[record];
+    const parts = Array.from(index.bags.subarray(offset, offset + index.bagSizes[record]), (id) => index.components[id]);
+    const [glyph, ...buffer] = parts;
+    const atTier3 = makeHintFinder(buffer, index, 3)(glyph);
+    expect(atTier3).not.toBeNull();
+    expect(hintTierOf(index.charIndex.get(atTier3!.text)!, index)).toBeGreaterThanOrEqual(3);
+    const common = makeHintFinder(buffer, index)(glyph);
+    if (common) expect(hintTierOf(index.charIndex.get(common.text)!, index)).toBeGreaterThanOrEqual(COMMON_TIER);
   });
 
   it('returns null when no common character contains the pair', () => {

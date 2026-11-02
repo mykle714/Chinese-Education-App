@@ -20,9 +20,9 @@ interface TimerEyeToggleProps {
 }
 
 /**
- * TimerEyeToggle — the eye that shows/hides a game's clock (drawn by `GameTimer`
- * for Word Search, Writing Grid and Bucket Drop). Docs: docs/WORD_SEARCH_GAME.md §3,
- * docs/WRITING_PRACTICE_REWORK.md § 2.
+ * TimerEyeToggle — the eye that shows/hides a game's clock (drawn by `GameTimer`;
+ * no game uses it today). Docs: docs/WRITING_PRACTICE_REWORK.md § 2,
+ * docs/FLP_GAME_BREAKS.md § 7.
  *
  * Absolutely positioned, so the parent strip must be `position: relative`; being out
  * of flow, the 32px target never makes the strip taller than its text. The owner hides
@@ -31,8 +31,9 @@ interface TimerEyeToggleProps {
  *
  * ALWAYS pinned to the strip's LEFT edge, in both states (2026-10-18). It used to sit
  * on the right while the clock showed and jump to the centre when it was hidden; the
- * fixed left position means the control never moves under the thumb, and it keeps the
- * right edge clear of an flp game break's Leave button (docs/FLP_GAME_BREAKS.md § 7).
+ * fixed left position means the control never moves under the thumb. It now shares that
+ * edge with an flp game break's Leave arrow, so a game with this eye needs room made
+ * before it can be a break (docs/FLP_GAME_BREAKS.md § 7).
  * The clock stays dead-centre either way.
  */
 export default function TimerEyeToggle({ shown, onToggle, className }: TimerEyeToggleProps) {

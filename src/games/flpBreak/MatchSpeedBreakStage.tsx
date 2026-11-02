@@ -15,6 +15,7 @@ const MatchSpeedBreakStage: React.FC<FlpBreakStageProps<GamePoolResponse>> = ({
     prefetched,
     Frame,
     onDone,
+    onRunEnded,
     onCardCleared,
 }) => (
     <MatchSpeedStage
@@ -26,6 +27,7 @@ const MatchSpeedBreakStage: React.FC<FlpBreakStageProps<GamePoolResponse>> = ({
         seedIds={context.seedIds}
         prefetchedPool={prefetched}
         onDone={onDone}
+        onRunEnded={onRunEnded}
         onCardCleared={onCardCleared}
     />
 );

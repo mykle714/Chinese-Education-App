@@ -59,7 +59,9 @@ function SwipeableTextLine({ text, className, sx, align = 'start', touchAction =
                 ...(Array.isArray(sx) ? sx : [sx]),
                 {
                     display: 'flex',
-                    whiteSpace: 'nowrap',
+                    // `pre`, not `nowrap`: a joined gloss carries doubled plain spaces
+                    // (DEFINITION_LIST_SEPARATOR) that must not collapse. Still one line.
+                    whiteSpace: 'pre',
                     overflowX: 'auto',
                     overflowY: 'hidden',
                     touchAction,

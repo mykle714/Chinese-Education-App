@@ -27,6 +27,9 @@ export type GameCategory = "Unfamiliar" | "Target" | "Comfortable" | "Mastered";
  * The buckets each mode may draw from mirror the /decks study buttons exactly
  * (FlashcardsDecksPage.tsx): Review = Comfortable + Mastered, Challenge = Unfamiliar
  * + Target, Study Mix = everything. See docs/MATCH_SPEED_GAME.md § Difficulty modes.
+ *
+ * @deprecated `review` and `challenge` are being removed; only `mixed` stays
+ * (docs/DEFERRED_WORK.md § 31).
  */
 export type MatchSpeedMode = "mixed" | "review" | "challenge";
 

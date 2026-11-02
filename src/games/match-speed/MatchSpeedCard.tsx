@@ -1,25 +1,31 @@
 import React, { useMemo } from "react";
-import { Box } from "@mui/material";
+import { Box, useTheme } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
 import { LentCardBadge } from "../../components/LentCardBadge";
 import { resolveDisplayDefinition, resolveDisplayPronunciation, stripParentheses } from "../../utils/definitionUtils";
 import type { Language } from "../../types";
 import type { BoardCard, CardVisualState } from "./types";
 import { COLORS } from "../../theme/colors";
-import { GROUND_PRINT } from "../../theme/groundPaint";
-import { useTowerWash } from "../../timeOfDay/useDayWash";
+import { FONTS } from "../../theme/fonts";
+import { keycapPressSx } from "../../theme/keycapPress";
 import {
-    CARD_PANEL,
-    CORRECT_CARD_PANEL,
+    CARD_KEY,
+    CARD_LIP,
+    CARD_OUTLINE,
+    CORRECT_CARD_BG,
     DEF_FONT_MAX_PX,
     DEF_FONT_MIN_PX,
     DEF_LEN_MAX,
     DEF_LEN_MIN,
     DEF_MAX_LINES,
+    ENGLISH_CARD_BG,
     FADE_IN_DURATION_MS,
+    FOREIGN_CARD_BG,
     POP_DURATION_MS,
-    SELECTED_CARD_PANEL,
-    WRONG_CARD_PANEL,
+    SELECTED_CARD_BG,
+    SELECTED_CARD_RING,
+    WRONG_CARD_BG,
+    WRONG_CARD_INK,
     WRONG_FEEDBACK_MS,
 } from "./constants";
 
@@ -35,6 +41,29 @@ interface MatchSpeedCardProps {
      *  board can measure how long the tap waited for the main thread before its
      *  handler ran (see reportTap in src/utils/perfDiagnostics.ts). */
     onTap: (card: BoardCard, eventTimeStamp: number) => void;
+}
+
+/** The key's ring and solid lip as one box-shadow. `lip` 0 is a key held flush. */
+function keyShadow(picked: boolean, lip: number): string {
+    const ring = picked ? `inset 0 0 0 2px ${SELECTED_CARD_RING}` : `inset 0 0 0 1px ${CARD_OUTLINE}`;
+    return lip > 0 ? `${ring}, 0 ${lip}px 0 ${CARD_LIP}` : ring;
+}
+
+/**
+ * A card as a 2-state key (docs/MATCH_SPEED_GAME.md § Card visual states): the app's
+ * raised-key press, which snaps. Selection fires on pointerdown, so a tap sinks the key and
+ * release leaves it wherever its new state rests: down on the short lip if picked, up on
+ * the tall one if not. The press also runs through the app-wide delegate, because a tap
+ * here is too quick for `:active` to paint and a key must show at least KEYCAP_MIN_HELD_MS.
+ */
+function cardKeySx(picked: boolean) {
+    const { lip, y } = picked ? CARD_KEY.picked : CARD_KEY.raised;
+    return keycapPressSx({
+        restShadow: keyShadow(picked, lip),
+        pressedShadow: keyShadow(picked, 0),
+        restY: y,
+        pressedY: CARD_KEY.sinkY,
+    });
 }
 
 /**
@@ -89,7 +118,8 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     showPinyinColor,
     onTap,
 }) => {
-    const wash = useTowerWash();
+    const theme = useTheme();
+    const fc = theme.palette.flashcard;
     const isForeign = card.side === "foreign";
     // A LENT card is one the server borrowed the player into this run rather than one
     // they sorted (docs/PROVISIONAL_CARDS.md). Match Speed streams its buffer, so its
@@ -117,21 +147,42 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
         [isForeign, card.entry]
     );
 
-    // A white button at rest; a state replaces the white. Annotated `string` because COLORS is
-    // `as const`.
+    // Resting surface per column. The two columns are told apart by TYPE, not colour
+    // (see the palette note in constants.ts): the foreign column is cjk 19/700, the
+    // english column sans 13/500, both on white (v2). Every fill below is therefore
+    // free to mean state and nothing else.
+    // Annotated `string` on purpose: COLORS is `as const`, so inference would pin
+    // each of these to the literal hex it was initialised with.
+    let background: string = isForeign ? FOREIGN_CARD_BG : ENGLISH_CARD_BG;
+    let textColor: string = isForeign ? fc.onSurface : COLORS.iconColor;
+
+    if (state === "wrong") {
+        background = WRONG_CARD_BG;
+        textColor = WRONG_CARD_INK;
+    } else if (state === "partner-hint") {
+        // Cleanup-mode "here's your partner" hint — deliberately the same green as a
+        // correct match, so the two games teach one visual vocabulary.
+        background = CORRECT_CARD_BG;
+    } else if (state === "selected") {
+        // `.msc.pick`: the design fills the selected card AND gives it a 2px ink edge (v2).
+        // The edge is cardKeySx's ring; the key staying down is the rest of the pick.
+        background = SELECTED_CARD_BG;
+        textColor = fc.onSurface;
+    }
+
     // A matched pair pops green on its way out; the board removes it once the pop
     // finishes. Overrides the selection styling it necessarily had a frame ago.
-    let panel: string = CARD_PANEL;
-    if (card.exiting || state === "partner-hint") panel = CORRECT_CARD_PANEL;
-    else if (state === "wrong") panel = WRONG_CARD_PANEL;
-    else if (state === "selected") panel = SELECTED_CARD_PANEL[card.side];
+    if (card.exiting) {
+        background = CORRECT_CARD_BG;
+    }
 
     return (
         // The fade-in lives on a WRAPPER, not on the card itself, and that split is
         // load-bearing. A CSS animation with `both` fill keeps overriding the
         // properties it animates for as long as the element lives — so a fade-in
         // declared on the card (animating opacity + transform) permanently beat the
-        // card's own selection lift and exit pop, silently killing both. Wrapper animates arrival;
+        // card's own key press and its `scale(1.14)` + `opacity: 0` exit pop, silently
+        // killing both. Wrapper animates arrival;
         // the card animates state. Neither touches the other's properties.
         <Box
             className="match-speed__card-enter"
@@ -201,33 +252,20 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 // on every other card — nothing else here is positioned.
                 position: "relative",
                 borderRadius: "14px",
-                backgroundColor: wash(panel),
-                // No border in any state: nothing can change the box, so a tap can never
-                // re-wrap a three-line gloss under the finger; the outline is an inset
-                // shadow for the same reason (CLAUDE.md § Buttons & cards, in paint).
-                boxShadow: `inset 0 0 0 1px ${COLORS.border}`,
-                color: COLORS.onSurface,
+                backgroundColor: background,
+                color: textColor,
                 cursor: "pointer",
                 overflow: "hidden",
-                // Transforms only: nothing here changes the cell's layout box.
-                ...(card.exiting && { transform: "translateY(-12px) scale(1.06)" }),
+                // A matched card stops being a key: a press still held on it would pin it
+                // down through its pop. Transforms only, so the cell's layout box never moves.
+                ...(card.exiting
+                    ? { boxShadow: keyShadow(false, CARD_KEY.raised.lip), transform: "scale(1.14)" }
+                    : cardKeySx(state === "selected")),
                 opacity: card.exiting ? 0 : 1,
-                // Only colour eases on a live card: selection lands on pointerdown.
+                // The press snaps, so only colour eases on a live key.
                 transition: card.exiting
                     ? `transform ${POP_DURATION_MS}ms ease-out, opacity ${POP_DURATION_MS}ms ease-out, background-color 120ms linear`
                     : `background-color ${state === "wrong" ? WRONG_FEEDBACK_MS / 3 : 160}ms linear`,
-                // `translate`, not `transform`: the exit pop owns `transform`, and this
-                // card can be matched mid-shake.
-                ...(state === "wrong" && {
-                    animation: `match-speed-card-shake ${WRONG_FEEDBACK_MS}ms ease-out`,
-                    "@keyframes match-speed-card-shake": {
-                        "0%, 100%": { translate: "0" },
-                        "20%": { translate: "-5px" },
-                        "45%": { translate: "4px" },
-                        "70%": { translate: "-2px" },
-                    },
-                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-                }),
                 // Game surface: taps only, never scroll or text selection.
                 touchAction: "none",
                 userSelect: "none",
@@ -252,7 +290,6 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                     pinyinShift
-                    characterColor={COLORS.onSurface}
                 />
             ) : (
                 <Box
@@ -261,8 +298,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                         // Step 2 of the fit: scale by length. Step 3: clamp at
                         // DEF_MAX_LINES with an ellipsis, so even a gloss past the
                         // band's floor size cannot push the fixed row height.
-                        ...GROUND_PRINT,
+                        fontFamily: FONTS.sans,
                         fontSize: `${fontSizeForGloss(gloss)}px`,
+                        fontWeight: 500,
                         letterSpacing: "0.005em",
                         lineHeight: 1.3,
                         textAlign: "center",

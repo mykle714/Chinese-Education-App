@@ -104,6 +104,15 @@ as the same text wherever it appears:
 The rest of the sense menu (pinyin reading headings, counter chip, grammar tag) stays on
 its UI faces.
 
+**No U+00A0 in `FONTS.cjk` text.** cn-fontsource faces are sliced by `unicode-range`, and
+975 Maru SC keeps NBSP (`L3_60_64`) and U+0020 (`L3_20_64`) in different slices. WebKit
+draws an NBSP with the space glyph of the font it matched, which that slice lacks, so an
+NBSP renders wider than a space on iOS: about 1em there, against 0.22em for U+0020. Blink
+is unaffected, so desktop Chrome will not show it. To keep doubled spaces, use plain
+spaces with `white-space: pre`, as `DEFINITION_LIST_SEPARATOR`
+(`src/utils/definitionUtils.ts`) and its renderers do: `SwipeableTwoLineText`,
+`SwipeableTextLine` and `DictionaryEntryRow` → `DictionaryEntryGloss`.
+
 **One writer, and one fallback:**
 
 1. `src/hooks/useChineseFont.ts` — always `DEFAULT_CHINESE_FONT_ID`. The only code

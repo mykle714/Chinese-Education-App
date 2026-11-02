@@ -36,6 +36,7 @@ export {
 export { default as IsoCardRuns } from "./IsoCardRuns";
 export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";
+export { default as IsoPawnStill } from "./IsoPawnStill";
 export { backToFront, depthRankAmong, PLATE_LAUNCH_APEX_MS, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
 export {
     PAWN_ENTRANCES,

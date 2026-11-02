@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
  * added field picks up its default for existing users). Storage that is full,
  * disabled or holds unparseable JSON falls back to `defaults` / in-memory only.
  *
- * Used by: useWordSearchSettings (Word Search), WritingGridPage (Writing Grid).
+ * No consumer today: Writing Grid's show/hide-clock preference was its only one.
  * `defaults` is read once, on mount — pass a module-level constant.
  */
 export function useLocalGameSettings<T extends object>(storageKey: string, defaults: T) {

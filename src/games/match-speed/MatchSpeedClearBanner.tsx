@@ -1,7 +1,8 @@
 import React from "react";
 import { Box } from "@mui/material";
-import { GROUND_PAINT, GROUND_PRINT } from "../../theme/groundPaint";
-import { useTowerWash } from "../../timeOfDay/useDayWash";
+import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
+import { SIZE, WEIGHT } from "../../theme/scale";
 import { CLEAR_BANNER_MS } from "./constants";
 
 /**
@@ -27,9 +28,7 @@ import { CLEAR_BANNER_MS } from "./constants";
  * Rendered by: src/games/match-speed/MatchSpeedBoard.tsx.
  * Documented in: docs/MATCH_SPEED_GAME.md § Board cleared celebration.
  */
-const MatchSpeedClearBanner: React.FC = () => {
-    const wash = useTowerWash();
-    return (
+const MatchSpeedClearBanner: React.FC = () => (
     <Box
         className="match-speed__clear-banner"
         aria-hidden
@@ -41,11 +40,14 @@ const MatchSpeedClearBanner: React.FC = () => {
             pointerEvents: "none",
             zIndex: 5,
             whiteSpace: "nowrap",
-            // Painted, like the rest of the board. The cleared board is empty beneath it.
-            ...GROUND_PRINT,
-            fontSize: "26px",
+            fontFamily: FONTS.sans,
+            fontSize: SIZE.heading,
+            fontWeight: WEIGHT.bold,
             lineHeight: 1,
-            color: wash(GROUND_PAINT),
+            color: COLORS.successInk,
+            // A soft halo keeps the text legible over the cards fading in beneath
+            // it on the next refill tick.
+            textShadow: "0 2px 10px rgba(255,255,255,0.9), 0 2px 6px rgba(0,0,0,0.18)",
             // `forwards` parks it at opacity 0 rather than snapping back to
             // visible, so the element can stay mounted until the next clear
             // replaces it. translate(-50%, -50%) does the centring; the animation
@@ -64,7 +66,6 @@ const MatchSpeedClearBanner: React.FC = () => {
     >
         Board Cleared!
     </Box>
-    );
-};
+);
 
 export default MatchSpeedClearBanner;

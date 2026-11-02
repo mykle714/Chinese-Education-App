@@ -46,29 +46,26 @@ export function stripParentheses(text: string): string {
 
 /**
  * Between the senses of a definitions LIST rendered as one line: a middle dot with two
- * spaces either side (owner's call 2026-10-29). Non-breaking spaces, because HTML would
- * collapse plain ones to one.
+ * spaces either side (owner's call 2026-10-29).
+ *
+ * PLAIN spaces, so every renderer of this string must set `white-space: pre` (HTML would
+ * otherwise collapse each pair to one). Never U+00A0: the app's CJK face is sliced by
+ * unicode-range (src/theme/cjkFontOptions.ts), and 975 Maru SC keeps NBSP and U+0020 in
+ * DIFFERENT slices. WebKit draws an NBSP with the space glyph of the font it was matched
+ * in, which that slice lacks, so on iOS each NBSP came out about 1em wide (18px, against
+ * 4px for U+0020) and the gloss list overflowed. Blink is unaffected, so this does not
+ * show on desktop Chrome. Docs: docs/CJK_TYPEFACE_LAB.md, docs/SHELF_REDESIGN.md § 7b.
  */
-export const DEFINITION_LIST_SEPARATOR = '\u00A0\u00A0·\u00A0\u00A0';
+export const DEFINITION_LIST_SEPARATOR = '  ·  ';
 
 /**
- * The flat `definitions` array as ONE line: each gloss `stripParentheses`'d, empties
- * dropped, joined by `DEFINITION_LIST_SEPARATOR`. "" when nothing is left.
- * Used by: components/DictionaryEntryRow.tsx (the search row's gloss). The Dictionary eip's
- * header lays out `definitionListItems` itself, with `DEFINITION_LIST_SEPARATOR`.
- * Docs: docs/SHELF_REDESIGN.md § 7b.
+ * A list of glosses as ONE line: each `stripParentheses`'d, empties dropped, joined by
+ * `DEFINITION_LIST_SEPARATOR`. "" when nothing is left.
+ * Used by: components/DictionaryEntryRow.tsx (the search row's gloss, fed by
+ * `resolveSearchRowView`). Docs: docs/SHELF_REDESIGN.md § 7b.
  */
 export function joinDefinitionList(definitions: readonly string[] | null | undefined): string {
-  return definitionListItems(definitions).join(DEFINITION_LIST_SEPARATOR);
-}
-
-/**
- * The flat `definitions` array as display items: each gloss `stripParentheses`'d, empties
- * dropped. The unjoined form of `joinDefinitionList`, for a renderer that lays the glosses
- * out itself (the Dictionary eip's two-line header, components/SwipeableTwoLineText.tsx).
- */
-export function definitionListItems(definitions: readonly string[] | null | undefined): string[] {
-  return (definitions ?? []).map(stripParentheses).filter(Boolean);
+  return (definitions ?? []).map(stripParentheses).filter(Boolean).join(DEFINITION_LIST_SEPARATOR);
 }
 
 /**
@@ -365,8 +362,8 @@ function clusterReadingOrColumn(cluster: DefinitionCluster | null, columnPinyin:
  * donate its reading to it), and applied to a list row it reads 了 as `liǎo` — its particle
  * senses (`le`, score 5) carry only parenthetical glosses.
  *
- * Use it where the row prints the FLAT definitions list — the dictionary search row, the iw
- * lookup results, the community search header, the Reader's dictionary card. Use
+ * Use it where a row names no chosen sense — the dictionary search row, the iw lookup
+ * results, the community search header, the Reader's dictionary card. Use
  * `resolveDisplayPronunciation` wherever one sense's gloss is shown (cards, the eip, games).
  * See docs/DEFINITION_CLUSTERS.md.
  */
@@ -379,15 +376,20 @@ export function resolveDefaultPronunciation(
 }
 
 /**
- * **What a dictionary SEARCH row shows** — its pinyin and its gloss list, honouring the sense
+ * **What a dictionary SEARCH row shows** — its pinyin and its sense list, honouring the sense
  * the search term hit.
+ *
+ * The list is the one the eip header shows (`EipEntryHeader` → `senseSegments`): each sense's
+ * dd, in `sortedSenseClusters` order, or the plain dd for a word with no choice of sense
+ * (owner's call 2026-10-31). The flat `definitions` no longer reach the screen here, but they
+ * still drive the search itself, so a hit on a later gloss ("pretty" → 漂亮) can show a row
+ * that does not print the word searched for.
  *
  * The server sets `matchedSense` (`resolveMatchedSense`, server/utils/searchSenseMatch.ts) when
  * the term hit a sense other than the default one: "ma2" hits 吗's 吗啡 sense, "row" hits 行's
- * háng sense. Such a row shows THAT sense's reading and leads its gloss list with that sense's
- * glosses, followed by the rest of the flat `definitions` (de-duplicated). Without a
- * `matchedSense` — or when its label no longer names a cluster — this is exactly the
- * default-sense row: `resolveDefaultPronunciation` + the flat `definitions`.
+ * háng sense. Such a row shows THAT sense's reading and moves that sense's dd to the front of
+ * the list. Without a `matchedSense` — or when its label no longer names a cluster — this is
+ * exactly the default-sense row: `resolveDefaultPronunciation` + the list as it stands.
  *
  * Used by every surface that renders `/api/dictionary/search` hits: `DictionaryEntryRow`
  * (dictionary page, Compare slot B), `CommunitySearchBar`, `IWLookupResults`.
@@ -396,18 +398,21 @@ export function resolveDefaultPronunciation(
 export function resolveSearchRowView(
   entry: Pick<DictionaryEntry, 'pronunciation' | 'definitionClusters' | 'definitions'> & { matchedSense?: string | null },
 ): { pronunciation: string | null; definitions: string[] } {
-  const flat = Array.isArray(entry.definitions) ? entry.definitions : [];
+  // No choice of sense → the plain dd, stripped the way `resolveDisplayDefinition` strips it,
+  // so the row agrees with the eip header it opens.
+  const legacyDd = stripParentheses(Array.isArray(entry.definitions) ? entry.definitions[0] ?? '' : '');
+  const senses = sortedSenseClusters(entry)?.map(ddt) ?? (legacyDd ? [legacyDd] : []);
   const cluster = entry.matchedSense && Array.isArray(entry.definitionClusters)
     ? entry.definitionClusters.find((c) => c?.sense === entry.matchedSense) ?? null
     : null;
   if (!cluster) {
-    return { pronunciation: resolveDefaultPronunciation(entry), definitions: flat };
+    return { pronunciation: resolveDefaultPronunciation(entry), definitions: senses };
   }
-  const lead = Array.isArray(cluster.glosses) ? cluster.glosses : [];
-  const leadSet = new Set(lead);
+  // A cluster with no displayable English has no dd to lead with; the list stands as is.
+  const lead = ddt(cluster);
   return {
     pronunciation: clusterReadingOrColumn(cluster, entry.pronunciation ?? null),
-    definitions: [...lead, ...flat.filter((d) => !leadSet.has(d))],
+    definitions: lead ? [lead, ...senses.filter((d) => d !== lead)] : senses,
   };
 }
 

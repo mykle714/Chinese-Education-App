@@ -114,7 +114,7 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/scp/dictionary display. It should be **per game**, following `useWordSearchSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
+| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/scp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
 | **Why deferred** | (a) is small but touches five components; (b) is not. Hydra's tier ladder and its two color buffers are keyed on the mastery bands of the track it pools by, so a reading run re-bands the entire board — and a sparsely-marked reading track puts nearly every card in drain, which is the side that grows the board. Whether the § 3.1 spawn table still terminates under that mix is an open question (O5) that has to be answered before the conversion can ship |
 | **Cost of leaving it** | A learner who switches Bubble Match to Reading loses pinyin in Hydra and Match Speed without asking, and Hydra keeps writing `recognition` marks for a board it is drawing as a reading board — the mark no longer describes what the player did. Match Speed is display-only, so it is merely surprising there |
 | **Trigger** | Ship (a) whenever a game's settings are next touched — it stands alone and fixes the leak. (b) waits on O5 |
@@ -477,6 +477,22 @@ The likely shape then: the page always takes a host, and the route-only pieces
 | **Cost of leaving it** | A word like 明 shows an encyclopedic line in its sense list, and a long list takes more swiping to read |
 | **Trigger** | The next definition-cluster backfill or `ddt` change, or the next report of a long sense on a card |
 | **References** | `src/utils/definitionUtils.ts` → `ddt`, `sortedSenseClusters`; `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx`; `src/features/flashcards/card/SensePicker.tsx`; [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) |
+
+### 31. Remove review and challenge modes
+
+**What:** Review and Challenge are deprecated (decided 2026-10-31); Study Mix is the only
+mode that stays. They are marked `@deprecated` but still work. Removing them touches the
+flp's `?mode=` (`StudyMode`, `parseStudyMode`, server `MODE_CONFIGS`,
+`getDistributedWorkingLoop`, `getFlpReadyCounts`), the fdp and Center study hands
+(`StudyHand`, `FlpStudyHand`, `HAND_LAUNCH_REQUESTS`), Match Speed's modes (`MatchSpeedMode`,
+`MODE_CONFIGS`, `widenedMode`, `relaxed`) and `FlpBreakContext.studyMode`.
+
+**Not in scope:** the Study Challenge feature ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)),
+whose ids also contain the word "challenge". Mode rows in `wins` (levels 2, 3) and
+`game_personal_bests` (`review`, `challenge`) need a keep-or-delete decision.
+
+**Why deferred:** only the marking was requested so far. **Cost of leaving:** a fan of three
+cards offering modes that are on their way out. **Trigger:** the removal is scheduled.
 
 ## Recently closed
 

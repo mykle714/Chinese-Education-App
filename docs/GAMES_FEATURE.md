@@ -5,8 +5,11 @@ reinforce vocabulary and character learning. The hub page lists all registered
 games; each game lives as its own page linked from the hub.
 
 > **Second host:** games embedded mid-session in the flp as "game breaks" — **phase 1
-> built (Match Speed only)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
+> built (Match Speed and Word Search)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
 > game is split into a page + an embeddable Stage (§ "Routes" below; § 6 there).
+>
+> **In design, not built:** a sentence-building tile game with Chinese word tiles on a
+> panning crossword-style board — [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md).
 
 ## Status
 
@@ -28,15 +31,16 @@ games; each game lives as its own page linked from the hub.
   `Bento`/`BentoTile` primitive ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
   deleted 2026-08-21); the empty state is now only a fallback for when every game is gated
   out (public/demo accounts, a language gate, or every `GAME_FLAGS` entry off).
-- Games — **eight shipped**, all registered in `src/games/registry.ts` (Memory Map is the
-  bullet below this list; Writing Grid is [WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2):
+- Games — **nine shipped**, all registered in `src/games/registry.ts` (Memory Map is the
+  bullet below this list; Writing Grid is [WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2;
+  Superposition, a writing-flp break hidden from the hub, is [SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md)):
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
     Fans out on the hub into three difficulty modes (Study Mix / Review / Challenge), which
     restrict the pool to the same mastery buckets the `/decks` study buttons use.
     A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
-    English), 30-second clock, board refills every 3s, medals by pairs matched.
+    English), how fast can you complete 30 pairs, board refills every 3s until they are all dealt, medals by finish time.
   - **Speed Reading** (`/games/speed-reading`) — see
     [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). A **reading** drill: pinyin
     + definition + audio at the top, then two word options — the real word and
@@ -193,7 +197,7 @@ is split into its **page** (the route: `GameLeafPage`, `useBlockEdgeSwipe`, laun
 `state`) and a **Stage** (the run itself), and the Stage renders inside a host-injected
 `Frame` (`GameStageFrameProps`, `GameStageHost` in `src/games/types.ts`). This is NOT a
 generic shell: there is no shared stage, each game keeps its own, and the page stays the
-standalone experience unchanged. Match Speed is split (`MatchSpeedStage`); the rest
+standalone experience unchanged. Match Speed (`MatchSpeedStage`) and Word Search (`WordSearchStage`) are split; the rest
 follow one at a time. The flp side — adapters and candidate derivation — is
 `src/games/flpBreak/`; the break's opening card is an flp card, not a game surface; see
 [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
@@ -294,9 +298,9 @@ launched **only** from there. **Memory Map** (reading by construction) joined th
 offers Word Search's Pinyin mode only, and pins Bubble Match to Recognition.
 
 **The Writing Center is a third entry point.** The **Writing Grid** (`writing-grid`,
-`hiddenFromHub`, zh only) launches only from the Writing Center's games belt
+`hiddenFromHub`, zh only) launches from the Writing Center's games belt
 (`src/features/flashcards/centers/WritingGamesCarousel.tsx`), whose launch carries
-`exitTo` the Writing Center. The belt's other card, the Writing Notebook, is not a game
+`exitTo` the Writing Center, and is the writing flp's game break (FLP_GAME_BREAKS.md). The belt's other card, the Writing Notebook, is not a game
 ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)). The game itself: [WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md).
 Every game but Bubble Match and Memory Map also keeps a per-mode **personal best**
 (§ 2a there).
@@ -582,16 +586,16 @@ Presentational only; nothing here holds state.
   game's own overlays (a countdown, a pause veil) stop at the panel's rounded edge instead
   of covering its margin, and it gives a physics surface **one** element to measure for
   bounds. Under a `GameFrameExitContext` provider (`gameFrameExit.ts`) it also draws a
-  host's exit button top-right on its top strip — only the flp game break provides one
+  host's exit as a back arrow at the study header's arrow position — only the flp game break provides one
   (its Leave; docs/FLP_GAME_BREAKS.md § 6), so on a game's own route nothing extra shows.
-  `tone="tower"` draws the panel as the tower's gold slab and restyles its strips through
-  context; no game uses it today (TOWER_STYLE_SHIFT.md § The play slab). `tone="ground"` draws
-  no panel: the game is white paint on the ground, Match Speed only (§ Ground paint).
+  A provider also means the game is the whole screen, so the frame drops its inset, corner
+  and line, and `GameTimer` / `GameHud` drop their tint and hairline. `tone="tower"` draws the panel as the tower's gold slab and restyles its strips
+  through context; no game uses it today (TOWER_STYLE_SHIFT.md § The play slab).
 - **`GameHud`** (`.hud`) + **`GameHudLabel`** (`.hud .lab`) — the bordered strip of mono
   facts across the panel's top. `space-between`, so the child count is load-bearing: two
   children pin to the edges, three put one in the middle — and so is the ORDER: only a
   middle child can appear and disappear without moving anything else, which is where a
-  toggleable fact belongs (Word Search's clock). `divider={false}` suppresses the hairline
+  toggleable fact belongs. `divider={false}` suppresses the hairline
   for a HUD sitting directly under a `GameTimer`, which already draws one.
 - **`GameHudBar`** — the HUD's optional third slot, `flex: 1`. It always restates a number
   a label beside it already gives; that is the point. The count is what you read when you
@@ -602,17 +606,16 @@ Presentational only; nothing here holds state.
   run and never read again should be legible on request and invisible the rest of the
   time — as body text the panel would look like it was explaining itself every round.
 - **`GameTimer`** (`.timer` + `.trk`) — tabular numerals over an optional 4px drain track
-  (omit `fraction` for a bare stopwatch). **Every game's clock is this component** — Word
-  Search, Writing Grid, Bucket Drop, Match Speed — styled after Word Search's HUD clock
-  (standardized 2026-10-06): `FONTS.mono`, `SIZE.bodyLg`, normal case/tracking, regular
+  (omit `fraction` for a bare stopwatch). **Every game's visible clock is this component** —
+  no game draws one today (Writing Grid dropped its clock 2026-11-01) — in the style Word Search's HUD clock had when it was
+  standardized (2026-10-06; Word Search itself has shown no clock since 2026-11-01): `FONTS.mono`, `SIZE.bodyLg`, normal case/tracking, regular
   weight, on a strip padded like `GameHud` (`12px 15px`). Only **colour** varies per game:
-  the strip's hue tint (`useGameSurfaceHue`) and `valueColor` (Match Speed's urgency ink).
+  the strip's hue tint (`useGameSurfaceHue`) and `valueColor`.
   Opt-in show/hide eye via `valueShown` / `onToggleValueShown` (`TimerEyeToggle`), always
   pinned to the strip's **left** edge in both states (since 2026-10-18; it used to sit
   right and jump to centre when hidden — docs/FLP_GAME_BREAKS.md § 7).
   Optional `trailing` slot pinned to the strip's top-**right** corner (absolutely
-  positioned, so it never shifts the centred clock or grows the strip) — Writing Grid's
-  phase label. (Was `leading`, top-left, until the eye took the left edge.)
+  positioned, so it never shifts the centred clock or grows the strip). (Was `leading`, top-left, until the eye took the left edge.)
   Takes an **already-formatted** `value`; the frame does no clock math. Its `pulse` prop is
   a deliberate departure from the design, which draws no pulse — a colour change plus a
   nearly-drained track is easy to miss in peripheral vision, which is exactly where a clock
@@ -704,9 +707,7 @@ Bubbles) now use `GameHud` for their strip as well — see entries 12–16 of
 absolutely-positioned overlays INSIDE their stages, at `top: 8`, so bubbles drifted under
 the text and each field's measured bounds were larger than the area a bubble could
 actually be read in; both stages now return a fragment — HUD row, then measured field.
-Match Speed's `MatchSpeedTimerBar` delegates to `GameTimer` and keeps only
-`RUN_DURATION_MS`, its 10-second urgency threshold and its colours — ink in every state
-(v2: the clock drains in ink, and "urgent" is `dangerInk`, which v2 also made ink).
+Match Speed shows no clock during play; its finish time appears on the end card.
 
 Speed Reading has a `GameHud` as of the A6b pass: a round counter over
 `SpeedReadingRoundTicks`. Its HUD is the one that is a COLUMN rather than a row of facts
@@ -768,7 +769,7 @@ caller always sends its real `surface`.
 
 Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
 (`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`),
-Bucket Drop (`BucketDropPage` → `fetchPool`), Hydra (`HydraBubblesPage` →
+Bucket Drop (`BucketDropStage` → `fetchPool`), Hydra (`HydraBubblesPage` →
 `fetchChallengeCards`; `useColorBuffers` → `fetchColor`), and Immersive World
 (`iwPlayApi.fetchKnownWords`). **Not** through it: Word Search
 (`GET /api/onDeck/wordSearchGrid`), Memory Map (`src/api/memoryMap.ts`), Writing Grid
@@ -928,18 +929,17 @@ it to whatever moves on its own:
 
 | Game | `clockPaused` is true while | What freezes | Code |
 | --- | --- | --- | --- |
-| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the 30 s run clock | `MatchSpeedStage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
-| Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchPage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
+| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the run clock | `MatchSpeedStage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
+| Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchStage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
-| Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropPage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropStage` (`paused`) |
+| Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropStage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropBoard` (`paused`) |
 
 Three consequences worth keeping in mind when adding a popup or a game:
 
 - **Only input-blocking overlays qualify.** `ProvisionalCardsNotice` takes the whole
   screen, so a frozen clock cannot be used to study a live board. (Word Search's
-  settings sheet was a second such overlay until it was deleted on 2026-09-30; its
-  replacement, the HUD's eye toggle, is inline and does not pause.) Word Search's in-grid gloss popups are deliberately
+  settings sheet was a second such overlay until it was deleted on 2026-09-30.) Word Search's in-grid gloss popups are deliberately
   **excluded**: they are small anchored tooltips that leave the board playable, so
   pausing on them would hand the player a free stopwatch stop. Match Speed lost its
   settings-sheet pause source on 2026-08-28 when that sheet was deleted — its
@@ -947,9 +947,8 @@ Three consequences worth keeping in mind when adding a popup or a game:
   **not** pause ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
 - **End-of-run popups are irrelevant.** The end popup and `ProvisionalSortOffer`
   only ever open once the run is scored and the clock has already stopped.
-- **Resume must not pay the pause back.** A count-down clock re-arms from the time
-  *remaining* (Match Speed keeps `remainingMs` in a ref for exactly this); a
-  count-up clock moves its origin forward (Speed Reading) or uses an explicit
+- **Resume must not pay the pause back.** A count-up clock moves its origin forward
+  (Speed Reading), banks each stretch of play (Match Speed's hidden stopwatch) or uses an explicit
   pause/resume pair (Word Search); the rAF field re-bases its frame clock every
   paused frame so the whole span doesn't arrive as one giant `dt` (Bubble Match).
 
@@ -983,9 +982,9 @@ in full to that part.
 
 | Game | How |
 | --- | --- |
-| Word Search | its own earlier implementation — `WordSearchPage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false. **This is what the rule was generalised from**, and it is deliberately left as-is (its localStorage snapshot is entangled with its pause path) |
+| Word Search | its own earlier implementation — `WordSearchStage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false. **This is what the rule was generalised from**, and it is deliberately left as-is (its localStorage snapshot is entangled with its pause path) |
 | Bubble Match | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` → `BubbleStage`'s `paused` prop |
-| Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + 30 s run clock) |
+| Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + run clock) |
 | Speed Reading | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
 | Bucket Drop | `useBackgroundPause(phase === "playing")` → `clockPaused`, plus `GamePausedOverlay` |
 | Hydra Bubbles | **challenge rounds only** (2026-08-22): `useBackgroundPause(playing && isChallengeLaunch)` → `framePaused` → the stage, plus `GamePausedOverlay`. Free play stays exempt — see the clockless-exemption paragraph above, and note that this is exactly the case it named |
@@ -1374,8 +1373,8 @@ The rule, and how much of it already holds:
 | **Hydra Bubbles** | ✳ its own persisted setting — **and its own track conversion**, see [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) |
 | **Match Speed** | ✳ its own persisted setting (display only — Match Speed stays `recognition`) |
 
-Follow the existing per-surface pattern — `useWordSearchSettings`
-(`src/games/word-search/useWordSearchSettings.ts`) and `useDiscoverSettings`
+Follow the existing per-surface pattern — `useLocalGameSettings`
+(`src/games/shared/useLocalGameSettings.ts`) and `useDiscoverSettings`
 (`src/hooks/useDiscoverSettings.ts`): one hook per game over its own localStorage key,
 defaults merged on read so adding a knob later needs no migration. Four of the seven
 surfaces are already there; this finishes the job rather than inventing a mechanism.

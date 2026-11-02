@@ -57,6 +57,11 @@ const CONTACT_LIFT = 0.6;
 
 /** How much darker than its receiver a shadow is (HSL lightness, see `shadeHex`). */
 const SHADOW_DEPTH = 0.1;
+/**
+ * The opacity of a GLAZE shadow (IsoShadow `glaze`): ink at this opacity darkens a pale
+ * receiver about as much as SHADOW_DEPTH does, and leaves what is printed on it readable.
+ */
+export const SHADOW_GLAZE_OPACITY = 0.12;
 
 /** How far (world x/y) a shadow lands from its caster's footprint, for a caster at `casterZ` over a receiver at `receiverZ`. */
 export function shadowSlide(casterZ: number, receiverZ: number): { x: number; y: number } {

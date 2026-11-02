@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import {
-  WORD_SEARCH_TEMPLATES,
-  WORD_SEARCH_TEMPLATE_ROWS,
-  WORD_SEARCH_TEMPLATE_COLS,
-  WORD_SEARCH_TEMPLATE_HOLES,
-} from '../services/wordSearchTemplates.js';
-import { CARD_BASELINES } from '../contracts/wire.js';
+import { WORD_SEARCH_TEMPLATE_SETS } from '../services/wordSearchTemplates.js';
+import { generateWordSearchGrid, type GridCell, type WordSearchInput } from '../services/wordSearchGrid.js';
+import { CARD_BASELINES, WORD_SEARCH_BOARDS } from '../contracts/wire.js';
 
 /**
  * The templates are GENERATED DATA committed as source (see
@@ -19,24 +15,26 @@ const key = (r: number, c: number) => `${r},${c}`;
 const adjacent = (a: [number, number], b: [number, number]) =>
   Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
 
-describe('word search placement templates', () => {
-  const holes = new Set(WORD_SEARCH_TEMPLATE_HOLES.map(([r, c]) => key(r, c)));
-  const nonHoleCells = WORD_SEARCH_TEMPLATE_ROWS * WORD_SEARCH_TEMPLATE_COLS - holes.size;
+describe.each(WORD_SEARCH_TEMPLATE_SETS.map((set) => [`${set.rows}x${set.cols}`, set] as const))('word search placement templates %s', (_board, set) => {
+  const { rows, cols, templates } = set;
+  const holes = new Set(set.holes.map(([r, c]) => key(r, c)));
+  const nonHoleCells = rows * cols - holes.size;
   const slotsPerTemplate = nonHoleCells / SLOT_LEN;
 
   it('has a whole number of slots covering every non-hole cell', () => {
     expect(nonHoleCells % SLOT_LEN).toBe(0);
-    expect(WORD_SEARCH_TEMPLATES.length).toBeGreaterThan(0);
+    expect(templates.length).toBeGreaterThan(0);
   });
 
   // Template mode only engages when the word count equals the slot count
   // (`templateModeApplicable`), so a board that holds fewer words than the
   // templates have slots would never reach the fallback at all.
   it('has one slot per word the board is sized for', () => {
-    expect(slotsPerTemplate).toBe(CARD_BASELINES['word-search']);
+    const board = Object.values(WORD_SEARCH_BOARDS).find((b) => b.rows === rows && b.cols === cols);
+    expect(slotsPerTemplate).toBe(board?.words);
   });
 
-  it.each(WORD_SEARCH_TEMPLATES.map((t, i) => [i, t] as const))(
+  it.each(templates.map((t, i) => [i, t] as const))(
     'template %i tiles the board with walkable, disjoint 4-cell paths',
     (_i, template) => {
       expect(template.slots).toHaveLength(slotsPerTemplate);
@@ -49,9 +47,9 @@ describe('word search placement templates', () => {
 
         for (const [r, c] of slot) {
           expect(r).toBeGreaterThanOrEqual(0);
-          expect(r).toBeLessThan(WORD_SEARCH_TEMPLATE_ROWS);
+          expect(r).toBeLessThan(rows);
           expect(c).toBeGreaterThanOrEqual(0);
-          expect(c).toBeLessThan(WORD_SEARCH_TEMPLATE_COLS);
+          expect(c).toBeLessThan(cols);
           expect(holes.has(key(r, c))).toBe(false); // never covers a hole
           expect(covered.has(key(r, c))).toBe(false); // no overlap between slots
           covered.add(key(r, c));
@@ -77,12 +75,42 @@ describe('word search placement templates', () => {
   );
 
   it('has no duplicate templates', () => {
-    const canonical = WORD_SEARCH_TEMPLATES.map((t) =>
+    const canonical = templates.map((t) =>
       t.slots
         .map((slot) => slot.map(([r, c]) => key(r, c)).sort().join(' '))
         .sort()
         .join(' | ')
     );
     expect(new Set(canonical).size).toBe(canonical.length);
+  });
+});
+
+describe('word search boards', () => {
+  it('sizes each distribution to its board', () => {
+    for (const board of Object.values(WORD_SEARCH_BOARDS)) {
+      expect(Object.values(board.distribution).reduce((a, b) => a + b, 0)).toBe(board.words);
+    }
+  });
+
+  it('keeps the standard board at the provisional baseline', () => {
+    expect(WORD_SEARCH_BOARDS.standard.words).toBe(CARD_BASELINES['word-search']);
+  });
+
+  // The whole point of the compact templates: at 28 of 30 cells, seven full-length words.
+  it('fits seven 4-character words on the compact board', () => {
+    const { rows, cols, words: count } = WORD_SEARCH_BOARDS.compact;
+    const words: WordSearchInput[] = Array.from({ length: count }, (_, w) => {
+      const chars = Array.from({ length: SLOT_LEN }, (_c, i) => String.fromCodePoint(0x4e00 + w * SLOT_LEN + i));
+      return { id: w + 1, entryKey: chars.join(''), pinyin: 'a a a a', definition: `w${w}` };
+    });
+    const filler: GridCell[] = [{ char: '一', pinyin: 'yi' }, { char: '二', pinyin: 'er' }];
+
+    for (let run = 0; run < 50; run++) {
+      const board = generateWordSearchGrid(words, filler, rows, cols);
+      expect(board.rows).toBe(rows);
+      expect(board.cols).toBe(cols);
+      const used = new Set(board.words.flatMap((w) => w.cells.map(([r, c]) => key(r, c))));
+      expect(used.size).toBe(count * SLOT_LEN);
+    }
   });
 });

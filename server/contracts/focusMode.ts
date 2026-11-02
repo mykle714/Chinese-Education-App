@@ -67,6 +67,11 @@ export interface FocusWorldStatus {
    * null when `on` is false.
    */
   remaining: number | null;
+  /**
+   * Cards an flp game break can deal today: every sorted card in the world outside the
+   * snapshot, plus `remaining` (docs/FOCUS_MODE.md § 4a). null when `on` is false.
+   */
+  breakCards: number | null;
 }
 
 /** `GET /api/focus` → the learner's focus state in their selected language. */
@@ -79,8 +84,8 @@ export interface FocusStatusResponse {
 /**
  * The fewest focus cards a game needs to be offered in a focused world. A game with a
  * card baseline needs its baseline; one without (Hydra Bubbles, Memory Map, Writing Grid)
- * needs a single card. Below this, the games menu refuses the game with a popup and an flp
- * break skips it (docs/FOCUS_MODE.md § 5).
+ * needs a single card. The games menu refuses a game when `remaining` is below this; an flp
+ * break skips a game when `breakCards` is (docs/FOCUS_MODE.md § 5).
  */
 export function focusGameMinimum(surface: string | null | undefined): number {
   return surface && surface in CARD_BASELINES ? CARD_BASELINES[surface as CardBaselineSurface] : 1;

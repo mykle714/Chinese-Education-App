@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import { CARD_THICKNESS, IsoCard, IsoScene, makeCameraProjector, type CameraView, type IsoWash, type WorldRect } from "./iso";
+import { CARD_THICKNESS, IsoCard, IsoPawnStill, IsoScene, makeCameraProjector, type CameraView, type IsoWash, type WorldRect } from "./iso";
 import type { StudyFrame } from "./towerCamera";
 import type { TowerDeck } from "./towerDecks";
 import { SHADOW } from "../../theme/shadows";
@@ -24,6 +24,9 @@ import { SHADOW } from "../../theme/shadows";
  *              beat on top of it read as a stall.
  *   returning  slides back on from the right and settles; the scene's own top card takes
  *              over as the camera starts to climb.
+ *
+ * A pawn standing on the tower's top (`pawnAt`) rides the card both ways: the scene's pawn
+ * stands still under a study (usePawnMotion's `held`) and is hidden while this copy is up.
  *
  * Layer: feature view (src/features/deckTower). Rendered by DeckTowerPage while
  * useTowerStudy reports a `cover`.
@@ -67,7 +70,12 @@ export interface TowerCover {
  * `wash` is the page scene's time-of-day wash (timeOfDay.ts): this copy must be lit the
  * same as the scene's top card it stands in for, or the swap would show.
  */
-const TowerCoverCard: React.FC<{ cover: TowerCover; deck: TowerDeck; wash: IsoWash }> = ({ cover, deck, wash }) => {
+const TowerCoverCard: React.FC<{ cover: TowerCover; deck: TowerDeck; wash: IsoWash; pawnAt: { x: number; y: number } | null }> = ({
+    cover,
+    deck,
+    wash,
+    pawnAt,
+}) => {
     const { mode, box, frame, view, card, topZ, count } = cover;
     const proj = useMemo(() => makeCameraProjector(view), [view]);
 
@@ -134,6 +142,7 @@ const TowerCoverCard: React.FC<{ cover: TowerCover; deck: TowerDeck; wash: IsoWa
                             figure={String(count)}
                             caption={count === 1 ? "card" : "cards"}
                         />
+                        {pawnAt && <IsoPawnStill at={{ ...pawnAt, z: topZ }} />}
                     </IsoScene>
                 </Box>
             )}

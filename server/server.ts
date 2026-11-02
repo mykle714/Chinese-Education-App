@@ -17,6 +17,7 @@ import nightMarketTemplateRoutes from './routes/nightMarketTemplateRoutes.js';
 import nightMarketSandboxRoutes from './routes/nightMarketSandboxRoutes.js';
 import onDeckRoutes from './routes/onDeckRoutes.js';
 import writingGridRoutes from './routes/writingGridRoutes.js';
+import superpositionRoutes from './routes/superpositionRoutes.js';
 import writingNotebookRoutes from './routes/writingNotebookRoutes.js';
 import starterPacksRoutes from './routes/starterPacksRoutes.js';
 import dictionaryRoutes from './routes/dictionaryRoutes.js';
@@ -142,6 +143,7 @@ app.use(speedReadingRoutes);
 app.use(memoryMapRoutes);
 // Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2) — gated by its game flag.
 if (isGameEnabled('writing-grid')) app.use(writingGridRoutes);
+if (isGameEnabled('superposition')) app.use(superpositionRoutes);
 // Writing Notebook (docs/WRITING_NOTEBOOK.md) — a page, not a game, so a FEATURE flag.
 if (isFeatureEnabled('writingNotebook')) app.use(writingNotebookRoutes);
 app.use(gamesRoutes);

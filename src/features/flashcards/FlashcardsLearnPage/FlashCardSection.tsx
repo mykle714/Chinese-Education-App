@@ -82,6 +82,7 @@ export { ChineseBlock, EnglishBlock, CardFaceSide } from "../card/CardFace";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
 import CardNote from "../card/CardNote";
 import BreakCardLayer from "./gameBreak/BreakCardLayer";
+import { cardThrowSteps } from "./cardThrow";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -186,13 +187,16 @@ interface FlashCardSectionProps {
      *   title    — `breakCard` is on top. The next real card is already the front slot,
      *              under it, so Skip reveals it with no swap.
      *   skipping — `breakCard` is flying off that card.
+     *   shrinking / results — `breakCard` is back, as the run's results, over the next card.
      *   active   — the game is on screen. Every slot but a still-flying one is hidden.
      */
-    gameBreak?: "due" | "title" | "skipping" | "active" | null;
+    gameBreak?: "due" | "title" | "skipping" | "growing" | "shrinking" | "results" | "active" | null;
     /** The break's card face (`GameBreakCard`). Memoize it: this component is memoized. */
     breakCard?: React.ReactNode;
-    /** `breakCard`'s Skip fly-out finished. */
+    /** `breakCard`'s fly-out finished. */
     onBreakCardGone?: () => void;
+    /** The results card was swiped or tapped off: start its fly-out. */
+    onBreakCardSwiped?: () => void;
     /**
      * The card stack IS the Deck Tower's top card (docs/DECK_TOWER.md § "Studying the
      * tower"): the flp is laid over the tower, the card covering the tower's top face.
@@ -249,43 +253,19 @@ const TOWER_TUCK_KEYFRAMES = {
 /**
  * Writing flp's throw — the card is sent off by the SYSTEM (a tap or a swipe attempt on
  * its graded back), never dragged, so there is no release point to fly from. Instead it
- * plays a keyframe "grab and throw": the card lifts (grows to WRITING_THROW_LIFT_SCALE, rises, tilts a touch
- * toward its exit side), then accelerates off along a swiping arc — sideways with a
- * rising-then-falling y and a growing tilt, like a hand flicking it.
+ * plays a keyframe "grab and throw" (cardThrow.ts → `cardThrowSteps`, the motion itself).
  *
  * A keyframe animation (not a transition) on purpose: on dismiss the flying slot's key
  * changes (`front-N` → `slot-X`), so the wrapper remounts — a transition would have no
  * "from" state and the card would jump straight off-screen. An animation plays on mount.
  * Total length is CARD_FLY_OUT_MS so the loop's fly-out timeout still lines up.
- *
- * Per-segment timing: the lift (0 → LIFT) eases out; the throw (LIFT → 100%) eases IN
- * (cubic-bezier(0.5, 0, 0.9, 0.5)), which is what reads as acceleration.
  * Docs: docs/WRITING_PRACTICE_REWORK.md § 3.
  */
-const WRITING_THROW_LIFT_PCT = 30;
-// How much the card grows as it is "picked up" — held through the throw so it reads as
-// still in hand. 1.05 was too subtle to register in a ~110 ms lift.
-const WRITING_THROW_LIFT_SCALE = 1.1;
-// How far (px) the card rises during the lift. The throw's arc keeps climbing a little
-// past it (to 60%) before falling away, so the mid-throw y is derived from this.
-const WRITING_THROW_LIFT_RISE_PX = 40;
-const writingThrowKeyframes = (sign: 1 | -1) => ({
-    "0%": {
-        transform: "translate(0px, 0px) rotate(0deg) scale(1)",
-        animationTimingFunction: "cubic-bezier(0.2, 0.8, 0.3, 1)",
-    },
-    [`${WRITING_THROW_LIFT_PCT}%`]: {
-        transform: `translate(${sign * 14}px, ${-WRITING_THROW_LIFT_RISE_PX}px) rotate(${sign * 3}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
-        animationTimingFunction: "cubic-bezier(0.5, 0, 0.9, 0.5)",
-    },
-    "60%": {
-        transform: `translate(${sign * FLY_OUT_X * 0.3}px, ${-(WRITING_THROW_LIFT_RISE_PX + 16)}px) rotate(${sign * FLY_OUT_ROTATION * 0.45}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
-        animationTimingFunction: "cubic-bezier(0.4, 0, 1, 1)",
-    },
-    "100%": {
-        transform: `translate(${sign * FLY_OUT_X}px, 40px) rotate(${sign * FLY_OUT_ROTATION}deg) scale(${WRITING_THROW_LIFT_SCALE})`,
-    },
-});
+const writingThrowKeyframes = (sign: 1 | -1) =>
+    Object.fromEntries(cardThrowSteps(sign).map(({ offset, transform, easing }) => [
+        `${offset * 100}%`,
+        { transform, ...(easing && { animationTimingFunction: easing }) },
+    ]));
 
 /** Renders the card face (Side 1 + Side 2 + drag overlay) for a given entry.
  *  Side 1 shows only one language (determined by sideOneLanguage).
@@ -599,6 +579,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     gameBreak = null,
     breakCard = null,
     onBreakCardGone,
+    onBreakCardSwiped,
     towerStack = false,
     cardsCovered = false,
     cardFrameRef,
@@ -804,8 +785,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             // Back card should never capture pointer events
                                             ...(!isFront && { pointerEvents: 'none', userSelect: 'none' }),
                                             // Opacity, not `visibility: hidden`: CardFace's facing side sets its
-                                            // own `visible`, which beats it. A game on a slab covered the
-                                            // leak; a game on the bare ground shows the card through it.
+                                            // own `visible`, which beats it, and the game falling away at
+                                            // its end would otherwise uncover the card early.
                                             ...(hiddenForBreak && { opacity: 0, pointerEvents: 'none' }),
                                             // Writing flp: the promoted back card grows from its peek pose
                                             // into place under the throw. A keyframe for the same reason as
@@ -885,12 +866,13 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     </Box>
                                 );
                             })}
-                            {breakCard && (gameBreak === "due" || gameBreak === "title" || gameBreak === "skipping") && (
+                            {breakCard && gameBreak !== null && gameBreak !== "active" && (
                                 <BreakCardLayer
                                     hold={gameBreak}
                                     towerStock={towerStack}
                                     contentHidden={gameBreak === "due" && flipInProgress}
                                     onGone={onBreakCardGone}
+                                    onSwiped={onBreakCardSwiped}
                                 >
                                     {breakCard}
                                 </BreakCardLayer>

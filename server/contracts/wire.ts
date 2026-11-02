@@ -1037,6 +1037,40 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
 };
 
 /**
+ * The boards Word Search deals on (docs/WORD_SEARCH_GAME.md § 2). `rows`, `cols` and
+ * `words` must match a template set in server/services/wordSearchTemplates.ts, or that
+ * board loses its placement fallback; server/__tests__/wordSearchTemplates.test.ts
+ * pins them together.
+ *
+ *   standard — the game's own board: the hub, the Reading Center, a Study Challenge
+ *              round, and a break on the routed flp.
+ *   compact  — a break inside a Deck Tower session: one row shorter and one column
+ *              narrower, so its tiles can be larger, and two words fewer. One word came off Target and one off Comfortable, so the
+ *              board still leans on the band the learner is working on.
+ *
+ * The client sends the board as `?board=`, and its band quotas from `distribution`.
+ * Referenced by: OnDeckVocabController.getWordSearchGrid,
+ * OnDeckVocabService.getWordSearchGrid, src/games/word-search/constants.ts,
+ * src/games/word-search/gridRequest.ts.
+ */
+export const WORD_SEARCH_BOARDS = {
+  standard: {
+    rows: 7,
+    cols: 6,
+    words: 9,
+    distribution: { Unfamiliar: 1, Target: 5, Comfortable: 2, Mastered: 1 },
+  },
+  compact: {
+    rows: 6,
+    cols: 5,
+    words: 7,
+    distribution: { Unfamiliar: 1, Target: 4, Comfortable: 1, Mastered: 1 },
+  },
+} as const;
+
+export type WordSearchBoardId = keyof typeof WORD_SEARCH_BOARDS;
+
+/**
  * Learning supply thresholds — when the app nudges a learner toward Sort Cards.
  * Both are read against the CORE Learning count (Unfamiliar + Target + Comfortable,
  * `builtinCollectionCount` → `learn-now`), the same figure the fdp tile and the sort
@@ -1609,6 +1643,12 @@ export interface VocabEntryBase {
    * See docs/MATCH_SPEED_GAME.md § Backend change and docs/MASTERY_REWORK.md.
    */
   gameCategory?: FlashcardCategory;
+  /**
+   * Stamped only on a focused flp break's board (`getGameVocabPool`): this card is not in
+   * today's focus set, so it is not on the Deck Tower and clearing it drops nothing
+   * (docs/FLP_GAME_BREAKS.md § 6). Absent everywhere else.
+   */
+  outsideFocus?: boolean;
   /** Starter pack sorting bucket. Required on the server; absent on det-fallback entries. */
   starterPackBucket?: StarterPackBucket | null;
 
@@ -2317,12 +2357,24 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
       fillerHit: 20,
       fillerMiss: -20,
       missChargedOncePerWord: true,
-      // No bonus. Match Speed's challenge shape is the ALTERNATION RULE instead
-      // (§ 5.3): every other pair dealt must be contested, and when the contested
-      // words run out the alternation lapses to filler rather than recycling them.
-      // That gives its contested score a hard ceiling of
-      // CHALLENGE_WORD_COUNT × contestedHit (900 at 9) and makes CLEARING THE SET
-      // the goal of the round rather than raw taps-per-second.
+      // ALTERNATION RULE (§ 5.3): every other pair dealt must be contested, and when
+      // the contested words run out the alternation lapses to filler rather than
+      // recycling them. A run is a fixed 30 pairs, so every finisher matches the same
+      // pairs and earns the same hit points; only misses and the clock separate them.
+      bonuses: [
+        {
+          // A stopwatch game, scored like Word Search's: free until the gold time,
+          // then −10 per second of ACCUMULATED ACTIVE time. Without this a finished
+          // round would ignore speed altogether (src/games/match-speed/constants.ts →
+          // MEDAL_THRESHOLDS).
+          ruleId: 'timePenalty',
+          label: 'time penalty',
+          kind: 'elapsedPenalty',
+          points: -10,
+          decayIntervalMs: 1000,
+          graceMs: 100_000,
+        },
+      ],
     },
   },
   {

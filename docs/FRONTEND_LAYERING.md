@@ -137,7 +137,7 @@ and is re-exported by `features/nightmarket/templateEditorApi.ts` for feature ca
 
 ## 2. File size
 
-A file over ~300 lines is a candidate for splitting; over ~800 it needs a reason.
+A file over ~600 lines is a candidate for splitting; over ~1000 it needs a reason.
 Split along the seams the consumers already imply, not by line count.
 
 Note the constraint that shapes these splits: **`react-refresh/only-export-components`**

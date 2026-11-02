@@ -17,7 +17,7 @@
  * by what the player is doing (e.g. "the word they are holding next"), or the slot that
  * just emptied would point at an answer.
  *
- * Referenced by: BucketDropStage. Tested by src/__tests__/bucketDropQueue.test.ts.
+ * Referenced by: BucketDropBoard. Tested by src/__tests__/bucketDropQueue.test.ts.
  */
 
 /** A word in the run — the vet id, which is unique within a dealt pool. */

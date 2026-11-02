@@ -317,7 +317,7 @@ nodes, so the morph never re-renders React.
 
 | Surface | `origin` | Host |
 |---|---|---|
-| Writing Grid game cell | the board cell (`WritingGridBoard` → `onOpenCell(i, el)`) | `WritingGridPage` → `WritingFocusEditor` |
+| Writing Grid game cell | the board cell (`WritingGridBoard` → `onOpenCell(i, el)`) | `WritingGridStage` → `WritingFocusEditor` |
 | Writing flp card cell | the card-face cell (`WritingCardFace` → `onOpenCell(i, el)`) | `useWritingFlashcard` → `WritingFocusEditor` (Dialog with `hideBackdrop` + `transitionDuration={0}`, so only the editor's own scrim fades) |
 | Popup 2×2 slot | the slot (`focusSlot(i, el)`) | `PracticeWritingPopup` → `focusOverlay` |
 | Popup single character | the launcher (`PracticeWritingButton`, `WritingPracticeGrid` tile) | `PracticeWritingPopup` → `singleBody` (`WritingPanel`) |

@@ -65,7 +65,8 @@ interface WritingUsedInBubblesProps {
     cardRef: RefObject<HTMLElement | null>;
     /**
      * The card is not on screen (Deck Tower: the session is parked, or the count card
-     * hides the cards — FlpTowerHost `parked`, `cardsCovered`).
+     * hides the cards — FlpTowerHost `parked`, `cardsCovered`; any flp: a game break's
+     * card or game is over it — FlashcardsLearnPage passes `gameBreak.phase`).
      * The bubbles vanish at once (no pop — the card they sit on is gone too) and the set
      * is cleared, so they GROW IN fresh once the card is seen. Without this, the first
      * card of a parked session played its grow-in unseen and was simply there on the dive.

@@ -90,21 +90,26 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
 
 ## 2. Writing Grid game
 
-8 single characters in a grid of 4 rows × 2 columns (3 columns on a vertically tight frame — see Flow step 2); grid **position i is Level i + 1**, and each slot has its level name written beneath it. Writing Center only
+8 single characters in a grid of 4 rows × 2 columns (3 columns on a vertically tight frame — see Flow step 2); grid **position i is Level i + 1**, and each slot has its level name written beneath it. Launched from the Writing Center, and offered as the writing
+flp's game break ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), never from the hub
 (`GameDef.hiddenFromHub`, `languages: ["zh"]`, game flag `writing-grid`).
 
-### Flow (`src/games/writing-grid/WritingGridPage.tsx`)
+`WritingGridStage` owns the run. `WritingGridPage` is the route's thin host; `WRITING_GRID_BREAK`
+and `WritingGridBreakStage` (`src/games/flpBreak/`) are the break's. A break differs in four ways:
+no give-up chip; a seeded, prefetched deal; Leave ends a live run as give up
+does, with no confirm; and the run reports to the flp's results card in place of the End
+board and popup, so steps 4 and 5's popup, puck and practice redraw are route-only. The personal
+best still records on a finished run, and a win still logs on a medalled one.
+
+### Flow (`src/games/writing-grid/WritingGridStage.tsx`)
 `loading → (empty) → countdown → arrange → write → ended`
 1. **Countdown** — 3·2·1·Go over the readable board (Match Speed's steps); no time billed.
 2. **Phase 1, arrange** — the stopwatch runs (accumulated active time; backgrounding
-   pauses it, `useBackgroundPause`). The stopwatch is a bare `GameTimer` — no progress
-   track under it — with Word Search's **show/hide eye** (`TimerEyeToggle`, via
-   `GameTimer`'s `valueShown` / `onToggleValueShown`): hiding keeps the numerals' height
-   (`visibility`) and never pauses the clock; the end popup always shows the final time.
-   The preference is device-local, under this game's own key (`constants.ts` →
-   `SETTINGS_STORAGE_KEY` = `writingGrid.settings`, read by `useLocalGameSettings`). The
-   current phase ("Phase 1" / "Phase 2") sits in the stopwatch strip's top-right corner
-   (`GameTimer`'s `trailing` slot — top-left until 2026-10-18, when the eye took the left edge), not on a row of its own. Drag a character to another slot: the 8 cells are one
+   pauses it, `useBackgroundPause`). It is never on screen during a run: it exists for the
+   finish time, medal and personal best, which the end of the run reports. The current phase
+   ("Phase 1" / "Phase 2") is the one label of a `GameHud` strip, pinned right
+   (`writing-grid__phase-strip`); in a break the strip is the study header's row, level with
+   Leave's arrow. Drag a character to another slot: the 8 cells are one
    list, so it **moves** (`gridOrder.ts` → `moveItem`), everything between shifts. Each
    cell (also on the countdown's board) shows its character as the full, still **shadow**
    outline — every slot, regardless of level, since arranging needs to see them all — with
@@ -119,19 +124,24 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    fit; the other axis's leftover space widens the gaps on that axis, from `CELL_GAP` up to
    `CELL_GAP_MAX` (`constants.ts`; `WritingGridBoard` → `spreadGap`), so a tall phone spaces
    the rows out and a short/wide frame spaces the two columns apart. The side columns carry
-   **Easiest** (green, `grnMk`) beside L1 and **Hardest** (red, `redMk`) beside L8, each
+   **Hardest word** (red, `redMk`) beside L1 and **Easiest word** (green, `grnMk`) beside L8, each
    centred in its column (the free space either side of the centred grid); a minimum
    column is reserved in the cell-size fit (`WritingGridBoard` → `DIFFICULTY_GUTTER`).
    **Compact layout** — a vertically tight frame (short phone, landscape) switches to
    3 columns (3 + 3 + 2 rows) whenever that gives a strictly bigger cell than 4 × 2
    (`WritingGridBoard` → `GRID_LAYOUTS`, `pickLayout`, `cellSizeFor`). It has no side
-   columns (16px edge padding only): **Easiest** sits in a band above L1 (`topBand`), and
-   **Hardest** in a band above L8 (`lastRowBand`, its own band because the space directly
+   columns (16px edge padding only): **Hardest word** sits in a band above L1 (`topBand`), and
+   **Easiest word** in a band above L8 (`lastRowBand`, its own band because the space directly
    above L8 holds L5's level name). Dragging over the empty ninth slot targets L8.
    The two labels show on the countdown, in Phase 1 and at End, but **not in Phase 2**
    (write); their space stays reserved so the grid never resizes between phases.
-   Neither phase has a hint line — the two labels carry the direction (Phase 2's "Tap a
-   square to write it from memory" was removed 2026-10-04).
+   **Arrange instruction** — "Drag cells to rearrange" (`WritingGridBoard` → `ARRANGE_HINT`)
+   shows on the countdown and in Phase 1: in a band under the grid in the tall layout
+   (`bottomBand`, reserved in the fit and kept in Phase 2 so the cells never resize), and in
+   the empty ninth slot in the compact layout. It is the board's largest text: `SIZE.title`
+   on one line in the tall layout (overflowing the board evenly into the side columns), and
+   `SIZE.subtitle` wrapped inside the slot in the compact one. Phase 2 has no hint line (its "Tap a square to
+   write it from memory" was removed 2026-10-04).
 3. **Phase 2, write** — glyphs hide (the arrangement is now from memory). What a cell
    shows depends on its slot (`WritingGridBoard`, `constants.ts` → `SHADOW_PREVIEW_MAX_LEVEL`):
    - **L1–L3** (Snap, Trace, Step Through) — the level's **shadow preview**
@@ -155,13 +165,13 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    on every slot regardless of level (L4–L8 included, though they never showed one while
    writing; Snap keeps its snapped strokes), pinyin at the bottom centre
    (`WritingGridBoard`, the `phase === "ended"` branch). The end popup is **minimizable**
-   (`GameEndPopup`'s `onMinimize` / `onRestore`, `WritingGridPage` → `popupMinimized`):
+   (`GameEndPopup`'s `onMinimize` / `onRestore`, `WritingGridStage` → `popupMinimized`):
    its × collapses it to the top-right puck so the finished board can be looked over.
    **Practice redraw** — on the End board every cell is tappable (any verdict): it reopens
    `WritingFocusEditor` at the slot's level with the cell's ink **as drawn** (unlike a
    Phase 2 ✗ reopen, which wipes it). Clear / Undo and redraw; on tap-out a **changed**
    drawing is verified (top-1) and the cell's ✓ / ✗ updates, but **no mark is sent** —
-   the run's marks were already emitted while it was timed (`WritingGridPage` →
+   the run's marks were already emitted while it was timed (`WritingGridStage` →
    `handleCellDone`, its `practice` branch). Closing unchanged, or cleared and left empty,
    keeps the cell's drawing and verdict (`sameInk`). The time, medal and personal best are
    final and never change.
@@ -173,10 +183,12 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
    works as above. The popup reads **"Gave up"** with "*N* of 8 written" (the ✓ count frozen
    at the moment of giving up) instead of the time; **no medal, no personal best, no win,
    and no marks** beyond the cells already checked during the run
-   (`WritingGridPage` → `handleGiveUp`, `gaveUpCorrect`).
+   (`WritingGridStage` → `handleGiveUp`, `endRunEarly`, `gaveUpCorrect`).
 
 ### Dealing (`GET /api/writingGrid/deal`)
-`WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`:
+`WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`. An flp break adds
+`seedIds` and `flpBreak`, which put the loop's characters first or apply the focus rule
+([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 4):
 - candidates = every distinct Han character in the learner's **sorted** vet words that has a
   det row (`findCandidateCharacters`), each banded by its **own** single-char writing count;
 - sampled in Study Mix proportions, off-cooldown first (`sampleWritingGridCharacters`,
@@ -188,16 +200,18 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
   `resolveDisplayDefinition` (`server/utils/definitions.ts`), honouring the `selectedSense`
   on the character's own vet row — so the cell reads what that card reads;
 - every dealt character is given a single-char vet row (`ensureCharacterRows`, a hidden
-  `provisional` row when new), whose id is the `cardId` a check marks.
+  `provisional` row when new), whose id is the `cardId` a check marks, and whose `ownCard`
+  says whether that row is one of the learner's sorted cards.
 
 Medals (estimates, tune from play data): gold ≤ 2:00, silver ≤ 3:30, bronze ≤ 6:00, none
 beyond — `WRITING_GRID_MEDAL_THRESHOLDS_MS`.
 
-Code: `src/games/writing-grid/` (`WritingGridPage`, `WritingGridBoard`, `gridOrder`,
-`constants`), `src/api/writingGrid.ts`, `server/contracts/writingGrid.ts`,
+Code: `src/games/writing-grid/` (`WritingGridStage`, `WritingGridPage`, `WritingGridBoard`,
+`gridOrder`, `constants`), `src/games/flpBreak/writingGridBreak.ts`, `WritingGridBreakStage.tsx`, `src/api/writingGrid.ts`, `server/contracts/writingGrid.ts`,
 `server/{dal/implementations/WritingGridDAL,services/WritingGridService,controllers/WritingGridController,routes/writingGridRoutes}.ts`,
 `src/features/flashcards/centers/WritingGamesCarousel.tsx` (the Writing Center belt card).
-Tests: `server/__tests__/writingGrid.test.ts`, `src/__tests__/writingGridOrder.test.ts`.
+Tests: `server/__tests__/writingGrid.test.ts`, `src/__tests__/writingGridOrder.test.ts`,
+`src/games/flpBreak/__tests__/writingGridBreak.test.ts`.
 
 ### 2a. Personal bests
 One best per **(user, language, game, mode)** in `game_personal_bests` (migration 171).
@@ -206,7 +220,7 @@ Direction and unit per game: `server/contracts/personalBests.ts` → `PERSONAL_B
 | Game | Value | Mode key |
 |---|---|---|
 | Word Search | completion ms (lower) | `pinyin` / `no-pinyin` |
-| Match Speed | pairs (higher) | `mixed` / `review` / `challenge` (not recorded when `relaxed`) |
+| Match Speed (`match-speed-30`) | finish time, ms (lower) | `mixed` / `review` / `challenge` (not recorded when `relaxed`) |
 | Speed Reading | total ms incl. penalties (lower) | `default`; finished runs only |
 | Hydra Bubbles | matches (higher) | `default` |
 | Writing Grid | completion ms (lower) | `default` |
@@ -244,7 +258,7 @@ it is the submit tap (`submitOrNudge`: grade + flip once every cell is filled, e
 wiggle), on the graded back the dismiss tap (`sendOff`), the card still going right/left by
 its **grade**, never by the swipe's direction. Either way the click that would follow is
 swallowed, so it cannot submit/dismiss twice or open a cell's editor. The dismissal plays a **grab-and-throw** keyframe (`FlashCardSection` →
-`writingThrowKeyframes`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `WRITING_THROW_LIFT_SCALE` = 1.1 over the first 30%, rises `WRITING_THROW_LIFT_RISE_PX` = 40 px, tilts
+`writingThrowKeyframes`, built from `cardThrow.ts` → `cardThrowSteps`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `LIFT_SCALE` = 1.1 over the first 30%, rises `LIFT_RISE_PX` = 40 px, tilts
 toward its exit), then accelerates off along an arc. It is a keyframe animation rather than
 the core flp's transition because the flying slot remounts on dismiss (its key changes) and
 a tapped card has no drag release point to fly from. The flying slot draws above the

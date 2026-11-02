@@ -98,8 +98,6 @@ function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
  */
 const STARTLE_AT_CARDS = 50;
 
-/** A kept deck's own fade (`deckOpacity`): a game drawn on the bare ground coming up or going. */
-const DECK_FADE_MS = 360;
 
 export interface PlateFace {
     text: string;
@@ -150,8 +148,6 @@ interface DeckTowerPlatformProps {
      * own fades (DeckTowerPage).
      */
     keepDeck?: boolean;
-    /** A kept deck's own opacity (useTowerStudy `deckOpacity`), eased. Default 1. */
-    deckOpacity?: number;
     /**
      * Draw the cards' imprint (IsoCardImprint) under the stack. False while the deck's count
      * is still loading: it reads as 0 then, and "0 cards" would be a lie.
@@ -165,6 +161,15 @@ interface DeckTowerPlatformProps {
     pawns: SwapPawn[];
     /** Cards standing on this tower right now: the startle threshold reads it. */
     cardsOnTower: number;
+    /**
+     * The cards a pawn up on the tower stands on: `cardsOnTower`, or a shrink's lower figure
+     * from its start, so it falls through the cards leaving rather than hovering over them.
+     */
+    summitCards: number;
+    /** A study has the tower: a pawn on its top stands still, to be carried off on the count card. */
+    summitHeld: boolean;
+    /** Kept at where the pawn stands on the tower's top (null when it is not there). */
+    summitSpot: React.MutableRefObject<{ x: number; y: number } | null>;
     /** A swap's old towers are still on screen: an INCOMING pawn is not startled by them. */
     swapOutgoing: boolean;
     plate: {
@@ -207,6 +212,9 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     dropPx,
     pawns,
     cardsOnTower,
+    summitCards,
+    summitHeld,
+    summitSpot,
     swapOutgoing,
     plate,
     lever,
@@ -215,7 +223,6 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     bobPaused = false,
     fadeOpacity = 1,
     keepDeck = false,
-    deckOpacity = 1,
 }) => {
     const proj = useIsoProjector();
     // The world arrives already lit for the time of day (timeOfDay.ts `litWorld`); the
@@ -229,6 +236,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
 
     // Each pawn's depth slot among the obstacles, by pawn key (mid-swap there are two).
     const [pawnDepthRanks, setPawnDepthRanks] = useState<Record<string, number>>({});
+    // The pawn on the tower's top, by key. It keeps out of the study fade (see `wrapped`).
+    const [summitPawn, setSummitPawn] = useState<string | null>(null);
     // A pawn reports its depth slot under its own key; keys of pawns no longer drawn are
     // dropped as the next report comes in, so the record never outgrows two entries.
     const livePawnKeys = useRef<string[]>([]);
@@ -286,7 +295,17 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
 
     // The plate as a step the pawns walk up onto, at its live height (sinking when pressed,
     // springing back past RAISED_HEIGHT as it pops up).
-    const plateStep: PawnStep[] = [{ rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT }];
+    // And the tower's top as the summit (usePawnMotion's SUMMIT), at its live height. With
+    // no cards left it closes, so a pawn never stays inside the tower's footprint (not
+    // during a study: the pawn is away on the count card, and comes back with it).
+    const pawnSteps: PawnStep[] = [
+        { rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT },
+        {
+            rect: layout.card,
+            height: summitCards * CARD_THICKNESS,
+            summit: { closed: !summitHeld && summitCards === 0, held: summitHeld },
+        },
+    ];
 
     const renderPawn = (p: SwapPawn) => (
         <g key={`pawn-${pawnKey(p)}`} className={p.outgoing && dropPx > 0 ? "deck-tower-page__falling" : "deck-tower-page__standing"}>
@@ -303,8 +322,11 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 // one is still on screen (it is in the air then anyway).
                 startled={(p.outgoing || !swapOutgoing) && cardsOnTower >= STARTLE_AT_CARDS}
                 decals={plateShade}
-                steps={plateStep}
+                steps={pawnSteps}
                 entrance={p.entrance}
+                tappable={!p.outgoing}
+                onSummitChange={(on) => setSummitPawn((k) => (on ? pawnKey(p) : k === pawnKey(p) ? null : k))}
+                summitSpot={p.outgoing ? undefined : summitSpot}
             />
         </g>
     );
@@ -488,18 +510,19 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const layerFade = keepDeck && fading ? fadeStyle : undefined;
     const keptDeckStyle = {
         "--platform-fade": fadeOpacity,
-        opacity: deckOpacity,
-        transition: `opacity ${DECK_FADE_MS}ms ease-in-out`,
     } as React.CSSProperties;
     // Every layer is wrapped the same way whatever the mode, so a session starting or ending
     // re-styles the wrappers without remounting what is inside (the pawn's motion state).
     const wrapped = layers.map((el) => {
         const isDeck = el.key === "stack";
+        // The pawn on the deck stays with the deck. Once the camera is down (fade 0) the
+        // count card has its copy of it (TowerCoverCard), so the fade hides this one.
+        const pawnKeptUp = el.key === `pawn-${summitPawn}` && fadeOpacity > 0;
         return (
             <g
                 key={el.key ?? undefined}
                 className={isDeck && keepDeck ? "deck-tower-page__layer deck-tower-page__kept-deck" : "deck-tower-page__layer"}
-                style={isDeck ? (keepDeck ? keptDeckStyle : undefined) : layerFade}
+                style={isDeck ? (keepDeck ? keptDeckStyle : undefined) : pawnKeptUp ? undefined : layerFade}
             >
                 {el}
             </g>

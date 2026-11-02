@@ -88,6 +88,11 @@ export interface WordSearchResponse {
      * the grid.
      */
     provisionalWords?: string[];
+    /**
+     * A focused flp break's words from outside today's set: they are not on the Deck
+     * Tower, so finding one drops nothing (docs/FLP_GAME_BREAKS.md § 6). Absent elsewhere.
+     */
+    outsideFocusWords?: string[];
     /** Why the game is blocked when !sufficient (client picks the copy). */
     reason?: "language" | "insufficient-distinct" | "no-filler";
     /** Index into WORD_SEARCH_TEMPLATES if template mode placed this grid, else null (random snaking). */

@@ -5,7 +5,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import { formatTimeMs } from "../../utils/timeUtils";
 import GameEndPopup from "../runtime/GameEndPopup";
 import PersonalBestLine from "../shared/PersonalBestLine";
-import { GAME_ID, MEDAL_LABEL, type Medal } from "./constants";
+import { GAME_ID, runResultDetail, runResultTitle, type Medal } from "./constants";
 
 /**
  * Bucket Drop's end-of-run card (docs/BUCKET_DROP_GAME.md § 6): medal, time (the
@@ -16,8 +16,9 @@ import { GAME_ID, MEDAL_LABEL, type Medal } from "./constants";
  * modal. A finished board is empty, so there is nothing behind it worth uncovering
  * (the Speed Reading rule, docs/GAMES_FEATURE.md § Layer 2).
  *
- * Never shown during a Study Challenge round — the page renders
- * ChallengeRoundScoreboard instead, which has no Play Again.
+ * Never shown during a Study Challenge round — the Stage renders
+ * ChallengeRoundScoreboard instead, which has no Play Again — nor in an flp break, whose
+ * results land on the break's card (docs/FLP_GAME_BREAKS.md § 5b).
  */
 interface BucketDropEndPopupProps {
     medal: Medal | null;
@@ -38,14 +39,13 @@ const BucketDropEndPopup: React.FC<BucketDropEndPopupProps> = ({
 }) => (
     <GameEndPopup classPrefix="bucket-drop">
         <Typography className="bucket-drop__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-            {medal ? `${MEDAL_LABEL[medal]}!` : "Finished!"}
+            {runResultTitle(true, medal)}
         </Typography>
         <Typography className="bucket-drop__popup-time" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
             {formatTimeMs(finalMs)}
         </Typography>
         <Typography className="bucket-drop__popup-score" sx={{ fontSize: SIZE.body, color: COLORS.textSecondary }}>
-            {total} words · {misses} {misses === 1 ? "miss" : "misses"}
-            {!fullRun && " · short run, no medal"}
+            {runResultDetail(total, misses, fullRun)}
         </Typography>
         <PersonalBestLine game={GAME_ID} best={personalBestMs} isNewBest={isNewBest} className="bucket-drop__personal-best" />
         <Box className="bucket-drop__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}>

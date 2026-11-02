@@ -307,7 +307,7 @@ sends). Use it in fetch callbacks that drive load effects so they don't need
 
 ### Sites converted (reference)
 Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
-`WordSearchPage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
+`WordSearchStage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
 `useWorkingLoop.ts` (distributed-loop fetch), `ReaderPage.tsx`,
 `FlashcardsPage.tsx` (×2), `FlashcardsDecksPage.tsx`, `CollectionViewPage.tsx`
 (the page that replaced `MasteredCardsPage.tsx`),

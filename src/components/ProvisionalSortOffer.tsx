@@ -1,5 +1,5 @@
 import { alpha } from "@mui/material/styles";
-import React from "react";
+import React, { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import MinimizablePopup from "./MinimizablePopup";
@@ -39,7 +39,7 @@ import type { Language } from "../types";
  * the same offer appears after the next round, and sorting later still preserves the
  * progress (StarterPacksService.sortCard promotes the row in place).
  *
- * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingPage, WordSearchPage,
+ * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingPage, WordSearchStage,
  * FlashcardsLearnPage.
  */
 export interface ProvisionalSortOfferProps {
@@ -51,6 +51,11 @@ export interface ProvisionalSortOfferProps {
     language: Language;
     /** "Not now" — the caller decides what dismissal means (close, or leave the page). */
     onDismiss: () => void;
+    /**
+     * The lookup came back with nothing to offer, so no popup will appear and no one can
+     * dismiss it. For a host that waits on the offer (an flp break, Match Speed).
+     */
+    onNothingToOffer?: () => void;
     /** Called just before navigating into the sort flow, e.g. to tear down a game loop. */
     onNavigate?: () => void;
     /** Collapsed into the top-left puck. Omit `onMinimize` to make it non-minimizable. */
@@ -74,6 +79,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     words,
     language,
     onDismiss,
+    onNothingToOffer,
     onNavigate,
     minimized,
     onMinimize,
@@ -85,6 +91,12 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     const navigate = useNavigate();
     const location = useLocation();
     const { entries, loading } = useProvisionalEntries(language, words, undefined, open);
+
+    useEffect(() => {
+        if (open && !loading && entries.length === 0) onNothingToOffer?.();
+        // On the lookup settling, not on the callback's identity.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, loading, entries.length]);
 
     // Nothing to offer: either the round used no lent cards, or every one of them has
     // since been sorted. Also stay silent while the lookup is in flight so the popup

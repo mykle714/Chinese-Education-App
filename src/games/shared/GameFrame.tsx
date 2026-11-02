@@ -4,26 +4,31 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { SIZE, TRACKING } from "../../theme/scale";
+import { LEADING, SIZE, TRACKING, WEIGHT } from "../../theme/scale";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 import TimerEyeToggle from "./TimerEyeToggle";
 import { useGameFrameExit, type GameFrameExit } from "./gameFrameExit";
 import Icon from "../../components/Icon";
-import { GROUND_PAINT, GROUND_PAINT_FAINT, GROUND_PRINT } from "../../theme/groundPaint";
-import { TOWER_PLATE_PRINT, towerPlateSx } from "../../theme/towerPlate";
-import { CREAM_PLATE_TONES, TOWER_SLAB, TOWER_SLAB_WALL_PX, washPlateTones } from "../../theme/towerSlab";
+import {
+    BACK_ARROW_ICON,
+    BACK_ARROW_PX,
+    BACK_GROUP_GAP_PX,
+    DENSE_HEADER_PAD_X_PX,
+    DENSE_HEADER_TITLE_PX,
+    DENSE_HEADER_TITLE_TRACKING,
+    TOWER_STUDY_BACK_ARROW_TOP_PX,
+} from "../../components/pageHeaderSizing";
+import { TOWER_PLATE_PRINT } from "../../theme/towerPlate";
+import { TOWER_SLAB, TOWER_SLAB_WALL_PX } from "../../theme/towerSlab";
 import { useTowerWash } from "../../timeOfDay/useDayWash";
 
 /**
  * The panel's material. `tower` draws it as the Deck Tower's gold platform: the strips lose
  * their tint and hairline, the labels take the plate's print, and the clock's track becomes
  * a groove (docs/TOWER_STYLE_SHIFT.md § "The play slab"). Set once on `GameFrame`; its parts
- * read it from this context. `ground` draws no panel at all: the game is flat white paint on
- * whatever is behind it, like the tower's Tap to Start (docs/TOWER_STYLE_SHIFT.md § "Ground
- * paint"). Match Speed is the only `ground` game and nothing uses `tower` now; every other
- * game stays `bento`.
+ * read it from this context. Nothing uses `tower` now; every game is `bento`.
  */
-export type GameFrameTone = "bento" | "tower" | "ground";
+export type GameFrameTone = "bento" | "tower";
 const GameFrameToneContext = createContext<GameFrameTone>("bento");
 
 /**
@@ -113,75 +118,101 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, t
                     // The bevel round the top edge, then the wall.
                     boxShadow: `inset 0 0 0 2px ${wash(TOWER_SLAB.rim)}, 0 ${TOWER_SLAB_WALL_PX}px 0 ${wash(TOWER_SLAB.right)}`,
                 }),
-                ...(tone === "ground" && {
-                    backgroundColor: "transparent",
-                    border: "none",
-                    borderRadius: 0,
-                    // Paint has no entrance of its own: it comes up as the card and platform go.
-                    animation: "game-frame-ground-in 320ms ease-out both",
-                    "@keyframes game-frame-ground-in": { from: { opacity: 0 }, to: { opacity: 1 } },
-                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
-                }),
+                // A host's exit means the game is the screen (an flp break): the panel's
+                // boundary would be the phone's, so its inset, corner and line go. Its strips
+                // lose their band too (GameTimer, GameHud): they sit straight on the ground.
+                ...(exit && { margin: 0, borderRadius: 0, border: "none" }),
             },
             ...(Array.isArray(sx) ? sx : [sx]),
         ]}
     >
         {children}
-        {exit && <GameFrameExitButton label={exit.label} onExit={exit.onExit} tone={tone} />}
+        {exit && (
+            <>
+                <GameFrameExitButton label={exit.label} onExit={exit.onExit} />
+                <GameFrameExitTitle title={exit.title} />
+            </>
+        )}
     </Box>
     </GameFrameToneContext.Provider>
     );
 };
 
 /**
- * The host's exit control, pinned to the panel's top-right corner — vertically centred
- * on the TOP STRIP (a `GameTimer` / `GameHud` is 12px padding + a 1.2 × `SIZE.bodyLg`
- * line ≈ 43px tall). That right edge is kept free by every strip since the timer eye
- * moved to the left (docs/FLP_GAME_BREAKS.md § 7).
- *
- * ⚠️ A strip that puts its OWN content at the right edge collides with this: a HUD's
- * last label (pinned right by `space-between`) and `GameTimer`'s `trailing` slot
- * (Writing Grid's phase label). Such a game must make room before it is offered as an
- * flp break.
- *
- * Above any in-panel overlay (Match Speed's countdown is zIndex 5), so the
- * player can always leave. Ink on white with the `--line2` outline (CLAUDE.md
- * § "Buttons & cards"), on `ground` too; on a `tower` panel, a cream plate instead.
+ * The exit arrow's invisible tap margin, px: the glyph alone is a 21px target, and a mid-game
+ * thumb misses that. The margin grows the button outward, so the glyph stays put.
  */
-const GameFrameExitButton: React.FC<GameFrameExit & { tone: GameFrameTone }> = ({ label, onExit, tone }) => {
-    const wash = useTowerWash();
-    return (
+const GAME_FRAME_EXIT_TAP_SLOP_PX = 8;
+
+/**
+ * The host's exit control: the flp study header's back arrow, redrawn at the same place on
+ * screen, same glyph and size (pageHeaderSizing.ts). The header it replaces is covered by
+ * the game, and the frame starts just below the status bar, as the header's padding does.
+ * The glyph takes the default header ink, not the tower header's white: the break's ground
+ * is white, not the sky.
+ *
+ * ⚠️ The left edge of the top strip is this button's. A strip that puts its OWN content there
+ * collides with it: a `GameHud`'s first label and `GameTimer`'s eye. Such a game must make
+ * room before it is offered as an flp break (Writing Grid's strip pins its one label right).
+ *
+ * Above any in-panel overlay (Match Speed's countdown is zIndex 5), so the player can always
+ * leave. `label` names the button for a screen reader. No outline, like the header's arrow.
+ */
+const GameFrameExitButton: React.FC<Omit<GameFrameExit, "title">> = ({ label, onExit }) => (
     <Box
         component="button"
         type="button"
         className="game-frame__exit"
+        aria-label={label}
         onClick={onExit}
         sx={{
             position: "absolute",
-            top: "9px",
-            right: "10px",
+            top: `${TOWER_STUDY_BACK_ARROW_TOP_PX - GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
+            left: `${DENSE_HEADER_PAD_X_PX - GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
             zIndex: 6,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "4px",
-            padding: "5px 9px",
-            borderRadius: "999px",
-            border: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.white,
-            color: COLORS.onSurface,
-            fontFamily: FONTS.mono,
-            fontSize: SIZE.caption,
-            lineHeight: 1,
+            display: "flex",
+            padding: `${GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
+            border: "none",
+            backgroundColor: "transparent",
             cursor: "pointer",
-            ...(tone === "tower" && towerPlateSx(washPlateTones(CREAM_PLATE_TONES, wash))),
-            ...(tone === "ground" && { ...GROUND_PRINT, backgroundColor: wash(COLORS.white) }),
         }}
     >
-        <Icon name="logout" size={13} color={COLORS.onSurface} />
-        {label}
+        <Icon className="game-frame__exit-icon" name={BACK_ARROW_ICON} size={BACK_ARROW_PX} />
     </Box>
-    );
-};
+);
+
+/**
+ * The game's name beside the exit arrow, in the `dense` page header's type, so a break reads
+ * as a page with a header. It is not part of the button: a mis-tap on it during a live run
+ * must fall through to the game, not end the run.
+ *
+ * Every break game keeps the arrow's row clear (`GAME_FRAME_EXIT_CLEARANCE_PX` or
+ * `GAME_FRAME_EXIT_ARROW_BOTTOM_PX`), and Writing Grid pins its phase label right.
+ */
+const GameFrameExitTitle: React.FC<{ title: string }> = ({ title }) => (
+    <Box
+        className="game-frame__exit-title"
+        sx={{
+            position: "absolute",
+            top: `${TOWER_STUDY_BACK_ARROW_TOP_PX}px`,
+            left: `${DENSE_HEADER_PAD_X_PX + BACK_ARROW_PX + BACK_GROUP_GAP_PX}px`,
+            zIndex: 6,
+            height: `${BACK_ARROW_PX}px`,
+            display: "flex",
+            alignItems: "center",
+            fontFamily: FONTS.sans,
+            fontSize: `${DENSE_HEADER_TITLE_PX}px`,
+            fontWeight: WEIGHT.semibold,
+            letterSpacing: DENSE_HEADER_TITLE_TRACKING,
+            lineHeight: LEADING.tight,
+            color: COLORS.onSurface,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+        }}
+    >
+        {title}
+    </Box>
+);
 
 export interface GameHudProps {
     /** Typically two or three `GameHudLabel`s. Spread apart, first left, last right. */
@@ -214,7 +245,9 @@ export interface GameHudProps {
  */
 export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className, sx }) => {
     const hue = useGameSurfaceHue();
-    const flat = useContext(GameFrameToneContext) !== "bento";
+    const tone = useContext(GameFrameToneContext);
+    const onScreen = useGameFrameExit() !== null;
+    const flat = tone !== "bento" || onScreen;
     return (
     <Box
         className={className ? `game-hud ${className}` : "game-hud"}
@@ -271,12 +304,11 @@ export interface GameHudLabelProps {
 /** `.hud .lab` — one fact. A `Label` that refuses to wrap; the strip is one line. */
 export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color = COLORS.onSurface, className, sx }) => {
     const tone = useContext(GameFrameToneContext);
-    const wash = useTowerWash();
     return (
         <Label
             className={className}
-            color={tone === "ground" ? wash(GROUND_PAINT) : color}
-            sx={[{ whiteSpace: "nowrap", ...(tone === "tower" && TOWER_PLATE_PRINT), ...(tone === "ground" && GROUND_PRINT) }, ...(Array.isArray(sx) ? sx : [sx])]}
+            color={color}
+            sx={[{ whiteSpace: "nowrap", ...(tone === "tower" && TOWER_PLATE_PRINT) }, ...(Array.isArray(sx) ? sx : [sx])]}
         >
             {children}
         </Label>
@@ -345,12 +377,11 @@ export interface GameHintProps {
 export const GameHint: React.FC<GameHintProps> = ({ children, className }) => {
     // The faint label ink turns muddy on the gold slab.
     const tone = useContext(GameFrameToneContext);
-    const wash = useTowerWash();
     return (
         <Label
             className={className ? `game-hint ${className}` : "game-hint"}
-            color={tone === "tower" ? COLORS.onSurface : tone === "ground" ? wash(GROUND_PAINT) : undefined}
-            sx={{ flexShrink: 0, display: "block", textAlign: "center", padding: "8px 12px 11px", ...(tone === "ground" && GROUND_PRINT) }}
+            color={tone === "tower" ? COLORS.onSurface : undefined}
+            sx={{ flexShrink: 0, display: "block", textAlign: "center", padding: "8px 12px 11px" }}
         >
             {children}
         </Label>
@@ -382,8 +413,7 @@ export interface GameTimerProps {
      */
     pulse?: boolean;
     /**
-     * Opt-in show/hide for the numerals, driven by the eye (`TimerEyeToggle`, shared
-     * with Word Search's HUD). Pass `onToggleValueShown` to draw the eye; the owner keeps
+     * Opt-in show/hide for the numerals, driven by the eye (`TimerEyeToggle`). Pass `onToggleValueShown` to draw the eye; the owner keeps
      * the preference. Hidden numerals keep their height (`visibility`), so a toggle never
      * reflows the board. Omit both for a clock with no eye.
      */
@@ -395,9 +425,7 @@ export interface GameTimerProps {
      * the eye on the LEFT, so it never pushes the clock off centre or makes the strip
      * taller. Keep it to a word or two: it shares the row with the centred numerals.
      *
-     * Was `leading` (top-left) until the eye moved to the left edge on 2026-10-18 — the
-     * right edge is kept clear of the eye so an flp game break's Leave button, top-right
-     * of the game area, is never next to it (docs/FLP_GAME_BREAKS.md § 7).
+     * Was `leading` (top-left) until the eye moved to the left edge on 2026-10-18.
      */
     trailing?: React.ReactNode;
     className?: string;
@@ -405,8 +433,9 @@ export interface GameTimerProps {
 
 /**
  * `.timer` — the run clock, inside the panel rather than in the page header. Every
- * game's clock is this component (Word Search, Writing Grid, Bucket Drop, Match Speed),
- * so they share one typeface, size and strip; only the colour differs per game.
+ * game's visible clock is this component (no game shows one today), so
+ * they share one typeface, size and strip; only the colour differs per game. Word Search,
+ * Bucket Drop, Match Speed and Writing Grid show no clock.
  *
  * It sits here because it is GAME STATE, not chrome: the player's eyes are on the board,
  * and a countdown they have to look away to read is a countdown they stop reading. The
@@ -429,9 +458,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     className,
 }) => {
     const hue = useGameSurfaceHue();
-    const tone = useContext(GameFrameToneContext);
-    const tower = tone === "tower";
-    const ground = tone === "ground";
+    const tower = useContext(GameFrameToneContext) === "tower";
+    const onScreen = useGameFrameExit() !== null;
     const wash = useTowerWash();
     return (
     <Box
@@ -447,7 +475,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             // stack on one panel and have to read as one band of chrome.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
             borderBottom: `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}`,
-            ...((tower || ground) && { backgroundColor: "transparent", borderBottom: "none" }),
+            ...((tower || onScreen) && { backgroundColor: "transparent", borderBottom: "none" }),
             opacity: dimmed ? 0.35 : 1,
             transition: "opacity 200ms linear",
         }}
@@ -455,8 +483,8 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         <Box
             className="game-timer__value"
             sx={{
-                // Word Search's HUD clock is the house style for every game's clock
-                // (standardized 2026-10-06): the mono (fonts.ts reserves it for data,
+                // The house style for every game's clock (standardized 2026-10-06, from
+                // the clock Word Search had then): the mono (fonts.ts reserves it for data,
                 // timers by name) at `SIZE.bodyLg` — the play panel's one text size —
                 // normal case, normal tracking, `Label`'s 1.2 line height. Only the
                 // COLOUR stays per game (`valueColor`, and the hue tint behind it).
@@ -465,8 +493,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
                 letterSpacing: TRACKING.normal,
                 fontVariantNumeric: "tabular-nums",
                 lineHeight: 1.2,
-                color: ground ? wash(GROUND_PAINT) : valueColor,
-                ...(ground && GROUND_PRINT),
+                color: valueColor,
                 transition: "color 300ms linear",
                 animation: pulse ? "game-timer-pulse 1s ease-in-out infinite" : "none",
                 visibility: valueShown ? "visible" : "hidden",
@@ -495,9 +522,9 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         <Box
             className="game-timer__track"
             sx={{
-                height: tower || ground ? "8px" : "4px",
-                borderRadius: tower || ground ? "4px" : "2px",
-                backgroundColor: ground ? GROUND_PAINT_FAINT : tower ? wash(TOWER_SLAB.right) : COLORS.card,
+                height: tower ? "8px" : "4px",
+                borderRadius: tower ? "4px" : "2px",
+                backgroundColor: tower ? wash(TOWER_SLAB.right) : COLORS.card,
                 marginTop: "7px",
                 overflow: "hidden",
             }}

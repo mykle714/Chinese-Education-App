@@ -14,12 +14,13 @@
 Third game. A **recognition** speed drill: two columns × six rows of cards, the
 left column holding the foreign word, the right column holding its English
 definition. Tap one card, then tap a card in the *other* column to attempt a
-match. Thirty seconds; match as many pairs as you can.
+match. **How fast can you complete 30 pairs?** No timer is shown during play; the
+finish time appears on the end card.
 
 Where Bubble Match is a spatial/physical game (drag bubbles through a packing
 field) and Word Search is a scanning game, Match Speed is a pure **read-and-recall
 throughput** test. There is no physics, no grid generation, and no drag — only
-taps, a clock, and a board that keeps refilling.
+taps and a board that refills until the run's 30 pairs have all been dealt.
 
 ---
 
@@ -65,7 +66,10 @@ taps, a clock, and a board that keeps refilling.
    never be a pair.)
 6. Tapping the already-selected card deselects it.
 7. **Every 3 seconds**, all empty slots are refilled with fresh pairs, fading in.
-8. At **0:30**, the run ends and the end popup appears with the score + medal.
+   Once all 30 pairs have been dealt, nothing refills: the last holes stay empty
+   and the board drains (see [Dealing stops at 30 pairs](#dealing-stops-at-30-pairs)).
+8. On the **30th match** the hidden stopwatch stops on that tap and the end popup appears with
+   the finish time + medal.
 
 ### Selection is never locked
 
@@ -234,9 +238,9 @@ the natural fast gesture for this game and half-allowing it is harder to explain
 #### Selection outranks every other visual state
 
 `visualState` (`MatchSpeedBoard.tsx`) resolves `selected` **before** `wrong`. The
-A wrong card draws raised and red, so with the opposite precedence a card re-tapped
-during its own 400ms flash was genuinely selected while drawing as unselected, with
-no acknowledgement. Input was never blocked there; the *feedback* was, which is
+`wrong` style draws a raised red key, so with the opposite precedence a card
+re-tapped during its own 400ms flash was genuinely selected while drawing as
+unselected — no ring, no key staying down, no acknowledgement. Input was never blocked there; the *feedback* was, which is
 indistinguishable from a lockout to the player. A player who has moved on to
 their next guess is owed feedback about that guess, not a replay of the mistake.
 
@@ -307,7 +311,7 @@ leak which pair is which. A long definition is absorbed by
 [strip → scale → clamp](#rendering-a-card), never by the card box.
 
 The size is **measured, not pure CSS** (`MatchSpeedBoard`, the `gridElRef` /
-`cardHeight` block). CSS `aspect-ratio` derives one dimension from the other and
+`cardSize` block). CSS `aspect-ratio` derives one dimension from the other and
 a `max-width`/`max-height` clamp on the derived side breaks the ratio rather than
 re-deriving it, so it cannot satisfy a fixed ratio against *both* a width and a
 height constraint. The board therefore measures its own box with a
@@ -328,12 +332,14 @@ would restart every card's fade-in). Cell height is fixed per row rather than
 shared via `1fr`, so an **empty slot holds its row open** and surviving cards
 never slide when a pair pops.
 
-**An flp break uses different numbers in the same fit** (`MatchSpeedBoard` → `evenGaps`,
-`EVEN_GAP_BOARD` in `constants.ts`): a locked **2:1** card, 8px between rows and between
-columns, and at least 15px of margin round the grid. The tighter axis sits at that margin
-and the other takes the slack, as above.
+**An flp break locks a 2:1 card instead** (`MatchSpeedBoard` → `cardAspect`,
+`BREAK_CARD_ASPECT` in `constants.ts`), in the same fit, then scales the fitted size by
+`BREAK_CARD_SCALE` (`cardScale`) so the cards are shorter at the same ratio: the board has a
+whole screen, and the grid centres in its slack.
 
-The outlined box is the whole tap target.
+**One visible gap on both axes.** A raised card's lip hangs below its cell and its face rises
+above it, `CARD_KEY.raised.lip` in all, so equal cell gaps would look uneven (3px between
+rows, 8px down the middle). `ROW_GAP_PX` is therefore `COL_GAP_PX + CARD_KEY.raised.lip`.
 
 ---
 
@@ -353,6 +359,25 @@ Consequence, and it is **intentional**: a pair matched right after a tick leaves
 a visible hole for nearly 3 seconds. Clearing fast means playing a partly-empty
 board. That's the game's pacing pressure — it's why the medal thresholds sit
 where they do, and it's the reason the refill is not per-hole.
+
+### Dealing stops at 30 pairs
+
+A run deals exactly `TARGET_PAIRS` (30). `MatchSpeedStage` → `drawPairs` counts pairs
+handed to the board in `dealtPairsRef` and never draws past the total, so after the
+30th pair is dealt a tick finds holes and fills none. That one cap is the whole
+end-of-run behavior; the board needs no special case. `topUpBuffer` also stops fetching
+once the cards in hand cover the pairs left to deal.
+
+### A run must always be able to finish
+
+The clock used to end every run. Now only the 30th match does, so a board that stops
+being fed would hang forever. Three rules in `topUpBuffer` and `refill` close that:
+
+| Case | Behavior |
+|---|---|
+| Buffer dry, or a top-up failed | `refill` fires `onRefilled` on every tick that found a hole, even if it placed nothing, so the top-up retries every 3 seconds. |
+| The mode's own buckets are spent (Review or Challenge in an flp break) | The run turns **relaxed** mid-run and takes whatever the server sent, through `widenedMode`. A relaxed run sets no personal best. |
+| The server has nothing, the buffer is empty and the board has drained | The run ends where it stands, on the "Run ended" card. |
 
 ### Fill algorithm (one tick)
 
@@ -374,7 +399,7 @@ where they do, and it's the reason the refill is not per-hole.
 | Constant | Value | Meaning |
 |---|---|---|
 | `ROWS` | 5 | rows per column |
-| `RUN_DURATION_MS` | 30_000 | thirty seconds |
+| `TARGET_PAIRS` | 30 | pairs dealt in a run; matching them all ends it |
 | `REFILL_TICK_MS` | 3_000 | board refill cadence |
 | `FADE_IN_MAX_DELAY_MS` | 500 | upper bound of the per-card random fade delay |
 | `FADE_IN_DURATION_MS` | ~260 | the fade itself |
@@ -386,14 +411,15 @@ where they do, and it's the reason the refill is not per-hole.
 
 ## Board cleared celebration
 
-When the **last pair leaves the board**, a painted white **"Board Cleared!"** pops
+When the **last pair leaves the board**, a green **"Board Cleared!"** banner pops
 in over the centre of the grid, drifts up and fades
 (`MatchSpeedClearBanner.tsx`, `CLEAR_BANNER_MS` = 1400ms).
 
 **It is an indicator and nothing else** — no score, no medal, no mark, no bonus,
 no phase change. The board refills on its normal tick exactly as it would have.
 It exists because clearing the board is the best thing that can happen in a run
-and the game otherwise passes over it in silence.
+and the game otherwise passes over it in silence. It does **not** fire on the run's
+final pair (`removePair` checks `frozenRef`): by then the end popup is up.
 
 | Property | Value | Why |
 |---|---|---|
@@ -416,12 +442,14 @@ indicator used for repeat taps at one spot, before it was removed).
 
 **Reachability.** With `ROWS` = 5 and a 3-second tick, clearing during live play
 means matching five pairs inside one tick window — very rare, which is the point.
-The common case is the **cleanup phase**, where the board drains and never
-refills; the banner fires there too, on the final pair.
+It also fires in the **cleanup phase** of a run that was cut short.
 
 ---
 
 ## Difficulty modes (Study Mix / Review / Challenge)
+
+> ⚠️ **DEPRECATED (2026-10-31).** Review and Challenge are being removed; Study Mix stays
+> ([DEFERRED_WORK.md](./DEFERRED_WORK.md) § 31).
 
 > ⚠️ **No mode is reachable from the UI today.** The Games hub briefly carried a
 > `HubMenuArrayItem` strip with one sub-card per mode; it was removed and Match
@@ -435,8 +463,8 @@ The game defines **three independently-playable modes**, selected via nav
 `state.mode` (there is no in-game picker). Modes do **not** chain and nothing is
 unlocked by clearing one.
 
-A mode changes **only which mastery buckets the pool may draw from**. The 30s
-clock, the 5×2 board, the 3-second refill tick and the medal thresholds are
+A mode changes **only which mastery buckets the pool may draw from**. The 30-pair
+target, the 5×2 board, the 3-second refill tick and the medal thresholds are
 identical across all three — difficulty comes purely from which cards you are
 asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
 
@@ -474,8 +502,9 @@ therefore enforced client-side at every point where a category is chosen:
 2. The empty-bucket fallback walk uses `mode.fallbackOrder` — which contains only
    in-mode buckets, so a bare Review buffer draws **nothing** rather than reaching
    for Target.
-3. `fillBuffer` **drops** an off-mode card on arrival. Shelving a card no roll can
-   ever draw would only bloat the `exclude` list. (An *unstamped* card is still
+3. `fillBuffer` **drops** an off-mode card on arrival. Shelving a card no draw can
+   ever reach would only bloat the `exclude` list. Reachable means
+   `mode.fallbackOrder`, so a relaxed run (`widenedMode`) shelves every bucket. (An *unstamped* card is still
    filed — under `mode.fallbackOrder[0]` — for the reason given below.)
 
 Nothing below `MatchSpeedStage` branches on the mode *name*: every function in
@@ -654,8 +683,8 @@ What happens instead:
    still deals a playable run.
 
 2. **Nothing inside the mode's buckets** → the run switches to **relaxed mode**
-   (`relaxed` in `MatchSpeedStage.tsx`): its `fallbackOrder` widens to all four buckets
-   for that run only, so the server's cross-bucket top-up actually reaches the board.
+   (`relaxed` in `MatchSpeedStage.tsx`, `widenedMode` in `constants.ts`): its
+   `fallbackOrder` widens to all four buckets for that run only, so the server's cross-bucket top-up actually reaches the board.
    The mode's WEIGHTS are untouched, so once the player has real on-mode cards the
    widened fallback stops being reached and the mode plays exactly as designed.
 
@@ -704,8 +733,8 @@ the shared plumbing. What is specific to THIS game:
 
 **Why it needs a rule at all.** Every other eligible game has a fixed board, so "all
 nine contested words appear in the round" is a fact about board composition. Match
-Speed deals from a rolling buffer into ten slots against a 30-second clock, so the same
-guarantee has to become a rule about the DEAL:
+Speed deals from a rolling buffer into ten slots, so the same guarantee has to become a
+rule about the DEAL:
 
 > **Every other pair filled is a contested one, while any contested word is left
 > undealt.**
@@ -806,25 +835,27 @@ a mark request.
 
 ## Scoring and medals
 
-**Score = pairs matched.** Nothing else affects it. A wrong match costs only the
-time it wastes.
+**The result is the time to finish all 30 pairs.** Nothing else affects it. A wrong
+match costs only the time it wastes.
 
-| Medal | Threshold (pairs in 30s) | ≈ pace |
+| Medal | Finish time | ≈ pace |
 |---|---|---|
-| 🥇 Gold | 9+ | ~3.3s/pair |
-| 🥈 Silver | 6+ | ~5.0s/pair |
-| 🥉 Bronze | 3+ | ~10s/pair |
-| — none | 0–2 | |
+| 🥇 Gold | up to 1:40 | ~3.3s/pair |
+| 🥈 Silver | up to 2:30 | 5s/pair |
+| 🥉 Bronze | up to 5:00 | 10s/pair |
+| — none | over 5:00 | |
 
-Thresholds are stated **against the run clock** and were halved with it when the
-run went 60s → 30s, so the required pace is unchanged. Re-tune them together or
-not at all.
+The thresholds keep the pace of the old 30-second table (9/6/3 pairs), scaled to 30
+pairs. They are stated **against `TARGET_PAIRS`**, as is the challenge time penalty's
+grace period, so re-tune them together or not at all.
 
-There is a genuine **no-medal tier** — unlike Word Search's `medalForTime`, whose
-bronze row is `maxSeconds: Infinity` and therefore always awarded
-(`src/games/word-search/constants.ts`). Structure the resolver the same
-way (an ordered threshold table + a `medalForScore(score)` helper) but let it
-return `null`.
+There is a genuine **no-medal tier** — unlike Word Search's table, whose bronze row is
+`maxSeconds: Infinity` and therefore always awarded
+(`src/games/word-search/constants.ts`). `medalForTime` returns `null` past bronze.
+
+**An unfinished run has no time to judge.** A run left early in an flp break, or one
+that ran out of cards, gets the "Run ended" card with `x of 30 pairs matched`, and no
+medal, win or personal best.
 
 The end card also shows **accuracy** — correct attempts / total attempts — as
 information only. It does not gate a medal.
@@ -841,17 +872,19 @@ as its corner badge — the shared trophy `WinCountPill` (`src/games/shared/Game
 passed as a `pinBare` BentoTile pin in the tile's top-left (`pinSide="left"`) so it matches the Reading Center's cards (there is no per-mode ⭐ left — that lived on the removed mode
 sub-cards). Gold-only keeps the badge an achievement rather than a play counter.
 
-Medal thresholds are deliberately **not** re-tuned per mode: a 9-pair gold on
+Medal thresholds are deliberately **not** re-tuned per mode: a gold on
 Challenge is a real achievement and on Review it is an easier one, which is the point of
 having modes at all.
 
 ### Personal best
 
-The most pairs matched in one 30s run (count, higher wins) is kept **per difficulty
-mode** — the mode key is the slug `mixed` / `review` / `challenge`
+The fastest finish (ms, lower wins) is kept **per difficulty mode**, under the game key
+`match-speed-30`. That key is new on purpose: `match-speed` rows hold pair counts from
+the old game, and a stored 9 read as milliseconds could never be beaten. Those rows
+remain in `game_personal_bests`, unread. The mode — the mode key is the slug `mixed` / `review` / `challenge`
 (`baseModeConfig.mode` in `MatchSpeedStage`, i.e. the mode the hub launched — or, in an flp game break, the session's study mode). The
-`phase === "ended"` effect in `MatchSpeedStage` calls `recordPersonalBest(score)`;
-`playAgain` calls `resetPersonalBest`. The line renders in `MatchSpeedEndPopup` under the
+`phase === "ended"` effect in `MatchSpeedStage` calls `recordPersonalBest(finishMs)` for a finished run;
+`playAgain` calls `resetPersonalBest`. The line renders in `MatchSpeedEndPopup` (in a break, on the results card) under the
 accuracy row. **Not recorded:** a challenge round (dealt from the round's set, ends on
 the scoreboard) and a `relaxed` run — a Review/Challenge run that widened to every bucket
 for lack of in-mode cards was an easier board than its mode's, so it must not set that
@@ -863,6 +896,10 @@ The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBes
 
 ## End popup and cleanup phase
 
+**Page host only.** An flp game break shows neither: the run reports to the flp with
+`onRunEnded`, and the results land on the break's card (docs/FLP_GAME_BREAKS.md § 5b). The
+copy is shared through `constants.ts` → `runResultTitle`, `runResultScore`, `runResultAccuracy`.
+
 Reuses `GameEndPopup` (`src/games/runtime/GameEndPopup.tsx`) with
 `classPrefix="match-speed"` — the shared scrim + card + × button + FLIP-style
 collapse into a corner puck. Bubble Match wraps it in `BubbleMatchEndPopup` to
@@ -872,10 +909,14 @@ Card content: score, medal, accuracy, and two actions —
 
 - **Play Again** (primary) — new run, fresh board. Unlike Bubble Match there is no
   partial-refresh logic to carry over: Match Speed's board is fully transient, so
-  a replay simply re-primes the buffer and starts a new 30s run.
+  a replay simply re-primes the buffer and starts a new run.
 - **Back to Games** (secondary) → `/games`.
 
 ### Cleanup phase
+
+**Only a run cut short has a cleanup phase.** A finished run leaves an empty board, so
+its popup passes no `onMinimize` and cannot be minimized; on the page host that is every
+run except one that ran out of cards.
 
 Minimizing the popup to its corner puck (the `phase === "ended" && popupMinimized`
 condition, mirroring Bubble Match's `cleanupMode`) turns the leftover board into a
@@ -925,18 +966,18 @@ plus a clock consumed roughly half the bar:
 | **pinyin toggle** | the cog, then **back to the header** (2026-08-28) | With the other two rows gone the sheet held one row — and NOTHING at all for a Latin-script language, since every row was script-gated. A cog opening an empty dialog is worse than a chip. |
 | **tone-color toggle** | the cog, then **`/settings` → Display** (2026-08-28) | It is not Match Speed's setting, or any page's: it applies to every reading the app renders. `/settings` is now the ONLY place it is edited. |
 | **autoplay toggle** | the cog, then **back to the header** (2026-08-28) | It stopped being a game pref: it is now the app-wide narration setting ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)), and it is the one control here a player changes mid-session. Every surface that offers it offers it in the header. |
-| **Countdown timer** | `MatchSpeedTimerBar`, at the top of the **play area** | The clock is game state, not page chrome. A countdown the player has to look away from the board to read is a countdown they stop reading. |
+| **Run clock** | removed | No timer is shown during play. `MatchSpeedTimerBar` was deleted on 2026-10-31; `MatchSpeedStage` keeps a hidden stopwatch in refs (`bankedMsRef`, `clockStartRef`) and renders only the final `finishMs`, so timing costs the board no renders. Pauses still bank correctly. |
 
 ### The HUD strip and the hint line
 
-Inside the play panel, under the clock (shelf redesign entry 14). **Page host only:**
-an flp game break (`host="flpBreak"`, `MatchSpeedStage` → `isBreak`) renders neither, so
-its panel holds just the clock, the board and Leave; the session already chose the mode
-and deck, and the score is on the results card.
+Inside the play panel, at its top (shelf redesign entry 14). An flp game break
+(`host="flpBreak"`, `MatchSpeedStage` → `isBreak`) has no strip and no hint line: the session already chose the mode and deck. A blank
+`match-speed__exit-clearance` row (`GAME_FRAME_EXIT_CLEARANCE_PX`) takes the strip's place,
+so Leave's back arrow at the top-left clears the board.
 
 | Element | Content | Notes |
 |---|---|---|
-| `GameHud` (`divider={false}`) | `Study Mix · All cards` — `9 matched` | Both facts are otherwise invisible once a run starts: the mode is chosen on the Games hub, the collection on `/decks`. Without the strip, a player who launched the wrong mode only found out from the cards. The divider is suppressed because `GameTimer` directly above already draws one. |
+| `GameHud` | `Study Mix · All cards` — `9/30 matched` | Both facts are otherwise invisible once a run starts: the mode is chosen on the Games hub, the collection on `/decks`. Without the strip, a player who launched the wrong mode only found out from the cards. |
 | `GameHint` | "tap a word, then its meaning" | Mono/uppercase/faint at the foot of the panel. |
 
 The collection name comes from `collectionTitle` (`src/features/flashcards/collectionRef.ts`),
@@ -1009,47 +1050,46 @@ Card size stays **fixed at 2.4:1 and equal across all ten cards** throughout —
 [Card sizing](#card-sizing-locked-to-241) for why this is a correctness
 constraint.
 
-### Drawn on the ground
+### The two columns are told apart by TYPE, not colour
 
-The game has no panel: it is flat white paint straight on the ground, the same
-look as the Deck Tower's Tap to Start (`src/features/deckTower/TapToStartHint.tsx`;
-`src/theme/groundPaint.ts` → `GROUND_PAINT`, `GROUND_PRINT`; [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md)
-§ Ground paint). `GameFrame tone="ground"` draws no box, and the clock, the 3·2·1 and "Board
-Cleared!" are paint. The only things not painted are the buttons: every card, and Leave, is a
-white button with the app's outline. The ground itself:
+*(Shelf redesign entry 14, class `.msc` — `docs/SHELF_REDESIGN.md`.)*
 
-| Host | Ground |
-|---|---|
-| flp break, tower session | the tower's sky at this hour. The card fades where it is and the platform and deck fade with it ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 2) |
-| flp break, routed flp | `RAMP[hue].mark` on the break area, since white paint vanishes on the flp's pale ground |
-| the game's route | `RAMP[GAME_HUE].mark` (`bluMk`, the main world's day sky), not the default Mid tier, which white paint does not read on |
+The columns used to be colour-coded: pale blue for the foreign word, cream for its
+meaning. That spent the board's strongest signal on a distinction the player can already
+see — one column is Chinese, the other is English. The design separates them
+typographically instead:
 
-The columns are told apart by content alone (one is Chinese, one is English). **Nothing in the
-game is bold**, unlike the hint itself: `GROUND_PRINT` is regular weight, and `NOTHING_BOLD`
-(`MatchSpeedStage.tsx`) forces it over the shared parts too (plates, personal best, overlays)
-and over the bold a tower session's stage would pass down.
+| Column | Face | Ground |
+|---|---|---|
+| foreign (`.msc.zh`) | cjk, 19px, 700 | `COLORS.background` (paper) |
+| english (`.msc`) | sans, length-scaled, 500, `iconColor` | `COLORS.white` |
 
-**Tone colours follow the learner's setting** (`showPinyinColor`).
-
-⚠️ White on `bluMk` is about 2:1 contrast, so the white paint is only for large or secondary
-text: the clock and the numerals. Words sit on the white buttons, in ink.
+Which frees every fill to mean **state and only state**. That is what makes the feedback
+colours unambiguous — a filled card is always saying something about what just happened.
 
 ### Card visual states
 
-A card rests on white with the app's 1px `COLORS.border` outline (inset, so it cannot change the
-box). A state replaces the white, so any colour on the board means something just happened.
-Type is always `COLORS.onSurface`.
-
 | State | Treatment |
 |---|---|
-| idle | `CARD_PANEL` (white) |
-| selected | `SELECTED_CARD_PANEL[side]`: `yelM` in the foreign column, `purM` in the english one |
-| wrong | `COLORS.redM` swatch + a sideways shake, ~400ms, **board stays live** |
-| partner-hint (cleanup only) | `COLORS.grnM` — the same green a correct match pops |
+| idle | a raised key: white (both columns since v2, `.msc`), `COLORS.border` inset ring, 5px `COLORS.grey` lip |
+| selected | the key stays down on a 2px lip: `COLORS.blu` fill with a 2px **ink** inset ring (`.msc.pick`, v2; `SELECTED_CARD_RING`, `src/games/match-speed/constants.ts`; `keyShadow`, `MatchSpeedCard.tsx`) |
+| wrong | `COLORS.red` fill + `dangerInk` text, ~400ms, **board stays live** |
+| partner-hint (cleanup only) | `COLORS.grn` — the same green a correct match pops |
 
-Selection fires on `pointerdown`, so the swatch lands with the finger. The wrong shake
-animates `translate`, because the exit pop owns `transform` and a card can be matched
-mid-shake.
+Every fill is a **pastel carrying ink text**, per the redesign's fill rule
+(`docs/SHELF_REDESIGN.md` § A1) — never saturated ink behind white letters. The wrong
+flash in particular used to be white on `#F44336`, which read as an error dialog dropped
+onto the board rather than as part of the game.
+
+**Every card is a 2-state key**, on `EipAddKey`'s Add ⇄ Added! numbers (`CARD_KEY`,
+`src/games/match-speed/constants.ts`; `cardKeySx`, `MatchSpeedCard.tsx`), white on grey like
+the Dictionary's keycaps. It uses the app's press (`src/theme/keycapPress.ts`), which snaps.
+Held, a key bottoms out with no lip; released, it rests by its new state. Since selection
+fires on `pointerdown`, the press and the state change land together. A matched card drops
+the press rules so a held press cannot pin it through its pop.
+
+Selection **fills** rather than outlines, and the blue glow shadow that used to
+accompany the outline is gone with it: a filled card does not need help being noticed.
 
 The first four are the `CardVisualState` union the board resolves and passes in.
 The remaining two are **not** union members, because they aren't mutually exclusive
@@ -1057,17 +1097,18 @@ with a selection — they ride on the card itself:
 
 | State | Driven by | Treatment |
 |---|---|---|
-| correct | `BoardCard.exiting` | green panel, rises and fades (`POP_DURATION_MS`), then the board removes it |
+| correct | `BoardCard.exiting` | green pop (`POP_DURATION_MS`), then the board removes it |
 | entering | `BoardCard.fadeDelayMs` | CSS fade-in on a **wrapper** element, keyed by card id, `fadeDelayMs` stagger up to 500ms |
 
-A card has no border in any state, so no state can change the box and re-wrap a 3-line gloss
-mid-tap.
+A card has no CSS border in any state. Its outline and the selected ring are inset shadows,
+because a width change on selection would re-wrap a 3-line gloss mid-tap.
 
 **The entry fade-in must live on a wrapper element, never on the card itself.** A
 CSS animation with `both` fill keeps overriding the properties it animates for as
 long as the element lives. A fade-in declared on the card animates `opacity` and
-`transform`, and therefore permanently beat the card's own exit pop. Wrapper animates
-*arrival*; card animates *state*; neither touches the other's properties.
+`transform`, and therefore permanently beat the card's own key press and its `scale(1.14)` + `opacity: 0` exit pop — both were silently dead until
+the split. Wrapper animates *arrival*; card animates *state*; neither touches the
+other's properties.
 
 All class names BEM-style under `match-speed__` (`match-speed__cell`,
 `match-speed__card--selected`, `match-speed__column--foreign`, …).
@@ -1077,9 +1118,9 @@ All class names BEM-style under `match-speed__` (`match-speed__cell`,
 ## Phase state machine
 
 ```
-loading ──► blocked            (not signed in / < 20 Learning cards / fetch failed)
+loading ──► blocked            (not signed in / fetch failed / challenge round error)
    │
-   └─────► playing ──(30s)──► ended ──► (popup minimized) ──► cleanup
+   └─────► playing ──(30 pairs, or Leave, or out of cards)──► ended ──► (popup minimized, unfinished runs only) ──► cleanup
                                  ▲                               │
                                  └───────(popup restored)────────┘
               ▲                                  │
@@ -1105,7 +1146,6 @@ src/games/match-speed/
   MatchSpeedBoard.tsx      the 5×2 slot grid (ROWS=5 × 2 columns), tap handling, refill tick
   MatchSpeedCard.tsx       one card (foreign or english) + its visual states
   MatchSpeedHeader.tsx     right-slot controls: pinyin chip + audio chip (fire badge is PageHeader's)
-  MatchSpeedTimerBar.tsx   run clock + drain bar, top of the play area
   MatchSpeedEndPopup.tsx   GameEndPopup wrapper pinning classPrefix
   cardBuffer.ts            weighted category roll + per-category buffer + fallback
                            (every function is mode-aware, defaulting to Mix)
@@ -1163,7 +1203,7 @@ All steps complete — kept as the build order a similar game should follow.
    pool prefetch + buffer top-up, marks, timer. (Split 2026-10-18: everything but the
    `LeafPage` frame and the edge-swipe block now lives in `MatchSpeedStage.tsx`.)
 6. ✅ `MatchSpeedHeader.tsx` + `MatchSpeedSettingsDialog.tsx` (the latter deleted
-   2026-08-28) + `MatchSpeedTimerBar.tsx` + `MatchSpeedEndPopup.tsx`; `formatTimeMs` hoisted to
+   2026-08-28) + `MatchSpeedTimerBar.tsx` (deleted 2026-10-31) + `MatchSpeedEndPopup.tsx`; `formatTimeMs` hoisted to
    `src/utils/timeUtils.ts` (word-search importers re-pointed).
 7. ✅ Registry entry + `MINUTE_POINTS_ELIGIBLE_PAGES`.
 8. ✅ `docs/GAMES_FEATURE.md` + `docs/MASTERY_REWORK.md` updated; this doc flipped
@@ -1175,7 +1215,7 @@ All steps complete — kept as the build order a similar game should follow.
 
 | Question | Decision |
 |---|---|
-| **Timer start** (was #1, #2) | A **3·2·1·Go countdown**, `COUNTDOWN_STEPS` at `COUNTDOWN_STEP_MS` each. The board is primed and readable during it, dimmed to 40% (`MatchSpeedBoard` `dimmed`; there is no scrim on bare ground, and the numeral is plain paint), so the opening board gets a beat to be read and the clock starts from an identical state every run — nobody is billed for reading time. The board is `frozen` (renders, ignores taps, no refill tick) until the last step clears. |
+| **Timer start** (was #1, #2) | A **3·2·1·Go countdown**, `COUNTDOWN_STEPS` at `COUNTDOWN_STEP_MS` each. The board is primed and fully readable behind a dimming scrim during it, so the opening board gets a beat to be read and the clock starts from an identical state every run — nobody is billed for reading time. The board is `frozen` (renders, ignores taps, no refill tick) until the last step clears. |
 | **Buffer under-supply mid-run** (was #3) | **Just gaps**, no placeholder. `takePairs` short-returns, the tick fills what it can, and the rest wait for the next tick. A placeholder would advertise a network problem the player can do nothing about, and the hole is already the game's normal resting state right after a match. |
 | **Tap on an empty slot** (was #4) | **No-op**; the selection is preserved. An empty slot has no `MatchSpeedCard` to receive the tap, so this is the natural behavior rather than a coded rule. Clearing the selection would punish a near-miss on a card that had just popped out. |
 | **Bubble Match's pinyin toggles** (was #5) | **Fixed in the same pass.** `BubbleMatchHeader` now takes `language` and hides the toggle for Latin-script languages, same as `MatchSpeedHeader`. Both import `isLatinScriptLang` from `ForeignText` rather than re-testing `=== "es"`. |
@@ -1194,20 +1234,21 @@ it reads from.
 | Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
 | Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedStage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedStage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
-| Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool` (856-976), `fetchGameCandidates` (252-293), `GAME_FALLBACK_ORDER` (803) |
+| Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool`, `fetchGameCandidates`, `GAME_FALLBACK_ORDER` |
+| Dealing stops at 30 pairs, a run must finish | `src/games/match-speed/MatchSpeedStage.tsx` (`dealtPairsRef`, `drawPairs`, `topUpBuffer`, `handleMatch`); `MatchSpeedBoard.tsx` (`refill`); `constants.ts` (`TARGET_PAIRS`, `widenedMode`) |
 | Personal best | `src/games/match-speed/MatchSpeedStage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
 | Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx` (reads the hub's `state.mode`), `MatchSpeedStage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
-| Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`); `src/theme/groundPaint.ts`; `src/games/shared/GameFrame.tsx` (`tone="ground"`); `src/games/match-speed/MatchSpeedCard.tsx`, `MatchSpeedPage.tsx` (`ground`) |
+| Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |
 | Lent-card badge | `src/components/LentCardBadge.tsx` (`LentCardBadge`, `LENT_ICON_ID`) |
 | Lent words the run reviewed | `src/hooks/useMarkedLentWords.ts` |
-| Medals | `src/games/match-speed/constants.ts` (`MEDAL_THRESHOLDS`, `medalForScore`); shape modeled on `src/games/word-search/constants.ts` (`medalForTime`) |
+| Medals | `src/games/match-speed/constants.ts` (`MEDAL_THRESHOLDS`, `medalForTime`); shape modeled on `src/games/word-search/constants.ts` (`medalForTime`) |
 | Timer format | `src/utils/timeUtils.ts` (`formatTimeMs`) — shared with Word Search |
 | End popup, cleanup | `src/games/runtime/GameEndPopup.tsx`; `src/games/bubble-match/BubbleStage.tsx` (`cleanupMode`, `revealed`) |
 | Page shell, header | `src/components/LeafPage.tsx`; `src/games/word-search/WordSearchHeader.tsx` (the chip-only header pattern this one shares — neither game has a cog or settings sheet any more); `src/hooks/useBlockEdgeSwipe.ts` |
 | Two-finger (multi-touch) taps | `src/games/match-speed/MatchSpeedCard.tsx` (the card `Box`'s `onPointerDown`); `src/games/match-speed/MatchSpeedBoard.tsx` (`selectedIdRef` / `setSelected`, `findCard`, `handleTap`) |
-| Card sizing (2.4:1) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardHeight` measurement block); `constants.ts` (`CARD_ASPECT`, `ROW_GAP_PX`, `COL_GAP_PX`) |
+| Card sizing (2.4:1; 2:1 in a break) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardSize` measurement block); `constants.ts` (`CARD_ASPECT`, `BREAK_CARD_ASPECT`, `BREAK_CARD_SCALE`, `ROW_GAP_PX`, `COL_GAP_PX`) |
 | Registry, minute points | `src/games/registry.ts`; `src/constants.ts` |
 | Win badge | `src/hooks/useGameWins.ts` |
 | Pure-selection precedent | `src/games/bubble-match/spawnSelection.ts` |

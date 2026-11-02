@@ -52,9 +52,9 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
  * the text fits, centers and finishes scrolling inside the insets.
  *
  * Layer: shared component (`src/components/`). Used by:
- * features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx (`showAllDefinitions`, and
- * the per-sense list with its underlined pick + starred default).
- * Docs: docs/SHELF_REDESIGN.md § 7b ("The Dictionary eip shows every meaning");
+ * features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx (the per-sense list with its
+ * underlined pick + starred default).
+ * Docs: docs/SHELF_REDESIGN.md § 7b ("The Dictionary lists senses, as the flp eip does");
  * docs/DEFINITION_CLUSTERS.md (eip header sense list).
  */
 
@@ -267,17 +267,19 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
                 }}
             >
                 {layout.lines.map(([from, to], i) => (
-                    <span key={i} className="swipeable-two-line-text__line" style={{ whiteSpace: 'nowrap' }}>
+                    <span key={i} className="swipeable-two-line-text__line" style={{ whiteSpace: 'pre' }}>
                         {renderLine(from, to)}
                     </span>
                 ))}
             </Box>
-            {/* Width probe: same font, never painted, out of flow so it adds no scroll width. */}
+            {/* Width probe: same font, never painted, out of flow so it adds no scroll width.
+                `pre`, like the lines: the separator's doubled spaces must not collapse here
+                either, or the layout is chosen on a narrower string than the one drawn. */}
             <span
                 ref={probeRef}
                 aria-hidden
                 className="swipeable-two-line-text__probe"
-                style={{ position: 'absolute', left: 0, top: 0, visibility: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none' }}
+                style={{ position: 'absolute', left: 0, top: 0, visibility: 'hidden', whiteSpace: 'pre', pointerEvents: 'none' }}
             />
         </Typography>
     );

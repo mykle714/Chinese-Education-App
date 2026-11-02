@@ -490,7 +490,8 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-s
 |---|---|
 | Flashcard face, bubble-match, eip header, cdp, mini cards, /decks previews, related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
 | Discover sort cards (scp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
-| Dictionary row / vocab card | `definitions` array (#1), `shortDefinition` (#4) |
+| Dictionary row | each sense's dd in `sortedSenseClusters` order, plain dd (#3) with no choice of sense (`resolveSearchRowView`, `src/utils/definitionUtils.ts`) |
+| Vocab card | `definitions` array (#1), `shortDefinition` (#4) |
 | eip / card detail expanded view | header dd (#3); the CURRENT sense's `longDefinition`/`longDefinitionParts` (#5, resolved by `resolveLongDefinitionForSense`), `synonyms`/`breakdown` (#7-segment) |
 | Example sentence popups (est) | `segmentMetadata[*].definition` (#7), resolved per segment from `senseDict` → `ddt(cluster)` (#6) with string-match fallback |
 | flp sense-picker dropdown | `ddt(cluster)` per `definitionClusters` entry (#6) |

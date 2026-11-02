@@ -313,7 +313,7 @@ clusters), so a search result is resolved at the render site, not in the DAL.
 Search hits found through a NON-default sense are the one exception to "default sense": the
 search response carries `matchedSense`, and `DictionaryEntryRow`, `IWLookupResults` and
 `CommunitySearchBar` resolve through `resolveSearchRowView` (`src/utils/definitionUtils.ts`),
-which shows that sense's reading and leads with its glosses — see
+which shows that sense's reading and leads with its dd — see
 [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) § "Sense matching".
 
 Segments — a sentence segment with no sense tag (every IW speech bubble, every Reader

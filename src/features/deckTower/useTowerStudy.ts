@@ -125,8 +125,6 @@ export interface TowerStudy {
      * while down, back in on the climb.
      */
     platformOpacity: number;
-    /** The deck's own opacity (it stays out of the platform's fade): 0 for a game drawn on the bare ground, which clears everything. */
-    deckOpacity: number;
     /** Start a session on `world`'s tower of `cards` cards (the stack tap). */
     start: (args: { world: TowerWorldId; cards: number; svg: SVGSVGElement; viewBox: SceneBox; startMidY: number }) => void;
 }
@@ -146,7 +144,7 @@ interface WorldHandles {
     onMarked: (isCorrect: boolean) => void;
     onUndone: (wasCorrect: boolean) => void;
     onGameCardCleared: () => void;
-    onGameBreakChange: (up: boolean, onGround: boolean) => void;
+    onGameBreakChange: (up: boolean) => void;
     onLoopChange: (loop: LoopReport) => void;
     cardFrameRef: (el: HTMLDivElement | null) => void;
 }
@@ -243,7 +241,6 @@ export function useTowerStudy(opts: {
     const gameBreakUp = useRef(false);
     const gameCleared = useRef(0);
     // A game drawn on the bare ground is up: the deck is faded for it.
-    const [breakOnGround, setBreakOnGround] = useState(false);
 
     const clearClocks = useCallback(() => {
         for (const t of timers.current) window.clearTimeout(t);
@@ -289,7 +286,6 @@ export function useTowerStudy(opts: {
             setDealReady(false);
             setCoverMode(null);
             gameBreakUp.current = false;
-            setBreakOnGround(false);
             gameCleared.current = 0;
             setPhase("preparing");
             // A parked session already dealt dives at once; one still loading (or just
@@ -422,7 +418,6 @@ export function useTowerStudy(opts: {
         const cardsLeft = Math.max(0, latest.current.cards - gameCleared.current);
         gameCleared.current = 0;
         gameBreakUp.current = false;
-        setBreakOnGround(false);
         setCards(cardsLeft);
         // Settle the camera on the tower's real top before flying out.
         setCameraZ(topZOf(cardsLeft));
@@ -488,9 +483,8 @@ export function useTowerStudy(opts: {
         if (!gameBreakUp.current) settleGameCards();
     }, [settleGameCards]);
     const onGameBreakChange = useCallback(
-        (up: boolean, onGround: boolean) => {
+        (up: boolean) => {
             gameBreakUp.current = up;
-            setBreakOnGround(up && onGround);
             if (!up) settleGameCards();
         },
         [settleGameCards]
@@ -523,7 +517,7 @@ export function useTowerStudy(opts: {
             onMarked: (isCorrect) => { if (isStudied(w)) onMarked(isCorrect); },
             onUndone: (wasCorrect) => { if (isStudied(w)) onUndone(wasCorrect); },
             onGameCardCleared: () => { if (isStudied(w)) onGameCardCleared(); },
-            onGameBreakChange: (up, onGround) => { if (isStudied(w)) onGameBreakChange(up, onGround); },
+            onGameBreakChange: (up) => { if (isStudied(w)) onGameBreakChange(up); },
             onLoopChange: (loop) => {
                 loops.current.set(w, loop);
                 if (isStudied(w)) onStudiedLoopChange(loop);
@@ -656,7 +650,6 @@ export function useTowerStudy(opts: {
         towerPrintShown: !cameraDown,
         cover,
         platformOpacity: cameraDown ? 0 : phase === "diving" || phase === "climbing" ? 1 - e : 1,
-        deckOpacity: breakOnGround ? 0 : 1,
         start,
     };
 }

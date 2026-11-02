@@ -10,7 +10,7 @@ import type { CardPair } from "./types";
  * ── WHY MATCH SPEED NEEDS A RULE AT ALL ───────────────────────────────────────
  * Every other challenge game has a fixed board, so "all the contested words
  * appear in the round" is a statement about its composition. Match Speed deals from
- * a rolling buffer with ten slots and a 30-second clock, so the same guarantee has
+ * a rolling buffer into ten slots, so the same guarantee has
  * to become a rule about the DEAL: **every other pair filled is a contested one**,
  * while any contested word is left undealt.
  *
@@ -22,11 +22,9 @@ import type { CardPair } from "./types";
  * Contested words are DRAINED, never recycled, so:
  *   * once the contested set is dealt the alternation lapses and the rest of the run is
  *     filler at 20 points a pair;
- *   * contested scoring has a hard ceiling of CHALLENGE_WORD_COUNT × 100 (900 at 9),
- *     which makes CLEARING THE SET the goal of the round rather than raw
- *     taps-per-second;
- *   * two strong players converge near the top of the range — past that point this
- *     round stops separating them and the other rounds decide the match.
+ *   * contested scoring has a hard ceiling of CHALLENGE_WORD_COUNT × 100 (900 at 9);
+ *   * a run is a fixed 30 pairs, so the whole set is always dealt, and finishers
+ *     differ only by their misses and the time penalty.
  */
 
 /** Mutable deal state for one run. Create it fresh in `beginRun`. */

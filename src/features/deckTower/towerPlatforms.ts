@@ -44,7 +44,7 @@ const CARD: WorldRect = {
  * deck while a tall tower's top card is scrolled off screen, and it is the deck switch:
  * tapping it swaps the world's tower to its other deck (towerDecks.ts).
  * It is part of the floor — a floor decal, not an obstacle — so pawns walk over it,
- * stepping up onto the slightly raised push button (DeckTowerPlatform → `plateStep`).
+ * stepping up onto the slightly raised push button (DeckTowerPlatform → `pawnSteps`).
  */
 const LABEL_PLATE: WorldRect = { x: CARD.x, y: CARD.y + CARD_D + 0.5, w: CARD_W, d: 1.1, r: 0.25 };
 

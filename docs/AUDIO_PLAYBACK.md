@@ -700,7 +700,7 @@ Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found
 blue matches and review rungs, so it needed a mid-play mute like the rest) and
 Immersive World (`IWPlayPage`'s `rightContent`, added 2026-09-09 — a scene speaks its
 NPC lines aloud, so it needs the same mid-play mute) and Bucket Drop
-(`BucketDropPage`'s `rightContent`, added 2026-10-06 — it narrates the picked-up word,
+(`BucketDropStage`'s `headerRight`, added 2026-10-06 — it narrates the picked-up word,
 and like Bubble Match hides the chip on a reading run). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
 on 2026-08-28, so the chip means the same thing and sits in the same place

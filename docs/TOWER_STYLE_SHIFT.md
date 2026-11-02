@@ -69,14 +69,14 @@ Only the tower-hosted flp sets `towerStock`. The routed flp, the cdp hero card a
 Code: `src/theme/towerSlab.ts` → `TOWER_SLAB`, `CREAM_PLATE_TONES`;
 `src/games/shared/GameFrame.tsx` → `GameFrameTone`.
 
-No game uses the slab today: Match Speed, its only user, moved to § Ground paint. `tone="tower"`
-is kept for the next tower-toned game, and `TOWER_SLAB` still colours the plates.
+No game uses the slab today: Match Speed, its only user, went back to the bento panel
+(MATCH_SPEED_GAME.md). `tone="tower"` is kept for the next tower-toned game, and `TOWER_SLAB`
+still colours the plates.
 
 A game's panel in tower style is the tower's floating platform, flat from above:
 `GameFrame tone="tower"` draws a gold slab (`TOWER_SLAB`, the shades of
 `platformTone(COLORS.gld)`) with a light bevel and a wall as thick as the tower platform (`TOWER_SLAB_WALL_PX`). Its strips lose their tint
-and hairline, labels take the plate's print, the clock's track is a groove, and a break's
-Leave is a cream plate. Gold rather than the game's blue because the break floats in the
+and hairline, labels take the plate's print, and the clock's track is a groove. Gold rather than the game's blue because the break floats in the
 tower's `bluMk` sky, where a blue panel would vanish.
 
 - **Fixed gold.** The slab does not follow the reading or writing world's platform colour,
@@ -85,28 +85,8 @@ tower's `bluMk` sky, where a blue panel would vanish.
   `useDayWash` at the Stage, `useTowerWash` in each part, `TowerWashContext` between them). It
   must stay per colour: an SVG or CSS filter over the DOM is what made the flp lag at night.
   Ink, and the flp card a grow starts from, are not washed.
-- **Grow plate.** `FlpBreakGame.panelFill` is what the break card turns into as it grows, so
-  each game's plate lands on its own panel colour. Null means the game has no panel (§ Ground
-  paint) and the card fades where it is.
-
-## Ground paint
-
-Code: `src/theme/groundPaint.ts` → `GROUND_PAINT`, `GROUND_PRINT`, `GROUND_PAINT_FAINT`;
-`src/games/shared/GameFrame.tsx` → `GameFrameTone` `"ground"`; `src/games/match-speed/`.
-
-The lightest tower surface: nothing but the look of Tap to Start
-(`src/features/deckTower/TapToStartHint.tsx`), flat white on the ground in regular weight, with no plate,
-wall, shadow or panel. Washed like every other tower colour. `GameFrame tone="ground"` draws
-no box, and its strips and labels turn to paint. Buttons do not: a card and Leave are white
-with the app's `COLORS.border` outline, ink type. State replaces a
-button's white (MATCH_SPEED_GAME.md § Card visual states).
-
-The paint needs a mid-tone ground: the sky, or a hue's Mark tier. It vanishes on a Mid tier or
-on paper. `GROUND_PRINT` and `GROUND_PAINT` are not read by `TapToStartHint`, which paints SVG
-through the iso palette; retune the two together.
-
-Still bento inside a tower-toned game: `ChallengeRoundScoreboard`, `GamePausedOverlay`,
-`ProvisionalSortOffer` and `ProvisionalCardsNotice`, which every game shares.
+- **Still bento inside a tower-toned game:** `ChallengeRoundScoreboard`, `GamePausedOverlay`,
+  `ProvisionalSortOffer` and `ProvisionalCardsNotice`, which every game shares.
 
 ## Surfaces already in tower style
 
@@ -116,7 +96,6 @@ Still bento inside a tower-toned game: `ChallengeRoundScoreboard`, `GamePausedOv
 | flp card stock (tower-hosted) | `CardFaceSide` `towerStock` | § Card stock above |
 | flp page buttons: Write it, Compare, More Info (tower-hosted) | `src/theme/towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
 | flp game break's card (card stock, plates, glyph token) | `gameBreak/GameBreakCard.tsx`, `BreakCardLayer.tsx` | FLP_GAME_BREAKS.md § 5 |
-| Match Speed play surface: ground paint on the sky, end popup, plates | `GameFrame tone="ground"`, `src/games/match-speed/` | § Ground paint, MATCH_SPEED_GAME.md § Rendering a card |
 | flp study header + audio chip (tower-hosted) | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
 | scp's on-deck cards (rim + panel; keeps the hairline ring, adds a 2px wall and a flat cast shadow on the page ground) | `SortCardsPage.tsx` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5 |
 | Slab footer (`footerStyle: "slab"`: `/deck-tower`, the Dictionary tab, scp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
@@ -124,6 +103,5 @@ Still bento inside a tower-toned game: `ChallengeRoundScoreboard`, `GamePausedOv
 ## Still bento
 
 Everything else: the hp Menu bento, the Games hub, the rest of scp, the cdp, the eip/sheets, the
-routed flp and every game page except Match Speed's play surface (its page header and blue
-ground stay). When one of them moves, add a row to the table above and
+routed flp and every game page. When one of them moves, add a row to the table above and
 say which bento rule it drops.

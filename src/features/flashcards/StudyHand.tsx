@@ -149,7 +149,11 @@ import { SlotNumber, SLOT_LINE_HEIGHT } from "./SlotNumber";
 /** What sits under the full face's big numeral — see `StudyHandProps.figureMark`. */
 export type FigureMark = "label" | "rule";
 
-/** The three session modes, in the order they seed the back slots. */
+/**
+ * The three session modes, in the order they seed the back slots.
+ * @deprecated `challenge` and `review` are being removed, which leaves the hand one card
+ * (docs/DEFERRED_WORK.md § 31).
+ */
 export type StudyModeId = "challenge" | "review" | "mix";
 const FAN_ORDER: HandOrder = ["challenge", "review", "mix"];
 

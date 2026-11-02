@@ -5,6 +5,7 @@ import { shadowFootprint, type IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import {
     EMOTE_DRAW_SCALE,
+    EMOTE_MS,
     PAWN_FOOT_RADIUS,
     usePawnMotion,
     type PawnEntranceCue,
@@ -39,6 +40,7 @@ import { WEIGHT } from "../../../theme/scale";
  * falling away under it: it falls on its own (finishing a launch from the plate first) and
  * pops the bubble as it starts to (no lean, no leap). With `entrance` it first ARRIVES
  * (pawnEntrances.ts — e.g. dropping out of the sky), timed so it lands at a given moment.
+ * With `tappable`, a tap pops the bubble and it jumps on the spot (usePawnMotion's POKE).
  */
 interface IsoPawnProps {
     /** World x/y where the pawn starts (and is drawn before its motion transform). */
@@ -78,6 +80,12 @@ interface IsoPawnProps {
      * IsoFloorLabel, at its current height). Heights are read live (usePawnMotion `steps`).
      */
     steps?: PawnStep[];
+    /** Called when it gets onto, or leaves, a `summit` step (usePawnMotion's SUMMIT). */
+    onSummitChange?: (onSummit: boolean) => void;
+    /** Kept at where it stands on the summit (null when it is not there). */
+    summitSpot?: React.MutableRefObject<{ x: number; y: number } | null>;
+    /** Tapping it pops the "!" bubble and it jumps (usePawnMotion's POKE). */
+    tappable?: boolean;
 }
 
 /**
@@ -86,10 +94,9 @@ interface IsoPawnProps {
  * EMOTE_DRAW_SCALE round its tail tip; usePawnMotion places and scales it over the head.
  */
 const EMOTE_RADIUS = 0.62 / Math.SQRT2;
-/** The "!" bubble's one-shot: snap in (shock is sudden), hold, fade. */
-const EMOTE_MS = 2000;
 
 /**
+ * The "!" bubble's one-shot: snap in (shock is sudden), hold, fade, over EMOTE_MS.
  * Only the emote is a CSS animation — it is a fire-and-forget one-shot, remounted (by key)
  * per startle. The shadow's pivot (its own centre, for usePawnMotion's scale) lives here
  * too. The emote is drawn at EMOTE_DRAW_SCALE, so its fade's drift up is in those units:
@@ -115,13 +122,13 @@ const PAWN_CSS = `
 }
 `;
 
-const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, floorDrop, onDepthRankChange, decals, entrance, steps }) => {
+const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, startledBy, floorDrop, onDepthRankChange, decals, entrance, steps, onSummitChange, summitSpot, tappable = false }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     // `url(#…)` needs a plain id; React's useId wraps its ids in colons.
     const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
     const decalClipId = `iso-pawn-decal-clip-${uid}`;
-    const { refs, emote } = usePawnMotion({
+    const { refs, emote, poke } = usePawnMotion({
         proj,
         at,
         startled,
@@ -131,6 +138,8 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
         entrance,
         floorDrop,
         steps,
+        onSummitChange,
+        summitSpot,
         surfaceZ: surface.z,
     });
     // The id of the last emote whose one-shot has finished. A finished bubble must be
@@ -142,6 +151,7 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
     const showEmote = emote !== null && emote.id !== finishedEmoteId;
     const r = PAWN_FOOT_RADIUS;
     const footprint = { x: at.x - r, y: at.y - r, w: 2 * r, d: 2 * r, r };
+    const hasSummit = !!steps?.some((st) => st.summit);
 
     // The bubble, round its tail tip at the origin (usePawnMotion's `emoteAnchor` puts the
     // tip over the head).
@@ -160,7 +170,22 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
             <g className="iso-pawn__presence" ref={refs.presence}>
                 <g className="iso-pawn__travel" ref={refs.travel}>
                     <g className="iso-pawn__shadow-hop" ref={refs.shadow}>
-                        <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
+                        <g className="iso-pawn__floor-shadow" ref={refs.floorShadow}>
+                            <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
+                        </g>
+                        {/* The same shadow as a glaze, so the summit's print shows through it;
+                            usePawnMotion swaps the two. */}
+                        {hasSummit && (
+                            <g className="iso-pawn__summit-shadow" ref={refs.summitShadow} style={{ visibility: "hidden" }}>
+                                <IsoShadow
+                                    footprint={footprint}
+                                    casterZ={surface.z}
+                                    receiver={surface}
+                                    glaze={palette.ink}
+                                    className="iso-pawn__shadow"
+                                />
+                            </g>
+                        )}
                     </g>
                     {/* The shaded decals, clipped to the shadow's outline (same path IsoShadow
                         draws; usePawnMotion scales it in step with shadow-hop). The inner group
@@ -182,10 +207,12 @@ const IsoPawn: React.FC<IsoPawnProps> = ({ at, surface, startled = false, roam, 
                 </g>
                 {/* The 3D figure, in absolute screen space: usePawnMotion writes the body's `d`
                     and the head's cx/cy/r every frame (iso/pawnFigure.ts). The head is drawn
-                    last: it is the nearest part to any camera looking down. */}
-                <g className="iso-pawn__figure">
+                    last: it is the nearest part to any camera looking down. The tap target
+                    goes over both; usePawnMotion keeps it on the figure. */}
+                <g className="iso-pawn__figure" onClick={tappable ? poke : undefined} style={tappable ? { cursor: "pointer" } : undefined}>
                     <path className="iso-pawn__body" ref={refs.body} fill={palette.ink} />
                     <circle className="iso-pawn__head" ref={refs.head} fill={palette.ink} />
+                    {tappable && <circle className="iso-pawn__hit" ref={refs.hit} fill="transparent" />}
                 </g>
                 {/* A billboard over the head, placed and scaled by usePawnMotion. Keyed per
                     startle so the CSS pop replays. */}

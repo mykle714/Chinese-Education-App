@@ -1,6 +1,7 @@
 import { COLORS, type RampHue } from "../../theme/colors";
 import type { MarkType } from "../../types";
 import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
+import { formatTimeMs } from "../../utils/timeUtils";
 
 /**
  * Match Speed — tunable constants.
@@ -54,18 +55,42 @@ export const ROWS = 5;
  * docs/MATCH_SPEED_GAME.md § Board model.
  */
 export const CARD_ASPECT = 2.4;
-/** Vertical gap between rows, in px (measured layout, so this is a number). */
-export const ROW_GAP_PX = 8;
-/** Horizontal gap between the two columns, in px. Equal to ROW_GAP_PX because the
- *  design's `.msg2` grid uses one gap on both axes — an uneven pair reads as a
- *  measurement mistake at this size. */
+/** The same lock, in an flp break's full-screen board (MatchSpeedStage → `cardAspect`). */
+export const BREAK_CARD_ASPECT = 2;
+/**
+ * How much of the fitted size a break's cards take. Both sides scale, so the ratio holds; a
+ * phone's board is width-limited, so this is what shortens them (CARD_ASPECT stays at 2:1).
+ */
+export const BREAK_CARD_SCALE = 0.92;
+/**
+ * A card is a 2-state key, on EipAddKey's Add ⇄ Added! numbers (MatchSpeedCard → `cardKeySx`):
+ * raised on a 5px lip, or picked and left down on a 2px lip. Held, either one bottoms out
+ * with no lip. Its foot lands 4px below the cell in all three, so only the face moves, and
+ * that foot stays inside ROW_GAP_PX and the board's padding.
+ */
+export const CARD_KEY = {
+    raised: { lip: 5, y: -1 },
+    picked: { lip: 2, y: 2 },
+    sinkY: 4,
+} as const;
+/** Horizontal gap between the two columns, in px (measured layout, so this is a number). */
 export const COL_GAP_PX = 8;
+/**
+ * Gap between the row CELLS, in px, set so the gap the eye sees between rows equals
+ * COL_GAP_PX: the design's `.msg2` grid uses one gap on both axes, and an uneven pair reads as
+ * a measurement mistake at this size. The lip adds the difference: a raised key's foot hangs
+ * 4px below its cell and the next face rises 1px above its own, `raised.lip` in all.
+ */
+export const ROW_GAP_PX = COL_GAP_PX + CARD_KEY.raised.lip;
 
 // ---- Run timing (ms) ------------------------------------------------------
-/** Thirty seconds per run. Short on purpose: the drill is a throughput sprint,
- *  and the medal thresholds below are stated against THIS number — changing one
- *  without the other silently re-tunes the whole scoring curve. */
-export const RUN_DURATION_MS = 30_000;
+/** Pairs in one run: the run ends when the player has matched this many, and the
+ *  clock counts UP to that moment. The whole run deals exactly this many pairs, so the
+ *  board stops refilling once they are all dealt and simply drains. The medal
+ *  thresholds below are stated against THIS number — changing one without the other
+ *  silently re-tunes the whole scoring curve. So is the challenge grace period
+ *  (`CHALLENGE_GAMES`, server/contracts/wire.ts). */
+export const TARGET_PAIRS = 30;
 /** Board refill cadence. ONE global interval, not a per-slot timer: a pair matched
  *  right after a tick leaves a visible hole for nearly the full interval. That is
  *  intentional — clearing fast means playing a partly-empty board, and it is the
@@ -200,10 +225,13 @@ function defineMode(
  * Mix table (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target
  * and Review still leans on Comfortable rather than flattening to 50/50.
  *
- * Everything else about a run — the 30s clock (RUN_DURATION_MS), the 5×2 board, the 3s refill
+ * Everything else about a run — the 30-pair target (TARGET_PAIRS), the 5×2 board, the 3s refill
  * tick, the medal thresholds — is identical across modes. Difficulty comes only
  * from which cards you are asked to recognize, which is exactly what "Review"
  * and "Challenge" mean on /decks.
+ *
+ * @deprecated The `review` and `challenge` entries are being removed; `mixed` stays
+ * (docs/DEFERRED_WORK.md § 31).
  */
 export const MODE_CONFIGS: ModeConfig[] = [
     defineMode("mixed", "Study Mix", 1, "Learning", CATEGORY_WEIGHTS, CATEGORY_FALLBACK_ORDER),
@@ -229,26 +257,58 @@ export function modeConfigFor(raw: unknown): ModeConfig {
     return MODE_CONFIGS.find((cfg) => cfg.mode === raw) ?? DEFAULT_MODE_CONFIG;
 }
 
+/**
+ * The same mode with its bucket restriction lifted to every bucket's fallback. The WEIGHTS
+ * stay, so a card from the mode's own buckets is still preferred whenever one exists.
+ * A run with no clock can only finish if the board keeps being fed, so this is what a
+ * run falls back to when its own buckets are bare (`relaxed` in MatchSpeedStage).
+ */
+export function widenedMode(mode: ModeConfig): ModeConfig {
+    return { ...mode, fallbackOrder: CATEGORY_FALLBACK_ORDER };
+}
+
 // ---- Scoring --------------------------------------------------------------
 /**
- * Medal thresholds by pairs matched in 30s, best-first. Halved alongside the run
- * clock (they were 18/12/6 over 60s), so the required PACE is unchanged.
+ * Medal thresholds by time to finish all TARGET_PAIRS, best-first. These keep the pace
+ * of the old 30-second table (gold 9 pairs, silver 6, bronze 3), scaled up to 30 pairs.
  *
- * Unlike Word Search's `medalForTime` — whose bronze row is `maxSeconds: Infinity`
- * and is therefore ALWAYS awarded — this table has a genuine no-medal tier, so
- * `medalForScore` returns null below the bronze line. Same ordered-table shape,
- * different floor.
+ * Unlike Word Search's table — whose bronze row is `maxSeconds: Infinity` and is
+ * therefore ALWAYS awarded — this one has a genuine no-medal tier, so `medalForTime`
+ * returns null past the bronze line. Same ordered-table shape, different floor.
  */
-export const MEDAL_THRESHOLDS: { medal: Medal; minPairs: number; emoji: string }[] = [
-    { medal: "gold", minPairs: 9, emoji: "🥇" }, // ~3.3s/pair
-    { medal: "silver", minPairs: 6, emoji: "🥈" }, // ~5.0s/pair
-    { medal: "bronze", minPairs: 3, emoji: "🥉" }, // ~10s/pair
+export const MEDAL_THRESHOLDS: { medal: Medal; maxMs: number; emoji: string }[] = [
+    { medal: "gold", maxMs: 100_000, emoji: "🥇" }, // ~3.3s/pair
+    { medal: "silver", maxMs: 150_000, emoji: "🥈" }, // 5s/pair
+    { medal: "bronze", maxMs: 300_000, emoji: "🥉" }, // 10s/pair
 ];
 
-/** Resolve a final score (pairs matched) to its medal tier, or null for 0–2 pairs. */
-export function medalForScore(score: number): { medal: Medal; emoji: string } | null {
-    const tier = MEDAL_THRESHOLDS.find((t) => score >= t.minPairs);
+/** Resolve a finished run's time to its medal tier, or null past the bronze line.
+ *  Only a run that reached TARGET_PAIRS has a time to judge; see MatchSpeedStage. */
+export function medalForTime(elapsedMs: number): { medal: Medal; emoji: string } | null {
+    const tier = MEDAL_THRESHOLDS.find((t) => elapsedMs <= t.maxMs);
     return tier ? { medal: tier.medal, emoji: tier.emoji } : null;
+}
+
+/**
+ * The end-of-run copy, shared by the page's end popup and an flp break's results card
+ * (docs/FLP_GAME_BREAKS.md § 5b), so the two can't drift.
+ */
+export function runResultTitle(score: number, finishMs: number): string {
+    if (score < TARGET_PAIRS) return "Run ended";
+    const tier = medalForTime(finishMs);
+    return tier ? `${tier.emoji} ${tier.medal[0].toUpperCase()}${tier.medal.slice(1)}!` : "Finished!";
+}
+
+export function runResultScore(score: number, finishMs: number): string {
+    return score >= TARGET_PAIRS
+        ? `${TARGET_PAIRS} pairs in ${formatTimeMs(finishMs)}`
+        : `${score} of ${TARGET_PAIRS} pairs matched`;
+}
+
+/** Information only: accuracy never gates a medal. */
+export function runResultAccuracy(score: number, attempts: number): string {
+    const percent = attempts > 0 ? Math.round((score / attempts) * 100) : 0;
+    return `Accuracy ${score}/${attempts} (${percent}%)`;
 }
 
 // ---- Gloss fitting --------------------------------------------------------
@@ -276,41 +336,30 @@ export const DEF_MAX_LINES = 3;
 //   grn  = matched, or the cleanup partner hint
 //   red  = a wrong attempt
 //
-// Ground paint (docs/TOWER_STYLE_SHIFT.md § "Ground paint"): everything else on the board is
-// paint, but a card is a white button with the app's outline. A state replaces the white, so
-// any colour on the board means something just happened. All Mid tiers, for ink on top.
-/** A resting card. */
-export const CARD_PANEL = COLORS.white;
-/** The one visible space between tiles on an even-gaps board (below), px. */
-const EVEN_GAP_PX = 8;
-/** The least visible margin round the grid, px (`GameTimer`'s side inset). A locked card
- *  rarely fills the box exactly, so the tighter axis sits at this and the other at more. */
-const EVEN_GAP_EDGE_PX = 15;
-/** `GameTimer`'s bottom padding, which already sits above the board. */
-const TIMER_STRIP_PAD_PX = 12;
-/**
- * An flp break's board metrics: every space the eye sees between tiles, across rows and
- * columns alike, is EVEN_GAP_PX, inside a wider EVEN_GAP_EDGE_PX margin round the grid.
- * See docs/MATCH_SPEED_GAME.md § Card sizing. Read by: MatchSpeedBoard → `evenGaps`.
- */
-export const EVEN_GAP_BOARD = {
-    cardAspect: 2,
-    colGap: EVEN_GAP_PX,
-    rowGap: EVEN_GAP_PX,
-    paddingTop: EVEN_GAP_EDGE_PX - TIMER_STRIP_PAD_PX,
-    paddingBottom: EVEN_GAP_EDGE_PX,
-    paddingX: EVEN_GAP_EDGE_PX,
-} as const;
-/**
- * Picked card, one colour per column, so with a word picked the eye can tell at a glance which
- * column it needs next. Yellow and purple because blue is the sky, and red and green are the
- * answer colours below.
- */
-export const SELECTED_CARD_PANEL = { foreign: COLORS.yelM, english: COLORS.purM } as const;
+// Every fill below is a PASTEL carrying ink text, per the redesign's fill rule
+// (docs/SHELF_REDESIGN.md § A1) — never saturated ink behind white letters.
+//
+// v2 (artboard 14, `#msp`): every resting card is WHITE (`.msc{background:var(--white)}`)
+// — the foreign column no longer sits on the paper ground, so the columns are told apart
+// by type alone. State fills are the SURFACE tier (caption "Surface: picked cards"): a
+// card is a large fill, not a Mid-tier chip.
+export const FOREIGN_CARD_BG = COLORS.white;
+export const ENGLISH_CARD_BG = COLORS.white;
+/** The lip under every card: the Dictionary keycap's white-on-grey (DictionaryPageParts → `Keycap`). */
+export const CARD_LIP = COLORS.grey;
+/** The app's outline, an inset ring so a key's box never changes and no tap can re-wrap a
+ *  three-line gloss. A state's fill sits under the same ring. */
+export const CARD_OUTLINE = COLORS.border;
+/** Selected card (`.msc.pick{background:var(--blu);border:2px solid var(--ink)}`): the
+ *  blue SURFACE fill, with the outline swapped for a 2px INK ring. */
+export const SELECTED_CARD_BG = COLORS.blu;
+export const SELECTED_CARD_RING = COLORS.onSurface;
 /** Correct-match pop AND the cleanup-mode partner hint. */
-export const CORRECT_CARD_PANEL = COLORS.grnM;
-/** Wrong-attempt flash, with a sideways shake. */
-export const WRONG_CARD_PANEL = COLORS.redM;
+export const CORRECT_CARD_BG = COLORS.grn;
+/** Wrong-attempt flash. Ink-on-pastel like the rest, so the flash reads as the same
+ *  system as the other two rather than as an error dialog dropped onto the board. */
+export const WRONG_CARD_BG = COLORS.red;
+export const WRONG_CARD_INK = COLORS.dangerInk;
 
 /**
  * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
@@ -321,7 +370,11 @@ export const WRONG_CARD_PANEL = COLORS.redM;
  * `GameSurfaceProvider`. Tapping a blue row must open a blue screen.
  *
  * Blue since v2 (artboard 14, `#msp` on `--bluM`); it was green until the hub hues were
- * brought in line with the artboards. The route's ground is this hue's Mark tier, not its
- * Mid (MatchSpeedPage), because the board is white paint.
+ * brought in line with the artboards. The state fills above were checked against the
+ * move: the picked card's `--blu` Surface now shares the ground's hue, which is the
+ * design's own pairing (`#msp .msc.pick{background:var(--blu)}` on a `--bluM` ground),
+ * and it stays distinct because the cards sit on the white `.play` panel, not on the
+ * ground, and the pick carries the ink edge. The green "matched" fill no longer shares
+ * the game's hue at all, which only helps it read as feedback.
  */
 export const GAME_HUE: RampHue = "blu";

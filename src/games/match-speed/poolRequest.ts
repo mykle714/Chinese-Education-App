@@ -20,6 +20,8 @@ export function matchSpeedPoolRequest(args: {
     excludeContested?: boolean;
     /** An flp game break's working loop; opening board only (docs/FLP_GAME_BREAKS.md § 4). */
     seedIds?: number[];
+    /** This run is an flp game break, on every request (docs/FOCUS_MODE.md § 4a). */
+    flpBreak?: boolean;
 }): GamePoolRequest {
     // NOTE: no `need`, even on a top-up — so the server treats every top-up as a full
     // board and re-runs the baseline check (`ensureBaseline`) each tick. Preserved as-is
@@ -33,5 +35,6 @@ export function matchSpeedPoolRequest(args: {
         challengeParams: args.challengeParams,
         excludeContested: args.excludeContested,
         seedIds: args.seedIds,
+        flpBreak: args.flpBreak,
     };
 }

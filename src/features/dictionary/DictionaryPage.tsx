@@ -487,7 +487,6 @@ function DictionaryPage() {
             showSynonymsRelated
             showWordTools
             showLearning
-            showAllDefinitions
             // A lookup is the whole point of this page, so the result opens tall — and a
             // downward drag/fling clips back to this 80% rather than to the usual 60%.
             defaultHeightRatio={0.8}

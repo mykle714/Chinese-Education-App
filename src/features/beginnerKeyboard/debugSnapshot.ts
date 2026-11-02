@@ -41,7 +41,8 @@ import { appearsInWord, expandGlyph, lookupBuffer, makeHintFinder } from '../../
 import type { MatchExplanation } from '../../components/handwriting/glyphMatcher';
 import type { GlyphTemplates } from '../../components/handwriting/glyphTemplates';
 import type { GlyphLookupIndex, GlyphWordPool } from '../../components/handwriting/glyphLookup';
-import { directCommitCandidate, rankGlyphs, type CandidateMode } from './compositionRules';
+import { directCommitCandidate, rankGlyphs, widenHintsIfNone, type CandidateMode } from './compositionRules';
+import { CANDIDATE_DISPLAY_LIMIT } from './useComposition';
 
 /**
  * How deep the dump's candidate lists go.
@@ -182,7 +183,12 @@ export function buildDebugSnapshot({
   // dump shows the order the learner saw rather than the raw ink order.
   const hintFor = index && buffer.length > 0 ? makeHintFinder(buffer, index) : null;
   const allRanked = templates && ink.length > 0 ? rankGlyphs(matchGlyphs(ink, templates), buffer, hintFor) : [];
-  const ranked = allRanked.slice(0, DEBUG_CANDIDATE_LIMIT);
+  // § 6z-4's tier fallback judges the DISPLAYED row, so apply it at the same cut
+  // the keyboard does; the dump's extra rows past that cut stay COMMON-only.
+  const shown = allRanked.slice(0, CANDIDATE_DISPLAY_LIMIT);
+  const widened =
+    index && buffer.length > 0 ? widenHintsIfNone(shown, (tier) => makeHintFinder(buffer, index, tier)) : shown;
+  const ranked = [...widened, ...allRanked.slice(CANDIDATE_DISPLAY_LIMIT)].slice(0, DEBUG_CANDIDATE_LIMIT);
   const direct = index ? directCommitCandidate(allRanked, buffer, (char) => appearsInWord(char, index)) : null;
   // The FULL result list, not the display cut — the target's rank is the point,
   // and it is routinely past the row's 12 (that is the bug being chased).

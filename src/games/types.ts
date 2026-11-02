@@ -149,7 +149,7 @@ export interface GameProgress {
 /**
  * Who is hosting a game's Stage (docs/FLP_GAME_BREAKS.md § 6):
  *   page      — the game's own route, inside a `GameLeafPage` (standalone play);
- *   flpBreak  — an flp game break, inside the flp's slide-up game area.
+ *   flpBreak  — an flp game break, inside the flp's full-screen game area.
  */
 export type GameStageHost = "page" | "flpBreak";
 

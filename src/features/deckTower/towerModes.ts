@@ -8,8 +8,9 @@ import { RAMP } from "../../theme/colors";
  * Mix, all four utcm bands — the flp's own Study Mix (server/contracts/studyMode.ts),
  * counting off-cooldown cards only. A Mix / Review floor switch (IsoModeSwitch) used to
  * flip each world between Mix and Review (Comfortable + Mastered); it was dropped
- * 2026-10-22. The record is kept keyed by mode so a mode toggle can come back: `label` and
- * `band` are what such a switch would print and paint.
+ * 2026-10-22, and Review itself is now deprecated (docs/DEFERRED_WORK.md § 31), so that
+ * switch will not return. The record is still keyed by mode: `label` and `band` are what a
+ * switch would print and paint.
  *
  * Depended on by: DeckTowerPage.tsx (`learningCount`), useFocusLever.tsx (`readyTotal`).
  */

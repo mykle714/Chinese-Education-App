@@ -15,8 +15,8 @@ import type { PlateTones } from "./towerPlate";
  * Fixed gold in every world. The reading and writing worlds paint their platforms other
  * colours, but a game on its own route has no world to read.
  *
- * Depended on by: games/shared/GameFrame.tsx (`tone="tower"`), games/match-speed/
- * MatchSpeedPlateButton.tsx, GameBreakCard.tsx (`CREAM_PLATE_TONES`).
+ * Depended on by: games/shared/GameFrame.tsx (`tone="tower"`), GameBreakCard.tsx
+ * (`CREAM_PLATE_TONES`).
  * Docs: docs/TOWER_STYLE_SHIFT.md § "The play slab".
  */
 
@@ -48,8 +48,3 @@ export const TOWER_SLAB_WALL_PX = 26;
 
 /** A plate cut from card stock: reads as part of a card or a card-stock popup. */
 export const CREAM_PLATE_TONES: PlateTones = { top: COLORS.cardFace, left: COLORS.cardWall, right: COLORS.cardWall };
-
-/** A plate's tones under a wash (src/timeOfDay/wash.ts). */
-export function washPlateTones(tones: PlateTones, wash: (hex: string) => string): PlateTones {
-    return { top: wash(tones.top), left: wash(tones.left), right: wash(tones.right) };
-}

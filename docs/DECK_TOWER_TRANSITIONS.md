@@ -188,7 +188,7 @@ under a pawn still on its way up. At today's pawn gravity the 300 ms settle is t
   platform's floor decals throughout and swings with the trap door.
 - **The pawn's shaded copy** (`decals`) shows the same face as the plate.
 - **A pawn on the plate is thrown by it.** The plate is also the pawn's step (`DeckTowerPlatform` →
-  `plateStep`, `IsoPawn` `steps`) at its live `raised · RAISED_HEIGHT`. The pawn's feet run
+  `pawnSteps`, `IsoPawn` `steps`) at its live `raised · RAISED_HEIGHT`. The pawn's feet run
   under gravity (`usePawnMotion.ts` → feet physics, docs/ISO_ART_FRAMEWORK.md § "IsoPawn"):
   pressing the plate drops it out from under the pawn, which FALLS onto it a moment later;
   releasing it LAUNCHES the pawn into the air off the plate's spring, landing in a couple of

@@ -24,6 +24,8 @@ export function useProvisionalSortOffer(
     onRestore: () => void;
     /** "Not now" — closes the offer for the rest of this round. */
     dismiss: () => void;
+    /** True once the offer is closed for this round: a host waiting on it can move on. */
+    dismissed: boolean;
 } {
     const [open, setOpen] = useState(false);
     const [minimized, setMinimized] = useState(false);
@@ -55,5 +57,6 @@ export function useProvisionalSortOffer(
             setOpen(false);
             setDismissed(true);
         },
+        dismissed,
     };
 }

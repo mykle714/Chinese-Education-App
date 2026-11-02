@@ -205,6 +205,7 @@ export const GAME_FLAGS: Record<GameFlagId, boolean> = {
   'memory-map': true,
   'writing-grid': true,
   'bucket-drop': true,
+  superposition: true,
 };
 
 /**

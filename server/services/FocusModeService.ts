@@ -21,10 +21,12 @@ import { ValidationError } from '../types/dal.js';
  *                   signals that with FOCUS_ENDED_HEADER.
  *   active: true  — serve only `ids`: today's snapshot minus the cards already marked
  *                   correct today, in snapshot order. May be empty (the day is done).
+ *                   `setIds` is the whole snapshot, for a flp break that must stay
+ *                   outside it (docs/FOCUS_MODE.md § 4a).
  */
 export type FocusResolution =
   | { active: false; ended: boolean }
-  | { active: true; ids: number[] };
+  | { active: true; ids: number[]; setIds: number[] };
 
 /**
  * Pick a focused world's daily set (docs/FOCUS_MODE.md § 3): the flp's Study Mix shape
@@ -134,6 +136,7 @@ export class FocusModeService {
     return {
       active: true,
       ids: snapshot.vetIds.filter((id) => live.has(id) && !doneToday.has(id)),
+      setIds: snapshot.vetIds,
     };
   }
 
@@ -145,9 +148,13 @@ export class FocusModeService {
     for (const world of MASTERY_WORLDS) {
       const resolution = await this.resolveWorld(userId, language, world, state);
       if (resolution.active) {
-        worlds[world] = { on: true, remaining: resolution.ids.length };
+        // A card since removed from the snapshot makes this an undercount of at most a
+        // card or two, and it only decides whether a break is offered.
+        const worldCards = await this.focusModeDAL.countWorldCards(userId, language, world);
+        const outside = Math.max(0, worldCards - resolution.setIds.length);
+        worlds[world] = { on: true, remaining: resolution.ids.length, breakCards: outside + resolution.ids.length };
       } else {
-        worlds[world] = { on: false, remaining: null };
+        worlds[world] = { on: false, remaining: null, breakCards: null };
         if ('ended' in resolution && resolution.ended) endedNotices.add(world);
       }
     }

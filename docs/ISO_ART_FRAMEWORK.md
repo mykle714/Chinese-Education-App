@@ -560,7 +560,7 @@ of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps? }`. A featureless ink
+`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, tappable? }`. A featureless ink
 worker: a pill body and a ball head — a 3D capsule and sphere projected through the scene's
 camera (§ "View") — standing at a world point. Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
@@ -630,7 +630,7 @@ walk → land:
   The pawn therefore stops ~0.3 units further from the front-right edges than the back-left
   ones. Both regions are convex, so a straight walk between legal spots stays legal.
 
-- **Pause** for 0.7–2.6 s. The first pause after mount is a longer opening hold of 3.5–6 s
+- **Pause** for 0.9–3.3 s. The first pause after mount is a longer opening hold of 3.5–6 s
   (`OPENING_PAUSE_MIN_MS` / `OPENING_PAUSE_MAX_MS`), so the pawn stands still while the
   page settles in rather than walking off the instant it appears.
 - **Walk** to a random spot in `area` 1.2–5.5 units away whose straight path keeps the
@@ -727,6 +727,30 @@ the shadow does not grow (`air` is clamped at 0) — the page fades it out inste
    replay.
 4. **Stare, then recover.** It holds the look-up for `LOOK_HOLD_MS` (2.8 s), straightens
    over `RECOVER_MS`, and goes back to wandering.
+
+**Poke.** With `tappable`, a tap on the figure calls `usePawnMotion` → `poke`: the "!" bubble
+pops and the feet are thrown straight up (`POKE_JUMP_HEIGHT`, 2.6 units) through the feet
+physics, so the jump lands in the plate launch's shrinking bounces. Taps count in the air
+too: each re-throws the feet from where they are, so quick taps climb with no ceiling, and
+gravity brings the pawn back down once they stop. A walk stops where it is, and the pawn
+stands until the bubble has gone (`EMOTE_MS`), then wanders on. A startle keeps its
+timeline, with the jump on top of it. A tap is ignored during an entrance or an edge hop
+(no feet physics runs there), while the floor is dropping, and under
+`prefers-reduced-motion`. The tap target is an invisible circle
+(`iso-pawn__hit`, `PAWN_HIT_RADIUS`) that `applyFrame` keeps centred on the figure, because
+the body alone is only a few px wide. Code: `iso/IsoPawn.tsx`, `iso/usePawnMotion.ts`.
+
+**Summit.** A step with `summit: { closed, held }` is a surface no walk reaches (the Deck
+Tower's tower top). A poke while the feet are above it, and not in a startle, throws the pawn
+onto a random spot there, `SUMMIT_LANDING_INSET` in from the edge (`startFlight`, the `flight` mode: the feet physics carries the
+height, the ground position glides over the time they take to land). It wanders that step
+(`walkRoam`), ranks in front of every obstacle, ignores startles, and its shadow swaps to a
+see-through glaze of ink (`floorShadow` / `summitShadow`, IsoShadow `glaze`,
+`SHADOW_GLAZE_OPACITY`), so the top card's print shows through it. The height is live, as on any step: a drop
+leaves it to fall, and a rise of `SUMMIT_JOLT_RISE` in one frame throws it up. When `closed`
+turns true it flies back to `at`; while `held` it finishes its step and stands still. Where it
+stands is published (`summitSpot`, `onSummitChange`) so a caller can carry it away:
+`IsoPawnStill` draws the same figure, feet at a world point, in another scene. Code: `iso/usePawnMotion.ts`, `iso/IsoPawn.tsx`.
 
 **Depth sorting.** A wandering pawn can be in front of or behind the things it walks
 around. An object is nearer the viewer than a box when it is past one of the box's faces

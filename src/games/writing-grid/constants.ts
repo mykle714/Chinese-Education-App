@@ -38,11 +38,3 @@ export const SHADOW_PREVIEW_MAX_LEVEL = 3;
 export const CANVAS_SIZE = WRITING_FOCUS_SIZE;
 
 export const MEDAL_LABEL = { gold: "🥇 Gold", silver: "🥈 Silver", bronze: "🥉 Bronze" } as const;
-
-/** localStorage key for Writing Grid's own device-local preferences (useLocalGameSettings). */
-export const SETTINGS_STORAGE_KEY = "writingGrid.settings";
-/**
- * `showTimer` — whether the stopwatch's numerals are visible (the eye in `GameTimer`).
- * The clock keeps running either way, and the end popup always shows the final time.
- */
-export const DEFAULT_SETTINGS = { showTimer: true };

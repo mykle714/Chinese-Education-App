@@ -79,9 +79,6 @@ interface InfoCardSectionProps {
     // Content pinned to the bottom of the definition tab (InfoCardTabContent
     // `definitionFooter`). Today: the Dictionary page eip's word-tools rail, via EipSheet.
     definitionFooter?: React.ReactNode;
-    // The Dictionary eip's all-definitions mode (EipSheet `showAllDefinitions`): the header
-    // gloss is the whole joined list (EipEntryHeader).
-    showAllDefinitions?: boolean;
     // SUPPRESSES the missing-pinyin warning (see `useMissingPinyinWarning` below). The eip
     // always shows pinyin, so a Chinese entry with none to show is presumed to be a bug in
     // the data or in what the host handed in. A host whose entries GENUINELY have no
@@ -171,7 +168,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     entryTabIndex,
     showSynonymsRelated,
     definitionFooter,
-    showAllDefinitions,
     missingPinyinReason,
 }, ref) => {
     useMissingPinyinWarning(compareTab ? null : currentEntry, selectedSenseIndex, !!missingPinyinReason);
@@ -290,7 +286,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                                 entry={currentEntry}
                                 showPinyinColor={showPinyinColor}
                                 selectedSenseIndex={selectedSenseIndex}
-                                showAllDefinitions={showAllDefinitions}
                                 glossToScreenEdge
                                 // In the upper panel the band's own rhythm spaces it: no rule
                                 // under it (the shelf's edge is the divide), no side padding,

@@ -442,7 +442,7 @@ For layering rules (where a file goes, and which layer may do what):
 ## Code Quality Standards
 When reviewing or writing code, actively look for and address:
 - **Duplicate code** — if the same logic appears 2+ times, extract it into a shared function, hook, or utility
-- **Large files** — files over ~300 lines should be evaluated for splitting into focused modules (controllers, hooks, utils, etc.)
+- **Large files** — files over ~600 lines should be evaluated for splitting into focused modules (controllers, hooks, utils, etc.)
 - **Non-robust patterns** — missing null/undefined guards, unchecked array access, `JSON.parse` without try-catch, fire-and-forget promises without `.catch()`, unvalidated external inputs
 - **Potential failure paths** — database clients not released in all branches, missing error handling in async code, `Promise.all` failing mid-batch without individual error capture
 - **Complex code without comments** — algorithms, non-obvious state management (stale closure workarounds, ref sync patterns), and transaction flows should have inline comments explaining *why*, not just *what*

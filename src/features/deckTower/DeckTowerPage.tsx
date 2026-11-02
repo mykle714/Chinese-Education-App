@@ -463,6 +463,8 @@ const DeckTowerPage: React.FC = () => {
     // This world's tower resize. While a resize plays, the scene is fitted to the TALLER of
     // its two heights: a shrink starts from it, and a grow needs its sky to fall through.
     const resize = resizes[worldId];
+    // Where the pawn stands on the tower's top: the count card carries it off from there.
+    const summitSpot = useRef<{ x: number; y: number } | null>(null);
     // Cards standing on the tower. A sky drop counts from its IMPACT (not the resize's end,
     // IMPACT_MS later), so a total crossing STARTLE_AT_CARDS startles the pawn as it lands.
     const cardsOnTower = !stackDrawn ? 0 : resize.dropLanded && resize.toCards !== null ? resize.toCards : Math.round(towerCount * stackProgress);
@@ -1053,7 +1055,6 @@ const DeckTowerPage: React.FC = () => {
                             fadeOpacity={studying(worldId) ? study.platformOpacity : 1}
                             // The deck itself never fades (§ "The platform fades").
                             keepDeck={studying(worldId)}
-                            deckOpacity={studying(worldId) ? study.deckOpacity : 1}
                             bobPaused={study.active}
                             // Not while the count is loading: it reads as 0 then (towerCount's `?? 0`).
                             showImprint={towerCounts[worldId] !== undefined}
@@ -1061,6 +1062,9 @@ const DeckTowerPage: React.FC = () => {
                             dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
                             pawns={swap.pawns}
                             cardsOnTower={cardsOnTower}
+                            summitCards={resize.toCards !== null ? Math.min(cardsOnTower, resize.toCards) : cardsOnTower}
+                            summitHeld={study.active}
+                            summitSpot={summitSpot}
                             swapOutgoing={swap.outgoing !== null}
                             plate={{
                                 face: faceFor(swap.titleDeck),
@@ -1126,6 +1130,7 @@ const DeckTowerPage: React.FC = () => {
                     back on before the climb) — TowerCoverCard. */}
                 {study.cover && (
                     <TowerCoverCard
+                        pawnAt={summitSpot.current}
                         cover={study.cover}
                         // The studied tower's deck: its top card's head band rides along. Only
                         // Learning can be studied (onStackTap), so that is the fallback.

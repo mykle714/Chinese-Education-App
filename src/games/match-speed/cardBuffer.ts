@@ -160,7 +160,9 @@ export function takePairs(
  * An OFF-MODE stamped card IS dropped. The server tops a short bucket up from
  * its own fallback order, so a Review request can come back holding an Unfamiliar
  * card; a mode is a hard bucket restriction (the /decks rule), so shelving a
- * card no roll can ever draw would only bloat the `exclude` list. In Mix nothing
+ * card no draw can ever reach would only bloat the `exclude` list. "Reachable" is
+ * `fallbackOrder`, not `categories`: a relaxed run (`widenedMode`) keeps its roll but
+ * can draw from every bucket, so it must also shelve from every bucket. In Mix nothing
  * is off-mode, so this branch is unreachable there.
  *
  * MUTATES and returns `buffer`.
@@ -180,7 +182,7 @@ export function fillBuffer(
         // payloads predating the stamp.
         const stamped = entry.gameCategory;
         const isKnown = !!stamped && ALL_CATEGORIES.includes(stamped);
-        if (isKnown && !mode.categories.includes(stamped as GameCategory)) continue;
+        if (isKnown && !mode.fallbackOrder.includes(stamped as GameCategory)) continue;
         const category: GameCategory = isKnown ? (stamped as GameCategory) : mode.fallbackOrder[0];
         buffered.add(entry.id);
         buffer[category].push({

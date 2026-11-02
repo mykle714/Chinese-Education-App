@@ -40,6 +40,7 @@ import {
   bufferAfterSelect,
   directCommitCandidate,
   rankGlyphs,
+  widenHintsIfNone,
   toGlyphCandidates,
   toResultCandidates,
   type Candidate,
@@ -151,11 +152,12 @@ export function useComposition({ templates, index, words, draft }: CompositionDe
   /** The whole pool, re-ranked by buffer fit and hinted (§ 6z-6), look-alikes merged (§ 6z-7). */
   const rankedGlyphs = useMemo(() => rankGlyphs(glyphMatches, buffer, hintFor), [glyphMatches, buffer, hintFor]);
 
-  /** The glyph row: the ranked pool cut to the display limit. */
-  const glyphCandidates = useMemo<Candidate[]>(
-    () => toGlyphCandidates(rankedGlyphs.slice(0, CANDIDATE_DISPLAY_LIMIT)),
-    [rankedGlyphs],
-  );
+  /** The glyph row: the ranked pool cut to the display limit, then § 6z-4's tier fallback. */
+  const glyphCandidates = useMemo<Candidate[]>(() => {
+    const displayed = rankedGlyphs.slice(0, CANDIDATE_DISPLAY_LIMIT);
+    if (!index || buffer.length === 0) return toGlyphCandidates(displayed);
+    return toGlyphCandidates(widenHintsIfNone(displayed, (tier) => makeHintFinder(buffer, index, tier)));
+  }, [rankedGlyphs, buffer, index]);
 
   /** § 6z-8: the direct-commit chip, derived from the same ranking so it repeats the first blue chip. */
   const directCandidate = useMemo<Candidate | null>(

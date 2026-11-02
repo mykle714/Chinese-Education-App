@@ -22,14 +22,25 @@ import type { MasteryWorldId } from './wire.js';
  * 2026-10-03 "reading" was itself a third MODE, which could not express Reading Review
  * or Reading Challenge.
  *
+ * ⚠️ DEPRECATED (2026-10-31): the review and challenge MODES are being removed entirely;
+ * Study Mix is the only mode that stays (docs/DEFERRED_WORK.md § 31). The WORLD axis is
+ * unaffected, and so is the Study Challenge feature, which merely shares the word.
+ *
  * Readers: server/services/OnDeckVocabService.ts (MODE_CONFIGS, getDistributedWorkingLoop,
  * getFlpReadyCounts), server/routes/flashcardRoutes.ts + OnDeckVocabController (parsing),
  * server/contracts/flpReadiness.ts, and on the client FlashcardsLearnPage /
  * useWorkingLoop / flpFaceSteering / FlpStudyHand.
  */
+/**
+ * @deprecated Review and challenge modes are being removed; Study Mix stays
+ * (docs/DEFERRED_WORK.md § 31). Not related to the Study Challenge feature (docs/STUDY_CHALLENGE.md), which stays.
+ */
 export type StudyMode = 'review' | 'challenge';
 
-/** Parse a `?mode=` / body `mode` value. Anything unrecognized is the default Mix. */
+/**
+ * Parse a `?mode=` / body `mode` value. Anything unrecognized is the default Mix.
+ * @deprecated With `StudyMode`: once it goes, every session is Mix.
+ */
 export function parseStudyMode(raw: unknown): StudyMode | undefined {
   return raw === 'review' || raw === 'challenge' ? raw : undefined;
 }

@@ -39,9 +39,10 @@ const INDEX_MAGIC = 'HWLK';
 const WORDS_MAGIC = 'HWWD';
 /**
  * The two assets version independently (see the generator): index v2 added the
- * per-character reading and the COMMON flag; the word pool is still v1.
+ * per-character reading and the COMMON flag; v3 widened that flag into the 0–5
+ * hint tier (§ 6z-4 "Fallback tiers"); the word pool is still v1.
  */
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
 const WORDS_VERSION = 1;
 
 /**
@@ -49,8 +50,13 @@ const WORDS_VERSION = 1;
  * server/scripts/backfill/chinese/generate-handwriting-lookup.js — change both together.
  */
 const FLAG_DISCOVERABLE = 1;
-/** § 6z-4: the character appears in a headword with `frequencyScore` ≥ 4. */
-const FLAG_COMMON = 2;
+/**
+ * § 6z-4: bits 1–3 hold the character's HINT TIER — the highest `frequencyScore`
+ * of any zh headword containing it (itself included), 0 when none is scored.
+ */
+const HINT_TIER_SHIFT = 1;
+/** The tier at which a character counts as COMMON — the default hint pool. */
+export const COMMON_TIER = 4;
 
 export interface GlyphLookupIndex {
   /** Component character for component id i. */
@@ -66,7 +72,7 @@ export interface GlyphLookupIndex {
   charIndex: Map<string, number>;
   /** `frequencyScore`, 1–5, or 0 for NULL. */
   freq: Uint8Array;
-  /** Flags bitfield; bit 0 = discoverable, bit 1 = common (§ 6z-4). */
+  /** Flags bitfield; bit 0 = discoverable, bits 1–3 = hint tier (§ 6z-4). */
   flags: Uint8Array;
   /** The row's default `pronunciation` (tone-marked pinyin), or '' when NULL. */
   readings: string[];
@@ -529,21 +535,32 @@ export interface HintCharacter {
 }
 
 /**
- * Record indices of the COMMON characters, built once per index.
+ * Record indices of the characters at `minTier` or above, built once per index
+ * and tier.
  *
- * The hint search runs once per glyph candidate on every stroke (up to 12 scans
- * per ink change), so it scans only the ~760 common records rather than all
- * ~9,900. A WeakMap keyed on the index keeps this cache from outliving it.
+ * The hint search runs on every stroke, so it scans only the ~1,000 scored records
+ * rather than all ~9,900. A WeakMap keyed on the index keeps this cache from
+ * outliving it.
  */
-const commonRecordCache = new WeakMap<GlyphLookupIndex, Uint32Array>();
+const tierRecordCache = new WeakMap<GlyphLookupIndex, Map<number, Uint32Array>>();
 
-function commonRecords(index: GlyphLookupIndex): Uint32Array {
-  let records = commonRecordCache.get(index);
+/** A character's § 6z-4 hint tier, 0–5. */
+export function hintTierOf(record: number, index: GlyphLookupIndex): number {
+  return index.flags[record] >> HINT_TIER_SHIFT;
+}
+
+function recordsAtTier(index: GlyphLookupIndex, minTier: number): Uint32Array {
+  let byTier = tierRecordCache.get(index);
+  if (!byTier) {
+    byTier = new Map();
+    tierRecordCache.set(index, byTier);
+  }
+  let records = byTier.get(minTier);
   if (!records) {
     const list: number[] = [];
-    for (let i = 0; i < index.chars.length; i++) if (index.flags[i] & FLAG_COMMON) list.push(i);
+    for (let i = 0; i < index.chars.length; i++) if (hintTierOf(i, index) >= minTier) list.push(i);
     records = Uint32Array.from(list);
-    commonRecordCache.set(index, records);
+    byTier.set(minTier, records);
   }
   return records;
 }
@@ -558,7 +575,9 @@ function commonRecords(index: GlyphLookupIndex): Uint32Array {
  * buffer, so a hint can never promise a character the tap would not lead to.
  *
  * Ranked by § 6k (fewest missing components first, then frequency, discoverable,
- * usage), restricted to characters flagged COMMON (in a freq 4–5 headword).
+ * usage), restricted to characters at `minTier` or above. The default is COMMON
+ * (in a freq 4–5 headword); only the row-level fallback passes anything lower
+ * (`widenHintsIfNone`, compositionRules.ts).
  *
  * ⚠️ There is no § 6n atomic rescue here, on purpose: the hint only fires with a
  * non-empty buffer, so the would-be buffer always holds ≥ 2 components and an
@@ -573,12 +592,13 @@ function commonRecords(index: GlyphLookupIndex): Uint32Array {
  * the common records are narrowed to those ONCE per buffer here, and each glyph
  * re-checks only the survivors — typically a handful rather than ~760.
  *
- * The returned function yields null when no common character contains the
+ * The returned function yields null when no character at the tier contains the
  * would-be buffer.
  */
 export function makeHintFinder(
   buffer: readonly string[],
   index: GlyphLookupIndex,
+  minTier: number = COMMON_TIER,
 ): (glyph: string) => HintCharacter | null {
   const scratch = new Int32Array(index.components.length);
   const bufferOnly = bufferCounts(buffer, index);
@@ -586,7 +606,7 @@ export function makeHintFinder(
   if (bufferOnly === null) return () => null;
 
   const narrowed: number[] = [];
-  for (const record of commonRecords(index)) {
+  for (const record of recordsAtTier(index, minTier)) {
     const size = index.bagSizes[record];
     if (size < buffer.length) continue;
     if (contains(index.bags, index.bagOffsets[record], size, bufferOnly, scratch)) narrowed.push(record);

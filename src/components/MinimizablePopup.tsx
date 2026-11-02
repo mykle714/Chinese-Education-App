@@ -1,4 +1,4 @@
-import { alpha, type SxProps, type Theme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, IconButton, useTheme } from "@mui/material";
@@ -68,8 +68,6 @@ export interface MinimizablePopupProps {
      * sideways game. Every other caller leaves this off.
      */
     inPlace?: boolean;
-    /** Merged over the card's own look: a game's tower stock. */
-    cardSx?: SxProps<Theme>;
     /** Card body (title / message / actions) supplied by the caller. */
     children: React.ReactNode;
 }
@@ -129,7 +127,6 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     scrimColor = COLORS.scrim,
     puckAnchorSelector,
     inPlace = false,
-    cardSx,
     children,
 }) => {
     const theme = useTheme();
@@ -236,7 +233,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
             <Box
                 ref={cardRef}
                 className={`${classPrefix}__popup-card`}
-                sx={[{
+                sx={{
                     position: "relative",
                     display: "flex",
                     flexDirection: "column",
@@ -257,7 +254,7 @@ const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
                         opacity: 0,
                         pointerEvents: "none",
                     }),
-                }, ...(Array.isArray(cardSx) ? cardSx : [cardSx])]}
+                }}
             >
                 {/* Minimize — collapses the card into the corner puck. Absent entirely
                     on a non-minimizable popup, whose only exits are its own buttons. */}

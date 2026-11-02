@@ -1571,9 +1571,9 @@ for challenge rounds only.
 
 Match Speed deals from a rolling buffer rather than a fixed board, so it needs an
 explicit challenge mode: **every other pair filled must be a contested (non-filler)
-pair.** With 12 contested words and a 30-second run this keeps contested words on the
-board continuously without letting the board become 100% contested (which would
-exhaust the set in the first few seconds).
+pair.** With 9 contested words in a 30-pair run this keeps contested words on the
+board continuously without letting the board become 100% contested. The whole set is
+always dealt, within the first 18 pairs or so.
 
 **When the contested words run out mid-run, the alternation lapses and the rest of the
 run is filler.** Contested words are **not** recycled back into the buffer.
@@ -1587,14 +1587,12 @@ other rather than leaving a hole; a drained set never comes back; and a run whos
 buffer is starved deals contested pairs rather than nothing.
 
 The consequence is deliberate and worth stating: Match Speed's contested scoring has a
-hard ceiling of **900 points** (9 × 100), and a player who clears the set early spends
-the rest of the run earning 20s. That makes *clearing the set* the goal of the round
-rather than raw taps-per-second — the challenge is a measure of the nine words, so once
-those nine are answered the round has already said what it was built to say.
+hard ceiling of **900 points** (9 × 100), and the other 21 pairs of the run earn 20 each.
 
-It also means the two players' Match Speed scores converge near the top of the range,
-which is the intended shape: past a certain point the round stops separating them and
-the other two games decide the match.
+Since a run is a fixed 30 pairs, every finisher matches the same number of pairs and
+earns the same hit points, so two finishers are separated only by their misses and the
+time penalty (§ 5.4). Before 2026-10-31 this was a 30-second run, and there was no
+time penalty because the clock itself capped how many pairs a player could score.
 
 ### 5.4 Scoring
 
@@ -1629,6 +1627,10 @@ Per-game rules as specified:
 | contested mistake | **−100**, charged **at most once per foreign word** |
 | filler match | **+20** |
 | filler mistake | **−20**, same once-per-word rule |
+| time penalty | **−10 per second** of active time past **1:40** (the gold time) |
+
+A run is a fixed 30 pairs, so every finisher earns the same hit points. The time penalty
+is what keeps speed in the score, and it runs on no limit, like Word Search's.
 
 **Bubble Match**
 
@@ -2089,7 +2091,7 @@ it ran on wall-clock. The opposite is true:
 
 | Game | Pauses on backgrounding today? |
 |---|---|
-| **Word Search** | ✅ **yes** — `WordSearchPage.tsx` already listens for `visibilitychange`, snapshots to localStorage and calls `pauseTimer()` |
+| **Word Search** | ✅ **yes** — `WordSearchStage.tsx` already listens for `visibilitychange`, snapshots to localStorage and calls `pauseTimer()` |
 | Bubble Match | ❌ no |
 | Match Speed | ❌ no |
 | Speed Reading | ❌ no |

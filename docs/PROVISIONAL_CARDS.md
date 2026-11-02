@@ -35,6 +35,8 @@ fix: **being signed out**, and **Word Search being Chinese-only**.
 learner has put in focus mode serves only that day's remaining focus cards, below the
 baseline if need be, and never lends: the focused round rides the collection slot
 (`CollectionFilter` `{ kind: 'focus' }`), so every lend tier's `!collection` gate skips it.
+An flp break in a focused world draws from outside the set instead (`{ kind: 'outside-focus' }`,
+FOCUS_MODE.md § 4a) and never lends either.
 From a menu, a game the set cannot fill is refused with a popup; in the flp, a break skips it.
 
 ---
@@ -864,7 +866,7 @@ others, admits lent rows by id when it has to borrow.
 | Controller | `server/controllers/StarterPacksController.ts` | `GET /api/starterPacks/:language/provisionalSet` |
 | Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalEntries`) from a served set, and adapt a `DiscoverCard` into the mini card's `VocabEntry` |
 | Client (shared) | `src/hooks/useProvisionalEntries.ts` | the lent cards as `VocabEntry` rows — local when the caller holds them, fetched when it holds only words |
-| Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state |
+| Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state. An flp break's Match Speed waits on `dismissed` before leaving the board; `ProvisionalSortOffer` → `onNothingToOffer` closes an offer whose lookup came back empty, so that wait always ends |
 | Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
 | Client (shared) | `src/components/ProvisionalCardGrid.tsx` | the lent cards as `MiniVocabCard` thumbnails, 2 per row |
 | Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup (which records `?from=` for the exit) |

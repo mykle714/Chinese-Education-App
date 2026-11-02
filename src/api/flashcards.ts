@@ -48,7 +48,9 @@ export type MarkSurface =
     // The Writing Center's Writing Grid game (docs/WRITING_PRACTICE_REWORK.md § 2).
     | "writing-grid"
     // Bucket Drop (docs/BUCKET_DROP_GAME.md).
-    | "bucket-drop";
+    | "bucket-drop"
+    // Superposition (docs/SUPERPOSITION_GAME.md).
+    | "superposition";
 
 /** A single review mark. `mode` is flp-only — it caps the replacement card's category. */
 export interface MarkFlashcardRequest {

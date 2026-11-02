@@ -5,7 +5,7 @@ plain `/deploy`).
 
 Parent: [DECK_TOWER.md](./DECK_TOWER.md) (the lever lives on its platform). Related:
 [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (a focused round never lends),
-[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) (a break skips an unplayable game).
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) (a break draws from outside the set, § 4a).
 
 ---
 
@@ -86,17 +86,52 @@ set everywhere at once: every candidate query narrows to the ids, and every lend
 |---|---|---|
 | `GET /api/onDeck/distributedWorkingLoop` | `?world=` | baseline top-up skipped |
 | `POST /api/flashcards/mark` (refill) | body `world` | resolved after the mark commits, so the card just marked correct is already out |
-| `GET /api/onDeck/gamePool` | `worldForMarkType(markType)` | baseline top-up skipped; a short pool is a smaller board |
-| `GET /api/onDeck/wordSearchGrid` | its mark type's world | no lending escalation |
+| `GET /api/onDeck/gamePool` | `worldForMarkType(markType)` | baseline top-up skipped; a short pool is a smaller board. With `?flpBreak=1` the round is inverted instead (§ 4a) |
+| `GET /api/onDeck/wordSearchGrid` | its mark type's world | no lending escalation. With `?flpBreak=1` the round is inverted instead (§ 4a) |
 | `GET /api/onDeck/flpReadyCounts` | `?world=` | counts only the remaining set; response adds `focusOn` |
 
 **Not narrowed:** deck / built-in collection rounds (`?deck=`, `?collection=`: a hand-picked set
 ignores focus), Study Challenge boards, Memory Map (its own `MemoryMapService` pool) and Writing
-Grid (its own DAL).
+Grid's own route (its own DAL). A Writing Grid **break** does apply § 4a: `WritingGridController.deal`
+resolves the writing world itself and passes `focusBreak` to `WritingGridService.deal`, which
+treats the characters of the set's words as the fallback.
 
 **Never-block exception.** A focused world deliberately serves fewer cards than a surface's
 baseline (`CARD_BASELINES`, PROVISIONAL_CARDS.md § 1). Focus is the learner's own choice to see
 less.
+
+### 4a. flp game breaks draw from outside the set
+
+A break is a change of scene from the day's cards, so a pool request marked `?flpBreak=1`
+in a focused world substitutes `{ kind: 'outside-focus', setIds, remainingIds }` for the
+`focus` collection, on the opening board and on every top-up. `applyFocus` is the only place
+that chooses between the two; the games menu's rounds stay narrowed to the set.
+
+Fill order (`getGameVocabPool`):
+
+1. fresh cards **outside** the snapshot, requested bands then fallback bands;
+2. the day's **remaining** cards that can take the game's marks, as tier 2a;
+3. the remaining cards that cannot (tier 2b), then cooling and avoided outside cards;
+4. never a lent card: the collection slot skips every lend tier, and the baseline top-up is
+   skipped too. A pool short after all that is a smaller board.
+
+- `setIds` is the **whole** snapshot, so a card marked correct today is neither outside nor
+  remaining and is not dealt.
+- The client's `seedIds` (the working loop) are ignored: the loop is the set, and `remainingIds`
+  replaces them.
+- Remaining cards rank ahead of cooling outside cards because a mark on a cooling card is
+  dropped.
+- Each outside card is stamped `outsideFocus`. It is not on the tower, so a Stage must not
+  report it through `onCardCleared` (FLP_GAME_BREAKS.md § 6).
+- A correct mark on an outside card leaves today's set alone, and the card simply cools.
+
+`wordSearchGrid` does the same. A grid is placed whole, so instead of stamping each card it
+lists the outside words as `outsideFocusWords`.
+
+*Code: `OnDeckVocabController` → `applyFocus`, `getGamePool`, `getWordSearchGrid`; `OnDeckVocabService` →
+`CollectionFilter`, `deckPlayFilter`, `getGameVocabPool`, `getWordSearchGrid` (`focusBreak`);
+`FocusModeService` → `resolveWorld` (`setIds`); `src/api/gamePool.ts` → `GamePoolRequest.flpBreak`;
+`src/games/match-speed/poolRequest.ts`.*
 
 **Auto-off signal.** When resolving switches focus off, the response carries
 `X-Focus-Ended: <world>` (`FOCUS_ENDED_HEADER`, exposed through CORS in `server/server.ts`).
@@ -114,7 +149,7 @@ Search's raw fetch calls it itself).
 | Popups | `src/features/focusMode/FocusDialog.tsx` | turn-on / turn-off / ended / game-blocked |
 | Auto-off popup | `src/features/focusMode/FocusEndedNoticeHost.tsx` (mounted in `App.tsx`) | checks `GET /api/focus` on sign-in and on every `focus-mode-ended` event; dismiss acknowledges |
 | Games menu | `src/features/focusMode/FocusGameGuard.tsx`, wrapping every game route in `src/routes/registry.ts` | refuses a launch with the game-blocked popup, then returns to the menu |
-| flp breaks | `useGameBreak` | drops break candidates today's set cannot fill; none left → the break is skipped |
+| flp breaks | `useGameBreak` | drops break candidates that `breakCards` (outside cards + remaining, § 6) cannot fill; none left → the break is skipped |
 
 **The lever's life:**
 
@@ -152,13 +187,15 @@ Search's raw fetch calls it itself).
 
 **A game is refused** when, in every world it can mark (a moded game picks its mode in-game),
 focus is on and fewer than `focusGameMinimum(gameId)` cards remain: its `CARD_BASELINES` entry,
-or 1 for a game with none (Hydra Bubbles, Memory Map, Writing Grid).
+or 1 for a game with none (Hydra Bubbles, Memory Map, Writing Grid). An flp break with a
+smaller board than the game's own uses its adapter's `focusMinimum` instead: a Word Search
+break in a tower session needs 7 (`src/games/flpBreak/wordSearchBreak.ts`).
 
 ## 6. API
 
 | Endpoint | Body | Returns |
 |---|---|---|
-| `GET /api/focus` | — | `FocusStatusResponse`: per world `{ on, remaining }` + `endedNotices` |
+| `GET /api/focus` | — | `FocusStatusResponse`: per world `{ on, remaining, breakCards }` + `endedNotices` |
 | `POST /api/focus` | `{ world, on }` | the new `FocusStatusResponse` |
 | `POST /api/focus/notices/ack` | `{ worlds }` | 204 |
 

@@ -37,7 +37,7 @@
 >   `UserService.updateGoals`); surfaced via `useAuth().updateGoals` and the
 >   account page Goals section (`src/pages/AccountSheet.tsx`).
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
->   (`WordSearchPage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
+>   (`WordSearchStage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
 > - Bars UI: `src/components/mastery/MasteryWindow.tsx` (cdp "Mastery" section — the
 >   eight-mark `.msb` window for **one** track at a time, defaulting to the surface's
@@ -969,7 +969,7 @@ read from there by all three places that need it: the `?markType=` pool query, t
 `src/games/registry.ts`). Two exceptions, both because one constant cannot answer for
 them: **Word Search**'s type is per MODE, so it lives on
 `WordSearchModeConfig.markType` (`src/games/word-search/constants.ts`), read by
-`WordSearchPage`'s mark call; and
+`WordSearchStage`'s mark call; and
 **Bubble Match**'s is per RUN (§ 1a), latched from `foreignPromptTrack` when the board
 is dealt and read from there by its pool query and its mark call alike, while its
 `MARK_TYPE` constant stays the game's declared/default track for the registry.

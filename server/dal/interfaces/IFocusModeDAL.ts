@@ -80,6 +80,9 @@ export interface IFocusModeDAL {
    */
   listWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<FocusCardRow[]>;
 
+  /** How many cards `listWorldCards` would return, without reading them. */
+  countWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<number>;
+
   /** The same fields for exactly these ids (still SORTED — a card removed since is gone). */
   listCardsByIds(userId: string, language: string, ids: number[]): Promise<FocusCardRow[]>;
 }

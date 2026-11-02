@@ -14,7 +14,8 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
 //
 // The flp card HAND with its data: three fanned cards — Challenge, Review, Study Mix —
 // each showing how many cards that session could deal right now, one played forward,
-// tapping it opens the flp in that mode. `StudyHand` is the pixels; this is everything
+// tapping it opens the flp in that mode. ⚠️ DEPRECATED: the Challenge and Review cards are
+// being removed (docs/DEFERRED_WORK.md § 31). `StudyHand` is the pixels; this is everything
 // around it (the figures, the Review gate, the "resting" toast, the launch URL).
 //
 // Three hosts, one component, so they cannot drift:

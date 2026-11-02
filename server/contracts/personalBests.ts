@@ -20,8 +20,13 @@ export type PersonalBestDirection = 'lower' | 'higher';
 export const PERSONAL_BEST_GAMES = {
   /** Completion time per mode (pinyin / no-pinyin). */
   'word-search': { direction: 'lower', unit: 'ms' },
-  /** Pairs matched per level. */
-  'match-speed': { direction: 'higher', unit: 'count' },
+  /**
+   * Time to match all 30 pairs, per mode. A NEW KEY rather than a re-pointed
+   * 'match-speed': that key holds pair COUNTS from the old 30-second game, and read as
+   * "lower ms wins" a stored 9 would be an unbeatable 9 ms. The old rows stay in the
+   * table, unread, and an out-of-date client's count is rejected rather than stored.
+   */
+  'match-speed-30': { direction: 'lower', unit: 'ms' },
   /** Total run time. */
   'speed-reading': { direction: 'lower', unit: 'ms' },
   /** Matches cleared in one endless run. */
@@ -30,6 +35,8 @@ export const PERSONAL_BEST_GAMES = {
   'writing-grid': { direction: 'lower', unit: 'ms' },
   /** Time to drop all 20 words, per mode (pinyin / no-pinyin). */
   'bucket-drop': { direction: 'lower', unit: 'ms' },
+  /** Time to stack all four characters. */
+  superposition: { direction: 'lower', unit: 'ms' },
 } as const satisfies Record<string, { direction: PersonalBestDirection; unit: 'ms' | 'count' }>;
 
 export type PersonalBestGame = keyof typeof PERSONAL_BEST_GAMES;

@@ -25,7 +25,7 @@ import AudioModeChip from "../../components/AudioModeChip";
  *     reveal (see WordSearchHintBar). Spending a hint is a game ACTION.
  *   - the settings cog itself, deleted along with `WordSearchSettingsDialog`: its last
  *     row, timer visibility, became an eye toggle in the HUD strip beside the clock it
- *     controls (see WordSearchPage), which left the sheet empty.
+ *     controls (see WordSearchStage), which left the sheet empty.
  *
  * Word Search is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md), so the header + down chevron
  * come from LeafPage/LeafPageHeader; this component just fills LeafPage's `rightContent`

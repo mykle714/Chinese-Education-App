@@ -1782,7 +1782,7 @@ The keyboard UI is still unbuilt.
 
 | | |
 |---|---|
-| `glyph-lookup.bin` | **173.3 KB** (format **v2**, 2026-09-24) — 895 components, 9,855 characters, 17,651 component slots, plus per character a flags bit for COMMON and its default reading (§ 6z-4). v1 was 124.6 KB; the readings are the whole difference |
+| `glyph-lookup.bin` | **173.3 KB** (format **v3**, 2026-10-31) — 895 components, 9,855 characters, 17,651 component slots, plus per character a 0–5 hint tier in the flags byte and its default reading (§ 6z-4). v1 was 124.6 KB; the readings are the whole difference, and v3 reuses the same flags byte |
 | `glyph-words.bin` | **699.8 KB** — 99,200 words of length 2–4 (still format v1; the two files version independently) |
 
 **Two files, because they are needed at different moments.** The character index
@@ -2582,8 +2582,8 @@ character straight to the field.
 |---|---|
 | when | ink on the canvas (GLYPH mode) **and** buffer non-empty. With an empty buffer, one drawn glyph says too little for a suggestion to be anything but noise |
 | how many | **one per chip** — every glyph chip that leads anywhere gets its own bubble |
-| which character | the best **COMMON** character whose component bag contains *buffer + the chip's glyph*, ranked by § 6k (fewest missing components → `frequencyScore` → discoverable → usage). "On track", not "complete": the hint may still need parts (`distance > 0`) |
-| COMMON | the character appears in any zh headword — itself as a one-character word included — with `frequencyScore` ≥ 4. **763** characters on dev (2026-09-24) |
+| which character | the best **COMMON** character whose component bag contains *buffer + the chip's glyph*, ranked by § 6k (fewest missing components → `frequencyScore` → discoverable → usage), stepping down to rarer tiers only under "Fallback tiers" below. "On track", not "complete": the hint may still need parts (`distance > 0`) |
+| COMMON | hint tier ≥ 4. A character's **hint tier** is the highest `frequencyScore` of any zh headword containing it — itself as a one-character word included — or 0 when none is scored. **978** characters on dev (2026-10-31) |
 | tap | **commit** the character, exactly as tapping it in the result row: same `selectCandidate` path, so buffer and ink clear (§ 6r) |
 | where | floats **above** the candidate row, over the switch bar — no lane of its own, so it costs no canvas height. The accepted price: a bubble can cover 写/ABC, but only mid-character, which is not when a learner reaches for them |
 | reading | the row's default `pronunciation`, context-naive — the same accepted trade as § 6p "Cell content". Rendered through `ForeignText` (project rule) |
@@ -2595,6 +2595,21 @@ bubble never promises a character its own chip's tap would not lead to.
 
 There is **no § 6n atomic rescue** in the hint search: the would-be buffer always
 holds ≥ 2 components, so an atomic character (empty bag) can never be the answer.
+
+### Fallback tiers (added 2026-10-31)
+
+**When no chip in the displayed row has a COMMON hint, the row steps the minimum
+hint tier down to 3, then 2, then 1, stopping at the first tier that gives any
+chip a bubble.** Tier 0 (no scored headword) never appears.
+
+| question | decision |
+|---|---|
+| judged on | the **whole displayed row**, not per chip: one COMMON bubble anywhere means no fallback on any chip. A COMMON hint past the display cut does not count, since the learner cannot see it |
+| ranking | **unchanged.** § 6z-6's discount stays COMMON-only, so a fallback hint decorates a chip and never moves one. A rare character is not a likely target, so it has no business overturning the ink |
+| reach | small: only **56** characters on dev sit in tiers 1–3 (47 / 8 / 1), because `frequencyScore` is NULL on most of the corpus. 8,821 characters are tier 0 |
+
+`widenHintsIfNone` runs after the display cut, so the fallback search only happens
+on a stroke whose row has no hint.
 
 ### Motion (added 2026-09-24)
 
@@ -2626,25 +2641,26 @@ popped bubble stays mounted, so the animation and the unmount cannot drift.
 
 ### Cost
 
-The search scans only the ~760 COMMON records (cached per index in a `WeakMap`),
-not all 9,855. Since § 6z-6 it runs for every matcher survivor (~200), not just
+The search scans only the ~980 COMMON records (cached per index and tier in a
+`WeakMap`), not all 9,855. Since § 6z-6 it runs for every matcher survivor (~200), not just
 the 12 chips, so `makeHintFinder` narrows the COMMON records to those containing
 the buffer **once per buffer**, and each glyph re-checks only those survivors:
-**≈ 0.5 ms for the whole ~200-glyph pool** (measured 2026-09-27, buffer 木 / 口),
+**≈ 0.5 ms for the whole ~200-glyph pool** (measured 2026-09-27 at 763 COMMON
+records, buffer 木 / 口),
 against ~35 ms for the ink match itself. It is a separate memo from the ink
 match, so a buffer change re-derives only the hints and the ranking.
 
-### Data — index format v2
+### Data — index format v3
 
-The COMMON flag (bit 1 of the flags byte) and each character's reading are
-precomputed into `glyph-lookup.bin` by the generator, so the keyboard stays
-offline (§ 6u). The flag is computed at generation time rather than derived from
-`glyph-words.bin` at runtime, because the word pool loads separately and later —
-hints would otherwise not appear until it landed. Regenerate after a
-`frequencyScore` backfill moves, or the COMMON set goes stale.
+The hint tier (bits 1–3 of the flags byte; v2 held a single COMMON bit at bit 1) and
+each character's reading are precomputed into `glyph-lookup.bin` by the generator,
+so the keyboard stays offline (§ 6u). The tier is computed at generation time rather
+than derived from `glyph-words.bin` at runtime, because the word pool loads
+separately and later — hints would otherwise not appear until it landed. Regenerate
+after a `frequencyScore` backfill moves, or the tiers go stale.
 
 ⚠️ **The generator needs `dictionaryentries_zh.components` populated.** A PPE →
-dev data pull can leave it empty on a dev box (found empty 2026-09-24); re-run
+dev data pull can leave it empty on a dev box (found empty 2026-09-24 and 2026-10-31); re-run
 `backfill-character-components.js` first. On that date the re-run reproduced
 the committed bags **byte for byte** — only `frequencyScore` / discoverable
 drift differed.
@@ -2652,16 +2668,19 @@ drift differed.
 ### Code
 
 - `server/scripts/backfill/chinese/generate-handwriting-lookup.js` →
-  `COMMON_FREQ_THRESHOLD`, `FLAG_COMMON`, `INDEX_FORMAT_VERSION`, `loadCharacters`
-  (the `common` CTE), `serializeIndex`
-- `src/components/handwriting/glyphLookup.ts` → `FLAG_COMMON`, `readings`,
-  `makeHintFinder` (and its one-shot wrapper `findHintCharacter`), `HintCharacter`,
-  `commonRecords`
+  `COMMON_FREQ_THRESHOLD`, `HINT_TIER_SHIFT`, `INDEX_FORMAT_VERSION`, `loadCharacters`
+  (the `tiers` CTE), `serializeIndex`
+- `src/components/handwriting/glyphLookup.ts` → `COMMON_TIER`, `HINT_TIER_SHIFT`,
+  `hintTierOf`, `readings`, `makeHintFinder` (and its one-shot wrapper
+  `findHintCharacter`), `HintCharacter`, `recordsAtTier`
 - `src/features/beginnerKeyboard/compositionRules.ts` → `Candidate.hint`,
   `rankGlyphs` (attaches hints AND applies § 6z-6's re-rank; replaced
-  `withHints`), `toGlyphCandidates`, `hintCommit`
+  `withHints`), `widenHintsIfNone`, `HINT_FALLBACK_TIERS`, `toGlyphCandidates`,
+  `hintCommit`
 - `src/features/beginnerKeyboard/useComposition.ts` → `glyphMatches`, `hintFor`,
   `glyphCandidates`
+- `src/features/beginnerKeyboard/debugSnapshot.ts` → `buildDebugSnapshot` (applies the tier
+  fallback at the same display cut)
 - `src/features/beginnerKeyboard/CandidateRow.tsx` → `measureAnchors` (the chip
   centres; the bubbles cannot live inside the scroller, whose `overflow-x: auto`
   also clips vertically), `beginner-keyboard__hint-layer`

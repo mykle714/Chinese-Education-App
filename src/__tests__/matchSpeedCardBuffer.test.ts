@@ -17,7 +17,8 @@ import {
     BUFFER_TOTAL_TARGET,
     CATEGORY_WEIGHTS,
     MODE_CONFIGS,
-    medalForScore,
+    medalForTime,
+    widenedMode,
     modeConfigFor,
 } from "../games/match-speed/constants";
 import type { GameCategory } from "../games/match-speed/types";
@@ -240,20 +241,18 @@ describe("bufferedEntryIds", () => {
     });
 });
 
-describe("medalForScore", () => {
-    // Thresholds are stated against the 30-second run clock (9 / 6 / 3).
-    it("awards by threshold, best-first", () => {
-        expect(medalForScore(30)?.medal).toBe("gold");
-        expect(medalForScore(9)?.medal).toBe("gold");
-        expect(medalForScore(8)?.medal).toBe("silver");
-        expect(medalForScore(6)?.medal).toBe("silver");
-        expect(medalForScore(5)?.medal).toBe("bronze");
-        expect(medalForScore(3)?.medal).toBe("bronze");
+describe("medalForTime", () => {
+    it("awards each tier up to and including its time limit", () => {
+        expect(medalForTime(80_000)?.medal).toBe("gold");
+        expect(medalForTime(100_000)?.medal).toBe("gold");
+        expect(medalForTime(100_001)?.medal).toBe("silver");
+        expect(medalForTime(150_000)?.medal).toBe("silver");
+        expect(medalForTime(150_001)?.medal).toBe("bronze");
+        expect(medalForTime(300_000)?.medal).toBe("bronze");
     });
 
-    it("has a REAL no-medal tier, unlike Word Search's always-bronze floor", () => {
-        expect(medalForScore(2)).toBeNull();
-        expect(medalForScore(0)).toBeNull();
+    it("has a real no-medal tier past bronze", () => {
+        expect(medalForTime(300_001)).toBeNull();
     });
 });
 
@@ -340,6 +339,13 @@ describe("takePair (restricted modes)", () => {
 });
 
 describe("fillBuffer (restricted modes)", () => {
+    it("shelves every bucket on a widened run, so a bare mode can still be dealt", () => {
+        const buffer = emptyBuffer();
+        fillBuffer(buffer, [entry(1, "Unfamiliar")], widenedMode(REVIEW));
+        expect(buffer.Unfamiliar).toHaveLength(1);
+        expect(takePair(buffer, () => 0, widenedMode(REVIEW))?.entry.id).toBe(1);
+    });
+
     it("drops an off-mode card instead of shelving one no roll can draw", () => {
         // The server tops a short bucket up from ITS fallback order, so a Review
         // request really can come back holding an Unfamiliar card.

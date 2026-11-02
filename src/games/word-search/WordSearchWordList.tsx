@@ -69,11 +69,11 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                 // against the ~5px of a word space, so the dot groups with neither gloss.
                 // (Gaps scaled with the 11px → SIZE.bodyLg type, 2026-09-25, to keep the ratio.)
                 alignItems: "baseline",
+                justifyContent: "center",
                 gap: "0 10px",
                 rowGap: "4px",
-                // The list sits directly under the HUD (the hint row moved to the bottom of
-                // the panel and the old "Find these words" caption is gone).
-                padding: "11px 15px 0",
+                // Side insets only: WordSearchStage's band centres the list vertically.
+                padding: "0 15px",
             }}
         >
             {words.map((w, i) => {
@@ -119,8 +119,7 @@ const WordSearchWordList: React.FC<WordSearchWordListProps> = ({ words, found, h
                             sx={{
                                 fontFamily: FONTS.sans,
                                 // SIZE.bodyLg — the play panel's one text size, shared
-                                // with the clock (`GameTimer`) and the
-                                // hint reveal (`WordSearchHintRow`).
+                                // with the hint reveal (`WordSearchHintRow`).
                                 fontSize: SIZE.bodyLg,
                                 fontWeight: WEIGHT.medium,
                                 lineHeight: LEADING.tight,

@@ -27,6 +27,7 @@ import {
 import { CHALLENGE_GAMES } from "../types";
 import type { ChallengeScoringSpec, Language } from "../types";
 import { GAME_ID as WRITING_GRID_GAME_ID, GAME_HUE as WRITING_GRID_HUE } from "./writing-grid/constants";
+import { GAME_ID as SUPERPOSITION_GAME_ID, GAME_HUE as SUPERPOSITION_HUE } from "./superposition/constants";
 import { isGameEnabled } from "../../server/contracts/featureFlags";
 
 /**
@@ -188,6 +189,19 @@ const ALL_GAMES: GameDef[] = [
         modes: BUCKET_DROP_MODES.map(({ mode, markType }) => ({ mode, markType })),
         // No `languages` gate: es plays the hub's Pinyin mode as plain words. The
         // Reading Center card is zh-only on its own (ReadingGamesCarousel).
+    },
+    {
+        gameId: SUPERPOSITION_GAME_ID,
+        glyph: "layers",
+        title: "Superposition",
+        route: "/games/superposition",
+        Component: lazy(() => import("./superposition/SuperpositionPage")),
+        hue: SUPERPOSITION_HUE,
+        markType: "writing",
+        // An flp break only, in the writing world (docs/SUPERPOSITION_GAME.md).
+        hiddenFromHub: true,
+        // zh-only: the tiles are cut from the hanzi stroke corpus.
+        languages: ["zh"],
     },
 ];
 

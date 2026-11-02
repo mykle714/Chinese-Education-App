@@ -1,21 +1,12 @@
 import { COLORS, type RampHue } from "../../theme/colors";
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
+import { formatTimeMs } from "../../utils/timeUtils";
+import { WORD_SEARCH_BOARDS, type WordSearchBoardId } from "../../../server/contracts/wire";
 import type { Medal } from "./types";
-// Word Search's own mix: 1 Unfamiliar + 5 Target + 2 Comfortable + 1 Mastered = 9.
-// The board went 12 words → 9 on 2026-08-28 (and 9×6 → 7×6 with it), which put the
-// mix back on the "HALF of Bubble Match's 2/10/6/2" shape it started from (1/5/3/1
-// = 10); the one extra word came off Comfortable rather than Target, so the board
-// still leans on the band the player is actively learning.
-export const GAME_DISTRIBUTION: Record<string, number> = {
-    Unfamiliar: 1,
-    Target: 5,
-    Comfortable: 2,
-    Mastered: 1,
-};
 
-/** Total target words in a board (sum of the distribution) = 9. */
-export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
+/** Target words on the standard board. Older saves can hold another count (`savedWordCount`). */
+export const TOTAL_WORDS = WORD_SEARCH_BOARDS.standard.words;
 
 /** This game's key in the shared `wins` table (see useGameWins / migration 78).
     Lifted out of WordSearchPage so the hub item reads the same bucket the page
@@ -112,11 +103,6 @@ export function modeConfigFor(mode: unknown): WordSearchModeConfig | null {
     return MODE_CONFIGS.find((m) => m.mode === mode) ?? null;
 }
 
-/** `?Unfamiliar=2&Target=6&...` query built from the distribution. */
-export const GRID_QUERY = Object.entries(GAME_DISTRIBUTION)
-    .map(([cat, n]) => `${encodeURIComponent(cat)}=${n}`)
-    .join("&");
-
 /**
  * Hint meter (see docs/WORD_SEARCH_GAME.md §5a). The bar holds `HINT_BAR_UNITS`
  * charge bars (drawn under the hint button); each successful find fills one. A hint
@@ -182,11 +168,12 @@ export const HINT_REMAINDER_MARK = "—";
 export const HINT_LETTER_BLANK = "_";
 
 /**
- * cpcd size for each grid cell. `sm` (32px column). The board is 7 rows tall
- * (down from 9 on 2026-08-28), so the pinyin row no longer crowds the height on
- * a ~402px frame (see docs/WORD_SEARCH_GAME.md §3).
+ * cpcd size for each grid cell, by board. A tile is sized from its cpcd cell, so this is
+ * what sets the board's width. `standard` is `sm`: six 57px tiles fill a ~402px panel.
+ * `compact` drops to five columns, and `smd` makes up the width with 70px tiles
+ * (see docs/WORD_SEARCH_GAME.md §3).
  */
-export const CELL_SIZE: CPCDSize = "sm";
+export const BOARD_CELL_SIZE: Record<WordSearchBoardId, CPCDSize> = { standard: "sm", compact: "smd" };
 
 /**
  * Gap (px) between adjacent cells, on BOTH axes. Every cell is square
@@ -209,6 +196,32 @@ export const CELL_GAP = 4;
  */
 export const GRID_MARGIN = 12;
 
+/** The grid box's own padding (px), so the outer tiles' shadows are not clipped. */
+export const GRID_BOX_PADDING = 4;
+
+/**
+ * Where the board's centre sits, as a fraction of the screen's height up from its bottom
+ * edge. Surrounding elements can still move it: see `anchoredBandHeight`.
+ */
+export const GRID_CENTER_FROM_BOTTOM = 2 / 5;
+
+/** A tile's corner radius (px). The reviewing outline stays concentric with it. */
+export const CELL_RADIUS = 8;
+
+/** Stroke (px) of the reviewing outline. See docs/WORD_SEARCH_GAME.md § The selection system. */
+export const REVIEW_OUTLINE_WIDTH = 2.5;
+
+/**
+ * How far (px) the reviewing outline's centre line sits outside the word's tile edge.
+ * Equal to `CELL_GAP`, so it runs along the neighbouring tiles' edges and overlaps them
+ * by half its stroke. At the board edge it lands on the grid box's edge, past
+ * `GRID_BOX_PADDING`, so its SVG must not clip (`overflow: visible`).
+ */
+export const REVIEW_OUTLINE_OUTSET = 4;
+
+/** Empty space (px) between the grid container's top edge and the first row of tiles. */
+export const GRID_EDGE_PX = GRID_MARGIN + GRID_BOX_PADDING;
+
 /**
  * How long a true miss's flash (red highlight + shake) stays visible before
  * auto-clearing. A bonus-word match is blue at every length — 2+ characters also
@@ -219,9 +232,9 @@ export const GRID_MARGIN = 12;
 export const MISS_FLASH_MS = 320;
 
 /**
- * Medal thresholds by total completion time, best-first. The last tier is the
- * floor (unbounded) — because play is untimed you always finish, just at the
- * lowest tier if slow. Tunable. See doc §5.
+ * Medal thresholds by total completion time on a 9-word board, best-first. The last
+ * tier is the floor (unbounded) — because play is untimed you always finish, just at
+ * the lowest tier if slow. Tunable. See doc §5.
  */
 export const MEDAL_THRESHOLDS: { medal: Medal; maxSeconds: number; emoji: string }[] = [
     { medal: "gold", maxSeconds: 60, emoji: "🥇" },
@@ -229,14 +242,41 @@ export const MEDAL_THRESHOLDS: { medal: Medal; maxSeconds: number; emoji: string
     { medal: "bronze", maxSeconds: Infinity, emoji: "🥉" },
 ];
 
-/** Resolve a completion time (seconds) to its medal tier. */
-export function medalForTime(seconds: number): { medal: Medal; emoji: string } {
-    const tier = MEDAL_THRESHOLDS.find((t) => seconds <= t.maxSeconds) ?? MEDAL_THRESHOLDS[MEDAL_THRESHOLDS.length - 1];
+/**
+ * Resolve a completion time (seconds) to its medal tier. A medal asks for the same pace on
+ * every board, so the thresholds scale with the word count: gold on the 7-word compact
+ * board is 46s, not the 9-word board's 60.
+ */
+export function medalForTime(seconds: number, wordCount: number = TOTAL_WORDS): { medal: Medal; emoji: string } {
+    const scale = wordCount / TOTAL_WORDS;
+    const tier = MEDAL_THRESHOLDS.find((t) => seconds <= t.maxSeconds * scale) ?? MEDAL_THRESHOLDS[MEDAL_THRESHOLDS.length - 1];
     return { medal: tier.medal, emoji: tier.emoji };
+}
+
+/**
+ * The personal-best key for a board. A compact board has its own best: seven words beat
+ * nine on time alone, so sharing the mode's key would retire every 9-word best.
+ */
+export function personalBestMode(mode: WordSearchMode, board: WordSearchBoardId): string {
+    return board === "standard" ? mode : `${mode}-${board}`;
 }
 
 // NOTE: `formatTimeMs` used to live here. It moved to src/utils/timeUtils.ts when
 // Match Speed became a third caller — import it from there.
+
+/** The flp break's results-card heading (docs/FLP_GAME_BREAKS.md § 5b). */
+export function runResultTitle(finished: boolean, finalMs: number, wordCount: number = TOTAL_WORDS): string {
+    if (!finished) return "Run ended";
+    const { medal, emoji } = medalForTime(Math.floor(finalMs / 1000), wordCount);
+    return `${emoji} ${medal[0].toUpperCase()}${medal.slice(1)}!`;
+}
+
+/** The results card's headline figure. A run left early has no finish time to show. */
+export function runResultScore(foundCount: number, total: number, finalMs: number): string {
+    return foundCount >= total
+        ? `All ${total} found in ${formatTimeMs(finalMs)}`
+        : `${foundCount} of ${total} words found`;
+}
 
 /** Human-readable subtitle for a mode slug (e.g. "Pinyin"), or the raw slug if
  *  unknown. Used by the "Start a new game?" confirm (NewGameConfirmDialog) to name

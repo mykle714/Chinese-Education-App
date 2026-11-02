@@ -191,13 +191,18 @@ export function playBreakToolsReturn(contentArea: Element): Promise<void> {
 }
 
 /**
- * The game area's own motion: on Play the card GROWS into the game's panel, the plate then
- * fades off the mounted game; on exit the area falls away through the bottom.
+ * The game's own motion: on Play a circle GROWS out of the screen's middle until it is the
+ * game's ground. When a run ends the board holds a beat (so the end doesn't read as a
+ * crash), fades to that ground, and the circle SHRINKS back onto the break's card, the
+ * grow in reverse. With no run to report the game falls away through the bottom.
  */
 export const BREAK_AREA_MOTION = {
-    growMs: 420,
-    growEasing: "cubic-bezier(0.3, 0, 0.15, 1)",
-    plateFadeMs: 200,
+    growMs: 520,
+    growEasing: "cubic-bezier(0.5, 0, 0.3, 1)",
+    shrinkHoldMs: 420,
+    shrinkFadeMs: 200,
+    /** `growEasing` mirrored, so the shrink is the grow played backwards. */
+    shrinkEasing: "cubic-bezier(0.7, 0, 0.5, 1)",
     exitMs: BREAK_ENTER_MS,
     exitEasing: "cubic-bezier(0.4, 0, 1, 1)",
 } as const;

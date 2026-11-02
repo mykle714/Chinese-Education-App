@@ -24,7 +24,7 @@ import type { Language, VocabEntry } from "../../../types";
  * Hosts: scp (`SortCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold),
  * the Reading Center's word grid (`centers/ReadingSwipeGrid`) and the Dictionary page
  * (`features/dictionary/DictionaryPage`, the only host that turns on
- * `showSynonymsRelated` + `showWordTools` + `showAllDefinitions`). The flp and cdp mount
+ * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
  * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
@@ -51,13 +51,6 @@ interface EipSheetProps {
     // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page only. A
     // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
-    // Show EVERY meaning, as a lookup should (owner's call 2026-10-29): the header gloss is
-    // the whole flat `definitions` list joined with spaced middle dots on one swipeable
-    // line (the SensePicker is hidden — there is nothing left to switch), and the
-    // definition tab opens with every gloss in two columns. Dictionary page only; needs
-    // det-sourced entries (lookupVocabEntry carries `definitions`), which is every tab
-    // this host opens. See EipEntryHeader / InfoCardTabContent `showAllDefinitions`.
-    showAllDefinitions?: boolean;
     // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
@@ -67,7 +60,7 @@ interface EipSheetProps {
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, showAllDefinitions, depth = 0, defaultHeightRatio,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -124,7 +117,6 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     }}
                     showMinutePoints
                     showSynonymsRelated={showSynonymsRelated}
-                    showAllDefinitions={showAllDefinitions}
                     definitionFooter={showWordTools && entryTab ? (
                         <WordToolsRail
                             className="eip-sheet__word-tools"

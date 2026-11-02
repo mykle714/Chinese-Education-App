@@ -126,6 +126,38 @@ export function rankGlyphs(
   return ranked.sort((a, b) => a.cost - b.cost);
 }
 
+/** § 6z-4: the tiers the row steps down through, in order, when it shows no COMMON hint. */
+export const HINT_FALLBACK_TIERS = [3, 2, 1] as const;
+
+/**
+ * § 6z-4 "Fallback tiers" — when NO displayed chip has a hint, step the minimum
+ * tier down until at least one does, and stop at the first tier that helps.
+ *
+ * The test is on the DISPLAYED chips: a COMMON hint on a glyph past the display
+ * cut is one the learner cannot see, so it must not suppress the fallback. That is
+ * why this runs AFTER the cut, on `rankGlyphs` output.
+ *
+ * ⚠️ Costs are left alone on purpose. The § 6z-6 re-rank stays COMMON-only: its
+ * discount exists to let a likely target overturn ambiguous ink, and a rare
+ * character is not a likely target. A fallback hint decorates a chip; it never
+ * moves one. That also keeps this a simple post-pass — the row cannot be reordered
+ * by a decision that depends on what the row shows.
+ *
+ * `finderAt` is injected (from `makeHintFinder`), like `hintFor` in `rankGlyphs`.
+ */
+export function widenHintsIfNone(
+  displayed: readonly RankedGlyph[],
+  finderAt: (minTier: number) => (glyph: string) => HintCharacter | null,
+): readonly RankedGlyph[] {
+  if (displayed.some(({ hint }) => hint)) return displayed;
+  for (const tier of HINT_FALLBACK_TIERS) {
+    const hintFor = finderAt(tier);
+    const widened = displayed.map((ranked) => ({ ...ranked, hint: hintFor(ranked.match.char) }));
+    if (widened.some(({ hint }) => hint)) return widened;
+  }
+  return displayed;
+}
+
 /**
  * § 6z-7 — fold each look-alike component's chip into its canonical form's.
  *

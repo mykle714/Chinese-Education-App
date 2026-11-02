@@ -20,7 +20,7 @@ import { BUCKET_GAP, BUCKET_SIZE, MAX_EDGE_INSET, MAX_LIVE_BUCKETS } from "./con
  *
  * Slots are numbered left → right.
  *
- * Referenced by: BucketDropStage. Tested by src/__tests__/bucketDropPerimeter.test.ts.
+ * Referenced by: BucketDropBoard. Tested by src/__tests__/bucketDropPerimeter.test.ts.
  */
 
 /** One bucket position, in field coordinates (px, top-left origin). */

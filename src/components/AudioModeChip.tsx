@@ -2,6 +2,7 @@ import React from "react";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { HeaderCycleChip } from "./PageHeader";
 import { cycleChipWidthCh } from "./cycleChipSizing";
+import { OUTLINED_CHIP_ICON_PX, OUTLINED_CHIP_PAD_Y_PX } from "./pageHeaderSizing";
 import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
 
 /**
@@ -105,7 +106,6 @@ const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(MODE_LABELS);
  * 10 px / 13 px now that there is no fill to carry it.
  */
 const OUTLINED_TEXT_PX = 12;
-const OUTLINED_ICON_PX = 15;
 
 /**
  * The `outlined` skin's pill: a 1px outline in the chip's own `ink` (not `COLORS.border`
@@ -116,7 +116,7 @@ const OUTLINED_SX = (ink: string) =>
     ({
         border: `1px solid ${ink}`,
         borderRadius: "999px",
-        padding: "4px 10px",
+        padding: `${OUTLINED_CHIP_PAD_Y_PX}px 10px`,
         fontSize: OUTLINED_TEXT_PX,
     }) as const;
 
@@ -149,7 +149,7 @@ const AudioModeChip: React.FC<{
               tone: "bare" as const,
               sx: [OUTLINED_SX(ink), ...(Array.isArray(sx) ? sx : sx ? [sx] : [])] as SxProps<Theme>,
               fitLabels: true,
-              iconPx: OUTLINED_ICON_PX,
+              iconPx: OUTLINED_CHIP_ICON_PX,
           }
         : { tone, sx, fitLabels, iconPx };
 

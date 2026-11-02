@@ -8,6 +8,21 @@ import { Language } from '../types/index.js';
  */
 
 /**
+ * Upper bound on `?seedIds=` (docs/FLP_GAME_BREAKS.md § 4). A seed is an flp working loop
+ * (~10 cards); 40 leaves room for a grown loop without letting one request address an
+ * unbounded id list.
+ */
+export const MAX_SEED_IDS = 40;
+
+/** A csv of positive vet ids; anything unparseable is dropped. */
+export function parseIdCsv(raw: unknown): number[] {
+  return String(raw ?? '')
+    .split(',')
+    .map((part) => parseInt(part, 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/**
  * Extract and validate the authenticated user's ID from an Express request.
  * The `authenticateToken` middleware attaches `req.user.userId` after JWT verification.
  *

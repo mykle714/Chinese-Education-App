@@ -5,6 +5,15 @@ import { styled, type SxProps, type Theme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
 import { CYCLE_CHIP_FONT_PX, cycleChipFontPx } from "./cycleChipSizing";
+import {
+    BACK_ARROW_ICON,
+    BACK_ARROW_PX,
+    BACK_GROUP_GAP_PX,
+    DENSE_HEADER_PAD_TOP_PX,
+    DENSE_HEADER_PAD_X_PX,
+    DENSE_HEADER_TITLE_PX,
+    DENSE_HEADER_TITLE_TRACKING,
+} from "./pageHeaderSizing";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS } from "../theme/fonts";
 import { LEADING, WEIGHT } from "../theme/scale";
@@ -60,7 +69,7 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
     hub: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
     node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
-    dense: { padTop: 23, padBottom: 0, padX: 22, titleSize: 18, titleTracking: "-0.018em", rightGap: 10 },
+    dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: 10 },
     // ⚠️ The leaf band is DELIBERATELY deeper than the design's `21px 18px 0`
     // (2026-09-05). At 17px the leaf title is the smallest in the app, so the same
     // padding that reads as generous under a 24px hub title read as cramped here —
@@ -125,7 +134,7 @@ const Header = styled(Box, {
 const BackGroup = styled(Box)(() => ({
     display: "flex",
     alignItems: "center",
-    gap: 9,
+    gap: BACK_GROUP_GAP_PX,
     minWidth: 0,
     cursor: "pointer",
 }));
@@ -221,8 +230,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 >
                     <Icon
                         className="page-header__back-icon"
-                        name={arrowDirection === "left" ? "arrow_back" : "keyboard_arrow_down"}
-                        size={arrowDirection === "left" ? 21 : 22}
+                        name={arrowDirection === "left" ? BACK_ARROW_ICON : "keyboard_arrow_down"}
+                        size={arrowDirection === "left" ? BACK_ARROW_PX : 22}
                         color={titleColor}
                     />
                     {titleNode}

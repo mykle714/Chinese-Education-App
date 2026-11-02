@@ -10,7 +10,7 @@
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6n, § 6r, § 6q, § 6z-4, § 6z-6.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { parseGlyphTemplates } from '../components/handwriting/glyphTemplates';
@@ -34,7 +34,9 @@ import {
   toGlyphCandidates,
   toResultCandidates,
   hintCommit,
+  widenHintsIfNone,
   type Candidate,
+  type RankedGlyph,
 } from '../features/beginnerKeyboard/compositionRules';
 import { CANDIDATE_DISPLAY_LIMIT } from '../features/beginnerKeyboard/useComposition';
 import type { Ink } from '../components/handwriting/types';
@@ -230,6 +232,42 @@ describe('end to end — draw, append, commit', () => {
     expect(results[0].text).toBe('江湖');
     expect(results[0].isWord).toBe(true);
     expect(results[0].action).toBe('commit');
+  });
+});
+
+describe('§ 6z-4 fallback tiers', () => {
+  const glyph = (char: string, hint: HintCharacter | null = null): RankedGlyph => ({
+    match: { char, cost: 0.1, kind: 1, variant: false },
+    hint,
+    cost: 0.1,
+  });
+  const hinted = (text: string): HintCharacter => ({ text, pronunciation: '', distance: 0 });
+
+  it('leaves the row alone when any displayed chip already has a hint', () => {
+    const row = [glyph('木'), glyph('口', hinted('呆'))];
+    const finderAt = vi.fn(() => () => hinted('杏'));
+    expect(widenHintsIfNone(row, finderAt)).toBe(row);
+    expect(finderAt).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first tier that gives any chip a hint', () => {
+    const finderAt = vi.fn((tier: number) => (char: string) => (tier === 2 && char === '口' ? hinted('呆') : null));
+    const row = widenHintsIfNone([glyph('木'), glyph('口')], finderAt);
+    expect(finderAt.mock.calls.map(([tier]) => tier)).toEqual([3, 2]);
+    expect(row.map(({ hint }) => hint?.text ?? null)).toEqual([null, '呆']);
+  });
+
+  it('never moves a chip: fallback hints leave cost and order untouched', () => {
+    const row = widenHintsIfNone([glyph('木'), glyph('口')], () => () => hinted('呆'));
+    expect(row.map(({ match }) => match.char)).toEqual(['木', '口']);
+    expect(row.every(({ cost }) => cost === 0.1)).toBe(true);
+  });
+
+  it('stops at tier 1 and shows nothing when no tier helps', () => {
+    const finderAt = vi.fn(() => () => null);
+    const row = [glyph('木')];
+    expect(widenHintsIfNone(row, finderAt)).toBe(row);
+    expect(finderAt.mock.calls.map(([tier]: number[]) => tier)).toEqual([3, 2, 1]);
   });
 });
 

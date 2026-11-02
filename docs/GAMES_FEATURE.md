@@ -80,7 +80,7 @@ games; each game lives as its own page linked from the hub.
   u/ü). Moded hub tile. It is the first game that emits **no marks**, but it still accrues minutes.
 
 - **Memory Map** (`/games/memory-map`) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
-  **BUILT ON DEV (migration 151), not on PPE.** A persistent, pan/zoom **reading** map:
+  **DEPLOYED to PPE (migration 151).** A persistent, pan/zoom **reading** map:
   every card the learner sorted that is **not reading-mastered** owns a permanent spot
   (capped at 100, chosen by the flp offering priority list evaluated on the reading
   track), new words spawn touching an existing island (10% start a new one), and an

@@ -1,7 +1,7 @@
 # Reading & Writing Centers (redesign)
 
-**STATUS: BUILT ON DEV (2026-10-02), all five phases — not yet deployed to PPE.** Migration
-169 ships with a standard `/deploy` (expand-only; apply before the rebuild).
+**STATUS: BUILT, all five phases, and deployed to PPE.** Migration
+169 is applied (expand-only).
 Design source: claude.ai/design project `b8b44c24-…`, file
 `Reading & Writing Center - Sheets.html` (+ `shelf-system-v2.css`).
 

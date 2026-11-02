@@ -1,6 +1,6 @@
 # Superposition (stroke-stacking game)
 
-> **Status: BUILT ON DEV, not on PPE, no migration.** A writing-flp game break, hidden from
+> **Status: DEPLOYED to PPE 2026-11-01, no migration.** A writing-flp game break, hidden from
 > the hub. Grid and tile sizes are first-pass values, due to be tuned by hand. Parent doc:
 > [GAMES_FEATURE.md](./GAMES_FEATURE.md). Break host: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 

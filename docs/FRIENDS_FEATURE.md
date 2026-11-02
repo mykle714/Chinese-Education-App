@@ -3,7 +3,7 @@
 The friend graph: sending, answering and revoking friend requests, and the list of
 accepted friends. Reached from the **Friends** tile on the Menu hub (`/menu`; it was the `/` Home hub until Home and Menu swapped contents on 2026-10-10).
 
-Status: **implemented**, on dev. Migration **138** is not yet on PPE (see
+Status: **implemented** and on PPE. Migration **138** is applied (see
 [§ Deploying](#deploying)).
 
 ---

@@ -1,6 +1,6 @@
 # flp Game Breaks
 
-> **Status: PHASE 1 BUILT (dev, not on PPE), no migration.** The break mechanism, the
+> **Status: PHASE 1 DEPLOYED to PPE (2026-11-01), no migration.** The break mechanism, the
 > break's card, the server `seedIds` seed and the timer-eye move are built. **Match Speed,
 > Word Search and Writing Grid are in the rotation**, so the **core** flp offers Match Speed
 > and Word Search (Pinyin), the **reading** flp offers Word Search (No Pinyin), and the

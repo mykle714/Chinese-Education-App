@@ -2300,7 +2300,7 @@ viewer would have watched their chip dissolve into their row.
 suite clean. The board itself (`.bd`) had already landed with A7; what this entry added is
 the banner, the state chrome around it, and the twelve-rung material ladder.
 
-Arena is **built on dev, not on PPE** — check `docs/ARENA_FEATURE.md` before assuming a
+Arena is **deployed to PPE** — check `docs/ARENA_FEATURE.md` before assuming a
 field exists on PPE.
 
 ### The division banner replaced a tinted card — and `.ladder` with it
@@ -2398,7 +2398,7 @@ which **supersedes artboard 9** — entry 9 above converted the one `live` scree
 original spec drew and extrapolated the rest; this entry replaces those extrapolations
 with the drawn design.
 
-Arena is **built on dev, not on PPE**.
+Arena is **deployed to PPE**.
 
 ### What the flow changed, and what it settled
 

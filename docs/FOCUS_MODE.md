@@ -1,6 +1,6 @@
 # Focus Mode — a daily cap of 25 cards per world
 
-**Status:** built on dev (2026-10-20), **not on PPE**. Migration 176 (expand-only; ships with a
+**Status:** deployed to PPE. Migration 176 applied (expand-only; shipped with a
 plain `/deploy`).
 
 Parent: [DECK_TOWER.md](./DECK_TOWER.md) (the lever lives on its platform). Related:

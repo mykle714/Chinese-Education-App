@@ -12,19 +12,23 @@ export const GAME_ID = "superposition";
 export const GAME_HUE: RampHue = "tea";
 
 /** The snapping grid's pitch (px). A tile's position is always a whole number of units. */
-export const GRID_UNIT_PX = 8;
+export const GRID_UNIT_PX = 16;
 /** A stroke tile's side, in grid units. */
-export const TILE_UNITS = 12;
+export const TILE_UNITS = 9;
 /** A stroke tile's side (px). */
 export const TILE_PX = TILE_UNITS * GRID_UNIT_PX;
 /** Clear grid units kept between a freshly dealt tile and every edge of the board. Drags may still reach the edge. */
-export const SPAWN_MARGIN_UNITS = 3;
+export const SPAWN_MARGIN_UNITS = 2;
 /** How far a deal's tile positions spread on each axis of the bottom-centre bunch. */
-export const SPAWN_SPREAD_UNITS = 12;
+export const SPAWN_SPREAD_UNITS = 6;
 /** A tile's outline width (px). */
 export const TILE_OUTLINE_PX = 2;
 /** Pointer travel (px) before a press on the board becomes a drag rather than a tap. */
 export const DRAG_SLOP_PX = 6;
+/** Seconds between hints. */
+export const HINT_COOLDOWN_SECONDS = 15;
+/** The hint button's height (px). The word info starts below it. */
+export const HINT_BUTTON_PX = 32;
 
 /**
  * The ink (outline area, square glyph units) at which a tile's merged strokes stop taking

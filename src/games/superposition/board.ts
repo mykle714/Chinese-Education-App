@@ -298,6 +298,39 @@ export function completedStacks(tiles: readonly Tile[], liftedId: number | null 
 
 export const stackKey = (tile: Pick<Tile, "x" | "y">): string => `${tile.x},${tile.y}`;
 
+/** Can these two tiles fill two different groups of one character? Reads `accepts`, so a lookalike swap counts. */
+function belongTogether(a: Tile, b: Tile): boolean {
+    return a.accepts.some((first) =>
+        b.accepts.some((second) => first.charIndex === second.charIndex && first.groupIndex !== second.groupIndex)
+    );
+}
+
+/**
+ * Two tiles the hint should point at: they belong in one stack and are not in one yet.
+ * Tiles in finished stacks never qualify. Two tiles lying alone are preferred. When no such
+ * pair exists (say, one tile left to add to a partial stack) any unfinished tile counts, so a
+ * hint is only unavailable when no two tiles are left to join. Returns tile ids, or null.
+ */
+export function pickHintPair(
+    tiles: readonly Tile[],
+    finished: ReadonlyMap<string, number>,
+    random: () => number = Math.random
+): [number, number] | null {
+    const open = tiles.filter((tile) => !finished.has(stackKey(tile)));
+    const countAt = new Map<string, number>();
+    tiles.forEach((tile) => countAt.set(stackKey(tile), (countAt.get(stackKey(tile)) ?? 0) + 1));
+    const pairsAmong = (pool: readonly Tile[]) =>
+        pool.flatMap((a, index) =>
+            pool
+                .slice(index + 1)
+                .filter((b) => stackKey(a) !== stackKey(b) && belongTogether(a, b))
+                .map((b): [number, number] => [a.id, b.id])
+        );
+    const alone = pairsAmong(open.filter((tile) => countAt.get(stackKey(tile)) === 1));
+    const pairs = alone.length > 0 ? alone : pairsAmong(open);
+    return pairs.length > 0 ? pairs[Math.floor(random() * pairs.length)] : null;
+}
+
 /** Snap a pixel offset to the nearest unit, keeping a whole tile on the board. */
 export function snapToGrid(px: number, unitPx: number, gridSize: number, tileUnits: number): number {
     return Math.max(0, Math.min(Math.max(0, gridSize - tileUnits), Math.round(px / unitPx)));

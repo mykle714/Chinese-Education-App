@@ -20,9 +20,10 @@ stroke keeps its true place inside the tile, so an exact stack redraws the chara
 
 ## Tuning
 
-`src/games/superposition/constants.ts` → `GRID_UNIT_PX` (8) and `TILE_UNITS` (12, so 96px).
-Every board measure derives from these two. `SPAWN_MARGIN_UNITS` (3, so 24px) sets the deal's
-gap from the board edges and the word info. `SPAWN_SPREAD_UNITS` (12, so 96px) sets how tight
+`src/games/superposition/constants.ts` → `GRID_UNIT_PX` (16) and `TILE_UNITS` (9, so 144px).
+Every board measure derives from these two. The spawn constants are whole grid units, so they
+need rescaling when the pitch changes. `SPAWN_MARGIN_UNITS` (2, so 32px) sets the deal's
+gap from the board edges and the word info. `SPAWN_SPREAD_UNITS` (6, so 96px) sets how tight
 the opening bunch is. `TILE_OUTLINE_PX` (2) sets the tile outline.
 
 ## Deal
@@ -58,13 +59,22 @@ Refused: a character shared between words or repeated in one (two identical stac
   [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)). The selected stroke is highlighted.
 - **Drag:** `dragTarget` lifts the selection if it is in the pile, else the top tile. A drop
   clears the selection.
-- **Hints:** `SuperpositionHints`, drawn on the grid under the tiles: the words side by side
-  across the top, each a column of toned pinyin (`TonedPronunciation`), dd (up to three lines)
+- **Hint button:** `SuperpositionHintButton`, top-right on the grid, on the Leave arrow's row in
+  a break. A press outlines two tiles in `RAMP.org.mark` (`board.ts` → `pickHintPair`, held by the
+  Stage as `hintedTileIds`). The pair belongs in one stack and is not in one yet; it reads `accepts`,
+  so a lookalike swap counts. Tiles in finished stacks never qualify, and two lone tiles are
+  preferred; failing that, a tile in an unfinished pile can be picked, so a last tile can be
+  pointed at its partial stack. The outline clears when the two tiles are dropped together or
+  either finishes in another stack; moving one elsewhere keeps it. The next hint comes
+  `HINT_COOLDOWN_SECONDS` (15) later, counted down on the button and held while the app is
+  backgrounded. A hint has no effect on marks or the personal best.
+- **Word info:** `SuperpositionHints`, drawn on the grid under the tiles and below the hint
+  button: the words side by side across the top, each a column of toned pinyin (`TonedPronunciation`), dd (up to three lines)
   and an audio button. A filled green `check_circle` sits in a word's top corner, beside the
   pinyin, while all its characters are finished. Only the button takes input, so a tile lying
   over the info stays grabbable.
 
-Colors: game hue `tea`; finished outline and word check `RAMP.grn.mark`; selection `RAMP.pur.mark`.
+Colors: game hue `tea`; finished outline and word check `RAMP.grn.mark`; selection `RAMP.pur.mark`; hint outline `RAMP.org.mark`.
 
 ## Stroke parts
 
@@ -79,7 +89,8 @@ lists. Re-run it after changing a list or upgrading `hanzi-writer-data`:
 - `WHOLE_PARTS`: kept whole wherever they appear. A listed part is never opened, because 日
   holds 口 and 田 holds 土. An unlisted part opens, so 语 yields 讠 and the 口 inside 吾.
 - `SPLIT_PARTS`: cut into set pieces: ⺮ (two halves), 门 (dot and vertical / frame), 心 (dots /
-  hook), 米 (two dots / 木). These apply when the character is the part itself as well.
+  hook), 米 (two dots / 木), 那 (left block / 阝, because the source leaves the left block
+unmatched). These apply when the character is the part itself as well.
 - A character's radical (the dictionary's `radical`, stroke indices from `radStrokes`) groups
   like a whole part, unless it is in `UNGROUPED_RADICALS`.
 
@@ -104,14 +115,14 @@ board of about 28 strokes deals about 12 tiles with parts and ink together.
 
 ## Lookalike strokes
 
-`LOOKALIKE_TOLERANCE_UNITS` (derived from the tile as a fixed 2px on screen, about 21 glyph
-units on a 96px tile): a tile `accepts` every stroke whose medians stay within the tolerance
+`LOOKALIKE_TOLERANCE_UNITS` (derived from the tile as a fixed 2px on screen, about 14 glyph
+units on a 144px tile): a tile `accepts` every stroke whose medians stay within the tolerance
 at every resampled point. Without this, swapping two
 visually identical strokes would leave a finished-looking stack un-green. `stackFillsCharacter`
 runs a bipartite matching because lookalikes are not transitive.
 
 Measured 2026-11-01 over 20,000 random 3-word boards of discoverable words, on the original
-32px tile (the 96px tile's 2px tolerance is about 0.67px on this scale, so these rates are an
+32px tile (the 144px tile's 2px tolerance is about 0.44px on this scale, so these rates are an
 upper bound): boards holding a pair within 1px / 2px were 34% / 84% (any length) and 6% / 25% (one-character
 words). Nearly every such pair also shares a stroke type, and almost none fall inside one
 character. Picking clean words from a 20-word loop is possible (17–28% of triples clean at

@@ -12,7 +12,7 @@ interface SuperpositionHintsProps {
     words: SuperpositionWord[];
     /** Characters currently stacked and finished. */
     finishedChars: ReadonlySet<string>;
-    /** Clear space above the words: a break's Leave arrow sits top-left. */
+    /** Clear space above the words, for the hint button and a break's Leave arrow. */
     topInsetPx: number;
     onSpeak: (word: SuperpositionWord) => void;
 }

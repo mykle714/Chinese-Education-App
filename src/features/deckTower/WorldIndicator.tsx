@@ -108,7 +108,7 @@ const WorldIndicator: React.FC<WorldIndicatorProps> = ({ side, name, onTap, hidd
                         sx={{
                             display: "block",
                             fontFamily: FONTS.cjk,
-                            fontSize: SIZE.body,
+                            fontSize: SIZE.bodyLg,
                             fontWeight: WEIGHT.bold,
                             lineHeight: 1,
                         }}

@@ -18,10 +18,12 @@ import { formatTimeMs } from "../../utils/timeUtils";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { WRITING_LEVEL_COUNT } from "../../../server/contracts/writingLevels";
-import { buildTiles, completedStacks, scatterTiles, type BoardCharacter, type Tile } from "./board";
+import { BACK_ARROW_PX } from "../../components/pageHeaderSizing";
+import { buildTiles, completedStacks, pickHintPair, scatterTiles, stackKey, type BoardCharacter, type Tile } from "./board";
 import SuperpositionBoard from "./SuperpositionBoard";
+import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
-import { GAME_ID, INK_MERGE_THRESHOLD, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
+import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, INK_MERGE_THRESHOLD, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
@@ -42,6 +44,13 @@ export interface SuperpositionStageProps {
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
     onCardCleared?: () => void;
 }
+
+/** The hint button's top edge on the game's own route, where the corner is empty. */
+const ROUTE_HINT_TOP_PX = 6;
+/** In a break the button sits on the Leave arrow's row, centred on the arrow. */
+const BREAK_HINT_TOP_PX = GAME_FRAME_EXIT_ARROW_BOTTOM_PX - (BACK_ARROW_PX + HINT_BUTTON_PX) / 2;
+/** The gap between the hint button and the word info below it. */
+const INFO_GAP_PX = 4;
 
 /** The characters of a board, with their stroke data. Null if any failed to load. */
 async function loadCharacters(words: readonly SuperpositionWord[]): Promise<BoardCharacter[] | null> {
@@ -94,6 +103,8 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     const [tiles, setTiles] = useState<Tile[]>([]);
     // The tile held in a drag. Stacks are judged without it, so finishing happens on the drop.
     const [liftedId, setLiftedId] = useState<number | null>(null);
+    const [hintedTileIds, setHintedTileIds] = useState<number[]>([]);
+    const [hintSecondsLeft, setHintSecondsLeft] = useState(0);
     const [loadNonce, setLoadNonce] = useState(0);
     const [finalMs, setFinalMs] = useState(0);
     const [popupMinimized, setPopupMinimized] = useState(false);
@@ -120,6 +131,8 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 placedRef.current = false;
                 setPlaced(false);
                 setLiftedId(null);
+                setHintedTileIds([]);
+                setHintSecondsLeft(0);
                 setLeftWith(null);
                 setPhase(playable ? "playing" : "empty");
             })
@@ -187,6 +200,32 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     const finishedChars = useMemo(() => new Set(Array.from(stacks.values(), (index) => characters[index]?.char ?? "")), [stacks, characters]);
     const markedRef = useRef(new Set<string>());
     const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
+
+    // ── Hint ─────────────────────────────────────────────────────────────────────
+    // The cooldown counts down one second per commit and holds while the app is backgrounded.
+    useEffect(() => {
+        if (hintSecondsLeft <= 0 || backgroundPaused) return;
+        const timer = window.setTimeout(() => setHintSecondsLeft((seconds) => seconds - 1), 1000);
+        return () => window.clearTimeout(timer);
+    }, [hintSecondsLeft, backgroundPaused]);
+
+    const hintPair = useMemo(() => (running && placed ? pickHintPair(tiles, stacks) : null), [running, placed, tiles, stacks]);
+
+    const showHint = () => {
+        if (!hintPair) return;
+        setHintedTileIds(hintPair);
+        setHintSecondsLeft(HINT_COOLDOWN_SECONDS);
+    };
+
+    // The outline stays until the hint is taken: the two tiles dropped together, or either
+    // one finished as part of another stack. Moving one elsewhere keeps it, because the
+    // learner may still need to find the other.
+    useEffect(() => {
+        if (hintedTileIds.length === 0 || liftedId !== null) return;
+        const hinted = tiles.filter((tile) => hintedTileIds.includes(tile.id));
+        const joined = hinted.length === 2 && stackKey(hinted[0]) === stackKey(hinted[1]);
+        if (joined || hinted.some((tile) => stacks.has(stackKey(tile)))) setHintedTileIds([]);
+    }, [tiles, stacks, liftedId, hintedTileIds]);
 
     const endRun = (leftEarlyWith: number | null) => {
         holdStopwatch();
@@ -263,6 +302,8 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         void tts.speakSentence(word.entryKey, word.pinyin ?? undefined);
     };
 
+    const hintTopPx = isBreak ? BREAK_HINT_TOP_PX : ROUTE_HINT_TOP_PX;
+
     return (
         <Frame title="Superposition" onExitRequest={isBreak ? leaveBreak : onDone}>
             {phase === "loading" && (
@@ -290,15 +331,24 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                     <SuperpositionBoard
                         tiles={tiles}
                         finishedStacks={finishedStackKeys}
+                        hintedTileIds={hintedTileIds}
                         liftedId={liftedId}
                         locked={phase === "ended"}
                         info={
-                            <SuperpositionHints
-                                words={words}
-                                finishedChars={finishedChars}
-                                topInsetPx={isBreak ? GAME_FRAME_EXIT_ARROW_BOTTOM_PX : 4}
-                                onSpeak={speakWord}
-                            />
+                            <>
+                                <SuperpositionHints
+                                    words={words}
+                                    finishedChars={finishedChars}
+                                    topInsetPx={hintTopPx + HINT_BUTTON_PX + INFO_GAP_PX}
+                                    onSpeak={speakWord}
+                                />
+                                <SuperpositionHintButton
+                                    secondsLeft={hintSecondsLeft}
+                                    ready={hintSecondsLeft === 0 && hintPair !== null}
+                                    topPx={hintTopPx}
+                                    onHint={showHint}
+                                />
+                            </>
                         }
                         onMeasured={handleMeasured}
                         onMove={handleMove}

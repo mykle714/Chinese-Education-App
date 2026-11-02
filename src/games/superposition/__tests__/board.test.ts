@@ -14,6 +14,7 @@ import {
   groupStrokes,
   groupStrokesByInk,
   nextTapSelection,
+  pickHintPair,
   scatterTiles,
   snapToGrid,
   strokeInk,
@@ -66,6 +67,43 @@ describe('completedStacks', () => {
     const done = completedStacks(swapped);
     expect(done.get('0,0')).toBe(0);
     expect(done.get('8,8')).toBe(1);
+  });
+});
+
+describe('pickHintPair', () => {
+  const threeOfA: BoardCharacter[] = [
+    { char: 'A', strokes: [square(100), square(100, 1), square(100, 2)], medians: [line(0), line(0, 500), line(0, 900)] },
+    { char: 'B', strokes: [square(100, 3), square(100, 4)], medians: [line(200), line(200, 500)] },
+  ];
+  const board = (positions: [number, number][]) => place(buildTiles(threeOfA, 1, 1), positions);
+
+  it('picks two lone tiles of one character', () => {
+    const all = board([[0, 0], [10, 0], [40, 0], [40, 0], [60, 0]]);
+    expect(pickHintPair(all, completedStacks(all), () => 0)).toEqual([0, 1]);
+  });
+
+  it('never pairs tiles of different characters', () => {
+    const all = board([[0, 0], [10, 0], [20, 0], [30, 0], [40, 0]]);
+    for (const roll of [0, 0.3, 0.6, 0.9]) {
+      const [a, b] = pickHintPair(all, completedStacks(all), () => roll)!;
+      expect(all[a].source.charIndex).toBe(all[b].source.charIndex);
+    }
+  });
+
+  it('skips finished stacks', () => {
+    const all = board([[0, 0], [10, 0], [20, 0], [30, 0], [30, 0]]);
+    expect(pickHintPair(all, completedStacks(all), () => 0.99)).toEqual([1, 2]);
+  });
+
+  it('falls back to a stacked tile when no two lone tiles belong together', () => {
+    const all = board([[0, 0], [0, 0], [20, 0], [30, 0], [30, 0]]);
+    const pair = pickHintPair(all, completedStacks(all), () => 0)!;
+    expect(pair).toContain(2);
+  });
+
+  it('is null when nothing is left to join', () => {
+    const all = board([[0, 0], [0, 0], [0, 0], [30, 0], [30, 0]]);
+    expect(pickHintPair(all, completedStacks(all))).toBeNull();
   });
 });
 

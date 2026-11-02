@@ -13,11 +13,15 @@ const GLYPH_TRANSFORM = "translate(0,900) scale(1,-1)";
 const SELECTED_INK = RAMP.pur.mark;
 /** A finished stack's outline. */
 const FINISHED_OUTLINE = RAMP.grn.mark;
+/** A hinted tile's outline. Orange stays clear of the selection, the finish and the teal ground. */
+const HINT_OUTLINE = RAMP.org.mark;
 
 interface SuperpositionBoardProps {
     tiles: Tile[];
     /** Keys of the finished stacks (`stackKey`). */
     finishedStacks: ReadonlySet<string>;
+    /** The tiles the hint button pointed at. */
+    hintedTileIds: readonly number[];
     /** The tile held in a drag. It is not judged, so it never reads as finished. */
     liftedId: number | null;
     /** Input is off once the run is over. */
@@ -52,7 +56,7 @@ interface Press {
  *
  * Layer: game component, presentational over `board.ts`. The Stage owns the tiles.
  */
-const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finishedStacks, liftedId, locked, info, onMeasured, onMove, onLift }) => {
+const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finishedStacks, hintedTileIds, liftedId, locked, info, onMeasured, onMove, onLift }) => {
     const boardRef = useRef<HTMLDivElement | null>(null);
     const infoRef = useRef<HTMLDivElement | null>(null);
     const pressRef = useRef<Press | null>(null);
@@ -161,10 +165,11 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
             {tiles.map((tile) => {
                 const selected = tile.id === selectedId;
                 const finished = finishedTileIds.has(tile.id);
+                const hinted = hintedTileIds.includes(tile.id);
                 return (
                     <Box
                         key={tile.id}
-                        className={`superposition-board__tile${selected ? " superposition-board__tile--selected" : ""}${finished ? " superposition-board__tile--finished" : ""}`}
+                        className={`superposition-board__tile${selected ? " superposition-board__tile--selected" : ""}${finished ? " superposition-board__tile--finished" : ""}${hinted ? " superposition-board__tile--hinted" : ""}`}
                         sx={{
                             position: "absolute",
                             left: 0,
@@ -174,10 +179,10 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
                             boxSizing: "border-box",
                             borderRadius: `${CARD_SURFACE_RADIUS}px`,
                             transform: `translate(${tile.x * GRID_UNIT_PX}px, ${tile.y * GRID_UNIT_PX}px)`,
-                            border: `${TILE_OUTLINE_PX}px solid ${finished ? FINISHED_OUTLINE : selected ? SELECTED_INK : COLORS.border}`,
+                            border: `${TILE_OUTLINE_PX}px solid ${finished ? FINISHED_OUTLINE : selected ? SELECTED_INK : hinted ? HINT_OUTLINE : COLORS.border}`,
                             // The body stays transparent so a pile shows every stroke in it.
-                            // The selection rides above without changing the pile's order.
-                            zIndex: selected ? tiles.length + 1 : tile.z,
+                            // The selection and the hint ride above without changing the pile's order.
+                            zIndex: selected ? tiles.length + 1 : hinted ? tiles.length : tile.z,
                             pointerEvents: "none",
                         }}
                     >

@@ -38,6 +38,8 @@ const SPLIT_PARTS = new Map([
     ['门', [[0, 1], [2]]], // dot and vertical / the right frame
     ['心', [[0, 2, 3], [1]]], // three dots / the hook
     ['米', [[0, 1], [2, 3, 4, 5]]], // two dots / 木
+    // The source leaves 那's left side unmatched (？？), so ink would pull its bars away from its frame.
+    ['那', [[0, 1, 2, 3], [4, 5]]], // left block / 阝
 ]);
 
 /** Radicals left to ink, because they do not read as a unit here. */

@@ -4,7 +4,7 @@
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 17-step zh
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 18-step zh
  * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
  * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
  * to initRunLog (that is the key it stamps into `enrichmentLog`).
@@ -151,6 +151,13 @@ export const REQUIRED_SCRIPTS_ZH = [
   // majority ("breakdown is straightforward") and stamps every row it decides, so its
   // done-state lives in this stamp — never in `breakdownElaboration IS NULL`.
   { id: 'chinese/backfill-breakdown-elaboration',     when: 'multiChar', version: 1 },
+  // Superposition's AI-authored tile groups (migration 180). Applies to EVERY word: the
+  // groups are stored on the word's CHARACTERS' own rows, and the word row is stamped once
+  // all of them are. Reads only word1 + glyph data, so it has no ordering constraint; it
+  // sits last only because it was added last. Done-ness is the stamp (multi-character rows
+  // keep NULL). ⚠️ CROSS-ROW like breakdown-senses: it writes rows OTHER than the one the
+  // planner named. docs/SUPERPOSITION_GAME.md § Stored groups.
+  { id: 'chinese/backfill-superposition-groups',      when: 'always',    version: 1 },
 ];
 
 /**

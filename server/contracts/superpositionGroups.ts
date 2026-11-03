@@ -4,54 +4,51 @@
  *
  * Pure, with no value imports, so both halves load one definition:
  *   - the client builds tiles from it (src/games/superposition/board.ts → buildTiles);
- *   - the stored-groups backfill writes its output to `dictionaryentries_zh."superpositionGroups"`
- *     (server/scripts/backfill/chinese/backfill-superposition-groups.ts, migration 180), read
- *     only while `FEATURE_FLAGS.superpositionStoredGroups` is on.
+ *   - it is the FALLBACK for a character whose `dictionaryentries_zh."superpositionGroups"`
+ *     (migration 180) is still NULL: those groups are AI-authored by
+ *     server/scripts/backfill/chinese/backfill-superposition-groups.js, which also imports
+ *     `SINGLE_STROKE_MAX`, `isStrokePartition`, `strokeOutline` and `strokeInk` from here.
  *
  * ── The rule ──────────────────────────────────────────────────────────────────
- * A UNIT is a natural part (strokeParts.json: 口, 氵, …) or a stroke no part claims. Parts
- * are atomic, never opened, but they can be pulled into a neighbour's group like a stroke.
- * Units sit in stroke order, by their first stroke.
+ * A natural part (strokeParts.json: 口, 氵, …) is a CLOSED tile: exactly its own strokes,
+ * never opened and never added to. Grouping runs only over the FREE strokes (the ones no
+ * part claims), and ignores stroke order: it grows DENSE tiles, density being a group's ink
+ * (outline area) over its bounding-box area. No stroke-count limit decides a tile's size;
+ * the density curve does.
  *
- *  1. SEED: the free unit with the least ink opens a group.
- *  2. GROW, in stroke order only: the candidates are the free unit just before the group
- *     and the free unit just after it. Pull in the better one (see `compareContact`) until
- *     the group's ink reaches the threshold. A side whose next unit already belongs to a
- *     group is closed; with both sides closed the group stops, even under the threshold.
- *  3. Repeat from 1 until every unit is grouped. The next seed is again the smallest FREE
- *     unit; a group never collects the other small units by size alone.
- *  4. STRANDED: a group that stopped under the threshold joins a neighbouring group (the
- *     one before or after it, chosen by `compareContact`), smallest first, until none is
- *     left or the character is one group.
- *  5. A character that ends as ONE group gives back its last addition (the last pull or
- *     the last merge) as a second tile, because a lone tile is already a finished stack.
+ *  0. SIMPLE: a character of at most `SINGLE_STROKE_MAX` strokes deals every stroke alone
+ *     (parts ignored), since it has too few strokes to break into anything else.
+ *  1. SEED: the densest pair of free strokes starts a group.
+ *  2. GROW: add the free stroke that leaves the group densest, and repeat. Stop before a
+ *     SHARP DROP: when the next best stroke would leave density under `dropRatio` × the
+ *     current density, the group is closed (it sits at a local peak of its density curve).
+ *     Then seed the next group from the strokes left.
+ *  3. LEFTOVER: a lone free stroke left at the end joins the group it leaves densest, so no
+ *     tile is a single stroke. It stays alone only when no free group exists to join (every
+ *     other stroke is in a part). A one-stroke PART (a split 心's dot) is a part, not this.
+ *  4. A character that ends as ONE tile is cut at the sharpest drop of its growth, keeping
+ *     both halves at two strokes or more, because a lone tile is already a finished stack.
  *
- * Every group is a contiguous run of units, so a tile's strokes are neighbours in writing
- * order (a part may still reach around others, as 囗 does in 国).
+ * A tile's strokes need not be neighbours in writing order (耳 can pair strokes 1, 2).
  *
  * Referenced by: docs/SUPERPOSITION_GAME.md § Stroke groups,
  * src/games/superposition/board.ts, src/games/superposition/SuperpositionStage.tsx,
  * server/services/SuperpositionService.ts (stored groups),
- * server/scripts/backfill/chinese/backfill-superposition-groups.ts.
+ * server/scripts/backfill/chinese/backfill-superposition-groups.js.
  */
+
+/** A character of at most this many strokes deals every stroke as its own tile (rule 0). */
+export const SINGLE_STROKE_MAX = 4;
 
 /**
- * The ink (outline area, square glyph units) at which a group stops pulling in units.
- * 25,000 is set from 木 (2026-11-02): its smallest stroke holds about 26,000, so each of its
- * four strokes stands alone (at 30,000 the first three merged). 灬 no longer sets it: it is a
- * whole part in strokeParts.json, kept on one tile whatever the threshold. It does not
- * depend on the tile's size on screen.
+ * Rule 2's sharp drop: a group stops growing when its next best stroke would leave it under
+ * this fraction of its current density (2026-11-03, still to be tuned). Over the 710 most
+ * frequent characters, 0.9 deals 3.05 tiles a character, 19% single strokes (nearly all
+ * from characters of ≤ 4 strokes), 5% of five strokes or more. Lower ratios tolerate bigger
+ * drops and so grow bigger tiles: 0.85 gives 2.97 tiles and lets 球's right side grow to 7.
  */
-export const INK_MERGE_THRESHOLD = 25000;
+export const DENSITY_DROP_RATIO = 0.9;
 
-/**
- * Outlines this close (glyph units, of 1024) count as touching. The data draws joined
- * strokes overlapping, so this only forgives hairline gaps where a join is drawn short.
- */
-export const TOUCH_TOLERANCE_UNITS = 4;
-
-/** Sampling pitch (glyph units) for the overlap measure. Coarse is fine: it only ranks. */
-const OVERLAP_SAMPLE_UNITS = 8;
 /** Line segments per curve when flattening an outline. */
 const CURVE_SEGMENTS = 8;
 /** Points each outline command reads. The hanzi-writer data uses only these, absolute. */
@@ -108,7 +105,7 @@ export function strokeInk(path: string): number {
   return polygonArea(strokeOutline(path));
 }
 
-// ── Contact between outlines ─────────────────────────────────────────────────────────
+// ── Bounding boxes ───────────────────────────────────────────────────────────────────
 
 interface Box {
   minX: number;
@@ -127,110 +124,6 @@ const boxOf = (outline: Polygon): Box =>
     }),
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
   );
-
-/** Even-odd ray cast. */
-function pointInPolygon(x: number, y: number, outline: Polygon): boolean {
-  let inside = false;
-  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
-    const [xi, yi] = outline[i];
-    const [xj, yj] = outline[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-function pointSegmentDistance([px, py]: Coordinate, [ax, ay]: Coordinate, [bx, by]: Coordinate): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSquared = dx * dx + dy * dy;
-  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
-const cross = (o: Coordinate, a: Coordinate, b: Coordinate) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-
-/** Distance between two segments: 0 when they cross. */
-function segmentDistance(a1: Coordinate, a2: Coordinate, b1: Coordinate, b2: Coordinate): number {
-  const d1 = cross(b1, b2, a1);
-  const d2 = cross(b1, b2, a2);
-  const d3 = cross(a1, a2, b1);
-  const d4 = cross(a1, a2, b2);
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
-  return Math.min(
-    pointSegmentDistance(a1, b1, b2),
-    pointSegmentDistance(a2, b1, b2),
-    pointSegmentDistance(b1, a1, a2),
-    pointSegmentDistance(b2, a1, a2)
-  );
-}
-
-/** One stroke's measures, computed once per character. */
-interface StrokeShape {
-  outline: Polygon;
-  box: Box;
-  ink: number;
-}
-
-/** How two strokes meet: the gap between their outlines (0 when they overlap) and the overlap's area. */
-interface Contact {
-  distance: number;
-  overlap: number;
-}
-
-function strokeContact(a: StrokeShape, b: StrokeShape): Contact {
-  // The boxes' gap is a lower bound; a pair this far apart has no overlap to sample.
-  const boxGap = Math.hypot(
-    Math.max(0, a.box.minX - b.box.maxX, b.box.minX - a.box.maxX),
-    Math.max(0, a.box.minY - b.box.maxY, b.box.minY - a.box.maxY)
-  );
-  if (a.outline.length === 0 || b.outline.length === 0) return { distance: Infinity, overlap: 0 };
-  let distance: number;
-  if (boxGap > 0) {
-    distance = Infinity;
-  } else if (pointInPolygon(a.outline[0][0], a.outline[0][1], b.outline) || pointInPolygon(b.outline[0][0], b.outline[0][1], a.outline)) {
-    distance = 0;
-  } else {
-    distance = Infinity;
-  }
-  for (let i = 0; i < a.outline.length && distance > 0; i++) {
-    const a1 = a.outline[i];
-    const a2 = a.outline[(i + 1) % a.outline.length];
-    for (let j = 0; j < b.outline.length && distance > 0; j++) {
-      distance = Math.min(distance, segmentDistance(a1, a2, b.outline[j], b.outline[(j + 1) % b.outline.length]));
-    }
-  }
-  return { distance, overlap: distance > 0 ? 0 : overlapArea(a, b) };
-}
-
-/** The shared area of two outlines, sampled on a grid over their boxes' intersection. */
-function overlapArea(a: StrokeShape, b: StrokeShape): number {
-  const minX = Math.max(a.box.minX, b.box.minX);
-  const maxX = Math.min(a.box.maxX, b.box.maxX);
-  const minY = Math.max(a.box.minY, b.box.minY);
-  const maxY = Math.min(a.box.maxY, b.box.maxY);
-  let hits = 0;
-  for (let x = minX + OVERLAP_SAMPLE_UNITS / 2; x < maxX; x += OVERLAP_SAMPLE_UNITS) {
-    for (let y = minY + OVERLAP_SAMPLE_UNITS / 2; y < maxY; y += OVERLAP_SAMPLE_UNITS) {
-      if (pointInPolygon(x, y, a.outline) && pointInPolygon(x, y, b.outline)) hits++;
-    }
-  }
-  return hits * OVERLAP_SAMPLE_UNITS * OVERLAP_SAMPLE_UNITS;
-}
-
-/**
- * Rank two candidates for the same group, given how each meets it. Negative: `a` goes
- * first. Touching beats not touching; between two touching, the bigger overlap wins;
- * between two apart, the shorter gap wins. A full tie goes to the unit AFTER the group,
- * the way the hand moves on.
- */
-function compareContact(a: Contact & { after: boolean }, b: Contact & { after: boolean }): number {
-  const touchA = a.distance <= TOUCH_TOLERANCE_UNITS;
-  const touchB = b.distance <= TOUCH_TOLERANCE_UNITS;
-  if (touchA !== touchB) return touchA ? -1 : 1;
-  const byMeasure = touchA ? b.overlap - a.overlap : a.distance - b.distance;
-  if (byMeasure !== 0) return byMeasure;
-  return a.after === b.after ? 0 : a.after ? -1 : 1;
-}
 
 // ── Grouping ─────────────────────────────────────────────────────────────────────────
 
@@ -259,137 +152,149 @@ function usableParts(parts: readonly (readonly number[])[], strokeCount: number)
   return parts.filter((part) => part.length > 0);
 }
 
-/** A group under construction: a run of units `lo..hi` in stroke order. */
-interface OpenGroup {
-  lo: number;
-  hi: number;
+/** A free-stroke group while growing. */
+interface FreeGroup {
+  strokes: number[];
   ink: number;
-  /** Unit indices in the order they joined, one entry per pull or merge (rule 5 undoes the last). */
-  additions: number[][];
+  box: Box;
+  /** Density after each step: [0] is the seed pair, [k] after the k-th added stroke. */
+  densities: number[];
+}
+
+/** Floored at 1 so a zero-width stroke (a straight line's box) cannot divide by zero. */
+const boxArea = (box: Box) => Math.max(1, (box.maxX - box.minX) * (box.maxY - box.minY));
+const boxUnion = (a: Box, b: Box): Box => ({
+  minX: Math.min(a.minX, b.minX),
+  minY: Math.min(a.minY, b.minY),
+  maxX: Math.max(a.maxX, b.maxX),
+  maxY: Math.max(a.maxY, b.maxY),
+});
+
+interface Shape {
+  ink: number;
+  box: Box;
+}
+
+const densityOf = (ink: number, box: Box) => ink / boxArea(box);
+
+/** A copy of `group` with `stroke` added and its new density recorded. */
+const withStroke = (group: FreeGroup, stroke: number, shape: Shape): FreeGroup => {
+  const box = boxUnion(group.box, shape.box);
+  const ink = group.ink + shape.ink;
+  return { strokes: [...group.strokes, stroke], ink, box, densities: [...group.densities, densityOf(ink, box)] };
+};
+
+/** The free stroke that leaves `group` densest. Ties go to the lowest stroke index. */
+function bestAddition(group: FreeGroup, free: readonly number[], shapes: readonly Shape[]) {
+  let best: { stroke: number; density: number } | null = null;
+  for (const stroke of free) {
+    const density = densityOf(group.ink + shapes[stroke].ink, boxUnion(group.box, shapes[stroke].box));
+    if (best === null || density > best.density) best = { stroke, density };
+  }
+  return best;
+}
+
+/** Rules 1–2: seed the densest pair of `free`, then grow it until the next stroke is a sharp drop. */
+function growGroup(free: readonly number[], shapes: readonly Shape[], dropRatio: number): FreeGroup {
+  let seed: { a: number; b: number; density: number } | null = null;
+  for (let i = 0; i < free.length; i++) {
+    for (let j = i + 1; j < free.length; j++) {
+      const a = shapes[free[i]];
+      const b = shapes[free[j]];
+      const density = densityOf(a.ink + b.ink, boxUnion(a.box, b.box));
+      if (seed === null || density > seed.density) seed = { a: free[i], b: free[j], density };
+    }
+  }
+  if (seed === null) throw new Error('growGroup needs two free strokes');
+  const { a, b } = seed;
+  let group: FreeGroup = {
+    strokes: [a, b],
+    ink: shapes[a].ink + shapes[b].ink,
+    box: boxUnion(shapes[a].box, shapes[b].box),
+    densities: [seed.density],
+  };
+  let rest = free.filter((stroke) => stroke !== a && stroke !== b);
+  for (;;) {
+    const next = bestAddition(group, rest, shapes);
+    if (next === null) break;
+    const current = group.densities[group.densities.length - 1];
+    if (next.density < current * dropRatio) break; // the sharp drop: close the group
+    group = withStroke(group, next.stroke, shapes[next.stroke]);
+    rest = rest.filter((stroke) => stroke !== next.stroke);
+  }
+  return group;
 }
 
 /**
- * A character's tiles: stroke indices per group, each group sorted, groups in stroke order.
- * `parts` are its natural parts (strokeParts.json); parts that do not fit are ignored.
+ * A character's tiles: stroke indices per group, each group sorted, groups ordered by their
+ * first stroke. `parts` are its natural parts (strokeParts.json); parts that do not fit are
+ * ignored. `dropRatio` defaults to `DENSITY_DROP_RATIO`; tests pass their own.
  */
 export function groupStrokes(
   paths: readonly string[],
   parts: readonly (readonly number[])[] = [],
-  inkThreshold: number = INK_MERGE_THRESHOLD
+  dropRatio: number = DENSITY_DROP_RATIO
 ): number[][] {
   if (paths.length === 0) return [];
-  const shapes: StrokeShape[] = paths.map((path) => {
+  // Rule 0: a simple character is all single strokes.
+  if (paths.length <= SINGLE_STROKE_MAX) return paths.map((_, stroke) => [stroke]);
+
+  const shapes: Shape[] = paths.map((path) => {
     const outline = strokeOutline(path);
-    return { outline, box: boxOf(outline), ink: polygonArea(outline) };
+    return { box: boxOf(outline), ink: polygonArea(outline) };
   });
 
-  // Units in stroke order, by first stroke.
-  const fitParts = usableParts(parts, paths.length);
+  // Parts are closed tiles; only the free strokes are grouped.
+  const fitParts = usableParts(parts, paths.length).map((part) => [...part].sort((a, b) => a - b));
   const claimed = new Set(fitParts.flat());
-  const units = [
-    ...fitParts.map((part) => [...part].sort((a, b) => a - b)),
-    ...paths.map((_, stroke) => stroke).filter((stroke) => !claimed.has(stroke)).map((stroke) => [stroke]),
-  ].sort((a, b) => a[0] - b[0]);
-  const unitInk = units.map((strokes) => strokes.reduce((sum, stroke) => sum + shapes[stroke].ink, 0));
+  let free = paths.map((_, stroke) => stroke).filter((stroke) => !claimed.has(stroke));
 
-  // Stroke-pair contact is the costly measure, so each pair is measured once.
-  const pairCache = new Map<number, Contact>();
-  const pairContact = (a: number, b: number): Contact => {
-    const key = Math.min(a, b) * paths.length + Math.max(a, b);
-    let contact = pairCache.get(key);
-    if (!contact) {
-      contact = strokeContact(shapes[a], shapes[b]);
-      pairCache.set(key, contact);
-    }
-    return contact;
-  };
-  /** How the strokes of some units meet the strokes of others: the nearest gap, the summed overlap. */
-  const contactBetween = (unitsA: readonly number[], unitsB: readonly number[]): Contact => {
-    let distance = Infinity;
-    let overlap = 0;
-    for (const ua of unitsA) {
-      for (const ub of unitsB) {
-        for (const sa of units[ua]) {
-          for (const sb of units[ub]) {
-            const contact = pairContact(sa, sb);
-            distance = Math.min(distance, contact.distance);
-            overlap += contact.overlap;
-          }
+  // Rules 1–2: grow groups until fewer than two free strokes are left.
+  // O(n³) over ≤ ~30 free strokes, so no heap.
+  const groups: FreeGroup[] = [];
+  while (free.length >= 2) {
+    const group = growGroup(free, shapes, dropRatio);
+    groups.push(group);
+    free = free.filter((stroke) => !group.strokes.includes(stroke));
+  }
+
+  // Rule 3: a lone leftover joins the group it leaves densest (or stays alone when there is none).
+  const lone: number[][] = [];
+  for (const stroke of free) {
+    let target = -1;
+    let targetDensity = -Infinity;
+    groups.forEach((group, index) => {
+      const density = densityOf(group.ink + shapes[stroke].ink, boxUnion(group.box, shapes[stroke].box));
+      if (density > targetDensity) {
+        targetDensity = density;
+        target = index;
+      }
+    });
+    if (target === -1) lone.push([stroke]);
+    else groups[target] = withStroke(groups[target], stroke, shapes[stroke]);
+  }
+
+  let result: number[][] = [...fitParts, ...groups.map((group) => group.strokes), ...lone];
+
+  // Rule 4: one tile would deal as a finished stack, so it is cut in two.
+  if (result.length === 1) {
+    const only = groups[0];
+    if (only && only.strokes.length >= 4) {
+      // Cut after step k (strokes [0, k + 1]) where the density fell hardest, both halves ≥ 2.
+      // strokes.length > SINGLE_STROKE_MAX here, so at least one cut exists.
+      let cut = 2;
+      let worst = Infinity;
+      for (let k = 0; k + 1 < only.densities.length && k + 4 <= only.strokes.length; k++) {
+        const fall = only.densities[k + 1] / only.densities[k];
+        if (fall < worst) {
+          worst = fall;
+          cut = k + 2;
         }
       }
-    }
-    return { distance, overlap };
-  };
-  const unitsOf = (group: OpenGroup) => group.additions.flat();
-
-  // Rules 1–3: seed at the smallest free unit, grow to a stroke-order neighbour.
-  const owner: (OpenGroup | null)[] = units.map(() => null);
-  const groups: OpenGroup[] = [];
-  for (;;) {
-    let seed = -1;
-    owner.forEach((group, unit) => {
-      if (group === null && (seed === -1 || unitInk[unit] < unitInk[seed])) seed = unit;
-    });
-    if (seed === -1) break;
-    const group: OpenGroup = { lo: seed, hi: seed, ink: unitInk[seed], additions: [[seed]] };
-    owner[seed] = group;
-    groups.push(group);
-    while (group.ink < inkThreshold) {
-      const options = [
-        { unit: group.lo - 1, after: false },
-        { unit: group.hi + 1, after: true },
-      ].filter(({ unit }) => unit >= 0 && unit < units.length && owner[unit] === null);
-      if (options.length === 0) break;
-      // Contact is only measured when there is a choice to rank.
-      const members = unitsOf(group);
-      const [pick] =
-        options.length === 1
-          ? options
-          : options.map((option) => ({ ...option, ...contactBetween([option.unit], members) })).sort(compareContact);
-      owner[pick.unit] = group;
-      group.additions.push([pick.unit]);
-      group.ink += unitInk[pick.unit];
-      group.lo = Math.min(group.lo, pick.unit);
-      group.hi = Math.max(group.hi, pick.unit);
-    }
-  }
-
-  // Rule 4: a group stranded under the threshold joins its better neighbour, smallest first.
-  for (;;) {
-    if (groups.length < 2) break;
-    const stranded = groups
-      .filter((group) => group.ink < inkThreshold)
-      .sort((a, b) => a.ink - b.ink || a.lo - b.lo)[0];
-    if (!stranded) break;
-    const members = unitsOf(stranded);
-    const neighbours = [
-      { group: stranded.lo > 0 ? owner[stranded.lo - 1] : null, after: false },
-      { group: stranded.hi < units.length - 1 ? owner[stranded.hi + 1] : null, after: true },
-    ].filter((option): option is { group: OpenGroup; after: boolean } => option.group !== null);
-    const [into] =
-      neighbours.length === 1
-        ? neighbours
-        : neighbours.map((option) => ({ ...option, ...contactBetween(members, unitsOf(option.group)) })).sort(compareContact);
-    into.group.additions.push(members);
-    into.group.ink += stranded.ink;
-    into.group.lo = Math.min(into.group.lo, stranded.lo);
-    into.group.hi = Math.max(into.group.hi, stranded.hi);
-    members.forEach((unit) => (owner[unit] = into.group));
-    groups.splice(groups.indexOf(stranded), 1);
-  }
-
-  let result = groups.map((group) => unitsOf(group).flatMap((unit) => units[unit]));
-
-  // Rule 5: one tile would deal as a finished stack, so the last addition stands apart.
-  if (groups.length === 1) {
-    const [only] = groups;
-    if (only.additions.length > 1) {
-      const last = only.additions[only.additions.length - 1];
-      const rest = only.additions.slice(0, -1).flat();
-      result = [rest.flatMap((unit) => units[unit]), last.flatMap((unit) => units[unit])];
-    } else if (result[0].length > 1) {
+      result = [only.strokes.slice(0, cut), only.strokes.slice(cut)];
+    } else if (groups.length === 0 && result[0].length > 1) {
       // A single part covering the whole character (strokeParts.json never emits one): its largest stroke.
-      const largest = result[0].reduce((best, stroke) => (shapes[stroke].ink > shapes[best].ink ? stroke : best));
+      const largest = result[0].reduce((most, stroke) => (shapes[stroke].ink > shapes[most].ink ? stroke : most));
       result = [result[0].filter((stroke) => stroke !== largest), [largest]];
     }
   }

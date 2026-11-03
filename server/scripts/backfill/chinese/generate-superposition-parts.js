@@ -31,6 +31,7 @@ const WHOLE_PARTS = new Set([
     ...'木日土⺼月火田贝女王子见目工口', // closed shapes and common blocks
     ...'力又大攵彐夂巾', // smaller blocks
     ...'人几儿亠乂厶卜', // simple shapes kept as units
+    ...'自', // the source names only its 目 (its 丿 is '？'), so it is listed to keep the 丿
 ]);
 
 /** Parts cut into set pieces, by the stroke positions inside the part. */
@@ -42,13 +43,15 @@ const SPLIT_PARTS = new Map([
     ['西', [[1, 2, 5], [0, 3, 4]]], // the box (丨 𠃌 and the bottom bar) / the top bar and the two legs
     // The source leaves 那's left side unmatched (？？), so ink would pull its bars away from its frame.
     ['那', [[0, 1, 2, 3], [4, 5]]], // left block / 阝
+    // The source leaves 首's long bar unmatched (⿱丷自), so neither the 丷一 hat nor 自 would form.
+    ['首', [[0, 1, 2], [3, 4, 5, 6, 7, 8]]], // the hat (丷 and the bar) / 自
 ]);
 
 /** Radicals left to ink, because they do not read as a unit here. */
 const UNGROUPED_RADICALS = new Set([
     ...'十二八丷冂匕丁七',
     ...'戈斤方寸欠白车页禾雨',
-    ...'隹青其里各令',
+    ...'隹青其里各令豕',
 ]);
 
 const IDS_OPERATOR = /[⿰-⿻]/;
@@ -90,7 +93,10 @@ function collectParts(char, strokes, entries, isPart, parts, isRoot) {
         for (const piece of split) parts.push(piece.map((position) => strokes[position]));
         return;
     }
-    if (isPart(char)) {
+    // A character that is its own radical (黑, 言, 金) is opened at the root rather than taken
+    // whole, so its inner parts (黑's 灬) are still found. A listed whole part at the root
+    // (口, 木) stays closed: it has no parts of its own and is grouped stroke by stroke.
+    if (isPart(char) && !(isRoot && !WHOLE_PARTS.has(char))) {
         // A whole character is not a part of itself: its strokes go to ink.
         if (!isRoot && strokes.length >= 2) parts.push(strokes);
         return;

@@ -4,8 +4,9 @@
 > the hub. Grid and tile sizes are first-pass values, due to be tuned by hand. Parent doc:
 > [GAMES_FEATURE.md](./GAMES_FEATURE.md). Break host: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
-The strokes of four characters are cut out onto transparent tiles, grouped along stroke order
-by ink with natural parts kept whole, and dealt in a bunch on a snapping grid. The learner stacks each character's tiles at one exact grid position. The
+The strokes of four characters are cut out onto transparent tiles, grouped into
+pieces that read as parts of the character (AI-authored per character, § Stored groups; the
+density algorithm in § Stroke groups covers a character not authored yet), and dealt in a bunch on a snapping grid. The learner stacks each character's tiles at one exact grid position. The
 stroke keeps its true place inside the tile, so an exact stack redraws the character.
 
 | Layer | Piece | Where |
@@ -14,7 +15,8 @@ stroke keeps its true place inside the tile, so an exact stack redraws the chara
 | Service | The deal | `server/services/SuperpositionService.ts` |
 | DAL | Candidate words (shared with Writing Grid) | `server/dal/implementations/WritingGridDAL.ts` → `findCandidateWords` |
 | Controller / route | `GET /api/superposition/deal` | `server/controllers/SuperpositionController.ts`, `server/routes/superpositionRoutes.ts` |
-| Contract (pure, shared) | Stroke groups: which strokes share a tile | `server/contracts/superpositionGroups.ts` |
+| Contract (pure, shared) | Stroke groups: the fallback algorithm | `server/contracts/superpositionGroups.ts` |
+| Backfill (pipeline step) | Stroke groups: AI-authored, stored on det | `server/scripts/backfill/chinese/backfill-superposition-groups.js` |
 | Game logic (pure) | Tiles, stacks, tap cycle, snapping | `src/games/superposition/board.ts` |
 | Stage | The run: deal, stopwatch, marks, end | `src/games/superposition/SuperpositionStage.tsx` |
 | Page / break | Hosts | `src/games/superposition/SuperpositionPage.tsx`, `src/games/flpBreak/superpositionBreak.ts` |
@@ -106,8 +108,8 @@ Colors: game hue `tea`; finished outline, character checks and word check `RAMP.
 
 ## Stroke parts
 
-Natural parts are the units `groupStrokes` (§ Stroke groups) builds tiles from: a part is never
-opened, but it can share a tile with the strokes beside it in writing order.
+Natural parts are closed tiles for `groupStrokes` (§ Stroke groups): a part is never opened and
+never takes on other strokes. Each part deals as exactly its own tile.
 
 `src/games/superposition/strokeParts.json` holds the parts as `{ char: [[stroke indices]] }`,
 lazily imported by `SuperpositionStage.tsx` → `loadCharacters`. It is generated and committed
@@ -115,12 +117,18 @@ by `server/scripts/backfill/chinese/generate-superposition-parts.js`, which owns
 lists. Re-run it after changing a list or upgrading `hanzi-writer-data`:
 
 - `WHOLE_PARTS`: kept whole wherever they appear. A listed part is never opened, because 日
-  holds 口 and 田 holds 土. An unlisted part opens, so 语 yields 讠 and the 口 inside 吾.
+  holds 口 and 田 holds 土. An unlisted part opens, so 语 yields 讠 and the 口 inside 吾. 自 is listed because the source
+  names only its 目 (`⿻目？`): unlisted, its 丿 was left free (息, 鼻, 嗅, 夏).
 - `SPLIT_PARTS`: cut into set pieces: ⺮ (two halves), 门 (dot and vertical / frame), 心 (dots /
   hook), 米 (two dots / 木), 西 (the box / the top bar and legs), 那 (left block / 阝, because the source leaves the left block
-unmatched). These apply when the character is the part itself as well.
+unmatched), 首 (the 丷一 hat / 自, because the source leaves 首's long bar unmatched, so neither
+would form; 道 and 導 get both). These apply when the character is the part itself as well.
 - A character's radical (the dictionary's `radical`, stroke indices from `radStrokes`) groups
   like a whole part, unless it is in `UNGROUPED_RADICALS`.
+- A character that IS its own radical (黑, 言, 金, 走, …) is opened at the root rather than taken
+  whole, so its inner parts are found: 黑 gets 灬 and 言 gets 亠 and 口 (95
+  characters gained parts when this was fixed on 2026-11-03). Only a listed whole part at the root (口, 木) stays closed (`collectParts`'s
+  `isRoot && !WHOLE_PARTS.has(char)` check).
 
 A character that is only one whole part (口, 木), or whose single part claims every stroke
 (由), gets no parts entry and is grouped stroke by stroke, because one tile would deal as a finished stack. Repeated
@@ -130,46 +138,105 @@ parts get a tile each, so 品 is three 口 tiles. Stroke matches come from the M
 
 ## Stroke groups
 
-`groupStrokes` (`server/contracts/superpositionGroups.ts`, pure and shared by the client and the
-stored-groups backfill) cuts a character into tiles. A **unit** is a natural part (§ Stroke parts),
-never opened, or a stroke no part claims. Units sit in stroke order by their first stroke.
+**The fallback.** Stored AI groups (§ Stored groups) win whenever a character has them; this
+algorithm runs on the device only for a character whose `superpositionGroups` is still NULL.
+`groupStrokes` (`server/contracts/superpositionGroups.ts`, pure, shared with the backfill for its
+helpers) cuts a character into tiles. Each natural part (§ Stroke parts) is a
+**closed** tile: exactly its own strokes, never opened, never added to. Grouping runs only over
+the **free** strokes (the ones no part claims), and works on where strokes sit, not on stroke
+order.
 
-1. **Seed:** the free unit with the least ink (`strokeInk`, outline area in square glyph units)
-   opens a group.
-2. **Grow in stroke order:** the only candidates are the free unit just before the group and the
-   free unit just after it. The better one joins (`compareContact`): touching beats apart
-   (`TOUCH_TOLERANCE_UNITS`, 4); between two touching, the bigger overlap wins; between two
-   apart, the shorter gap wins; a full tie takes the unit after. Growth stops once the group's
-   ink reaches `INK_MERGE_THRESHOLD`, or when both sides are already grouped.
-3. Repeat from the smallest free unit. A group never collects the other small units by size.
-4. **Stranded:** a group that stopped under the threshold joins the better of its two
-   neighbouring groups (same ranking), smallest first.
-5. A character left as one group gives back its last addition as a second tile, because a lone
-   tile is already a finished stack.
+No stroke-count limit sizes a tile; the density curve does (density = a group's ink,
+`strokeInk`, over its bounding-box area).
 
-Every group is a contiguous run of units, so a tile's strokes are neighbours in writing order;
-a part can still reach around others (囗 in 国). Parts are pullable: a dot may share 口's tile
-(点 gives 卜 + 口, then 灬). Groups come out sorted, in stroke order, which is also the order
-`groupsLookAlike` compares strokes in.
+0. **Simple characters:** a character of at most `SINGLE_STROKE_MAX` (4) strokes deals every
+   stroke alone, parts ignored (木, 人, 口).
+1. **Seed:** the densest pair of free strokes starts a group (a tie takes the lowest indices).
+2. **Grow:** add the free stroke that leaves the group densest, and repeat. Stop before a **sharp
+   drop**: when the next best stroke would leave the group under `DENSITY_DROP_RATIO` (0.9) × its
+   current density, the group closes at that local peak of its density curve. Then seed again
+   from the strokes left.
+3. **Leftover:** a lone free stroke left at the end joins the group it leaves densest, so a free
+   tile always has two strokes or more. It stays alone only when no free group exists (every
+   other stroke is in a part). One-stroke *parts* (心's split dot, § Stroke parts) are parts, not
+   leftovers.
+4. A character left as one tile is cut where its growth's density fell hardest, both halves
+   keeping at least two strokes, because a lone tile is already a finished stack.
 
-The threshold, 25,000, is set from 木 (2026-11-02): its smallest stroke holds about 26,000, so all
-four strokes stand alone (30,000 merged the first three). 灬 once set it at 30,000, but it is now a
-whole part and stays on one tile at any threshold. Over the 710 most frequent discoverable characters
-with stroke data, 25,000 deals 2.98 tiles a character (30,000: 2.76) from 7.76 strokes. The rule costs about 13 ms a character in Node, almost all
-of it the contact measure, which only runs when both sides are free.
+**Tuning (`DENSITY_DROP_RATIO`, 2026-11-03, still being tuned):** a lower ratio tolerates bigger
+drops and grows bigger tiles. At 0.85 球's right side grows into one 7-stroke tile; at 0.6 黑 is
+one tile before rule 4. Growing a stroke into a box that already covers it always raises density,
+so the curve mostly climbs and a drop marks the step that reaches for a stroke outside the cluster.
+
+A tile's strokes need not be neighbours in writing order. Examples: 点 gives 卜 | 口 | 灬; 球 gives
+王 | 一 + the right dot | 亅 + the left dot + ㇀ | ノ + ㇏; 象 gives ⺈ | 口 | 5 6 7 8 | 9 10; 我
+gives its part | 一 + 戈; 耳 gives 0 2 5 | 1 3 4; 木 and 水 stay four strokes. 黑 gives
+0 1 3 | 2 5 | 4 6 7 | 灬, its 灬 a part because own-radical characters are opened (§ Stroke
+parts). Groups come out with
+their strokes sorted, which is also the order `groupsLookAlike` compares strokes in, and ordered
+by their first stroke.
+
+Over the 710 most frequent discoverable characters with stroke data (7.76 strokes each):
+
+| Rule | Tiles a character | Single-stroke tiles | Tiles of 5+ strokes |
+|---|---|---|---|
+| **density drop 0.9; ≤ 4 strokes all single** | **3.06** | **19%** (4% in characters of 5+ strokes) | **4%** |
+| density drop 0.85 | 2.97 | 19% | 6% |
+| density drop 0.8 | 2.86 | 20% | 8% |
+| density score; min ¼, max ⅓ of strokes; floor 0.18 (replaced 2026-11-03) | 3.19 | 23% | 4% |
+
+The single-stroke tiles left in characters of 5+ strokes are one-stroke parts and strokes whose
+only neighbours are parts (the dot of 国). Earlier rules, all replaced on 2026-11-02/03: pairwise
+density merging gated by stroke-count fractions (above), least box growth with box limits (3.09 /
+24%), an ink threshold (3.30 / 30% at 20,000), and stroke-order chunking (3.24) or seeding at the
+smallest stroke (3.16). Growing is O(n³) over a character's free strokes (≤ ~30), so no priority
+queue.
 
 ## Stored groups
 
-**Built, flagged OFF** (`FEATURE_FLAGS.superpositionStoredGroups`, docs/DEFERRED_WORK.md item 32).
-The groups can be stored once on det instead of computed at every deal:
+**ON** (`FEATURE_FLAGS.superpositionStoredGroups`). Each character's tiles are **AI-authored once**
+and stored on det; the algorithm above (§ Stroke groups) is only the fallback for a character the
+backfill has not reached yet.
 
 | Layer | Piece |
 |---|---|
 | Schema | `dictionaryentries_zh."superpositionGroups"` jsonb (migration 180): `[[stroke indices], …]`, single-character rows only |
-| Writer | `server/scripts/backfill/chinese/backfill-superposition-groups.ts`: recomputes every row and writes the ones that differ; refuses to write while the flag is off (`--dry-run` always runs) |
+| Writer | `server/scripts/backfill/chinese/backfill-superposition-groups.js`: a `/mark-discoverable` pipeline step (`REQUIRED_SCRIPTS_ZH`, `when: 'always'`), so the PPE oracle workers pick it up through `oracle-plan.js`. Model `claude-opus-5-5` |
 | DAL | `server/dal/implementations/WritingGridDAL.ts` → `findSuperpositionGroups` |
-| Service | `SuperpositionService.deal` attaches `strokeGroups` to each `SuperpositionCharacter`, only while the flag is on |
-| Client | `board.ts` → `characterGroups` uses `BoardCharacter.groups` when they pass `isStrokePartition`, else computes |
+| Service | `SuperpositionService.deal` attaches `strokeGroups` to each `SuperpositionCharacter` (while the flag is on) |
+| Client | `board.ts` → `characterGroups` uses `BoardCharacter.groups` when they pass `isStrokePartition`, else computes with `groupStrokes` |
+
+**How the writer works.** It is handed WORDS but authors CHARACTERS: it collects the distinct
+characters of the selected words and skips any whose rows are already stamped at its
+`SCRIPT_VERSION`, so a character shared by many words is authored once.
+- A character of ≤ `SINGLE_STROKE_MAX` strokes gets every stroke alone with no model call.
+- A character with no hanzi-writer-data file gets a decided NULL.
+- Every other character gets one model call. Its answer is written to every zh row with that
+  `word1`, and each row is stamped.
+- A word row is stamped once all of its characters are.
+
+Done-ness is the `enrichmentLog` stamp, never the column: multi-character rows stay NULL for good.
+An answer must be an exact partition into ≥ 2 tiles, or it is left unwritten and unstamped and
+printed as `⚠ SUPERPOSITION GROUPS REVIEW <char>` so a later round retries it.
+
+**The prompt** (`SYSTEM_TEXT` in the script) was worked out with the owner on 2026-11-03 and tried
+on 球 我 黑 象, 想 道 跳 慢 and 重 鬼 黄 赛. In priority order:
+1. Natural parts stay whole.
+2. Tiles are dense.
+3. No lone strokes.
+4. No tile of half the character.
+5. Writing order is free.
+6. Never one tile.
+7. Leftover strokes form clean sub-shapes.
+
+One boundary rule overrides the size rule: a tile never mixes strokes from two components, and a
+too-big part splits only along its own sub-components. That rule is why 道 deals its 丷一 hat and
+its 自 apart. Each stroke is shown with its full component path (`componentPath`, which recurses
+into each component's own Make Me a Hanzi entry), its median, its box and its ink, plus the
+strokeParts.json parts as hints.
+
+Revising the prompt means bumping `SCRIPT_VERSION` and its `REQUIRED_SCRIPTS_ZH` version together.
+The oracle workers then re-author every character once.
 
 A word reads its characters' rows, so multi-character rows stay NULL.
 

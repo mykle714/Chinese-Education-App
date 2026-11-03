@@ -61,12 +61,14 @@ const COMPARE_POINTS = 24;
  * A character's tiles: the groups the deal sent (stored on its det row, while
  * `FEATURE_FLAGS.superpositionStoredGroups` is on) when they partition its strokes, else
  * computed here by the shared rule (server/contracts/superpositionGroups.ts → groupStrokes).
+ * `dropRatio` is for tests; the game leaves it out and gets `DENSITY_DROP_RATIO`, the
+ * same one the stored-groups backfill uses.
  */
-export function characterGroups(character: BoardCharacter, inkThreshold: number): number[][] {
+export function characterGroups(character: BoardCharacter, dropRatio?: number): number[][] {
     if (character.groups && isStrokePartition(character.groups, character.strokes.length)) {
         return character.groups.map((group) => [...group]);
     }
-    return groupStrokes(character.strokes, character.parts ?? [], inkThreshold);
+    return groupStrokes(character.strokes, character.parts ?? [], dropRatio);
 }
 
 function worstGap(a: readonly Point[], b: readonly Point[]): number {
@@ -83,9 +85,9 @@ function groupsLookAlike(a: readonly Point[][], b: readonly Point[][], tolerance
 }
 
 /** The board's tiles, unplaced (x, y and z are 0): one per stroke group, in reading order. */
-export function buildTiles(characters: readonly BoardCharacter[], toleranceUnits: number, inkThreshold: number): Tile[] {
+export function buildTiles(characters: readonly BoardCharacter[], toleranceUnits: number, dropRatio?: number): Tile[] {
     const refs: (GroupRef & { lines: Point[][]; paths: string[] })[] = characters.flatMap((character, charIndex) =>
-        characterGroups(character, inkThreshold).map((strokeIndices, groupIndex) => ({
+        characterGroups(character, dropRatio).map((strokeIndices, groupIndex) => ({
             charIndex,
             groupIndex,
             paths: strokeIndices.map((strokeIndex) => character.strokes[strokeIndex]),

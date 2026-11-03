@@ -115,6 +115,7 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-example-sen
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-classifier.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-senses.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-breakdown-elaboration.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-superposition-groups.js --words=未来,摸脉
 ```
 
 **`backfill-max-char-stroke-count` NULL is a valid answer, not a miss.** It writes `maxCharStrokeCount` (migration 179) = the stroke count of the word's HARDEST character, read from the committed `scripts/backfill/chinese/lib/hanziStrokeCounts.json` (hanzi-writer-data). It is the writing flp's easiest-first key (docs/MASTERY_REWORK.md § 6 "Ordering"). A word containing any character outside that data (Latin letters as in 卡拉OK, punctuation, a rare variant) gets NULL and simply sorts last in the writing queue; done-ness is its `enrichmentLog` stamp. Deterministic, no API calls, no ordering constraint — it reads only `word1`. Most rows already carry it (migration 179 filled and stamped every row that existed then), so on those it reports "0 rows".
@@ -147,6 +148,8 @@ single-char batch will report "0 entries" — that is correct, not a failure.
 
 **`backfill-breakdown-elaboration` writes NULL for most words, and that is the intended answer.** It judges whether a word's breakdown is opaque enough to need a sentence of explanation (东西 east+west = "thing"), and stays silent — NULL — for the ~70% of words whose parts plainly add up. **NULL therefore does NOT mean "the step didn't run"**: done-ness lives in the `enrichmentLog` stamp under `chinese/backfill-breakdown-elaboration`, which is written for every decided row including the NULL ones. Do not add a `breakdownElaboration IS NOT NULL` check to the §A4 verification query — it would read a correct run as a failure. See docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c.
 
+**`backfill-superposition-groups` writes the word's CHARACTERS, not the word.** It authors Superposition tile groups (`superpositionGroups`, migration 180) on each character's own single-character row: one model call per character with 5+ strokes, no call at all for ≤ 4 strokes (every stroke its own tile). A character already stamped at the current version is skipped, so a shared character (未 in 未来 and 未必) is authored once. A multi-character word's own column stays NULL forever; its `enrichmentLog` stamp, written once all its characters are stamped, is what proves the step ran. Scan the output for `⚠ SUPERPOSITION GROUPS REVIEW <char>`: the answer was not an exact partition of the strokes into ≥ 2 tiles, so the character is left unwritten and unstamped, and the word stays pending until a later run gets it right. See docs/SUPERPOSITION_GAME.md § Stored groups.
+
 **Scan the `backfill-breakdown-elaboration` output for `⚠ BREAKDOWN ELABORATION REVIEW <word>` lines.** A word is flagged when the model's answer was unparseable, or still over its character budget after one shortening retry. Those rows are left **unwritten AND unstamped** on purpose, so a later run retries them rather than freezing in a truncated sentence — they will simply reappear as pending in the next `oracle-plan` round. Same for `⚠ BREAKDOWN SENSE REVIEW` from the tagger.
 
 **Scan the `backfill-cluster-definitions` output for `⚠ CLUSTER REVIEW <word> (id=...): <reason>` lines and surface every one of them to the user for human review.** It self-flags any sense it is even slightly unsure about (uncertain readings/heteronyms, borderline split/merge calls, low-confidence ordering, etc.). These are the cases most likely to need a manual fix (e.g. a wrong heteronym reading), and because this pipeline writes straight to PPE that fix has to happen *now* rather than at a review gate — and a wrong cluster here now also feeds a wrong `sense` into the example sentences downstream.
@@ -158,6 +161,8 @@ SELECT word1, tone, difficulty,
   -- NULL is valid (a character outside hanzi-writer-data); the stamp proves the step ran.
   "maxCharStrokeCount",
   "enrichmentLog" ? 'chinese/backfill-max-char-stroke-count' AS has_stroke_count_stamp,
+  -- Superposition groups live on the CHARACTERS' rows; on a multi-char word the stamp is the proof.
+  "enrichmentLog" ? 'chinese/backfill-superposition-groups' AS has_superposition_stamp,
   "longDefinition" IS NOT NULL AS has_long_def,
   -- has_longdef_citations is TRUE even for '[]' — a definition with nothing translatable
   -- (quotes no Chinese, or every quoted run is itself a det headword) records "done" as [].

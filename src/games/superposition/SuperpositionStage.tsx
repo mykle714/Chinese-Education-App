@@ -19,7 +19,7 @@ import SuperpositionBoard from "./SuperpositionBoard";
 import SuperpositionExitButton from "./SuperpositionExitButton";
 import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
-import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, INK_MERGE_THRESHOLD, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
+import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
@@ -129,7 +129,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 setWords(dealt);
                 setCharacters(loaded ?? []);
                 // Unplaced until the board measures itself (`handleMeasured`).
-                setTiles(playable ? buildTiles(loaded, LOOKALIKE_TOLERANCE_UNITS, INK_MERGE_THRESHOLD) : []);
+                setTiles(playable ? buildTiles(loaded, LOOKALIKE_TOLERANCE_UNITS) : []);
                 markedRef.current = new Set();
                 placedRef.current = false;
                 setPlaced(false);

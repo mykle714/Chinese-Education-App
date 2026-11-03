@@ -161,19 +161,16 @@ export const FEATURE_FLAGS = {
    * Superposition stored groups — read each character's tile groups from
    * `dictionaryentries_zh."superpositionGroups"` (migration 180) instead of computing them
    * on the device (docs/SUPERPOSITION_GAME.md § Stored groups). A DATA-PATH flag, not a
-   * route gate: no router, page or entry point changes. It gates exactly two sites:
+   * route gate: no router, page or entry point changes. It gates one site:
+   * `server/services/SuperpositionService.ts` → `deal` attaches `strokeGroups` to each
+   * character only when on (the column is not even read when off).
    *
-   *   1. `server/services/SuperpositionService.ts` → `deal` attaches `strokeGroups` to each
-   *      character only when on (the column is not even read when off);
-   *   2. `server/scripts/backfill/chinese/backfill-superposition-groups.ts` refuses to WRITE
-   *      when off (its `--dry-run` always runs).
-   *
-   * The client needs no check: it uses `strokeGroups` when the deal sends them.
-   *
-   * ⚠️ CURRENTLY OFF, deliberately: the grouping rule is still being tuned, and stored
-   * groups would freeze it. Tracked in docs/DEFERRED_WORK.md.
+   * The column is AI-authored by `server/scripts/backfill/chinese/backfill-superposition-groups.js`
+   * (a /mark-discoverable pipeline step). A character it has not reached yet has NULL, and
+   * the client groups it with the shared algorithm, so ON is safe while the backfill fills in.
+   * Off sends no stored groups at all: every character is computed on the device.
    */
-  superpositionStoredGroups: false,
+  superpositionStoredGroups: true,
 } as const;
 
 /** The name of any feature flag above. */

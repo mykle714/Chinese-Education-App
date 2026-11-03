@@ -38,13 +38,6 @@ export const HINT_COOLDOWN_SECONDS = 15;
 /** The hint button's height (px). The word info starts below it. */
 export const HINT_BUTTON_PX = 32;
 
-/**
- * The ink at which a tile's group stops pulling in strokes. Owned by the shared grouping
- * rule (server/contracts/superpositionGroups.ts), because the stored-groups backfill must
- * cut tiles exactly as the client does.
- */
-export { INK_MERGE_THRESHOLD } from "../../../server/contracts/superpositionGroups";
-
 /** The hanzi-writer glyph box's side, in glyph units. */
 const GLYPH_UNITS = 1024;
 /** The on-screen gap (px) below which two strokes read as the same stroke. */

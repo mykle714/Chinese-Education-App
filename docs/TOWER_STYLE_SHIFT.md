@@ -85,7 +85,7 @@ tower's `bluMk` sky, where a blue panel would vanish.
   `useDayWash` at the Stage, `useTowerWash` in each part, `TowerWashContext` between them). It
   must stay per colour: an SVG or CSS filter over the DOM is what made the flp lag at night.
   Ink, and the flp card a grow starts from, are not washed.
-- **Still bento inside a tower-toned game:** `ChallengeRoundScoreboard`, `GamePausedOverlay`,
+- **Still bento inside a tower-toned game:** `ChallengeRoundScoreboard`,
   `ProvisionalSortOffer` and `ProvisionalCardsNotice`, which every game shares.
 
 ## Surfaces already in tower style

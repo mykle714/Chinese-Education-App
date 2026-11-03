@@ -25,17 +25,25 @@ export const SPAWN_SPREAD_UNITS = 6;
 export const TILE_OUTLINE_PX = 2;
 /** Pointer travel (px) before a press on the board becomes a drag rather than a tap. */
 export const DRAG_SLOP_PX = 6;
+/**
+ * Where a dragged tile hangs from the finger, as a fraction of the tile's side: centred
+ * horizontally, 1/5 of the way up from the bottom edge. A fixed grip (rather than wherever
+ * the press landed) keeps most of the tile visible above the finger while it is moved.
+ * Read by `SuperpositionBoard` → `handlePointerMove`.
+ */
+export const DRAG_GRIP_X_FRACTION = 0.5;
+export const DRAG_GRIP_Y_FRACTION = 0.8;
 /** Seconds between hints. */
 export const HINT_COOLDOWN_SECONDS = 15;
 /** The hint button's height (px). The word info starts below it. */
 export const HINT_BUTTON_PX = 32;
 
 /**
- * The ink (outline area, square glyph units) at which a tile's merged strokes stop taking
- * more. 30,000 is set so 灬's four dots form one group: three dots peak near 29,300 and all
- * four start near 32,600 across the 14 characters measured. It does not depend on tile size.
+ * The ink at which a tile's group stops pulling in strokes. Owned by the shared grouping
+ * rule (server/contracts/superpositionGroups.ts), because the stored-groups backfill must
+ * cut tiles exactly as the client does.
  */
-export const INK_MERGE_THRESHOLD = 30000;
+export { INK_MERGE_THRESHOLD } from "../../../server/contracts/superpositionGroups";
 
 /** The hanzi-writer glyph box's side, in glyph units. */
 const GLYPH_UNITS = 1024;

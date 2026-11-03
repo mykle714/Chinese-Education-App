@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Button, Typography } from "@mui/material";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_ARROW_BOTTOM_PX } from "../shared/gameFrameExit";
-import GameEndPopup from "../runtime/GameEndPopup";
-import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { usePersonalBest } from "../shared/usePersonalBest";
-import PersonalBestLine from "../shared/PersonalBestLine";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { loadGlyph } from "../../components/handwriting/GlyphSvg";
 import { useAuth } from "../../AuthContext";
@@ -15,12 +12,11 @@ import { dealSuperposition, type SuperpositionWord } from "../../api/superpositi
 import type { WritingGridDealRequest } from "../../api/writingGrid";
 import { useTTS } from "../../hooks/useTTS";
 import { formatTimeMs } from "../../utils/timeUtils";
-import { COLORS } from "../../theme/colors";
-import { SIZE, WEIGHT } from "../../theme/scale";
 import { WRITING_LEVEL_COUNT } from "../../../server/contracts/writingLevels";
 import { BACK_ARROW_PX } from "../../components/pageHeaderSizing";
-import { buildTiles, completedStacks, pickHintPair, scatterTiles, stackKey, type BoardCharacter, type Tile } from "./board";
+import { buildTiles, lockFinishedStacks, moveTile, pickHintPair, scatterTiles, stackKey, type BoardCharacter, type Tile } from "./board";
 import SuperpositionBoard from "./SuperpositionBoard";
+import SuperpositionExitButton from "./SuperpositionExitButton";
 import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
 import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, INK_MERGE_THRESHOLD, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
@@ -39,7 +35,7 @@ export interface SuperpositionStageProps {
     onDone: () => void;
     /** The destination `onDone` names, for "Back to …". */
     doneLabel: string;
-    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
+    /** flp break only: FlpBreakStageProps `onRunEnded` — the run's one ending, the td flp's end card. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
     onCardCleared?: () => void;
@@ -54,7 +50,8 @@ const INFO_GAP_PX = 4;
 
 /** The characters of a board, with their stroke data. Null if any failed to load. */
 async function loadCharacters(words: readonly SuperpositionWord[]): Promise<BoardCharacter[] | null> {
-    const chars = words.flatMap((word) => word.characters.map((character) => character.char));
+    const dealt = words.flatMap((word) => word.characters);
+    const chars = dealt.map((character) => character.char);
     // A separate chunk, so the table only loads with the game.
     const [glyphs, { default: strokeParts }] = await Promise.all([Promise.all(chars.map(loadGlyph)), import("./strokeParts.json")]);
     if (glyphs.some((glyph) => !glyph?.medians)) return null;
@@ -64,6 +61,8 @@ async function loadCharacters(words: readonly SuperpositionWord[]): Promise<Boar
         strokes: glyphs[index]!.strokes,
         medians: glyphs[index]!.medians!,
         parts: partsOf[char],
+        // Stored groups, sent only while FEATURE_FLAGS.superpositionStoredGroups is on.
+        groups: dealt[index].strokeGroups,
     }));
 }
 
@@ -72,7 +71,13 @@ async function loadCharacters(words: readonly SuperpositionWord[]): Promise<Boar
  * learner stacks them back into place (docs/SUPERPOSITION_GAME.md). Runs on its route and
  * as an flp game break (docs/FLP_GAME_BREAKS.md § 6).
  *
- * Flow: loading → (empty) → playing → ended.
+ * Flow: loading → (empty) → playing → (inspecting) → ended.
+ *
+ * A WIN does not end the run on the spot: it enters "inspecting", where the finished board
+ * stays on screen, locked, so the learner can look over what they built. The → button in the
+ * bottom-right corner (or a break's Leave) moves on to "ended", whose only ending is the
+ * Deck Tower flp's end card (`onRunEnded`). There is no end popup: on the deprecated route
+ * (no flp to report to) → simply leaves via `onDone`. Leaving early skips inspection.
  *
  * Untimed on screen: no clock is drawn and a run cannot be lost. The stopwatch still runs,
  * as ACCUMULATED active time so a backgrounded app is not billed, for the personal best.
@@ -97,7 +102,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     const personalBest = usePersonalBest(GAME_ID, "default");
     const tts = useTTS();
 
-    const [phase, setPhase] = useState<"loading" | "empty" | "playing" | "ended">("loading");
+    const [phase, setPhase] = useState<"loading" | "empty" | "playing" | "inspecting" | "ended">("loading");
     const [words, setWords] = useState<SuperpositionWord[]>([]);
     const [characters, setCharacters] = useState<BoardCharacter[]>([]);
     const [tiles, setTiles] = useState<Tile[]>([]);
@@ -105,9 +110,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     const [liftedId, setLiftedId] = useState<number | null>(null);
     const [hintedTileIds, setHintedTileIds] = useState<number[]>([]);
     const [hintSecondsLeft, setHintSecondsLeft] = useState(0);
-    const [loadNonce, setLoadNonce] = useState(0);
     const [finalMs, setFinalMs] = useState(0);
-    const [popupMinimized, setPopupMinimized] = useState(false);
     // Set when the run ended through Leave: how many characters stood finished by then.
     const [leftWith, setLeftWith] = useState<number | null>(null);
 
@@ -117,7 +120,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         if (!isAuthenticated) return;
         let cancelled = false;
         setPhase("loading");
-        const deal = prefetchedWords && loadNonce === 0 ? Promise.resolve(prefetchedWords) : dealSuperposition(dealRequest);
+        const deal = prefetchedWords ? Promise.resolve(prefetchedWords) : dealSuperposition(dealRequest);
         deal
             .then(async (dealt) => {
                 const loaded = await loadCharacters(dealt);
@@ -145,11 +148,12 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         };
         // The request and the prefetch are fixed for a Stage's life.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, loadNonce]);
+    }, [isAuthenticated]);
 
     // ── Placement ────────────────────────────────────────────────────────────────
     // Until the board measures itself every tile sits at 0,0, which is not a stack anyone
-    // built, so nothing is judged before `placed`.
+    // built, so no hint is offered before `placed`. (Stacks are only judged on a drop, which
+    // cannot happen before placement.)
     const placedRef = useRef(false);
     const [placed, setPlaced] = useState(false);
     const handleMeasured = useCallback((cols: number, rows: number, infoRows: number) => {
@@ -164,21 +168,22 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         setPlaced(true);
     }, []);
 
+    // A locked stack moves as one (`moveTile`), on top of the pile.
     const handleMove = useCallback((tileId: number, x: number, y: number) => {
-        setTiles((current) => {
-            const moved = current.find((tile) => tile.id === tileId);
-            if (!moved || (moved.x === x && moved.y === y)) return current;
-            // Moves to the top of the pile, and z values stay a compact 0..n-1.
-            return current.map((tile) => {
-                if (tile.id === tileId) return { ...tile, x, y, z: current.length - 1 };
-                return tile.z > moved.z ? { ...tile, z: tile.z - 1 } : tile;
-            });
-        });
+        setTiles((current) => moveTile(current, tileId, x, y));
+    }, []);
+
+    // The drop is the one moment a stack can finish: any loose stack that now holds exactly a
+    // character fuses into a locked stack. Both updates are functional, so this runs after the
+    // drag's last `handleMove`.
+    const handleLift = useCallback((tileId: number | null) => {
+        setLiftedId(tileId);
+        if (tileId === null) setTiles(lockFinishedStacks);
     }, []);
 
     // ── Stopwatch: accumulated ACTIVE time ───────────────────────────────────────
     const running = phase === "playing";
-    const { paused: backgroundPaused, resume: resumeFromBackground } = useBackgroundPause(running);
+    const { paused: backgroundPaused } = useBackgroundPause(running);
     const accumulatedRef = useRef(0);
     const runningSinceRef = useRef<number | null>(null);
     const holdStopwatch = () => {
@@ -190,16 +195,19 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         if (backgroundPaused) holdStopwatch();
         else if (runningSinceRef.current === null) runningSinceRef.current = Date.now();
     }, [backgroundPaused, running]);
-    useEffect(() => {
-        if (loadNonce > 0) accumulatedRef.current = 0;
-    }, [loadNonce]);
 
     // ── Marks and the end ────────────────────────────────────────────────────────
-    const stacks = useMemo(() => (placed ? completedStacks(tiles, liftedId) : new Map<string, number>()), [placed, tiles, liftedId]);
-    const finishedStackKeys = useMemo(() => new Set(stacks.keys()), [stacks]);
-    const finishedChars = useMemo(() => new Set(Array.from(stacks.values(), (index) => characters[index]?.char ?? "")), [stacks, characters]);
+    // A finished character is a locked stack, and a lock never opens, so a finish stands
+    // for the rest of the run.
+    const finishedChars = useMemo(
+        () => new Set(tiles.flatMap((tile) => (tile.lock ? [characters[tile.lock.charIndex]?.char ?? ""] : []))),
+        [tiles, characters]
+    );
     const markedRef = useRef(new Set<string>());
     const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
+    // The personal best as it stood when the run was won. Inspection delays the break's report,
+    // and by then `personalBest.best` may already hold this run's own time.
+    const bestBeforeRunRef = useRef<number | null>(null);
 
     // ── Hint ─────────────────────────────────────────────────────────────────────
     // The cooldown counts down one second per commit and holds while the app is backgrounded.
@@ -209,7 +217,19 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         return () => window.clearTimeout(timer);
     }, [hintSecondsLeft, backgroundPaused]);
 
-    const hintPair = useMemo(() => (running && placed ? pickHintPair(tiles, stacks) : null), [running, placed, tiles, stacks]);
+    // The hint reads the board at rest. A drag moves the held tile's x,y on every hover, so a
+    // live read would re-judge mid-air: hovering the last tile over its partial stack puts
+    // every open tile at one stackKey, `pickHintPair` finds no pair, and the button dims
+    // until the drop. While a tile is lifted, the pair from before the lift stands. This uses
+    // React's "store info from previous renders" pattern (setState during render, guarded so
+    // it settles in one extra pass) rather than an effect, so the button never flashes.
+    const liveHintPair = useMemo(
+        () => (running && placed && liftedId === null ? pickHintPair(tiles) : null),
+        [running, placed, liftedId, tiles]
+    );
+    const [restingHintPair, setRestingHintPair] = useState<[number, number] | null>(null);
+    if (liftedId === null && liveHintPair !== restingHintPair) setRestingHintPair(liveHintPair);
+    const hintPair = liftedId === null ? liveHintPair : restingHintPair;
 
     const showHint = () => {
         if (!hintPair) return;
@@ -224,14 +244,13 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         if (hintedTileIds.length === 0 || liftedId !== null) return;
         const hinted = tiles.filter((tile) => hintedTileIds.includes(tile.id));
         const joined = hinted.length === 2 && stackKey(hinted[0]) === stackKey(hinted[1]);
-        if (joined || hinted.some((tile) => stacks.has(stackKey(tile)))) setHintedTileIds([]);
-    }, [tiles, stacks, liftedId, hintedTileIds]);
+        if (joined || hinted.some((tile) => tile.lock)) setHintedTileIds([]);
+    }, [tiles, liftedId, hintedTileIds]);
 
     const endRun = (leftEarlyWith: number | null) => {
         holdStopwatch();
         setFinalMs(accumulatedRef.current);
         setLeftWith(leftEarlyWith);
-        setPopupMinimized(false);
         setPhase("ended");
     };
 
@@ -257,23 +276,39 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                     .catch((err) => console.error(`[Superposition] writing mark failed → card ${character.cardId}:`, err));
             });
         if (boardCharacters.length > 0 && boardCharacters.every(({ char }) => finishedChars.has(char))) {
-            endRun(null);
+            // Won: stop the clock and record now, then hold the board for inspection.
+            holdStopwatch();
+            setFinalMs(accumulatedRef.current);
+            setLeftWith(null);
+            setLiftedId(null);
+            setHintedTileIds([]);
+            bestBeforeRunRef.current = personalBest.best;
             newBestRef.current = personalBest.record(accumulatedRef.current);
+            setPhase("inspecting");
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [finishedChars, phase]);
 
-    // The flp break's Leave: a live run ends with what stands finished.
+    // Inspection over (the → button): a break reports to the td flp's end card; the
+    // deprecated route has no end card, so it just leaves.
+    const finishInspecting = () => {
+        if (isBreak) setPhase("ended");
+        else onDone();
+    };
+
+    // The flp break's Leave: a live run ends with what stands finished; during inspection
+    // it acts as the → button, so a won run is still reported.
     const leaveBreak = () => {
         if (running) endRun(finishedChars.size);
+        else if (phase === "inspecting") finishInspecting();
         else if (phase !== "ended") onDone();
     };
 
-    // A break reports to the flp instead of showing the end popup. Read on the commit that
-    // entered "ended", where `personalBest.best` is still the best from before this run.
+    // A break reports to the flp instead of showing the end popup. A won run's best-before
+    // was captured at the win (`bestBeforeRunRef`); a left run reports no best.
     useEffect(() => {
         if (!isBreak || phase !== "ended") return;
-        const bestBefore = personalBest.best;
+        const bestBefore = bestBeforeRunRef.current;
         const left = leftWith !== null;
         onRunEnded?.({
             title: left ? "Run ended" : "Finished!",
@@ -291,12 +326,6 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         // Once per run.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isBreak, phase]);
-
-    const playAgain = () => {
-        personalBest.reset();
-        setPopupMinimized(false);
-        setLoadNonce((n) => n + 1);
-    };
 
     const speakWord = (word: SuperpositionWord) => {
         void tts.speakSentence(word.entryKey, word.pinyin ?? undefined);
@@ -323,17 +352,15 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 </GameCentered>
             )}
 
-            {(phase === "playing" || phase === "ended") && (
+            {(phase === "playing" || phase === "inspecting" || phase === "ended") && (
                 // The grid is the whole play area, so the panel's inset, corner and line go on
                 // the route too; a break's frame already drops them. The word info is drawn
                 // on the grid, and in a break it starts below Leave's arrow, top-left.
                 <GameFrame className="superposition__frame" sx={{ touchAction: "none", margin: 0, borderRadius: 0, border: "none" }}>
                     <SuperpositionBoard
                         tiles={tiles}
-                        finishedStacks={finishedStackKeys}
                         hintedTileIds={hintedTileIds}
-                        liftedId={liftedId}
-                        locked={phase === "ended"}
+                        locked={phase !== "playing"}
                         info={
                             <>
                                 <SuperpositionHints
@@ -342,47 +369,25 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                                     topInsetPx={hintTopPx + HINT_BUTTON_PX + INFO_GAP_PX}
                                     onSpeak={speakWord}
                                 />
-                                <SuperpositionHintButton
-                                    secondsLeft={hintSecondsLeft}
-                                    ready={hintSecondsLeft === 0 && hintPair !== null}
-                                    topPx={hintTopPx}
-                                    onHint={showHint}
-                                />
+                                {/* Nothing left to hint once the board is complete. */}
+                                {phase === "playing" && (
+                                    <SuperpositionHintButton
+                                        secondsLeft={hintSecondsLeft}
+                                        ready={hintSecondsLeft === 0 && hintPair !== null}
+                                        topPx={hintTopPx}
+                                        onHint={showHint}
+                                    />
+                                )}
                             </>
                         }
                         onMeasured={handleMeasured}
                         onMove={handleMove}
-                        onLift={setLiftedId}
+                        onLift={handleLift}
                     />
+                    {/* Inspection's exit: an "Exit →" pill that inflates in. */}
+                    {phase === "inspecting" && <SuperpositionExitButton onClick={finishInspecting} />}
                 </GameFrame>
             )}
-
-            {phase === "ended" && !isBreak && (
-                <GameEndPopup
-                    classPrefix="superposition"
-                    minimized={popupMinimized}
-                    onMinimize={() => setPopupMinimized(true)}
-                    onRestore={() => setPopupMinimized(false)}
-                >
-                    <Typography className="superposition__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                        Finished!
-                    </Typography>
-                    <Typography className="superposition__popup-time" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                        {formatTimeMs(finalMs)}
-                    </Typography>
-                    <PersonalBestLine game={GAME_ID} best={personalBest.best} isNewBest={personalBest.isNewBest} className="superposition__personal-best" />
-                    <Box className="superposition__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}>
-                        <Button className="superposition__popup-again" variant="contained" onClick={playAgain} sx={{ py: 1.25, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.bold }}>
-                            Play Again
-                        </Button>
-                        <Button className="superposition__popup-back" variant="outlined" onClick={onDone} sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}>
-                            Back to {doneLabel}
-                        </Button>
-                    </Box>
-                </GameEndPopup>
-            )}
-
-            <GamePausedOverlay open={backgroundPaused} onResume={resumeFromBackground} classPrefix="superposition" />
         </Frame>
     );
 };

@@ -4,8 +4,8 @@
 > the hub. Grid and tile sizes are first-pass values, due to be tuned by hand. Parent doc:
 > [GAMES_FEATURE.md](./GAMES_FEATURE.md). Break host: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
-The strokes of four characters are cut out onto transparent tiles, grouped into natural parts
-and then merged by ink, and dealt in a bunch on a snapping grid. The learner stacks each character's tiles at one exact grid position. The
+The strokes of four characters are cut out onto transparent tiles, grouped along stroke order
+by ink with natural parts kept whole, and dealt in a bunch on a snapping grid. The learner stacks each character's tiles at one exact grid position. The
 stroke keeps its true place inside the tile, so an exact stack redraws the character.
 
 | Layer | Piece | Where |
@@ -14,6 +14,7 @@ stroke keeps its true place inside the tile, so an exact stack redraws the chara
 | Service | The deal | `server/services/SuperpositionService.ts` |
 | DAL | Candidate words (shared with Writing Grid) | `server/dal/implementations/WritingGridDAL.ts` → `findCandidateWords` |
 | Controller / route | `GET /api/superposition/deal` | `server/controllers/SuperpositionController.ts`, `server/routes/superpositionRoutes.ts` |
+| Contract (pure, shared) | Stroke groups: which strokes share a tile | `server/contracts/superpositionGroups.ts` |
 | Game logic (pure) | Tiles, stacks, tap cycle, snapping | `src/games/superposition/board.ts` |
 | Stage | The run: deal, stopwatch, marks, end | `src/games/superposition/SuperpositionStage.tsx` |
 | Page / break | Hosts | `src/games/superposition/SuperpositionPage.tsx`, `src/games/flpBreak/superpositionBreak.ts` |
@@ -47,39 +48,66 @@ Refused: a character shared between words or repeated in one (two identical stac
   `SPAWN_SPREAD_UNITS` on each axis, `SPAWN_MARGIN_UNITS` clear of every edge and below the
   word info. Tiles overlap but never start as a stack. Drags may go anywhere.
 - **Stack:** tiles at one exact `(x, y)`. An overlap at an offset is not a stack.
-- **Green:** `completedStacks`: a stack's outline turns green only when it holds exactly a
-  character's strokes. There is no feedback before that, and a green stack can still be moved.
-- **Judged on the drop:** the tile held in a drag (`liftedId`, owned by the Stage, set through
-  `SuperpositionBoard`'s `onLift`) sits in no stack. Green, marks and the win wait for the drop,
-  and lifting a tile out of a green stack clears the stack's green at once.
+- **Judged on the drop:** stacks are judged only when a drag ends (`SuperpositionStage` →
+  `handleLift`, called through `SuperpositionBoard`'s `onLift`). Hovering over a stack finishes
+  nothing. There is no feedback before a finish.
+- **Lock:** a dropped stack that holds exactly a character's strokes (`completedStacks`) fuses
+  at once (`board.ts` → `lockFinishedStacks`). Its tiles share a `TileLock` (`id` = the smallest
+  tile id, `charIndex` = the character), the outline turns green, and the lock never opens:
+  - **Moves as one:** dragging any of its tiles moves the whole stack onto the top of the pile
+    (`moveTile`). It cannot be pulled apart, so a finish (and its checks) stands for the run.
+  - **Selects as one:** a pile's hits fold each locked stack to one entry (`collapseLocked`),
+    so a tap selects it whole, highlights all its strokes, and one drag lifts it.
+  - **Never re-judged:** `completedStacks` reads loose tiles only. A loose tile dropped on a
+    locked cell is allowed, and neither spoils nor joins the locked stack; loose tiles there
+    can finish (and lock) a character of their own.
 - **Win:** all four characters finished. Stacks may sit anywhere, and a word's characters
   need not be adjacent or in order.
+- **Inspect on win:** a win stops the clock and records the personal best, then holds the
+  completed board on screen, locked, with the hint button gone (`SuperpositionStage` phase
+  `"inspecting"`). A solid-ink **Exit →** pill in the bottom-right corner
+  (`src/games/superposition/SuperpositionExitButton.tsx`, `superposition__inspect-done`) —
+  which inflates in like a bubble (scale 0 → 1.08 → 1 from its bottom-right corner, after a
+  250 ms beat; none under reduced motion) — moves on to `onRunEnded` — the Deck Tower
+  flp's end card, the game's **only** ending (there is no end popup and no Play Again). A
+  break's Leave arrow during inspection does the same as Exit, so a won run is always reported.
+  Leaving early skips inspection. On the deprecated `/games/superposition` route (no flp to
+  report to) Exit simply leaves via `onDone`.
 - **Tap:** `nextTapSelection` walks the pile under the finger, the card icon editor's rule
   (`src/cardIcons/editor/CardIconCanvas.tsx` → `pickTapTarget`,
   [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)). The selected stroke is highlighted.
-- **Drag:** `dragTarget` lifts the selection if it is in the pile, else the top tile. A drop
-  clears the selection.
+- **Drag:** `dragTarget` lifts the selection if it is in the pile, else the top tile. Once the
+  press passes `DRAG_SLOP_PX`, the tile jumps so the finger sits at its bottom-middle grip —
+  centred, 1/5 up from the bottom edge (`constants.ts` → `DRAG_GRIP_X_FRACTION`,
+  `DRAG_GRIP_Y_FRACTION`; `SuperpositionBoard.tsx` → `handlePointerMove`) — keeping the stroke
+  visible above the finger. A drop clears the selection.
 - **Hint button:** `SuperpositionHintButton`, top-right on the grid, on the Leave arrow's row in
-  a break. A press outlines two tiles in `RAMP.org.mark` (`board.ts` → `pickHintPair`, held by the
+  a break. A press outlines two tiles and inks their strokes in `RAMP.org.mark` (`board.ts` → `pickHintPair`, held by the
   Stage as `hintedTileIds`). The pair belongs in one stack and is not in one yet; it reads `accepts`,
-  so a lookalike swap counts. Tiles in finished stacks never qualify, and two lone tiles are
-  preferred; failing that, a tile in an unfinished pile can be picked, so a last tile can be
+  so a lookalike swap counts. Locked tiles never qualify, and two lone loose tiles are
+  preferred (a locked stack on the same cell does not count against "alone"); failing that, a tile in an unfinished pile can be picked, so a last tile can be
   pointed at its partial stack. The outline clears when the two tiles are dropped together or
-  either finishes in another stack; moving one elsewhere keeps it. The next hint comes
+  either locks into another stack; moving one elsewhere keeps it. The next hint comes
   `HINT_COOLDOWN_SECONDS` (15) later, counted down on the button and held while the app is
-  backgrounded. A hint has no effect on marks or the personal best.
+  backgrounded. A hint has no effect on marks or the personal best. The button's armed state
+  reads the board at rest: while a tile is lifted the Stage keeps the pair it had before the
+  lift (`restingHintPair`), so hovering a tile over a stack doesn't change the button.
 - **Word info:** `SuperpositionHints`, drawn on the grid under the tiles and below the hint
   button: the words side by side across the top, each a column of toned pinyin (`TonedPronunciation`), dd (up to three lines)
-  and an audio button. A filled green `check_circle` sits in a word's top corner, beside the
-  pinyin, while all its characters are finished. Only the button takes input, so a tile lying
-  over the info stays grabbable.
+  and an audio button. Each finished character gets a small filled green `check_circle`
+  (`CHAR_CHECK_PX`, 14) under its own syllable, through `TonedPronunciation`'s
+  `renderBelowSyllable` slot; the slot is always reserved (hidden until finished) so the pinyin
+  never shifts. Syllables pair with characters by position, and a word whose syllable count
+  differs from its characters gets no per-syllable checks (`SuperpositionHints.tsx` →
+  `syllableChecks`). A larger check sits in a word's top corner once all its characters are
+  finished. Only the audio button takes input, so a tile lying over the info stays grabbable.
 
-Colors: game hue `tea`; finished outline and word check `RAMP.grn.mark`; selection `RAMP.pur.mark`; hint outline `RAMP.org.mark`.
+Colors: game hue `tea`; finished outline, character checks and word check `RAMP.grn.mark`; selection `RAMP.pur.mark`; hint outline and stroke `RAMP.org.mark`.
 
 ## Stroke parts
 
-`groupStrokes` (`src/games/superposition/board.ts`) decides what each tile holds. Natural parts
-come first and each keeps its own tile; the strokes left over go to the ink pass below.
+Natural parts are the units `groupStrokes` (§ Stroke groups) builds tiles from: a part is never
+opened, but it can share a tile with the strokes beside it in writing order.
 
 `src/games/superposition/strokeParts.json` holds the parts as `{ char: [[stroke indices]] }`,
 lazily imported by `SuperpositionStage.tsx` → `loadCharacters`. It is generated and committed
@@ -89,29 +117,61 @@ lists. Re-run it after changing a list or upgrading `hanzi-writer-data`:
 - `WHOLE_PARTS`: kept whole wherever they appear. A listed part is never opened, because 日
   holds 口 and 田 holds 土. An unlisted part opens, so 语 yields 讠 and the 口 inside 吾.
 - `SPLIT_PARTS`: cut into set pieces: ⺮ (two halves), 门 (dot and vertical / frame), 心 (dots /
-  hook), 米 (two dots / 木), 那 (left block / 阝, because the source leaves the left block
+  hook), 米 (two dots / 木), 西 (the box / the top bar and legs), 那 (left block / 阝, because the source leaves the left block
 unmatched). These apply when the character is the part itself as well.
 - A character's radical (the dictionary's `radical`, stroke indices from `radStrokes`) groups
   like a whole part, unless it is in `UNGROUPED_RADICALS`.
 
 A character that is only one whole part (口, 木), or whose single part claims every stroke
-(由), gets no parts entry and goes to ink, because one tile would deal as a finished stack. Repeated
+(由), gets no parts entry and is grouped stroke by stroke, because one tile would deal as a finished stack. Repeated
 parts get a tile each, so 品 is three 口 tiles. Stroke matches come from the Make Me a Hanzi
 `matches` field read through `server/scripts/backfill/chinese/lib/decompose.js` →
-`loadDecompositionEntries`; strokes it leaves unmatched fall to ink.
+`loadDecompositionEntries`; strokes it leaves unmatched are grouped as single strokes.
 
-## Ink merging
+## Stroke groups
 
-`groupStrokesByInk` (`src/games/superposition/board.ts`) is the fallback for a character with no
-parts, and `mergeByInk` is its core, also run on a character's leftover strokes. Strokes
-are sorted by `strokeInk` (outline area in square glyph units), smallest first, and collect in
-the open group until its ink reaches `INK_MERGE_THRESHOLD`. Grouping reads size only, so a
-tile's strokes need not be neighbours. A character that would form one tile gives its largest
-stroke a second tile, because a lone tile is already a finished stack.
+`groupStrokes` (`server/contracts/superpositionGroups.ts`, pure and shared by the client and the
+stored-groups backfill) cuts a character into tiles. A **unit** is a natural part (§ Stroke parts),
+never opened, or a stroke no part claims. Units sit in stroke order by their first stroke.
 
-The threshold, 30,000, is set from 灬. Across 14 characters holding it, three dots peak near
-29,300 and all four start near 32,600. Over the common words (`frequencyScore` >= 4), a
-board of about 28 strokes deals about 12 tiles with parts and ink together.
+1. **Seed:** the free unit with the least ink (`strokeInk`, outline area in square glyph units)
+   opens a group.
+2. **Grow in stroke order:** the only candidates are the free unit just before the group and the
+   free unit just after it. The better one joins (`compareContact`): touching beats apart
+   (`TOUCH_TOLERANCE_UNITS`, 4); between two touching, the bigger overlap wins; between two
+   apart, the shorter gap wins; a full tie takes the unit after. Growth stops once the group's
+   ink reaches `INK_MERGE_THRESHOLD`, or when both sides are already grouped.
+3. Repeat from the smallest free unit. A group never collects the other small units by size.
+4. **Stranded:** a group that stopped under the threshold joins the better of its two
+   neighbouring groups (same ranking), smallest first.
+5. A character left as one group gives back its last addition as a second tile, because a lone
+   tile is already a finished stack.
+
+Every group is a contiguous run of units, so a tile's strokes are neighbours in writing order;
+a part can still reach around others (囗 in 国). Parts are pullable: a dot may share 口's tile
+(点 gives 卜 + 口, then 灬). Groups come out sorted, in stroke order, which is also the order
+`groupsLookAlike` compares strokes in.
+
+The threshold, 25,000, is set from 木 (2026-11-02): its smallest stroke holds about 26,000, so all
+four strokes stand alone (30,000 merged the first three). 灬 once set it at 30,000, but it is now a
+whole part and stays on one tile at any threshold. Over the 710 most frequent discoverable characters
+with stroke data, 25,000 deals 2.98 tiles a character (30,000: 2.76) from 7.76 strokes. The rule costs about 13 ms a character in Node, almost all
+of it the contact measure, which only runs when both sides are free.
+
+## Stored groups
+
+**Built, flagged OFF** (`FEATURE_FLAGS.superpositionStoredGroups`, docs/DEFERRED_WORK.md item 32).
+The groups can be stored once on det instead of computed at every deal:
+
+| Layer | Piece |
+|---|---|
+| Schema | `dictionaryentries_zh."superpositionGroups"` jsonb (migration 180): `[[stroke indices], …]`, single-character rows only |
+| Writer | `server/scripts/backfill/chinese/backfill-superposition-groups.ts`: recomputes every row and writes the ones that differ; refuses to write while the flag is off (`--dry-run` always runs) |
+| DAL | `server/dal/implementations/WritingGridDAL.ts` → `findSuperpositionGroups` |
+| Service | `SuperpositionService.deal` attaches `strokeGroups` to each `SuperpositionCharacter`, only while the flag is on |
+| Client | `board.ts` → `characterGroups` uses `BoardCharacter.groups` when they pass `isStrokePartition`, else computes |
+
+A word reads its characters' rows, so multi-character rows stay NULL.
 
 ## Lookalike strokes
 

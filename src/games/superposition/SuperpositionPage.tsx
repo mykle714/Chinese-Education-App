@@ -19,6 +19,10 @@ const SuperpositionPageFrame: React.FC<GameStageFrameProps> = ({ title, onExitRe
  * Superposition's own ROUTE (`/games/superposition`). The game is hidden from the hub and
  * reached through an flp break; every registered game needs a route, and this one is also
  * the direct way in for tuning. A thin host around `SuperpositionStage`.
+ *
+ * DEPRECATED as a play flow: the game's one ending is the Deck Tower flp's end card, which
+ * only a break has. Here a won run's → (and Back) simply leave; there is no end popup or
+ * Play Again. Kept only because every registered game needs a route.
  */
 const SuperpositionPage: React.FC = () => {
     usePageTitle("Superposition");

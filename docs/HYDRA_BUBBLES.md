@@ -1049,8 +1049,7 @@ clock and nothing that advances against the player: bubbles drift (since 2026-09
 but the drift changes no score, fill or spawn, there is no descending ceiling, and the
 board's CONTENTS change only in response to a match. (The rAF loop does not run in a
 backgrounded tab anyway, so the board does not even move while hidden.) Backgrounding therefore costs the player nothing,
-and a tap-to-resume overlay on return is pure friction over a board that is exactly as
-they left it.
+and a pause would protect a board that is exactly as they left it.
 
 The field still freezes for an **input-blocking modal** (§ 6.4) — that is about the
 pointer and a half-finished drag, not about time.
@@ -1059,7 +1058,8 @@ pointer and a half-finished drag, not about time.
 > A challenge round is timed (§ 7.5), so `HydraBubblesPage` arms
 > `useBackgroundPause(phase === "playing" && isChallengeLaunch)`, feeds it into
 > `framePaused` (which the lend notice used to share, before it was replaced by the
-> per-bubble badge in § 6.4), and renders `GamePausedOverlay`. The round's
+> per-bubble badge in § 6.4); the pause clears by itself on return (no resume screen
+> since 2026-11-02). The round's
 > elapsed time is accumulated ACTIVE time — the shared `useChallengeRound` clock ticks
 > only while unpaused — so the pause is real rather than cosmetic. Free play is
 > unchanged and still exempt.
@@ -1283,7 +1283,7 @@ SHAPE (clear all nine, a wrong match ends the run), exactly as this section alre
 argued.
 
 **Background pause is now armed for challenge rounds** (§ 7.1c's own caveat, honoured):
-a challenge run is timed, so it gets `useBackgroundPause` + `GamePausedOverlay`, while
+a challenge run is timed, so it gets `useBackgroundPause`, while
 free play stays exempt.
 
 **O2 is now closed** (2026-09-02). Zeroing filler had left two clean 9-of-9 runs tied at

@@ -46,6 +46,13 @@ export interface IWritingGridDAL {
    */
   findCandidateWords(userId: string, extraIds: number[]): Promise<WritingCandidateWordRow[]>;
 
+  /**
+   * Superposition's stored tile groups (`dictionaryentries_zh."superpositionGroups"`,
+   * migration 180) for each of `chars` that has them: char → stroke indices per tile.
+   * Read only while `FEATURE_FLAGS.superpositionStoredGroups` is on.
+   */
+  findSuperpositionGroups(chars: string[]): Promise<Map<string, number[][]>>;
+
   /** The `entryKey` of each of the learner's vet rows in `ids` (an flp break's seed words). */
   findEntryKeys(userId: string, ids: number[]): Promise<string[]>;
 

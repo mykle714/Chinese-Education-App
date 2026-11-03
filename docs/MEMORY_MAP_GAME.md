@@ -865,7 +865,7 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Minute points | route in `MINUTE_POINTS_ELIGIBLE_PAGES`, in the **start-on-entry** subset — the player reads the map before their first tap |
 | Wins | **none** |
 | Study Challenge | **not eligible** — it marks `reading`, and the challenge pool is recognition/production only ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.4) |
-| Pause on background | **deliberately skipped.** The rule exists to stop a *clock* draining while the app is backgrounded. Memory Map has no clock and no timed state, so `useBackgroundPause` / `GamePausedOverlay` would render an overlay that protects nothing. Documented here so its absence is not later "fixed" |
+| Pause on background | **deliberately skipped.** The rule exists to stop a *clock* draining while the app is backgrounded. Memory Map has no clock and no timed state, so `useBackgroundPause` would protect nothing. Documented here so its absence is not later "fixed" |
 
 ---
 

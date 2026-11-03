@@ -273,7 +273,7 @@ A break-capable game is split into:
   `usePageTitle`, `useBlockEdgeSwipe(true)`, the hub's launch `state`, header controls,
   and where "Back to Games" goes. Standalone behaviour is unchanged.
 - **its Stage** — the run: phase machine, card supply (it keeps its own fetching and
-  top-ups), marks, timers, `useBackgroundPause` + `GamePausedOverlay`, the challenge
+  top-ups), marks, timers, `useBackgroundPause` (auto-resuming, no resume screen), the challenge
   round, sense and dd rules, and its results card. It renders inside a **host-injected
   `Frame`** (`GameStageFrameProps`) and branches on `host: GameStageHost` only for:
   the opening board (a break seeds it and may hand over the prefetched pool), the way

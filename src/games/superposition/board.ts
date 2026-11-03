@@ -1,11 +1,17 @@
 import { resampleStroke, type Point } from "../../components/handwriting/inkGeometry";
+import { groupStrokes, isStrokePartition } from "../../../server/contracts/superpositionGroups";
 
 /**
  * Superposition's board rules (docs/SUPERPOSITION_GAME.md) — pure, no React.
  *
  * Tiles live on a grid of whole units. A STACK is the tiles sharing one exact position, and
  * a stack is a finished character only when it holds that character's tiles and nothing
- * else. A tile carries a natural part, or strokes merged by ink. Overlapping at an offset is not a stack.
+ * else. A tile carries a run of the character's strokes in writing order, natural parts kept
+ * whole, grouped by ink (server/contracts/superpositionGroups.ts). Overlapping at an offset is not a stack.
+ *
+ * A finished stack LOCKS on the drop that finishes it (`lockFinishedStacks`): its tiles share
+ * a `TileLock`, move as one (`moveTile`), select as one (`collapseLocked`) and are never judged
+ * again, so a finished character cannot be pulled apart or spoiled by a loose tile on its cell.
  */
 
 /** A character as the game reads it: each stroke's outline and centreline. */
@@ -13,14 +19,24 @@ export interface BoardCharacter {
     char: string;
     strokes: string[];
     medians: number[][][];
-    /** Stroke indices of its natural parts (strokeParts.json). Each part keeps a tile of its own. */
+    /** Stroke indices of its natural parts (strokeParts.json). A part is never split across tiles. */
     parts?: readonly (readonly number[])[];
+    /** Its stored stroke groups, when the deal sent them (`SuperpositionCharacter.strokeGroups`). */
+    groups?: readonly (readonly number[])[];
 }
 
 /** One tile's worth of a character: the `groupIndex`th group of its strokes. */
 export interface GroupRef {
     charIndex: number;
     groupIndex: number;
+}
+
+/** The fused stack a tile belongs to once its character is finished. */
+export interface TileLock {
+    /** The stack's id: the smallest tile id in it. Shared by every tile of the stack. */
+    id: number;
+    /** The character the stack finished. */
+    charIndex: number;
 }
 
 /** A tile: one or more strokes of a character. `z` is its place in the pile order: higher is on top. */
@@ -35,104 +51,22 @@ export interface Tile {
     x: number;
     y: number;
     z: number;
+    /** Set once the tile is part of a finished, fused stack; null while it is loose. */
+    lock: TileLock | null;
 }
 
 const COMPARE_POINTS = 24;
-/** Line segments per curve when measuring a stroke's outline. */
-const CURVE_SEGMENTS = 8;
-/** Points each outline command reads. The hanzi-writer data uses only these, absolute. */
-const COMMAND_POINTS: Record<string, number> = { M: 1, L: 1, Q: 2, C: 3 };
-
-type Coordinate = [number, number];
-
-/** A point along a Bézier curve of any order (de Casteljau). */
-function bezierAt(points: readonly Coordinate[], t: number): Coordinate {
-    if (points.length === 1) return points[0];
-    const next = points.slice(1).map((point, i): Coordinate => [
-        points[i][0] + (point[0] - points[i][0]) * t,
-        points[i][1] + (point[1] - points[i][1]) * t,
-    ]);
-    return bezierAt(next, t);
-}
 
 /**
- * A stroke's ink: the area of its outline in square glyph units. Curves are flattened into
- * short segments and the polygon is measured with the shoelace formula.
+ * A character's tiles: the groups the deal sent (stored on its det row, while
+ * `FEATURE_FLAGS.superpositionStoredGroups` is on) when they partition its strokes, else
+ * computed here by the shared rule (server/contracts/superpositionGroups.ts → groupStrokes).
  */
-export function strokeInk(path: string): number {
-    const tokens = path.match(/[A-Z]|-?\d*\.?\d+/g) ?? [];
-    const outline: Coordinate[] = [];
-    let i = 0;
-    while (i < tokens.length) {
-        const pointCount = COMMAND_POINTS[tokens[i++]];
-        if (!pointCount) continue;
-        const points: Coordinate[] = [];
-        for (let p = 0; p < pointCount; p++) {
-            points.push([Number(tokens[i]), Number(tokens[i + 1])]);
-            i += 2;
-        }
-        if (pointCount === 1) {
-            outline.push(points[0]);
-        } else {
-            const curve = [outline[outline.length - 1] ?? points[0], ...points];
-            for (let k = 1; k <= CURVE_SEGMENTS; k++) outline.push(bezierAt(curve, k / CURVE_SEGMENTS));
-        }
+export function characterGroups(character: BoardCharacter, inkThreshold: number): number[][] {
+    if (character.groups && isStrokePartition(character.groups, character.strokes.length)) {
+        return character.groups.map((group) => [...group]);
     }
-    const doubled = outline.reduce((sum, [x, y], index) => {
-        const [nextX, nextY] = outline[(index + 1) % outline.length];
-        return sum + x * nextY - nextX * y;
-    }, 0);
-    return Math.abs(doubled) / 2;
-}
-
-/**
- * Group a character's strokes into tiles by ink. Strokes go smallest first into the open
- * group, and a group closes once its ink reaches the threshold, so small strokes pool
- * together and a big stroke stands alone. A character that would collapse into one tile
- * loses its largest stroke to a second tile: a lone tile is already a finished stack.
- * Returns stroke indices per group.
- */
-export function groupStrokesByInk(paths: readonly string[], inkThreshold: number): number[][] {
-    const groups = mergeByInk(paths.map((_, strokeIndex) => strokeIndex), paths, inkThreshold);
-    if (groups.length === 1 && groups[0].length > 1) {
-        const largest = groups[0].pop()!;
-        groups.push([largest]);
-    }
-    return groups;
-}
-
-/** The ink pass over the given strokes: smallest first, a group closing at the threshold. */
-function mergeByInk(strokeIndices: readonly number[], paths: readonly string[], inkThreshold: number): number[][] {
-    const byInk = strokeIndices
-        .map((strokeIndex) => ({ strokeIndex, ink: strokeInk(paths[strokeIndex]) }))
-        .sort((a, b) => a.ink - b.ink);
-    const groups: number[][] = [];
-    let open: number[] = [];
-    let openInk = 0;
-    for (const { strokeIndex, ink } of byInk) {
-        open.push(strokeIndex);
-        openInk += ink;
-        if (openInk >= inkThreshold) {
-            groups.push(open);
-            open = [];
-            openInk = 0;
-        }
-    }
-    if (open.length > 0) groups.push(open);
-    return groups;
-}
-
-/**
- * A character's tiles: its natural parts first, each a closed group, then the strokes left
- * over merged by ink. Parts that do not fit the glyph are ignored, leaving the ink rule.
- */
-export function groupStrokes(paths: readonly string[], parts: readonly (readonly number[])[], inkThreshold: number): number[][] {
-    if (parts.length === 0 || parts.some((part) => part.some((stroke) => stroke >= paths.length))) {
-        return groupStrokesByInk(paths, inkThreshold);
-    }
-    const claimed = new Set(parts.flat());
-    const leftover = paths.map((_, strokeIndex) => strokeIndex).filter((strokeIndex) => !claimed.has(strokeIndex));
-    return [...parts.map((part) => [...part]), ...mergeByInk(leftover, paths, inkThreshold)];
+    return groupStrokes(character.strokes, character.parts ?? [], inkThreshold);
 }
 
 function worstGap(a: readonly Point[], b: readonly Point[]): number {
@@ -143,7 +77,7 @@ function worstGap(a: readonly Point[], b: readonly Point[]): number {
     return worst;
 }
 
-/** Two groups look alike when they hold as many strokes and each pair, in ink order, does. */
+/** Two groups look alike when they hold as many strokes and each pair, in stroke order, does. */
 function groupsLookAlike(a: readonly Point[][], b: readonly Point[][], toleranceUnits: number): boolean {
     return a.length === b.length && a.every((line, i) => worstGap(line, b[i]) <= toleranceUnits);
 }
@@ -151,7 +85,7 @@ function groupsLookAlike(a: readonly Point[][], b: readonly Point[][], tolerance
 /** The board's tiles, unplaced (x, y and z are 0): one per stroke group, in reading order. */
 export function buildTiles(characters: readonly BoardCharacter[], toleranceUnits: number, inkThreshold: number): Tile[] {
     const refs: (GroupRef & { lines: Point[][]; paths: string[] })[] = characters.flatMap((character, charIndex) =>
-        groupStrokes(character.strokes, character.parts ?? [], inkThreshold).map((strokeIndices, groupIndex) => ({
+        characterGroups(character, inkThreshold).map((strokeIndices, groupIndex) => ({
             charIndex,
             groupIndex,
             paths: strokeIndices.map((strokeIndex) => character.strokes[strokeIndex]),
@@ -170,6 +104,7 @@ export function buildTiles(characters: readonly BoardCharacter[], toleranceUnits
         x: 0,
         y: 0,
         z: 0,
+        lock: null,
     }));
 }
 
@@ -273,18 +208,18 @@ function stackFillsCharacter(stack: readonly Tile[], charIndex: number, groupCou
 }
 
 /**
- * The finished stacks: `${x},${y}` → the character index that stack completes.
+ * The loose stacks that now finish a character: `${x},${y}` → the character index.
  *
- * A tile held in a drag (`liftedId`) sits in no stack, so passing over a position finishes
- * nothing and lifting a tile out unfinishes its stack at once. It still counts towards its
- * character's size, or the rest of that character would read as a whole one.
+ * Only loose tiles are judged. A locked stack is already finished, and a loose tile lying on
+ * its cell neither joins it nor spoils it. Every tile still counts towards its character's
+ * size, or the rest of a character would read as a whole one.
  */
-export function completedStacks(tiles: readonly Tile[], liftedId: number | null = null): Map<string, number> {
+export function completedStacks(tiles: readonly Tile[]): Map<string, number> {
     const stacks = new Map<string, Tile[]>();
     const groupCounts: number[] = [];
     for (const tile of tiles) {
         groupCounts[tile.source.charIndex] = (groupCounts[tile.source.charIndex] ?? 0) + 1;
-        if (tile.id === liftedId) continue;
+        if (tile.lock) continue;
         const key = stackKey(tile);
         stacks.set(key, [...(stacks.get(key) ?? []), tile]);
     }
@@ -298,6 +233,54 @@ export function completedStacks(tiles: readonly Tile[], liftedId: number | null 
 
 export const stackKey = (tile: Pick<Tile, "x" | "y">): string => `${tile.x},${tile.y}`;
 
+/**
+ * Fuse every loose stack that now finishes a character. Run on a drop, the one moment a
+ * stack can change. Returns the same array when nothing finished, so a no-op drop does not
+ * re-render the board.
+ */
+export function lockFinishedStacks(tiles: Tile[]): Tile[] {
+    const finished = completedStacks(tiles);
+    if (finished.size === 0) return tiles;
+    const locks = new Map<string, TileLock>();
+    finished.forEach((charIndex, key) => {
+        const ids = tiles.filter((tile) => !tile.lock && stackKey(tile) === key).map((tile) => tile.id);
+        locks.set(key, { id: Math.min(...ids), charIndex });
+    });
+    return tiles.map((tile) => {
+        const lock = tile.lock ? undefined : locks.get(stackKey(tile));
+        return lock ? { ...tile, lock } : tile;
+    });
+}
+
+/**
+ * Move a tile — with its whole locked stack, if it has one — to (x, y) and onto the top of
+ * the pile. The moved tiles keep their order among themselves, and z stays a compact 0..n-1.
+ * Returns the same array when nothing moved.
+ */
+export function moveTile(tiles: Tile[], tileId: number, x: number, y: number): Tile[] {
+    const moved = tiles.find((tile) => tile.id === tileId);
+    if (!moved || (moved.x === x && moved.y === y)) return tiles;
+    const moving = (tile: Tile) => (moved.lock ? tile.lock?.id === moved.lock.id : tile.id === moved.id);
+    const order = [...tiles].sort((a, b) => a.z - b.z);
+    const z = new Map([...order.filter((tile) => !moving(tile)), ...order.filter(moving)].map((tile, index) => [tile.id, index]));
+    return tiles.map((tile) => (moving(tile) ? { ...tile, x, y, z: z.get(tile.id)! } : { ...tile, z: z.get(tile.id)! }));
+}
+
+/**
+ * A pile with each locked stack folded to its topmost tile, topmost first. A locked stack is
+ * one thing to the finger: one tap selects it and one drag lifts it, rather than the tap
+ * cycle stepping through tiles that can no longer part.
+ */
+export function collapseLocked(hits: readonly Tile[]): Tile[] {
+    const seen = new Set<number>();
+    return hits.filter((tile) => {
+        if (!tile.lock) return true;
+        if (seen.has(tile.lock.id)) return false;
+        seen.add(tile.lock.id);
+        return true;
+    });
+}
+
 /** Can these two tiles fill two different groups of one character? Reads `accepts`, so a lookalike swap counts. */
 function belongTogether(a: Tile, b: Tile): boolean {
     return a.accepts.some((first) =>
@@ -307,18 +290,15 @@ function belongTogether(a: Tile, b: Tile): boolean {
 
 /**
  * Two tiles the hint should point at: they belong in one stack and are not in one yet.
- * Tiles in finished stacks never qualify. Two tiles lying alone are preferred. When no such
+ * Locked tiles never qualify. Two loose tiles lying alone are preferred (a locked stack on the
+ * same cell does not count against "alone"). When no such
  * pair exists (say, one tile left to add to a partial stack) any unfinished tile counts, so a
  * hint is only unavailable when no two tiles are left to join. Returns tile ids, or null.
  */
-export function pickHintPair(
-    tiles: readonly Tile[],
-    finished: ReadonlyMap<string, number>,
-    random: () => number = Math.random
-): [number, number] | null {
-    const open = tiles.filter((tile) => !finished.has(stackKey(tile)));
+export function pickHintPair(tiles: readonly Tile[], random: () => number = Math.random): [number, number] | null {
+    const open = tiles.filter((tile) => !tile.lock);
     const countAt = new Map<string, number>();
-    tiles.forEach((tile) => countAt.set(stackKey(tile), (countAt.get(stackKey(tile)) ?? 0) + 1));
+    open.forEach((tile) => countAt.set(stackKey(tile), (countAt.get(stackKey(tile)) ?? 0) + 1));
     const pairsAmong = (pool: readonly Tile[]) =>
         pool.flatMap((a, index) =>
             pool

@@ -1350,7 +1350,7 @@ swipe out of this game" invisible to whoever reads the page.
 | Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
 | Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
 
-In every case the popups (`GameEndPopup`, `ProvisionalSortOffer`, `GamePausedOverlay`, the
+In every case the popups (`GameEndPopup`, `ProvisionalSortOffer`, the
 lend notice) stay **outside** the panel: each covers the whole content area and must not be
 clipped by the panel's radius.
 

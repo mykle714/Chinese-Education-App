@@ -41,10 +41,9 @@ import type { MemoryMapWord as MemoryMapWordData } from "../../api/memoryMap";
  * That is not an omission to be filled in later — it is the game.
  *
  * ── AND NO PAUSE-ON-BACKGROUND ───────────────────────────────────────────────
- * Every other game calls `useBackgroundPause` + renders `GamePausedOverlay`. Memory
- * Map deliberately does NOT (Q22). That rule exists to stop a CLOCK draining while the
- * app is backgrounded; this game has no clock and no timed state, so the overlay would
- * cover the screen to protect nothing. Documented here so its absence is not later
+ * Every other game calls `useBackgroundPause`. Memory Map deliberately does NOT (Q22).
+ * That rule exists to stop a CLOCK draining while the app is backgrounded; this game has
+ * no clock and no timed state, so the pause would protect nothing. Documented here so its absence is not later
  * "fixed" by someone auditing games against the framework checklist.
  *
  * ── AND NO CARD BASELINE ─────────────────────────────────────────────────────

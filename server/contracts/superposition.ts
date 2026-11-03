@@ -22,6 +22,13 @@ export interface SuperpositionCharacter {
   ownCard: boolean;
   /** A focused break's character from outside today's set: it was never on the tower. */
   outsideFocus?: boolean;
+  /**
+   * Its tile groups (stroke indices per tile), read from its single-character det row
+   * (`dictionaryentries_zh."superpositionGroups"`). Sent only while
+   * `FEATURE_FLAGS.superpositionStoredGroups` is on and the row has them; absent, the client
+   * computes them (server/contracts/superpositionGroups.ts → groupStrokes).
+   */
+  strokeGroups?: number[][];
 }
 
 /** One word of the board — one hint row: its pinyin, dd and audio. */

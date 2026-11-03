@@ -14,6 +14,7 @@ One registry file switches whole features, and individual games, on and off:
 | `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | **OFF** (since 2026-10-30) |
 | `writingNotebook` | The Writing Notebook page and its Writing Center belt card ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
+| `superpositionStoredGroups` | A data path, not a feature: Superposition reads tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | **OFF** (since 2026-11-02) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
 **`studyChallenge`, `community`, `nightMarket` and `immersiveWorld` are the only things currently switched off.** Every other
@@ -168,6 +169,21 @@ parameter every other caller already omits, so there is nothing to switch off. L
 The notebook is a page, not a game, so it has a FEATURE flag rather than a `GAME_FLAGS`
 entry. The `/flashcards/writing/notebook` row in `MINUTE_POINTS_ELIGIBLE_PAGES` is a path
 list that simply stops matching.
+
+### 2g. `superpositionStoredGroups` — OFF
+
+A data-path flag: no router, route or entry point. It decides where Superposition's tile groups
+come from. On, they come from `dictionaryentries_zh."superpositionGroups"` (migration 180);
+off, every device computes them.
+
+| Layer | Site |
+|---|---|
+| Service | `server/services/SuperpositionService.ts` → `deal` reads the column (`WritingGridDAL.findSuperpositionGroups`) and attaches `strokeGroups` only when on. Off, the column is never selected |
+| Script | `server/scripts/backfill/chinese/backfill-superposition-groups.ts` refuses to write when off; `--dry-run` always runs |
+| Client | None needed: `board.ts` → `characterGroups` uses `strokeGroups` when the deal sends them |
+
+Off until the owner approves the grouping rule (docs/DEFERRED_WORK.md item 32). Turning it on
+also needs the backfill run on PPE, or the flag does nothing.
 
 ---
 

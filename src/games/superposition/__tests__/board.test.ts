@@ -3,26 +3,29 @@
  * docs/SUPERPOSITION_GAME.md).
  *
  * Pinned: a stack finishes only with exactly a character's strokes at one exact position, a
- * lookalike swap still finishes, the tap cycle walks and wraps like the icon editor's, and
- * no tile starts stacked.
+ * lookalike swap still finishes, a finished stack locks and then moves, selects and stays
+ * finished as one, the tap cycle walks and wraps like the icon editor's, and no tile starts
+ * stacked.
  */
 import { describe, expect, it } from 'vitest';
 import {
   buildTiles,
+  characterGroups,
+  collapseLocked,
   completedStacks,
   dragTarget,
-  groupStrokes,
-  groupStrokesByInk,
+  lockFinishedStacks,
+  moveTile,
   nextTapSelection,
   pickHintPair,
   scatterTiles,
   snapToGrid,
-  strokeInk,
   tilesAt,
   type BoardCharacter,
   type Tile,
 } from '../board';
 import strokeParts from '../strokeParts.json';
+import { groupStrokes, isStrokePartition, strokeInk } from '../../../../server/contracts/superpositionGroups';
 
 const line = (x: number, y = 100): number[][] => [[x, y], [x + 400, y]];
 /** A square outline of the given side, ink = side². `x` keeps otherwise equal strokes distinct. */
@@ -51,13 +54,6 @@ describe('completedStacks', () => {
     expect(completedStacks(place(tiles(), [[4, 4], [4, 4], [4, 4]])).has('4,4')).toBe(false);
   });
 
-  it('judges a tile only once it is dropped', () => {
-    const stacked = place(tiles(), [[4, 4], [4, 4], [20, 20]]);
-    expect(completedStacks(stacked, 1).has('4,4')).toBe(false);
-    expect(completedStacks(stacked, 1).get('20,20')).toBe(1);
-    expect(completedStacks(stacked, null).get('4,4')).toBe(0);
-  });
-
   it('accepts a lookalike from another character in place of the real stroke', () => {
     const twins: BoardCharacter[] = [
       { char: 'A', strokes: [square(100), square(100, 1)], medians: [line(0), line(0, 500)] },
@@ -70,6 +66,54 @@ describe('completedStacks', () => {
   });
 });
 
+describe('locked stacks', () => {
+  const locked = () => lockFinishedStacks(place(tiles(), [[4, 4], [4, 4], [20, 20]]));
+
+  it('locks each finished stack, its tiles sharing one lock', () => {
+    const all = locked();
+    expect(all.map((tile) => tile.lock)).toEqual([
+      { id: 0, charIndex: 0 },
+      { id: 0, charIndex: 0 },
+      { id: 2, charIndex: 1 },
+    ]);
+  });
+
+  it('returns the same array when nothing new finishes', () => {
+    const all = locked();
+    expect(lockFinishedStacks(all)).toBe(all);
+  });
+
+  it('leaves an offset overlap loose', () => {
+    expect(lockFinishedStacks(place(tiles(), [[4, 4], [5, 4], [20, 20]])).map((tile) => tile.lock)).toEqual([
+      null,
+      null,
+      { id: 2, charIndex: 1 },
+    ]);
+  });
+
+  it('moves a locked stack as one, onto the top of the pile', () => {
+    const moved = moveTile(locked(), 1, 30, 30);
+    expect(moved.filter((tile) => tile.x === 30 && tile.y === 30).map((tile) => tile.id)).toEqual([0, 1]);
+    expect(moved.map((tile) => tile.z)).toEqual([1, 2, 0]);
+  });
+
+  it('moves a loose tile alone', () => {
+    const moved = moveTile(place(tiles(), [[4, 4], [5, 4], [20, 20]]), 0, 30, 30);
+    expect(moved.map(({ x, y }) => [x, y])).toEqual([[30, 30], [5, 4], [20, 20]]);
+  });
+
+  it('is not spoiled, nor joined, by a loose tile dropped on its cell', () => {
+    const all = locked().map((tile) => (tile.id === 2 ? { ...tile, x: 4, y: 4, lock: null } : tile));
+    expect(completedStacks(all).get('4,4')).toBe(1);
+    expect(lockFinishedStacks(all).map((tile) => tile.lock?.id)).toEqual([0, 0, 2]);
+  });
+
+  it('folds a locked stack to one entry in a pile', () => {
+    const all = locked().map((tile) => (tile.id === 2 ? { ...tile, x: 4, y: 4, z: 5, lock: null } : tile));
+    expect(collapseLocked(tilesAt(all, 5, 5, 9)).map((tile) => tile.id)).toEqual([2, 1]);
+  });
+});
+
 describe('pickHintPair', () => {
   const threeOfA: BoardCharacter[] = [
     { char: 'A', strokes: [square(100), square(100, 1), square(100, 2)], medians: [line(0), line(0, 500), line(0, 900)] },
@@ -79,48 +123,39 @@ describe('pickHintPair', () => {
 
   it('picks two lone tiles of one character', () => {
     const all = board([[0, 0], [10, 0], [40, 0], [40, 0], [60, 0]]);
-    expect(pickHintPair(all, completedStacks(all), () => 0)).toEqual([0, 1]);
+    expect(pickHintPair(lockFinishedStacks(all), () => 0)).toEqual([0, 1]);
   });
 
   it('never pairs tiles of different characters', () => {
     const all = board([[0, 0], [10, 0], [20, 0], [30, 0], [40, 0]]);
     for (const roll of [0, 0.3, 0.6, 0.9]) {
-      const [a, b] = pickHintPair(all, completedStacks(all), () => roll)!;
+      const [a, b] = pickHintPair(lockFinishedStacks(all), () => roll)!;
       expect(all[a].source.charIndex).toBe(all[b].source.charIndex);
     }
   });
 
-  it('skips finished stacks', () => {
+  it('skips locked stacks', () => {
     const all = board([[0, 0], [10, 0], [20, 0], [30, 0], [30, 0]]);
-    expect(pickHintPair(all, completedStacks(all), () => 0.99)).toEqual([1, 2]);
+    expect(pickHintPair(lockFinishedStacks(all), () => 0.99)).toEqual([1, 2]);
   });
 
   it('falls back to a stacked tile when no two lone tiles belong together', () => {
     const all = board([[0, 0], [0, 0], [20, 0], [30, 0], [30, 0]]);
-    const pair = pickHintPair(all, completedStacks(all), () => 0)!;
+    const pair = pickHintPair(lockFinishedStacks(all), () => 0)!;
     expect(pair).toContain(2);
   });
 
   it('is null when nothing is left to join', () => {
     const all = board([[0, 0], [0, 0], [0, 0], [30, 0], [30, 0]]);
-    expect(pickHintPair(all, completedStacks(all))).toBeNull();
+    expect(pickHintPair(lockFinishedStacks(all))).toBeNull();
   });
 });
 
-describe('ink merging', () => {
+describe('ink', () => {
   it('measures straight and curved outlines', () => {
     expect(strokeInk(square(100))).toBeCloseTo(10000);
     // A parabola's area is ⅔ × base × height: the curve peaks at half its control point, 150.
     expect(strokeInk('M 0 0 Q 150 300 300 0 Z')).toBeCloseTo(30000, -3);
-  });
-
-  it('merges from the smallest stroke until a group reaches the threshold', () => {
-    const paths = [square(100), square(10, 1), square(10, 2), square(10, 3), square(10, 4), square(90, 5)];
-    expect(groupStrokesByInk(paths, 400)).toEqual([[1, 2, 3, 4], [5], [0]]);
-  });
-
-  it('never collapses a character into one tile', () => {
-    expect(groupStrokesByInk([square(100), square(90, 1)], 1e6)).toEqual([[1], [0]]);
   });
 
   it('finishes a character from its merged tiles, and draws each merged stroke', () => {
@@ -133,18 +168,75 @@ describe('ink merging', () => {
   });
 });
 
+/** A side × side square with its corner at (x, y): placed, so strokes can touch or stand apart. */
+const box = (x: number, side: number, y = 0) => `M ${x} ${y} L ${x + side} ${y} L ${x + side} ${y + side} L ${x} ${y + side} Z`;
+
+describe('groupStrokes (server/contracts/superpositionGroups.ts)', () => {
+  it('grows from the smallest stroke along stroke order, not by size', () => {
+    // 1 seeds, pulls in 2 (the nearer side) and closes. 3 is as small as 1 but is never
+    // pooled with it by size; stranded behind 2, it joins that group.
+    const paths = [box(0, 100), box(200, 10), box(300, 50), box(500, 10)];
+    expect(groupStrokes(paths, [], 2000)).toEqual([[0], [1, 2, 3]]);
+  });
+
+  it('prefers the side whose stroke overlaps the group more', () => {
+    // Both neighbours touch the seed (1); the one before overlaps it far more.
+    const paths = [box(85, 40), box(100, 20), box(118, 40)];
+    expect(groupStrokes(paths, [], 1000)).toEqual([[0, 1], [2]]);
+  });
+
+  it('breaks a full tie towards the stroke after', () => {
+    const paths = [box(70, 40), box(100, 20), box(110, 40)];
+    expect(groupStrokes(paths, [], 1000)).toEqual([[0], [1, 2]]);
+  });
+
+  it('pulls a natural part in whole, as one unit', () => {
+    const paths = [box(0, 10), box(30, 20), box(60, 20), box(200, 40)];
+    expect(groupStrokes(paths, [[1, 2]], 500)).toEqual([[0, 1, 2], [3]]);
+  });
+
+  it('keeps a part whole even when its strokes are not neighbours in writing order', () => {
+    const paths = [box(0, 100), box(300, 10), box(320, 10), box(0, 100, 200)];
+    const groups = groupStrokes(paths, [[0, 3]], 5000);
+    expect(groups.find((group) => group.includes(0))).toContain(3);
+  });
+
+  it('ignores parts that do not fit the glyph', () => {
+    const paths = [box(0, 10), box(30, 20), box(60, 20), box(200, 40)];
+    expect(groupStrokes(paths, [[0, 9]], 500)).toEqual(groupStrokes(paths, [], 500));
+  });
+
+  it('never collapses a character into one tile: its last addition stands apart', () => {
+    expect(groupStrokes([box(0, 10), box(100, 20), box(200, 30)], [], 1e6)).toEqual([[0, 1], [2]]);
+  });
+});
+
+describe('stored groups', () => {
+  const stored = (groups: number[][]): BoardCharacter => ({
+    char: 'S',
+    strokes: [box(0, 10), box(100, 20), box(200, 30)],
+    medians: [line(0), line(0, 300), line(0, 600)],
+    groups,
+  });
+
+  it('uses groups that partition the strokes', () => {
+    expect(characterGroups(stored([[0], [1, 2]]), 1e6)).toEqual([[0], [1, 2]]);
+  });
+
+  it('computes its own when the stored groups do not fit the glyph', () => {
+    expect(characterGroups(stored([[0], [1]]), 1e6)).toEqual([[0, 1], [2]]);
+    expect(characterGroups(stored([[0, 1], [1, 2]]), 1e6)).toEqual([[0, 1], [2]]);
+  });
+
+  it('checks a partition exactly', () => {
+    expect(isStrokePartition([[0, 2], [1]], 3)).toBe(true);
+    expect(isStrokePartition([[0], [1]], 3)).toBe(false);
+    expect(isStrokePartition([[0, 1], []], 2)).toBe(false);
+    expect(isStrokePartition([[0, 3]], 2)).toBe(false);
+  });
+});
+
 describe('natural parts', () => {
-  const paths = [square(100), square(100, 1), square(10, 2), square(10, 3), square(10, 4)];
-
-  it('gives each part its own tile and merges only what is left by ink', () => {
-    expect(groupStrokes(paths, [[0, 2]], 150)).toEqual([[0, 2], [3, 4], [1]]);
-  });
-
-  it('falls back to ink with no parts, or parts that do not fit the glyph', () => {
-    expect(groupStrokes(paths, [], 150)).toEqual(groupStrokesByInk(paths, 150));
-    expect(groupStrokes(paths, [[0, 9]], 150)).toEqual(groupStrokesByInk(paths, 150));
-  });
-
   it('lets the same part from two characters swap', () => {
     const shared = [square(100), square(100, 1)];
     const lines = [line(0), line(0, 300)];

@@ -1977,7 +1977,7 @@ written inside the game's content box, next to the game's own end-of-run popup, 
 `zIndex: 1200`. Pinned to the game's content box instead, it stopped short of the leaf
 header, leaving the round's title bar and its game controls lit above the blackout,
 which reads as "the board up there is still playable". `absolute`-on-the-host rather
-than `fixed` for the same reason `GamePausedOverlay` avoids `fixed`: inside the desktop
+than `fixed` for the same reason every in-game overlay avoids `fixed`: inside the desktop
 phone frame, `fixed` covers the browser window rather than the phone card. No
 `useHideFooter` is needed — a leaf page has no footer.
 
@@ -2073,8 +2073,10 @@ What it requires:
   which freezes the round: timers stop accumulating, ceilings stop dropping, per-second
   penalties stop counting. Games must express elapsed time as **accumulated active
   time**, not `now − startedAt`, or the pause is cosmetic.
-* A resume affordance on return rather than an instant unfreeze, so the player is not
-  dropped back into a live timer they cannot see yet.
+* ~~A resume affordance on return rather than an instant unfreeze.~~ **Dropped
+  2026-11-02:** the tap-to-resume screen (`GamePausedOverlay`) was removed app-wide as
+  friction; the round now unfreezes the moment the app is visible again
+  (`useBackgroundPause`, docs/GAMES_FEATURE.md § Backgrounding pauses the clock).
 * **No exceptions — live mode included.** An earlier draft carved live mode out on the
   grounds that pausing would let one player freeze the other's game. It would not: in live
   mode an **unpausable AFK timer** runs alongside the paused game and forfeits a player who

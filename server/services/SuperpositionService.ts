@@ -2,6 +2,7 @@ import type { IWritingGridDAL } from '../dal/interfaces/IWritingGridDAL.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
 import type { WritingGridDealOptions } from './WritingGridService.js';
 import { isBarOnCooldown } from '../contracts/cooldown.js';
+import { isFeatureEnabled } from '../contracts/featureFlags.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
 import {
   SUPERPOSITION_CHAR_COUNT,
@@ -19,6 +20,9 @@ import {
  *
  * The focus rule and the lending rule match WritingGridService: a focused break draws from
  * outside today's set first and never lends; otherwise a short board lends words.
+ *
+ * Stored tile groups ride along only while `FEATURE_FLAGS.superpositionStoredGroups` is on
+ * (docs/SUPERPOSITION_GAME.md § Stored groups); otherwise the client computes them.
  */
 export class SuperpositionService {
   constructor(
@@ -83,6 +87,9 @@ export class SuperpositionService {
       picked.flatMap((word) => Array.from(word.entryKey))
     );
     const remaining = focusBreak ? new Set(focusBreak.remainingIds) : null;
+    const storedGroups = isFeatureEnabled('superpositionStoredGroups')
+      ? await this.writingGridDAL.findSuperpositionGroups([...ids.keys()])
+      : new Map<string, number[][]>();
 
     return picked
       .filter((word) => Array.from(word.entryKey).every((char) => ids.has(char)))
@@ -95,6 +102,7 @@ export class SuperpositionService {
           cardId: ids.get(char)!,
           ownCard: ownCards.has(char),
           ...(remaining && !remaining.has(ids.get(char)!) && { outsideFocus: true }),
+          ...(storedGroups.has(char) && { strokeGroups: storedGroups.get(char)! }),
         })),
       }));
   }

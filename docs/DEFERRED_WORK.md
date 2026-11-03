@@ -494,6 +494,19 @@ whose ids also contain the word "challenge". Mode rows in `wins` (levels 2, 3) a
 **Why deferred:** only the marking was requested so far. **Cost of leaving:** a fan of three
 cards offering modes that are on their way out. **Trigger:** the removal is scheduled.
 
+### 32. Store Superposition's stroke groups on det
+
+*Added 2026-11-02. Docs: [SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups, [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2g.*
+
+| | |
+|---|---|
+| **What** | Turn on `FEATURE_FLAGS.superpositionStoredGroups`, then run `scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-superposition-groups.ts` on PPE (dry-run first). Each single-character `dictionaryentries_zh` row gets its tile groups in `"superpositionGroups"` (migration 180), and deals send them so devices stop computing them. Everything is built: column, writer, DAL read, service attach, client fallback |
+| **Why deferred** | The owner is still tuning the grouping rule (2026-11-02). Stored groups would freeze a rule under review, so the flag stays off and the backfill refuses to write |
+| **Cost of leaving it** | About 13 ms per character on every deal (around 50 ms per board in Node, more on a phone), and an empty column on PPE |
+| **Open before turning it on** | (a) Run-ppe.sh needs the **repo-root** `node_modules` on the PPE host for `hanzi-writer-data`; confirm it is there or install it. (b) Decide whether the backfill joins the mark-discoverable manifest (`scripts/backfill/shared/lib/requiredScripts.js`) or stays a manual re-run. It is a pure function of committed inputs, so it must be re-run whenever `groupStrokes`, `INK_MERGE_THRESHOLD`, `strokeParts.json` or `hanzi-writer-data` changes. (c) A dev pull (`/data-ppe-to-dev`) brings the column down only once dev has migration 180 |
+| **Trigger** | The owner approves the grouping rule |
+| **References** | `server/contracts/superpositionGroups.ts` → `groupStrokes`; `server/contracts/featureFlags.ts` → `superpositionStoredGroups`; `server/dal/implementations/WritingGridDAL.ts` → `findSuperpositionGroups`; `server/services/SuperpositionService.ts` → `deal`; `src/games/superposition/board.ts` → `characterGroups` |
+
 ## Recently closed
 
 ### A lapsed challenge invitation still spent one of the issuer's six slots (closed 2026-09-13 — DONE)

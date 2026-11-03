@@ -118,8 +118,8 @@ almost everything below follows from that one difference:
   whenever the selected collection is anything but All Cards, rather than showing a row
   that would silently ignore it. Same hide-don't-block principle as the language gate.
 - **A game that deliberately skips pause-on-background.** No `useBackgroundPause`, no
-  `GamePausedOverlay`. That rule exists to stop a CLOCK draining while backgrounded;
-  this game has no clock, so the overlay would protect nothing. Recorded so it is not
+  pause at all. That rule exists to stop a CLOCK draining while backgrounded;
+  this game has no clock, so the pause would protect nothing. Recorded so it is not
   later "fixed" by an audit against the framework checklist.
 - **A second pan/zoom surface** after the night market — and the first built as plain
   DOM + a CSS transform rather than Pixi. The 49-word cap
@@ -537,8 +537,8 @@ inherits a shell from it.
   (docs/UX_AND_NAVIGATION.md § Dimming the background).
 - **Answer-feedback sound** — there is none. Every game marks silently; narration
   (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
-- **`useBackgroundPause.ts` + `GamePausedOverlay.tsx`** — the app-wide
-  backgrounding pause and its tap-to-resume overlay (§ Backgrounding pauses the clock).
+- **`useBackgroundPause.ts`** — the app-wide backgrounding pause, which resumes by
+  itself on return (§ Backgrounding pauses the clock).
 - **The Study Challenge round runner** — five files, and the largest thing in here:
   - **`challengeScoring.ts`** — the pure, React-free spec runner (events → score +
     itemised breakdown). Written so the server can adopt it verbatim for live mode.
@@ -697,8 +697,7 @@ stay the page's job. The edge-swipe block is a document-level touch handler with
 lifecycle, and hiding it inside a layout wrapper would make "why can I still swipe out of
 this game" invisible to whoever reads the page.
 
-**Every popup stays OUTSIDE the frame** — `GameEndPopup`, `ProvisionalSortOffer`,
-`GamePausedOverlay`. Each covers the whole content area and must not be
+**Every popup stays OUTSIDE the frame** — `GameEndPopup`, `ProvisionalSortOffer`. Each covers the whole content area and must not be
 clipped by the panel's radius.
 
 All the games are framed, and four of them (Bubble Match, Word Search, Match Speed, Hydra
@@ -972,42 +971,42 @@ the same `clockPaused` boolean. It is not new machinery.
 opts out (docs/HYDRA_BUBBLES.md § 7.1c): it has no timer, its bubbles' drift moves
 no score, fill or spawn (and the rAF loop does not run while hidden), and nothing on
 its board changes except in response to a match, so a returning player finds the run
-as they left it without any pause machinery — and a tap-to-resume overlay would be
-friction over a board whose contents never changed. A game
+as they left it without any pause machinery. A game
 qualifies for this exemption only if **nothing** advances unattended; if any part of
 it is timed (Hydra's own challenge variant is scored on time to clear) the rule applies
 in full to that part.
 
-**Status of the four shipped games — ✅ ALL FOUR PAUSE (completed 2026-08-17):**
+**Status — ✅ every timed game pauses (first four completed 2026-08-17):**
 
 | Game | How |
 | --- | --- |
 | Word Search | its own earlier implementation — `WordSearchStage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false. **This is what the rule was generalised from**, and it is deliberately left as-is (its localStorage snapshot is entangled with its pause path) |
 | Bubble Match | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` → `BubbleStage`'s `paused` prop |
 | Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + run clock) |
-| Speed Reading | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
-| Bucket Drop | `useBackgroundPause(phase === "playing")` → `clockPaused`, plus `GamePausedOverlay` |
-| Hydra Bubbles | **challenge rounds only** (2026-08-22): `useBackgroundPause(playing && isChallengeLaunch)` → `framePaused` → the stage, plus `GamePausedOverlay`. Free play stays exempt — see the clockless-exemption paragraph above, and note that this is exactly the case it named |
+| Speed Reading | `useBackgroundPause(phase === "ready" \|\| phase === "feedback")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
+| Bucket Drop | `useBackgroundPause(phase === "playing")` → `clockPaused` |
+| Writing Grid | `useBackgroundPause(arrange \|\| write)` → holds the accumulated-active-time stopwatch |
+| Superposition | `useBackgroundPause(running)` → holds the stopwatch and the hint countdown |
+| Hydra Bubbles | **challenge rounds only** (2026-08-22): `useBackgroundPause(playing && isChallengeLaunch)` → `framePaused` → the stage. Free play stays exempt — see the clockless-exemption paragraph above, and note that this is exactly the case it named |
 
 The three that needed it got a **signal wired to a gate they already had**, not a new
 pause implementation — which is what the 2026-08-16 audit predicted. Hydra's later,
 partial adoption is the exemption working as written rather than an exception to it: the
 same game is exempt free-play and covered in its timed variant.
 
-**The two shared pieces** (`src/games/runtime/`):
+**The shared piece** (`src/games/runtime/useBackgroundPause.ts`):
 
-* **`useBackgroundPause(active)`** — latches on `visibilitychange` *and* `pagehide`
-  (neither is sufficient alone: `pagehide` is the one iOS Safari fires on swipe-away and
-  screen lock). It **stays paused after the player returns**; only `resume()` clears it.
-  That is the § 5.8 requirement — dropping somebody back into a live timer they have not
-  looked at yet is the same as not pausing for that first second. `active` should be the
-  game's playing condition, so returning to a finished board shows no prompt.
-* **`<GamePausedOverlay>`** — the tap-to-resume affordance. It **covers** the board
-  rather than dimming it, so the pause cannot be used as a free look at the arrangement;
-  that is what lets the rule stay absolute with no per-mode exception. Rendered as a
-  SIBLING of the board at **z-index 150** inside the page; MinimizablePopup's scrim is
-  portaled to the phone frame at 200, outside the page surface entirely, so a notice that
-  also pauses the clock always stacks above it.
+* **`useBackgroundPause(active)`** → `{ paused }` — true while the app is hidden
+  (`visibilitychange` *and* `pagehide`; neither is sufficient alone: `pagehide` is the one
+  iOS Safari fires on swipe-away and screen lock), and it **clears by itself** when the
+  player returns (`visibilitychange` → visible, or `pageshow`). `active` should be the
+  game's playing condition; leaving it clears the pause.
+* **No resume screen (2026-11-02).** The old `GamePausedOverlay` — an opaque
+  "Paused / Resume" scrim the player had to tap through, latched by the hook — was
+  deleted app-wide, challenge rounds and flp breaks included, as friction. Every game now
+  behaves the way Word Search always did. Accepted trade-off: the board is not hidden on
+  return, but it is only visible while the clock is running again, so it buys no free
+  study time.
 
 ⚠️ **The pause is only real if elapsed time is ACCUMULATED ACTIVE TIME.** A game that
 computes elapsed as `now − startedAt` will honour the hook visually and still bill the

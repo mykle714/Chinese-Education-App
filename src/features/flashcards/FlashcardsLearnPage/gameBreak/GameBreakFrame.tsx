@@ -38,8 +38,8 @@ function makeGameBreakFrame(hue: RampHue): React.FC<GameStageFrameProps> {
                     <Box
                         className="game-break-frame"
                         // A flex child, not `inset: 0`, so the area's safe-bottom padding
-                        // holds; `relative` anchors the Stage's in-place overlays (the
-                        // paused veil) to the screen.
+                        // holds; `relative` anchors the Stage's in-place overlays (its
+                        // end card, notices) to the screen.
                         sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
                     >
                         <Box className="game-break-frame__status-spacer" sx={{ flexShrink: 0, height: SAFE_TOP }} />

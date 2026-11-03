@@ -88,6 +88,20 @@ export class WritingGridDAL implements IWritingGridDAL {
     }));
   }
 
+  async findSuperpositionGroups(chars: string[]): Promise<Map<string, number[][]>> {
+    if (chars.length === 0) return new Map();
+    // Single-character rows only: a word's tiles are its characters' tiles.
+    const result = await this.dbManager.executeQuery(async (client) =>
+      client.query(
+        `SELECT word1, "superpositionGroups"
+           FROM dictionaryentries_zh
+          WHERE language = 'zh' AND word1 = ANY($1::text[]) AND "superpositionGroups" IS NOT NULL`,
+        [chars]
+      )
+    );
+    return new Map(result.recordset.map((row: any) => [row.word1 as string, row.superpositionGroups as number[][]]));
+  }
+
   async findEntryKeys(userId: string, ids: number[]): Promise<string[]> {
     if (!userId) throw new ValidationError('userId is required');
     if (ids.length === 0) return [];

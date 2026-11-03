@@ -5,6 +5,32 @@ import { COLORS, RAMP } from "../../theme/colors";
 import { LEADING, SIZE } from "../../theme/scale";
 import type { SuperpositionWord } from "../../api/superposition";
 
+/** The per-character check's size (px). Its space is always reserved, so the pinyin never jumps. */
+const CHAR_CHECK_PX = 14;
+
+/**
+ * The finished check under each syllable. Syllables pair with characters by position (cpcd's
+ * convention); a word whose syllable count does not match its characters (erhua, odd data)
+ * gets no per-syllable checks, only the word's corner check.
+ */
+function syllableChecks(word: SuperpositionWord, finishedChars: ReadonlySet<string>) {
+    const syllables = (word.pinyin ?? "").split(/\s+/).filter(Boolean);
+    if (syllables.length !== word.characters.length) return undefined;
+    return (index: number) => {
+        const finished = finishedChars.has(word.characters[index].char);
+        return (
+            <Icon
+                className={`superposition-hints__char-check${finished ? " superposition-hints__char-check--finished" : ""}`}
+                name="check_circle"
+                size={CHAR_CHECK_PX}
+                color={RAMP.grn.mark}
+                fill={1}
+                sx={{ visibility: finished ? "visible" : "hidden" }}
+            />
+        );
+    };
+}
+
 /** A dd's longest run, in lines: four one-character words leave each column under 100px. */
 const DEFINITION_MAX_LINES = 3;
 
@@ -19,8 +45,9 @@ interface SuperpositionHintsProps {
 
 /**
  * What to build, drawn straight on the grid: the words side by side, each a column of
- * colored pinyin, dd and audio button. A green check sits beside the pinyin while all of a
- * word's characters are finished, so it follows the board if a finished stack is pulled apart.
+ * colored pinyin, dd and audio button. Each finished character gets a small green check under
+ * its syllable, and the whole word a check in its top corner once every character is built.
+ * A finished stack is locked (board.ts → `lockFinishedStacks`), so a check never goes away.
  *
  * Only the audio button takes input: the rest lets a press through to any tile lying here.
  * That button stops its own press from reaching the board, which would start a drag.
@@ -51,7 +78,14 @@ const SuperpositionHints: React.FC<SuperpositionHintsProps> = ({ words, finished
                         <Icon className="superposition-hints__finished-check" name="check_circle" size={18} color={RAMP.grn.mark} fill={1} sx={{ position: "absolute", top: 4, right: 0 }} />
                     )}
                     {word.pinyin && (
-                        <TonedPronunciation className="superposition-hints__pinyin" pronunciation={word.pinyin} fontSize={SIZE.title} gap={4} justifyContent="center" />
+                        <TonedPronunciation
+                            className="superposition-hints__pinyin"
+                            pronunciation={word.pinyin}
+                            fontSize={SIZE.title}
+                            gap={4}
+                            justifyContent="center"
+                            renderBelowSyllable={syllableChecks(word, finishedChars)}
+                        />
                     )}
                     <Typography
                         className="superposition-hints__definition"

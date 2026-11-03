@@ -20,7 +20,6 @@ import type { FlpBreakResults } from "../flpBreak/types";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
 import { usePersonalBest } from "../shared/usePersonalBest";
-import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
@@ -167,7 +166,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     const boardShowPinyin = runTrack !== "reading";
 
     // ── Pause sources → one boolean ─────────────────────────────────────────────
-    const { paused: backgroundPaused, resume: resumeFromBackground } = useBackgroundPause(phase === "playing");
+    const { paused: backgroundPaused } = useBackgroundPause(phase === "playing");
     const clockPaused = noticeOpen || backgroundPaused;
 
     // ── Study Challenge round (inert for an ordinary launch, and so for a break) ─
@@ -513,9 +512,6 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
                     onRestore={sortOffer.onRestore}
                 />
             </Box>
-
-            {/* Backgrounding paused the run — covers the board until Resume. */}
-            <GamePausedOverlay open={backgroundPaused} onResume={resumeFromBackground} classPrefix="bucket-drop" />
         </Frame>
         </>
     );

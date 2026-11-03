@@ -31,7 +31,6 @@ import { fetchGamePool } from "../../api/gamePool";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
-import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 
 /**
@@ -81,7 +80,7 @@ const HydraBubblesPage: React.FC = () => {
     // Read straight off the URL rather than from the hook below, which needs the
     // pause flag this line produces. One fact, two readers, no cycle.
     const isChallengeLaunch = !!searchParams.get("challengeId");
-    const { paused: backgroundPaused, resume: resumeFromBackground } =
+    const { paused: backgroundPaused } =
         useBackgroundPause(phase === "playing" && isChallengeLaunch);
     const challengeRound = useChallengeRound({
         gameId: "hydra-bubbles",
@@ -355,13 +354,13 @@ const HydraBubblesPage: React.FC = () => {
     // clock and nothing that advances against the player: bubbles drift (2026-09-25)
     // but drift moves no score/fill/spawn, there is no descending ceiling, and the
     // board changes only in response to a match. Backgrounding therefore costs the
-    // player nothing, and a tap-to-resume overlay on return is pure friction over a
-    // board that is exactly as they left it.
+    // player nothing, and pausing would protect a board that is exactly as they
+    // left it.
     //
     // ⚠️ IT IS BACK FOR CHALLENGE MODE ONLY (2026-08-22), exactly as this note
     // predicted. A challenge round is scored on TIME TO CLEAR (§ 7.5), so that
     // variant IS timed and falls squarely under the rule — `useBackgroundPause` is
-    // armed for it above, its overlay renders below, and the round's elapsed time is
+    // armed for it above (it resumes by itself on return), and the round's elapsed time is
     // ACCUMULATED ACTIVE time (the shared hook ticks only while unpaused), never
     // `now − startedAt`. A free-play run is unchanged: nothing in it advances on its
     // own, so pausing it would be friction over a board that has not moved.
@@ -550,15 +549,6 @@ const HydraBubblesPage: React.FC = () => {
                         centered
                     )}
                 </Box>
-
-                {/* Backgrounding paused a CHALLENGE round (the only timed Hydra
-                    variant). Covers the board so the pause cannot be used as a free
-                    look at it; the clock restarts only on Resume. */}
-                <GamePausedOverlay
-                    open={backgroundPaused}
-                    onResume={resumeFromBackground}
-                    classPrefix="hydra"
-                />
             </GameLeafPage>
         </>
     );

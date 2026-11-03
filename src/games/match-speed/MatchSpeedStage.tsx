@@ -53,7 +53,6 @@ import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { useMarkedLentWords } from "../../hooks/useMarkedLentWords";
 import { isProvisional, provisionalWords } from "../../utils/provisionalCards";
-import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
@@ -250,7 +249,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // Hoisted above the loaders because the challenge round's active-time clock
     // needs it (the pause GATE itself still reads below, next to the run clock it
     // protects — see `clockPaused`).
-    const { paused: backgroundPaused, resume: resumeFromBackground } =
+    const { paused: backgroundPaused } =
         useBackgroundPause(phase === "countdown" || phase === "playing");
 
     // ── STUDY CHALLENGE ROUND (docs/STUDY_CHALLENGE.md § 5) ──
@@ -964,17 +963,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                     />
                 )}
             </Box>
-
-            {/* Backgrounding paused the round — the app-wide rule
-                (docs/GAMES_FEATURE.md § Backgrounding pauses the clock). A SIBLING of
-                the board, like GameEndPopup, so the layout does not change shape when
-                paused; it covers the board so the pause cannot be used as a free look
-                at it, and the clock only restarts when the player taps Resume. */}
-            <GamePausedOverlay
-                open={backgroundPaused}
-                onResume={resumeFromBackground}
-                classPrefix="match-speed"
-            />
         </Frame>
         </>
     );

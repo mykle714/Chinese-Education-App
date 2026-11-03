@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Box } from "@mui/material";
 import { COLORS, RAMP } from "../../theme/colors";
 import { CARD_SURFACE_RADIUS } from "../../theme/surfaces";
-import { dragTarget, nextTapSelection, snapToGrid, stackKey, tilesAt, type Tile } from "./board";
-import { DRAG_SLOP_PX, GRID_UNIT_PX, TILE_OUTLINE_PX, TILE_PX, TILE_UNITS } from "./constants";
+import { collapseLocked, dragTarget, nextTapSelection, snapToGrid, tilesAt, type Tile } from "./board";
+import { DRAG_GRIP_X_FRACTION, DRAG_GRIP_Y_FRACTION, DRAG_SLOP_PX, GRID_UNIT_PX, TILE_OUTLINE_PX, TILE_PX, TILE_UNITS } from "./constants";
 
 /** The hanzi-writer glyph box, Y-up (see GlyphSvg). */
 const GLYPH_VIEW_BOX = "0 0 1024 1024";
@@ -11,19 +11,15 @@ const GLYPH_TRANSFORM = "translate(0,900) scale(1,-1)";
 
 /** The selected stroke's highlight. Purple stays clear of the ink, the teal ground and the green finish. */
 const SELECTED_INK = RAMP.pur.mark;
-/** A finished stack's outline. */
+/** A finished (locked) stack's outline. */
 const FINISHED_OUTLINE = RAMP.grn.mark;
-/** A hinted tile's outline. Orange stays clear of the selection, the finish and the teal ground. */
-const HINT_OUTLINE = RAMP.org.mark;
+/** A hinted tile's outline and stroke. Orange stays clear of the selection, the finish and the teal ground. */
+const HINT_INK = RAMP.org.mark;
 
 interface SuperpositionBoardProps {
     tiles: Tile[];
-    /** Keys of the finished stacks (`stackKey`). */
-    finishedStacks: ReadonlySet<string>;
     /** The tiles the hint button pointed at. */
     hintedTileIds: readonly number[];
-    /** The tile held in a drag. It is not judged, so it never reads as finished. */
-    liftedId: number | null;
     /** Input is off once the run is over. */
     locked: boolean;
     /** The word info, drawn on the grid under the tiles. */
@@ -52,11 +48,13 @@ interface Press {
  *
  * A tap walks the pile under the finger (`nextTapSelection`), highlighting the selected
  * stroke. A drag lifts the selection if it is in that pile, else the top tile, and the tile
- * snaps cell to cell under the finger. Dropping clears the selection.
+ * jumps to hang from the finger at its bottom-middle grip (`DRAG_GRIP_*_FRACTION`), then
+ * snaps cell to cell under it. Dropping clears the selection. A locked (finished) stack is one
+ * entry in the pile (`collapseLocked`): it selects, highlights and drags whole.
  *
  * Layer: game component, presentational over `board.ts`. The Stage owns the tiles.
  */
-const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finishedStacks, hintedTileIds, liftedId, locked, info, onMeasured, onMove, onLift }) => {
+const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, hintedTileIds, locked, info, onMeasured, onMove, onLift }) => {
     const boardRef = useRef<HTMLDivElement | null>(null);
     const infoRef = useRef<HTMLDivElement | null>(null);
     const pressRef = useRef<Press | null>(null);
@@ -89,7 +87,8 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
             pointerId: event.pointerId,
             startX: x,
             startY: y,
-            hits: tilesAt(tiles, x / GRID_UNIT_PX, y / GRID_UNIT_PX, TILE_UNITS),
+            // A locked stack is one entry, so a tap selects it whole and a drag lifts it whole.
+            hits: collapseLocked(tilesAt(tiles, x / GRID_UNIT_PX, y / GRID_UNIT_PX, TILE_UNITS)),
             drag: null,
         };
         event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -104,10 +103,12 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
             const tileId = dragTarget(press.hits, selectedId);
             const tile = press.hits.find((hit) => hit.id === tileId);
             if (!tile) return;
+            // The tile re-centres on a fixed grip (bottom-middle) instead of keeping the
+            // press point, so the finger never covers the stroke being placed.
             press.drag = {
                 tileId: tile.id,
-                offsetX: press.startX - tile.x * GRID_UNIT_PX,
-                offsetY: press.startY - tile.y * GRID_UNIT_PX,
+                offsetX: TILE_PX * DRAG_GRIP_X_FRACTION,
+                offsetY: TILE_PX * DRAG_GRIP_Y_FRACTION,
             };
             setSelectedId(tile.id);
             onLift(tile.id);
@@ -132,10 +133,13 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
         }
     }, [onLift]);
 
-    const finishedTileIds = useMemo(
-        () => new Set(tiles.filter((tile) => tile.id !== liftedId && finishedStacks.has(stackKey(tile))).map((tile) => tile.id)),
-        [tiles, finishedStacks, liftedId]
-    );
+    // The selection as a set of tiles: a locked stack is selected, and highlighted, whole.
+    const selectedTileIds = useMemo(() => {
+        const picked = tiles.find((tile) => tile.id === selectedId);
+        if (!picked) return new Set<number>();
+        if (!picked.lock) return new Set([picked.id]);
+        return new Set(tiles.filter((tile) => tile.lock?.id === picked.lock!.id).map((tile) => tile.id));
+    }, [tiles, selectedId]);
 
     return (
         <Box
@@ -163,8 +167,9 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
                 {info}
             </Box>
             {tiles.map((tile) => {
-                const selected = tile.id === selectedId;
-                const finished = finishedTileIds.has(tile.id);
+                const selected = selectedTileIds.has(tile.id);
+                // Finished = locked: a lock only forms on a finishing drop and never opens.
+                const finished = tile.lock !== null;
                 const hinted = hintedTileIds.includes(tile.id);
                 return (
                     <Box
@@ -179,7 +184,7 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
                             boxSizing: "border-box",
                             borderRadius: `${CARD_SURFACE_RADIUS}px`,
                             transform: `translate(${tile.x * GRID_UNIT_PX}px, ${tile.y * GRID_UNIT_PX}px)`,
-                            border: `${TILE_OUTLINE_PX}px solid ${finished ? FINISHED_OUTLINE : selected ? SELECTED_INK : hinted ? HINT_OUTLINE : COLORS.border}`,
+                            border: `${TILE_OUTLINE_PX}px solid ${finished ? FINISHED_OUTLINE : selected ? SELECTED_INK : hinted ? HINT_INK : COLORS.border}`,
                             // The body stays transparent so a pile shows every stroke in it.
                             // The selection and the hint ride above without changing the pile's order.
                             zIndex: selected ? tiles.length + 1 : hinted ? tiles.length : tile.z,
@@ -188,8 +193,9 @@ const SuperpositionBoard: React.FC<SuperpositionBoardProps> = ({ tiles, finished
                     >
                         <svg className="superposition-board__stroke" viewBox={GLYPH_VIEW_BOX} width="100%" height="100%" aria-hidden>
                             <g transform={GLYPH_TRANSFORM}>
+                                {/* The stroke takes the same color as its outline; the selection outranks the hint. */}
                                 {tile.paths.map((path) => (
-                                    <path key={path} d={path} fill={selected ? SELECTED_INK : COLORS.onSurface} />
+                                    <path key={path} d={path} fill={selected ? SELECTED_INK : hinted ? HINT_INK : COLORS.onSurface} />
                                 ))}
                             </g>
                         </svg>

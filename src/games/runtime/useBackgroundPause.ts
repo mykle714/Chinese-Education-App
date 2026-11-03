@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * Backgrounding pauses the clock — the app-wide games rule
@@ -14,11 +14,10 @@ import { useCallback, useEffect, useState } from "react";
  * Backgrounding is a SECOND SOURCE for the `clockPaused` boolean each game already
  * derives from its input-blocking popups. Compose, never replace:
  *
- *     const { paused: backgroundPaused, resume } = useBackgroundPause(phase === "playing");
- *     const clockPaused = noticeOpen || settingsOpen || backgroundPaused;
+ *     const { paused: backgroundPaused } = useBackgroundPause(phase === "playing");
+ *     const clockPaused = noticeOpen || backgroundPaused;
  *
- * and feed `clockPaused` to everything that advances on its own. Then render
- * `<GamePausedOverlay open={backgroundPaused} onResume={resume} />`.
+ * and feed `clockPaused` to everything that advances on its own.
  *
  * ⚠️ THE PAUSE IS ONLY REAL IF ELAPSED TIME IS ACCUMULATED ACTIVE TIME. A game that
  * computes elapsed as `now − startedAt` will honour this hook visually and still bill
@@ -26,54 +25,52 @@ import { useCallback, useEffect, useState } from "react";
  * than none because it looks correct. Word Search's `pauseTimer`/`resumeTimer` pair is
  * the reference for doing it properly.
  *
- * ── WHY `paused` STAYS TRUE AFTER THE PLAYER RETURNS ──────────────────────────
- * It latches. Returning to the tab does NOT clear it; only `resume()` does. That is
- * deliberate (§ 5.8): dropping somebody straight back into a live timer they have not
- * had a chance to look at yet is the same as not pausing at all for the first second.
- * The caller renders a tap-to-resume affordance, and the player chooses when the clock
- * restarts.
+ * ── AUTO-RESUME (2026-11-02) ──────────────────────────────────────────────────
+ * `paused` tracks visibility: it goes true when the app is hidden and clears by itself
+ * the moment the player is back. There is NO tap-to-resume screen any more — the old
+ * latch + `GamePausedOverlay` pair was removed app-wide (challenge rounds included) as
+ * friction, matching what Word Search always did. The trade-off accepted with it: the
+ * board is no longer hidden while paused, so a backgrounded round can be looked at on
+ * return before the clock restarts — but only for as long as the app is visible, which
+ * is exactly when the clock is running again, so it buys no free study time.
  *
  * ── WHY BOTH EVENTS ───────────────────────────────────────────────────────────
  * `visibilitychange` is the one that fires for tab switches and for backgrounding on
  * desktop. `pagehide` is the one that fires on iOS Safari when the app is swiped away
- * or the screen locks, cases where `visibilitychange` is unreliable. Neither is
- * sufficient alone, and both setting the same latch is harmless.
+ * or the screen locks, cases where `visibilitychange` is unreliable. `pageshow` (a
+ * bfcache restore) and `visibilitychange` → visible clear it again.
  *
- * @param active Only latch while the round is genuinely running. Pass the game's
- *   "playing" condition, so a player who backgrounds the app on the results screen does
- *   not come back to a resume prompt over a finished board.
+ * Docs that depend on this hook: docs/GAMES_FEATURE.md § "Backgrounding pauses the
+ * clock", docs/FLP_GAME_BREAKS.md § 6, docs/STUDY_CHALLENGE.md § 5.8.
+ *
+ * @param active Only pause while the round is genuinely running. Pass the game's
+ *   "playing" condition; leaving it clears the pause.
  */
-export function useBackgroundPause(active: boolean): { paused: boolean; resume: () => void } {
-    const [paused, setPaused] = useState(false);
+export function useBackgroundPause(active: boolean): { paused: boolean } {
+    const [hidden, setHidden] = useState(false);
 
     useEffect(() => {
-        if (!active) return;
+        if (!active) {
+            setHidden(false);
+            return;
+        }
 
-        const latch = () => {
-            // Only latch on the way OUT. `visibilitychange` also fires when the player
-            // comes back, and treating that as an event would clear the latch the
-            // resume affordance exists to hold.
-            if (document.visibilityState === "hidden") setPaused(true);
-        };
+        const sync = () => setHidden(document.visibilityState === "hidden");
         // `pagehide` carries no visibility state — its firing IS the signal.
-        const latchOnHide = () => setPaused(true);
+        const onHide = () => setHidden(true);
+        const onShow = () => setHidden(false);
 
-        document.addEventListener("visibilitychange", latch);
-        window.addEventListener("pagehide", latchOnHide);
+        // Arm in the current state, so a round that goes live while hidden starts paused.
+        sync();
+        document.addEventListener("visibilitychange", sync);
+        window.addEventListener("pagehide", onHide);
+        window.addEventListener("pageshow", onShow);
         return () => {
-            document.removeEventListener("visibilitychange", latch);
-            window.removeEventListener("pagehide", latchOnHide);
+            document.removeEventListener("visibilitychange", sync);
+            window.removeEventListener("pagehide", onHide);
+            window.removeEventListener("pageshow", onShow);
         };
     }, [active]);
 
-    // Leaving the "playing" phase clears the latch, so a player who backgrounds during a
-    // round and returns after it ended (a timer expiring while they were away is normal)
-    // is not shown a resume prompt for a round that no longer exists.
-    useEffect(() => {
-        if (!active) setPaused(false);
-    }, [active]);
-
-    const resume = useCallback(() => setPaused(false), []);
-
-    return { paused, resume };
+    return { paused: active && hidden };
 }

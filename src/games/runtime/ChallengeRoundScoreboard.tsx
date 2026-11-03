@@ -190,9 +190,9 @@ const ChallengeRoundScoreboard: React.FC<{
                 // both `inset: 0` to the whole screen, header strip included.
                 position: "absolute",
                 inset: 0,
-                // Above the leaf page's own header, and above MinimizablePopup's 200 and
-                // GamePausedOverlay's 150: once a round is scored, nothing the game can
-                // still be showing may sit on top of the scoreboard.
+                // Above the leaf page's own header and MinimizablePopup's 200: once a
+                // round is scored, nothing the game can still be showing may sit on top
+                // of the scoreboard.
                 zIndex: 1200,
                 // Not fully opaque: a sliver of the finished board stays legible behind
                 // it, which is what says "this score came from THAT run" without

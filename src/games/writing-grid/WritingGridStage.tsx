@@ -3,7 +3,6 @@ import { Box, Button, Typography } from "@mui/material";
 import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
 import GameEndPopup from "../runtime/GameEndPopup";
-import GamePausedOverlay from "../runtime/GamePausedOverlay";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import PersonalBestLine from "../shared/PersonalBestLine";
@@ -167,7 +166,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
 
     // ── Stopwatch: accumulated ACTIVE time ───────────────────────────────────────
     const running = phase === "arrange" || phase === "write";
-    const { paused: backgroundPaused, resume: resumeFromBackground } = useBackgroundPause(running);
+    const { paused: backgroundPaused } = useBackgroundPause(running);
     const accumulatedRef = useRef(0);
     const runningSinceRef = useRef<number | null>(null);
 
@@ -182,7 +181,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         runningSinceRef.current = null;
     };
 
-    // Background pause latches the clock off until the learner taps Resume.
+    // Background pause holds the clock while the app is hidden; it resumes on return.
     useEffect(() => {
         if (!running) return;
         if (backgroundPaused) holdStopwatch();
@@ -526,8 +525,6 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                     </Box>
                 </GameEndPopup>
             )}
-
-            <GamePausedOverlay open={backgroundPaused} onResume={resumeFromBackground} classPrefix="writing-grid" />
         </Frame>
     );
 };

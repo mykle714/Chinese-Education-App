@@ -1,7 +1,8 @@
 /**
  * Generate src/games/superposition/strokeParts.json: { "<character>": [[stroke indices], ...] },
  * the strokes of each character that belong on one Superposition tile because they form a
- * natural part (氵, 口, 宀 ...). Strokes in no part are left out; the game merges them by ink.
+ * natural part (氵, 口, 宀 ...). Strokes in no part are left out. The game treats each part as
+ * one unit when it groups strokes into tiles (server/contracts/superpositionGroups.ts → groupStrokes).
  *
  * LAYER: data-enrichment asset generator. Dev-box only, like generate-stroke-counts.js: it
  * reads the client dependency hanzi-writer-data, and its output is COMMITTED. Only derived
@@ -38,6 +39,7 @@ const SPLIT_PARTS = new Map([
     ['门', [[0, 1], [2]]], // dot and vertical / the right frame
     ['心', [[0, 2, 3], [1]]], // three dots / the hook
     ['米', [[0, 1], [2, 3, 4, 5]]], // two dots / 木
+    ['西', [[1, 2, 5], [0, 3, 4]]], // the box (丨 𠃌 and the bottom bar) / the top bar and the two legs
     // The source leaves 那's left side unmatched (？？), so ink would pull its bars away from its frame.
     ['那', [[0, 1, 2, 3], [4, 5]]], // left block / 阝
 ]);

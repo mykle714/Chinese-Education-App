@@ -156,7 +156,7 @@ mid-run — shown only when `runTrack !== "reading"`, mirroring Bubble Match's
 
 - **Accumulated active time** (`BucketDropStage` → `activeMsRef`, `segmentStartRef`,
   `clockRunning`): runs while `phase === "playing"` and not `clockPaused`
-  (provisional notice OR backgrounding — `useBackgroundPause` + `GamePausedOverlay`). Each
+  (provisional notice OR backgrounding — `useBackgroundPause`, which resumes by itself on return). Each
   running segment is banked on pause / end / unmount.
 - **Never on screen during play.** The clock runs in the background with no `GameTimer` and no
   tick: `elapsedMs` only updates when a segment is banked. The time first appears on the end

@@ -49,6 +49,7 @@ describe('WritingGridService.deal', () => {
     const dal: IWritingGridDAL = {
       findCandidateCharacters: async (_user, extraIds) => { seen.push(extraIds); return rows; },
       findCandidateWords: async () => [],
+      findSuperpositionGroups: async () => new Map(),
       findEntryKeys: async (_user, ids) => ids.flatMap((id) => (entryKeys[id] ? [entryKeys[id]] : [])),
       ensureCharacterRows: async (_user, chars) => new Map(chars.map((c) => [c, CHARS.indexOf(c) + 1])),
     };

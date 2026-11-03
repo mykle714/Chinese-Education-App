@@ -18,8 +18,13 @@ import { WEIGHT } from "../theme/scale";
  * about what it is rendering. The tone colours are shared with cpcd via `toneColors`,
  * so the two agree without either owning the other.
  *
+ * `renderBelowSyllable` stacks a slot under each syllable (the syllable stays centred on it),
+ * for per-character marks such as Superposition's finished-character check.
+ *
  * Used by Memory Map's prompt (`MemoryMapPrompt`) and the writing flp card
- * (`WritingCardFace`). Referenced by docs/WRITING_PRACTICE_REWORK.md § 3.
+ * (`WritingCardFace`), Writing Grid, the lookalike notice and Superposition's word info
+ * (`SuperpositionHints`, the only `renderBelowSyllable` user). Referenced by
+ * docs/WRITING_PRACTICE_REWORK.md § 3 and docs/SUPERPOSITION_GAME.md § Play.
  */
 interface TonedPronunciationProps {
     pronunciation: string;
@@ -29,29 +34,40 @@ interface TonedPronunciationProps {
     /** Space between syllables, px. */
     gap?: number;
     justifyContent?: "flex-start" | "center";
+    /** Something to draw under the `index`th syllable. Return the same size for every syllable so the row never reflows. */
+    renderBelowSyllable?: (index: number) => React.ReactNode;
     sx?: SxProps<Theme>;
 }
 
 const TonedPronunciation: React.FC<TonedPronunciationProps> = ({
-    pronunciation, className, fontSize, gap = 8, justifyContent = "flex-start", sx,
+    pronunciation, className, fontSize, gap = 8, justifyContent = "flex-start", renderBelowSyllable, sx,
 }) => (
     <Box className={className} sx={[{ display: "flex", flexWrap: "wrap", columnGap: `${gap}px`, justifyContent }, ...(Array.isArray(sx) ? sx : [sx])]}>
-        {pronunciation.split(/\s+/).filter(Boolean).map((syllable, i) => (
-            <Typography
-                key={`${syllable}-${i}`}
-                component="span"
-                className={`${className}-syllable`}
-                sx={{
-                    fontFamily: FONTS.sans,
-                    fontSize,
-                    fontWeight: WEIGHT.semibold,
-                    color: getToneColor(syllable),
-                    whiteSpace: "nowrap",
-                }}
-            >
-                {syllable}
-            </Typography>
-        ))}
+        {pronunciation.split(/\s+/).filter(Boolean).map((syllable, i) => {
+            const text = (
+                <Typography
+                    key={`${syllable}-${i}`}
+                    component="span"
+                    className={`${className}-syllable`}
+                    sx={{
+                        fontFamily: FONTS.sans,
+                        fontSize,
+                        fontWeight: WEIGHT.semibold,
+                        color: getToneColor(syllable),
+                        whiteSpace: "nowrap",
+                    }}
+                >
+                    {syllable}
+                </Typography>
+            );
+            if (!renderBelowSyllable) return text;
+            return (
+                <Box key={`${syllable}-${i}`} className={`${className}-syllable-column`} sx={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
+                    {text}
+                    {renderBelowSyllable(i)}
+                </Box>
+            );
+        })}
     </Box>
 );
 

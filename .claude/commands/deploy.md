@@ -14,10 +14,9 @@ depends on the answer:
   block; execute them. The only exceptions are commands that need an interactive
   `sudo` password — you cannot supply the password non-interactively, so ask the
   user to run just those. (The maintenance-schedule install is **no longer** one of
-  them: it is a systemd *user* timer and needs no privilege. See Step 3.) Since rebuilding
-  PPE containers briefly takes the live site down for real users, confirm with the
-  user before running the `down`/`up --build` step unless they've already told you to
-  proceed.
+  them: it is a systemd *user* timer and needs no privilege. See Step 3.) Asking for a
+  deployment **is** the go-ahead: the user knows the `down`/`up --build` step briefly
+  takes the live site down and wants it done now, so do not stop to confirm it.
 
 - **If this is the DEV machine** — prepare the code first: run `npm run build`, run the
   tests, then commit and push to `origin main`. Then **run the deploy yourself over SSH**
@@ -25,9 +24,10 @@ depends on the answer:
   the dev box at `michael@174.127.171.187` with `~/.ssh/id_ed25519_cow_ppe`, so there is
   no need to hand the user a copy-paste block.
 
-  The confirmation rule is unchanged and matters more here, not less: the
-  `down`/`up --build` step **takes the live site down for real users**, so confirm before
-  running it unless the user has already said to proceed. Everything else in this skill
+  The same go-ahead applies here: asking for a deployment covers the brief outage from
+  `down`/`up --build`, so run it without confirming. A nonstandard deploy
+  (a runbook-held migration, a failed check) still follows its runbook and stops where
+  the runbook says to. Everything else in this skill
   still applies verbatim — never `down -v`, derive pending migrations from
   `schema_migrations` + `migrate.sh --dry-run` rather than a runbook banner, and record
   each hand-applied migration in `schema_migrations`.
@@ -38,7 +38,7 @@ depends on the answer:
 (`beech-2025` = PPE) or `machineEnvironment.md`, never by container name. An older version of this doc claimed they were the same machine with containers side by side — that was wrong, as was the address `174.127.171.180` (nothing answers there).
 - **App directory**: `~/vocabulary-app`
 - **Domain**: `mren.me` — Cloudflare Flexible SSL (Cloudflare terminates HTTPS; server only needs to serve HTTP on port 80)
-- **Access**: When you are invoked *on the PPE machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev you cannot reach PPE at all; only build/test/commit/push. Fall back to handing the user a copy-paste block only for PPE commands you genuinely cannot run (e.g. interactive `sudo`).
+- **Access**: When you are invoked *on the PPE machine* you have direct Docker + repo access — run the deploy yourself (see "Which machine are you on?" above). When invoked on dev, build/test/commit/push locally, then run the rest over SSH (see [`/ssh-ppe`](./ssh-ppe.md)). Fall back to handing the user a copy-paste block only for PPE commands you genuinely cannot run (e.g. interactive `sudo`).
 - **Deployment type**: "Future Updates" only (no initial setup needed)
 
 ## Port Layout

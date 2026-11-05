@@ -109,10 +109,43 @@ Event wiring (one code path for keyboard and touch):
   `findDictionaryMatch`): selections are now gsa segments, so det/vet matches are
   the common case rather than the lucky one.
 
+## Keyboards: reading mode vs edit mode
+
+The reading box is a focused `<textarea>` (focus drives the caret, the word
+highlight and arrow navigation, and `useTextSelection` → `handleTextAreaBlur`
+re-asserts focus whenever it is lost), but it is **not for typing**. So in reading
+mode it declines **both** keyboards:
+
+- `inputMode="none"` — no OS soft keyboard.
+- `data-beginner-keyboard="off"` — no app handwriting keyboard
+  (docs/BEGINNER_KEYBOARD.md § 7a's opt-out). Without it, the provider's `focusin`
+  trigger raised the keyboard on every one of the box's refocuses.
+
+Edit mode (`useReaderContentEditor`, `ReaderEditToolbar`) drops both overrides, so
+the learner's chosen keyboard comes up there and only there.
+
+⚠️ **Each mode gets its own `<textarea>`** (`key` on the `TextField` in
+`TextArea.tsx`). The beginner keyboard resets its field's `inputMode` to `''` when
+it closes, and that cleanup lands after the exit-edit re-render; on a shared element
+it stripped reading mode's `inputMode="none"` and the OS keyboard came back.
+Remounting leaves that cleanup on the detached edit element. The cost is that
+scroll offset and caret must be handed across the swap: `TextArea` snapshots them
+from the outgoing element on the render where `editMode` flips, then focuses the
+incoming edit element with them restored. That focus also matters for the keyboard:
+a tap on an already-focused field fires no `focusin`, so without it nothing would
+open until the learner tapped away and back.
+
+Code: `src/features/reader/TextArea.tsx` → `TextArea` (`inputProps`, the `key`,
+the read ⇄ edit hand-off effect); `src/features/beginnerKeyboard/eligibility.ts` →
+`OPT_OUT_ATTRIBUTE`; `src/features/beginnerKeyboard/BeginnerKeyboardHost.tsx`
+(the `inputMode` cleanup).
+
 ## Code / doc dependencies
 
 - `src/features/reader/documentSegmentation.ts` — everything above; header notes
   the server cross-reference and the intentional divergences.
+- `src/features/reader/TextArea.tsx` — reading/edit keyboard suppression and the
+  per-mode textarea (§ "Keyboards: reading mode vs edit mode").
 - `src/types.ts` `DictionaryEntry.matchException` — declared for the client
   because the gsa exclude set reads it (the API always sent it).
 - `server/dal/shared/segmentString.ts` — canonical gsa; header points back here.

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Box, TextField } from "@mui/material";
 import { selectRelativeSpan, type SegmentSpan } from "./documentSegmentation";
 import ReaderTapOverlay from "./ReaderTapOverlay";
@@ -54,6 +54,42 @@ function TextArea({
     draftContent = '',
     onDraftChange,
 }: TextAreaProps) {
+    // ── Read ⇄ edit hand-off ────────────────────────────────────────────────
+    // The two modes render DIFFERENT <textarea> elements (see the `key` on the
+    // TextField below), so the reader's place would be lost on every toggle. On
+    // the render where `editMode` flips, `inputRef` still points at the OUTGOING
+    // element (the swap only happens at commit), so snapshot its scroll offset and
+    // caret here and hand them to the incoming one in the effect below. Reading the
+    // DOM during render is idempotent, so a StrictMode double render is harmless.
+    const prevEditModeRef = useRef(editMode);
+    const handoffRef = useRef<{ scrollTop: number; caret: number } | null>(null);
+    if (prevEditModeRef.current !== editMode) {
+        const outgoing = inputRef.current;
+        handoffRef.current = outgoing
+            ? { scrollTop: outgoing.scrollTop, caret: outgoing.selectionStart ?? 0 }
+            : null;
+        prevEditModeRef.current = editMode;
+    }
+
+    // Entering edit mode focuses the fresh editable textarea. That focus is the
+    // keyboard trigger: the BeginnerKeyboardProvider listens for `focusin`, and a
+    // tap on an ALREADY-focused field fires none, so without this the learner would
+    // have to tap away and back before any keyboard appeared. Leaving edit mode
+    // needs nothing here — ReaderDocumentPage's dialog-close effect refocuses the
+    // reading box and restores its word highlight.
+    useEffect(() => {
+        const handoff = handoffRef.current;
+        handoffRef.current = null;
+        if (!editMode) return;
+        const field = inputRef.current;
+        if (!field) return;
+        if (handoff) {
+            field.scrollTop = handoff.scrollTop;
+            field.setSelectionRange(handoff.caret, handoff.caret);
+        }
+        field.focus({ preventScroll: true });
+    }, [editMode, inputRef]);
+
     // Memoized Text Area Component - isolated from vocab card updates
     const MemoizedTextArea = useMemo(() => {
         if (!selectedText) return null;
@@ -67,7 +103,16 @@ function TextArea({
                 position: 'relative',
             }}>
                 <TextField
-                    className="reader-page-text-field"
+                    // ⚠️ One element per mode, NOT one element toggled. The beginner
+                    // keyboard writes `inputMode` on the field it drives and resets it
+                    // to '' when it closes (BeginnerKeyboardHost), and that close lands
+                    // AFTER the exit-edit re-render — so a shared element came back to
+                    // reading mode stripped of its `inputMode="none"` and raised the OS
+                    // keyboard on every refocus. Remounting gives reading mode a clean
+                    // element and leaves the keyboard's cleanup on the detached one
+                    // (the provider closes itself once its field is disconnected).
+                    key={editMode ? 'reader-edit-field' : 'reader-read-field'}
+                    className={editMode ? "reader-page-text-field reader-page-text-field--editing" : "reader-page-text-field"}
                     multiline
                     fullWidth
                     value={editMode ? draftContent : selectedText.content}
@@ -120,10 +165,14 @@ function TextArea({
                     // The reading box is focused on purpose (it drives word selection +
                     // arrow-key navigation), so mobile browsers would normally raise the
                     // soft keyboard. This box is not for typing, so inputMode="none"
-                    // suppresses the virtual keyboard while keeping focus/selection intact.
-                    // In edit mode this is a normal editable textarea, so the keyboard is
-                    // allowed to appear (no inputMode override).
-                    inputProps={editMode ? undefined : { inputMode: 'none' }}
+                    // suppresses the OS virtual keyboard while keeping focus/selection
+                    // (the caret + word highlight) intact. `data-beginner-keyboard="off"`
+                    // does the same for the app's own handwriting keyboard, which would
+                    // otherwise open on every focus — the reading box re-asserts focus
+                    // constantly (useTextSelection → handleTextAreaBlur), so it popped up
+                    // all the time. In edit mode this is a normal editable textarea and
+                    // both keyboards are allowed (no overrides).
+                    inputProps={editMode ? undefined : { inputMode: 'none', 'data-beginner-keyboard': 'off' }}
                     InputProps={{
                         sx: {
                             lineHeight: 2,

@@ -239,9 +239,8 @@ This document is referenced by:
 
 ## 5. Deployment
 
-Migration 130 has **not been run on PPE**. It was authored on the PPE machine but
-deliberately not executed there; it is applied and verified on dev, and ships to
-PPE via `/deploy`.
+Migration 130 is on PPE (applied 2026-07-29). The ordering below is kept as the
+record of how it had to ship.
 
 Order matters — the cron SQL and the prune script both read
 `user_languages`, so they break until the migrations land:

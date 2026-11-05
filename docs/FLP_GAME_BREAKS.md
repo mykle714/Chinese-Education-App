@@ -4,8 +4,8 @@
 > break's card, the server `seedIds` seed and the timer-eye move are built. **Match Speed,
 > Word Search, Writing Grid, Superposition and Speed Reading are in the rotation**, so the
 > **core** flp offers Match Speed and Word Search (Pinyin), the **reading** flp offers Match
-> Speed (No Pinyin, zh), Word Search (No Pinyin), Speed Reading (zh; built 2026-11-04,
-> **not yet on PPE**) and Memory Map (zh; built 2026-11-04, **not yet on PPE**), and the **writing** flp offers Writing Grid and Superposition (zh).
+> Speed (No Pinyin, zh), Word Search (No Pinyin), Speed Reading (zh; on PPE 2026-11-04)
+> and Memory Map (zh; on PPE 2026-11-04), and the **writing** flp offers Writing Grid and Superposition (zh).
 > Bucket Drop's adapter is built but switched off (§ 6). The other two games join as their
 > Stages are extracted.
 

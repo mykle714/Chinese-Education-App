@@ -452,8 +452,10 @@ which also refreshes the affected `breakdown[char].definition` values (2,273 on 
 1,605 short glosses placed, 1,621 → 16 long leads. The 16 left are rare non-default
 senses where every attempt stayed over 20 chars (e.g. 雅量 "high drinking capacity"); they
 print as `FAILED` review lines and are retried by any later run. **es has not been
-patched** (Spanish is paused — DEFERRED_WORK.md item 33). **PPE has not been patched**
-either; the script must be run there too, since PPE is the det source of truth. The
+patched** (Spanish is paused — DEFERRED_WORK.md item 33). **PPE was patched 2026-11-04**
+(zh, after `chinese/patch-classifier-senses.js`): 1,606 glosses placed on 1,418 entries, 2,400
+breakdown definitions refreshed, 30 clusters left `FAILED` (log on PPE:
+`~/deploy-logs/long-glosses-2026-11-04.log`). The
 repair was done deliberately **without** a `SCRIPT_VERSION` bump on either clusterer,
 because a bump marks the corpus stale and a `--stale` run would re-partition it and
 re-mint sense labels.

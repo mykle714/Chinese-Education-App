@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **180** (2026-11-02). Latest code deploy: `c42e96f` (2026-11-02, migration 180 — expand-only, applied before the rebuild).
+PPE is current through migration **182** (2026-11-04). Latest code deploy: `c5541a9` (2026-11-04, migrations 181 + 182 — applied by `migrate.sh` before the rebuild).
 
 ## Open runbooks
 
@@ -30,6 +30,16 @@ PPE is current through migration **180** (2026-11-02). Latest code deploy: `c42e
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-04, **181** (`users."memoryMapFrameAspect"`, expand-only) + **182**
+(Match Speed review/challenge history delete — 0 rows matched on PPE), no runbook: both
+applied by `migrate.sh` before the rebuild (the shipped `MemoryMapDAL` reads and writes 181's
+column by name). Data in the same pass, from the host via `run-ppe.sh`, in this order:
+`chinese/patch-classifier-senses.js` (21 rows, 21 new classifier senses) then
+`shared/patch-long-cluster-glosses.js --lang=zh` (the classifier headlines need the split
+senses to exist first). **Lesson:** `run-ppe.sh` takes the script path relative to
+`server/` (`scripts/backfill/…`), not relative to `scripts/backfill/`. PPE again held a
+cron-written `oracle-excluded-words.json` change; it was committed and pushed from PPE first.
 
 Deployed 2026-10-30, **179** (`dictionaryentries_zh."maxCharStrokeCount"`, no runbook):
 applied by hand with `psql -1 -f` BEFORE the rebuild (the shipped `DICT_COLS` select it by

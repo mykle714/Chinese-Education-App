@@ -17,7 +17,7 @@ cards (§ 2.1) and made graduation refill the same slot (§ 3.6). Deploy:
 32 design questions are in § 12 (several since overruled, marked there); what the first
 build changed is § 14.
 
-**FIXED CAMERA + WORD FINDER (2026-11-04, migration 181 — not yet on PPE).** The map no
+**FIXED CAMERA + WORD FINDER (2026-11-04, migration 181 — on PPE 2026-11-04).** The map no
 longer pans or zooms: the whole map is fitted to the game viewport (§ 6), and the server
 packs it toward that viewport's shape — the **frame**, stored per learner (§ 2.4b). Pre-frame maps are
 wiped on the first framed load (§ 8.1). The prompt row gained a handwriting-only **word

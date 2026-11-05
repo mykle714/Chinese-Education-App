@@ -280,6 +280,36 @@
       "word1": "狗日",
       "reason": "slur/vulgar epithet: only sense is the obscene insult 'fucked/spawned by a dog; contemptible, fucking'",
       "droppedAt": "2026-10-26T17:47:50Z"
+    },
+    {
+      "word1": "野种",
+      "reason": "derogatory epithet ('bastard' / illegitimate child, cedict-tagged derog.) as its only sense",
+      "droppedAt": "2026-10-28T19:50:00Z"
+    },
+    {
+      "word1": "人尽可夫",
+      "reason": "slur: only sense is the sexist derogatory epithet '(of a woman) promiscuous / loose' (cf. 胸大无脑)",
+      "droppedAt": "2026-10-28T20:48:02Z"
+    },
+    {
+      "word1": "乳交",
+      "reason": "explicit-sexual: only sense is a sex act ('mammary intercourse')",
+      "droppedAt": "2026-10-28T22:20:00Z"
+    },
+    {
+      "word1": "欧派",
+      "reason": "explicit-sexual: only sense is '(ACG) breasts (loanword from Japanese \"oppai\")', sexualized slang (cf. 大雷)",
+      "droppedAt": "2026-10-29T03:17:56Z"
+    },
+    {
+      "word1": "人势",
+      "reason": "explicit-sexual: only sense is '(human) penis (TCM)'; genital term, consistent with 玉门/鸡鸡/牛子 drops",
+      "droppedAt": "2026-10-29T15:18:00Z"
+    },
+    {
+      "word1": "精虫冲脑",
+      "reason": "explicit-sexual: only sense is crude slang 'lit. the spermatozoa have gone to his head / fig. overwhelmed by lust' (cf. 大雷, 欧派)",
+      "droppedAt": "2026-10-29T22:17Z"
     }
   ],
   "es": []

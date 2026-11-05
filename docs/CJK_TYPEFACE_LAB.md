@@ -101,8 +101,22 @@ as the same text wherever it appears:
 - sense menu labels (each is a candidate dd) — `src/features/flashcards/card/SensePicker.tsx`
   → `renderSenseItem` (`FONTS.cjk`)
 
+- the mini preview card — `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`):
+  the WHOLE card is set in `FONTS.cjk` (root `fontFamily`, inherited by wrapper overlays;
+  restated on the dd `Typography` and the frequency badge). Reaches every wrapper at once:
+  the ancp's `DraggableCard`, `SkippedCardsSheet`, `MiniVocabCard`, `QuickMarkCard`,
+  `ChallengeWordCard`.
+
 The rest of the sense menu (pinyin reading headings, counter chip, grammar tag) stays on
 its UI faces.
+
+**Pinyin follows the face on two surfaces.** cpcd sets its pinyin in `FONTS.sans` by
+default; `ForeignText`'s `latinFontFamily` prop (threaded to `CPCDRow`, `CPCDBlock` and
+`CPCDInline`, and also used for the Latin-script plain-text word) overrides it. Two
+callers pass `FONTS.cjk`: `MiniCard` and the flp card face
+(`src/features/flashcards/card/CardFace.tsx` → the `foreignRow` `ForeignText`, `FC_FONT_CJK`).
+Every other cpcd keeps sans pinyin. The pinyin-shift solver measures in-DOM, so it
+measures the Maru pinyin correctly (see the table below).
 
 **No U+00A0 in `FONTS.cjk` text.** cn-fontsource faces are sliced by `unicode-range`, and
 975 Maru SC keeps NBSP (`L3_60_64`) and U+0020 (`L3_20_64`) in different slices. WebKit

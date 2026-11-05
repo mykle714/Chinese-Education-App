@@ -1,17 +1,9 @@
 # Challenge help screenshots
 
-The two stepped explainers on View Challenge (docs/STUDY_CHALLENGE.md § 5.4a, design
-F20/F21) each take one screenshot per step. Drop the files here with EXACTLY these
+The stepped explainer on View Challenge (docs/STUDY_CHALLENGE.md § 5.4a, design
+F20/F21) takes one screenshot per step. Drop the files here with EXACTLY these
 names — `challengeHelpSteps.ts` picks them up through `import.meta.glob` and hands them to the shared `SteppedHelpPopup`, so no code
 change is needed:
-
-## "How to study this deck" (the orange button, F20)
-
-| File | What it should show |
-|---|---|
-| `study-shelf.png` | The flashcards shelf, with the challenge deck highlighted in the Challenges row |
-| `study-learn.png` | The flashcards learn page mid-session, with the deck named in the header |
-| `study-games.png` | A game's collection selector with the challenge deck picked as the source |
 
 ## "How the test works" (the card's info button, F21)
 

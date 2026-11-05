@@ -21,15 +21,16 @@ import type { PointerEvent as ReactPointerEvent } from "react";
  * (no native pan) behave the same, and it stops a diagonal scroll from nudging the card.
  *
  * Without the lock (`axisLock: false`) any movement drags — for a card that already owns
- * every gesture (`touch-action: none`), e.g. the Reading Center's open tile.
+ * every gesture (`touch-action: none`), e.g. the game-break results card (BreakCardLayer).
  *
  * A `pointercancel` never commits: it means the browser (or the OS) took the gesture away.
  *
- * Used by: `src/features/flashcards/centers/ReadingSwipeGrid.tsx` (reading marks, state
- * mode), `src/features/discover/useQuickMarkGrid.ts` (Learning / Mastered triage,
- * imperative `paint` mode) and `src/features/deckTower/DeckTowerPage.tsx` (the world swipe,
- * imperative `paint` mode, carrying the release momentum into the pan).
- * Documented in: docs/QUICK_MARK.md § 3, docs/READING_WRITING_CENTERS.md § Phase 2, docs/DECK_TOWER.md § Worlds.
+ * Used by: `src/features/discover/useQuickMarkGrid.ts` (Learning / Mastered triage,
+ * imperative `paint` mode), `src/features/deckTower/DeckTowerPage.tsx` (the world swipe,
+ * imperative `paint` mode, carrying the release momentum into the pan) and
+ * `src/features/flashcards/FlashcardsLearnPage/gameBreak/BreakCardLayer.tsx` (swiping the
+ * game-break results card away, unlocked, `paint` mode).
+ * Documented in: docs/QUICK_MARK.md § 3, docs/DECK_TOWER.md § Worlds.
  */
 
 export type SwipeDirection = "left" | "right";
@@ -93,7 +94,7 @@ export interface SwipeCommitOptions {
      *
      * Use it for a large grid: in state mode every pointermove re-renders the caller,
      * which for Quick Mark's ~100-card grid re-ran the grid's whole render per frame.
-     * State mode is fine for a single dragged element (the Reading Center's open tile).
+     * State mode is fine for a single dragged element.
      */
     paint?: (card: HTMLElement, dx: number | null, commit?: SwipeDirection) => void;
 }

@@ -26,7 +26,7 @@ interface SpeedReadingOptionTextProps {
  * pointer events. The control is the half of the screen behind it
  * (`SpeedReadingTapZone`): the whole left half picks option A, the whole right
  * half picks option B. The text is just the label on that zone, so it lives in
- * the content layer, which the page marks `pointer-events: none` in full.
+ * the content layer, which the Stage marks `pointer-events: none` in full.
  *
  * It used to be a rounded `ButtonBase` card that both carried the word and took
  * the tap. The card chrome is gone with the tap target — an answer is now a tap

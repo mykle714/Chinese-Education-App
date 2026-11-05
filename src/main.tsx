@@ -13,8 +13,8 @@ import { initPerfDiagnostics } from './utils/perfDiagnostics'
 import { initErrorReporting } from './utils/errorReporting'
 import { installKeycapPress } from './utils/keycapPressDelegate'
 
-// Interaction-latency telemetry. The footer/decks tap-lag only reproduces in
-// PPE, so we instrument real users there. `localStorage.perfDiag = "1"` opts a
+// Interaction-latency telemetry. Tap-lag on the footer and the landing page (the
+// Deck Tower at `/`) reproduced only in PPE, so we instrument real users there. `localStorage.perfDiag = "1"` opts a
 // dev/local session in for verifying the pipeline end-to-end.
 if (import.meta.env.MODE === 'production' || localStorage.getItem('perfDiag') === '1') {
   initPerfDiagnostics()

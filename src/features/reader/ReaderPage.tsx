@@ -18,8 +18,8 @@ import { downloadValidationDoc } from "./validationApi";
 import { apiGet } from "../../api/http";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
-// keeps the footer (Home tab stays active, same as Games/Dictionary), LEFT back
-// arrow → Home, slides in from the right. Fixed non-scrolling shell
+// keeps the footer (Menu tab stays active, same as Games), LEFT back
+// arrow → /menu, slides in from the right. Fixed non-scrolling shell
 // (scrollable={false}) — TextSidebar owns its own internal scroll region for the
 // document list, same shape as before under LeafPage. Opening a document is a
 // real navigation to `/reader/:id` (ReaderDocumentPage.tsx), a footerless

@@ -1,5 +1,5 @@
 import type { GamePoolDistribution, GamePoolRequest } from "../../api/gamePool";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
+import type { MarkType } from "../../types";
 import { MARK_TYPE } from "./constants";
 
 /**
@@ -11,10 +11,12 @@ import { MARK_TYPE } from "./constants";
  * Docs: docs/MATCH_SPEED_GAME.md, docs/FLP_GAME_BREAKS.md § 4.
  */
 export function matchSpeedPoolRequest(args: {
+    /** The run's track — `MARK_TYPE` (recognition) unless an flp break on the reading
+        flp passes `reading` (docs/FLP_GAME_BREAKS.md § 3). Omitted ⇒ `MARK_TYPE`. */
+    markType?: MarkType;
     distribution: GamePoolDistribution;
     /** On board + buffered ids — a duplicate-on-screen guard, not a repeat gate. */
     exclude?: number[];
-    collection: CollectionRef | null;
     challengeParams?: string;
     /** Mid-run challenge top-ups are filler only (docs/STUDY_CHALLENGE.md § 5.3). */
     excludeContested?: boolean;
@@ -27,11 +29,10 @@ export function matchSpeedPoolRequest(args: {
     // board and re-runs the baseline check (`ensureBaseline`) each tick. Preserved as-is
     // from the hand-built query; see docs/MATCH_SPEED_GAME.md.
     return {
-        markType: MARK_TYPE,
+        markType: args.markType ?? MARK_TYPE,
         surface: "match-speed",
         distribution: args.distribution,
         exclude: args.exclude,
-        collection: args.collection,
         challengeParams: args.challengeParams,
         excludeContested: args.excludeContested,
         seedIds: args.seedIds,

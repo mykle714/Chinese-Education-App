@@ -22,7 +22,7 @@ import { INVALID_SHAKE_ANIMATION } from "../../theme/invalidShake";
  * One perimeter bucket — a grey keycap-shaped HOLE holding one English dd
  * (docs/BUCKET_DROP_GAME.md § 4).
  *
- * The hole is the sort flow's bucket (SortCardsPage → `Bucket`), the app's one bucket
+ * The hole is the sort flow's bucket (AddNewCardsPage → `Bucket`), the app's one bucket
  * style: pressed INTO the panel with `SHADOW.recessedDeep`, edged with the standard
  * `1px COLORS.border` hairline. Two departures, both asked for: the fill is the
  * palette's inert grey rather than a collection hue, and the corner is a keycap's

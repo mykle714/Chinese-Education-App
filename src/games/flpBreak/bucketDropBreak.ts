@@ -7,8 +7,7 @@ import type { FlpBreakGame } from "./types";
  * Bucket Drop as an flp game break (docs/FLP_GAME_BREAKS.md § 6).
  *
  * The candidate's mode IS the board: Pinyin on the core flp (production), No Pinyin on the
- * reading flp (reading). Bucket Drop has no review / challenge modes, so the flp's study
- * mode does not reach the pool (§ 4).
+ * reading flp (reading).
  */
 export const BUCKET_DROP_BREAK: FlpBreakGame<GamePoolResponse> = {
     gameId: "bucket-drop",
@@ -16,11 +15,10 @@ export const BUCKET_DROP_BREAK: FlpBreakGame<GamePoolResponse> = {
     prefetch: (candidate, context) =>
         fetchGamePool(bucketDropPoolRequest({
             markType: candidate.markType,
-            collection: context.collection,
             seedIds: context.seedIds,
             flpBreak: true,
         })),
-    // Lending cannot run under a collection filter, so a pool can come back empty.
+    // Defensive: a pool with no cards would open onto a dead board; pick another game.
     isPlayable: (pool) => pool.cards.length > 0,
     Stage: lazy(() => import("./BucketDropBreakStage")),
 };

@@ -63,11 +63,14 @@ interface SheetPanelProps {
     onClose?: () => void;
     // Resting FLOOR height in px. 0 (default) = the modal eip behaviour: the
     // panel can be dragged all the way down and that dismisses it.
-    // > 0 makes the panel PERSISTENT page furniture (the /decks sheet): it
+    // > 0 makes the panel PERSISTENT page furniture: it
     // opens at this height, can never be dragged below it, and never closes.
     // The two resting stops become {minHeight, max} — there is no middle stop,
     // because a permanent sheet's "closed" state IS its floor.
     minHeight?: number;
+    // (No host passes one today; the old Home page's Cards/Decks sheets, its only users,
+    // were deleted 2026-11-04. The mode is kept, not stripped, because it is threaded
+    // through the height model below.)
     // Render the dimming scrim behind the sheet (default true). A persistent
     // sheet passes false: it is always on screen, so a scrim would darken the
     // page permanently and would have nothing to dismiss to on tap.
@@ -83,13 +86,6 @@ interface SheetPanelProps {
     // snap, and a downward fling's momentum floor), and only a drag below it dismisses.
     // Ignored when `initialHeight` is given or the panel is persistent (minHeight > 0).
     defaultHeightRatio?: number;
-    // Re-open ALREADY at this height, with no 0 → height animation and no scrim fade-in:
-    // the sheet as it was when the learner left the page, for a Back restore
-    // (src/features/flashcards/backRestore.ts). Unlike `initialHeight` it does NOT move the
-    // resting stop — the default stop is still the usual fraction of the screen, so a
-    // sheet restored at full height still collapses to the normal height, not to the
-    // restored one. Read on MOUNT only; clamped to [default stop, max].
-    restoreHeight?: number | null;
     // Stack depth (0 = root panel). Bumps z-index so child panels and their
     // scrims render above their parent.
     depth?: number;
@@ -133,11 +129,11 @@ interface SheetPanelProps {
     // in a panel whose only close affordance no longer closes.
     onCloseX?: () => boolean | void;
     // Whether to draw the ✕ at all. Defaults to "yes, unless the panel is PERSISTENT" —
-    // a panel with a floor (the /decks sheet) has no closed state to offer, and a ✕ that
+    // a panel with a floor (a persistent sheet) has no closed state to offer, and a ✕ that
     // collapses a sheet to its floor is not a close.
     showClose?: boolean;
     // Draw the minute-points flame to the LEFT of the ✕. Passed by the STUDY SURFACES
-    // eip sheets (flp, scp, cdp — the minute-eligible pages of src/constants.ts) and
+    // eip sheets (flp, ancp, cdp — the minute-eligible pages of src/constants.ts) and
     // NEVER by pull-up dictionary flows (CompareSheet, NotebookWordPickerSheet), because a sheet
     // covers its page's header and takes the page's own flame with it: without this the
     // one indicator that says "your time is counting" disappears exactly while the
@@ -222,7 +218,7 @@ const CLOSE_CLUSTER_RIGHT_PX = 16;
 
 // Base stacking for the portaled scrim + sheet. Both are hosted at FRAME level now
 // (see the portal note), so they no longer compete with their page's content area —
-// they compete with the page's top-level layers, and those go high: the scp lifts its
+// they compete with the page's top-level layers, and those go high: the ancp lifts its
 // draggable cards to 1000 and its eip host to 1100. Chosen below MUI's modal layer
 // (1300) so a real Dialog still covers the sheet.
 const SCRIM_BASE_Z_INDEX = 1200;
@@ -305,7 +301,7 @@ const mountedDepths = new Set<number>();
 // Module-level stack of the DISMISSIBLE (non-persistent) panels currently open, in mount
 // order. Escape closes only the last entry — the panel the user opened most recently,
 // which is the one on top. Kept separate from `mountedDepths` on purpose: that set is
-// keyed by depth and includes persistent sheets (the /decks sheet), so two panels at the
+// keyed by depth and includes persistent sheets, so two panels at the
 // same depth, or a persistent sheet that owns no closed state, would make "topmost"
 // ambiguous for a key press. A token per panel keeps the stack identity-exact.
 const escapeStack: symbol[] = [];
@@ -314,7 +310,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     onClose,
     initialHeight,
     defaultHeightRatio = DEFAULT_HEIGHT_RATIO,
-    restoreHeight,
     minHeight = 0,
     showScrim = true,
     depth = 0,
@@ -378,10 +373,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // ---- Where the SHEET mounts (2026-08-30) -------------------------------
     // The sheet is portaled to the SAME host as the scrim, and that is what lets it
     // reach full height. Rendered in place it is `absolute; bottom: 0` against the host
-    // PAGE's content box — which starts BELOW the page header (flp's ContentArea, scp's
+    // PAGE's content box — which starts BELOW the page header (flp's ContentArea, ancp's
     // ContentArea) and is clipped by MobileTabScreen's ScrollArea — so `parentElement.
     // clientHeight` could never include the header and growing past it would just be
-    // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (scp no
+    // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (ancp no
     // longer needs its negative-bottom FOOTER_CLEARANCE trick for this) and
     // `parentHeight` is the whole screen, so MAX_HEIGHT_RATIO = 1 covers everything.
     //
@@ -427,9 +422,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // Latest onClose, read from timers without re-binding them.
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
-    // Frozen at mount (see the `restoreHeight` prop): a restore describes how the panel
-    // OPENS, so a host re-rendering with a different value later must change nothing.
-    const [restoreAtMount] = useState(() => restoreHeight ?? null);
 
     // A panel with a floor is persistent: it cannot be dismissed, and every
     // path that would have shrunk it to 0 stops at the floor instead.
@@ -756,12 +748,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 ? Math.min(minHeight, parentH * MAX_HEIGHT_RATIO)
                 : parentH * clamp(defaultHeightRatio, 0, MAX_HEIGHT_RATIO);
         defaultHeightRef.current = targetHeight;
-        if (restoreAtMount !== null && !persistent) {
-            // A Back restore: already at the height the learner left it, from the first
-            // paint. The resting stop stays `targetHeight` (set just above).
-            writeHeight(clamp(restoreAtMount, targetHeight, parentH * MAX_HEIGHT_RATIO));
-            return;
-        }
         if (persistent) {
             // Sits at its floor from the first paint — no 0 → height slide.
             writeHeight(targetHeight);
@@ -940,10 +926,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 // It used to be `scrollEl.scrollTop += dy` inside this non-passive
                 // handler, which put the scroll on the main thread — so every frame
                 // of it waited on whatever React/layout work the body was doing, and
-                // a heavy body (the decks panel: ~470 mini cards, each with a cpcd
-                // row that re-measures itself) stuttered badly. The identical card
-                // grid on CollectionViewPage never did, because that page scrolls
-                // natively. Handing the scroll back is what closes that gap.
+                // a heavy body (the old decks panel: ~470 mini cards, each with a
+                // cpcd row that re-measures itself) stuttered badly, while the same
+                // grid on a natively scrolled page did not. Handing the scroll back is
+                // what closes that gap.
                 return;
             } else {
                 // A live finger may drag all the way down to the floor — 0 for a
@@ -1046,8 +1032,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // machinery above is all relative to `bottom: 0`), the body's SCROLL element gets
     // extra bottom padding equal to the inset — the scroll range grows by exactly the
     // covered band, so every row can be brought above the keyboard. The sheet itself
-    // never moves. Motivating cases: the decks-sheet search (DecksPanelBody) and the
-    // compare slot-B search (CompareWorkspace), whose results run under the keyboard.
+    // never moves. Motivating case: the compare slot-B search (CompareWorkspace), whose
+    // results run under the keyboard (also the old decks-sheet search, now deleted).
     //
     // Imperative, on the element behind bodyRef, so it applies to every body without
     // each one opting in. The body's own padding is read back from computed style
@@ -1112,9 +1098,6 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const stackZ = depth * 2;
     const scrimStyle: React.CSSProperties = {
         zIndex: SCRIM_BASE_Z_INDEX + stackZ,
-        // A restored sheet was already dimmed when the learner left; fading the scrim in
-        // again would flash the page behind it. `dismiss` still owns the fade OUT.
-        ...(restoreAtMount !== null && { animation: "none" }),
     };
     // NOTE: no `height` key here on purpose — height is owned imperatively by
     // writeHeight (see the height-model comment above). Same for the merge chrome

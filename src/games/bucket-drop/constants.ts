@@ -13,8 +13,7 @@ import type { MarkType } from "../../types";
  *
  * Referenced by: BucketDropPage, BucketDropStage, BucketDropBoard, BucketDropEndPopup,
  * DropBucket, StackWord, perimeterLayout, poolRequest, games/registry.ts,
- * runtime/challengeLaunch.ts, flpBreak/bucketDropBreak.ts,
- * features/flashcards/centers/ReadingGamesCarousel.
+ * runtime/challengeLaunch.ts, flpBreak/bucketDropBreak.ts.
  */
 
 /** Stable slug — the registry key, the route segment, the GAME_FLAGS / personal-best key. */
@@ -41,7 +40,8 @@ export const WIN_LEVEL = 1;
  *               each English bucket is the prompt, and the learner finds the foreign
  *               word that answers it (Word Search's Pinyin mode marks the same track).
  *               The challenge-eligible mode.
- *   no-pinyin — the Reading Center carousel (zh only). Characters alone ⇒ READING.
+ *   no-pinyin — an flp break on the reading flp (zh only; its launcher on the route, the
+ *               Reading Center carousel, was deleted 2026-11-04). Characters alone ⇒ READING.
  *
  * The run's actual track is `runTrackFor(language, config)` below: a Spanish run is
  * production in either mode — 'es' has no phonetic layer to hide, so its "no-pinyin"

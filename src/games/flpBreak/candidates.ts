@@ -21,10 +21,10 @@ export function breakShowsPinyin(world: FlpWorld): boolean {
  * Every (game, mode) on the registry that marks a track on `bar`, is playable in
  * `language`, and has a break adapter.
  *
- *   - `hiddenFromHub` is IGNORED: Speed Reading / Memory Map / Writing Grid are hub-hidden
- *     but are exactly the reading and writing flps' games.
+ *   - Routed and BREAK-ONLY games alike: Speed Reading / Memory Map / Writing Grid /
+ *     Superposition have no standalone page but are exactly the reading and writing flps' games.
  *   - A moded game contributes one candidate per mode whose track is on `bar`.
- *   - A game whose track follows pinyin (`noPinyinMarkType`, Bubble Match) marks
+ *   - A game whose track follows pinyin (`noPinyinMarkType`: Match Speed, Bubble Match) marks
  *     `noPinyinMarkType` on a zh board with pinyin hidden — i.e. on the reading flp.
  */
 export function flpBreakCandidates(

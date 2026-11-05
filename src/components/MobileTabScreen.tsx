@@ -16,8 +16,8 @@ import { routeFooterStyle } from "../routes/routeMeta";
 import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx, trackScrollEdgeFade } from "./scrollEdgeFade";
 import { COLORS } from "../theme/colors";
 
-// Shared layout shell for every SCROLLABLE footer-tab hub page (Home,
-// Menu, Discover, Dictionary). It encodes two design rules so individual pages don't
+// Shared layout shell for every footer-tab page (Deck — the Deck Tower, which runs it
+// non-scrolling —, Menu, Arena, Dictionary) and, through NodePage, the node drill-ins. It encodes two design rules so individual pages don't
 // have to re-implement them:
 //
 //   1. Scroll-away header — the page header lives INSIDE the scroll area (as its
@@ -72,10 +72,11 @@ const EDGE_FADE_BOTTOM_BAND = 34;
 // stays on unconditionally, because the bar covers it anyway.
 //
 // The band height is per page (`bottomFadeBand`): a page with furniture floating just
-// above the bar (the Reading/Writing Centers' Cards/Decks pills) runs a TALLER band so
-// the content scrolling behind that furniture is already dissolved, not busy text
-// under a button. A band must stay ≤ `EDGE_FADE_VAR_CAP` (scrollEdgeFade.ts), or the
-// tracked var caps it short of the requested height.
+// above the bar would run a TALLER band so the content scrolling behind that furniture
+// is already dissolved, not busy text under a button. (No page passes one today; the
+// Reading/Writing Centers' Cards/Decks pills, its last users, were deleted 2026-11-04.)
+// A band must stay ≤ `EDGE_FADE_VAR_CAP` (scrollEdgeFade.ts), or the tracked var caps it
+// short of the requested height.
 //
 // `footprint` is the footer's top edge above the viewport bottom — the bar's total
 // height, or the floating slab's footprint on a slab route (footerFootprint). Below a
@@ -94,9 +95,6 @@ const edgeFadeMaskNoTop = (band: number, footprint: string) =>
 // the same bar-vs-slab choice for its height).
 const footerFootprint = (style: FooterStyle) => (style === "slab" ? SLAB_FOOTER_TOTAL_HEIGHT : FOOTER_TOTAL_HEIGHT);
 const footerClearance = (style: FooterStyle) => (style === "slab" ? SLAB_FOOTER_TOTAL_CLEARANCE : FOOTER_TOTAL_CLEARANCE);
-// Bottom band only, at the default height, over the bar. Also used by the Mastery
-// Centers page variant of DecksPanelBody, which tracks its own scroller the same way.
-export const EDGE_FADE_MASK_NO_TOP = edgeFadeMaskNoTop(EDGE_FADE_BOTTOM_BAND, FOOTER_TOTAL_HEIGHT);
 
 // Positioning context for the footer bar + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
@@ -183,10 +181,9 @@ interface MobileTabScreenProps {
     // Extra header actions rendered flush-right in the header.
     headerExtraActions?: ReactNode;
     // Rendered to the RIGHT of the minute-points flame (PageHeader `trailingContent`).
-    // Home uses it for the Settings gear and the profile-picture button; the Deck Tower
-    // for its profile picture.
+    // The Deck Tower's profile picture (DeckTowerAvatar) is its only user.
     headerTrailingActions?: ReactNode;
-    // Header title ink, forwarded to PageHeader's `titleColor`. The Deck Tower, and scp (via NodePage).
+    // Header title ink, forwarded to PageHeader's `titleColor`. The Deck Tower, and ancp (via NodePage).
     headerTitleColor?: string;
     // Title scale override, forwarded to PageHeader. Pass "dense" when
     // `headerExtraActions` carries three or more controls — the title drops to 18px
@@ -195,7 +192,7 @@ interface MobileTabScreenProps {
     // Painted behind the whole scroll surface (header + content + the padding
     // that clears the floating footer), so short pages have no color seams.
     surfaceColor?: string;
-    // Decoration painted over `surfaceColor` and BEHIND the header and content (scp's night
+    // Decoration painted over `surfaceColor` and BEHIND the header and content (ancp's night
     // sky). Non-interactive and fills the screen. Passing it makes the scroll area a
     // positioned box, so it paints over this layer — and so becomes the containing block
     // for any absolutely-positioned content that had none nearer.

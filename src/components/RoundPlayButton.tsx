@@ -3,63 +3,38 @@ import Icon from "./Icon";
 import { COLORS } from "../theme/colors";
 
 /**
- * RoundPlayButton — the solid-ink launch button with a white glyph: a card's one launch
+ * RoundPlayButton — the solid-ink launch button with a white ▶: a card's one launch
  * action. A solid-ink control, so it is exempt from the app's 1px outline rule
  * (CLAUDE.md § "Buttons & cards").
  *
- * Shape + glyph (both default to the original circle + ▶):
- *   `shape="circle"` — fully round (GameCard's corner button).
- *   `shape="square"` — a rounded square, `SQUARE_RADIUS` (14px) to match the full Study
- *                      Hand's `Start` bar, so the two hands' commits share a corner.
- *   `glyph="play"`   — the ▶ triangle (`play_arrow`).
- *   `glyph="arrow"`  — a → (`arrow_forward`); the compact Study Hand uses square + arrow.
- *
- * Two sizes, one look:
- *   `card` (44px) — GameCard's corner play button (games/shared/GameCard);
- *   `hand` (52px) — the Study Hand's compact face (`study-hand__go--square`,
- *                   features/flashcards/StudyHand).
+ * One look: a 44px circle — GameCard's corner play button (games/shared/GameCard). A
+ * rounded-square / → variant and a 52px `hand` size served the old Home page's Study
+ * Hand until it was deleted on 2026-11-04; `size` keeps its one key so a second size
+ * can return without touching callers.
  *
  * Layer: shared presentational primitive (src/components).
- * Docs: docs/GAMES_FEATURE.md § "Games hub", docs/READING_WRITING_CENTERS.md.
+ * Docs: docs/GAMES_FEATURE.md § "Games hub".
  */
 
 const SIZES = {
     card: { diameter: 44, icon: 24 },
-    hand: { diameter: 52, icon: 28 },
-} as const;
-
-/** Corner radius of `shape="square"` — the same 14px as StudyHand's `Start` bar. */
-const SQUARE_RADIUS = "14px";
-
-/** Glyph key → Material Symbols name. `arrow_forward` reads optically larger than the
- *  ▶ at the same size (it spans the full width of its box), so it is drawn 2px smaller. */
-const GLYPHS = {
-    play: { name: "play_arrow", sizeOffset: 0 },
-    arrow: { name: "arrow_forward", sizeOffset: -2 },
 } as const;
 
 export interface RoundPlayButtonProps {
     size?: keyof typeof SIZES;
-    /** `circle` (default) or `square` (rounded square, `SQUARE_RADIUS`). */
-    shape?: "circle" | "square";
-    /** `play` (default, ▶) or `arrow` (→). */
-    glyph?: keyof typeof GLYPHS;
     className?: string;
     ariaLabel?: string;
     onClick?: (e: React.MouseEvent) => void;
     disabled?: boolean;
-    /** Dim the commit (an ineligible launch) without hiding it — `COLORS.greyA`. */
-    greyed?: boolean;
     tabIndex?: number;
     ariaHidden?: boolean;
     sx?: SxProps<Theme>;
 }
 
 const RoundPlayButton: React.FC<RoundPlayButtonProps> = ({
-    size = "card", shape = "circle", glyph = "play", className, ariaLabel, onClick, disabled, greyed = false, tabIndex, ariaHidden, sx,
+    size = "card", className, ariaLabel, onClick, disabled, tabIndex, ariaHidden, sx,
 }) => {
     const s = SIZES[size];
-    const g = GLYPHS[glyph];
     return (
         <Box
             component="button"
@@ -75,10 +50,10 @@ const RoundPlayButton: React.FC<RoundPlayButtonProps> = ({
                     width: s.diameter,
                     height: s.diameter,
                     flexShrink: 0,
-                    borderRadius: shape === "square" ? SQUARE_RADIUS : "50%",
+                    borderRadius: "50%",
                     border: "none",
                     padding: 0,
-                    backgroundColor: greyed ? COLORS.greyA : COLORS.onSurface,
+                    backgroundColor: COLORS.onSurface,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -87,7 +62,7 @@ const RoundPlayButton: React.FC<RoundPlayButtonProps> = ({
                 ...(Array.isArray(sx) ? sx : [sx]),
             ]}
         >
-            <Icon name={g.name} size={s.icon + g.sizeOffset} color={COLORS.white} />
+            <Icon name="play_arrow" size={s.icon} color={COLORS.white} />
         </Box>
     );
 };

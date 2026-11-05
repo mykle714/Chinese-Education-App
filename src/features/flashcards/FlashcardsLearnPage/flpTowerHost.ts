@@ -7,17 +7,17 @@ export type { PlateTones };
 /**
  * flpTowerHost — the contract between the flp and the Deck Tower when the flp runs
  * INSIDE the tower page, laid over the tower scene (docs/DECK_TOWER.md § "Studying the
- * tower"), instead of on its own `/flashcards/learn` route.
+ * tower") — the only place the flp runs (its own `/flashcards/learn` route was deleted
+ * 2026-11-04).
  *
  * Layer: feature types (src/features/flashcards). FlashcardsLearnPage takes it as its
- * optional `tower` prop; without it the page is the ordinary routed flp, unchanged.
- * With it:
- *   - the session is the HOST's: its bar is `world`, always in Mix (no mode, category or
- *     collection — the tower is the whole Learning deck), whatever the URL says;
+ * REQUIRED `tower` prop:
+ *   - the session is the HOST's: its bar is `world`, always in Study Mix over the whole
+ *     library (the tower is the whole Learning deck);
  *   - leaving calls `onExit` (the host climbs its camera back out) instead of navigating;
  *   - the page is transparent and its header is the over-the-sky study header
  *     (TowerStudyHeader), and its card stack behaves as the tower's top card
- *     (FlashCardSection `towerStack`);
+ *     (FlashCardSection);
  *   - its page buttons (Write it, Compare, More Info) are drawn as the tower's floor-plate
  *     push button, in white (`plateTones`; towerPlate.ts);
  *   - every swipe and undo is reported, so the host can take cards off its tower and put

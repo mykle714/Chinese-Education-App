@@ -248,7 +248,7 @@ Proposed algorithm, one server query per batch:
    chosen kind is skipped for that round.
 2. **Kind**: weighted draw (§ 3).
 3. **Pool**: library first, corpus fill ([Q4](#q4-whose-words-are-the-targets)). Draw from the
-   learner's playable cards (narrowed by the hub collection selector) that have ≥1 sibling on
+   learner's playable cards that have ≥1 sibling on
    the axis, then top up from any discoverable word. For `phrase`/`sentence`, a sibling must
    share a POS with the template slot.
 4. **Siblings**: every discoverable word sharing the target's `siblingKey` on the axis (same
@@ -393,11 +393,13 @@ Being **moded** makes this harder. `GameDef.modes` is typed `{ mode, markType }[
 for the challenge-pool test, so a mark-free moded game cannot fill it. Proposal: keep the
 Listening Practice modes in the game's own `MODE_CONFIGS` (`src/games/listening-practice/constants.ts`,
 the Word Search / Bucket Drop pattern) and leave `GameDef.modes` unset. With `emitsMarks:
-false`, the invariant still holds, and the hub fans the tile out from `MODE_CONFIGS` the same
-way Match Speed's difficulty modes do. This needs checking against `GamesPage` before building.
+false`, the invariant still holds, and the hub fans the tile out from `MODE_CONFIGS`. No
+hub tile fans out into modes today (Match Speed's difficulty modes were removed
+2026-11-04; Bubble Match's levels and Word Search's resume tile are special-cased in
+`GamesPage`), so this needs a `GamesPage` branch before building.
 
-The Games hub's collection selector ("Playing with: …") still applies: it narrows the
-library-first half of the target pool ([Q4](#q4-whose-words-are-the-targets)).
+There is no hub collection selector (deleted 2026-11-04): the library-first half of the
+target pool ([Q4](#q4-whose-words-are-the-targets)) is the whole library.
 
 ## 12. Question log
 
@@ -420,9 +422,9 @@ natural sentences per target, cached; (d) tag words with semantic classes.
 **Answered 2026-10-12: (a) POS templates, accept nonsense.** No semantic typing, no new data.
 
 ### Q4. Whose words are the targets?
-The learner's library (and the hub collection selector) vs. any discoverable word.
+The learner's library vs. any discoverable word.
 **Answered 2026-10-12: library first, corpus fill.** Targets are drawn first from the learner's
-playable cards (narrowed by the hub collection selector, so the selector keeps meaning), then
+playable cards (the hub collection selector that once narrowed this was deleted 2026-11-04), then
 topped up from any discoverable word. Siblings are always any discoverable word.
 
 ### Q5. Tone sandhi

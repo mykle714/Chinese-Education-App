@@ -3,9 +3,9 @@ import { API_BASE_URL } from "../constants";
 /**
  * Client-side interaction-latency telemetry.
  *
- * Purpose: the "buttons take 1–2s before working" lag on the mobile-demo footer
- * and /decks page only reproduces in PPE, so we cannot profile it
- * locally. This module records *real-user* tap→response latency in PPE and
+ * Purpose: a "buttons take 1–2s before working" lag on the mobile-demo footer
+ * and the landing page (then the old Home decks page; the Deck Tower at `/` since
+ * 2026-11-04) reproduced only in PPE, so it could not be profiled locally. This module records *real-user* tap→response latency in PPE and
  * ships it to the server (`POST /api/diagnostics/perf`, see server.ts) for
  * offline analysis.
  *
@@ -84,7 +84,7 @@ const ENDPOINT = `${API_BASE_URL}/api/diagnostics/perf`;
 // the JSONL the server writes is easy to grep and the beacon payload stays tiny.
 interface PerfRecord {
     kind: "interaction" | "longtask" | "first-input" | "tap" | "frame" | "frame-worst";
-    // Route the entry happened on (helps separate footer vs /decks vs learn).
+    // Route the entry happened on (helps separate one page's lag from another's).
     path: string;
     // Best-effort description of what was tapped (see describeTarget), or for
     // `tap` records the caller-supplied identifier of the thing tapped.
@@ -109,7 +109,7 @@ let started = false;
 
 /**
  * Build a short, human-readable description of an interaction's target element,
- * e.g. "div.mobile-footer-item[Home]" or "button.flashcards-decks__mix-button".
+ * e.g. "div.mobile-footer-item[Deck]" or "button.header-avatar-button".
  * Uses the descriptive class names the app already applies, plus aria-label /
  * trimmed text as a fallback, so log lines map straight back to the component.
  */

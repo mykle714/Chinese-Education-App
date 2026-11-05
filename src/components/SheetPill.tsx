@@ -9,9 +9,8 @@ import { WEIGHT, TRACKING } from "../theme/scale";
  *
  * The app has exactly one affordance for "there is a sheet down there, tap to
  * raise it": a small centred capsule floating over the bottom of the surface,
- * `↑ <label>`. It ships on the flp (More Info → the eip), the fdp (Sets & Cards →
- * the decks sheet) and the cdp (More Info → the eip). This component is the shared
- * body of that shape so the three stay identical.
+ * `↑ <label>`. It ships on the flp (More Info → the eip) and the vet cdp (More Info →
+ * the eip). This component is the cdp's; the flp draws the same spec itself (below).
  *
  * Positioning contract: it is `position: absolute` and expects to be rendered
  * inside a positioned FRAME (not inside a scroll area), so the sheet's scrim can
@@ -19,30 +18,15 @@ import { WEIGHT, TRACKING } from "../theme/scale";
  * to do. `bottom` is measured from that frame; pass `FOOTER_TOTAL_CLEARANCE` on a page
  * that keeps the footer bar and `0`-ish on a footerless one.
  *
- * ── One frame, two pills (`align`) ────────────────────────────────────────────
- * A surface with TWO sheets (the fdp: Cards and Decks) puts its pills side by side.
- * They are still absolutely positioned individually rather than wrapped in a flex
- * row, because the scrim/zIndex contract above is per-pill and a wrapper would have
- * to reproduce it. `align` shifts each one off the frame's midline by half the gap:
- * "left" sits its right edge a half-gap before centre, "right" its left edge a
- * half-gap after. The PAIR is therefore centred as a unit whatever the two labels
- * measure — neither pill has to know the other's width.
- *
  * The flp keeps its own `MoreInfoPill` (`FlashcardsLearnPage/styled.ts`) because
  * that page MEASURES the pill (`useCardSlotPadding`) to size the card slot and
  * carries flip-state semantics; its visual spec is the one reproduced here.
  *
- * Referenced by docs/SHELF_REDESIGN.md, docs/DECKS_FEATURE.md, docs/LEAF_NODE_PAGES.md.
+ * Referenced by docs/SHELF_REDESIGN.md, docs/LEAF_NODE_PAGES.md.
  */
-
-/**
- * Gap between the two pills of a side-by-side pair, in px. Each pill is offset by
- * half of it, so the pair stays centred on the frame's midline.
- */
-export const PILL_PAIR_GAP = 10;
 
 export interface SheetPillProps {
-    /** Text on the pill, e.g. "More Info" / "Sets & Cards". */
+    /** Text on the pill, e.g. "More Info". */
     label: string;
     onClick: () => void;
     /**
@@ -68,12 +52,6 @@ export interface SheetPillProps {
     ariaLabel?: string;
     /** Set when the pill toggles a sheet whose open state the caller tracks. */
     ariaExpanded?: boolean;
-    /**
-     * Where the pill sits across the frame. "center" (default) is the single-sheet
-     * case; "left"/"right" are the two halves of a two-sheet surface — see the
-     * positioning contract above.
-     */
-    align?: "center" | "left" | "right";
     /** Leading icon; the arrow is the shared "this raises a sheet" mark. */
     iconName?: string;
     className?: string;
@@ -90,18 +68,12 @@ export const SheetPill: React.FC<SheetPillProps> = ({
     ariaLabel,
     ariaExpanded,
     iconName = "arrow_upward",
-    align = "center",
     className,
 }) => {
-    // The static half of the pill's transform. It is factored out because the pulse
+    // The static half of the pill's transform (centring it on the frame). The pulse
     // keyframes must RE-DECLARE it: a transform animation replaces the static value
     // wholesale, so every frame carries the placement as well as the bounce.
-    const alignTransform =
-        align === "left"
-            ? `translateX(calc(-100% - ${PILL_PAIR_GAP / 2}px))`
-            : align === "right"
-                ? `translateX(${PILL_PAIR_GAP / 2}px)`
-                : "translateX(-50%)";
+    const alignTransform = "translateX(-50%)";
     return (
     <Box
         component="button"

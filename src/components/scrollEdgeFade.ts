@@ -26,11 +26,9 @@ import { useLayoutEffect, type RefObject } from "react";
  *
  * Consumers (keep current):
  *   • src/components/MobileTabScreen.tsx → `ScrollArea` (every page / NodePage)
- *   • src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx → `SheetBody`
- *   • src/features/flashcards/DecksPanelBody.tsx → `DecksPanelBody`
  *   • src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx → tab panes
  *   • src/features/studyChallenge/ChallengeSheet.tsx → `.challenge-sheet__body`
- * Masks that read the variables: `EDGE_FADE_MASK` / `EDGE_FADE_MASK_NO_TOP`
+ * Masks that read the variables: `edgeFadeMask` / `edgeFadeMaskNoTop`
  * (MobileTabScreen) and `SHEET_EDGE_FADE_MASK` / `SHEET_EDGE_FADE_MASK_NO_TOP`
  * (components/sheet/sheetStyled). Every one of them is worn through `edgeFadeMaskSx`.
  *
@@ -51,8 +49,9 @@ export const EDGE_FADE_SCROLLBAR_VAR = "--edge-fade-scrollbar";
 
 // Written values are capped here. Every band is smaller than this, and capping keeps
 // the style write a no-op (same string) for the whole middle of a long scroll. The
-// tallest band today is the Mastery Centers' page bottom (`CENTER_BOTTOM_FADE_BAND`,
-// 110px, MasteryCenterPage) — raise this if a taller one arrives.
+// tallest band today is MobileTabScreen's default 34px page bottom; the cap was sized
+// for the deleted Mastery Centers' 110px band and leaves room for a tall one again —
+// raise it if a band above 128px arrives.
 const EDGE_FADE_VAR_CAP = 128;
 
 /** `min(var(--edge-fade-above, band), band)`. A band that ramps in with the content scrolled past the top wall. */

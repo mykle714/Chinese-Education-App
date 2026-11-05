@@ -111,13 +111,14 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   /**
    * Delete a vet row by id, from whichever physical table holds it.
    *
-   * ⚠️ ALSO CLEARS THE CARD'S DECK MEMBERSHIPS. `deck_cards."vocabEntryId"` cannot
-   * carry a foreign key — the vet is two physical tables sharing one id sequence,
-   * so there is no single table to reference (migration 141). This delete is
-   * therefore the hand-rolled ON DELETE CASCADE: without it, deleting a card would
-   * leave membership rows pointing at nothing, and every deck holding that card
-   * would report an inflated `cardCount` forever (the count is over membership
-   * rows, which no longer join to a card).
+   * ⚠️ ALSO CLEARS THE CARD'S DECK MEMBERSHIPS. The user Decks feature was removed
+   * 2026-11-04, but its `deck_cards` table (migration 141) is RETAINED with its existing
+   * rows, so this cascade stays: nothing reads decks any more, but leaving membership
+   * rows pointing at deleted cards would be orphan data in a table we kept on purpose.
+   * `deck_cards."vocabEntryId"` cannot carry a foreign key — the vet is two physical
+   * tables sharing one id sequence, so there is no single table to reference — so
+   * this delete is the hand-rolled ON DELETE CASCADE. Drop it together with the
+   * table if the table is ever dropped.
    *
    * The two statements run in ONE TRANSACTION so the pair cannot half-apply. The
    * membership delete goes FIRST: if the vet delete then fails and rolls back,

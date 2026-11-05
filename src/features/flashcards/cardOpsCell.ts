@@ -5,10 +5,10 @@ import { FONTS } from "../../theme/fonts";
  * The look of ONE cell on the card-operations rail (`.crail > div` in
  * `shelf-system.css`; artboard 21) — a glyph over a mono micro-caps label.
  *
- * Its own module rather than a constant inside `CardOpsRail`, for the same reason
- * `wordToolPill.ts` exists: one of the rail's cells is rendered by another component
- * (`AddToDeckMenu`, which owns the deck fetch, the tick state and the save-on-close),
- * so the two files would otherwise import each other in a cycle.
+ * Its own module rather than a constant inside `CardOpsRail` because a second component
+ * once rendered one of the rail's cells (`AddToDeckMenu`, deleted with Decks on
+ * 2026-11-04) and the two would otherwise have imported each other in a cycle.
+ * `CardOpsRail` is now its only importer; folding it back in is safe.
  */
 export const CARD_OPS_CELL_SX = {
     display: "flex",

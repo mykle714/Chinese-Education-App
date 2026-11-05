@@ -15,7 +15,7 @@ interface LayoutProps {
 
 // Global app shell. There is no navigation chrome here anymore — the hamburger
 // drawer / desktop sidebar were removed in favor of the footer tabs
-// (Home / Menu / Discover / Dictionary). Every page now
+// (Deck / Menu / Arena / Dictionary — src/components/MobileFooter.tsx). Every page now
 // owns its own header (a back arrow for drill-ins, or MobileTabScreen's header
 // for the footer-tab hubs).
 //
@@ -40,7 +40,7 @@ function Layout({ children }: LayoutProps) {
     // time the user navigates OUT of the Dictionary space. The state is meant to
     // survive the list ⇄ card-detail drill-in only, so we reset on the transition
     // from an in-space pathname to an out-of-space one. This covers every exit
-    // uniformly: the back arrow to Home, a footer-tab tap, and browser back.
+    // uniformly: a back arrow out of the space, a footer-tab tap, and browser back.
     const wasInDictionarySpace = useRef(isDictionarySpacePath(location.pathname));
     useEffect(() => {
         const nowInSpace = isDictionarySpacePath(location.pathname);

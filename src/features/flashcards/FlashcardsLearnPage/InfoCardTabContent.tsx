@@ -40,9 +40,9 @@ const PaneScrollSpacer: React.FC<{ className: string }> = ({ className }) => (
  * makes the gesture code readable without scrolling past 220 lines of chips.
  * See docs/ARCHITECTURE_REVIEW.md finding 9.
  *
- * `tabAvailability` is exported alongside it because the panel needs the SAME
- * emptiness answers to grey out tab labels — deriving them twice is how the strip
- * and the body drift apart.
+ * `tabAvailability` lives in its own module because the panel needs the SAME
+ * derived values (the tab-2 "used in" label) as the body — deriving them twice is
+ * how the strip and the body drift apart. The strip no longer dims empty tabs.
  *
  * Referenced by docs/EXAMPLE_SENTENCES.md (est tab), docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md
  * (bt tab), docs/DATA_VALIDATION_SYSTEM.md (the AI-generated chip treatment).
@@ -79,7 +79,7 @@ export interface InfoCardTabContentProps {
      * tab is a promise of content and most entries have neither list — an empty tab in
      * the strip on every card is a worse trade than a section that simply is not there.
      *
-     * The flp and scp leave it undefined: on those surfaces the panel is the reading
+     * The flp and ancp leave it undefined: on those surfaces the panel is the reading
      * view for a word in a drill, and the lists are reference material the cdp is for.
      */
     showSynonymsRelated?: boolean;

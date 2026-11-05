@@ -4,7 +4,7 @@
 > [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md). Curation/authoring:
 > [DISCOVER_BEGINNER_CURATION.md](./DISCOVER_BEGINNER_CURATION.md).
 
-This is the build plan for reworking the Sort Cards (scp) flow from single-card sorting
+This is the build plan for reworking the Add New Cards (ancp) flow from single-card sorting
 to **multi-card sort packs**, plus the new **Skipped Cards page**. It is forward-looking
 (the work is not yet built). Decisions below are locked unless noted "OPEN".
 
@@ -247,7 +247,7 @@ internal helper for fallback-card selection). Algorithm:
 Add `SortPack`; extend `DiscoverCard` with `sorted?: boolean` / `skipped?: boolean`.
 Replace `DiscoverFetchResponse.cards` with `packs`.
 
-### 5.2 `src/features/discover/SortCardsPage.tsx`
+### 5.2 `src/features/discover/AddNewCardsPage.tsx`
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
 - Render: up to **4 draggable MiniCards** (compact 78×112 faces when a 4-card row won't fit — SORT_CARDS_REQUIREMENTS.md §4.5 *Compact dock*) (no sentence band — removed). Autoplay
   is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
@@ -272,7 +272,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 ### 5.3 `SkippedCardsPage.tsx` (new — mirrored the then-current `MasteredCardsPage`)
 > **Superseded 2026-10-12:** the page, its route and its Discover entry (§5.4) were
-> removed. Skipped cards are now reached only through scp's hidden skipped-cards sheet
+> removed. Skipped cards are now reached only through ancp's hidden skipped-cards sheet
 > (`SkippedCardsSheet.tsx`, docs/SORT_CARDS_REQUIREMENTS.md §5.1a). Kept as the build record.
 
 - `NodePage` + `MiniVocabCardGrid`; fetch `GET /:language/skipped`.
@@ -282,13 +282,13 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 ### 5.4 Navigation wiring
 > **Superseded:** removed with §5.3 (2026-10-12), and `DiscoverPage` itself was deleted
-> 2026-10-17 — scp is now a Home drill-in (docs/DISCOVER_FLOW.md). Kept as the build record.
+> 2026-10-17 — ancp is now a Deck Tower drill-in (docs/DISCOVER_FLOW.md). Kept as the build record.
 
 - `src/hooks/useDiscoverNavigation.ts`: add `skippedPath` = `/discover/skipped/{language}`
   + `goToSkipped()`.
 - `src/features/discover/DiscoverPage.tsx`: add a "Skipped Cards" `HubMenuRow` → `skippedPath`.
 - `src/App.tsx`: register `/discover/skipped/:language` → `SkippedCardsPage`. Both
-  Sort Cards and Skipped Cards are **node pages** (keep the footer): registered in
+  Add New Cards and Skipped Cards are **node pages** (keep the footer): registered in
   `pageTransition.ts` `NODE_PREFIXES` and covered by `Layout.tsx`'s phone-frame check.
 
 ## 6. Layer 4 — Curation & validation
@@ -308,7 +308,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 1. Migration 93 (`sort_packs` + `users.seenPacks`) + a `SortPacksDAL` + hand-author a
    few zh packs to test against.
 2. Server `getNextPacks` + skip/next-pack/undo/skipped/recycle methods + endpoints.
-3. Client `SortCardsPage` pack rework (largest piece).
+3. Client `AddNewCardsPage` pack rework (largest piece).
 4. `SkippedCardsPage` + Discover row + nav wiring.
 5. Curation tooling + validation test + es support.
 
@@ -324,11 +324,8 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 - `server/services/StarterPacksService.ts` — supply, leveling, sort/undo (rework).
 - `server/controllers/StarterPacksController.ts` + `server/routes/starterPacksRoutes.ts` — routes.
-- `src/features/discover/SortCardsPage.tsx` — pack UI rework.
+- `src/features/discover/AddNewCardsPage.tsx` — pack UI rework.
 - `src/features/discover/DiscoverPage.tsx`, `src/hooks/useDiscoverNavigation.ts`, `src/App.tsx` — nav.
-- `src/features/flashcards/CollectionViewPage.tsx` — the generalized collection view that
-  replaced `MasteredCardsPage.tsx` (deleted in the decks work, migration 141); it was
-  `MasteredCardsPage` that `SkippedCardsPage` was originally copied from.
 - `src/types.ts` (`DiscoverCard`, `DiscoverFetchResponse`, new `SortPack`).
 - `database/migrations/131-seed-zh-sort-packs.sql` — the zh pack seed (§2.1); the only
   delivery path for authored packs into a non-authoring environment.

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Box, IconButton, useTheme } from "@mui/material";
+import { Box, IconButton, useTheme, type SxProps, type Theme } from "@mui/material";
 import MiniCard from "./MiniCard";
 import CardIconLayer from "../cardIcons/CardIconLayer";
 import { isAdvancedLayout } from "../cardIcons/cardIconLayout";
@@ -35,42 +35,43 @@ interface MiniVocabCardProps {
      */
     showMasteryStrip?: boolean;
     /**
-     * The surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
+     * The surface's mastery LENS.
      *
      * ALWAYS exactly one bar — the card carries a single eight-cell window for the lens
      * it is shown under, and nothing else. Defaults to `core`, so a card on any
-     * recognition/production surface (the fdp, search, the sort offer) reports
-     * recognition and production only; a Reading Center card passes `reading` and
-     * reports that instead.
+     * recognition/production surface (td's main-world cards page, the sort offer)
+     * reports recognition and production only; td's reading-world cards page passes
+     * `reading` and reports that instead.
      *
      * The strip used to draw one track per goal the account pursued, which put reading
-     * and writing progress onto pages that were not asking about them — the whole
-     * reason the Centers exist. One surface, one question, one bar.
+     * and writing progress onto pages that were not asking about them. One surface, one
+     * question, one bar.
      */
     lens?: MasteryWorldId;
     // When set, the card plays the shared `cardPopIn` animation on mount, delayed
-    // by this many ms. Callers (e.g. the /decks card previews) pass `index * step`
+    // by this many ms. Callers (e.g. MiniVocabCardGrid) pass `index * step`
     // to stagger a freshly-loaded row into a left-to-right cascade. Omit elsewhere
     // (card detail page, flashcard back) to render with no entrance animation.
     animationDelayMs?: number;
     /**
-     * Replaces the THEME card face (`palette.flashcard.flashCard`) as the fallback fill
-     * for this one surface. Only the default changes: a card with its own `cardColor`
-     * (advanced layout) still draws in that colour, because its per-card Contrast text
-     * colours were chosen against it and could be unreadable on anything else.
-     *
-     * Used by the Reading Center's swipe grid (`ReadingSwipeGrid`), whose flipped tile
-     * shows the mini card on white to match the grid's white tiles
-     * (docs/READING_WRITING_CENTERS.md § Phase 2).
+     * A CARD STOCK to print this card on instead of the theme's flat face — today only the
+     * Deck Tower's (td's cards page, docs/DECK_TOWER.md § "The cards page"), whose look
+     * lives in `features/discover/sortCardStock` and so cannot be imported here.
+     *   - `rim` replaces the face fill (the stock's cream rim);
+     *   - `sx` is appended last (the stock's panel `::before`, wall and cast shadow), and
+     *     MUST carry its own `&:hover` shadow — the face's hover elevation is dropped;
+     *   - a card with its OWN colour (advanced layout) hands it to the stock's panel
+     *     through `--mini-card-panel`, so the rim stays cream (CardFaceSide's rule).
+     * Must be referentially stable: every card in a long grid receives it.
      */
-    defaultBackground?: string;
+    stock?: { rim: string; sx: SxProps<Theme> };
 }
 
-const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core", defaultBackground }) => {
+const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, onDelete, onCycle, animationDelayMs, showMasteryStrip = true, lens = "core", stock }) => {
     const fc = useTheme().palette.flashcard;
     // The lens bar, or null when the strip is suppressed. Computed here from
     // `typedMarkHistory` rather than read off `entry.category`, because that column is the
-    // CORE band by definition and would be the wrong answer inside a Reading/Writing Center.
+    // CORE band by definition and would be the wrong answer under a reading/writing lens.
     // MiniCard draws the strip (docs/MASTERY_REWORK.md § "Mini cards").
     const bar = showMasteryStrip ? masteryBar(entry.typedMarkHistory, lens, entry.writingMastery) : null;
     // Render a custom icon arrangement behind the text only for ADVANCED layouts:
@@ -84,10 +85,11 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     // face (which this mini mirrors). Applied ONLY when the card is using an advanced layout —
     // same gate the flashcard face uses, INCLUDING a custom text placement (so pass textLayout
     // too), which is why this is a separate check from the icon-only `hasAdvancedLayout` above.
-    // Falls back to the caller's `defaultBackground`, else the THEME's card face (matches
-    // `CardFace`'s `faceBg`).
+    // Falls back to the THEME's card face (matches `CardFace`'s `faceBg`).
     const isUsingAdvancedLayout = isAdvancedLayout(entry.iconLayout, entry.textLayout);
-    const faceBg = (isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined) ?? defaultBackground ?? fc.flashCard;
+    const ownColor = isUsingAdvancedLayout ? resolveCardColor(entry.cardColor) : undefined;
+    // On a stock, the face IS the rim and the card's own colour moves onto the panel.
+    const faceBg = stock ? stock.rim : ownColor ?? fc.flashCard;
     return (
         <MiniCard
             className="mini-vocab-card"
@@ -108,15 +110,20 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
             hoverLift={!!onClick}
             animationDelayMs={animationDelayMs}
             masteryBar={bar}
-            sx={{
-                cursor: onClick ? 'pointer' : 'default',
-                // The hover state additionally reveals the corner action buttons, which
-                // is this card's alone — the shared face only steps the elevation.
-                '&:hover': {
-                    ...(onClick ? { boxShadow: `${MINI_CARD_RING}, ${SHADOW.float}` } : {}),
-                    '& .action-buttons': { opacity: 1 },
+            style={stock && ownColor ? ({ "--mini-card-panel": ownColor } as React.CSSProperties) : undefined}
+            sx={[
+                {
+                    cursor: onClick ? 'pointer' : 'default',
+                    // The hover state additionally reveals the corner action buttons, which
+                    // is this card's alone — the shared face only steps the elevation (not
+                    // on a stock, whose wall and cast shadow are its elevation).
+                    '&:hover': {
+                        ...(onClick && !stock ? { boxShadow: `${MINI_CARD_RING}, ${SHADOW.float}` } : {}),
+                        '& .action-buttons': { opacity: 1 },
+                    },
                 },
-            }}
+                ...(stock ? (Array.isArray(stock.sx) ? stock.sx : [stock.sx]) : []),
+            ]}
         >
             {/* Action Buttons - Top Corners */}
             <Box
@@ -188,7 +195,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     );
 };
 
-// Memoized: the /decks previews render long lists of these, and unrelated
+// Memoized: td's cards page renders long lists of these, and unrelated
 // parent state (e.g. toggling a snackbar) must not re-render every card. Props
 // are primitives + a stable `entry`, so referential equality is sufficient.
 const MiniVocabCard = memo(MiniVocabCardComponent);

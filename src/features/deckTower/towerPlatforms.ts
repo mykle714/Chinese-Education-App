@@ -64,6 +64,58 @@ const LEVER_AT = { x: 1.2, y: 9.85 };
  */
 const PAWN_AT = { x: 9.1, y: 7.5 };
 
+/**
+ * The Writing Notebook's paper stack (IsoPaperStack, docs/DECK_TOWER.md § "The notebook
+ * stack") — writing world only: the RIGHT corner of the floor on screen (high x, low y),
+ * the focus lever's corner mirrored. A portrait sheet (US-letter-ish, 1.2 × 1.55). Its
+ * left edge stands 1.45 units off the tower's right face (CARD x + w = 7.9), so the pawn
+ * (1.2 wide with its clearance) can still walk between them round to the tower's back.
+ */
+const NOTEBOOK: WorldRect = { x: 9.35, y: 0.6, w: 1.2, d: 1.55, r: 0.1 };
+
+/**
+ * The mini sort platform (IsoSortPlatform, docs/DECK_TOWER.md § "The sort platform") —
+ * main world only: the same right corner the notebook takes on the writing world. Its
+ * proportions are ancp's bin slab's (6.4 × 8, SortBins.tsx → PLATFORM) scaled down; its
+ * left edge stands 1.4 units off the tower's right face (CARD x + w = 7.9) — the pawn needs
+ * 1.2 (2 × PAWN_FOOT_RADIUS + 2 × OBSTACLE_CLEARANCE) to walk between them.
+ */
+const SORT_BIN: WorldRect = { x: 9.3, y: 0.45, w: 1.36, d: 1.7, r: 0.22 };
+
+/**
+ * Where a corner fixture's soft-introduction floor print is centred (IsoFloorPrint,
+ * docs/DECK_TOWER.md § "Corner fixture labels"): on the floor just in front of the
+ * fixture's front-left face (+y — "under" it on screen, the way the deck plate sits in
+ * front of the tower), centred on its x: `FIXTURE_LABEL_GAP` off the face, plus half the
+ * block's depth (`fixtureLabelDepth`). The +x side is no use: it is the platform's rim.
+ *
+ * The line counts are restated here (`SORT_BIN_LABEL_LINES`, `NOTEBOOK_LABEL_LINES`)
+ * rather than read off DeckTowerPlatform's `FIXTURE_PRINT`, because DeckTowerPlatform
+ * imports this file — keep the two in step when a print's copy changes.
+ */
+const FIXTURE_LABEL_GAP = 0.28;
+/** DeckTowerPlatform `FIXTURE_PRINT.fontSize`, and IsoFloorPrint's default `lineHeight` (1.25). */
+const FIXTURE_PRINT_FONT_SIZE = 0.4;
+const FIXTURE_PRINT_LINE_PITCH = FIXTURE_PRINT_FONT_SIZE * 1.25;
+/** "ADD / NEW / CARDS" (FIXTURE_PRINT.sortBin). */
+const SORT_BIN_LABEL_LINES = 3;
+/** "WRITING / NOTEBOOK" (FIXTURE_PRINT.notebook). */
+const NOTEBOOK_LABEL_LINES = 2;
+/** A print's depth on the floor: one glyph height plus a pitch per extra line (2 lines → 0.9). */
+function fixtureLabelDepth(lineCount: number): number {
+    return FIXTURE_PRINT_FONT_SIZE + (lineCount - 1) * FIXTURE_PRINT_LINE_PITCH;
+}
+/** The print's right limit: the rim's inner edge, less a hair so no glyph touches it. */
+const FIXTURE_LABEL_MAX_X = PLATFORM.x + PLATFORM.w - RIM_WIDTH - 0.15;
+function labelUnder(fixture: WorldRect, lineCount: number): { x: number; y: number } {
+    return { x: fixture.x + fixture.w / 2, y: fixture.y + fixture.d + FIXTURE_LABEL_GAP + fixtureLabelDepth(lineCount) / 2 };
+}
+
+/** `roam` with one corner fixture appended as obstacle 2 (DeckTowerPlatform's layer slots follow this index). */
+function roamWithCornerFixture(fixture: WorldRect): PawnRoam {
+    return { area: insetRect(PLATFORM, RIM_WIDTH), obstacles: [CARD, leverFootprint(LEVER_AT), fixture] };
+}
+
 export interface TowerPlatformLayout {
     platform: WorldRect;
     /** The tower's footprint. */
@@ -74,12 +126,29 @@ export interface TowerPlatformLayout {
     /** The focus lever's hatch centre. Its hatch is an obstacle in `roam`. */
     leverAt: { x: number; y: number };
     pawnAt: { x: number; y: number };
+    /** The notebook paper stack's footprint (writing world only). */
+    notebook: WorldRect;
+    /** The centre of the notebook's si floor print, in front of the stack. */
+    notebookLabelAt: { x: number; y: number };
     /**
      * Where the pawn may wander: the floor inside the platform's rim, around the tower.
      * The plate is NOT an obstacle — the pawn steps up onto it (IsoPawn `steps`). Obstacles are listed in
      * BACK-TO-FRONT draw order (the pawn reports its slot among them, `depthRankAmong`).
      */
     roam: PawnRoam;
+    /**
+     * `roam` on a platform that also stands the notebook stack: the same area, with the
+     * stack appended as obstacle 2 — DeckTowerPlatform's layer slots follow this index.
+     */
+    notebookRoam: PawnRoam;
+    /** The mini sort platform's footprint (main world only). */
+    sortBin: WorldRect;
+    /** The centre of the sort platform's si floor print, in front of the slab. */
+    sortBinLabelAt: { x: number; y: number };
+    /** The rightmost x either si floor print may reach (IsoFloorPrint `maxX`): inside the rim. */
+    fixtureLabelMaxX: number;
+    /** `roam` on a platform that stands the sort platform: obstacle 2, like `notebookRoam`. */
+    sortBinRoam: PawnRoam;
 }
 
 export const TOWER_LAYOUT: TowerPlatformLayout = {
@@ -92,4 +161,11 @@ export const TOWER_LAYOUT: TowerPlatformLayout = {
     // Back to front: the tower, then the lever's hatch (wholly in front of the tower's
     // front-left face), so it draws after the stack.
     roam: { area: insetRect(PLATFORM, RIM_WIDTH), obstacles: [CARD, leverFootprint(LEVER_AT)] },
+    notebook: NOTEBOOK,
+    notebookLabelAt: labelUnder(NOTEBOOK, NOTEBOOK_LABEL_LINES),
+    notebookRoam: roamWithCornerFixture(NOTEBOOK),
+    sortBin: SORT_BIN,
+    sortBinLabelAt: labelUnder(SORT_BIN, SORT_BIN_LABEL_LINES),
+    fixtureLabelMaxX: FIXTURE_LABEL_MAX_X,
+    sortBinRoam: roamWithCornerFixture(SORT_BIN),
 };

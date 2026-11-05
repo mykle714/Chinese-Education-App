@@ -6,7 +6,7 @@ import {
   sampleBankingRun,
 } from '../dailyBanking/bankingAnimation';
 
-// The hp daily banking run's pure timeline (docs/DAILY_MINUTE_BANKING.md § 3–4).
+// The td daily banking run's pure timeline (docs/DAILY_MINUTE_BANKING.md § 3–4).
 
 describe('bankingIntensity', () => {
   it('is 0 for an empty day and 1 at or past the full-ceremony size', () => {

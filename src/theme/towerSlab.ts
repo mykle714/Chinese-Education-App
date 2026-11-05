@@ -1,23 +1,20 @@
 import { liftHex } from "../timeOfDay/wash";
 import { COLORS } from "./colors";
-import { shadeHex } from "./shadeHex";
 import type { PlateTones } from "./towerPlate";
 
 /**
- * towerSlab — the Deck Tower's floating platform as a flat play surface for HTML: a gold
- * slab with a lighter bevel round its top edge and a solid wall under it. Cream cards on a
- * gold slab in blue air is the tower scene's own picture (docs/ISO_ART_FRAMEWORK.md
- * § "Palette"), so a game drawn on this reads as played on the platform.
+ * towerSlab — slab colour helpers shared by the Deck Tower's iso kit and the flp game
+ * break:
+ *   - `slabRim` — the light bevel round a platform's top edge (iso/palette.ts →
+ *     `platformTone`);
+ *   - `CREAM_PLATE_TONES` — a plate cut from card stock (GameBreakCard.tsx).
  *
- * The shades match `platformTone(COLORS.gld)` in the iso kit (walls `shadeHex` 0.07 / 0.15,
- * rim `slabRim`). They are derived, not tokens: the flagged `shadeHex` divergence.
+ * It also held `TOWER_SLAB` / `TOWER_SLAB_WALL_PX` — the gold play slab GameFrame's
+ * `tone="tower"` drew a game on — until that tone was removed on 2026-11-04.
  *
- * Fixed gold in every world. The reading and writing worlds paint their platforms other
- * colours, but a game on its own route has no world to read.
- *
- * Depended on by: games/shared/GameFrame.tsx (`tone="tower"`), GameBreakCard.tsx
- * (`CREAM_PLATE_TONES`).
- * Docs: docs/TOWER_STYLE_SHIFT.md § "The play slab".
+ * Depended on by: src/features/deckTower/iso/palette.ts (`slabRim`),
+ * src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakCard.tsx (`CREAM_PLATE_TONES`).
+ * Docs: docs/ISO_ART_FRAMEWORK.md § "Palette".
  */
 
 /** OKLCH lightness of a slab's rim over its floor. Set to keep the gold rim where it was. */
@@ -31,20 +28,6 @@ const RIM_LIFT = 0.04;
 export function slabRim(base: string): string {
     return liftHex(base, RIM_LIFT);
 }
-
-export const TOWER_SLAB = {
-    top: COLORS.gld,
-    left: shadeHex(COLORS.gld, 0.07),
-    right: shadeHex(COLORS.gld, 0.15),
-    rim: slabRim(COLORS.gld),
-} as const;
-
-/**
- * The slab's visible wall, px: the tower platform's own thickness at phone scale
- * (`PLATFORM_THICKNESS` 1.5 world units, at about 17 px each). `GameFrame` adds it to its
- * bottom margin, since the wall hangs below the box and a game's content area clips.
- */
-export const TOWER_SLAB_WALL_PX = 26;
 
 /** A plate cut from card stock: reads as part of a card or a card-stock popup. */
 export const CREAM_PLATE_TONES: PlateTones = { top: COLORS.cardFace, left: COLORS.cardWall, right: COLORS.cardWall };

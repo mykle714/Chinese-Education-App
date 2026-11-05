@@ -102,6 +102,40 @@ export function defaultSourceOf(field: EditableField): KeyboardSource | null {
 }
 
 /**
+ * § 6z-3b: a FIELD that may only be typed on ONE keyboard.
+ *
+ * `data-beginner-keyboard-lock="ours"` opens the field on the handwriting keyboard
+ * whatever the session is on, and the switch bar drops its toggle for it — no `ā`,
+ * no `ABC` — leaving only the close chevron. Stronger than
+ * `data-beginner-keyboard-default`, which only picks the OPENING keyboard and leaves
+ * the learner free to switch.
+ *
+ * It exists for fields whose MEANING depends on how the text was produced. Memory
+ * Map's word finder is the one user: it highlights the map words containing what the
+ * learner wrote, and that is fair play in a reading game only because writing the
+ * characters by component proves the learner can already recognise them. Typed
+ * pinyin would turn it into a lookup that answers the prompt for them
+ * (docs/MEMORY_MAP_GAME.md § 3.7).
+ *
+ * Read off the FIELD only, not inherited, like the default attribute. The lock does
+ * not touch the session choice: the next ordinary field opens on whatever the
+ * learner last picked.
+ *
+ * ⚠️ It locks the ON-SCREEN keyboard only. A desktop learner with a physical keyboard
+ * (and an OS pinyin IME) can still type into the field; there is no reliable way to
+ * tell an IME's insertion from ours at the DOM level.
+ *
+ * Used by: src/games/memory-map/MemoryMapPrompt.tsx (the word finder).
+ */
+export const LOCKED_SOURCE_ATTRIBUTE = 'data-beginner-keyboard-lock';
+
+/** The one keyboard this field allows, or null when the learner may switch freely. */
+export function lockedSourceOf(field: EditableField): KeyboardSource | null {
+  const value = field.getAttribute(LOCKED_SOURCE_ATTRIBUTE);
+  return value === 'os' || value === 'ours' || value === 'pinyin' ? value : null;
+}
+
+/**
  * The value in force for an element: the NEAREST declaration of the attribute on
  * it or an ancestor, or null when nothing declares one.
  *

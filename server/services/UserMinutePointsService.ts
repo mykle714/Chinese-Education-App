@@ -328,7 +328,7 @@ export class UserMinutePointsService {
    *     not summed over the ledger.
    *   • todayMinutes — that language's minutes today (the fire badge).
    *   • yesterdayMinutes — that language's minutes on the previous streak day. The size
-   *     of the hp daily banking animation (docs/DAILY_MINUTE_BANKING.md § 4).
+   *     of the td daily banking animation (docs/DAILY_MINUTE_BANKING.md § 4).
    *   • bankingPending — whether today's banking run is still owed: yesterday > 0 and
    *     the run has not started yet this streak day (migration 175). Decided HERE so the
    *     client never compares streak dates itself.
@@ -373,7 +373,7 @@ export class UserMinutePointsService {
   }
 
   /**
-   * Record that the hp daily banking animation has STARTED for this (user, language)
+   * Record that the td daily banking animation has STARTED for this (user, language)
    * today (docs/DAILY_MINUTE_BANKING.md § 5). Sent at the start of the run, not the end,
    * so closing the tab mid-animation cannot replay it on another device.
    *

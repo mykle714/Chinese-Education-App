@@ -17,8 +17,8 @@ import type { LearningToggleState } from "../hooks/useLearningToggle";
  * the same state as the raised `EipAddKey` in its trail row (2026-10-29).
  *
  *   • Not in Learning → a small round "+" breathing the soft green halo
- *     (theme/lowSupplyGlow.ts, LOW_SUPPLY_GLOW_NUDGE) — the same "add more cards" nudge
- *     the fdp's Sort Cards tile wears. Static at the peak under reduced motion.
+ *     (theme/lowSupplyGlow.ts, LOW_SUPPLY_GLOW_NUDGE), an inviting "add this" nudge.
+ *     Static at the peak under reduced motion.
  *   • In Learning → a small greyed "Added!" pill. Still a button: tap = remove, no
  *     confirmation (removal demotes to 'provisional'; see the hook). No glow.
  *     Flips the instant it is tapped — the hook is optimistic, so there is no

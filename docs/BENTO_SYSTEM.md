@@ -3,10 +3,7 @@
 Shared menu primitive (`src/components/bento/`) behind the app's hubs: the footer-tab
 hub `src/pages/MenuPage.tsx` (`/menu`, the Menu tab), plus the drill-in hubs
 `src/games/GamesPage.tsx` (`/games`) and `src/features/friends/FriendsPage.tsx`
-(`/friends`). The Discover hub (`/discover`, `DiscoverPage`, a one-tile Bento) was
-deleted 2026-10-17 — Sort Cards is now reached from Home ([DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The Menu bento was the Home tab (`/`,
-`HomePage.tsx`) until 2026-10-10, when Home and Menu swapped contents — Home is now
-the decks page (see [NAVIGATION.md](./NAVIGATION.md)).
+(`/friends`). `/` is the Deck Tower, not a hub (see [NAVIGATION.md](./NAVIGATION.md)).
 
 Introduced by the shelf redesign (see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A4
 and entries 1/3/4). It **replaced `HubMenu`**, a 439-line vertical list of
@@ -34,7 +31,6 @@ opposite of `Spine`, whose height *is* its count. See
 
 **Code:** `src/components/bento/Bento.tsx` → `Bento`, `BentoTile`, `TILE_VARIANTS`;
 `src/components/bento/CardShell.tsx` → `CardShell`, `CARD_SHELL`, `CARD_TITLE_SX`;
-`src/components/bento/CollectionChip.tsx` → `CollectionChip`;
 `src/components/bento/index.ts` (the barrel — import from here).
 
 | Export | Design class | What it is |
@@ -42,7 +38,6 @@ opposite of `Spine`, whose height *is* its count. See
 | `Bento` | `.bento` | 2-column grid, `gap: 10`, `padding: 14px 16px 0` |
 | `BentoTile` | `.bt` | one destination |
 | `CardShell` | `.bt` body | the family's shared body — see § "CardShell" |
-| `CollectionChip` | `.chipsel` | white outlined "which collection" bar above a grid |
 
 ### Tile variants
 
@@ -100,8 +95,8 @@ pill sized only by its padding renders as an oval, not the circle a badge is rea
 mono font, padding or background; `pinTone` is ignored). It exists for the games' win
 badge: the Games hub's Match Speed tile passes `WinCountPill`
 (`src/games/shared/GameCard.tsx` → `WinCountPill`) with `pinBare`, so its win count is
-the same trophy pill the `GameCard`s (Bubble Match, Word Search, the Reading Center
-carousel) wear rather than a `×N` mono pin. It also passes **`pinSide="left"`** (default
+the same trophy pill the `GameCard`s (Bubble Match, Word Search) wear rather than a
+`×N` mono pin. It also passes **`pinSide="left"`** (default
 `"right"`), putting the pill in the tile's top-LEFT corner, clear of the ghost glyph that
 bleeds off the top-right. Code: `src/components/bento/Bento.tsx` →
 `BentoTile`; `src/games/GamesPage.tsx`.
@@ -161,7 +156,7 @@ Two entities render through it, so a change to any shell number moves both:
 | Entity | Inner layout |
 |---|---|
 | `BentoTile` | foot-aligned title + subtitle, geometry from `TILE_VARIANTS` |
-| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`, or a non-win `tally` drawn by the same `CountPill` — the Writing Notebook's card) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's — except a card with an EMPTY options row, whose title takes the hero tier's size (`TILE_VARIANTS.hero.title`) |
+| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's — except a card with an EMPTY options row, whose title takes the hero tier's size (`TILE_VARIANTS.hero.title`) |
 
 `GameCard`'s other variant, `tile`, IS a `BentoTile` (see
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Games hub").
@@ -176,8 +171,8 @@ control" meaning the strip header had.)*
 
 | Page | Shape |
 |---|---|
-| **Menu** (`src/pages/MenuPage.tsx` → `MenuPage`, tiles typed `MenuTile`) | Night Market `hero` (`pur`, flagged off); Games (`blu`) / Arena (`yel`) / **Immersive World** (`red`, flagged off) / Reader (`pur`) `base`; Friends (`grn`) / Community (`org`, flagged off) `low`, in that order. **Live today (since 2026-10-30): a 2×2 of Games | Arena over Reader | Friends** — `low` Friends shares Reader's row, so it stretches to the `base` height. **One hue per main tile:** the six non-hero tiles each get a different one of the six tile hues. **No two warm hues (`yel`/`red`/`org`) share an edge:** with every flag on they sit in a checkerboard on the 2-column grid (Arena top-right, Immersive World middle-left, Community bottom-right). Turning off a flagged tile moves every tile after it, so check the pattern again when a flag changes. Night Market would share `pur` with Reader if it were turned back on. There is no Dictionary tile, because Dictionary is a footer tab. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.home-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isFeatureTester || isAdmin` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`red`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
-| **Games** (`src/games/GamesPage.tsx`) | `CollectionChip` above the grid; EVERY game is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (the Reading Center carousel's card, drawn on `CardShell`), Match Speed / Hydra Bubbles / Memory Map as half-width `variant="tile"` (a `BentoTile`). Speed Reading is hub-hidden. |
+| **Menu** (`src/pages/MenuPage.tsx` → `MenuPage`, tiles typed `MenuTile`) | Night Market `hero` (`pur`, flagged off); Games (`blu`) / **Immersive World** (`red`, flagged off) / Reader (`pur`) `base`; Friends (`grn`) / Community (`org`, flagged off) `low`, in that order. **Live today: Games over Reader | Friends.** **One hue per main tile:** the non-hero tiles each get a different tile hue (`yel` is free since Arena became a footer tab). **No two warm hues (`red`/`org`) share an edge:** with every flag on, Immersive World and Community sit apart on the 2-column grid. Turning off a flagged tile moves every tile after it, so check the pattern again when a flag changes. Night Market would share `pur` with Reader if it were turned back on. There is no Dictionary or Arena tile, because both are footer tabs. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.menu-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isFeatureTester || isAdmin` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`red`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
+| **Games** (`src/games/GamesPage.tsx`) | One tile per ROUTED game (`ROUTED_GAMES`); EVERY one is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (drawn on `CardShell`), the rest (Match Speed, Hydra Bubbles, Bucket Drop) as half-width `variant="tile"` (a `BentoTile`). The break-only games (Speed Reading, Memory Map, Writing Grid, Superposition) have no route and no tile. |
 | **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 
 Bubble Match's and Word Search's cards are **special-cased in the page**, not
@@ -208,8 +203,6 @@ ramp), via `buildBubbleMatchCard`.
   deleted 2026-08-22); since 2026-10-03 the hub tiles are name-only, so a player cannot
   see which track a game trains without opening it. `GameDef.markType` still drives
   the mark call and challenge eligibility.
-* **`CollectionChip` shows no card count.** The artboard's `1,284` has no source in
-  the current data flow.
 
 ## Related
 

@@ -54,7 +54,7 @@ const TipCard = styled(Box)(() => ({
  * Tappable tip card drawing from a hardcoded, frontend-shipped pool
  * (src/data/tips.ts) — not a database table. Picks a random tip on mount and
  * re-rolls (excluding the currently-shown tip) on tap. The same component is
- * reused as-is across the Home/Games/Discover hub headers/footers so every
+ * reused as-is across the Menu and Games hubs so every
  * hub draws from one shared pool.
  */
 const TipBox: React.FC<{ className?: string }> = ({ className }) => {

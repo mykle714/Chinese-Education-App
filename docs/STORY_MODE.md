@@ -381,9 +381,10 @@ every read filters by the learner's selected language.
 
 ## 9. Entry point and UI (Q18)
 
-Candidate homes: a **Menu (hp) Bento tile** (alongside Games, Reader, Arena), or a card on the
-**Reading Center** belt, since Authored is mostly a reading exercise. Visual design is not
-drafted yet; it should come from a claude.ai/design pass like the Centers did.
+Candidate home: a **Menu (hp) Bento tile** (alongside Games, Reader, Friends). (A card on
+the Reading Center's games belt was the other candidate; the Centers were deleted
+2026-11-04, and Arena moved to a footer tab the same day.) Visual design is not drafted yet;
+it should come from a claude.ai/design pass.
 
 ---
 
@@ -460,7 +461,7 @@ section it affects.
 | Q15 | Should the model favour the learner's *uncollected* endings? | Yes, when the action is ambiguous |
 | Q16 | Any feedback on the learner's written language (e.g. on the ending screen)? | None in v1 |
 | Q17 🔴 | Approve the three tables in § 7 (`stories`, `story_runs`, `story_endings_collected`) and their columns? | Pending |
-| Q18 | Entry point: Menu Bento tile, Reading Center belt, or both? | Pending |
+| Q18 | Entry point: Menu Bento tile? (The Reading Center belt option went with the Centers, 2026-11-04.) | Pending |
 | Q19 🔴 | How is the comparison judged: metrics, tester feedback, or your own play? Who sees which variant? | Testers see both; § 10 metrics + feedback |
 | Q20 | Build both variants on the *same* premise + catalog? | Yes |
 | Q21 | Authoring grant: reuse `isTemplateAuthor`, or a new `isStoryAuthor`? | Reuse |

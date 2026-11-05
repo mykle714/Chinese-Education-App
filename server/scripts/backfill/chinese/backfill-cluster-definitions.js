@@ -28,6 +28,12 @@
  *     the card stars and shows by default. This pass ranks the tied clusters (and
  *     only those, within the slots they already occupy) by the marginal commonality
  *     difference that was too small to move their band. No API call when nothing ties.
+ *   Stage C.6 — SHORT LEAD GLOSS (shared/lib/senseShortGloss.js): on a multi-sense
+ *     entry, any cluster whose displayed lead (`ddt`) exceeds 20 chars gets ONE
+ *     synthesized ≤20-char gloss for THAT sense placed first; the long source gloss
+ *     stays right behind it. The cluster-level twin of step 4's word-level short
+ *     gloss, which no longer reaches the card once the dd reads clusters. Skipped on
+ *     --rescore-only. Each synthesized gloss prints a "⚠ SHORT GLOSS REVIEW" line.
  *
  * HUMAN REVIEW: there is no review file. Anything the clustering model is even
  * slightly unsure about (prompt rule 6 → reviewNotes), plus low-confidence
@@ -76,6 +82,7 @@ import { buildSearchReadings, defaultPrimaryForms } from './lib/searchReadings.j
 import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
 import { createClusterTiebreaker } from '../shared/lib/tiebreakOrder.js';
+import { createSenseShortGlosser, printShortGlossReview } from '../shared/lib/senseShortGloss.js';
 
 const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes (v11: OVER-COMPACTION FIX — Stage A's rule 3 and the A.5 merge rule now decide membership by a TRANSLATION TEST (would a sentence using this gloss translate the word with the cluster's label?) instead of "one origin / one underlying image", and the 会 worked example, which TAUGHT the bad merges (can + likely-to, meeting + association), now splits them. A 2026-10-29 audit found 118 discoverable senses (94 zh) hiding a distinct meaning, e.g. 开 "to open" holding turn on / drive / boil / write a prescription. Rows judged fine by that audit were re-stamped at v11 without re-running (server/scripts/backfill/shared/restamp-cluster-version.js); only the flagged rows re-cluster — do NOT --stale the corpus. v10: GRAMMATICAL-FUNCTION senses — Stage C's sense-mode rubric now scores a classifier/particle/complement sense by how often speakers pick THIS word for that job (not how common the job is) and receives the cluster's pos; Stage C.5 gains rule 3, core content meaning before grammatical function (exception: words learned AS the function word — 个/了/的/把) and also receives pos. Fixes 回 starring "classifier for times/occurrences" over "to go back / return". Scores + order only, labels untouched — re-run with --rescore-only, NEVER --stale. v9: Stage C.5 — tied clusters (equal frequencyScore) are now ORDERED by a dedicated ranking pass instead of falling through to whatever order Stage A emitted; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. Ordering only — no cluster's score, label or glosses change, so --rescore-only picks it up safely. v8: THE FREQUENCY AXIS CHANGED — Stage C now scores how much a sense would STAND OUT in casual conversation rather than how often it occurs; bands 4+5 merged and the old band 1 split. All pre-2026-08-28 cluster scores are on the old axis — re-score with --rescore-only. v7: the shared rubric now credits BOUND FORMS through their compounds — a bound morpheme heard constantly inside common compounds is frequent, not rare — and the cluster write now enforces the word/cluster frequency invariant, det."frequencyScore" == MAX(cluster.frequencyScore), in the same statement; re-score with --rescore-only. v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
@@ -130,6 +137,14 @@ const { pass1Sort, pass2Critique } = createGlossOrderer({ anthropic, cachedSyste
 const { scoreFrequency } = createFrequencyScorer({ anthropic });
 // Stage C.5 — ranks clusters that TIE on frequencyScore (see shared/lib/tiebreakOrder.js).
 const { tiebreakClusterOrder } = createClusterTiebreaker({ anthropic, cachedSystem, model: CLUSTER_MODEL, language: 'Chinese' });
+// Stage C.6 — a ≤20-char lead gloss for any sense whose displayed lead is longer, and a
+// "classifier for …" lead for every pure classifier sense (shared/lib/senseShortGloss.js
+// → needsNewHeadline). Added 2026-11-03 WITHOUT a SCRIPT_VERSION bump, as were the
+// classifier rules in CLUSTER_INSTRUCTIONS rule 3/6 and MERGE_INSTRUCTIONS rule 3: they
+// touch a small minority of rows, which were repaired in place by
+// shared/patch-long-cluster-glosses.js and chinese/patch-classifier-senses.js, so a bump
+// would only re-cluster the corpus (and re-mint sense labels) for nothing.
+const { shortenLongLeads } = createSenseShortGlosser({ anthropic, cachedSystem, language: 'Chinese' });
 
 // ─── Stage A: clustering prompt ───────────────────────────────────────────────
 
@@ -157,7 +172,8 @@ Rules:
    - an event vs an organization: "meeting / gathering" vs "association / union";
    - different question words: 怎么 "how?" vs "why?";
    - a positive vs negative evaluation: 意见 "opinion / idea" vs "objection / complaint";
-   - a grammatical use vs the content meaning: 一些 "some" vs "(after an adjective) slightly …er".
+   - a grammatical use vs the content meaning: 一些 "some" vs "(after an adjective) slightly …er";
+   - a noun vs its CLASSIFIER use: 间 "room" vs "classifier for rooms", 盘 "plate" vs "classifier for things resembling a plate". EXCEPTION — a unit of measure or currency (米 meter, 千克 kilogram, 元 yuan) is counted directly in Chinese, so it stays ONE cluster with pos ["noun","classifier"].
    A history of "one origin" or "one underlying image" is NOT a reason to merge — the learner meets the uses separately. Err toward FINER clusters; a later consolidation pass merges any that are mere synonyms.
    LABEL CHECK: if the only label that covers a cluster has to join two different ideas with "/" (e.g. "to be able to / will (likely)", "to see / meet"), the cluster is two clusters.
 
@@ -168,7 +184,7 @@ Rules:
 6. For each cluster provide:
    - "sense": a short English label (2–5 words) naming the shared meaning.
    - "reading": the numbered-pinyin reading for THIS sense. Use the entry's primary reading unless this sense is a genuine heteronym pronounced differently (e.g. 会 in 会计 "accounting" is kuai4, not hui4) — then give that reading.
-   - "pos": the part(s) of speech for this sense — ALWAYS a JSON array of strings, even when only one applies (e.g. ["verb"] or ["verb","noun"]).
+   - "pos": the part(s) of speech for this sense — ALWAYS a JSON array of strings, even when only one applies (e.g. ["verb"] or ["verb","noun"]). A measure word is always "classifier" (never "measure word"); a classifier cluster split off its noun is ["classifier"] alone.
    - "glosses": the input glosses belonging to this sense (any order — they are re-ranked later).
 
 7. FLAG YOUR UNCERTAINTY. If you are even slightly unsure about ANY decision, add a short note to "reviewNotes" so a human can double-check. Err heavily toward flagging — a false alarm is cheap, a wrong card is not. Flag things like: an ambiguous origin boundary (could reasonably split or merge), a gloss that plausibly belongs in two clusters, a register split you were unsure whether to make, an uncertain or guessed "reading" (especially heteronyms), a sense whose pos you're unsure of, broken/cryptic source glosses, or anything that just looks off. If you are fully confident, return an empty array.
@@ -211,7 +227,7 @@ const MERGE_INSTRUCTIONS = `You are given a Chinese word and a list of CANDIDATE
 Rules:
 1. REGROUP ONLY, never edit text. You may only move whole glosses between clusters and combine clusters. Never add, rephrase, split the text of, or drop a gloss. Every input gloss must appear in exactly one output cluster, copied character-for-character. The union of all output glosses must equal the input set exactly.
 2. NEVER merge clusters with different "reading" values. Reading is a hard boundary — a merged cluster's members must all share one reading.
-3. Merge two clusters ONLY when they are the same meaning — near-synonyms or paraphrases of one idea, or the same idea in a different part of speech (结 to tie | knot). Use the TRANSLATION TEST: would a sentence using one cluster's meaning translate the word with the other cluster's label? If not, keep them apart. A "thread of relation", a shared origin, or one sense being an extension of the other is NOT enough: 开 "to open" vs "to turn on", 会 "can" vs "will (likely)", 见 "to see" vs "to meet", 中间 "middle" vs "during" all stay SEPARATE. Never produce a label that needs "/" to join two different ideas.
+3. Merge two clusters ONLY when they are the same meaning — near-synonyms or paraphrases of one idea, or the same idea in a different part of speech (结 to tie | knot). Use the TRANSLATION TEST: would a sentence using one cluster's meaning translate the word with the other cluster's label? If not, keep them apart. Never merge a noun with its classifier use (间 "room" + "classifier for rooms") — except a unit of measure or currency, which is one cluster. A "thread of relation", a shared origin, or one sense being an extension of the other is NOT enough: 开 "to open" vs "to turn on", 会 "can" vs "will (likely)", 见 "to see" vs "to meet", 中间 "middle" vs "during" all stay SEPARATE. Never produce a label that needs "/" to join two different ideas.
 4. For each output cluster provide:
    - "sense": a short English label (2–5 words) for the (possibly merged) meaning.
    - "reading": the shared numbered-pinyin reading.
@@ -427,7 +443,7 @@ async function run() {
     console.log(`Found ${entries.length} entries to cluster\n`);
 
     let updated = 0, failed = 0, opusRetries = 0;
-    let totalClusters = 0, multiClusterWords = 0, flaggedEntries = 0, tiebreakCalls = 0;
+    let totalClusters = 0, multiClusterWords = 0, flaggedEntries = 0, tiebreakCalls = 0, shortGlosses = 0;
 
     for (const row of entries) {
       const definitions = Array.isArray(row.definitions)
@@ -594,6 +610,19 @@ async function run() {
           if (t.called) tiebreakCalls++;
         }
 
+        // ── Stage C.6: short lead gloss per sense ──────────────────────────────
+        // Runs AFTER scoring and the tiebreak so neither sees a synthesized gloss as
+        // source evidence, and is skipped on --rescore-only, which promises to leave
+        // every gloss untouched. Only multi-sense entries are touched (with <2
+        // displayable clusters the dd reads `definitions[0]`, which step 4 owns).
+        // Glosses only — labels, scores and cluster order are unchanged.
+        if (!rescoreOnly) {
+          const sg = await shortenLongLeads(row.word1, finalClusters);
+          finalClusters = sg.clusters;
+          shortGlosses += sg.changes.length;
+          printShortGlossReview(row.word1, row.id, sg);
+        }
+
         totalClusters += finalClusters.length;
         if (finalClusters.length > 1) multiClusterWords++;
         if (reviewNotes.length) flaggedEntries++;
@@ -680,6 +709,7 @@ async function run() {
     console.log(`Multi-cluster words: ${multiClusterWords}`);
     console.log(`Flagged for review: ${flaggedEntries} entr${flaggedEntries === 1 ? 'y' : 'ies'} (see "${REVIEW_MARKER}" lines above)`);
     console.log(`Tiebreak calls    : ${tiebreakCalls}${skipTiebreak ? ' (--no-tiebreak)' : ''} — entries with senses tied on score`);
+    console.log(`Short lead glosses: ${shortGlosses} (see "⚠ SHORT GLOSS REVIEW" lines above)`);
     console.log(`Opus retries      : ${opusRetries}`);
     console.log('='.repeat(60));
   } finally {

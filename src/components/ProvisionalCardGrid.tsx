@@ -14,8 +14,7 @@ import type { VocabEntry } from "../types";
  *
  * WHY MiniVocabCard AND NOT A LOCAL CARD
  * This surface previews CARDS, so it renders the app's real card thumbnail — the same
- * `MiniVocabCard` the decks page, the collection view, Quick Mark and the flashcard
- * back all use. Nothing about the lent-card preview is special enough to justify a
+ * `MiniVocabCard` the Deck Tower's cards page and Quick Mark use. Nothing about the lent-card preview is special enough to justify a
  * second card design: a bespoke one would drift from the real thing (icon layouts,
  * per-card colors, text-color overrides, the utcm badge, the sense-resolved dd) and
  * would teach the learner a card shape they never see again. Everything the card shows

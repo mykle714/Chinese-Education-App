@@ -168,7 +168,7 @@ export class StarterPacksController {
   };
 
   /**
-   * List the user's currently-skipped words for a language (scp's hidden skipped-cards sheet).
+   * List the user's currently-skipped words for a language (ancp's hidden skipped-cards sheet).
    * GET /api/starterPacks/:language/skipped
    * Response: DiscoverCard[]
    */
@@ -214,7 +214,7 @@ export class StarterPacksController {
   };
 
   /**
-   * Recycle ONE skipped card back into the sort supply (scp's hidden skipped-cards
+   * Recycle ONE skipped card back into the sort supply (ancp's hidden skipped-cards
    * sheet, hold-to-recycle — docs/SORT_CARDS_REQUIREMENTS.md §5.1a).
    * POST /api/starterPacks/:language/recycleSkip
    * Body: { cardId: number }

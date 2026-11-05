@@ -25,6 +25,12 @@ interface CPCDBlockProps {
     bold?: boolean;
     className?: string;
     characterColor?: string;
+    // Font for the LATIN half of the word — the pinyin overlay. Defaults to the UI sans
+    // (FONTS.sans). A surface whose whole face is set in the app's Chinese face passes
+    // FONTS.cjk (975 Maru SC; its slices cover Latin + tone-marked vowels) so the pinyin
+    // matches the characters: MiniCard and the flp card face (CardFace.tsx). Docs:
+    // docs/CJK_TYPEFACE_LAB.md § "The dd follows the face too".
+    latinFontFamily?: string;
 }
 
 // Mirrors CPCDRow's per-size glyph/pinyin sizing so a block reads as the same
@@ -48,11 +54,12 @@ const CPCDBlock: React.FC<CPCDBlockProps> = ({
     bold = false,
     className,
     characterColor,
+    latinFontFamily = FONTS.sans,
 }) => {
     // 1–2 chars: identical to a plain CPCDRow (inline chars, per-char pinyin
     // below each), so just delegate instead of re-implementing that layout.
     if (items.length <= 2) {
-        return <CPCDRow items={items} size={size} bold={bold} className={className} characterColor={characterColor} />;
+        return <CPCDRow items={items} size={size} bold={bold} className={className} characterColor={characterColor} latinFontFamily={latinFontFamily} />;
     }
 
     if (items.length > 4 && process.env.NODE_ENV !== "production") {
@@ -101,7 +108,7 @@ const CPCDBlock: React.FC<CPCDBlockProps> = ({
                 key={key}
                 style={{
                     fontSize: pinyinFontSize,
-                    fontFamily: FONTS.sans,
+                    fontFamily: latinFontFamily,
                     fontStretch: "condensed",
                     color: color as string,
                     lineHeight: 1.21,

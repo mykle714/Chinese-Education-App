@@ -64,7 +64,7 @@ interface InfoCardSectionProps {
     // has no trail, passes nothing and the ✕ just closes the panel. See SheetPanel.
     onCloseX?: () => boolean | void;
     // Draw the minute-points flame beside the ✕. True on every STUDY surface that mounts
-    // this panel (flp, scp, cdp) — the panel covers the page header, flame included.
+    // this panel (flp, ancp, cdp) — the panel covers the page header, flame included.
     showMinutePoints?: boolean;
     // Identity + strip position of the ACTIVE entry tab (useEipTabs: `activeTab.id` /
     // `activeIndex`). Only used to drive the pager slide below — a change of id means the
@@ -178,7 +178,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     const headerSlideRef = useRef<HTMLDivElement | null>(null);
     // SheetPanel drives the upper panel's height from the sheet's (the telescope).
     const telescopeRef = useRef<SheetTelescopeHandle | null>(null);
-    // The time-of-day palette (dawn / day / sunset tint, night inverts the panel).
+    // The time-of-day palette (a pale sky tint by day, night inverts the panel).
     const palette = useEipPalette();
     // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
     // from it, and writing it during the effect keeps the comparison to exactly one place.

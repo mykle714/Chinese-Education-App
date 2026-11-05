@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useAuth } from "../AuthContext";
+import { useTestingFeatures } from "../hooks/useTestingFeatures";
 import { useThemeColor } from "../hooks/useThemeColor";
 import { useDayClock } from "./useDayClock";
 import { tier2LookAt, type Tier2Look } from "./tier2Look";
@@ -24,8 +24,8 @@ import { claimTier2Chrome, writeTier2Chrome } from "./tier2Chrome";
  * Docs: docs/SHELF_REDESIGN.md § 7b "Time of day".
  */
 export function useTier2Look(): Tier2Look {
-    const { user } = useAuth();
-    const { time } = useDayClock(user?.isFeatureTester === true);
+    // Tester time-of-day pin only while testing features are on (useTestingFeatures).
+    const { time } = useDayClock(useTestingFeatures());
     // `time` keeps its identity while the look is unchanged (useDayClock), so this only
     // recomputes on a real change.
     const look = useMemo(() => tier2LookAt(time), [time]);

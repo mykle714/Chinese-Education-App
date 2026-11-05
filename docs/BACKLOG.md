@@ -74,27 +74,12 @@ should be designed together with iw leading. **The next action is answering § 1
 
 ---
 
-### 3. Redesign the Reading and Writing Centers
+### 3. ~~Redesign the Reading and Writing Centers~~ — closed
 
-**What.** Rework `/flashcards/reading` and `/flashcards/writing`. Both routes currently
-render the **same component** as the decks page — `MasteryCenterPage`, which is the fdp's
-decks panel read through one skill bar instead of the core bar
-(`src/features/flashcards/masteryCenters.ts`, [DECKS_FEATURE.md](./DECKS_FEATURE.md)
-§ "Mastery Centers").
-
-**Why.** Reusing the decks panel was the cheap way to ship the split, and it means each
-Center inherits a layout designed to answer "how well do I know this" rather than "how is
-my reading going". A Center that is a re-skinned deck list gives a learner pursuing reading
-no surface built for reading.
-
-**Open questions.**
-- What should a Center actually *show*? Ranked "cannot read yet"? A reading-specific
-  practice entry point? Progress over time?
-- Should the two Centers diverge from each other, or stay one component with a bar prop?
-- Does the redesign keep the collections/decks/grid spine at all, or replace it?
-- The goal gate is on the **button, not the route** — does the redesign change that?
-- Related and possibly the same work: DEFERRED_WORK.md § 7 (reading/writing mastery has
-  no guess-odds buffer).
+The Centers were redesigned (2026-10) and then **deleted on 2026-11-04**. Reading and
+writing are now worlds of the Deck Tower ([DECK_TOWER.md](./DECK_TOWER.md) § Worlds): each
+has its own tower (that bar's flp), cards page and game breaks. DEFERRED_WORK.md § 7
+(reading/writing mastery has no guess-odds buffer) is still open.
 
 ---
 
@@ -248,11 +233,11 @@ windows for one bar.
   flp to finish" affordance?
 - **Does the cap apply retroactively** to cards already Mastered off game marks, or
   only from the ship date forward? (Retroactive demotion writes `category_promotions`
-  rows downward — [VELOCITY.md](./VELOCITY.md) — and un-masters cards in the fdp's
-  Mastered collections, `masteredAt`.)
+  rows downward — [VELOCITY.md](./VELOCITY.md) — and un-masters cards in the Mastered
+  collections and towers, `masteredAt`.)
 - **(b): does the cdp still show two windows** for the core bar, or one merged 8-slot
   window? Merging is a real design question, not a rename — the two tracks have
   independent windows and independent cooldowns, so a merged window has to pick what a
   cell means.
 - ~~**(b): what happens to the Bubble Match track toggle**~~ — moot: it was deleted
-  2026-10-03 (the hub pins Recognition; Reading launches from the Reading Center).
+  2026-10-03 (the hub pins Recognition; reading is played as reading-flp breaks).

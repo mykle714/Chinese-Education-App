@@ -13,17 +13,11 @@ interface UseWordSearchLauncherArgs {
     /** The registry entry, or undefined when the surface gated the game out — the hook
      *  still runs (hooks may not be conditional) and returns `card: null`. */
     game: GameDef | undefined;
-    /** The mode this surface launches AND the save slot it owns (hub = Pinyin, Reading
-     *  Center = No Pinyin; see gameStateStorage). */
+    /** The mode the card launches AND the save slot it owns (the hub's: Pinyin; see
+     *  gameStateStorage). */
     mode: WordSearchMode;
     /** BEM block for the card, resume tile and dialog classes. */
     classPrefix: string;
-    /** Where a NEW game goes — the hub appends the selected collection's params.
-     *  Default: the game's bare route. A RESUME never takes these: the parked board was
-     *  built from whatever set was selected when it started, and nothing refetches. */
-    newGamePath?: string;
-    /** Extra nav state on every launch (the Reading Center's `exitTo`). */
-    launchState?: Record<string, unknown>;
 }
 
 interface WordSearchLauncher {
@@ -34,9 +28,8 @@ interface WordSearchLauncher {
 }
 
 /**
- * Everything a surface needs to launch Word Search from its own save slot — the ONE
- * implementation shared by the Games hub (`WordSearchHubItem`, Pinyin) and the Reading
- * Center carousel (`ReadingGamesCarousel`, No Pinyin), which used to each hand-roll it.
+ * Everything the Games hub (`WordSearchHubItem`, Pinyin) needs to launch Word Search
+ * from its save slot.
  *
  * Behavior (docs/WORD_SEARCH_GAME.md §3 / §5b):
  *  - The play button ALWAYS deals a fresh board. With a board parked in this slot it
@@ -44,13 +37,13 @@ interface WordSearchLauncher {
  *    confirm the slot is cleared before navigating.
  *  - The resume tile restores the parked board — no warning, nothing is lost.
  *  - The resume tile's ✕ → Delete clears the slot; the tile unmounts with it.
- * The other surface's slot is never touched.
+ * Another mode's slot is never touched.
  *
  * Layer: feature hook (src/games/word-search) — owns the save-slot state and navigation;
  * the card itself is presentational (`buildWordSearchCard` → `GameCard`).
  */
 export function useWordSearchLauncher({
-    game, mode, classPrefix, newGamePath, launchState,
+    game, mode, classPrefix,
 }: UseWordSearchLauncherArgs): WordSearchLauncher {
     const { user } = useAuth();
     const userId = user?.id;
@@ -75,8 +68,8 @@ export function useWordSearchLauncher({
     // resume:false → WordSearchPage always fetches a new board.
     const startNewGame = useCallback(() => {
         if (!route) return;
-        slideNavigate(newGamePath ?? route, { state: { ...launchState, mode, resume: false } });
-    }, [route, newGamePath, launchState, mode, slideNavigate]);
+        slideNavigate(route, { state: { mode, resume: false } });
+    }, [route, mode, slideNavigate]);
 
     const confirmNewGame = useCallback(() => {
         setConfirming(false);
@@ -92,7 +85,7 @@ export function useWordSearchLauncher({
             saved,
             classPrefix,
             onResume: () => {
-                if (saved) slideNavigate(game.route, { state: { ...launchState, mode: saved.mode, resume: true } });
+                if (saved && route) slideNavigate(route, { state: { mode: saved.mode, resume: true } });
             },
             onErase: clearSlot,
             onPlay: () => {
@@ -100,7 +93,7 @@ export function useWordSearchLauncher({
                 else startNewGame();
             },
         });
-    }, [game, totalWins, saved, classPrefix, launchState, clearSlot, startNewGame, slideNavigate]);
+    }, [game, totalWins, saved, classPrefix, route, clearSlot, startNewGame, slideNavigate]);
 
     const confirmDialog = (
         <NewGameConfirmDialog

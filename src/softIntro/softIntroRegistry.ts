@@ -27,24 +27,33 @@ export interface SoftIntroSpec {
 
 export const SOFT_INTROS = {
     /**
-     * The fdp hand's big numeral (StudyHand, full variant). Intro: a small "cards" under
-     * it, so the learner learns the number is a card count. Graduated: the design's ink
-     * hairline instead (`.bignum:after`), no word.
-     */
-    handCardCount: {
-        minVisits: 15,
-        minDays: 7,
-        description: 'fdp hand numeral: "cards" label (intro) → ink hairline (graduated)',
-    },
-    /**
-     * scp's level pill ("Auto" / "HSK 3", SortCardsPage toolbar). Intro: a small
+     * ancp's level pill ("Auto" / "HSK 3", AddNewCardsPage toolbar). Intro: a small
      * "Difficulty" caption under it, so the learner learns what the pill picks. Graduated:
      * the pill alone, as the Tower Tier 2 design draws it.
      */
     sortDifficultyCaption: {
         minVisits: 7,
         minDays: 7,
-        description: 'scp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
+        description: 'ancp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
+    },
+    /**
+     * td main world's mini sort platform (DeckTowerPlatform `sortBin`). Intro: "SORT /
+     * CARDS" printed into the floor under it, so the learner learns the white slab is the
+     * Add New Cards button. Graduated: the slab alone.
+     */
+    towerSortLabel: {
+        minVisits: 70,
+        minDays: 14,
+        description: 'td sort platform: "Add new cards" floor print under it (intro) → slab alone (graduated)',
+    },
+    /**
+     * td writing world's notebook paper stack (DeckTowerPlatform `notebook`). Intro:
+     * "WRITING / NOTEBOOK" printed into the floor under it. Graduated: the stack alone.
+     */
+    towerNotebookLabel: {
+        minVisits: 70,
+        minDays: 14,
+        description: 'td notebook stack: "Writing notebook" floor print under it (intro) → stack alone (graduated)',
     },
 } as const satisfies Record<string, SoftIntroSpec>;
 

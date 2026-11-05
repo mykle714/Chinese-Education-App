@@ -2533,7 +2533,7 @@ keyboard comes up on its own, with the bar perched on it.
 **A field carrying `data-beginner-keyboard-default="os"` opens on `ABC` (the OS
 keyboard, switch bar perched on it) regardless of the session choice.** `"ours"` and `"pinyin"` (§ 6z-10) are
 accepted for symmetry. The only user today is the dictionary search box. (It no longer auto-focuses on
-visit — removed 2026-10-12; the learner taps it to raise a keyboard.)
+visit — removed 2026-10-12; the learner taps it, or double-taps the footer's Dictionary tab, to raise a keyboard.)
 
 | question | decision (confirmed 2026-10-10) |
 |---|---|
@@ -2552,11 +2552,43 @@ The provider's "close on pathname change" effect runs in the same commit that mo
 the page, after an `autoFocus` focus — it would tear down the bar the focus just
 raised. iOS Safari may not raise the OS keyboard for a focus outside a user gesture.
 (The dictionary did this from 2026-10-10 until its auto-focus was removed 2026-10-12.)
+Today the dictionary focuses its field only on a double tap of the footer's Dictionary tab
+(docs/NAVIGATION.md); a request made before the page mounts follows this one-frame rule.
 
 Code: `eligibility.ts` → `DEFAULT_SOURCE_ATTRIBUTE`, `defaultSourceOf`;
 `BeginnerKeyboardProvider` → `fieldSource`, `effectiveSource`, `changeSource`;
 `SearchField` → `inputAttributes`; `DictionaryPage` (the attribute on its
 `SearchField`).
+
+## 6z-3b. BUILT 2026-11-04 — a field may be locked to one keyboard
+
+**A field carrying `data-beginner-keyboard-lock="ours"` can only be typed on the
+handwriting keyboard.** It opens on `写` whatever the session or field default says,
+and the switch bar drops its `写 · ā · ABC` toggle entirely (a toggle with one usable
+segment would be a control that does nothing), keeping only the close chevron.
+`"pinyin"` and `"os"` are accepted for symmetry; nothing uses them.
+
+The one user is Memory Map's **word finder** (docs/MEMORY_MAP_GAME.md § 3.7): it dims the
+map words that do not contain what the learner wrote, which is fair in a reading game only
+because building characters from components proves the learner can read them. Typed pinyin
+would make it a lookup that answers the prompt. That field also sets `inputMode="none"`
+itself so the OS keyboard never flashes up before the host suppresses it.
+
+| question | decision (2026-11-04) |
+|---|---|
+| precedence | **lock > field default (§ 6z-3a) > session choice (§ 6z-3)** |
+| does it touch the session choice? | **no** — the next ordinary field opens on whatever the learner last picked |
+| inherited? | **no** — read off the field itself, like the default attribute |
+| re-seeded when? | with the default: only when the field changes identity |
+
+⚠️ **It locks the on-screen keyboard only.** A desktop learner with a physical keyboard
+(and an OS pinyin IME) can still type into the field; there is no reliable DOM-level way
+to tell an IME's insertion from ours.
+
+Code: `eligibility.ts` → `LOCKED_SOURCE_ATTRIBUTE`, `lockedSourceOf`;
+`BeginnerKeyboardProvider` → `fieldLock`, `effectiveSource`, `changeSource`;
+`BeginnerKeyboardHost` → `locked`; `KeyboardSwitchBar` → `showToggle`;
+`src/games/memory-map/MemoryMapPrompt.tsx` (the attribute on the finder's input).
 
 ## 6z-4. BUILT 2026-09-24 — hint bubbles over glyph chips
 
@@ -3075,7 +3107,7 @@ keyboard, pinyin mode*.
 ## 6z-11. BUILT 2026-10-29 — Tier 2 time-of-day colours
 
 Over a **Tier 2 page** (today the Dictionary and its card page) the keyboard takes that
-page's time-of-day look: the page's tinted ground at dawn / day / sunset, and slate keys
+page's time-of-day look: the page's pale-sky ground by day, and slate keys
 with light ink at night. Everywhere else it is unchanged (owner's choice: "only on Tier 2
 pages").
 

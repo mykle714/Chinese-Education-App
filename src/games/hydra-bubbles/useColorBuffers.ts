@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
 import { fetchGamePool } from "../../api/gamePool";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import type { VocabEntry } from "../../types";
 import { HYDRA_COLORS, type HydraCard, type HydraColor } from "./types";
 import {
@@ -77,17 +76,11 @@ export interface ColorBuffers {
 }
 
 /**
- * @param collection     the launch deck/collection, or null for an ordinary run.
- *                       Non-null makes the run RESTRICTED: exactly the set the learner
- *                       chose — no lending, and no cooldown either (§ 6.3).
  * @param challengeCards   a Study Challenge round's contested words (§ 7.5), which
  *                         ride the BLOOM slot ahead of that buffer's own stock.
  *                         Null/empty for an ordinary run.
  */
-export function useColorBuffers(
-    collection: CollectionRef | null,
-    challengeCards: VocabEntry[] | null = null
-): ColorBuffers {
+export function useColorBuffers(challengeCards: VocabEntry[] | null = null): ColorBuffers {
     // All buffer state lives in refs. It is read and written from inside the rAF /
     // pointer path, where a re-render per card would be both pointless (nothing
     // renders a buffer) and harmful (it would churn the stage mid-drag).
@@ -179,17 +172,12 @@ export function useColorBuffers(
             need,
             exclude,
             avoid,
-            // A restricted run plays the set the learner chose, so it must not ask for
-            // a lend tier at all — the server refuses to lend under a collection filter
-            // anyway (§ 6.3), and sending the param would imply otherwise to anyone
-            // reading the request log.
-            lendLevelOffset: collection ? undefined : TIER_OFFSET_BY_COLOR[color],
-            collection,
+            // Anything the server lends is drawn at this color's difficulty tier.
+            lendLevelOffset: TIER_OFFSET_BY_COLOR[color],
         });
         return data.cards;
         // apiGet reads the token at call time, so this callback's identity is
-        // stable across a silent token refresh (CLAUDE.md ⛔ rule). `collection`
-        // comes from this page's own URL and cannot change without a remount.
+        // stable across a silent token refresh (CLAUDE.md ⛔ rule).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

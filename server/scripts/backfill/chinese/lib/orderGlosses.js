@@ -20,6 +20,8 @@
  *   - scripts/backfill/chinese/backfill-cluster-definitions.js (per-cluster)
  */
 
+import { askShortGloss } from '../../shared/lib/senseShortGloss.js';
+
 // The card's headline slot wants a punchy gloss. If a leading definition
 // exceeds this many characters, callers synthesize a short replacement gloss to
 // prepend (see generateShortGloss).
@@ -306,34 +308,25 @@ export function createGlossOrderer({
     return { error: `pass2 failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
   }
 
-  async function callShortGloss(word, definitions, model) {
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: 256,
-      system: cachedSystem(`${SHORT_GLOSS_SYSTEM}\n\n${SHORT_GLOSS_INSTRUCTIONS}`),
-      messages: [{ role: 'user', content: shortGlossUser(word, definitions) }],
+  // Word-level short gloss (step 4). The prompt is unchanged; the attempt loop,
+  // parsing and validation are the shared ones in shared/lib/senseShortGloss.js
+  // (`askShortGloss`) — the same loop the clusterers' per-sense step uses. It replaced
+  // a two-attempt Sonnet → Opus retry that re-sent the identical prompt, so a model
+  // that miscounted to 21 characters got the same 21-character answer back on both
+  // attempts. The 2026-11-03 audit traced 35 discoverable zh rows still headlining a
+  // 21–200-char gloss to exactly that failure. Attempts now carry the previous answer
+  // and its exact overrun. Validation is also stricter than the old check (rejects
+  // any "()"/"[]" and ellipsis, not only a wholly parenthetical gloss) — the prompt
+  // already forbade both, so this enforces the stated contract rather than changing it.
+  const shortGlossSystem = cachedSystem(`${SHORT_GLOSS_SYSTEM}\n\n${SHORT_GLOSS_INSTRUCTIONS}`);
+  function generateShortGloss(word, definitions) {
+    return askShortGloss({
+      anthropic,
+      system: shortGlossSystem,
+      userContent: shortGlossUser(word, definitions),
+      models: [pass1Model, pass1Model, pass1Model, retryModel],
     });
-    const raw = response.content[0].text;
-    const objMatch = raw.match(/\{[\s\S]*\}/);
-    if (!objMatch) return { error: 'no object in response', raw };
-    let parsed;
-    try { parsed = JSON.parse(objMatch[0]); }
-    catch (e) { return { error: `JSON parse: ${e.message}`, raw }; }
-    const gloss = typeof parsed.gloss === 'string' ? parsed.gloss.trim() : '';
-    if (!gloss) return { error: 'empty gloss' };
-    if (gloss.length > MAX_FIRST_GLOSS_LEN) return { error: `gloss too long (${gloss.length} chars)` };
-    if (isExclusivelyParenthetical(gloss)) return { error: 'gloss is parenthetical-only' };
-    return { gloss };
   }
 
-  async function generateShortGloss(word, definitions) {
-    const first = await callShortGloss(word, definitions, pass1Model);
-    if (!first.error) return { ...first, model: pass1Model };
-    // Validation failed on Sonnet — retry with Opus.
-    const retry = await callShortGloss(word, definitions, retryModel);
-    if (!retry.error) return { ...retry, model: retryModel, retried: true, firstError: first.error };
-    return { error: `short-gloss failed both models (sonnet: ${first.error}, opus: ${retry.error})` };
-  }
-
-  return { callPass1, pass1Sort, callPass2, pass2Critique, callShortGloss, generateShortGloss };
+  return { callPass1, pass1Sort, callPass2, pass2Critique, generateShortGloss };
 }

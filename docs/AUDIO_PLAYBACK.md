@@ -20,7 +20,7 @@ Two ways in, one setting:
 - **`/settings` → Narration** — three `OptionRow`s that EXPLAIN the states (their
   subtitles have room to say "pauses music" and "follows the silent switch").
 - **`AudioModeChip`** — one header chip that CHANGES them mid-study: each tap
-  advances off → passthrough → media → off. Rendered on the flp, scp, Bubble Match,
+  advances off → passthrough → media → off. Rendered on the flp, ancp, Bubble Match,
   Hydra Bubbles, Match Speed, Word Search, Bucket Drop and Memory Map headers.
 
 Both go through `useTTSSettings`, so they cannot disagree, and both take their order
@@ -77,23 +77,26 @@ persisted contracts and do not move:
   (`DEFAULT_SETTINGS.route`), and "passthrough" names the iOS audio-session
   mechanism — accurate, but nothing a learner can act on. The subtitle explains.
 
-**Skin: mid blue.** The two audible states (`default`, `media`) render as a
-`COLORS.bluM` fill (`RAMP.blu.mid`) with ink text and glyph, and **no outline**. That is a
-deliberate exception to the buttons-and-cards `--line2` outline rule (design call,
-2026-10-06). `mute`
-stays the grey header-chip pill. The chip passes `tone="blu"` to `HeaderCycleChip`, and
-every other header toggle keeps the shared ink inversion. On a game ground,
-`gameSurfaceSx` re-inks active header chips but deliberately skips the blu tone
-(`.page-header__toggle--blu`), so the chip looks the same on every game surface.
-**One exception: the `outlined` skin**, for scene grounds — no fill, the glyph and label
-in the passed `ink` in every state (12 px type, 15 px glyph), bundled by a thin pill outline
-in that same ink (`AudioModeChip` → `OUTLINED_SX`) and boxed to the longest label, so it does
-not draw the eye off the card. Used by the Deck Tower study header (white on the sky —
-docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the scp (its ground look's
-`ink` — docs/SORT_CARDS_REQUIREMENTS.md).
-*Code:* `src/components/AudioModeChip.tsx` (`outlined`, `tone`, `ink`, `sx`, `fitLabels`, `iconPx`),
-`src/components/PageHeader.tsx` → `HeaderCycleChip` (`tone`, `ink`, `sx`, `fitLabels`, `iconPx`), `src/games/shared/gameSurface.ts` → `gameSurfaceSx`,
-`src/features/flashcards/FlashcardsLearnPage/TowerStudyHeader.tsx`.
+**Skin: outlined, on every surface (since 2026-11-04).** No fill in any state: the glyph
+and label in `ink`, bundled by a thin 1px pill outline in that same ink
+(`pageHeaderSizing.ts` → `outlinedChipSx`, also the skin of `PageHeader` → `HeaderActionChip`),
+12 px type / 15 px glyph (`OUTLINED_CHIP_TEXT_PX` / `OUTLINED_CHIP_ICON_PX`), the label in
+975 Maru SC (`FONTS.cjk`, the app's Chinese face, whose slices cover Latin) at regular 400 —
+the face's only cut, pinned so a bold ancestor (the ancp header layer) cannot make the browser
+synthesise bold. With no fill to light
+up, the label alone carries the state. `ink` is the only per-surface choice: it defaults to
+`COLORS.iconColor` (--ink2, the header's icon ink) on paper; the Deck Tower study header passes
+white for the sky (docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the ancp
+its ground look's `ink` (docs/SORT_CARDS_REQUIREMENTS.md). On a game's accent ground,
+`gameSurfaceSx` skips the bare chip in its filled-toggle rules (`:not(.page-header__toggle--bare)`)
+and re-inks its glyph, label and outline to full ink, like the header's other icons.
+History: until 2026-11-04 every surface but the tower and the ancp drew a filled chip in the
+mono face — grey when muted, mid blue (`COLORS.bluM`, `tone="blu"`) when audible. Instrument
+Sans was tried for the label on 2026-11-04 and reverted to 975 Maru the same day.
+*Code:* `src/components/AudioModeChip.tsx` (`ink`, `sx`),
+`src/components/PageHeader.tsx` → `HeaderCycleChip` (`tone="bare"`, `fitLabels`, `iconPx`),
+`src/components/pageHeaderSizing.ts` → `outlinedChipSx`,
+`src/games/shared/gameSurface.ts` → `gameSurfaceSx`.
 
 ⚠️ **Verify every glyph name against Material Symbols.** `multitrack_audio` was the
 first choice for `media`; it is a Material *Icons* name absent from the Symbols face,
@@ -107,21 +110,13 @@ characters on the flp and nothing else. The labels were once shortened to "loud"
 word the learner also sees on `/settings`, never an abbreviation invented for the
 chip.**
 
-The chip is **fixed-width**, sized to its own longest label (`default`, 7
-characters at 8px, so 5.6ch, plus a fixed allowance for the glyph) via `HeaderCycleChip`'s `widthCh` and measured in `ch` against the mono
-face, plus `CYCLE_CHIP_SLACK_CH` (**4ch**) of breathing room — `widthCh` alone is the
-label's exact advance width, which both clips the last glyph to subpixel rounding and
-reads as cramped inside the chip's radius. It therefore does not resize as the user taps
-through, and the controls to its left hold still under the thumb.
-**A label longer than the comfortable width renders one size down, and only that
-label does.** `default` is seven characters and would otherwise size the chip in all
-three states, including the two the learner is looking at most of the time. Rather
-than abbreviate it — which the label rule above forbids — `cycleChipFontPx`
-(`src/components/cycleChipSizing.ts`) shrinks just that word far enough to fit, down
-to a floor of **8px**, past which the chip widens instead. `mute` and `media` stay at
-the full 10px. `cycleChipWidthCh` measures the table by the same rule, so the width
-asked for is what the labels actually occupy; callers pass their whole label table to
-it rather than computing a character maximum themselves.
+The chip **does not resize as it cycles**: `HeaderCycleChip`'s `fitLabels` stacks every
+label (`MODE_LABELS`) in one grid cell and shows only the current one, so the box is always
+the longest label (`default`) in the chip's real face, and the controls to its left hold
+still under the thumb. Adding or renaming a state in `MODE_CHIP` resizes it automatically.
+(The older `widthCh` sizing — `ch` of the mono face plus `CYCLE_CHIP_SLACK_CH`, with
+`cycleChipFontPx` shrinking `default` a size down — still exists in `HeaderCycleChip` but no
+longer applies to this chip: its face is not mono, so `ch` would measure the wrong thing.)
 
 The **icon is pinned to the chip's left edge** and the label centres in the space
 that is left, rather than the pair centring together. The icon is the chip's anchor —
@@ -130,9 +125,6 @@ that slides as the label changes length is not one. It also gives the label a
 constant-size box in every state, which is what keeps a shrunken word optically
 centred. (The immersive-world volume chip was the other control laid out this way;
 it was removed on 2026-09-23 — [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 4c.)
-
-`MODE_LABEL_WIDTH_CH` derives the count from `MODE_CHIP`, so adding or renaming a
-state cannot silently bring the jump back.
 
 The `ariaLabel` carries the full meaning, since a screen reader gets neither a glyph
 nor any hint that the control cycles.
@@ -145,7 +137,7 @@ button is.
 Every automatic-narration effect is gated on `autoplay`, which made putting
 `tts.autoplay` in such an effect's **dep list** look harmless — but it re-runs the
 effect on the off → on edge, so switching to `default` (or `media`) narrated the card
-already on screen, and on the scp replayed the entire on-deck pack. Both effects now
+already on screen, and on the ancp replayed the entire on-deck pack. Both effects now
 key on **content identity only** (`currentEntry?.id`, `currentPack?.packKey`).
 
 The opposite direction still has to work — turning audio off must stop whatever is
@@ -162,7 +154,7 @@ doing its job.
 
 *Code:* `src/hooks/useTTS.ts` → the `wasAutoplayOnRef` effect;
 `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the
-`chineseVisible` narration effect; `src/features/discover/SortCardsPage.tsx` → the
+`chineseVisible` narration effect; `src/features/discover/AddNewCardsPage.tsx` → the
 pack autoplay effect.
 
 `HeaderCycleChip` (`src/components/PageHeader.tsx`) is its skin: the same `.lhd .tg`
@@ -328,10 +320,10 @@ whole contract:
 | `autoSpeak(entry)` / `autoSpeakSentence(text, pinyin)` | the app decided to speak | **yes** — no-op when autoplay is off |
 
 The gate lives inside the hook, so a call site never re-checks the setting.
-Automatic sites today: the flp card-flip narration, the scp on-deck pack
+Automatic sites today: the flp card-flip narration, the ancp on-deck pack
 sequence, Word Search's find/replay plays, Memory Map's answer feedback and per-prompt word
-(`MemoryMapPage` — the prompt waits for the answer narration to end rather than cancelling it), Speed
-Reading's per-round clue (`SpeedReadingPage` → `autoSpeak`, distinct from the
+(`MemoryMapStage` — the prompt waits for the answer narration to end rather than cancelling it), Speed
+Reading's per-round clue (`SpeedReadingStage` → `autoSpeak`, distinct from the
 manual `speak` its speaker button uses), and the bubble games' reveal. **A
 game-tile tap counts as automatic**, not manual — only a dedicated speaker button
 breaks the silence of `off`.
@@ -357,7 +349,7 @@ when **this** instance has an utterance in flight (`activeProviderRef` is set fo
 whole of `speakText` — fetch and playback — and cleared in its `finally`). A page that
 leaves mid-word still stops its own word; a component that never spoke stops nothing.
 
-It used to cancel unconditionally, and the scp lost the **first word of its first
+It used to cancel unconditionally, and the ancp lost the **first word of its first
 pack** in dev (2026-09-28): the header `AudioModeChip` mounts in the same commit the
 pack lands in, StrictMode's dev remount ran the chip's cleanup *after* the page's
 autoplay effect had started word one, and the cancel bumped the provider generation
@@ -369,10 +361,10 @@ entirely; the ownership check is what protects every other pairing.
 
 ### A manual press ends an autoplay sequence
 
-A multi-word autoplay run (the scp pack) awaits each word in turn. A speaker press
+A multi-word autoplay run (the ancp pack) awaits each word in turn. A speaker press
 mid-run cancels the current word, whose promise resolves — and the loop's *next*
 `autoSpeakSentence` would then cancel the word the learner asked for. So every manual
-narration on the scp (card speaker buttons and the eip's) first ends the run; the
+narration on the ancp (card speaker buttons and the eip's) first ends the run; the
 rest of the pack is not resumed afterwards.
 
 The run leaves a **600 ms gap** between words (`AUTOPLAY_GAP_MS`), so the pack is
@@ -381,7 +373,7 @@ so a press that lands during the silence still ends the run before the next word
 
 ### A word's promise settles when its sound ends, not on a wall-clock guess
 
-A sequenced caller (the scp gap above) is only as good as `speak()`'s promise, and
+A sequenced caller (the ancp gap above) is only as good as `speak()`'s promise, and
 `CloudTTSProvider` settles that promise with a **watchdog** as well as the
 end-of-clip event, because the end event is not guaranteed to fire (backgrounding, an
 interrupted context). The watchdog is timed from when **sound starts**, not from when
@@ -400,7 +392,7 @@ was the "second word plays too soon after a slow first word" bug.
 
 *Code:* `src/services/tts/CloudTTSProvider.ts` → `playViaElement`, `playViaWebAudio`.
 
-*Code:* `src/features/discover/SortCardsPage.tsx` → `packAutoplayRunRef`,
+*Code:* `src/features/discover/AddNewCardsPage.tsx` → `packAutoplayRunRef`,
 `AUTOPLAY_GAP_MS`, `stopPackAutoplay`, `handlePlayCardAudio`, `handleEipSpeak`, `handleEipSpeakSentence`,
 and the pack autoplay effect.
 
@@ -443,8 +435,8 @@ switch never has to hunt for a fresh gesture.
 > ⚠️ Call sites that begin playback only *after* an await (a game's first
 > drag-triggered narration) must call `tts.unlockAudio()` synchronously from an
 > earlier guaranteed gesture — a start or level button. There must be no `await`
-> between the gesture and that call. Existing examples: `SpeedReadingPage`,
-> `MemoryMapPage`, `BubbleMatchPage`, `HydraBubblesPage`.
+> between the gesture and that call. Existing examples: `SpeedReadingStage`,
+> `MemoryMapStage`, `BubbleMatchPage`, `HydraBubblesPage`.
 
 ### ⛔ Unlock must never latch
 
@@ -472,7 +464,7 @@ user tapped first, typically long before anything went wrong. After one
 interruption the context stayed suspended, every `speak()` returned silently from
 `playViaWebAudio`'s not-running guard, and **the only cure was reloading the app**.
 Game blips kept working throughout, which is the diagnostic signature. A
-redundant second latch (`audioUnlockedRef` in `SortCardsPage`) was removed in the
+redundant second latch (`audioUnlockedRef` in `AddNewCardsPage`) was removed in the
 same pass.
 
 Two supporting details:
@@ -680,7 +672,7 @@ Three separate flags collapsed into `autoplay`:
 |---|---|---|
 | `TTSSettings.enabled` (master mute) | `tts.settings` | deleted; `false` → `autoplay: false` |
 | `FlashcardLearnSettings.autoplayChinese` (flp + Bubble Match + Hydra + Match Speed) | `flashcard.learn-settings` | deleted; `false` → `autoplay: false` |
-| `DiscoverSettings.autoplay` (scp) | `discover.settings` | hook **deleted** (it held nothing else); `false` → `autoplay: false` |
+| `DiscoverSettings.autoplay` (ancp) | `discover.settings` | hook **deleted** (it held nothing else); `false` → `autoplay: false` |
 
 Any explicit `false` migrates to `autoplay: false` — the closest available
 meaning. Note it is not identical for the old master switch, whose `false` also
@@ -694,7 +686,7 @@ parsed object).
 **The quick toggles survived, became three-state, and consolidated into the header.** Every surface
 that offered an autoplay control still offers one, now reading and writing the
 unified flag — and all of them are in the **page header** as an `autoplay` chip:
-flp (`FlashcardsLearnHeader`), scp (`SortCardsPage` header actions), Bubble Match
+flp (`FlashcardsLearnHeader`), ancp (`AddNewCardsPage` header actions), Bubble Match
 and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
 Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
 blue matches and review rungs, so it needed a mid-play mute like the rest) and
@@ -716,8 +708,7 @@ were deleted on 2026-08-28: audio moved to the header chip, tone coloring moved 
 renders, not a study control belonging to one page), and the progress-category chip
 on the card back was removed outright along with its `showProgressCategory` setting
 and `CardFace`'s `CategoryChip` / `cornerBadge` slot. `useFlashcardLearnSettings` now
-holds two booleans and has no sheet of its own; `DecksPanelBody` is the only non-eip
-`SheetPanel` body left.
+holds two booleans and has no sheet of its own.
 
 `MatchSpeedSettingsDialog` followed it on the same day. Its rows were the same three
 settings, and once audio became a header chip and tone coloring moved to `/settings`
@@ -747,7 +738,7 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
   `VOICE_SAMPLE` and the voice section (§ 6)
 - `server/services/OnDeckVocabService.ts` — `prewarmAudio`, default-voice only (§ 6)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
-- `src/features/discover/SortCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
+- `src/features/discover/AddNewCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
   `stopPackAutoplay` (§ 4)
 - `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites

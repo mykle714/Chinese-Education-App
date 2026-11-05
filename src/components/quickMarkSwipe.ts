@@ -10,15 +10,13 @@ import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../utils/categoryColors";
 
 // The server bucket each direction commits. The values ARE `StarterPacksService.sortCard`
 // bucket ids: right = "I already know it" (8/8 core history → Mastered), left = "Add to
-// Learning" (empty history → Unfamiliar). Right = known mirrors the Reading Center's
-// right = "I could read it".
+// Learning" (empty history → Unfamiliar).
 export const QUICK_MARK_BUCKET: Record<SwipeDirection, "library" | "already-learned"> = {
     left: "library",
     right: "already-learned",
 };
 
-// Each direction is painted with the colour of the COLLECTION the card joins — the same
-// surface the fdp draws that collection's card with: Learning gold (`LEARNING_COLORS`)
+// Each direction is painted with the colour of the COLLECTION the card joins: Learning gold (`LEARNING_COLORS`)
 // and the core bar's Mastered blue (`MASTERY_BAR_COLORS.core`). The card's own fill
 // shifts to it as it is dragged (no overlay).
 export const QUICK_MARK_COLOR: Record<SwipeDirection, string> = {

@@ -12,8 +12,7 @@ import FocusDialog from "./FocusDialog";
  * today's cards to play it (docs/FOCUS_MODE.md § 5).
  *
  * Wraps every game route (src/routes/registry.ts), so every launch surface — the Games
- * hub's tiles and level cards, the Word Search hub item, the Reading and Writing Centers'
- * carousels — is covered by one check rather than one per button. On a launch it reads
+ * hub's tiles and level cards, the Word Search hub item — is covered by one check rather than one per button. On a launch it reads
  * `GET /api/focus` and, if blocked, shows the "not enough focus cards" popup over a blank
  * page and returns to the menu when it is dismissed. The game page is not mounted until
  * the check passes, so it never fetches a pool it cannot play.
@@ -34,8 +33,10 @@ function launchWorlds(game: GameDef, showPinyin: boolean | undefined): MasteryWo
     if (game.modes && game.modes.length > 0) {
         return [...new Set(game.modes.map((m) => worldForMarkType(m.markType)))];
     }
-    // A pinyin-following game launched with pinyin hidden (the Reading Center's Bubble
-    // Match) marks its no-pinyin track.
+    // A pinyin-following game launched with pinyin hidden (`state.showPinyin: false`)
+    // marks its no-pinyin track. No menu launches one that way today — the Games hub
+    // passes `true`; the Reading Center's no-pinyin Bubble Match was deleted 2026-11-04 —
+    // but the branch keeps the guard honest for any future no-pinyin launcher.
     const markType = showPinyin === false && game.noPinyinMarkType ? game.noPinyinMarkType : game.markType;
     return markType ? [worldForMarkType(markType)] : [];
 }

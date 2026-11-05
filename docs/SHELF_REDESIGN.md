@@ -37,7 +37,7 @@ supersedes its single artboard in the file above:
 |---|---|---|
 | `Arena Flow - Shelf System.html` | all of `/arena`, 15 artboards + a state map | entry **9a** (2026-09-21) |
 | `Challenge Flow - Shelf System.html` | View Challenge | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) |
-| `Sort Flow - Shelf System.html` | the sort-cards page | entry 3 |
+| `Sort Flow - Shelf System.html` | the add-new-cards page | entry 3 |
 | `Extra Info Panel - Shelf System.html` | the eip | entries 19–25 |
 | `Flashcard Learn Page - Shelf System.html` | the flp | entries 19–25 |
 
@@ -257,7 +257,7 @@ real ramp entry to build from.
   twelve material plates — was withdrawn on the user's ruling rather than minting ~30
   hexes outside the ramp. Every rung is the same neutral grey pending a decision. See
   entry 9 and DEFERRED_WORK.md; this is the **largest open visual gap** in the redesign.
-- **Sort Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
+- **Add New Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
   23% may now be too faint even with the ring. Flagged in the file; needs a device.
 - **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
   mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
@@ -369,7 +369,7 @@ removes the ink tier and gives each hue four FILL tiers:
 
 | Tier | Token (red) | `RAMP` field | Used for (caption wording) |
 |---|---|---|---|
-| Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Reading/Writing Centers, the fanned Study Mix cards, Learning, the Mastered section, community previews, theme swatches, Match Speed's picked card |
+| Surface | `COLORS.red` | `surface` | large fills — cards, sheets, Learning, the Mastered section, community previews, theme swatches, Match Speed's picked card |
 | Mid | `COLORS.redM` (the design's `--redK` aliases it) | `mid` | every bento tile, shelf spines, rows, band pills, avatars, bubbles, a game's whole-screen ground, arena zone dividers |
 | Mark | `COLORS.redMk` | `mark` | "fluorescent" — the dictionary vowel keypad, mastery cells, mini-card mastery bars |
 
@@ -537,9 +537,8 @@ and the decisions taken are recorded at the end of this sub-entry.
 - **Clearance re-derived, names kept:** `HEIGHT` 64 → **74**, `INSET` 16 → **0**,
   `EXTRA_GAP` 12 → **16**, so `CLEARANCE` 108 → **90** — which is exactly the
   design's `.clear` spacer. The ~8 downstream call sites
-  (`FlashcardsDecksPage`'s `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD` — the
-  former is gone since the sets sheet became modal, see DECKS_FEATURE.md,
-  `SortCardsPage`, `DecksPanelBody`, `CompareWorkspace`) all compose
+  (at the time: the decks page's `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD`,
+  `AddNewCardsPage`, the decks panel body, `CompareWorkspace`) all compose
   the named constants, so they re-derived themselves with no edit.
 - `src/components/FooterPresenter.tsx` — `HIDDEN_OFFSET` is now just
   `FOOTER_HEIGHT`. The old `INSET + HEIGHT + 16` added a pill inset and a
@@ -555,21 +554,20 @@ and the decisions taken are recorded at the end of this sub-entry.
 - Docs swept for "floating pill" wording: `MOBILE_TAB_SCREEN_LAYOUT.md` (footer
   section + geometry table rewritten), `NAVIGATION.md` (icon column dropped, tab
   order corrected), `UX_AND_NAVIGATION.md`, `LEAF_NODE_PAGES.md`,
-  `BENTO_SYSTEM.md`, `DECKS_FEATURE.md`, `QUICK_MARK.md`,
+  `BENTO_SYSTEM.md`, the decks doc (since deleted), `QUICK_MARK.md`,
   `SORT_CARDS_REQUIREMENTS.md`, `WORD_COMPARE_FEATURE.md`, `ARCHITECTURE_REVIEW.md`.
 
 **Decisions taken, and what is left**
 - **`FLOATING_FOOTER_*` renamed to `FOOTER_*`**, and `FLOATING_FOOTER_INSET` was
   **deleted** rather than renamed — a permanently-zero constant named "gap from the
   edges" is a trap for the next reader, not a tuning knob. `SHEET_CLOSED_HEIGHT` in
-  `FlashcardsDecksPage` was the only expression that composed it. The family is now
+  the (since deleted) decks page was the only expression that composed it. The family is now
   `FOOTER_HEIGHT` (74) / `FOOTER_EXTRA_GAP` (16) / `FOOTER_CLEARANCE` (90).
 - **Page tints retired, because the bar is always paper.** The bar is rendered at
   FRAME level and painted `--paper`; the design gives `.fbar` no other ground. So a
   page with a distinctly different `surfaceColor` gets a colour step across the bottom
-  74px. `/decks` and the Mastery Centers passed the grey `COLORS.header` and did
-  exactly that — both now use the default paper ground, which is also what artboard 2
-  shows. The **inversion survives**: `InfoSheetContainer` moved from
+  74px. The decks page and the Mastery Centers (both since deleted) passed the grey
+  `COLORS.header` and did exactly that, and moved to the default paper ground. The **inversion survives**: `InfoSheetContainer` moved from
   `theme.palette.flashcard.background` (the same value as the page behind it, so the
   sheet read as a sheet only because of its shadow) to `COLORS.white`, matching the
   design's `.sheet` / `.eic` / `.pnl`. The two card-detail pages kept
@@ -635,11 +633,10 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   **byte-identical 14-line `toggleSx` helper**. All three are gone; the chip skin
   lives once in `HeaderToggleChip`. Those three plus `MatchSpeedHeader` also dropped
   their `@mui/icons-material` imports for `<Icon>` names (D3).
-- The Settings gear is the app's one `outlined` `HeaderIconButton` — it sits on bare
-  paper beside the outlined avatar, which is exactly the case the artboard boxes. It
-  was drawn in the Account header; since Account became a sheet (2026-10-09) it lives
-  in the Home header, left of `HeaderAvatarButton` (`src/pages/HomePage.tsx`, which since
-  2026-10-10 passes it into the fdp's header as `headerTrailingActions`).
+- `HeaderIconButton` `outlined` was first drawn for the Settings gear beside the outlined
+  avatar (the case the artboard boxes). The gear is gone (2026-11-04, with the old Home
+  header); `outlined` is now worn by the Deck Tower cards page's up arrow
+  (`TowerCardsPage`, ring in the sky's ink via `outlineColor`).
 
 **Decisions taken**
 - **No `HeaderStreak`.** The plan listed it as a fourth export, but the app already
@@ -699,7 +696,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
 - **The flame moved into `PageHeader` itself on 2026-08-24, and is now on EVERY header.**
   It used to be opt-in — each page passed `<MinutePointsFireBadge />` into `rightContent`
   — so it appeared on the earning surfaces only, and was simply absent on the menus
-  (Home, Games, Discover, Decks & Cards, Dictionary, Arena, Friends, …), on the cdp, and
+  (Games, Discover, Decks & Cards, Dictionary, Arena, Friends, …), on the cdp, and
   on two game pages that had forgotten it (Hydra Bubbles, Speed Reading). "Am I earning
   right now?" is a question the learner can only ask where the answer is drawn, so the
   header now draws it everywhere: on an ineligible page the badge renders its own
@@ -709,9 +706,10 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   draws flame-then-gear, and that one ordering was traded for a fixed position app-wide.
   All ~12 per-page call sites were deleted; pages no longer import it.
   **One exception to "flame last" (2026-10-09): `trailingContent`.** `PageHeader` renders
-  it after the flame, and only the Home tab passes it (the Settings gear, then
-  `HeaderAvatarButton` — the profile picture that raises the AccountSheet — in the far
-  corner). So on Home alone the flame sits two controls in from the edge.
+  it after the flame, and only the Deck Tower passes it (through `MobileTabScreen`
+  `headerTrailingActions`: `DeckTowerAvatar`, the profile picture that raises the
+  AccountSheet, in the far corner). So on td alone the flame sits one control in from
+  the edge.
   Two consequences worth keeping in mind: exactly ONE `PageHeader` may be mounted at a
   time on an earning page (`useMinutePoints` runs a 1s accrual tick per instance), and
   the badge renders `null` when signed out.
@@ -724,8 +722,9 @@ Hydra want for their in-header toggles (see entries 13 and 16).
 - **Eligibility was narrowed in the same pass** so "grey on a menu" is actually true:
   `MINUTE_POINTS_ELIGIBLE_PAGES` had the bare prefix `/flashcards`, which made the cdp,
   Decks & Cards, the deck/collection browsers and the mastery centers all accrue minutes.
-  The prefix list is now study surfaces only (`/flashcards/learn`, `/reader`,
-  `/discover/sort`, the games), with the legacy desktop `/flashcards` page moved to a new
+  The prefix list is now study surfaces only (`src/constants.ts` →
+  `MINUTE_POINTS_ELIGIBLE_PAGES`; the flp itself earns through td's study-surface claim,
+  not a route), with the legacy desktop `/flashcards` page moved to a new
   exact-match list, `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES`, so its browse-screen descendants
   do not inherit eligibility. See docs/MINUTE_POINTS_SYSTEM.md.
 - **The same glyph now appears wherever a flame does.** `MinutePointsBadge` — the legacy
@@ -755,8 +754,9 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   see. `dense` is therefore the only size that must be **asked for**; the other three
   keep falling out of `showBack` / `arrowDirection`.
   Reached via `size` (`PageHeader`, `MobileDemoHeader`) or `headerSize`
-  (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage`,
-  `DictionaryCardDetailPage` and `FlashcardsLearnHeader`.
+  (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage` and
+  `DictionaryCardDetailPage` (and to the flp's `FlashcardsLearnHeader` until it was
+  deleted 2026-11-04 — the flp now uses `TowerStudyHeader`).
   Deriving it by counting `rightContent`'s children was the obvious alternative and is
   a trap — most callers pass a single wrapping `Box` or fragment, so the count is 1
   regardless of how many buttons are inside.
@@ -765,15 +765,14 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   question, not a skin question, so it stays as-is for entry 12.
 
 **Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
-`VocabCardDetailPage`, `DictionaryCardDetailPage`, `CollectionViewPage`,
-`UserProfilePage` and `SortCardsPage` header slots. They should
+`VocabCardDetailPage`, `DictionaryCardDetailPage`,
+`UserProfilePage` and `AddNewCardsPage` header slots. They should
 become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 
 **Code:** `src/components/PageHeader.tsx` → `PageHeader`, `Header`, `BackGroup`,
 `SIZE_SPEC`, `HeaderMetaLabel`, `HeaderIconButton`, `HeaderToggleChip`;
 `src/components/MobileDemoHeader.tsx`; `src/components/MobileTabScreen.tsx`;
 `src/components/LeafPageHeader.tsx`; `src/components/NodePageHeader.tsx`;
-`src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnHeader.tsx`;
 `src/games/bubble-match/BubbleMatchHeader.tsx`;
 `src/games/word-search/WordSearchHeader.tsx`;
 `src/games/match-speed/MatchSpeedHeader.tsx`; `src/pages/AccountSheet.tsx`.
@@ -823,7 +822,7 @@ everything in `index.css`.
 **Known consequence, deliberately not fixed here**
 
 `DeckTile`'s `cardWidth: 100` was derived from a **337px** content column (393
-frame − 28px gutter) so three tiles fill the fdp row. At 402 the column is 374 and
+frame − 28px gutter) so three tiles fill the decks page's row. At 402 the column is 374 and
 the row under-fills by ~38px on desktop. It was not retuned, because the number was
 about to be deleted — **A3 has since deleted it**, along with `DeckTile` itself, and
 the shelf row has no width arithmetic to get wrong.
@@ -847,8 +846,9 @@ the entry that converts them rather than changed blind here.
 
 **Status: DONE (2026-08-20).**
 
-Used by: **2** (Decks), **6** (Reader), **3** (Discover), **18** (Card Detail's
-related shelves). Built once; no page invents a copy.
+Used by: **5** (Account — `DeckBuckets`, the utcm band row), **6** (Reader), **3**
+(Discover), **18** (Card Detail's related shelves). Built once; no page invents a copy.
+Its first host, entry 2's Decks shelf, was deleted with the fdp on 2026-11-04.
 
 ### What landed
 
@@ -862,20 +862,18 @@ related shelves). Built once; no page invents a copy.
 | `ShelfNote` | `.shnote` | A sentence under a row. |
 | `ShelfRow` `board={false}` | — | A row without a board also drops its 12px board gap. Used by the utcm band row (`DeckBuckets`), which `LibraryShelfWithVelocity` closes with a plain section divider instead. |
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
-| `AddSpine` | `.sp.add` | The "make a new one" affordance. |
 | `spineHeight(count)` | — | The count→height band function. |
 
-All six spine variants exist from day one — `base` 74×116, `tall` 140, `short` 96,
-`uni` 126, `vol` 86×134, plus `AddSpine` — as are the three slots (`pin`, `caption`,
+The five spine variants — `base` 74×116, `tall` 140, `short` 96,
+`uni` 126, `vol` 86×134 — exist, as are the three slots (`pin`, `caption`,
 `glyph`) and `vol`'s own (`meta`, `ownerGlyph`). The sheet's 74px squat is the
 `height` prop rather than a seventh variant.
 
 ### Decisions taken while building
 
-- **`AddSpine` is its own component, not a `Spine` variant.** It shares only the
-  BOX: no body colour, no strap, no shadow, no title, no count, none of the slots.
-  Folding it in would make every one of those a conditional inside `Spine` for a
-  shape that carries no data.
+- **The "make a new one" spine (`.sp.add`) was its own component (`AddSpine`), not a
+  `Spine` variant** — it shared only the box. Its one host (the fdp's "+ new deck") went
+  with Decks on 2026-11-04 and the component was deleted.
 - **The reference width is PER VARIANT, and the scaling is JS, not `cqw`.** The plan
   said to author every interior size at one `REFERENCE_WIDTH` and render in `cqw`.
   Both halves needed correcting, and the second one only showed up in a browser:
@@ -901,23 +899,17 @@ All six spine variants exist from day one — `base` 74×116, `tall` 140, `short
 - **Rows scroll sideways rather than wrapping, where the list grows.** Spines are
   `flex-shrink: 0`, so a wrapped second line stands on no board at all. The fixed
   Collections row wraps (it is known to fit); the challenges and decks lists scroll.
-- **Every row is left-aligned.** `DecksPanelBody` used to centre its short rows and
-  left-align its growing ones. Centring is wrong on a shelf: the board runs the full
+- **Every row is left-aligned.** Centring is wrong on a shelf: the board runs the full
   row width, and spines floating in the middle of it read as a mistake.
 
 ### Consequences worth a second look
 
-- **The fdp's "+ new deck" moved** out of the Decks section header and onto an
-  `AddSpine` at the end of the row (the design's own affordance). It is therefore
-  hidden while that section is collapsed.
 - **The `spineHeight` cutoffs are a first cut** — `< 20` short, `< 100` base, `100+`
   tall. The design specifies the three heights but not where a set moves between
   them. Chosen against the app's actual spreads; wants real accounts on screen.
-- **Two counts on Account, one on the fdp.** A3 warns against encoding the count as
-  both height and numeral by reflex. Account keeps both (it is a stats block — the
-  height compares the four bands, the numeral is the figure you went there for).
-  The fdp sheet has no banding at all, because `.sheet .sp` flattens every spine to
-  74.
+- **Two counts on Account.** A3 warns against encoding the count as both height and
+  numeral by reflex. Account keeps both (it is a stats block — the height compares the
+  four bands, the numeral is the figure you went there for).
 
 ### The glyph slot, and what a browser pass changed
 
@@ -943,10 +935,6 @@ Three more things only a browser showed:
   100%`, so inside a centred flex column it shrank to its spines. The board sizes to
   the row, so it shrank too — a stub under the spines rather than a shelf they stand
   on.
-- **The panel needed its own gutter.** `Shelf` carries the design's 22px PAGE gutter,
-  but every section heading in the decks panel is inset by the panel's own 28px. A
-  shelf 6px narrower than its own caption reads as a misalignment, so `PanelShelf`
-  overrides it to 28.
 - **The three `LineSeparator`s are gone.** The board already sits at the foot of every
   row; a 280px hairline 12px under it is a seam, not a separation.
 
@@ -971,14 +959,13 @@ invisible, a ten-letter word broken after its ninth letter is not.
   word divides is caller knowledge — `Spine` renders whatever string it is given and
   has no business carrying a hyphenation dictionary.
 
-**Code:** `src/components/shelf/{Shelf,Spine,AddSpine,spineGeometry,index}.tsx|ts`
-(new); `src/features/flashcards/collectionGlyph.ts` (new, from `collectionIcon.tsx`);
-`src/components/DeckBuckets.tsx`; `src/features/flashcards/DecksPanelBody.tsx`;
-`src/features/flashcards/FlashcardsDecksPage.tsx`; `src/utils/categoryColors.ts`.
-**Deleted:** `src/components/DeckTile.tsx` (422 lines),
-`src/features/flashcards/collectionIcon.tsx`.
-**Docs:** `docs/DECKS_FEATURE.md`, `docs/STUDY_CHALLENGE.md`.
-**Verified in a browser** (Account + the fdp sheet), not only by typecheck. **Size: L.**
+**Code:** `src/components/shelf/{Shelf,Spine,spineGeometry,index}.tsx|ts`;
+`src/features/flashcards/collectionGlyph.ts` → `collectionGlyph` (now read by the Deck
+Tower's filter keys, `TowerFilterKeys`); `src/components/DeckBuckets.tsx`;
+`src/utils/categoryColors.ts`.
+**Deleted:** `src/components/DeckTile.tsx`, `src/features/flashcards/collectionIcon.tsx`,
+`src/components/shelf/AddSpine.tsx` (2026-11-04).
+**Docs:** `docs/STUDY_CHALLENGE.md`. **Size: L.**
 
 ## A4 · Bento — the menu primitive
 
@@ -998,7 +985,7 @@ its strip header instead, on the control that picks between them
 day every Games hub tile went name-only, so no hub tile names a track any more.)*
 Typecheck and `npm run build` clean. Shipped `src/components/bento/` —
 `Bento`/`BentoTile`/`BentoStrip`/`BentoSubTile` (`Bento.tsx`), `CollectionChip`
-(`CollectionChip.tsx`), and a barrel `index.ts`. *(2026-10-03: `BentoStrip` /
+(`CollectionChip.tsx`, deleted 2026-11-04), and a barrel `index.ts`. *(2026-10-03: `BentoStrip` /
 `BentoSubTile` deleted once the Games hub moved to `GameCard`; `BentoTile` now renders
 through `CardShell` — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "CardShell".)* Work items 1 and 2 are done; item 3
 (deleting `HubMenu` + rewriting its 10 importers) was always budgeted into entry 4,
@@ -1057,7 +1044,7 @@ place the tiles.
   says so in its header: it is not a destination, it changes what the destinations
   use, so it must not read as one more tile.
 
-Used by: **1** (Home), **3** (Discover), **4** (Games), **5** (Account).
+Used by: **1** (the Menu hub, `/menu`), **3** (Discover), **4** (Games), **5** (Account).
 This is the component that **replaces `HubMenu`** — deleted outright (D8).
 
 **Classes** — `.bento` (2-col grid, gap 10), `.bt` (tile: radius 19, min-height
@@ -1069,11 +1056,12 @@ bleeding off the top-right at `opacity:.15`), `.t` / `.s` (title/subtitle),
 **`.strip`** is the nested variant: a full-width cell containing `.sh` (a small
 header with a label and a right-hand affordance) over `.row` of `.st` sub-tiles
 (radius 15, min-height 80, smaller ghost icon, optional `.star`). Games uses it for
-level rows; Home uses it for grouped destinations.
+level rows; the Menu hub uses it for grouped destinations.
 
 **`.chipsel`** — the collection-selector chip (white, outlined, radius 14: icon +
-bold label + mono trailing count). Today this is `GamesCollectionSelector` rendered
-into `HubMenu`'s `header` slot.
+bold label + mono trailing count). Built as `CollectionChip`
+(`src/components/bento/CollectionChip.tsx`); deleted on 2026-11-04 with its only consumer,
+the Games hub's collection selector.
 
 **The rule that makes the system work** — repeat it in the component's header
 comment: *Bento is for **menus of destinations**; Shelf is for **collections the
@@ -1653,136 +1641,70 @@ still to do). **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx`.
 
 ## 1 · Home — `/` — **Size: M**
 
-> **Moved 2026-10-10:** this bento is now the **Menu** tab (`/menu`,
-> `src/pages/MenuPage.tsx` → `MenuPage`); Home (`/`) now shows the entry-2 decks page.
-> The entry below describes the hub as it was built.
+> **Now the Menu hub** (`/menu`, `src/pages/MenuPage.tsx` → `MenuPage`) since 2026-10-10;
+> `/` is the Deck Tower ([DECK_TOWER.md](./DECK_TOWER.md)). Arena left this bento on
+> 2026-11-04 for its own footer tab.
 
-**Status: DONE (2026-08-21).** `HomePage` is now a `Bento` mosaic: Night Market as
-the `hero`, Games / Arena / Reader / Dictionary as base tiles, Community / Friends /
-Compare Words as `low` tiles, `TipBox` + `FooterSpacer` below the grid. Hues and
-glyphs are the artboard's verbatim. The role-gated rows append as further `low`
-tiles, and the file says why an odd tile count is left half-empty rather than
-stretched. `MobileTabScreen` is unchanged.
+**Status: DONE (2026-08-21).** A `Bento` mosaic: Night Market as the `hero`, the other
+destinations as base / `low` tiles, `TipBox` + `FooterSpacer` below the grid. Hues and
+glyphs are the artboard's verbatim. The role-gated rows (`useTestingFeatures() ||
+user.isAdmin` → Tester Dashboard, `user.isTemplateAuthor` → Template Editor + Sandbox)
+are not drawn on the artboard; they append as further `low` tiles, and an odd tile count
+is left half-empty rather than stretched.
 
-**Today.** `HomePage` renders a vertical `HubMenu` of 8 rows plus up to 3
-role-gated ones, inside `MobileTabScreen`, with a `TipBox` header and
-`FooterSpacer` footer. Every row is the same size.
-
-**Design.** A bento mosaic. Night Market is the full-width hero (`.bt.w2`) with an
-"open now" pin; Games / Arena / Reader / Dictionary are normal tiles; Community /
-Friends / Compare Words are `.lo` tiles. Friends carries a badge count. Tip box
-stays below the grid.
-
-**Watch out.** The role-gated rows (`user.isFeatureTester || user.isAdmin` → Tester Dashboard,
-`user.isTemplateAuthor` → Template Editor + Sandbox) are **not drawn**. They append
-as further `.lo` tiles — the mosaic must not assume a fixed tile count.
-
-**Code:** `src/pages/HomePage.tsx`; `src/components/TipBox.tsx`;
+**Code:** `src/pages/MenuPage.tsx`; `src/components/TipBox.tsx`;
 `src/AuthContext.tsx` → `useAuth`.
 **Docs:** `docs/BENTO_SYSTEM.md`, `docs/UX_AND_NAVIGATION.md`.
 
 ## 2 · Decks & Cards — `/flashcards/decks` — **Size: L**
 
-> **Moved 2026-10-10:** this page is now the **Home** tab at `/` (header title "Home");
-> `/flashcards/decks` only redirects there (`DecksRedirect`). See
-> [NAVIGATION.md](./NAVIGATION.md).
-
-**Status: DONE (2026-08-24).** Typecheck, lint, build and the 557-test suite clean.
-
-**What landed.** The SHEET was already converted by A3, so this entry was the STUDY
-AREA behind it plus one change inside the sheet.
-
-- **`StudyHand` (`.fanw`) replaces the three study buttons.** Review / Challenge on one
-  row above a 3:4 Study Mix slab became a fanned HAND of three cards with one played
-  forward. Bringing a card forward is deliberately NOT starting the session — the front
-  card carries the figure and its own `Study now`, so choosing a mode and committing are
-  two taps. The fan is an ordered stack (`HandOrder`, bottom → top), seeded from
-  `FAN_ORDER`; a card is brought forward by TAPPING it, or by THROWING the front card to the
-  back of the stack in any direction (`useHandSwipe`, added later — see
-  DECKS_FEATURE.md § "The card hand"). Throw and tap together reach all six arrangements.
-- **The Centers rail (`.ctr2`) moved ABOVE the hand.** This resolves the entry's old
-  conflict (a): the artboard has a slot for Reading/Writing Center now. They are a
-  different KIND of destination — a place to look at your library by skill, not a session
-  — so they sit apart from the hand rather than joining it. Pastel fills (D2b), reading on
-  `red` and writing on the new `yel`.
-- **`LibraryDuo` (`.duo`) replaces the Collections spine row.** This resolves conflict
-  (b): the sheet now opens on the learner's two CONSTANTS — Learning and Mastered — as
-  two wide tiles carrying their figures. **This narrows D9** (see the amendment there).
-  No per-skill Mastered spine returns; the header comment's rule is intact.
-- **The `.duebar` is gone** (2026-09-05). Its artboard reads "24 due today", which the
-  app cannot answer, and its one shipped slot printed the library SIZE under that
-  caption; the hand's three ready counts directly beneath it already carry the signal.
-  The study area is now two rows — Centers rail, then the hand. See DEFERRED_WORK.md
-  § "Recently closed".
-
-**Figures.** Each mode's number is how many cards it could deal RIGHT NOW — its bands
-minus everything on cooldown: Challenge = Unfamiliar + Target, Review = Comfortable +
-Mastered, Mix = all four. The two halves partition the bands, so Challenge + Review ==
-Mix. `undefined` until the library lands, so the cards print an em dash rather than a
-provisional `0` — `0` is a real answer every one of these figures can give, and a common
-one on a cooldown count. Review's gate reads that ready count and its toast branches on
-whether cards are merely resting; an ineligible card still fires `onStudy` so the host
-can explain rather than leaving a dead card. An ineligible or zeroed card **keeps its
-ramp fill** — only the commit button dims. The top-right corner tag is worn by the BACK
-cards (always, as `N Cards`) and by the front card only at zero, where it prints a
-`zeroMessage` — "All caught up!" on Review, "Add more cards!" on Challenge/Mix.
-
-⚠️ This entry originally shipped **band totals** with per-card captions (`in rotation` /
-`ready` / `waiting`), and Mix's total omitted Mastered even though its loop deals one
-Mastered card in ten. Both were corrected when the figures became cooldown-aware — see
-DECKS_FEATURE.md § "The card hand" for the current rule.
-
-**Artboard 2b** (sheet minimized) needed no work: it is the same page with the sheet at
-its resting lip, which is the sheet's default state.
-
-**Code:** `src/features/flashcards/StudyHand.tsx` (new);
-`src/features/flashcards/LibraryDuo.tsx` (new);
-`src/features/flashcards/FlashcardsDecksPage.tsx`;
-`src/features/flashcards/DecksPanelBody.tsx`;
-`src/theme/colors.ts` (`yel`/`yelA`/`yelTint` + the `RAMP` entry).
-**Deleted:** the page's `MixButton` / `ReviewButton` / `ChallengeButton` / `CenterButton`
-styled components and `studyButtonBase`.
-**Docs:** `docs/DECKS_FEATURE.md`, `docs/MASTERY_REWORK.md`, `docs/DEFERRED_WORK.md` (`.duebar`, recently closed).
+**Status: PAGE DELETED (2026-11-04).** The page (later the Home tab at `/`: the study
+hand, the Centers rail, `LibraryDuo` and the Cards / Decks sheets) was removed with the
+Decks feature; `/` is the Deck Tower. What survived moved to the tower: the Learning /
+Mastered constants are the cards page's filter keys (`TowerFilterKeys`, which keep
+`LibraryDuo`'s tile shape) and the card library is the tower's cards page
+([DECK_TOWER.md](./DECK_TOWER.md) § "The cards page", [CARD_LIBRARY.md](./CARD_LIBRARY.md)).
+The `.duebar` was dropped 2026-09-05 (DEFERRED_WORK.md § "Recently closed").
 
 ## 3 · Discover — `/discover` — **Size: TBD**
 
 **Status: PAGE DELETED (2026-10-17).** `DiscoverPage` and the `/discover` route are
-gone; with its last other tile folded into scp it was a one-tile hub, so Sort Cards
-became a Home drill-in (decks rail Sort shortcut, back arrow → `/`; see
+gone; with its last other tile folded into ancp it was a one-tile hub, so Add New Cards
+became a drill-in (today reached from the Deck Tower's sort platform, back → `/`; see
 [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The outstanding pins/shelf items below no longer
-have a screen to live on — any "waiting to be sorted" count would now belong on the decks
-rail's Sort tile or inside scp. Everything below is the entry's history.
+have a screen to live on — any "waiting to be sorted" count would now belong on the
+tower's sort platform or inside ancp. Everything below is the entry's history.
 
 **Earlier status: DONE (2026-08-21) — the MENU only.** Converted at the user's explicit
-instruction, overriding the D11 block. Sort Cards is the `hero`, Quick Mark and
+instruction, overriding the D11 block. Add New Cards is the `hero`, Quick Mark and
 Skipped Cards are base tiles; hues and glyphs are artboard 3's. (Both tiles have since
-been removed — Skipped Cards 2026-10-12, Quick Mark 2026-10-17, each folded into scp — so
-the hub now carries only the Sort Cards hero; see DISCOVER_FLOW.md.)
+been removed — Skipped Cards 2026-10-12, Quick Mark 2026-10-17, each folded into ancp — so
+the hub now carries only the Add New Cards hero; see DISCOVER_FLOW.md.)
 
 **⚠️ Two pieces of artboard 3 are NOT built, because the data does not exist
 client-side:**
 
-1. **The tile pins** — `184 waiting` on Sort Cards, `31` on Skipped Cards.
+1. **The tile pins** — `184 waiting` on Add New Cards, `31` on Skipped Cards.
 2. **The "Waiting to be sorted" shelf** beneath the grid — four spines whose heights
    encode the unsorted queue by band.
 
 Nothing exposes a count of unsorted or skipped cards; `useCategoryCounts` counts the
 user's LIBRARY by band, which is a different number. Both want one endpoint returning
 the unsorted queue counted by band. **This is the outstanding item for entry 3** —
-the bento itself is complete. The sort flow (scp) remains separate and out of scope,
+the bento itself is complete. The sort flow (ancp) remains separate and out of scope,
 though the design project now has a `Sort Flow - Shelf System.html` not yet read.
 
 **Superseded note:** this entry previously read "BLOCKED — awaiting a new artboard".
 The user is redoing the Discover
 design (D11). Artboard 3 as it stands is **superseded**; do not build from it.
-The sort flow (`/discover/sort/:language`, scp) is explicitly left as an
+The sort flow (`/discover/sort/:language`, ancp) is explicitly left as an
 **outstanding item** and is not in scope for this pass.
 
 **Today.** `DiscoverPage` is 62 lines: a `HubMenu` of exactly three equal rows —
-Sort Cards, Quick Mark, Skipped Cards — with a `TipBox` header. Paths come from
+Add New Cards, Quick Mark, Skipped Cards — with a `TipBox` header. Paths come from
 `useDiscoverNavigation`.
 
-**Design.** Sort Cards becomes the hero tile with a "184 waiting" pin; Quick Mark
+**Design.** Add New Cards becomes the hero tile with a "184 waiting" pin; Quick Mark
 and Skipped Cards are normal tiles (Skipped carries its own count). **Below the
 bento, a new shelf** breaks the unsorted queue down by progress bucket —
 Unfamiliar / Target / Comfortable / Mastered — with spine heights encoding counts.
@@ -1795,15 +1717,16 @@ server change. Worth confirming before the new design is finalized, so the desig
 isn't drawn around data that doesn't exist.
 
 **Code:** `src/features/discover/DiscoverPage.tsx` (deleted 2026-10-17);
-`src/hooks/useDiscoverNavigation.ts` (now `goToSort` / `sortPath` only); `src/hooks/useCategoryCounts.ts`.
+`src/hooks/useDiscoverNavigation.ts` (now returns only `{ sortPath }`); `src/hooks/useCategoryCounts.ts`.
 **Docs:** `docs/DISCOVER_FLOW.md`, `docs/QUICK_MARK.md`, `docs/SORT_CARDS_REQUIREMENTS.md`.
 
 ## 4 · Games — `/games` — **Size: L**
 
 **Status: DONE (2026-08-21).** Bubble Match and Word Search are `BentoStrip`s, the
 other four are tiles (since superseded: Word Search is a `hero` banner, and on
-2026-10-03 Bubble Match became the Reading Center carousel's shared `GameCard`
-spanning the full row — see [GAMES_FEATURE.md](./GAMES_FEATURE.md)), and `GamesCollectionSelector` renders a `CollectionChip`.
+2026-10-03 Bubble Match became a full-row `GameCard` — see
+[GAMES_FEATURE.md](./GAMES_FEATURE.md)). The collection selector (`GamesCollectionSelector`
+on a `CollectionChip`) was deleted 2026-11-04 with collection-scoped launches.
 `WordSearchHubItem` was rewritten on the bento primitive (390 → ~300 lines) with its
 confirm-before-clobber, resume tile, in-place erase confirmation and leave animation
 all preserved.
@@ -1829,11 +1752,6 @@ all preserved.
   image URL that **no game ever set** — every game fell through to one generic
   controller icon, so the hub had six identical glyphs and a dead code path. `glyph`
   carries the artboard's per-game Material Symbol.
-- **The collection chip keeps its colour dot** (in a new `trailing` slot), which the
-  artboard does not draw. The dot is the only thing tying the chip to the same set's
-  tile on the decks page; without it the hub is the one surface where a collection has
-  no colour. The chip does NOT show a card count — the artboard's "1,284" has no
-  source in the current data flow, and inventing one would be worse than omitting it.
 - **The TipBox was KEPT**, though the artboard omits it. An artboard leaving out a
   feature is a layout omission, not a decision to delete a feature; that call is the
   user's, and it is cheap to reverse either way.
@@ -1842,11 +1760,11 @@ all preserved.
   row's 9px flex gap with `marginRight: -9` on leave — a gap survives its item
   shrinking to zero width, which would otherwise leave a stump.
 
-**Today.** `GamesPage` renders `GamesCollectionSelector` in `HubMenu`'s `header`
+**Before the conversion.** `GamesPage` rendered a collection selector in `HubMenu`'s `header`
 slot, then: Bubble Match as a `HubMenuArrayItem` (one sub-card per level),
 `WordSearchHubItem` as a **bespoke ~390-line component** that assembles its own
 strip out of six `HubMenu` exports, and Match Speed / Speed Reading / Hydra
-Bubbles / Memory Map as single rows. Every card carries a `MarkTypeChip` naming
+Bubbles / Memory Map as single rows. Every card carried a `MarkTypeChip` naming
 the mastery track that game feeds.
 
 **Design.** Collection selector chip stays at the top (`.chipsel`). Bubble Match
@@ -1858,20 +1776,20 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 (deleting `HubMenu`) is not free. Also: the artboard does not draw the
 `MarkTypeChip`; decide whether it survives the conversion.
 
-**Code:** `src/games/GamesPage.tsx`; `src/games/GamesCollectionSelector.tsx`;
+**Code:** `src/games/GamesPage.tsx`;
 `src/games/word-search/WordSearchHubItem.tsx`; `src/games/registry.ts` →
 `GAME_REGISTRY`; `src/games/bubble-match/constants.ts` → `LEVEL_CONFIGS`;
-`src/components/MarkTypeChip.tsx`; `src/hooks/useGameWins.ts`;
-`src/features/flashcards/selectedCollection.ts`.
+`src/components/MarkTypeChip.tsx`; `src/hooks/useGameWins.ts`.
 **Docs:** `docs/GAMES_FEATURE.md`, `docs/BENTO_SYSTEM.md`.
 
 ## 5 · Account — `/account` — **Size: M**
 
 > **Superseded surface (2026-10-09):** `/account` is no longer a route. Dictionary took
 > its footer slot, and the same body now renders as `AccountSheet`, a maximizable
-> `SheetPanel` raised from the Home header avatar — and, since 2026-10-24, from the Deck
-> Tower's header avatar too (`src/features/deckTower/DeckTowerAvatar.tsx`,
-> docs/DECK_TOWER.md § Layers). The gear moved out to the Home header.
+> `SheetPanel` raised from the Deck Tower's header avatar
+> (`src/features/deckTower/DeckTowerAvatar.tsx`, docs/DECK_TOWER.md § Layers) — its only
+> launcher since the old Home header (avatar + Settings gear) was deleted 2026-11-04.
+> There is no Settings gear any more; Settings is the sheet's Settings tab.
 > **Since 2026-10-31** this body is the sheet's Account tab (`src/pages/account/AccountPane.tsx`),
 > beside Friends and Settings tabs.
 > The artboard notes below still describe the body's contents.
@@ -2186,17 +2104,18 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
 - **Time of day** (added 2026-10-29). The page follows the Deck Tower's clock
   (`src/timeOfDay/useDayClock.ts`, the tester pin included) via `useTier2Look`, called once
   at the page root and passed down as `look`:
-  - **Dawn / day / sunset** tint only the GROUND and its sunken WELL (the no-results
-    panel) — the design's `--g` / `--well` / `--wellSh`, the same `--g` family as the
-    eip's upper panel (scp uses the separate `--gr` ground, `sortTimeOfDay.ts`).
-    Surfaces, ink and the slab footer stay as by day.
+  - **Day** tints only the GROUND and its sunken WELL (the no-results panel) — the
+    design's `--g` / `--well` / `--wellSh`, the same `--g` family as the eip's upper
+    panel (ancp's ground is the tower's sky instead, `sortTimeOfDay.ts`). Surfaces, ink
+    and the slab footer are the app's day colours. (Dawn and sunset tints were cut
+    2026-11-04 — [TOWER_WEATHER_SKY.md](./TOWER_WEATHER_SKY.md) § 1.)
   - **Night** turns the page slate: #1E2735 ground, #2A3446 field / slabs / keycaps on a
     #121822 lip, light ink (#EEF0F6 / #C3C8D6 / #8F97AA) — the slab footer and the
     beginner keyboard's keys included. The owner chose the design's CSS over its artboard
     note ("keycaps, cards and footer keep their day colours"), which the CSS contradicts.
   - **`CpcdPopup`** (`src/components/CpcdPopup.tsx`, the copy toast and definition popup)
     reads the `tier2Var` surface / ink / outline, so it turns #2A3446 at night too.
-  - Grounds **blend** across the 30-minute twilights; surfaces and ink **flip** together
+  - Grounds **blend** across the hour-long day ↔ night twilights; surfaces and ink **flip** together
     once night holds the larger share (`dark`), as the eip's ink does.
   - **Outside the framework** on purpose, like the tower's skies: the phase grounds and
     every night value are the design's hexes (`tier2Look.ts` header).
@@ -2758,7 +2677,8 @@ entry was the board and the strip around it.
 - **A `GameHud` under the timer**, `divider={false}`: `Study Mix · All cards` and
   `9 matched`. Both facts are otherwise invisible once a run starts — the mode is chosen
   on the hub, the collection on `/decks` — so a player who launched the wrong one only
-  found out from the cards.
+  found out from the cards. *(Since 2026-11-04 there is one mode and no collection, so
+  the strip reads `N/30 matched` only — MATCH_SPEED_GAME.md.)*
 - **`GameHint`** at the foot: "tap a word, then its meaning".
 - `COL_GAP_PX` 10 → 8, matching `ROW_GAP_PX`. `.msg2` uses one gap on both axes; an
   uneven pair reads as a measurement mistake at this size.
@@ -2782,7 +2702,9 @@ entry was the board and the strip around it.
 HUD, the clue as large centred text, and four options that differ by a single
 glyph. Chinese only, by design.
 
-**What landed (the HUD half).**
+**What landed (the HUD half).** *(2026-11-04: **removed** — the round counter and the ticks
+are gone, so the game draws no HUD at all; see [SPEED_READING_GAME.md](./SPEED_READING_GAME.md)
+§ "Screen layout". Kept below as history.)*
 - **`SpeedReadingRoundTicks`** — one pip per round, in the HUD strip. The design's
   revision split them from one row of 4px pips into **two rows of ten at 8px**, and the
   height is the point: a colour has to be seen peripherally, because that is the only way
@@ -2813,7 +2735,7 @@ much as a layout one, and the game plays well on two. Do not re-open this as lef
 — an agent reading the artboard set will find 15 drawn one way and built another, and this
 paragraph is the reason.
 
-**Code:** `src/games/speed-reading/SpeedReadingPage.tsx`;
+**Code:** `src/games/speed-reading/SpeedReadingStage.tsx` (the run; `SpeedReadingPage.tsx` is its route host);
 `src/games/speed-reading/SpeedReadingPrompt.tsx`;
 `src/games/speed-reading/SpeedReadingOptionText.tsx`;
 `src/games/speed-reading/SpeedReadingTapZone.tsx`.
@@ -2954,8 +2876,8 @@ Hydra's pinyin display genuinely is a live toggle.
   known.
   **Amended 2026-08-24 (third pass):** the affordance was briefly `InfoPeek` — a resting
   sheet LIP spanning the page width. That component is **deleted**; the cdp now raises the
-  sheet from the shared `SheetPill` capsule, which the fdp also uses and which reproduces
-  the flp's `MoreInfoPill` spec. All three surfaces show the same `↑ <label>` pill again.
+  sheet from the shared `SheetPill` capsule, which reproduces the flp's `MoreInfoPill`
+  spec, so both surfaces show the same `↑ <label>` pill.
   **Amended 2026-08-24 (second pass):** the sheet body was `VocabCardSections` in a
   `SheetBody`; it is now **the eip proper** — `InfoCardSection` — so the two surfaces share
   the component, not just the idea. The cdp gains the entry header, the underline tab
@@ -2965,6 +2887,14 @@ Hydra's pinyin display genuinely is a live toggle.
   tab — the one thing the old stacked-`SectionCard` body showed that the eip has no tab
   for. Tab state lives on the page (`infoTab`) and survives closing the sheet; the lip
   names whichever tab it will reopen on. `SheetBody` is left with no callers.
+
+**Tower look (2026-11-04).** The vet cdp wears td's chrome: the **slab** footer
+(`footerStyle: "slab"` on `/flashcards/card/:id` in `src/routes/routeMeta.ts`, lighting the
+Deck tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the dictionary cdp),
+and a hero card printed on the tower's **card stock** (`card/cardStock.ts` →
+`cardStockVars`, `VocabCardDetailPage` → `HERO_CARD_STOCK_VARS`) —
+[TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock". `CardOpsRail` letters its
+cells in `TOWER_STUDY_FONT` on every host.
 
 **Preserved, as the entry required:** the whole card-icon editor overlay
 (`useCardIconEditor` / `CardIconCanvas` / `CardEditToolbar`) is untouched — the peek
@@ -2978,6 +2908,8 @@ greys out while it is open, because the sheet would cover the canvas being edite
 `src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx` (new);
 `src/features/flashcards/VocabCardDetailPage.tsx`;
 `src/features/flashcards/VocabCardDetailBody.tsx`;
+`src/features/flashcards/card/cardStock.ts` → `cardStockVars`;
+`src/timeOfDay/useTier2Look.ts` → `useTier2Look`;
 `src/components/NodePage.tsx` (the `overlay` slot);
 `src/components/primitives/Label.tsx` (`SectionRule`'s `right` slot);
 `src/components/CompareSheet.tsx` (seeds slot A from the calling word; replaced
@@ -2990,6 +2922,10 @@ greys out while it is open, because the sheet would cover the canvas being edite
 
 ## 19–25 · Flashcard Learn + the Extra Info Panel — `/flashcards/learn` — **Size: L**
 
+> The flp has had no route of its own since 2026-11-04: it runs only inside the Deck
+> Tower (`FlashcardsLearnPage` with its required `tower` host; header `TowerStudyHeader`).
+> Everything below applies to that flp.
+
 **Status: DONE (2026-08-24).** The seven artboards this file previously had no entry for.
 Typecheck, lint, build and the 557-test suite clean.
 
@@ -3000,7 +2936,7 @@ place (the eip definition tab's `InfoCardActionBar`):
 
 | | |
 |---|---|
-| **CARD operations** — customize, file into a deck, write a note on it | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
+| **CARD operations** — customize, write a note on it (filing into a deck left with Decks, 2026-11-04) | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
 | **WORD tools** — practise writing, load into Compare | would still make sense if the card did not exist, so they live on the PAGE above it (`WordToolsRail`, `.wtl.top`) |
 
 Everything else follows: the eip becomes information-only, `InfoCardActionBar` is
@@ -3037,9 +2973,11 @@ that card's rail).
 
   **Also 2026-08-28**: the rail is no longer flp-only — the **cdp** mounts it on its hero
   card's `topRail` as well, because its `note` cell is the only affordance that opens the
-  note editor and the note now shows on both card surfaces. Its `customize` and
-  `add to deck` cells therefore duplicate two of that page's header actions (artboard 18's
-  header row); the header alone keeps `delete`.
+  note editor and the note now shows on both card surfaces. The cdp header dropped its own
+  `customize` (and `add to deck`) for it and keeps only `delete`.
+
+  **2026-11-04**: the `add to deck` cell left with the Decks feature (`AddToDeckMenu`
+  deleted), so the rail is **customize + note** on both hosts.
 - **22 · swipe coaching.** Already shipped (`SwipeHintLabel`); untouched.
 - **23 · sense sheet.** `SensePicker` gets its two designed states: RESTING `.ssel` (a
   `1/9` counter and a triangle in a small pill) and OPEN `.ssheet` (every sense at once,
@@ -3071,16 +3009,17 @@ that card's rail).
 
 ### Consequences worth knowing about
 
-- A word DRILLED INTO inside the panel lost its Add-to-Deck and Compare — deliberate, and
-  tracked with its fix in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
+- A word DRILLED INTO inside the panel lost its Compare (and Add-to-Deck, before Decks
+  was deleted) — deliberate, and tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
 - `CardFaceSide` gained a `topRail` slot (outer face box, last in DOM so it paints over
   the icon layer without a z-index war). It is threaded page → `FlashCardSection` →
   `CardFace` → face exactly as `editCanvas` already is, as a NODE rather than three
   callbacks, so the four surfaces that share `CardFace` never learn what a card operation
   is.
-- `PracticeWritingButton` and `AddToDeckMenu` each grew one more `appearance` rather than
-  being forked: both own real behaviour (star fetch + popup + Writing mark; deck fetch +
-  tick state + save-on-close) that every host wants behind a differently-shaped trigger.
+- `PracticeWritingButton` grew one more `appearance` rather than being forked: it owns
+  real behaviour (star fetch + popup + Writing mark) that every host wants behind a
+  differently-shaped trigger. (`AddToDeckMenu` did the same until it was deleted with
+  Decks.)
 - The flp header is down to four controls from five.
 
 **Code (new):** `src/components/WordToolsRail.tsx`, `src/components/wordToolPill.ts`,
@@ -3090,20 +3029,19 @@ that card's rail).
 `src/features/flashcards/DefinitionFacts.tsx`,
 `src/features/flashcards/BreakdownRow.tsx`,
 `src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx`.
-**Code (changed):** `FlashcardsLearnPage.tsx`, `FlashcardsLearnHeader.tsx`,
-`FlashCardSection.tsx`, `card/CardFace.tsx`, `card/SensePicker.tsx`,
+**Code (changed):** `FlashcardsLearnPage.tsx`, `FlashCardSection.tsx`, `card/CardFace.tsx`, `card/SensePicker.tsx`,
 `InfoCardPanelBody.tsx`, `InfoCardTabContent.tsx`, `InfoCardSection.tsx`,
 `EipTabStrip.tsx`, `styled.ts`, `useWorkingLoop.ts`, `ExampleSentenceList.tsx`,
-`AddToDeckMenu.tsx`, `VocabCardDetailBody.tsx`,
+`VocabCardDetailBody.tsx`,
 `src/components/handwriting/PracticeWritingButton.tsx`,
-`src/features/discover/SortCardsPage.tsx` (drops the removed `onOpenCompare`).
+`src/features/discover/AddNewCardsPage.tsx` (drops the removed `onOpenCompare`).
 **Deleted:** `FlashcardsLearnPage/InfoCardActionBar.tsx`,
 `FlashcardsLearnPage/InfoCardBlockButton.tsx`.
 **Docs:** `docs/DEFINITION_CLUSTERS.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
 `docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md`, `docs/EXAMPLE_SENTENCES.md`,
 `docs/CARD_ICON_LAYOUT.md`, `docs/PRACTICE_WRITING.md`,
 `docs/HANDWRITING_RECOGNITION.md`, `docs/WORD_COMPARE_FEATURE.md`,
-`docs/DECKS_FEATURE.md`, `docs/DEFERRED_WORK.md` §§ 10–11.
+`docs/CARD_NOTES.md`, `docs/DEFERRED_WORK.md` §§ 10–11.
 
 ## Not designed
 
@@ -3111,18 +3049,18 @@ that card's rail).
 extrapolated from the primitives rather than drawn. The mapping table lives in D10;
 this list is the inventory.
 
-- **Memory Map** (`/games/memory-map`) appears as a tile on the Games hub (4) but
-  has **no play-surface artboard**. The CSS anticipates it (`.mapw`, `.isl`, `.wd`)
+- **Memory Map** has **no play-surface artboard** (it is a break-only game since
+  2026-11-04, played inside the flp, with no route or hub tile). The CSS anticipates it (`.mapw`, `.isl`, `.wd`)
   without an artboard using it. **A2/A6 chrome only** — leave the play surface alone.
-- **Night Market** is the Home hero but has no artboard — a Pixi engine surface that
+- **Night Market** is the Menu hub's hero but has no artboard — a Pixi engine surface that
   sits outside this system. **A2 chrome only**; flag before touching anything inside.
 - ~~**flp** (`/flashcards/learn`)~~ — **REMOVED from this list 2026-08-24.** It has an
   entry (19–25) and it is built. It was never undesigned; this bullet predated the
   artboards.
-- **The Mastery Centers, Collection View, Sort Cards, Quick Mark, Skipped Cards, the
-  Reader document page, Login/Register and the Study Challenge pages**: extrapolated
-  per D10.
-- **The sort flow** (scp, `/discover/sort/:language`) is an explicit **outstanding
+- **Add New Cards, Quick Mark, Skipped Cards, the Reader document page, Login/Register and the Study Challenge pages**: extrapolated
+  per D10. (The Mastery Centers and Collection View were also on this list until they
+  were deleted, 2026-11-04.)
+- **The sort flow** (ancp, `/discover/sort/:language`) is an explicit **outstanding
   item** (D11) — out of scope for this pass even though D10 would otherwise cover it.
   ⚠️ The project now also holds `Sort Flow - Shelf System.html`, so a design exists;
   it is a sibling file rather than part of the spec artboard set.
@@ -3316,38 +3254,23 @@ of a tank, it turns one cell off.
 `HubMenu.tsx` (439 lines) and `hubMenuCardBase.ts` are removed, all **10** importers
 are converted to Bento, and `docs/BENTO_SYSTEM.md` is retired. The heavy part is
 `src/games/word-search/WordSearchHubItem.tsx` (~390 lines, imports six named
-exports) plus `GamesCollectionSelector`, which renders into `HubMenu`'s `header`
-slot — both budgeted into **entry 4**.
+exports) plus the Games hub's collection selector (since deleted), which rendered into
+`HubMenu`'s `header` slot — both budgeted into **entry 4**.
 
 ### D9 · `DeckTile` is deleted — NARROWED 2026-08-24
 
 > **Narrowing (2026-08-24), on the user's ruling.** The spine remains the single visual
-> for a set of cards, and still governs decks, challenges and bands. **The decks sheet's
-> two LIBRARY CONSTANTS — Learning and Mastered — are the one exception** (artboard 2's
-> `.duo`, built as `LibraryDuo`), and the reason is what the surface is for rather than a
-> change of mind:
->
-> Those two are the only sets whose SIZE is the thing the learner came to read. Every
-> other shelf answers "which set?" and encodes its count as the spine's height — a
-> comparison between neighbours, exactly right for a row of six decks. These two have no
-> neighbours to be compared against; "612" and "208" are the figures, and a 74px spine
-> cannot print a figure at a size worth reading.
->
-> They now take the **fdp Centers rail's material** rather than the shelf's: the hand's
-> hairline border and resting elevation, a 15px radius, `13px 13px 14px` padding, a 19px
-> glyph on its own line, 9px between the pair — the same object as
-> `flashcards-decks__center-tile`, because a Center tile and a library tile are the same
-> KIND of destination (a place to go look at a set of cards) and sat a thumb's width apart
-> in two different idioms. Each keeps its own pastel, and the FIGURE is **right-adjusted**
-> on the label's line so both tiles' counts land on one vertical rule. (Superseded: the
-> earlier "spine laid on its side" treatment — single pastel, inset white highlight, dark
-> left strap, bottom-heavy radius.) Do not read this as licence to bring tiles back
-> anywhere else.
+> for a set of cards. **The library's two CONSTANTS — Learning and Mastered — are the one
+> exception**: they are the only sets whose SIZE is the thing the learner came to read,
+> and a 74px spine cannot print a figure at a size worth reading. They were drawn as wide
+> tiles (`LibraryDuo`, artboard 2's `.duo`, deleted with the fdp 2026-11-04); today they
+> are the Deck Tower cards page's two filter keycaps (`TowerFilterKeys`), which keep that
+> tile's shape. Do not read this as licence to bring tiles back anywhere else.
 
 ### D9 · `DeckTile` is deleted
 The app switches to the new design entirely: the **spine replaces the stacked-card
 tile** as the single visual for a set of cards. `DeckTile.tsx` (413 lines) and its
-callers `DecksPanelBody` (3 uses) and `DeckBuckets` → Account are converted to
+callers (the decks panel, since deleted, and `DeckBuckets` → Account) are converted to
 `Spine`. No coexistence period.
 
 > **Correction to an earlier draft of this file:** `DeckTile` has **no** selection or
@@ -3359,7 +3282,7 @@ callers `DecksPanelBody` (3 uses) and `DeckBuckets` → Account are converted to
 
 **Carry forward into `Spine` (A3) — the one genuinely good idea in `DeckTile`:**
 every interior dimension is authored at a `REFERENCE_WIDTH` and rendered in **`cqw`,
-not px**, so the tile scales as a single unit. That is what lets the fdp render it at
+not px**, so the tile scales as a single unit. That is what let the decks page render it at
 100px and Account at ~71.5px and have both be the same object rather than two
 designs. `Spine` must do the same, or the Reader's `.sp.vol` (86×134) and the decks
 sheet's 74px override become two components.
@@ -3376,9 +3299,7 @@ reads, to be confirmed as each is built:
 
 | Surface | Primitive |
 |---|---|
-| flp (`/flashcards/learn`) | `.hero` card face (295/426), `.msb` for the lens bar |
-| Mastery Centers | `.msb` over a Bento of entry points |
-| Collection View | Shelf |
+| flp (inside the Deck Tower) | `.hero` card face (295/426), `.msb` for the lens bar |
 | Skipped Cards | Shelf, or `.rw` rows if there is no count to encode |
 | Quick Mark | leaf `.lhd` + `.hero` |
 | Reader document page | leaf `.lhd` + body type from A1 |
@@ -3393,10 +3314,19 @@ re-deriving it.
 
 ### D14 · "A card lying on the page" is ONE recipe — `CARD_SURFACE`
 **Decided 2026-09-04, on the user's ruling:** the cdp and flp cards should be styled the
-same way as the fdp's menu card items, with the same border.
+same way as the decks page's menu card items, with the same border.
 
-Three surfaces were drawing the same physical object three ways: the fdp's Mastery Center
-tiles had a `COLORS.border` hairline + a resting shadow at 15px, the flp flashcard had a
+> **Superseded for flashcards (2026-11-04).** Every vet flashcard face now prints on the
+> tower's card stock with **no hairline** (`CardFaceSide` sets `border: "none"`;
+> [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock"). From this recipe the face
+> keeps only the radius (`CARD_SURFACE.borderRadius`, read through `--card-radius`, which
+> `cardStockVars` sets). The flp card casts no shadow (`FlashCardSection` → `cardShadow`
+> is `"none"`); the cdp hero's wrapper still casts `CARD_SURFACE.boxShadow`. The flp's
+> empty-state card and `BreakCardLayer` still read the recipe. The text below is the
+> recipe's history.
+
+Three surfaces were drawing the same physical object three ways: the decks page's Mastery
+Center tiles had a `COLORS.border` hairline + a resting shadow at 15px, the flp flashcard had a
 shadow and **no border** at 12px, and the cdp hero card had **neither** — a pale cream face
 on the warm paper ground with nothing marking its edge. `src/theme/surfaces.ts` now holds
 the recipe:
@@ -3413,7 +3343,8 @@ a cream card on cream paper has no boundary at all; that was the cdp hero's bug.
 **`HAND_CARD_RESTING_SHADOW` is gone.** It was a hand-authored constant in `StudyHand.tsx`
 whose own comment asked to be folded into the token set "the next time the elevation scale
 is revisited"; it is now `SHADOW.cardRest` (`0 5px 16px` @ .14 — between `raised` and
-`float`), and `LibraryDuo` / `FlashcardsDecksPage` read it from there.
+`float`). (`StudyHand`, `LibraryDuo` and the decks page that read it were deleted
+2026-11-04.)
 
 **Who draws which half.** A flashcard FLIPS, so the hairline and radius live on each FACE
 (`CardFaceSide`, `card/CardFace.tsx`) — a border on the transparent flip wrapper would stay
@@ -3437,8 +3368,9 @@ and the fie's two canvas layers (`CardIconCanvas`).
 `flpCardRadiusCss`) sets `--card-radius` to `FLP_CARD_CORNER_RATIO` (0.09375) × the card's
 width, so its corners match the Deck Tower's card, which the study camera lays exactly over
 it (docs/DECK_TOWER.md § "Studying the tower"); ≈ 28px at the nominal 295px width. Every
-other card (cdp hero, Decks rail tiles, IW intro card) sets no variable and keeps 15px. Surfaces that are NOT cards keep their own radii: the hand's cards stay
-22px (twice the size), the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
+Since 2026-11-04 the cdp hero sets it too (`cardStockVars`), so both vet card surfaces
+share the tower card's corner ratio; the IW intro card sets no variable and keeps 15px.
+Surfaces that are NOT cards keep their own radii: the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
 
 ### D13 · Elevation is the design's shadow system, and it lives in one token file
 **Decided 2026-08-24, on the user's ruling.** The design has a shadow system; the app had
@@ -3465,27 +3397,21 @@ reads as dirt under the card. Pick by what the thing is: `rest` · `raised` · `
 `float` · `lifted` · `menu` · `popover` · `board` · `spine`/`spineSwatch`, plus the three
 upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`). One
 app-authored role has no artboard source: `recessed`, an inset shadow for an empty well
-pressed into a surface (the sort page's card crater, `SortCardsPage.tsx` → `CardCrater`).
+pressed into a surface (the sort page's card crater, `AddNewCardsPage.tsx` → `CardCrater`).
 
 **Where it is wired.** The light theme's `flashcard.cardShadow` / `.cardShadowSubtle` /
 `.sheetShadow` now resolve to `SHADOW.lifted` / `.raised` / `.panelUp`, so every call site
 already reading the theme moved for free. Dark / Ocean / Nature keep their own and are not
 re-derived (D4).
 
-**Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the scp's
-`CardShell` + bucket tile + platform, `CollectionViewPage`, `CommunityCardView`, `Shelf`,
+**Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the ancp's
+`CardShell` + bucket tile + platform, `CommunityCardView`, `Shelf`,
 `Spine`, `SensePicker`, `CardOpsRail`, `Bento`, `MinimizablePopup`, `HydraLendNotice`
 (deleted 2026-09-05),
 `ProvisionalCardsNotice`, `CommunityDesignZoom`, `CardIconOrderList`,
 `PracticeWritingPopup`.
 
 **Deliberately NOT converted, and why:**
-- **`StudyHand`'s front card** — a two-shadow stack (one ABOVE it, one below) so it reads as
-  lifted off the two cards behind. No single token expresses that, and its ink is already
-  the design's.
-- **`LibraryDuo`** — no longer shelf material at all: it shares `SHADOW.cardRest` with the
-  fdp's Centers rail and the hand's resting cards (see D9's narrowing), so `SHADOW.spine`
-  would break that pairing rather than tidy it.
 - **Game internals** (`BubbleStage`, `Bubble`, `WordSearchGrid`) and the icon editor's
   canvas handles (`CardIconCanvas`) — these are rendering surfaces with their own physical
   look, not app chrome.
@@ -3513,7 +3439,7 @@ into the open rather than a new decision:
    Ocean / Nature keep their own faces and are not re-derived (D4).
 2. **Four surfaces were not reading the theme at all** and had to be converted, or they would
    have stayed grey while the flashcard went cream: `MiniVocabCard`, `QuickMarkCard`,
-   `ChallengeWordCard` and the scp's `CardShell` (since folded into the shared `MiniCard`). All four are card faces; all four hard-coded
+   `ChallengeWordCard` and the ancp's `CardShell` (since folded into the shared `MiniCard`). All four are card faces; all four hard-coded
    `COLORS.card`. They looked correct only because the light theme's face happened to be that
    same token — which also meant a mini card silently ignored Dark / Ocean / Nature.
 3. **The fie's `auto` and `grey` swatches are now actually different.** `cardColor.ts` has
@@ -3528,7 +3454,7 @@ migration: `null` means "follow the theme", and the theme is what moved.
 
 ### D11 · Discover is being redesigned — artboard 3 is superseded
 The user is producing a new Discover design. Entry 3 is **blocked** on it; do not
-build from the existing artboard. The **sort flow** (scp, `/discover/sort/:language`)
+build from the existing artboard. The **sort flow** (ancp, `/discover/sort/:language`)
 is deliberately left as an **outstanding item** and is out of scope for this pass —
 which also parks the open question about per-bucket queue counts, since the new
 design decides whether that shelf exists at all.
@@ -3543,7 +3469,7 @@ Nothing blocking. Two things to confirm *while building*, not before:
   queue split by progress bucket. Parked under D11 until the new Discover design
   lands; worth answering before that design is finalized so it isn't drawn around
   data that doesn't exist. *(The Discover hub was deleted 2026-10-17 — see entry 3 — so this
-  now applies only to a count on the decks rail's Sort tile or inside scp.)*
+  now applies only to a count on the decks rail's Sort tile or inside ancp.)*
 - **The D10 primitive assignments** — each is a starting read, not a ruling.
 
 # Suggested order
@@ -3558,7 +3484,7 @@ smallest slice that shows the shelf system working on real data, and entry 4 car
 **Next**: the review this order stops for. After it, the entries are independent.
 
 After that the entries are independent. **5** (Account) shipped 2026-08-23 out of this
-order, as a targeted follow-up. **2** (Decks), **18** (Card Detail) and **19–25** (flp +
+order, as a targeted follow-up. **2** (Decks — page since deleted), **18** (Card Detail) and **19–25** (flp +
 eip) — the three highest-value entries and the last of the big ones — shipped together on
 2026-08-24, likewise out of order.
 **7** (Dictionary) shipped 2026-08-24, and 12–16 are closed — 15 by ruling that its board
@@ -3583,7 +3509,7 @@ the only entry that adds a route), and A7's **`.cpcd`** restyle.
 
 `docs/BENTO_SYSTEM.md`, `docs/UX_AND_NAVIGATION.md`,
 `docs/MOBILE_TAB_SCREEN_LAYOUT.md`, `docs/LEAF_NODE_PAGES.md`,
-`docs/DECKS_FEATURE.md`, `docs/DISCOVER_FLOW.md`, `docs/GAMES_FEATURE.md`,
+`docs/DECK_TOWER.md`, `docs/TOWER_STYLE_SHIFT.md`, `docs/DISCOVER_FLOW.md`, `docs/GAMES_FEATURE.md`,
 `docs/MASTERY_REWORK.md`, `docs/COMMUNITY_PAGE.md`, `docs/FRIENDS_FEATURE.md`,
 `docs/ARENA_FEATURE.md`, `docs/VELOCITY.md`, `docs/WORD_SEARCH_GAME.md`,
 `docs/MATCH_SPEED_GAME.md`, `docs/SPEED_READING_GAME.md`, `docs/HYDRA_BUBBLES.md`,

@@ -3,18 +3,16 @@ import { dealWritingGrid, type WritingGridCharacter, type WritingGridDealRequest
 import type { FlpBreakContext, FlpBreakGame } from "./types";
 
 /**
- * A break's deal. The focus rule applies to an unrestricted session only, because a
- * hand-picked set ignores focus (docs/FOCUS_MODE.md § 4), so a deck session omits `flpBreak`.
- * A deck session's seed is its own words, but the rest of the board is not narrowed to the
- * deck: the deal has no collection (docs/FLP_GAME_BREAKS.md § 4).
+ * A break's deal: the working loop as the seed, and `flpBreak` so the server applies the
+ * focus rule (docs/FOCUS_MODE.md § 4a). Every flp session is unrestricted (no deck or
+ * collection launch any more), so the flag is always sent.
  */
 export function writingGridBreakRequest(context: FlpBreakContext): WritingGridDealRequest {
-    return { seedIds: context.seedIds, flpBreak: context.collection === null };
+    return { seedIds: context.seedIds, flpBreak: true };
 }
 
 /**
  * Writing Grid as an flp game break (docs/FLP_GAME_BREAKS.md § 6), the writing flp's game.
- * The grid has no modes, so the flp's study mode does not reach it (§ 4).
  */
 export const WRITING_GRID_BREAK: FlpBreakGame<WritingGridCharacter[]> = {
     gameId: "writing-grid",

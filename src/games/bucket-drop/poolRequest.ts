@@ -1,5 +1,4 @@
 import type { GamePoolRequest } from "../../api/gamePool";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import type { MarkType } from "../../types";
 import { GAME_DISTRIBUTION, GAME_ID } from "./constants";
 
@@ -14,7 +13,6 @@ import { GAME_DISTRIBUTION, GAME_ID } from "./constants";
 export function bucketDropPoolRequest(args: {
     /** The run's track: the pool is bucketed and cooled on it. */
     markType: MarkType;
-    collection: CollectionRef | null;
     challengeParams?: string;
     /** An flp game break's working loop (docs/FLP_GAME_BREAKS.md § 4). */
     seedIds?: number[];
@@ -25,7 +23,6 @@ export function bucketDropPoolRequest(args: {
         markType: args.markType,
         surface: GAME_ID,
         distribution: GAME_DISTRIBUTION,
-        collection: args.collection,
         challengeParams: args.challengeParams,
         seedIds: args.seedIds,
         flpBreak: args.flpBreak,

@@ -86,11 +86,9 @@ const Chip = styled(Box, {
 // One tab — a transparent segment over the track. No outline ring (CLAUDE.md § Buttons &
 // cards): these are segments of one control, and the chip is already set off by its fill.
 //
-// An EMPTY tab stays legible but dimmed: it is still a real destination that says "nothing
-// here", which is an answer.
-const Segment = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isActive" && prop !== "isEmpty",
-})<{ isActive: boolean; isEmpty?: boolean }>(({ isActive, isEmpty }) => ({
+// Every tab renders at full strength, empty or not (2026-11-03): an empty tab is still a
+// real destination, and its pane shows its own "nothing here" state.
+const Segment = styled(Box)({
     // Above the sliding chip.
     position: "relative",
     zIndex: 1,
@@ -102,13 +100,11 @@ const Segment = styled(Box, {
     cursor: "pointer",
     fontFamily: FONTS.sans,
     userSelect: "none",
-    opacity: isEmpty && !isActive ? 0.4 : 1,
     background: "transparent",
-    transition: "opacity 0.2s ease",
-}));
+});
 
 interface SheetSegmentedTabsProps {
-    tabs: readonly { label: string; isEmpty?: boolean; className?: string }[];
+    tabs: readonly { label: string; className?: string }[];
     selected: number;
     onSelect: (index: number) => void;
     colors?: SheetSegmentedTabsColors;
@@ -133,8 +129,6 @@ function SheetSegmentedTabs({ tabs, selected, onSelect, colors = DEFAULT_COLORS,
                     key={index}
                     role="tab"
                     aria-selected={selected === index}
-                    isActive={selected === index}
-                    isEmpty={tab.isEmpty}
                     onClick={() => onSelect(index)}
                     className={tab.className}
                 >

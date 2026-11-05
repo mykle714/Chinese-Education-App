@@ -75,7 +75,7 @@ first-of-day requests agree on one set: `claimSnapshot` only replaces an older d
 ## 4. Where focus narrows a round
 
 *Code: `OnDeckVocabController.applyFocus`; `routes/flashcardRoutes.ts` (mark refill);
-`OnDeckVocabService` → `CollectionFilter` `{ kind: 'focus', ids }`, `deckPlayFilter`.*
+`OnDeckVocabService` → `CollectionFilter` `{ kind: 'focus', ids }`, `focusPlayFilter`.*
 
 On every **unrestricted** launch whose world is focused, the controller substitutes a `focus`
 collection holding today's remaining ids (snapshot minus cards marked correct today, re-read on
@@ -90,9 +90,8 @@ set everywhere at once: every candidate query narrows to the ids, and every lend
 | `GET /api/onDeck/wordSearchGrid` | its mark type's world | no lending escalation. With `?flpBreak=1` the round is inverted instead (§ 4a) |
 | `GET /api/onDeck/flpReadyCounts` | `?world=` | counts only the remaining set; response adds `focusOn` |
 
-**Not narrowed:** deck / built-in collection rounds (`?deck=`, `?collection=`: a hand-picked set
-ignores focus), Study Challenge boards, Memory Map (its own `MemoryMapService` pool) and Writing
-Grid's own route (its own DAL). A Writing Grid **break** does apply § 4a: `WritingGridController.deal`
+**Not narrowed:** Study Challenge boards, Memory Map (its own `MemoryMapService` pool) and a Writing Grid deal
+without `?flpBreak=1` (its own DAL). Writing Grid is break-only, so in practice its deals do apply § 4a: `WritingGridController.deal`
 resolves the writing world itself and passes `focusBreak` to `WritingGridService.deal`, which
 treats the characters of the set's words as the fallback.
 
@@ -129,7 +128,7 @@ Fill order (`getGameVocabPool`):
 lists the outside words as `outsideFocusWords`.
 
 *Code: `OnDeckVocabController` → `applyFocus`, `getGamePool`, `getWordSearchGrid`; `OnDeckVocabService` →
-`CollectionFilter`, `deckPlayFilter`, `getGameVocabPool`, `getWordSearchGrid` (`focusBreak`);
+`CollectionFilter`, `focusPlayFilter`, `getGameVocabPool`, `getWordSearchGrid` (`focusBreak`);
 `FocusModeService` → `resolveWorld` (`setIds`); `src/api/gamePool.ts` → `GamePoolRequest.flpBreak`;
 `src/games/match-speed/poolRequest.ts`.*
 

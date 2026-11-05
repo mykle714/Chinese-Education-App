@@ -132,7 +132,7 @@ case via `useEipTabs.syncEntry`).
 (`VocabCardDetailPage` → `InfoCardSection`), that page shows the picker twice: on the hero
 card face (`EnglishBlock`) and in the panel header. Both are driven by the page's single
 `selectedSenseIndex` state and both persist through the same `handleSelectSense`, so they
-cannot disagree. Note the contrast with the flp/scp, where the panel's index lives per
+cannot disagree. Note the contrast with the flp/ancp, where the panel's index lives per
 entry tab inside `useEipTabs` — the cdp has no entry tabs (it drills in by navigating), so
 page state is the simpler home for it.
 
@@ -330,7 +330,7 @@ resolvers and are stripped before the row leaves the method, so no wire DTO carr
 
 | Payload | Site | Sense pick |
 |---|---|---|
-| discover / sort cards (scp, QuickMark, Skipped) | `StarterPacksService._rowsToDiscoverCards` | default — no vet row exists yet |
+| discover / sort cards (ancp, QuickMark, Skipped) | `StarterPacksService._rowsToDiscoverCards` | default — no vet row exists yet |
 | Study Challenge word cards | `StudyChallengeDAL` (`findCandidates` + stored-word display) | default |
 | community feed designs | `CommunityLayoutDAL` (`feedSelect` → `normalize`) | the **design owner's** `selectedSense` |
 | used-in list, pass 1 (saved words) | `VocabEntryDAL.findUsedInForCharacter` | the learner's `selectedSense` |
@@ -392,6 +392,9 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
   `"a bit; give it a try"`) that exists in no source cluster.
 - a cluster may **prune** a low-value gloss (broken English / archaic) that
   `definitions` still lists.
+- a cluster may carry a **synthesized short lead gloss for that sense** that is in no
+  `definitions` element (see "Short lead gloss per sense").
+
 
 ## Pipeline
 
@@ -404,8 +407,72 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
 | **B — Order/prune within cluster** | Reuses the shared Pass-1/2 gloss-ordering pipeline per cluster (skips the API for ≤1-gloss clusters). Standalone-safe: Pass-1 also prunes broken/archaic glosses, so the clusterer runs on raw cedict glosses too. | `lib/orderGlosses.js` (`createGlossOrderer` → `pass1Sort`, `pass2Critique`) |
 | **C — Score frequency** | Scores each cluster's conversation frequency 1–5 **independently** (会 "can"=5 vs "accounts"=1), identical rubric to the word-level scorer, plus the sense-mode-only polysemy lines. Since v10 the call also receives the cluster's `pos`, and a **grammatical-function sense** (classifier / measure word, particle, complement) is scored by how often speakers pick *this word* for that job, not by how common the job is — 回 "times/occurrences" yields to the default 次 (4); 个 is the default general classifier (5). | `lib/frequencyScore.js` (`createFrequencyScorer` → `scoreFrequency`, `POLYSEMY_GUIDELINE.sense`) |
 | **C.5 — Tiebreak order** | Ranks the clusters that came back with the **same** `frequencyScore`, because array order is what every read-side sort uses to break a score tie (see "Ties" below). One call per entry that *has* a tie, none otherwise. The model is shown each tied cluster's `sense`, `glosses` and `pos` (pos since v10). Permutes tied clusters **within the slots they already occupy** — cross-band order is left to the read-side sort, and no `sense`, `glosses`, `pos` or score is edited. On any failure the original order is kept and a review note is printed. Skippable with `--no-tiebreak`. | `shared/lib/tiebreakOrder.js` (`createClusterTiebreaker` → `tiebreakClusterOrder`, `tieGroups`) |
+| **C.6 — Short lead gloss** | On a multi-sense entry (≥2 displayable clusters), any cluster whose **displayed** lead (`ddt`, i.e. `stripParentheses(glosses[0])`) exceeds 20 chars gets ONE synthesized ≤20-char gloss **for that sense** placed first; the long source gloss stays right behind it. Runs after C/C.5 so neither scoring nor the tiebreak sees a synthesized gloss; skipped on `--rescore-only`. See "Short lead gloss per sense" below. | `shared/lib/senseShortGloss.js` (`createSenseShortGlosser` → `shortenLongLeads`) |
 
 The clusterer then writes **only** `definitionClusters` and stamps the run log.
+
+### Short lead gloss per sense
+
+**Why.** Step 4 (`backfill-process-definitions-array.js`) keeps `definitions[0]` ≤20
+chars (`MAX_FIRST_GLOSS_LEN`) by prepending a synthesized gloss, but once an entry has
+≥2 displayable clusters the dd is `ddt(cluster)`, not `definitions[0]` — and Stages A/B
+copy and re-sort source glosses with no length rule. The step-4 gloss was sorted behind
+the long one (工事 "military fortifications"), landed in another sense (上火), or was
+never generated for non-default senses at all. The 2026-11-03 dev audit found 1,621 zh /
+449 es cluster leads over 20 displayed chars.
+
+**Rule.** For every cluster of a multi-sense entry whose displayed lead is >20 chars, a
+model writes one gloss for **that sense** (the step-4 prompt re-scoped from "the word's
+most common meaning" to "this sense", which is what keeps sibling senses from all getting
+the word's headline). Validation: ≤20 chars, no `()`/`[]`, no ellipsis, and not identical
+to another sense's headline (the sense picker would show two identical rows). A rejected
+answer is fed back with its reason (models miscount characters, so a blind retry returns
+the same 21-char answer); attempts are Sonnet → Sonnet with feedback → Opus with feedback.
+If the model returns a gloss the cluster already holds, that gloss is **moved** first
+instead of duplicated. Labels, scores, readings and cluster order never change.
+
+**Provenance.** A synthesized gloss is a non-source string inside `glosses`, so a
+cluster is no longer a subset of `definitions` (it already wasn't a strict partition after
+Stage B pruning — see "Ownership"). Nothing marks which gloss was synthesized; the
+`⚠ SHORT GLOSS REVIEW` stdout line is the only record. zh re-clustering reads
+`definitions` and so drops and regenerates it; **es re-clustering seeds from the stored
+clusters** (`buildSenseInput`), so from then on the synthesized gloss is treated as a
+source gloss.
+
+**Materialized copies.** `breakdown[char].definition` on multi-char zh words is a frozen
+copy of the tagged cluster's lead (`backfill-breakdown-senses.js` → `clusterLeadGloss`),
+so changing a character's cluster lead leaves those stale until refreshed. Every other dd
+consumer (est segment defs, `ddCollisionKey`, Word Search) resolves at read time; icons
+key off `definitions[0]`.
+
+**Both clusterers** run it on every new clustering (zh Stage C.6; es just before
+`writeClusters`). **zh** rows clustered before it existed were repaired in place on dev
+(2026-11-03) by `server/scripts/backfill/shared/patch-long-cluster-glosses.js --lang=zh`,
+which also refreshes the affected `breakdown[char].definition` values (2,273 on dev):
+1,605 short glosses placed, 1,621 → 16 long leads. The 16 left are rare non-default
+senses where every attempt stayed over 20 chars (e.g. 雅量 "high drinking capacity"); they
+print as `FAILED` review lines and are retried by any later run. **es has not been
+patched** (Spanish is paused — DEFERRED_WORK.md item 33). **PPE has not been patched**
+either; the script must be run there too, since PPE is the det source of truth. The
+repair was done deliberately **without** a `SCRIPT_VERSION` bump on either clusterer,
+because a bump marks the corpus stale and a `--stale` run would re-partition it and
+re-mint sense labels.
+
+**The attempt loop is shared with step 4.** `askShortGloss` (same module) runs up to four
+attempts (Sonnet ×3, then Opus). Each retry carries the previous answer and its exact
+overrun ("27 characters; remove at least 7"), because models miscount characters and a
+blind retry returns the same 21-char answer. It parses the FIRST `{…}` in a reply,
+non-greedily. Step 4's word-level `generateShortGloss` (`chinese/lib/orderGlosses.js`) uses
+the same loop with its own unchanged prompt. Since 2026-11-03 step 4 also leaves a row
+**unstamped** when every attempt fails, so the planner retries it instead of treating the
+failure as done.
+
+Code: `server/scripts/backfill/shared/lib/senseShortGloss.js` (`needsShortGloss`,
+`createSenseShortGlosser`, `withShortGlossFirst`, `validateShortGloss`,
+`MAX_SENSE_GLOSS_LEN`), `server/scripts/backfill/shared/patch-long-cluster-glosses.js`,
+`chinese/backfill-cluster-definitions.js` (Stage C.6), `spanish/backfill-cluster-definitions.js`
+(`run`). The 20-char budget is duplicated in `chinese/lib/orderGlosses.js` and
+`spanish/backfill-process-definitions-array.js` (`MAX_FIRST_GLOSS_LEN`); change all three together.
 
 Stage A's model is overridable for A/B testing via the `CLUSTER_MODEL` env var
 (defaults to Sonnet; e.g. `CLUSTER_MODEL=claude-opus-4-8` runs the whole split on
@@ -637,6 +704,7 @@ verbatim, none invented or dropped) deterministically, before any model judges q
 | **Check** | Deterministic: exact partition, unique sense labels, score range. No API call. | `checkShape` |
 | **Review** | Sonnet judges *quality* only — mixed meanings, mergeable duplicates, violated pos/gender boundaries, a wrong lead gloss, an implausible score, **and a cluster order that would star the wrong default sense**. | `validateClusters` |
 | **Retry** | Opus regenerates against the critique; if the retry fails the partition check, the first (mechanically valid) attempt is kept — a rejected retry must never lose a gloss. | `regenerateClusters`, `runPipeline` |
+| **Short lead gloss** | Same step as zh Stage C.6, after the partition check: a multi-sense entry's cluster with a displayed lead >20 chars gets a synthesized ≤20-char gloss for that sense placed first. | `shared/lib/senseShortGloss.js` |
 
 **Seeded clusters are input, not output.** Migration 123 wrote a *mechanical* cluster
 per merged row for the 9,087 multi-row words, carrying Wiktionary's pos/gender. Those
@@ -660,10 +728,57 @@ were rows. And like zh it never writes `definitions`.
 |---|---|---|
 | **Example sentences** (est) — generation | The list of `sense` labels + per-cluster `frequencyScore`, to tag each generated sentence with the target-word sense it demonstrates and to steer coverage toward every register-4/5 sense. | `server/scripts/backfill/chinese/backfill-example-sentences.js` (`buildSenseContext`) — see [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
 | **Example sentences** (est) — per-segment tagging | Each segment's own cluster labels are offered to the tagging pass, which writes a `senseDict[segment]` label; at read time the matching cluster supplies **both** that segment's displayed dd (`ddt(cluster)`) **and** its pronunciation (`cluster.reading`, tone-marked) — so a heteronym in a sentence reads as the sense the sentence uses (会 = kuài in "to reckon accounts"), including in TTS narration. | `backfill-example-sentences.js` (`tagSentenceSegments`), `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`), `server/utils/pinyinTones.ts` |
-| **sense-picker** (shared `SensePicker`) | **Two states, one component (redesigned 2026-08-24, artboards 19–25).** RESTING (`.ssel`) is a small pill carrying a counter and a triangle — `1/9` — beside or below the gloss. It replaced a bare triangle, which said "there is a control here" and nothing else; the counter says the two things a learner needs at rest (this word has nine meanings; you are on the first), which is what lets a set-and-forget control be this small and stop asking for attention on a word whose sense is settled. OPEN (`.ssheet`) lifts a compact sheet showing EVERY sense at once, so the choice is made by COMPARING in one look rather than by paging; it closes on the pick. The sheet's own header names the count and the trailing column ONCE (a column header belongs to the column, not to the first group in it — it used to be repeated into the first reading heading). Rows mark the showing sense by **weight**, not by a tick in a gutter: a tick pushes all nine labels off their own margin to mark one of them. Still a MUI `Menu` underneath the restyle — the portal, anchor tracking, outside-tap dismiss and focus trap are exactly what a sheet lifted off a chip inside a draggable card needs, and hand-rolling them on a gesture-heavy surface would be three bugs. Mounted by the flp/cdp card face (`EnglishBlock`) only. **The eip header does not mount it (since 2026-10-29)**: it lists every sense instead as a dot-separated, display-only gloss (`EipEntryHeader` → `senseSegments`, through `SwipeableTwoLineText`), the chosen sense underlined in the eip palette's `muted` ink and the default (index 0) carrying the same star (text-coloured on both surfaces, `color="inherit"`) — built from the same `sortedSenseClusters` order and `ddt` labels, so the two surfaces still name the senses identically. A pick is made on the card face; the open eip follows it via `useEipTabs.syncEntry`. It self-hides when the entry has no real choice. `ddt(cluster)` renders each cluster as a display string in the dropdown. **zh — sectioned by `reading`**: one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`, preserving the frequency sort within each section and the star on the global default (index 0). **es — flat list**: `senseSections` returns null when no cluster carries a reading (sectioning would emit one meaningless "—" heading over the whole list), so each row renders instead with its own `senseGrammarTag` ("n · m") to carry the disambiguation. Both paths render through the same `renderSenseItem` so selection/star/stop-propagation can't drift apart. **Front/question side censors the readings**: on flp Side 1 (English question side) `EnglishBlock` is passed `censorReadings`, which replaces each pinyin heading with a neutral ordinal label ("-pinyin 1-", "-pinyin 2-", … in section order) — the grouping still tells the learner which senses share a reading, but the pronunciation and tones (the answer they are supposed to produce) are not leaked. The back/answer side, both cdps, and the community card view leave the prop off and show real tone-colored pinyin. The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest frequency first) — the single source of truth both the picker and the persistence layer address. That helper also decides *which* clusters are offered at all: clusters with no displayable English are dropped and the picker is suppressed entirely below two survivors (see "Displayable clusters" below). **Each row carries a commonality meter**: the cluster's own `frequencyScore` renders as a 5px `FrequencyScoreDots` trailing the label (muted to `text.secondary` / `divider`), the same meter the eip and cdp show at full size. It is needed here precisely because the zh path re-groups by reading, so menu order is no longer globally frequency-sorted and nothing else tells the learner which of two senses under different readings is the common one. A cluster whose score is null renders no meter (rather than five hollow dots, which would read as "score 0"). The meter's column is labelled ONCE, by the sheet header described above (`… senses` on the left, `commonality` on the right, suppressed when no cluster is scored) — it used to be folded into the first `ListSubheader`, which read as part of that reading's heading rather than as a one-time column label. **Layout on the card face**: the trigger is out of flow, so the gloss centers and wraps as if it did not exist. `useSenseChipPlacement` then puts it right of the gloss when it fits inside the card's content boundary (the printed panel on Deck Tower stock), and otherwise centered below it (`CardFace.tsx` → `EnglishBlock`). `useShrinkWrapWrappedText` narrows a wrapped gloss to its balanced width first, so that check reads the lines' real width. | `src/utils/definitionUtils.ts` (`ddt`, `senseGrammarTag`, `sortedSenseClusters`), `src/features/flashcards/card/SensePicker.tsx` (`senseSections`, `renderSenseItem`), `src/features/flashcards/card/CardFace.tsx` (`EnglishBlock` — mounts it), `src/features/flashcards/card/useShrinkWrapWrappedText.ts`, `src/features/flashcards/card/useSenseChipPlacement.ts`, `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (`senseSegments` — the eip header's sense list, not the picker), `src/components/SwipeableTwoLineText.tsx` (`TwoLineSegment`), `src/components/FrequencyScoreDots.tsx`, `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
+| **sense-picker** (shared `SensePicker`) | **Two states, one component (redesigned 2026-08-24, artboards 19–25).** RESTING (`.ssel`) is a small pill carrying a counter and a triangle — `1/9` — beside or below the gloss. It replaced a bare triangle, which said "there is a control here" and nothing else; the counter says the two things a learner needs at rest (this word has nine meanings; you are on the first), which is what lets a set-and-forget control be this small and stop asking for attention on a word whose sense is settled. OPEN (`.ssheet`) lifts a compact sheet showing EVERY sense at once, so the choice is made by COMPARING in one look rather than by paging; it closes on the pick. The sheet's own header names the count and the trailing column ONCE (a column header belongs to the column, not to the first group in it — it used to be repeated into the first reading heading). Rows mark the showing sense by **weight**, not by a tick in a gutter: a tick pushes all nine labels off their own margin to mark one of them. Still a MUI `Menu` underneath the restyle — the portal, anchor tracking, outside-tap dismiss and focus trap are exactly what a sheet lifted off a chip inside a draggable card needs, and hand-rolling them on a gesture-heavy surface would be three bugs. Mounted by the flp/cdp card face (`EnglishBlock`) only. **The eip header does not mount it (since 2026-10-29)**: it lists every sense instead as a dot-separated, display-only gloss (`EipEntryHeader` → `senseSegments`, built by the shared `buildSenseSegments` in `src/components/senseListSegments.tsx` — also used by Memory Map's prompt since 2026-11-04 — through `SwipeableTwoLineText`), the chosen sense underlined in the eip palette's `muted` ink and the default (index 0) carrying the same star (text-coloured on both surfaces, `color="inherit"`) — built from the same `sortedSenseClusters` order and `ddt` labels, so the two surfaces still name the senses identically. A pick is made on the card face; the open eip follows it via `useEipTabs.syncEntry`. It self-hides when the entry has no real choice. `ddt(cluster)` renders each cluster as a display string in the dropdown. **zh — sectioned by `reading`**: one `ListSubheader` per distinct pinyin, tone-marked via `numberedToTonedPinyin` and per-syllable tone-colored via `getToneColor`, preserving the frequency sort within each section and the star on the global default (index 0). **es — flat list**: `senseSections` returns null when no cluster carries a reading (sectioning would emit one meaningless "—" heading over the whole list), so each row renders instead with its own `senseGrammarTag` ("n · m") to carry the disambiguation. Both paths render through the same `renderSenseItem` so selection/star/stop-propagation can't drift apart. **Front/question side censors the readings**: on flp Side 1 (English question side) `EnglishBlock` is passed `censorReadings`, which replaces each pinyin heading with a neutral ordinal label ("-pinyin 1-", "-pinyin 2-", … in section order) — the grouping still tells the learner which senses share a reading, but the pronunciation and tones (the answer they are supposed to produce) are not leaked. The back/answer side, both cdps, and the community card view leave the prop off and show real tone-colored pinyin. The clusters are ordered by the shared `sortedSenseClusters(entry)` helper (highest frequency first) — the single source of truth both the picker and the persistence layer address. That helper also decides *which* clusters are offered at all: clusters with no displayable English are dropped and the picker is suppressed entirely below two survivors (see "Displayable clusters" below). **Each row carries a commonality meter**: the cluster's own `frequencyScore` renders as a 5px `FrequencyScoreDots` trailing the label (muted to `text.secondary` / `divider`), the same meter the eip and cdp show at full size. It is needed here precisely because the zh path re-groups by reading, so menu order is no longer globally frequency-sorted and nothing else tells the learner which of two senses under different readings is the common one. A cluster whose score is null renders no meter (rather than five hollow dots, which would read as "score 0"). The meter's column is labelled ONCE, by the sheet header described above (`… senses` on the left, `commonality` on the right, suppressed when no cluster is scored) — it used to be folded into the first `ListSubheader`, which read as part of that reading's heading rather than as a one-time column label. **Layout on the card face**: the trigger is out of flow, so the gloss centers and wraps as if it did not exist. `useSenseChipPlacement` then puts it right of the gloss when it fits inside the card's content boundary (the printed panel on Deck Tower stock), and otherwise centered below it (`CardFace.tsx` → `EnglishBlock`). `useShrinkWrapWrappedText` narrows a wrapped gloss to its balanced width first, so that check reads the lines' real width. | `src/utils/definitionUtils.ts` (`ddt`, `senseGrammarTag`, `sortedSenseClusters`), `src/features/flashcards/card/SensePicker.tsx` (`senseSections`, `renderSenseItem`), `src/features/flashcards/card/CardFace.tsx` (`EnglishBlock` — mounts it), `src/features/flashcards/card/useShrinkWrapWrappedText.ts`, `src/features/flashcards/card/useSenseChipPlacement.ts`, `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (`senseSegments` — the eip header's sense list, not the picker), `src/components/senseListSegments.tsx` (`buildSenseSegments`, `SENSE_STAR_SIZE`/`SENSE_STAR_GAP`), `src/components/SwipeableTwoLineText.tsx` (`TwoLineSegment`), `src/components/FrequencyScoreDots.tsx`, `src/utils/textUtils.ts` (`numberedToTonedPinyin`), `src/utils/toneColors.ts` (`getToneColor`) |
 | **Long definition** (eip Definition tab, cdp) | The unit of generation is the cluster × POS pair: `backfill-long-definitions.js` writes one `longDefinition` entry per (cluster, part of speech), keyed by the cluster's `sense` label — a cluster whose `pos` lists several roles gets one definition per role, since the roles carry different meanings (docs/DEFINITION_MAPPING.md #5). `buildSlots` does the expansion; a cluster with no `pos` of its own yields one slot whose POS the model picks from the word-level `partsOfSpeech`. At read time the learner sees only the sense their card is on — resolved server-side by `resolveLongDefinition` and client-side (following the optimistic sense picker, no refetch) by `resolveLongDefinitionForSense`, both using the same sorted-cluster + `selectedSense` pick as dd. A re-clustering that changes a `sense` label orphans that sense's definition until the backfill re-runs (readers fall back to the default sense). | `server/scripts/backfill/chinese/backfill-long-definitions.js`; `server/utils/definitions.ts` (`resolveLongDefinition`, `resolveSelectedCluster`, `longDefToDisplayString`); `server/dal/implementations/DictionaryDAL.ts` (`enrichLongDefinitionMetadataBatch` — ships every sense as `longDefinitionSenses`); `src/utils/definitionUtils.ts` (`resolveLongDefinitionForSense`); `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`; `src/features/flashcards/VocabCardDetailBody.tsx` |
 | **Character breakdown** (bt tab + Word Search) | Each component character's *context-correct* gloss = the char's cluster keyed by `breakdown[char].sense` (the label written by `backfill-breakdown-senses.js`), rendered via `ddt`. The breakdown tab reads the materialized `breakdown[char].definition`; Word Search re-resolves it live at grid build via `resolveSenseGloss`. Both surface the **same dd**. | `server/utils/definitions.ts` (`resolveSenseGloss`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); `src/utils/breakdownUtils.ts` — see [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) §5b, [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §2/§4 |
 | **Per-account sense selection** (`selectedSense`, migration 99) | The learner's chosen sense is persisted **per user per word** so it survives reloads/re-promotion. Stored as the cluster's `sense` LABEL (not an index) so it's stable across re-clustering/re-scoring; resolved back to a sorted index on read (falls back to the default/starred sense if the label no longer matches). Only the card face's picker makes a pick (flp card face, saved-card cdp), and both **persist** it. The eip header is display-only (2026-10-29), so an eip tab drilled into a word, and the read-only dictionary cdp, show the requester's saved sense (or the default) and cannot change it. The index→label conversion is the shared `senseLabelForIndex` helper, so every host stores index 0 as NULL. **Every dd surface READS the pick**, via `resolveDisplayDefinition` — see [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3 for the full call-site list. Payloads that flatten dd to a plain string server-side (word-search word list, related words, used-in pass 1) resolve it with the server twin in `server/utils/definitions.ts`. An **open eip follows a pick made on the card underneath it**: entry tabs hold a snapshot, so the flp re-seeds the matching tab via `useEipTabs.syncEntry` whenever `selectedSense` changes — and `syncEntry` re-derives the tab's own `selectedSenseIndex` from the fresher entry, so the panel's underlined sense follows the card. (The reverse direction — an eip-header pick updating the card — went away with the eip's picker on 2026-10-29, along with `useEipTabs.setActiveSenseIndex` and the `onSelectSense` plumbing through `InfoCardSection` / `InfoCardPanelBody`.) `persistSelectedSense`'s optimistic session override lands a card-face pick on the current entry with no refetch. The card face's own sense index therefore re-seeds on `entry.selectedSense`, not just on `entry.id` (`CardFaceSide` in `FlashCardSection.tsx`) — keyed on the id alone, the face's stale local index would out-rank the fresher label until the card was cycled. **Dictionary lookups carry the requester's pick**: `GET /api/dictionary/lookup/:term` attaches `selectedSense` from the caller's vet row when they have that word as a card, so an eip drill-in and the dictionary cdp show the same sense as their flashcard (absent ⇒ default/starred sense). | vet column `selectedSense` (`database/migrations/99-add-selected-sense-to-vocabentries.sql`); `src/utils/definitionUtils.ts` (`resolveSelectedSenseIndex`, `senseLabelForIndex`, `resolveDisplayDefinition`); `server/utils/definitions.ts` (`resolveDisplayDefinition` — server twin); `src/utils/vocabApi.ts` (`saveSelectedSense`); `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`syncEntry`); `server/controllers/DictionaryController.ts` (`lookupTerm` — attaches the caller's `selectedSense`); `src/utils/dictEntryAdapter.ts` (carries `definitionClusters` + `selectedSense`); `server/dal/implementations/VocabEntryDAL.ts` (`findRelatedBySharedCharacters`, `findUsedInForCharacter`); `server/services/OnDeckVocabService.ts` (`getWordSearchGrid`); flp: `useCardIconEditor.ts` (`persistSelectedSense`) → `FlashCardSection.tsx` (`CardFace.handleSelectSense`); saved-card cdp: `VocabCardDetailPage.tsx` (`handleSelectSense`); eip header (display-only): `EipEntryHeader.tsx` (`senseSegments`); server: `PATCH /api/vocabEntries/:id/selectedSense` (`VocabEntryController.updateSelectedSense` → `VocabEntryService.updateSelectedSense` → `VocabEntryDAL.updateSelectedSense`) |
+
+### Classifier senses
+
+**House style (2026-11-03).** A classifier (measure-word) sense's lead gloss reads
+**"classifier for <what it counts>"**: 本 "classifier for books", 张 "classifier for flat
+objects". The client renders the fixed label in italics, so the card reads *classifier for*
+books. The label does **not** count toward the 20-char headline budget: it is a fixed tag,
+like a part-of-speech chip, so only "books" is budgeted.
+
+**Which senses.** A sense is a classifier sense when **every** `pos` entry is
+`classifier` (`isClassifierSense`). `pos` uses the single value `classifier`; the two
+`"measure word"` entries (下, 一个) were normalized. A **mixed** sense (`["noun",
+"classifier"]`) is a unit of measure or currency that Chinese counts directly (米 meter,
+千克 kilogram, 元 yuan, 61 senses on dev). It keeps its noun gloss, gets no label and no
+italics. Note: some units are tagged pure `classifier` (两 tael, 毛 ten cents, 开 carat),
+so they got the label ("classifier for taels"). They are inconsistent with the mixed-tagged
+units — an open question for the owner (2026-11-03).
+
+**Noun + classifier use = two senses.** Where one cluster fused a noun with its
+classifier use and the source carried a classifier gloss (间 `["room", "classifier for
+rooms"]`), the classifier glosses were moved verbatim into a new sense right after it:
+23 splits on dev, label `"<original label> — classifier"`, pos `["classifier"]`, scored
+by the per-sense frequency scorer. The original sense keeps its label, because labels are
+addresses. A noun with a classifier use but no classifier gloss (群, 队, 条) is not split.
+The clusterer's Stage A/A.5 prompts now carry the same rule for new clusterings (rule 3
+SPLIT list, rule 6 pos, merge rule 3), added without a `SCRIPT_VERSION` bump.
+
+**Gaps on the 23 split senses:** no `longDefinition` entry yet (readers fall back to the
+default sense's), and est sentences that show the classifier use stay tagged to the noun
+sense. `backfill-long-definitions.js --words=` would regenerate **every** sense of those
+words, so it has not been run.
+
+**Writers.** `shared/lib/senseShortGloss.js`: `CLASSIFIER_PREFIX`, `isClassifierSense`,
+`needsClassifierFormat`, `budgetedLength`, and `validateShortGloss`'s `classifier` option
+(true = must start with the label; false = may not start with "classifier"; null =
+unknown, for step 4, which has no pos). The one-off repairs were
+`chinese/patch-classifier-senses.js` (pos normalization, the splits, 回) and
+`shared/patch-long-cluster-glosses.js` (the headlines; `--redo=<file>` replaced 105
+earlier generated glosses that were clipped, abbreviated or not in classifier form).
+
+**Display.** `src/utils/definitionUtils.ts` → `CLASSIFIER_LABEL`, `splitClassifierLabel`;
+`src/components/GlossText.tsx`. Used by `CardFace` (EnglishBlock), `SensePicker`,
+`EipEntryHeader` (sense list via `TwoLineSegment.content`, and the plain dd),
+`WritingCardFace` and `MiniCard`. No markup is stored or parsed: the italics are a
+prefix test on plain text, and where the sense's `pos` is at hand (picker, eip list)
+a gloss is split only on a `classifier` sense. Game surfaces draw dd as plain strings and
+show the label upright. Test: `src/__tests__/splitClassifierLabel.test.ts`.
 
 ### Displayable clusters: the picker's `< 2` gate
 
@@ -674,7 +789,12 @@ A cluster is *not* displayable when its lead gloss is entirely parenthetical, so
 it to the empty string. CC-CEDICT writes grammatical-particle senses exactly this way — 了
 `(completed action marker)`, 在 `(used before a verb to indicate an action in progress)`.
 
-**The discoverable corpus carries none of these (2026-10-03).** All 34 such clusters (28 zh
+**Status: 4 new cases on dev (2026-11-03)** — 伯母, 真是, 蒙求 and 思密达 each have one
+sense whose lead gloss is fully parenthetical, which hides it from the picker (思密达's
+hidden sense is its primary "Korean-style sentence ending" one, so the card shows "a
+Korean"); they arrived with later
+`/mark-discoverable` batches and are not yet in `REWRITES`. **As of 2026-10-03 the
+discoverable corpus carried none.** All 34 such clusters (28 zh
 entries; es had none) were rewritten with hand-authored, parenthesis-free glosses by
 `server/scripts/backfill/chinese/rewrite-parenthetical-glosses.js` (`REWRITES`, `REMOVALS`),
 replacing the old strings in **both** `definitions` and the cluster's `glosses` so the exact

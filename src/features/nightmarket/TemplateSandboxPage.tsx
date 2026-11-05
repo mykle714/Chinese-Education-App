@@ -113,7 +113,7 @@ function TemplateSandboxPage() {
   // Guard concurrent def fetches for the same key (avoid double-loading the same version).
   const inFlight = useRef<Set<string>>(new Set());
 
-  // UX gate: bounce a signed-in non-author to Home (the backend also enforces isTemplateAuthor
+  // UX gate: bounce a signed-in non-author to `/` (the backend also enforces isTemplateAuthor
   // on every endpoint — this is UX, not the security boundary). Same stance as the editor.
   useEffect(() => {
     if (isAuthenticated && user && !user.isTemplateAuthor) navigate('/', { replace: true });

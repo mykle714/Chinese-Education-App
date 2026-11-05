@@ -9,6 +9,7 @@ import { ddt, senseGrammarTag, sortedSenseClusters } from "../../../utils/defini
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
 import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
+import GlossText from "../../../components/GlossText";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
 import type { DefinitionCluster } from "../../../types";
@@ -170,7 +171,8 @@ const SensePicker: React.FC<SensePickerProps> = ({
                         fontFamily: FONTS.cjk,
                     }}
                 >
-                    {ddt(cluster)}
+                    {/* `pos` narrows the italic label to this sense alone (GlossText). */}
+                    <GlossText text={ddt(cluster)} pos={cluster.pos} />
                 </Typography>
                 {/* The starred DEFAULT — the sense the card falls back to when the
                     learner has never picked one. Marked on the sense itself, not in a

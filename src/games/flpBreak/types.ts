@@ -1,8 +1,7 @@
 import type { ComponentType, LazyExoticComponent } from "react";
 import type { Language, MarkType } from "../../types";
 import type { GameDef, GameStageFrameProps } from "../types";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
-import type { FlpWorld, StudyMode } from "../../../server/contracts/studyMode";
+import type { FlpWorld } from "../../../server/contracts/studyMode";
 import type { PersonalBestGame } from "../../../server/contracts/personalBests";
 
 /**
@@ -14,19 +13,19 @@ import type { PersonalBestGame } from "../../../server/contracts/personalBests";
  * the flp.
  */
 
-/** Everything about the flp session a break's game needs to deal its board. */
+/**
+ * Everything about the flp session a break's game needs to deal its board.
+ *
+ * The flp only ever runs inside the Deck Tower, unrestricted: there is no study mode
+ * (every break deals the game's own Mix distribution), no launch collection, and no
+ * routed-vs-tower distinction (a game that has a smaller tower board always deals it).
+ */
 export interface FlpBreakContext {
     language: Language;
     /** The flp bar — picks the track (§ 3) and the pinyin display (§ 5a). */
     world: FlpWorld;
-    /** The flp's `?mode=`; the top-up honours its distribution (§ 4). Null = Mix. */
-    studyMode: StudyMode | null;
-    /** The deck/collection the flp was launched with; rides every pool request (§ 4). */
-    collection: CollectionRef | null;
     /** The working loop at the moment the break fell due — the seed (§ 4). */
     seedIds: number[];
-    /** The flp is running inside a Deck Tower session. A game may deal a smaller board. */
-    towerSession: boolean;
 }
 
 /** One playable break option: a game, the mode it runs in, and the track it marks. */
@@ -85,11 +84,14 @@ export interface FlpBreakStageProps<P> {
      */
     onRunEnded: (results: FlpBreakResults) => void;
     /**
-     * A correct mark the server RECORDED on a card the learner owns: that card has left
-     * the Deck Tower. Not a suppressed mark (the card was resting, so it was not on the
-     * tower) and not a lent card (never counted on it). Fired off the mark's response.
+     * A correct mark the server RECORDED on a card the learner owns, with that card's
+     * id: the card has left the Deck Tower, and if it is in the working loop it leaves
+     * the loop too (§ 4a). Not a suppressed mark (the card was resting, so it was not on
+     * the tower) and not a lent card (never counted on it). Fired off the mark's response.
+     * A character game passes the CHARACTER's card id — only a loop card that is that
+     * single character leaves the loop.
      */
-    onCardCleared?: () => void;
+    onCardCleared?: (cardId: number) => void;
 }
 
 /**
@@ -100,6 +102,13 @@ export interface FlpBreakGame<P = unknown> {
     gameId: string;
     /** The break card's one-line rule (§ 5). */
     rulesLine: string;
+    /**
+     * The game is played LANDSCAPE (Speed Reading, `useSidewaysStage`). The break's card
+     * and its results card then turn 90° the same way as the game, so the learner turns
+     * the phone before Play and reads the results before turning it back (§ 5, § 5b).
+     * Omit for an upright game.
+     */
+    sideways?: boolean;
     /**
      * Fetch the opening board while the last card before the break is still on screen,
      * so Play has no spinner (§ 1). Must not throw into the flp: the host catches and

@@ -4,33 +4,34 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "./dayPhase";
 /**
  * tier2Look.ts — what a "Tier 2" page (a page one level under the Deck Tower, with no sky
  * of its own) looks like at the learner's time of day. Source: Claude Design project
- * "Tower Tier 2 - Time of Day", the Dictionary artboards per phase (`.t2d` / `.t2a` /
- * `.t2s` / `.t2n` and the `.t2n .phone` overrides).
+ * "Tower Tier 2 - Time of Day", the Dictionary artboards per phase (`.t2a` / `.t2n` and the
+ * `.t2n .phone` overrides; the design's dawn `.t2d` and sunset `.t2s` artboards were cut
+ * 2026-11-04 with those phases, docs/TOWER_WEATHER_SKY.md § 1).
  *
  * Layer: shared module (`src/timeOfDay/`). Pure; no React. `useTier2Look` samples the clock
  * and turns it into a look; `tier2Chrome.ts` hands the parts drawn OUTSIDE the page (the
  * slab footer, the beginner keyboard) to them through root CSS custom properties.
  *
  * ── What a phase changes ──────────────────────────────────────────────────────
- *   DAWN / DAY / SUNSET change only the GROUND and its sunken WELL — a pale tint of the
- *   tower's sky at that hour (the design's `--g`, `--well`, `--wellSh`). Surfaces (the
- *   search field, result slabs, keycaps), the slab footer and the ink stay as by day.
+ *   DAY is a pale tint of the tower's sky on the GROUND and its sunken WELL (the design's
+ *   `--g`, `--well`, `--wellSh`), with the app's day surfaces (the search field, result
+ *   slabs, keycaps), the slab footer and the ink.
  *   NIGHT turns the whole page slate (owner's choice 2026-10-29, following the design's
  *   CSS over its "keep day colours" note): a #1E2735 ground, #2A3446 surfaces on a
  *   #121822 lip, light ink — the footer and the keyboard keys included.
  *
  * ── Blending ──────────────────────────────────────────────────────────────────
- * The ground and well BLEND across the tower's 30-minute twilights, so this page and the
+ * The ground and well BLEND across the tower's hour-long twilights, so this page and the
  * tower always agree on the hour. Surfaces and ink cannot blend — half-way white on
  * half-way slate under half-way ink is unreadable — so they FLIP together once night is
  * the larger share (`dark`), the same rule as the eip's ink (eipPalette.ts).
  *
  * The ground values are the eip's upper-panel `--g` family (eipPalette.ts carries the same
- * hexes for its own panel); the Sort Cards page uses the design's separate `--gr` ground by day and
+ * hexes for its own panel); the Add New Cards page uses the design's separate `--gr` ground by day and
  * the tower's night sky at night (features/discover/sortTimeOfDay.ts). Keep them apart.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (like the tower's `PHASE_SKY`): the
- * framework has no dawn, sunset or night tiers, so the phase grounds and every night
+ * framework has no night tier (nor a pale-sky ground tier), so the phase grounds and every night
  * value are the design's own hexes. Day surfaces and ink DO come from COLORS.
  *
  * Depends on: dayPhase.ts, theme/colors.ts. Depended on by: useTier2Look.ts,
@@ -74,13 +75,11 @@ type Surfaces = Omit<Tier2Look, keyof Ground | "dark">;
 // The phase grounds: the design's `--g` / `--well` / `--wellSh`. Day's are oklch in the
 // design (`oklch(.955 .028 238)` …), converted to the hexes the blend works in.
 const PHASE_GROUND: Record<DayPhase, Ground> = {
-    dawn: { ground: "#FBEEF1", well: "#F4DFE5", wellShadow: "#EAD0D8" },
     day: { ground: "#E0F3FF", well: "#D1EAFC", wellShadow: "#BDDDF2" },
-    sunset: { ground: "#FCF0E6", well: "#F6E1CF", wellShadow: "#EDD1BA" },
     night: { ground: "#1E2735", well: "#18202C", wellShadow: "#111720" },
 };
 
-/** Dawn, day and sunset: the app's day surfaces and ink, and the cream slab footer. */
+/** Day: the app's day surfaces and ink, and the cream slab footer. */
 const LIGHT_SURFACES: Surfaces = {
     surface: COLORS.white,
     // Design `--edge` #E2E2E6 → COLORS.grey #E7E7EA (nearest token).
@@ -131,8 +130,8 @@ export function tier2LookAt(time: TimeOfDay): Tier2Look {
 
 /**
  * Blends hex `a` toward hex `b` by `t` (0 = a, 1 = b), per sRGB channel. Plain mixing is
- * fine here: neighbouring phase grounds are all pale tints, and night's blend runs
- * through the twilight the tower's sky is also crossing.
+ * fine here: the day ↔ night blend runs through the twilight the tower's sky is also
+ * crossing.
  *
  * ⚠️ DUPLICATE of features/deckTower/iso/palette.ts → `mixHex` (and a private copy in
  * eipPalette.ts). Kept local because a shared module must not import from a feature; the

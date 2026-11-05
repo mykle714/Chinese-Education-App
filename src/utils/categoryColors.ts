@@ -1,6 +1,6 @@
 // Shared color tokens for a card's progress category (FlashcardCategory) and the
 // built-in collections. One source for MiniVocabCard, the cdp's MasteryWindow, the
-// Account bucket spines and the fdp collection tiles.
+// Account bucket spines and the Deck Tower's collection colours (filter keys, floor plates).
 import type { MasteryWorldId } from "../../server/contracts/wire";
 import { COLORS, RAMP, type RampHue } from "../theme/colors";
 // ⚠️ SHELF SYSTEM v2 (docs/SHELF_REDESIGN.md § A1b). Two things moved here:
@@ -97,16 +97,17 @@ export const BAND_COLORS: Record<string, { main: string; accent: string }> = {
 };
 
 /**
- * "Learning" — the cards still being learned. A COLLECTION, not a band, drawn on the
- * fdp's LibraryDuo as a SURFACE card (artboard 2: "Surface: … Learning").
+ * "Learning" — the cards still being learned. A COLLECTION, not a band, drawn as a
+ * SURFACE card (artboard 2: "Surface: … Learning") — today the Deck Tower's Learning
+ * filter key and floor plate, the ancp's Learning bin and Quick Mark's left swipe.
  *
- * Gold `--yel`, the hue the fdp's Study Mix card carries — Study Mix draws from exactly
- * this set of cards, so the two share a colour on purpose (2026-09-01).
+ * Gold `--yel`, Study Mix's colour too — Study Mix draws from exactly this set of
+ * cards, so the two share a colour on purpose (2026-09-01).
  *
  * ⚠️ OPEN COLLISION (v2): Target is ALSO yellow now. The design resolves it by drawing
  * Learning purple (artboard 2's duo is `--pur`); the user kept Learning yellow on
  * 2026-09-23 and moved Target to yellow, so yellow means both "Target band" (pills,
- * cells) and "Learning / Study Mix" (fdp cards). Tracked in docs/SHELF_REDESIGN.md
+ * cells) and "Learning / Study Mix". Tracked in docs/SHELF_REDESIGN.md
  * § A1b; switching is this one constant.
  *
  * The HUE is exported, not only the pair, because a collection tile needs more than
@@ -117,17 +118,17 @@ export const LEARNING_HUE: RampHue = "yel";
 export const LEARNING_COLORS = { main: RAMP[LEARNING_HUE].surface, accent: RAMP[LEARNING_HUE].tint } as const;
 
 /**
- * The hue of each mastery bar's Mastered collection (the fdp's Mastered row,
- * migration 143). Each bar carries its own hue so three DIFFERENT sets do not look
+ * The hue of each mastery bar's Mastered collection (migration 143) — td's Mastered
+ * filter key and floor plate, the ancp's Mastered bin. Each bar carries its own hue so three DIFFERENT sets do not look
  * interchangeable.
  *
  * `reading` and `writing` are single-mark-type bars and take their SKILL's hue —
- * reading green, writing purple (2026-10-02, the Reading / Writing Center redesign,
- * docs/READING_WRITING_CENTERS.md; they were red / orange). `core` blends recognition
- * and production and keeps the Mastered blue.
+ * reading green, writing purple (2026-10-02, chosen for the since-deleted Reading /
+ * Writing Centers; they were red / orange). `core` blends recognition and production
+ * and keeps the Mastered blue.
  *
- * ⚠️ Reading's green equals the Comfortable band's surface. On a Center's Cards sheet no
- * band tile sits beside the Mastered tile, so the collision is latent (as reading's red
+ * ⚠️ Reading's green equals the Comfortable band's surface. On td's reading cards page no
+ * band tile sits beside the Mastered key, so the collision is latent (as reading's red
  * vs Unfamiliar was before it).
  */
 export const MASTERY_BAR_HUES: Record<MasteryWorldId, RampHue> = {

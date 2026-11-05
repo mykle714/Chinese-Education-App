@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { readExit } from "../../../games/runtime/gameExit";
+import { readCirclePoint } from "../../../utils/pageTransition";
 import { Box } from "@mui/material";
 import LeafPage from "../../../components/LeafPage";
-import { HeaderIconButton } from "../../../components/PageHeader";
+import { HeaderActionChip } from "../../../components/PageHeader";
 import Icon from "../../../components/Icon";
 import { FIRE_COUNT_FONT_SIZE, FIRE_COUNT_INK, FIRE_GLYPH_SIZE_PX } from "../../../minutePoints/FireCount";
 import { useAuth } from "../../../AuthContext";
@@ -14,7 +16,6 @@ import {
     encodeNotebookInk,
     type NotebookInk,
 } from "../../../../server/contracts/writingNotebook";
-import { MASTERY_CENTER_PATHS } from "../masteryCenters";
 import { useNotebookSheet } from "./useNotebookSheet";
 import NotebookWordBar from "./NotebookWordBar";
 import { NOTEBOOK_EDITOR_MIN_HEIGHT, wordBarCompacts } from "./notebookLayout";
@@ -22,7 +23,7 @@ import { nextStrokeAid, type StrokeAid } from "./strokeAid";
 import NotebookGrid from "./NotebookGrid";
 import NotebookCellEditor from "./NotebookCellEditor";
 import NotebookWordPickerSheet from "./NotebookWordPickerSheet";
-import { NOTEBOOK_BELT_ID, NOTEBOOK_GLYPH } from "./notebookBelt";
+import { NOTEBOOK_GLYPH } from "./notebookEntry";
 import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
 
@@ -30,11 +31,11 @@ import { FONTS } from "../../../theme/fonts";
  * WritingNotebookPage — `/flashcards/writing/notebook` (docs/WRITING_NOTEBOOK.md).
  *
  * An endless handwriting practice sheet for one word at a time. NOT a game: no rounds,
- * no score, no game framework — a leaf page reached from the Writing Center's games
- * belt, whose back arrow returns there (scrolled to the belt, parked on this card).
+ * no score, no game framework — a leaf page reached from the Deck Tower's writing-world
+ * paper stack, whose launch carries `state.exitTo` back to that world.
  *
  *   ┌──────────────────────────────┐
- *   │ ⌄  Writing Notebook   ✎12  ⇄ │  LeafPage header — counter (flame-style) + change-word button
+ *   │ ⌄  Writing Notebook  ✎12 (⇄ Change) │  LeafPage header — counter (flame-style) + labelled change-word chip
  *   │ ▣▣▣▣▣▣▣                      │  NotebookWordBar — the shadows, 2 per row (3–4 chars: 2×2),
  *   │ ▣▣▣▣▣▣▣                      │    spanning the sheet's width; tapping one cycles its stroke help
  *   │                              │    (a 2×2 drops to one row only if the canvas would not fit)
@@ -132,9 +133,19 @@ export default function WritingNotebookPage() {
         return () => { cancelled = true; };
     }, [userId, language]);
 
-    // Back always returns to the Writing Center, scrolled to its games belt and parked on
-    // this card (MasteryCenterPage → readReturnedGame; WritingGamesCarousel).
-    const leave = () => navigate(MASTERY_CENTER_PATHS.writing, { state: { returnedFromGame: NOTEBOOK_BELT_ID } });
+    // Back returns where the notebook was opened from: the launch's `state.exitTo` (the
+    // Deck Tower's paper stack → DeckTowerPage `NOTEBOOK_EXIT`). A launch without one (a
+    // deep link, a reload that lost the state) returns to the tower's writing world all
+    // the same — the stack is the notebook's only entry point.
+    const location = useLocation();
+    const exit = readExit(location.state);
+    // Opened with the circle transition (the tower's paper stack): Back closes the circle
+    // back onto the point it grew from (LeafPage `exitCircleTo`).
+    const circleBackTo = exit ? readCirclePoint(location.state) : undefined;
+    const leave = () =>
+        exit
+            ? navigate(exit.path, { state: exit.state })
+            : navigate("/", { state: { towerWorld: "writing" } });
 
     // The sheet's box — measured at open to decide whether the editor fits beneath the bar.
     const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -188,6 +199,7 @@ export default function WritingNotebookPage() {
         <LeafPage
             title="Writing Notebook"
             onBack={leave}
+            exitCircleTo={circleBackTo}
             className="writing-notebook-page"
             contentSx={{ position: "relative" }}
             rightContent={language ? (
@@ -198,12 +210,14 @@ export default function WritingNotebookPage() {
                     {/* Stays lit while a cell is open, but does not open the picker then: a
                         word switch mid-edit would land the pending save on the NEW sheet
                         (the save is keyed on the word at save time). */}
-                    <HeaderIconButton
+                    <HeaderActionChip
                         className="writing-notebook-page__change-word"
                         icon={word ? "swap_horiz" : "add"}
-                        label={word ? `Change word (now ${word})` : "Choose a word"}
+                        ariaLabel={word ? `Change word (now ${word})` : "Choose a word"}
                         onClick={() => { if (!editing) setPickerOpen(true); }}
-                    />
+                    >
+                        {word ? "Change" : "Choose"}
+                    </HeaderActionChip>
                 </>
             ) : undefined}
         >

@@ -51,7 +51,7 @@ export const KNOWN_GAME_IDS = [
   'speed-reading',
   'hydra-bubbles',
   'memory-map',
-  // Writing Center only (docs/WRITING_PRACTICE_REWORK.md § 2).
+  // Played only as an flp game break since 2026-11-04 (docs/WRITING_PRACTICE_REWORK.md § 2).
   'writing-grid',
   // Drag the stack's top word into its meaning's bucket (docs/BUCKET_DROP_GAME.md).
   'bucket-drop',

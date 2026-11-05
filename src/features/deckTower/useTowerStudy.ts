@@ -37,7 +37,7 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  *   studying   the platform is gone and the camera stands still over the top card:
  *                - a CORRECT mark takes a card off;
  *                - an INCORRECT mark changes nothing here (the flp tucks the card back
- *                  into the deck: FlashCardSection `towerStack`);
+ *                  into the deck: FlashCardSection's tuck);
  *                - undoing a correct mark puts the card back;
  *                - a game break's cleared cards are tallied while it runs and come off
  *                  together as it ends;
@@ -83,8 +83,7 @@ const DRY_CLIMB_DELAY_MS = 700;
 const PREPARE_TIMEOUT_MS = 5000;
 /**
  * A parked session's deal is used for a tap this long after it was dealt or last studied;
- * past it, the tap re-deals (cards have come off cooldown meanwhile). The same window as
- * flpLaunch.ts's preloaded loops (`LOOP_FRESH_MS`).
+ * past it, the tap re-deals (cards have come off cooldown meanwhile).
  */
 const PARKED_LOOP_FRESH_MS = 5 * 60_000;
 export interface TowerStudy {
@@ -103,7 +102,7 @@ export interface TowerStudy {
     e: number;
     /** The camera's height over the floor (the top face it looks at), world z. */
     cameraZ: number;
-    /** The viewBox y on the tower's axis where the screen's middle stood at the tap (the sky's altitude then). */
+    /** The viewBox y on the tower's axis where the screen's middle stood at the tap — the sky's altitude, held for the whole session. */
     startMidY: number;
     /**
      * Every mounted flp session (one per visited world), with its host contract; the one

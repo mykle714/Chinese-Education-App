@@ -137,6 +137,7 @@ styled MUI `Button`/`IconButton`. Three headers each carried a byte-identical
 | `HeaderMetaLabel` | `.hd .meta` | mono uppercase metadata (a count, a status word) |
 | `HeaderIconButton` | `.hd .btn` | an icon action. `variant="bare"` (default) for drill-in/game headers carrying 2–4 actions; `variant="outlined"` for a hub header's single lone action, which needs the 32×32 box to separate it from bare paper |
 | `HeaderToggleChip` | `.lhd .tg` | a mono toggle chip. On = solid ink ground + white text — an inversion, not a tint change |
+| `HeaderActionChip` | AudioModeChip's `outlined` skin (`outlinedChipSx`, pageHeaderSizing.ts) | a labelled action — glyph + words in `ink` (default ink2), no fill, a thin pill outline in that ink, the tower's study lettering (`TOWER_STUDY_FONT`), no on state. For an action a glyph alone doesn't explain (the Writing Notebook's "Change") |
 
 The design's fourth slot shape, `.fire`, is **not** re-exported here and is **not
 passed by pages at all**: `PageHeader` renders `src/minutePoints/MinutePointsFireBadge.tsx`
@@ -162,8 +163,8 @@ so nothing breaks.
   and runs `document.startViewTransition(() => flushSync(() => navigate(to)))`.
   (Manual `startViewTransition` + `flushSync` because this app uses the component
   `<BrowserRouter>`/`<Routes>`, where React Router's `<Link viewTransition>` does
-  not fire one.) Used by the card-grid drill-ins (fdp, Mastery Centers, collection
-  pages → cdp / collection; `useOpenWordCard`), Dictionary and Reader list taps,
+  not fire one.) Used by td's cards page → cdp (`DeckTowerPage` → `onOpenTowerCard`) and
+  its sort platform / notebook stack (circle, below), `useOpenWordCard`, Dictionary and Reader list taps,
   Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
   `WordSearchHubItem`. The Bento hubs (Menu, Games) do **not** use it — their
   tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
@@ -180,6 +181,36 @@ so nothing breaks.
   blank frame). **Back never slides the destination in** — a `POP` navigation (the ←
   arrow's `navigate(-1)`, the browser button, iOS's edge swipe) and the initial page
   load mount static; see the skip-enter latch below.
+
+### The circle transition (an alternative to the slide)
+
+`src/utils/pageTransition.ts` → `CIRCLE_MOTION`, `circleCoverRadius`, `circleClip`,
+`ScreenPoint`, `readCirclePoint`; `useSlideNavigate` (`circleFrom`); `usePageSlide` →
+`exit(…, circleTo)`; `LeafPage` / `NodePage` `exitCircleTo`; the `data-vt-dir="circle"` rules in `src/index.css`.
+
+A leaf can be opened and closed with a circle instead of the slide: the page is revealed in
+a circle growing out of the tapped thing, and Back closes it into a circle shrinking onto
+that same point. The motion (520 ms, the same easings) is the flp game break's circle
+(FLP_GAME_BREAKS.md, whose `BREAK_AREA_MOTION` reads `CIRCLE_MOTION`), so the two read as
+one transition.
+
+- **Enter:** `slideNavigate(to, { circleFrom })`, with `circleFrom` in viewport px. It runs a
+  view transition with `data-vt-dir="circle"`, whose CSS holds both snapshots still (new
+  over old). Once the transition is `ready` it animates the new snapshot's `clip-path`
+  from JS (`pseudoElement: "::view-transition-new(root)"`), because the point is only
+  known at the tap.
+- **Exit:** the page passes the point back as `LeafPage` `exitCircleTo`. `usePageSlide`'s
+  exit makes its usual clone over the destination, but clips it to a shrinking circle
+  instead of sliding it down. The point is shifted into the phone frame's box, because the
+  clone lives in it.
+- **The point travels in nav state** (the caller's own key, e.g. `state.circleFrom`), so a
+  reload or deep link that loses it falls back to the slide-down.
+- **Reduced motion, or no view transitions:** a plain navigation, with no circle.
+- **Node pages too.** `NodePage` takes the same `exitCircleTo`, so a node page opened with
+  the circle closes the same way (its Back otherwise slides right).
+- **Used by:** the Deck Tower's mini sort platform ↔ Add New Cards (a node page;
+  DECK_TOWER.md § The sort platform), and the Deck Tower's notebook paper stack ↔ the Writing Notebook
+  (DECK_TOWER.md § The notebook stack).
 
 ## Slide hook
 
@@ -219,11 +250,28 @@ animate. Returns `{ surfaceRef, style, exit }`:
   the browser button and the iOS edge swipe never call `exit`, and a page the browser
   has just animated back to must not slide in again from the right. On iOS that second
   slide also keeps the page from matching Safari's swipe snapshot, which blocks input for
-  seconds — see "Card-grid back-restore" below.
+  seconds (WebKit keeps the swipe's picture up until the live page resembles it) —
+  [BACK_NAVIGATION.md](./BACK_NAVIGATION.md).
 - `LeafPage` uses `axis: "y"`; `NodePage` uses `axis: "x"`.
 
 The animated surface is `position: absolute; inset: 0` inside `MobileDemoFrame`
 (`position: relative; overflow: hidden`), so the slide stays inside the phone card.
+
+## Footer tab overrides
+
+`src/components/footerTabOverride.ts` → `useFooterTabOverride`, `runFooterTabOverride`;
+`MobileFooter` (every tab's `onClick` asks first); `NodePage` `backOnFooterTab`.
+
+The footer is rendered once at frame level, outside every page, so a page cannot pass it a
+prop. Instead the page on screen may claim ONE tab while it is mounted: a tap on that tab
+runs the page's handler and the footer does not navigate. The claim is dropped on unmount.
+
+`NodePage` `backOnFooterTab` is the one packaged use: a tap on that tab plays the page's own
+Back (`exit(onBack, exitCircleTo)`), so a page whose Back leads where the tab does leaves the
+same way either way. Today only **ancp opened from the Deck Tower** sets it (`"deck"`), so
+the Deck tab closes the circle onto the tower's sort platform rather than jumping
+(DECK_TOWER.md § The sort platform). Every other tap, and every other page, navigates as
+before.
 
 ## Footer (animated independently)
 
@@ -238,15 +286,14 @@ leaf page slides the page up while the footer drops away.
 `FooterPresenter` decides which routes show the footer (and which tab is active) from
 the `footerTab` field of each row in `src/routes/routeMeta.ts` (`routeFooterTab`) — the
 same row that decides the route's shell and page transition. A route with no
-`footerTab` is footerless (every leaf page, `/reader/:id`, `/flashcards/learn`, the
-games) and the footer slides away. Parameterized node routes (`/flashcards/card/:id`,
+`footerTab` is footerless (every leaf page, `/reader/:id`, the games) and the footer
+slides away. Parameterized node routes (`/flashcards/card/:id`,
 `/dictionary/card/:word`, `/discover/sort/:language`, …) are matched with React Router's
 `matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
 `FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
-route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `home` for `/`
-and the fdp's drill-ins, `menu` for `/menu` and the hub's drill-ins, `deck` and
-`dictionary` for their own spaces. Sort Cards (`/discover/sort/:language`) lights
-`home` — it is a Home drill-in since the Discover hub was deleted (2026-10-17).
+route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `deck` for `/`
+(td) and its drill-ins (the saved-card cdp, Add New Cards), `menu` for `/menu` and the
+hub's drill-ins, `arena` and `dictionary` for their own spaces.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
@@ -270,10 +317,9 @@ wrapping both the pages and `FooterPresenter`.
 It was built for modals, because the bar is rendered at frame level, outside every
 page's DOM, so no z-index inside a page reaches it. **Modals no longer use it** (since
 2026-10-06): a dim hosts at the frame above the bar and dims it in place
-(`src/components/overlayHost.ts` § "THE RULE FOR A DIM"). Current caller: the fdp's
-launch exit — `FlashcardsDecksPage` holds it while the page slides off before navigating
-to the flp, so the bar leaves with the rest of the page
-([DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Launching the flp from the hand").
+(`src/components/overlayHost.ts` § "THE RULE FOR A DIM"). Current caller: the Deck
+Tower — `DeckTowerPage` holds it while a study session is up (`useHideFooter(study.active)`),
+so the slab leaves while the flp runs in place (DECK_TOWER.md § Studying the tower).
 
 ## Current classification
 
@@ -285,15 +331,13 @@ own-animation pages) are neither archetype.
 
 | Route | Page | Archetype |
 |---|---|---|
-| `/discover/sort/:language` | `SortCardsPage` | Node |
+| `/discover/sort/:language` | `AddNewCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
-| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; footer added) |
-| `/flashcards/collection/:builtin` | `CollectionViewPage` | Node (Learning / Mastered / mastered-reading / mastered-writing — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)) |
-| `/flashcards/deck/:id` | `CollectionViewPage` | Node (a user-authored deck, addressed by numeric id) |
-| `/flashcards/mastered` | `MasteredRedirect` | Node (legacy path; `<Navigate replace>` to `/flashcards/collection/mastered`) |
+| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Deck tab lit) |
+| `/flashcards/writing/notebook` | `WritingNotebookPage` | Leaf (from td's writing-world paper stack, circle transition) |
 | `/friends` | `FriendsPage` | Node (Menu tab stays lit) |
 | `/friends/requests` | `IncomingRequestsPage` | Node |
 | `/friends/sent` | `SentRequestsPage` | Node |
@@ -302,15 +346,16 @@ own-animation pages) are neither archetype.
 | `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
 | `/games/word-search` | `WordSearchPage` | Leaf |
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |
-| `/games/speed-reading` | `SpeedReadingPage` | Leaf |
 | `/community` | `CommunityPage` | Node (reached from the Menu hub; Menu tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
-| `/settings` | `SettingsPage` | Leaf (slide-up sheet from the Home header gear) |
+| `/settings` | `SettingsPage` | Leaf (normally read as AccountSheet's Settings tab; `/settings/account`'s Back lands here) |
 
 > Game rows are not written out in `routeMeta.ts` — `GAME_ROUTE_META` derives one
-> `chrome: "leaf"` entry per `GAME_REGISTRY` member, so a new game is a leaf page
-> automatically. Adding a non-leaf game would need a `chrome` field on `GameDef`.
+> `chrome: "leaf"` entry per ROUTED `GAME_REGISTRY` member (`ROUTED_GAMES`), so a new
+> routed game is a leaf page automatically. The break-only games (Speed Reading, Memory
+> Map, Writing Grid, Superposition) have no route — they are played only as flp game
+> breaks inside td. Adding a non-leaf game would need a `chrome` field on `GameDef`.
 
 
 ### Dictionary browse-state persistence
@@ -324,48 +369,9 @@ effects in `DictionaryPage.tsx`.
 It is meant to survive **only** moves inside the Dictionary space (`/dictionary`
 and `/dictionary/card/*`). The route watcher in `Layout.tsx` calls
 `resetDictionaryBrowseState()` on the first transition from an in-space pathname to
-an out-of-space one, so every exit — the back arrow to Home, a footer-tab tap, and
+an out-of-space one, so every exit — a back arrow out of the space, a footer-tab tap, and
 browser back — clears the query; `isDictionarySpacePath()` defines the space. A full
 page reload also starts fresh (the singleton is not persisted to storage).
-
-### Card-grid back-restore
-
-> The general rules this implements (Back returns the page as it was left, only on the
-> same history entry) and the audit of which other pages still lack it are in
-> [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § Rule 3.
-
-The card-grid pages — the fdp's Cards/Decks sheets, both Mastery Centers and
-`CollectionViewPage` — come back **exactly as they were left** when the learner returns
-with Back: same open sheet and sheet height (fdp), scroll position, search text, sort key
-and collection filter, painted from cached lists on the first frame and then refreshed
-silently in the background. Store: `src/features/flashcards/backRestore.ts`
-(`saveBackSnapshot` / `readBackSnapshot`).
-
-Unlike the dictionary singleton above it is keyed on the **history entry**
-(`location.key`), not on a route space: a page saves its snapshot as the learner opens a
-card or a set from it, and only a return to that same entry — any `POP`, arrow, browser
-button or edge swipe — finds it. A fresh arrival at the same URL (a footer-tab tap, the
-Centers' own `navigate("/")` push back to the fdp) has a new key and opens fresh.
-
-**Why it is load-bearing on iOS, not just a nicety.** Safari's edge swipe drags a picture
-of the page saved when the learner left it, and after the gesture WebKit keeps that picture
-up — blocking input — until the live page resembles it, falling back to a watchdog after a
-few seconds. The fdp used to come back with its sheet closed, so a swipe back from a card
-opened in the Cards sheet froze the tab for a couple of seconds on PPE while the ← arrow
-(no Safari picture) was instant. (Diagnosed 2026-09-13 by elimination — not yet profiled on
-a device; if a swipe still stalls after this, a Safari Web Inspector timeline is the next step.)
-
-The pieces, by layer:
-
-| Layer | Code | Role |
-|---|---|---|
-| Feature utility | `backRestore.ts` | the bounded in-memory store (`MAX_SNAPSHOTS`) and the three snapshot shapes |
-| Feature hook | `useDecksPanel(lens, restore)` → `restored`, `snapshot()` | seeds lists + view state; background refetch never flips `*Loading` back on |
-| Shared component | `SheetPanel` → `restoreHeight` | opens at that height with no grow-in and no scrim fade; the resting stop is unchanged |
-| Shared component | `MiniVocabCardGrid` → `revealImmediately` | skips the paced reveal and pop-in so the restored scroll lands on real rows |
-| Feature component | `DecksPanelBody` → `initialScrollTop` | applies the scroll once the (possibly portaled) scroller exists |
-| Pages | `FlashcardsDecksPage`, `MasteryCenterPage`, `CollectionViewPage` → `rememberPlace` | save on leaving (ref-held so the memoized cards' `onCardClick` stays stable) |
-| Shared hook | `usePageSlide` → `useNavigationType` | no enter slide on `POP` |
 
 ## Card detail (cdp): two surfaces, two bodies
 
@@ -376,7 +382,7 @@ the definition tab via `showSynonymsRelated`), but host it differently:
 
 | Surface | Layout | How the eip is hosted |
 |---|---|---|
-| Saved-card cdp (`VocabCardDetailPage`) | scrolling page: **hero flashcard** (editable icon layout) + mastery window | in a sheet — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and scp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
+| Saved-card cdp (`VocabCardDetailPage`) | scrolling page: **hero flashcard** (editable icon layout) + mastery window | in a sheet — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and ancp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
 | Read-only dictionary cdp (`DictionaryCardDetailPage`) | **non-scrolling** page (`scrollable={false}`): category badge, then the panel filling the rest of the space above the footer; **no card** | **inline** — `InfoCardPanelBody` mounted straight on the page, no sheet; each tab pane scrolls on its own. The word-tools rail rides at the bottom of the definition tab (`definitionFooter`). (2026-10-10; replaced the hero card + stacked `VocabCardSections` boxes, which are deleted.) |
 
 So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
@@ -385,8 +391,11 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
 - **Saved-card cdp** (`/flashcards/card/:id`, `VocabCardDetailPage`) — loads a vet
   row by id; editable (icon-editor toolbar + delete). Delete is one tap, no confirmation, and
   non-destructive: `handleDelete` calls `removeFromLibrary`, demoting the card to
-  `'provisional'` (history kept; PROVISIONAL_CARDS.md), then returns to the fdp (`/`). Reached from the fdp and its collection pages, so
-  the **Home** tab stays active. Raises the eip from the "More Info" `SheetPill`; passes
+  `'provisional'` (history kept; PROVISIONAL_CARDS.md), then goes Back (`navigate(-1)`,
+  or `/` when deep-linked with no history entry). Reached from td's cards page, so
+  the **Deck** tab stays active; it wears the slab footer, the Tier 2 ground
+  (`useTier2Look`) and prints its hero card on the tower card stock (`cardStockVars`,
+  `src/features/flashcards/card/cardStock.ts`). Raises the eip from the "More Info" `SheetPill`; passes
   `onWordOpen` through the panel's drill-in callbacks (see § "Breakdown drill-in
   targets" below), so breakdown rows / used-in rows / example segments are tappable.
 - **Read-only dictionary cdp** (`/dictionary/card/:word`, `DictionaryCardDetailPage`)
@@ -414,13 +423,12 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   EIP_SHEET_GESTURES.md § Add key). This cdp's control:
   - **Not in Learning** → a compact 24px **"+"** (`learning-toggle--add`) breathing the
     soft green halo from `src/theme/lowSupplyGlow.ts` (`LOW_SUPPLY_GLOW_NUDGE`, 3.6s pulse;
-    static at peak under reduced motion), the same "add cards" nudge the fdp's Sort Cards
-    tile wears (DECKS_FEATURE.md § "Sort Cards tile"). Tap → `addToLibrary`.
+    static at peak under reduced motion), the app's "add cards" nudge. Tap → `addToLibrary`.
   - **In Learning** (bucket `'library'`) → a small greyed **"Added!"** pill
     (`learning-toggle--added`: `COLORS.grey` fill, `COLORS.textFaint` text, the app's
     `COLORS.border` outline, no glow). Tap → `removeFromLibrary`, **no confirmation**:
-    removal demotes the row to `'provisional'` rather than deleting it, so marks and deck
-    memberships survive and a re-add promotes it back in place (PROVISIONAL_CARDS.md).
+    removal demotes the row to `'provisional'` rather than deleting it, so marks
+    survive and a re-add promotes it back in place (PROVISIONAL_CARDS.md).
   - Membership comes from `GET /api/vocabEntries/libraryStatus` (a `'provisional'` row
     or no row = not in). Until it arrives nothing renders, so an added word never flashes
     "+". It is stored with its `entryKey`, so moving to another word refetches. A
@@ -492,7 +500,7 @@ nothing else changed. `useTTS`'s manual `speak`/`prefetch` path is untouched, an
 `prefetch` still warms the audio so the first press of the speaker button is instant.
 
 Autoplay elsewhere is unaffected: the flp, Bubble Match, Hydra Bubbles, Match Speed
-and the scp all narrate on their own gestures/toggles and keep doing so.
+and the ancp all narrate on their own gestures/toggles and keep doing so.
 
 ## Reader: node list + node-style document page (cdp-style)
 
@@ -505,7 +513,7 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   (`chrome: "node"`, `footerTab: "menu"`).
   Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
   internal scroll region for the document list, matching the fixed-layout
-  `NodePage` pattern used by `SortCardsPage`; `MobileTabScreen`'s scroll area
+  `NodePage` pattern used by `AddNewCardsPage`; `MobileTabScreen`'s scroll area
   reserves `FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
   footer spacer is needed. `TextSidebar`'s `onTextSelect` calls
   `useSlideNavigate()` to `/reader/${text.id}`.

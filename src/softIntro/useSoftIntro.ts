@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useAuth } from "../AuthContext";
+import { useTestingFeatures } from "../hooks/useTestingFeatures";
 import type { SoftIntroId, SoftIntroState } from "./softIntroRegistry";
 import {
     readSoftIntroOverride,
@@ -27,7 +27,8 @@ import {
  * point is comparing the two styles side by side.
  */
 export function useSoftIntro(id: SoftIntroId, { enabled = true }: { enabled?: boolean } = {}): SoftIntroState {
-    const { user } = useAuth();
+    // The tester override applies only while testing features are on (useTestingFeatures).
+    const testingFeatures = useTestingFeatures();
     const [natural] = useState(() => resolveSoftIntroState(id));
     const override = useSyncExternalStore(subscribeSoftIntroOverride, readSoftIntroOverride);
 
@@ -35,5 +36,5 @@ export function useSoftIntro(id: SoftIntroId, { enabled = true }: { enabled?: bo
         if (enabled) recordSoftIntroVisit(id);
     }, [id, enabled]);
 
-    return user?.isFeatureTester && override !== "auto" ? override : natural;
+    return testingFeatures && override !== "auto" ? override : natural;
 }

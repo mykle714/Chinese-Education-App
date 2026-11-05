@@ -98,8 +98,8 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * Renders nothing when signed out — there is no balance to report, and "0" would read
  * as a broken counter rather than as "no account".
  *
- * ── THE DAILY BANKING RUN (hp only) ──────────────────────────────────────────────────
- * Under HomePage's `DailyBankingProvider`, the first hp visit of a streak day plays a
+ * ── THE DAILY BANKING RUN (td only) ──────────────────────────────────────────────────
+ * Under DeckTowerPage's `DailyBankingProvider`, the first td visit of a streak day plays a
  * banking run (docs/DAILY_MINUTE_BANKING.md): while a frame is live the badge draws the
  * RUN's count, fill and scale instead of its own — yesterday's figure on a full flame,
  * swelling, then draining to today's figure while embers leave for the avatar. The
@@ -110,7 +110,7 @@ const MinutePointsFireBadge: React.FC = () => {
     const { user } = useAuth();
     const minutePoints = useMinutePoints();
     const paused = useMinutePointsPaused();
-    // Non-null only during an hp banking run — see THE DAILY BANKING RUN above.
+    // Non-null only during an td banking run — see THE DAILY BANKING RUN above.
     const banking = useBankingFrame();
     const flameAnchorRef = useBankingAnchorRef("flame");
 

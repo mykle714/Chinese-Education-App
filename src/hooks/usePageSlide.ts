@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigationType } from "react-router-dom";
 import type { CSSProperties, RefObject } from "react";
+import { CIRCLE_MOTION, circleClip, circleCoverRadius, prefersReducedMotion, type ScreenPoint } from "../utils/pageTransition";
 
 // Shared enter/exit slide transition for LeafPage / NodePage (see
 // docs/LEAF_NODE_PAGES.md). Plain CSS `transform` transitions (percentage units),
@@ -54,8 +55,10 @@ interface UsePageSlideResult {
     // Spread onto that surface for the enter transition.
     style: CSSProperties;
     // Call from the back-arrow handler: navigates (via performNavigate, which
-    // mounts the destination beneath) while sliding a clone of this page away.
-    exit: (performNavigate: () => void) => void;
+    // mounts the destination beneath) while sliding a clone of this page away — or,
+    // with `circleTo` (a viewport point), shrinking it into a circle closing onto that
+    // point (the circle transition's exit, src/utils/pageTransition.ts → CIRCLE_MOTION).
+    exit: (performNavigate: () => void, circleTo?: ScreenPoint) => void;
 }
 
 export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult {
@@ -73,7 +76,7 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
     // `exit` at all — and a page returned to with Back must not slide in again from the
     // right after the browser has already animated back to it. On iOS that second slide
     // also stops the page from matching Safari's swipe snapshot, which stalls input for
-    // seconds (src/features/flashcards/backRestore.ts). A POP is also the initial load,
+    // seconds. A POP is also the initial load,
     // where no entrance slide is wanted either.
     const navigationType = useNavigationType();
     const [entered, setEntered] = useState(() => skipNextEnter || navigationType === "POP");
@@ -89,9 +92,9 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
     }, []);
 
     const exit = useCallback(
-        (performNavigate: () => void) => {
+        (performNavigate: () => void, circleTo?: ScreenPoint) => {
             const el = surfaceRef.current;
-            if (!el) {
+            if (!el || (circleTo && (prefersReducedMotion() || typeof el.animate !== "function"))) {
                 performNavigate();
                 return;
             }
@@ -108,12 +111,30 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
                 inset: "0",
                 margin: "0",
                 transform: onscreen,
-                transition: `transform ${DURATION_MS}ms ${EASING}`,
+                transition: circleTo ? "none" : `transform ${DURATION_MS}ms ${EASING}`,
                 pointerEvents: "none",
                 // Above the freshly-mounted destination route.
                 zIndex: "50",
             } satisfies Partial<CSSStyleDeclaration>);
             frame?.appendChild(clone);
+
+            if (circleTo) {
+                // The circle exit: the clone stays put and is clipped to a circle closing
+                // onto `circleTo`. The clip is in the clone's own px, so the viewport point
+                // is shifted into the frame's box (the phone card on desktop).
+                armSkipNextEnter();
+                performNavigate();
+                const box = (frame ?? clone).getBoundingClientRect();
+                const at = { x: circleTo.x - box.left, y: circleTo.y - box.top };
+                const r = circleCoverRadius(at, { left: 0, top: 0, width: box.width, height: box.height });
+                const shrink = clone.animate([{ clipPath: circleClip(at, r) }, { clipPath: circleClip(at, 0) }], {
+                    duration: CIRCLE_MOTION.ms,
+                    easing: CIRCLE_MOTION.shrinkEasing,
+                    fill: "forwards",
+                });
+                shrink.finished.catch(() => {}).finally(() => clone.remove());
+                return;
+            }
 
             // Mount the destination NOW (underneath the clone). Arm the skip-enter
             // latch first so a leaf/node destination appears static beneath the

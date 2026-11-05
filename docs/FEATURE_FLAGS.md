@@ -13,7 +13,7 @@ One registry file switches whole features, and individual games, on and off:
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
 | `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | **OFF** (since 2026-10-30) |
-| `writingNotebook` | The Writing Notebook page and its Writing Center belt card ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
+| `writingNotebook` | The Writing Notebook page and its entry, the paper stack on the Deck Tower's writing world ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
@@ -48,6 +48,8 @@ read as live-flippable when the client half still requires a rebuild.
 
 A flag is **not** a permission check — per-user gating is `users.isValidator` /
 `users.isFeatureTester` / `users.isTemplateAuthor` / `users.isAdmin` — and **not** a data rollback.
+Client tester surfaces additionally require a per-device switch on top of `isFeatureTester`:
+see [FEATURE_TESTING.md](./FEATURE_TESTING.md).
 
 Referenced by: `server/contracts/featureFlags.ts` (the file's own header points back here).
 
@@ -62,13 +64,12 @@ Referenced by: `server/contracts/featureFlags.ts` (the file's own header points 
 | Server mount | `server/server.ts` → `app.use(studyChallengeRoutes)` — gates all of `/api/studyChallenges/*` |
 | **Leak** | `server/controllers/OnDeckVocabController.ts` → `resolveChallengeRound` returns `null` early. One guard covers **both** callers (`gamePool` and `wordSearchGrid`), since the challenge board is the only thing either does differently. Deliberately a silent fall-through to an ordinary pool rather than the 400/404 an unplayable challenge gets — a bookmarked `?challengeId=` URL should still yield a casual board |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes the three `/friends/challenges*` paths |
-| Entry points | `src/features/friends/FriendsPage.tsx` — the Challenges `BentoTile` **and** its `fetchChallengeBadge` call (skipped, not caught: the endpoint is unmounted, so the request would 404 to learn `0`) |
-| | `src/features/flashcards/useDecksPanel.ts` → `challengeDecks` resolves to `[]`, which is the whole gate for the `/decks` Challenges shelf — `DecksPanelBody` already omits that section when the list is empty |
+| Entry points | `src/features/friends/FriendsBody.tsx` — the Challenges `BentoTile` **and** its `fetchChallengeBadge` call (skipped, not caught: the endpoint is unmounted, so the request would 404 to learn `0`) |
 | | `src/features/profile/UserProfilePage.tsx` → `renderBlockToggle` returns `null` |
 
 **NOT gated:** the hourly `database/cron/expire-study-challenges.sql` pass keeps running, so
 a challenge that was already live still resolves or expires on schedule instead of hanging
-mid-week. No `study_challenges` row or generated preset deck is touched.
+mid-week. No `study_challenges` row is touched.
 
 ### 2b. `community` — OFF
 
@@ -93,7 +94,7 @@ Gates **sharing**, not **authoring**.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(arenaRoutes)`. **Arena has no leaked endpoint** — all six `/api/arena*` paths live in `arenaRoutes.ts`, so this single mount is the whole server gate |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/arena` |
-| Entry point | `src/pages/MenuPage.tsx` — the Arena tile, the only navigational entry (nothing in the footer, no row on `/friends`) |
+| Entry point | `src/components/MobileFooter.tsx` → `ARENA_TAB_ON` — the footer's Arena tab, the only navigational entry (no Menu tile, no row on `/friends`) |
 
 **NOT gated, and worth knowing:**
 
@@ -164,7 +165,7 @@ parameter every other caller already omits, so there is nothing to switch off. L
 |---|---|
 | Server mount | `server/server.ts` → `app.use(writingNotebookRoutes)` — all five `/api/writingNotebook/*` endpoints. **No leaked endpoint**: the recogniser it calls is `recognizeChinese` in-process, not another route |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/flashcards/writing/notebook` |
-| Entry point | `src/features/flashcards/centers/WritingGamesCarousel.tsx` — the notebook card, the only entry; `useNotebookTotal` (`writingNotebook/notebookBelt.ts`) also skips its summary fetch when the flag is off |
+| Entry point | `src/features/flashcards/writingNotebook/notebookEntry.ts` → `useNotebookTotal` returns `undefined` with the flag off (skipping its summary fetch), and `DeckTowerPage` draws the writing world's paper stack — the only entry — only once that total is defined |
 
 The notebook is a page, not a game, so it has a FEATURE flag rather than a `GAME_FLAGS`
 entry. The `/flashcards/writing/notebook` row in `MINUTE_POINTS_ELIGIBLE_PAGES` is a path
@@ -200,7 +201,7 @@ inherit a default and vanish from the hub.
 
 | Layer | Site |
 |---|---|
-| Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** The hub (`GamesPage`), `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests all derive from this array |
+| Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** `ROUTED_GAMES` (the games with a `route`), and through it the hub (`GamesPage`), `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests, all derive from this array; so do the flp game-break candidates, which is the ONLY surface a break-only game (Speed Reading, Memory Map, Writing Grid, Superposition) has |
 | Server | `server/controllers/GamesController.ts` → `isGameEnabled` on all three handlers (`getAssets`, `getProgress`, `saveProgress`) |
 | Tips | `src/data/tips.ts` — a tip naming a game carries `game: "<slug>"` (Bubble Match, Word Search) and is filtered by `isGameEnabled`. Not derived from `GAME_REGISTRY`, so it is a second client site to remember |
 
@@ -265,7 +266,7 @@ pages the API still serves).
 
 Turning a flag **off** is non-destructive: no rows are read, written or deleted, and every
 table (`study_challenges`, `community_layout_votes`, `arenas`, the `author` column,
-generated preset decks, game save state, `iw_scenes`, the night-market placement tables) is
+game save state, `iw_scenes`, the night-market placement tables) is
 left exactly as it was — with one deliberate exception, night-market unlock accrual (§ 2d),
 which keeps writing so that re-enabling is not a cliff. Turning it back on restores the
 feature as it stood.

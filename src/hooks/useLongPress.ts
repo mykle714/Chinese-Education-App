@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * Never tap AND hold: after a hold has fired, the browser's `click` (which still arrives
  * when the finger lifts) is swallowed, so a hidden long-press can sit on a button whose
- * tap means something else entirely (scp's Skip button: tap = skip the pack, hold = open
+ * tap means something else entirely (ancp's Skip button: tap = skip the pack, hold = open
  * the skipped-cards sheet — and a hold must NOT also skip).
  *
  * A press is abandoned (neither outcome) when the pointer travels more than
@@ -28,7 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * (suppressed, so a mobile long-press doesn't raise the OS callout/menu).
  *
  * Layer: shared hook (src/hooks), no feature knowledge.
- * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a (SortCardsPage's Skip button,
+ * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a (AddNewCardsPage's Skip button,
  * SkippedCardsSheet's hold-to-recycle cards).
  */
 interface UseLongPressOptions {

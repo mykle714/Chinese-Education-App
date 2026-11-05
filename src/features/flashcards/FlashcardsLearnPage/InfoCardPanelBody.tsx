@@ -97,7 +97,7 @@ export interface InfoCardPanelBodyHandle {
  * Shared inner content of the EIP: entry header (CPCD + English + sense picker +
  * speaker), underline tab strip, and the scrollable tab body (definition / examples /
  * breakdown-or-used-in). Hosted by InfoCardSection (the bottom-sheet wrapper on the
- * flp/scp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
+ * flp/ancp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
  * that changes here shows up on every host.
  *
  * The forwarded ref exposes both the gesture-root wrapper and the inner
@@ -176,12 +176,11 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     }, []);
 
     // Per-tab emptiness + the entry-derived values the tab bodies render. Derived ONCE
-    // and shared with InfoCardTabContent so the greyed-out tab labels and the panes
-    // can never disagree. See InfoCardTabContent.tsx.
+    // and shared with InfoCardTabContent so the strip's tab-2 label and the panes can
+    // never disagree. Empty tabs are NOT dimmed in the strip (2026-11-03) — the pane's
+    // own empty state says "nothing here". See InfoCardTabContent.tsx.
     const avail = tabAvailability(currentEntry, breakdownItems, selectedSenseIndex);
     const { breakdownTabLabel } = avail;
-
-    const tabIsEmpty = [!avail.definition, !avail.examples, !avail.breakdown];
 
     // --- Swipe-to-change-tab ------------------------------------------------
     // All three tab panes are ALWAYS mounted (their content once panesWarm) side by side on a permanent
@@ -527,7 +526,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                     const displayLabel = index === 2 ? breakdownTabLabel : label;
                     return {
                         label: displayLabel,
-                        isEmpty: tabIsEmpty[index],
                         className: `mobile-demo-tab mobile-demo-tab-${displayLabel.replace(/\s+/g, '-')}`,
                     };
                 })}

@@ -8,8 +8,8 @@ shadows. Code: `src/features/deckTower/iso/`. Import from its barrel,
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). Its main
 user is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
 (`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`.
-The scp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
-`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `SortCardsPage.tsx` → `shadeHex`).
+The ancp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
+`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddNewCardsPage.tsx` → `shadeHex`).
 **`IsoCarpet` currently has no user** (the Deck Tower dropped its carpet on 2026-10-17); it is
 kept as part of the kit.
 
@@ -49,10 +49,11 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
+| Behaviour | `fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`, `FogCover`, `FOG_LEVELS` | Shapes the fog clouds (staggered, bridged units) and plans their lanes across a screen box (§ IsoFog) |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoWind.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
-| Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowTone` | The light and the shadow rule |
+| Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowSpread`, `shadowTone`, `cloudShadowFootprint` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS`, `frozenBobOffsetPx` | The bob, and reading back where a paused one stopped |
 | Math | `geometry.ts` | Projection and shape math (below) |
@@ -61,7 +62,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 
 ## Geometry
 
-`geometry.ts` uses a dimetric projection tilted `VIEW_PITCH` (55°) from straight down. It was the Night Market's 2:1 grid (60°) until 2026-10-31; the tilt makes the floor 15% deeper on screen and heights 5% shorter at the same width. Every scene draws through it, so the Deck Tower and the scp's bins change together. The floor and heights no longer share a scale: `Projector.unit` (and `scaleAt`) is the floor's and `Projector.heightUnit` is height's.
+`geometry.ts` uses a dimetric projection tilted `VIEW_PITCH` (55°) from straight down. It was the Night Market's 2:1 grid (60°) until 2026-10-31; the tilt makes the floor 15% deeper on screen and heights 5% shorter at the same width. Every scene draws through it, so the Deck Tower and the ancp's bins change together. The floor and heights no longer share a scale: `Projector.unit` (and `scaleAt`) is the floor's and `Projector.heightUnit` is height's.
 World +x runs down-right, +y down-left and +z up. Screen coordinates are
 `sx = (x − y)·unit` and `sy = (x + y)·unit/2 − z·unit`.
 
@@ -187,13 +188,35 @@ from what it falls on.
 `light.ts` holds one rule, and `IsoShadow` applies it:
 
 > A shadow is the caster's **footprint** (its underside outline), slid along the light by
-> `LIGHT_SLOPE · (casterZ − receiver.z + CONTACT_LIFT)`, laid flat on the receiver, and
-> painted in the receiver's colour darkened by `SHADOW_DEPTH`.
+> `LIGHT_SLOPE · (casterZ − receiver.z + CONTACT_LIFT)`, stretched on its two front edges
+> (+x, +y) by `shadowSpread`, laid flat on the receiver, and painted in the receiver's colour darkened by
+> `SHADOW_DEPTH`.
 
 - **Direction.** `LIGHT_DIR` points screen down-right, away from the upper-left light that
   the face shading assumes.
 - **Distance grows with height.** An object resting flush on a surface still shows a short
   contact sliver (`CONTACT_LIFT`). A floating one throws its shadow further.
+- **The sliver is thin.** `CONTACT_LIFT` is 0.15, so a resting object's shadow peeks
+  ~1px (0.075 units) past its edge. It was 0.6 (~3px) until 2026-11-04, which read as every
+  object on the floor hovering; 0.15 is what a single sheet of paper got under the height
+  rule below.
+- **Size is separate from shift.** The slid footprint's two front edges are pushed back
+  out to where the old 0.6-lift shadow's were (`light.ts` → `shadowSpread`, applied inside
+  `shadowFootprint`): `LIGHT_DIR · LIGHT_SLOPE · (0.6 − 0.15)` ≈ 0.209 on +x (the right edge,
+  under the dark right wall) and ≈ 0.084 × `BOTTOM_SPREAD_SCALE` (1.5) ≈ 0.126 on +y (the
+  bottom / front-left edge). Visible shade: right ≈ 0.28 (the old shadow's), bottom ≈ 0.15
+  (a little more than the old 0.11, which read as too thin next to the thin shift), while the
+  back edges stay tucked under the object. Rejected on 2026-11-04: growing every side
+  (bottom band too heavy, rims on the back edges) and growing +x only (bottom sliver too thin).
+  The spread does not grow with height, and it scales down with `contactLift` for a caster
+  thinner than a sheet of paper. The `solid` form pushes each landed vertex past the landing's
+  centre by `spread` on that axis, so a closing door hands over to the footprint shadow without
+  a jump. The pawn's roam check (`usePawnMotion.ts` → `onFloor`) holds its shadow's centre
+  `spread` further from the roam area's +x and +y edges, so the stretched shadow stays on the floor.
+- **Very short casters may scale it further.** `IsoShadow` takes an optional `casterHeight`;
+  with it, the sliver is `min(CONTACT_LIFT, 2.5 · casterHeight)` (`contactLift`,
+  `CONTACT_LIFT_PER_HEIGHT`), which only bites below 0.06 units (one sheet of paper).
+  `IsoPaperStack` and `IsoSortPlatform` pass a height; every other caster takes the full lift.
 - **Tone comes from the receiver.** Shadows on the sky, the floor and a carpet read as the
   same strength of shade. There are no per-receiver shadow colours in the palette.
 - **Flat things are part of their surface.** A carpet or floor label receives shadows but casts none.
@@ -203,9 +226,14 @@ from what it falls on.
   shade is a saturation-boosted orange, which as a translucent overlay needs ~80% opacity and
   would repaint the decal.
 - **Parts cast no shadow.** `IsoCard` used as a stack's top card is a part; the stack casts.
-- **Clouds and wind cast no shadow.** They sit 90+ units up, where the rule would throw
-  the shadow far off the platform into empty sky. `IsoCloud` and `IsoWind` are the only
-  standing exceptions.
+- **Clouds use a shorter skew.** Clouds fly ~18–24 units over the floor, where `LIGHT_SLOPE`
+  would land their shadows ~10 units down-right, never on screen with the cloud. So a cloud's
+  shadow keeps `LIGHT_DIR` but slides by `CLOUD_LIGHT_SLOPE` (0.08 per unit of drop, ~1.5–2
+  units), with no contact lift or spread (`light.ts` → `cloudShadowFootprint`; decided
+  2026-11-04). It falls only on horizontal surfaces, the floor and the ground: the tower's
+  visible walls face away from the light, so the one-light rule never shades them (§ IsoCloud
+  → Shadow).
+- **Wind casts no shadow.** `IsoWind` is the only standing exception.
 - **Draw order.** Each object draws its shadow first, then itself, so it covers the hidden
   part of its own shadow.
 - **Tilted casters.** A caster that is not level (the platform swung open on its hinge)
@@ -241,13 +269,15 @@ a camera can aim at where the object actually stands (the Deck Tower's study cam
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, hingeAngle?, decals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, fadeChildren? }`. A slab whose top,
+`{ rect, thickness, ground, floating?, hingeAngle?, decals?, groundDecals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, fadeChildren? }`. A slab whose top,
 the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
 from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
 `ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
 
 It draws, in order:
 
+0. `groundDecals`: flat things on the ground (drifting cloud shadows). Drawn outside the bob
+   (the ground stays put) but inside `fadeStyle`; the slab's shadow and the slab cover what lies under them.
 1. Its shadow on `ground`.
 2. The slab, with its top in the lighter rim tone.
 3. The floor, inset by `RIM_WIDTH`, leaving a thin bevel line. `RIM_WIDTH` is exported so a
@@ -347,6 +377,47 @@ it makes.
 
 `count` 0 draws nothing: the floor under it carries an `IsoCardImprint` (below).
 
+### IsoPaperStack
+
+`src/features/deckTower/iso/IsoPaperStack.tsx` → `IsoPaperStack`, `PAPER_SHEET_THICKNESS`;
+palette `ISO.paper`, `paperSeam`, `paperRule`, `paperMargin`.
+
+`{ rect, sheets, surface, progress? }`. A stack of notebook paper: IsoCardStack's construction at
+paper scale. It is ONE body solid in `ISO.paper` (white top, walls shaded off white like the
+clouds'), never a solid per sheet. Its sheets are suggested by a seam every 5 sheets, drawn
+as one path. Every sheet is `PAPER_SHEET_THICKNESS` (0.06 units, ~1px), so the height is the
+count. The top face is printed as ruled paper: sky-blue rules (`bluMk`) run along world x
+(the page's head is its low-y edge, like IsoCard's), and a red margin line (`redMk`) runs
+down its low-x side. The rule ends are projected straight onto the face, because both are
+straight in world space. There is no figure or band. It casts its own `IsoShadow`.
+`progress` (0 → 1) builds it up like IsoCardStack's: the top sheet is always drawn and
+rides up as the sheets under it grow in (`paperStackHeight(sheets, progress)`, exported so
+a scene's fog / rain stand-ins match). Its shadow is classed `iso-paper-stack__shadow`, so a
+scene can hide it alongside `iso-card-stack__shadow`. `sheets` 0 draws nothing. Its user is
+the Deck Tower's notebook stack (DECK_TOWER.md
+§ The notebook stack).
+
+### IsoSortPlatform
+
+`src/features/deckTower/iso/IsoSortPlatform.tsx` → `IsoSortPlatform`;
+`sortPlatformMetrics.ts` → `sortPlatformTopZ`, `SORT_PLATFORM_JUMP`, `HOP_PERIOD_MS`,
+`FOOTPRINT_SHADE`; ancp's empty-bin footprint is `SortBins.tsx` → `SortBin` (`sort-bins__footprint`).
+
+`{ rect, surface, deckColor, slabColor, progress?, hopping?, paused? }`. ancp's EMPTY bin in
+miniature: a thin slab (0.28 units) lying flat on `surface` — standing up from it like any
+object on a floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's
+light rim bevel at this scale, and on its top the dashed outline where a deck would stand,
+in `deckColor` darkened by `FOOTPRINT_SHADE` (ancp's day value). Dash and stroke are floor
+units × `proj.unit`. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
+`iso-sort-platform__shadow`. It is drawn in world z, never by a screen-y translate, so it
+stays right under a moving camera. `progress` (0 → 1) grows the slab up out of the surface.
+`hopping` plays one big jump (`SORT_PLATFORM_JUMP`, 1.6 units) with rebounds at 0.28 and
+0.08 of it, all in the first 1 s of every `HOP_PERIOD_MS` (2 s), with ballistic quadratic
+easing and each flight timed by the square root of its height. Only the body hops; its
+shadow stays on the surface and shrinks and fades in step. `paused` freezes the hop. No hop
+under reduced motion. Its user is the Deck Tower's sort platform (DECK_TOWER.md § The sort
+platform).
+
 ### IsoCardImprint
 
 `{ rect, surface }`. The imprint a card stack leaves on its floor, printed "0" / "cards". A
@@ -362,6 +433,20 @@ empty deck (the Deck Tower hides it only while the count loads): the stack
 covers it, and anything that clears the floor (a collapse to 0, the trap door's fall, an
 empty deck) reveals it already in place. Code: `IsoCardImprint.tsx` → `IsoCardImprint`;
 used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`).
+
+### IsoFloorPrint
+
+`{ at, lines, surface, fontSize?, lineHeight?, letterSpacing?, opacity?, color?, maxX? }`.
+A few short lines of text printed flat into a floor, with no plate: in `color` (the
+caller washes it) or by default the floor's tone two shadow steps down (`shadowTone` twice
+— `IsoCardImprint`'s print ink), bold, letter-spaced via `IsoSpacedText`. Lines read along
+world x and stack along +y, the block centred on `at`. `maxX` slides the block left so its
+widest line (measured with `getBBox` after layout, once per text/size and per web-font
+load — `useFontLoadEpoch`, shared with IsoSpacedText) ends there.
+Not raised, not a shadow, `aria-hidden` and `pointer-events: none` (it labels something;
+it is not the button). No wrapping: the caller keeps lines short. Code: `IsoFloorPrint.tsx`
+→ `IsoFloorPrint`; used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`, the
+corner fixtures' si labels — [DECK_TOWER.md](./DECK_TOWER.md) § Corner fixture labels).
 
 ### IsoCardRuns
 
@@ -409,7 +494,7 @@ Depended on by the Deck Tower's tower shrinks (the focus lever's focus-on,
 
 ### IsoFloorLabel
 
-`{ rect, surface, text, fontSize?, bandColor?, shaded?, raised? }`. A name plate printed flat on a floor: a
+`{ rect, surface, text, fontSize?, bandColor?, shaded?, raised?, wallSteps? }`. A name plate printed flat on a floor: a
 rounded rect (`bandColor`, default `ISO.cardBand`) with ink text, the same treatment as a
 card's head band. Plate and text are drawn in world units inside one `faceTransform` at the
 plate's top. The text is an `IsoSpacedText` (spacing 0.06), not a bare `letterSpacing` `<text>` — see § IsoSpacedText. Text runs along +x. By default (`raised` 0) it is part of its surface like a carpet: zero height,
@@ -418,7 +503,10 @@ no shadow, and pawns walk over it (it is not a `PawnRoam` obstacle).
 `raised` (0 → 1, briefly above 1 on a spring overshoot) stands the plate up as a thin slab
 of `RAISED_HEIGHT` (0.25 units, ~5 px at the Deck Tower's scale) so it reads as a button:
 an `IsoSolid` whose walls are the band shaded by the platform's own steps (`plateMaterial`, built on palette.ts → `bandMaterial`:
-`shadeHex` 0.07 / 0.15 — the same flagged wall-tone divergence as the rest of the palette),
+`shadeHex` 0.07 / 0.15 — the same flagged wall-tone divergence as the rest of the palette;
+`wallSteps` `{ left, right }` overrides the two steps for a band whose default walls read too
+faint — the Deck Tower's yellow Learning plate, `towerDecks.ts` → `TOWER_DECKS` `plateWallSteps`
+0.25 / 0.36, because a full-saturation yellow barely changes brightness at the default steps),
 plus an `IsoShadow` contact shadow whose opacity follows `raised`, so it fades as the plate
 sinks flush. It stays a floor decal at this height: pawns still walk over it.
 
@@ -560,7 +648,7 @@ of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, tappable? }`. A featureless ink
+`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, tappable?, floorSpot?, shockId?, crispy? }`. A featureless ink
 worker: a pill body and a ball head — a 3D capsule and sphere projected through the scene's
 camera (§ "View") — standing at a world point. Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
@@ -740,6 +828,18 @@ timeline, with the jump on top of it. A tap is ignored during an entrance or an 
 (`iso-pawn__hit`, `PAWN_HIT_RADIUS`) that `applyFrame` keeps centred on the figure, because
 the body alone is only a few px wide. Code: `iso/IsoPawn.tsx`, `iso/usePawnMotion.ts`.
 
+**Lightning.** `floorSpot` (a ref) is kept at the pawn's live ground point every frame, or
+null while it is not on the floor (before its entrance, on the summit, falling). The Deck Tower
+tests strikes against it. Each change of `shockId` (not its mount value) is a strike landing
+on it. usePawnMotion's SHOCK freezes it for `SHOCK_MS` (1 s) plus a 0.9 s beat. Meanwhile
+IsoPawn's CSS flickers the body and head ink ↔ white (`--iso-pawn-ink` / `--iso-pawn-flash`
+override the fill attribute), jitters the figure and blinks four white zig-zag sparks. A
+one-shot white puff goes up as the shock ends and is unmounted when done, like the "!"
+bubble. With `crispy`, outside a shock, it smoulders: two thin white S-wisps of smoke rise
+off its head in turn (3.4 s loop). A frizzled-hair crown was dropped on 2026-11-04. The
+sparks and smoke ride the "!" bubble's head-following anchor, in its `EMOTE_DRAW_SCALE`
+units. Under reduced motion none of it shows.
+
 **Summit.** A step with `summit: { closed, held }` is a surface no walk reaches (the Deck
 Tower's tower top). A poke while the feet are above it, and not in a startle, throws the pawn
 onto a random spot there, `SUMMIT_LANDING_INSET` in from the edge (`startFlight`, the `flight` mode: the feet physics carries the
@@ -788,7 +888,22 @@ scaled 0.8–1.25, and sorted back-to-front by view depth: the fixed view's ray 
 
 **Motion.** Drawn once at its starting position and slid by its own requestAnimationFrame
 loop (the projection is affine, so a projected world delta moves the drawing exactly). It fades in over `FADE_MS` (1.6 s). No
-bob or wobble: a cloud only drifts.
+bob or wobble: a cloud only drifts. The start point, screen delta and loop live in
+`cloudDriftMotion.ts` → `useDriftGeometry`, `useDriftMotion`, shared with the cloud's shadows.
+
+**Shadow: `IsoCloudShadow` `{ drift, receiver, clip? }`.** The cloud's shadow on one
+surface. The cloud cannot draw it itself, because its shadow falls on surfaces that sit
+elsewhere in the draw order. It is the union of the puff footprints, each slid by the
+cloud skew from its own underside height (`IsoShadow`'s `cloudPuffs` form, one path under
+the nonzero fill rule, so overlapping puffs do not double-darken). It is painted as an ink
+glaze at `SHADOW_GLAZE_OPACITY`, so floor print stays readable. Each shadow runs its own
+`useDriftMotion` loop. They mount in the same commit as the cloud and read the same rAF
+timestamp, so they move in lockstep with it. A bounded surface passes `clip` (its outline
+at `receiver.z`), and the clip stays still while the shadow slides. The Deck Tower draws one
+per cloud on the floor (clipped to the platform, the last floor decal) and one on the
+ground (`IsoPlatform` `groundDecals`), from both sides of the tower: a back-side cloud's
+floor shadow is hidden where the tower stands over it. Objects standing on the floor do not
+receive cloud shade; they are drawn over it.
 
 **Scheduling: `useCloudDrifts({ proj, active, sky, maxInSky })`.** `CloudSky` is a
 `SkyRegion` whose `band` is the range of cloud **bases**.
@@ -801,16 +916,118 @@ bob or wobble: a cloud only drifts.
 - **Height.** Read from the clouds' altitude wander (§ Sky traffic), `ALTITUDE_WANDER`
   `{ knotMs: 20000, maxStep: 0.12 }`: slow, because a cloud is up for a minute or more and
   every cloud in the sky with it should sit at a close height.
-- **Openers.** A slot's first drift starts 15–75% of the way across (`startT`) and fades
-  in, so the band has sky in it the moment clouds switch on instead of staying empty
-  while one drifts in from the edge.
+- **No openers: every cloud traverses in.** Every moving drift starts off screen
+  (`startT` 0); none appears mid-sky when the clouds switch on. Clouds are the cloudy
+  weather (the commonest kind), so they arrive quietly: slot n's first drift waits a
+  0–1.5 s lead-in (`FIRST_LEAD_IN_MS`) plus n ordinary 4–14 s gaps (`firstWaitMs`), so the band
+  fills one cloud at a time. `IsoCloud`'s fade-in stays only as a safety net.
 - **Sorting among clouds.** Overlapping clouds show their order.
   `sortCloudsBackToFront` orders them by the view depth of their path's midpoint.
   ⚠️ This is approximate: two clouds on perpendicular sides swap true order as they move,
   which a static sort cannot follow.
 - **Reduced motion.** Clouds still show: a still cloud reads as a cloud. Nothing is
-  scheduled. There is one opener per slot, parked at its `startT`, fully opaque.
+  scheduled. There is one cloud per slot, parked 15–75% of the way across (`PARKED_AT`, its
+  `startT`), fully opaque.
 - **Memoize `sky`.** A new object restarts every slot.
+
+### IsoFog
+
+`{ clouds, opacity, piercers? }` (`iso/IsoFog.tsx` → `IsoFog`, `IsoFogPiercer`), with its
+field planned by `iso/fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`,
+`FogCover`, `FOG_LEVELS`. Fog clouds lie flat in the world XY plane and roll across the
+**whole screen width** (the platform and the sky either side of it) the way clouds cross
+the sky. Used by the Deck Tower's fog weather ([DECK_TOWER.md](./DECK_TOWER.md) § Weather).
+`DeckTowerPage` plans the field per framing, and `DeckTowerPlatform` draws it as the last
+layer on the floor, under the front sky travellers.
+
+**A fog cloud (`shapeCloud`).** Each cloud is 2–4 fog **units** (`UNITS_PER_CLOUD`). A unit
+is a skinny pill: 0.6–0.9 wide (`UNIT_WIDTH`, one width per cloud) and 5–12 long
+(`UNIT_LENGTH`), with its long side along the travel. The units lie side by side across
+world y, `UNIT_GAP` (0.3) apart, all at the cloud's height. They are **staggered**: each one
+slides up to `STAGGER` (5) along x from the previous unit, so the silhouette steps rather
+than scatters. Neighbouring units are **connected where they can be**: part of the gap
+between them is filled by a flat `FogBridge`. A bridge keeps `BRIDGE_END_INSET` (1) unit
+width clear of every unit's tip, so it never reaches a rounded cap. Inside that room its
+length is random, from `MIN_BRIDGE_WIDTHS` (2) widths up to the whole room, at a random
+spot; with less room than 2 widths the pair stays a notch. In a sample field about 70% of
+gaps are bridged, a bridge filling about 70% of its room on average. The bridge runs centre
+line to centre line, and each end is pinched in by two concave **fillets** of the units'
+own radius (`bridgeEnd`): one circle sits just off each unit's side and touches it at the
+bridge's end, and the two arcs curve inward to meet mid-gap (the gap is narrower than 2r,
+so they meet at a slight crease). The outline is pre-sampled (`FILLET_STEPS` segments per
+arc) in world offsets, so IsoFog only projects its points.
+
+**The field (`planFogClouds(proj, floorZ, cover)`).** It is pure, and it is planned against
+the **fixed** view, so the study camera re-projects the same clouds rather than re-planning
+them (which would remount them and restart their loops). `cover` is a screen box in viewBox
+units that the fog must fill. Every cloud travels along world +x (down-right on screen), so
+the field is made of **lanes**: lines of constant world y that hold each cloud's centre
+line, `LANE_SPACING` (1.2) apart and slightly jittered. Lanes take the three heights in turn
+(`FOG_LEVELS`: 0.35, 1.0 and 1.9 over the floor, so the pawn wades through). A lane's y range
+comes from inverting the affine projection at the box's corners, grown by a cloud's depth.
+A lane runs only where any part of its cloud-deep band crosses the box, widened by the
+lane's longest cloud plus `EDGE_MARGIN` at each end, so clouds enter and leave fully outside
+the box. A lane gets one cloud per `CLOUD_PITCH` (17) units of its travel, with at least
+one, spread evenly round its loop. Each lane moves at 0.06–0.1 units/s (`SPEED`), far slower
+than the sky clouds (0.4–0.8), so the fog barely drifts; a crossing takes many minutes. A seeded PRNG keeps the field the same every time it is planned. On a phone
+framing that comes to about 35 clouds (107 units), with about 40% of the box under fog at
+any moment.
+
+**Drawing.** Each cloud is two paths: its units (rounded rects, radius = half their width,
+unioned by the nonzero fill) and its bridges (the projected outlines, kept in their own path
+because their winding may oppose the units' and would cut holes in a shared one), in flat
+`ISO.fog` (white) with no walls and no gradient. `opacity` is set once per height level, on
+the level's group. The shapes composite first and the group then fades as a whole, so a
+bridge over its units reads as one even silhouette with no darker seams. Clouds at
+different heights do stack, so the fog reads thicker where they cross.
+
+**Motion.** Each cloud crosses from `x0` to `x1` as one group. It fades in over the first
+`FADE_SHARE` (12%) of the crossing and out over the last 12%, then loops, so there is no
+scheduler. The motion is one linear CSS animation of the projected crossing vector per
+cloud. That is exact because the projection is affine, and it needs no JS per frame. Each
+cloud starts at its own `phase` (a negative animation-delay), so the screen is already
+foggy when fog switches on. Under reduced motion each cloud is parked, fully opaque, at its
+`phase`.
+
+**Depth.** A flat layer at height h can't sit at one place in the painter's order against a
+solid that rises through it. The layer veils the solid's base in front of it, but the solid
+above h is nearer the camera than the fog behind it. So the fog is drawn **over** everything
+on the floor, and each `piercer` (a footprint and its top z) is cut out of every height level
+it rises **above**. An SVG mask on the level's group removes the screen hull of the
+footprint's prism from the level's z to the piercer's top. The mask sits outside the moving
+pills, so the cut-out stays on the tower as the fog rolls under it. A piercer whose top is
+at or below a level is not cut, so a short tower sits wholly in the fog. Pawns are not
+piercers because they move every frame. A pawn's head can pick up a faint veil from fog
+behind it, which the owner accepted on 2026-11-04.
+
+### IsoLightningBolt
+
+`{ at, z, seed, onDone? }` (`iso/IsoLightningBolt.tsx`). One lightning strike coming down
+onto a floor point. It is a jagged flat-white (`ISO.lightning`) stroke from `BOLT_HEIGHT` (90)
+world units of height above the point straight down to it. Its 14 kinks bunch toward the
+bottom, and it has one short fork plus a flat iso ring where it hits. The jag is seeded
+(`seededRandom`), so a re-render never re-jags it. It plays the sky flash's double-strike
+flicker once (~0.5 s) and calls `onDone`, and the caller keys it per strike. Draw it in front
+of everything on the floor, at a VISIBLE point (`openFloor.ts`), so its column never passes
+behind a solid. Under reduced motion it draws nothing and reports done at once.
+
+### IsoBurnMark
+
+`{ at, z, seed }` (`iso/IsoBurnMark.tsx`). A strike's scorch, as a floor **decal**. It has two
+flat ink shapes (`useIsoPalette().ink`, so it is washed by time of day): a faint ragged
+11-point star splash, and a darker wobbly core over it. Its outline is seeded, so a mark keeps
+its exact shape across remounts. `BURN_MARK_RADIUS` (0.95) is the farthest any part of a mark
+reaches from its centre. A caller keeps that much floor clear of objects (the Deck Tower:
+`towerLightning.ts` → `scorchFits`).
+
+### openFloor.ts
+
+`openFloorSpot(floor, solids, { inset, onSolids, tries?, random? })` and `hiddenBehind(x, y,
+solid)`: a uniformly random spot of a floor that the FIXED view can see. A point is hidden
+behind a `FloorSolid` (`{ rect, zTop }`) when it is short of both of the solid's visible faces
+and inside its screen-x span. With `onSolids`, a point inside a footprint lands on that
+solid's top (IsoRain's landings); without it such points are rejected (strike points). Rounded
+corners are ignored.
 
 ### IsoWind
 
@@ -915,7 +1132,7 @@ too. If the style spreads beyond the Deck Tower, promote them to tokens in
 
 The platform's rim is derived too, but not with `shadeHex`: `theme/towerSlab.ts` →
 `slabRim` lifts the base by a fixed OKLCH lightness step (`timeOfDay/wash.ts` → `liftHex`),
-holding hue and chroma, and both `platformTone` and `TOWER_SLAB` read it. An HSL step costs
+holding hue and chroma, and `platformTone` reads it. An HSL step costs
 chroma near HSL white, so it took reading's pale pink floor (`pnk`) to a white rim that read
 as an outline.
 

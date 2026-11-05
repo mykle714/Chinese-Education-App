@@ -18,7 +18,7 @@ import { COLORS } from "../theme/colors";
  * ── The inline filter slot ────────────────────────────────────────────────────
  * `endAction` renders INSIDE the input's trailing adornment, to the right of the
  * clear button. It exists so that a surface which filters or reorders its results
- * (the collection page and the decks panel, both via CollectionSortControl) puts that
+ * (the Deck Tower's cards page, via CollectionSortControl) puts that
  * control on the search row itself rather than on a second row beneath it — a search
  * box and its filter are one control, and the app should only ever show them as one.
  * Pass an ICON-sized node: the slot is sized for an `IconButton`, not a text button.
@@ -26,12 +26,12 @@ import { COLORS } from "../theme/colors";
  * ── What it does NOT own ──────────────────────────────────────────────────────
  * Debouncing, querying, and the result list. The host holds the term in state and
  * decides what a term means — some search the server (dictionary, icons8), some filter
- * an already-loaded array (collection, decks panel).
+ * an already-loaded array (td's cards page).
  *
  * Layer: shared presentation component (src/components). No data access.
  *
- * Referenced by: CollectionViewPage, DecksPanelBody, DictionaryPage, CommunitySearchBar,
- * IconPickerDialog, CompareWorkspace.
+ * Referenced by: TowerCardsPage, DictionaryPage, CommunitySearchBar, IconPickerDialog,
+ * DictionaryWordSearch.
  * Docs: docs/DECKS_FEATURE.md § "Search + filter row".
  */
 export interface SearchFieldProps {

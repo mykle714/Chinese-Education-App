@@ -60,7 +60,15 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
 
 /** A segment with its own span class and/or a node drawn right after its text. */
 export interface TwoLineSegment {
+    /** The plain text — what the probe MEASURES, and what renders when `content` is absent. */
     text: string;
+    /**
+     * Optional rich rendering of `text` (e.g. `GlossText`'s italic classifier label).
+     * It must draw the same characters as `text`: layout is computed from `text`, so a
+     * width-changing `content` would overflow its line. Used in SEGMENT mode only; in
+     * word mode (one segment broken across lines) the plain words render.
+     */
+    content?: ReactNode;
     /** Extra class on this segment's text span — the caller styles it through `sx`. */
     className?: string;
     /** Drawn immediately before the text (e.g. a star icon); never wraps away from it. */
@@ -225,7 +233,7 @@ function SwipeableTwoLineText({ segments, separator, className, sx, align = 'sta
             <Fragment key={from + i}>
                 {i > 0 ? separator : from > 0 && lineStartMark}
                 {seg.leading}
-                <span className={seg.className}>{seg.text}</span>
+                <span className={seg.className}>{seg.content ?? seg.text}</span>
                 {seg.trailing}
                 {from + i === end - 1 && end < units.length && lineEndMark}
             </Fragment>

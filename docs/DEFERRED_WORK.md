@@ -67,9 +67,8 @@ to explain it. On the flp the session simply ends: a suppressed mark returns
 **Resolved, and no longer part of this item:** *should the cooled tier be deleted in
 favour of lending?* No. Lending was demoted below it instead — minting words the learner
 never chose was the worse failure, and it was growing provisional holdings without bound
-(PROVISIONAL_CARDS.md § 4b). The `[MarkSuppressed]` log keeps its remaining job: telling
-ordinary cooled-tier suppression apart from the deck/collection suppression that is
-intended (HYDRA_BUBBLES.md § 6.3).
+(PROVISIONAL_CARDS.md § 4b). The `[MarkSuppressed]` log keeps its remaining job: counting how often
+cooled-tier suppression happens.
 
 **The task that remains is UI.** Give the learner feedback rather than silence —
 "resting until tomorrow" on the card, a muted state on a bubble, or an end-of-session
@@ -94,7 +93,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | | |
 |---|---|
 | **What** | Three of the fifteen shelf-system generic atoms have no shared implementation: `.modal` (scrim + centred grey card + one dark CTA), `.sheet` (pull-up panel, `top:176px`, radius 26, grab handle) and `.scrim` (a flat 28% ink overlay). Spec: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5 |
-| **Why deferred** | Each already has ONE live bespoke implementation — the decks preview panel (entry 2) for the sheet, MUI `Backdrop` for the scrim, and for the modal whichever blocking dialog survives (`HydraLendNotice`, the reference cited here, was **deleted 2026-09-05** when Hydra's lend popup became a per-bubble badge) — and none is repeated often enough to have drifted. Extracting a primitive from a single caller invents an API from one data point; the second caller is what tells you which parts are actually shared |
+| **Why deferred** | Each already has ONE live bespoke implementation — `SheetPanel` (`src/components/sheet/`) for the sheet, MUI `Backdrop` for the scrim, and for the modal whichever blocking dialog survives (`HydraLendNotice`, the reference cited here, was **deleted 2026-09-05** when Hydra's lend popup became a per-bubble badge) — and none is repeated often enough to have drifted. Extracting a primitive from a single caller invents an API from one data point; the second caller is what tells you which parts are actually shared |
 | **Cost of leaving it** | Low for now, rising. The moment a second sheet or a second blocking modal is written, the two will disagree on radius, top offset, grab-handle size and scrim opacity, and the fix becomes a reconciliation rather than an extraction |
 | **Trigger** | The second caller. Whichever entry next needs a pull-up panel or a blocking modal extracts the primitive as part of its own work rather than inlining a third copy |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A5, `src/components/primitives/` |
@@ -106,7 +105,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | **What** | A system for handling text one user writes and 24 strangers read. The first (and today only) such surface is the **arena message** (`users."arenaMessage"`, migration 152, [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a) — one line under each competitor's name on the `/arena` board. At minimum it needs: a **report** affordance on a row, somewhere for reports to land, a **takedown** path (clear the message and keep it cleared), and a decision about whether a cleared account may write another. Probably also a cheap pre-filter on write, and a per-account rate limit so a takedown is not undone in one tap |
 | **Why deferred** | The message shipped 2026-08-21 with SHAPE checks only — `ArenaService.setMessage` strips control characters, collapses whitespace, trims and caps at 80 — and none of that is judgement. Moderation was not built alongside it because the correct design depends on facts we do not have yet: how many people write one at all, and whether abuse arrives as a trickle (a human queue is fine) or not at all (a report button and nothing else is fine). Building a review queue for a feature nobody uses is the more expensive mistake |
 | **Cost of leaving it** | **Currently low, and it stops being low the day the app has strangers in it.** PPE has no customers ([memory: PPE is effectively a PPE](../CLAUDE.md)), and arena boards are mostly synthetic padding — bots draw their lines from a fixed pool and cannot type anything. So today the realistic blast radius is one tester reading another tester's line. The moment real users share a board, this is an unmoderated broadcast channel to 24 people who did not consent to each other, and the arena is the one surface a user **cannot leave mid-week** |
-| **Trigger** | ⚠️ **Before the arena carries real strangers** — whichever comes first: the first non-tester cohort, or a second surface adopting user-authored public text (a profile blurb, a deck description shown to others, a challenge taunt). Do not ship a second such field before this exists; the second one is what makes an ad-hoc fix permanent |
+| **Trigger** | ⚠️ **Before the arena carries real strangers** — whichever comes first: the first non-tester cohort, or a second surface adopting user-authored public text (a profile blurb, a challenge taunt). Do not ship a second such field before this exists; the second one is what makes an ad-hoc fix permanent |
 | **Interim mitigation** | The write path is a single chokepoint by design (`ArenaService.setMessage` → `ArenaDAL.setArenaMessage`, the ONLY writer of the column), and `{ message: null }` clears it. So an urgent takedown today is one `UPDATE users SET "arenaMessage" = NULL WHERE id = …` and nothing else in the app needs to change |
 | **References** | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a, `server/services/ArenaService.ts` → `setMessage`, `database/migrations/152-add-arena-message.sql`, `src/features/arena/ArenaMessageDialog.tsx` |
 
@@ -114,7 +113,7 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/scp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
+| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/ancp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
 | **Why deferred** | (a) is small but touches five components; (b) is not. Hydra's tier ladder and its two color buffers are keyed on the mastery bands of the track it pools by, so a reading run re-bands the entire board — and a sparsely-marked reading track puts nearly every card in drain, which is the side that grows the board. Whether the § 3.1 spawn table still terminates under that mix is an open question (O5) that has to be answered before the conversion can ship |
 | **Cost of leaving it** | A learner who switches Bubble Match to Reading loses pinyin in Hydra and Match Speed without asking, and Hydra keeps writing `recognition` marks for a board it is drawing as a reading board — the mark no longer describes what the player did. Match Speed is display-only, so it is merely surprising there |
 | **Trigger** | Ship (a) whenever a game's settings are next touched — it stands alone and fixes the leak. (b) waits on O5 |
@@ -141,7 +140,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | **What** | `ShelfHeader` (`src/components/shelf/Shelf.tsx`) and `SectionHeader` (`src/components/primitives/Label.tsx`) both render the design's `.shelfhd` — a mono overline with an optional right-hand affordance — at the identical `19px 22px 0` padding. Neither is a superset: `ShelfHeader` takes `children` (so it can hold two `Label`s), `SectionHeader` takes a `label` node plus an `action` glyph name and an `actionLabel` for a11y |
 | **Why deferred** | They were built in different parts of Part A (A3 and A5) for different reasons, and the split reads as intentional until you put them side by side. Collapsing them means picking one API and touching every caller; nothing is broken while both exist |
 | **Cost of leaving it** | A page that needs both a shelf caption and a section caption uses two components that look identical, which is how the next divergence gets introduced. Entry 5 (Account) hit exactly this and picked `SectionHeader` for both, so its library header is a shelf caption drawn by the non-shelf component |
-| **Trigger** | The next entry to touch A3 or A5. Merge into `SectionHeader` (the richer API), keep `ShelfHeader` as a re-export or delete it, and fix the `DecksPanelBody` / Reader / Account call sites |
+| **Trigger** | The next entry to touch A3 or A5. Merge into `SectionHeader` (the richer API), keep `ShelfHeader` as a re-export or delete it (it has no caller outside `src/components/shelf/` since the decks page was deleted), and fix the Reader / Account call sites |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A3, § A5, entry 5; `src/components/shelf/Shelf.tsx`, `src/components/primitives/Label.tsx` |
 
 ---
@@ -158,21 +157,22 @@ carries `suppressed: true`, and **no client reads it today**.
 
 ---
 
-### 11. A drilled-in eip word lost its Add-to-Deck and Compare
+### 11. A drilled-in eip word lost its Compare
 
 > **Compare half: fixed and then REVERTED, both on 2026-09-04.** The eip entry header briefly
 > carried a `compare_arrows` button (`InfoCardPanelBody`'s `onCompare`) acting on the word the
 > header was showing; it was removed at the user's request, along with the `onCompare` prop on
 > `InfoCardPanelBody`/`InfoCardSection` and its four call sites. Compare is once again reachable
-> only from `WordToolsRail` above the card, so both halves of this item are deferred: a
-> drilled-into word must be opened as its own page before it can be filed OR compared. See
+> only from `WordToolsRail` above the card: a drilled-into word must be opened as its own
+> page before it can be compared. (The Add-to-Deck half is moot: Decks were deleted
+> 2026-11-04, and `CardOpsRail` is now customize + note only.) See
 > [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
 
 | | |
 |---|---|
-| **What** | `InfoCardActionBar` (Add to Deck… / Compare To… / Practice Writing Me) rode at the end of the eip's definition tab and is **deleted**: artboards 20–25 make the panel information-only, so its three actions moved to the surfaces that own them — `CardOpsRail` on the card (add to deck) and `WordToolsRail` above it (compare, write it). Those rails act on the **card's** word. A word the learner has DRILLED INTO from the breakdown rows or an example segment therefore has no in-panel way to be filed or compared |
+| **What** | `InfoCardActionBar` (Add to Deck… / Compare To… / Practice Writing Me) rode at the end of the eip's definition tab and is **deleted**: artboards 20–25 make the panel information-only, so compare and write-it moved to `WordToolsRail` above the card, which acts on the **card's** word. A word the learner has DRILLED INTO from the breakdown rows or an example segment therefore has no in-panel way to be compared |
 | **Why deferred** | It is a deliberate consequence of the design's own rule ("card operations have left the panel entirely"), not an oversight, and there IS a path: the breakdown rows are tappable and open that word's own page, where both actions live. But it is one more navigation than before for a real thing learners do |
-| **Cost of leaving it** | Filing a component character into a deck costs a drill-in instead of a tap. Nothing is unreachable |
+| **Cost of leaving it** | Comparing a component character costs a drill-in instead of a tap. Nothing is unreachable |
 | **Trigger** | If it comes up in use. The fix is NOT to put the action bar back — it is to let the word trail's active pill carry a small ops affordance, so the actions stay attached to "the word you are looking at" rather than to a tab body |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 19–25; `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` (the comment at tab 0), `src/components/WordToolsRail.tsx`, `src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx` |
 
@@ -353,19 +353,18 @@ fallback.
 
 ### 23. The daily banking animation ignores `prefers-reduced-motion`
 
-*Added 2026-10-10 (design stage — the feature is not built yet). Docs:
+*Added 2026-10-10 (the feature is built and on PPE; it runs on the Deck Tower). Docs:
 [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 3 and Q7.*
 
-**What.** The once-per-day hp banking animation (flame swells, drains, embers fly into the
+**What.** The once-per-day td banking animation (flame swells, drains, embers fly into the
 avatar) plays for every learner, including those whose OS asks for reduced motion. The
 proposed fallback was to skip the swell and the ember flight and show only the end state
-with a brief static avatar glow. Precedent for honoring the setting: `IWSceneIntroCard`,
-`StudyHand`.
+with a brief static avatar glow. Precedent for honoring the setting: `IWSceneIntroCard`.
 
 **Why deferred.** The owner chose to ignore the setting for the first build.
 
 **Cost to leave.** A learner sensitive to motion gets a large animation (up to ~5 s, 1.8×
-scale) once a day per language, on the app's landing screen.
+scale) once a day per language, on the Deck Tower (the footer's Deck tab).
 
 **Trigger.** Any accessibility pass, or any feedback about motion from a learner.
 
@@ -389,36 +388,6 @@ on every study session.
 **Trigger.** Once the in-place study's design is settled (it is still being tuned), or
 any accessibility pass.
 
-### 25. Retire `/flashcards/learn` once the Deck Tower's in-place study is kept
-
-*Added 2026-10-24. Docs: [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower".*
-
-**What.** The flp now runs in two places: its own route (`/flashcards/learn`, reached from
-the fdp hand, the Reading/Writing Centers and the mastery centers) and inside the Deck
-Tower (`FlashcardsLearnPage` with a `tower` host, `FlpTowerHost`). The Deck Tower is meant
-to replace the fdp, at which point the route — and the route-only machinery in the flp
-(`useFlpLeave` / `useFlpEntrance` and the fdp ⇄ flp choreography in
-`src/features/flashcards/flpLaunch.ts`, the URL parsing of `mode` / `category` /
-`collection`) — has no way in left.
-
-**Decided 2026-10-26: the in-place study is kept.** The tower-hosted flp is the app's one
-flp; the route is LEGACY. New flp work targets the `tower` path first (its card stock, its
-plate buttons — TOWER_STYLE_SHIFT.md) and the route only gets what it needs to keep
-working. The owner chose NOT to restructure yet: the paths and the single
-`FlashcardsLearnPage` with its `tower ?` branches stay as they are.
-
-**Why deferred.** The route still has entry points the tower does not cover (the fdp
-hand's Challenge / Review modes, collection study, the Reading/Writing Centers), and the
-owner asked for no restructure in the same pass.
-
-**Cost to leave.** Two hosting modes in one 1,200-line page, and the choreography code
-kept alive for the fdp.
-
-**Trigger.** The fdp's removal, or when the route's remaining entry points are rehomed.
-The likely shape then: the page always takes a host, and the route-only pieces
-(`FlashcardsLearnHeader`, `useFlpLeave` / `useFlpEntrance`, the URL parsing) move into a
-`legacy/` route host that can be deleted as one folder.
-
 ### 26. Dictionary "Closest matches" on a no-result query
 
 *Added 2026-10-29. Docs: [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § 7b.*
@@ -437,10 +406,10 @@ The likely shape then: the page always takes a host, and the route-only pieces
 
 | | |
 |---|---|
-| **What** | The Tower Tier 2 re-skin of scp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with scp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a Home tile) and restore the hosting from git at `09f607e` |
+| **What** | The Tower Tier 2 re-skin of ancp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with ancp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a td fixture) and restore the hosting from git at `09f607e` |
 | **Why deferred** | Removing the button was a design decision; deleting a whole feature's code was not asked for |
 | **Cost of leaving it** | Dead code that still type-checks and drifts silently; a reader of QUICK_MARK.md assumes a live feature |
-| **Trigger** | The next Quick Mark or scp toolbar change, or a dead-code sweep |
+| **Trigger** | The next Quick Mark or ancp toolbar change, or a dead-code sweep |
 | **References** | `src/features/discover/QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts` |
 
 ### 28. Move the iso kit to `src/components/iso/`
@@ -449,7 +418,7 @@ The likely shape then: the page always takes a host, and the route-only pieces
 
 | | |
 |---|---|
-| **What** | scp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
+| **What** | ancp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
 | **Why deferred** | A wide `git mv` across files other sessions were editing on the same day; the cross-feature import works meanwhile |
 | **Cost of leaving it** | A layering violation (features/ importing another feature's internals) that the next importer will copy |
 | **Trigger** | The next quiet day on `src/features/deckTower/`, or a third importer |
@@ -467,34 +436,70 @@ The likely shape then: the page always takes a host, and the route-only pieces
 | **Trigger** | Item 28 (the iso kit move), or the next touch of any of the three |
 | **References** | the three symbols above |
 
-### 30. Analyse how long sense names run, starting with 明 (ming2)
+### 34. Drop the storage the deleted Decks, Word of the Day and challenge preset decks left behind
+
+*Added 2026-11-04, when Decks, the Word of the Day and the Study Challenge's preset decks
+were deleted from the code. Docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md),
+[STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).*
 
 | | |
 |---|---|
-| **What** | Measure the sense text learners actually read across the discoverable zh and es corpus, then decide whether long entries need a cap, a backfill or a display rule. Report the length distribution, the worst words, how many carry `[pinyin]` or `\|` residue, and how many are rare senses of common words |
-| **What to measure** | `ddt(cluster)`, which is what the eip header's sense list and the `SensePicker` show, not the cluster's `sense` field. 明's longest `sense` is 29 characters ("Ming, legendary Flame Emperor"), but that cluster's `glosses[0]` is a raw dictionary line of about 120: "Ming (c. 2000 BC), fourth of the legendary Flame Emperors, 炎帝[Yan2 di4] descended from Shennong 神農\|神农[Shen2 nong2] Farmer God". The `sense` field is short across the corpus (dev, 2026-10-31: 16,479 discoverable zh clusters, median 17, p99 35, max 66); the `ddt` distribution is the number still missing |
-| **Why deferred** | Raised while tuning the eip header's gloss layout. The layout swipes a long list rather than breaking, so nothing is blocked |
-| **Cost of leaving it** | A word like 明 shows an encyclopedic line in its sense list, and a long list takes more swiping to read |
-| **Trigger** | The next definition-cluster backfill or `ddt` change, or the next report of a long sense on a card |
-| **References** | `src/utils/definitionUtils.ts` → `ddt`, `sortedSenseClusters`; `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx`; `src/features/flashcards/card/SensePicker.tsx`; [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) |
+| **What** | A contract migration dropping storage no code reads any more: the `decks` + `deck_cards` tables (migration 141), the `study_challenges."presetDeckIds"` column (migration 148; new rows get the `{}` default), and the `daily_words` table (migration 169) |
+| **Order** | Two writers must go FIRST, in an earlier deploy: (1) `VocabEntryDAL.delete` still runs `DELETE FROM deck_cards WHERE "vocabEntryId" = $1` (the FK stand-in — `deck_cards."vocabEntryId"` has no foreign key); (2) `database/cron/expire-study-challenges.sql` passes 3 and 4 still drop `editMode = 'preset'` decks and rewrite `presetDeckIds`. Remove both, reinstall the cron on PPE, then the migration can drop the tables and column. Check PPE first that no `'preset'` deck rows remain (passes 3/4 only clean up decks from challenges accepted before 2026-11-04) |
+| **Why deferred** | Kept on purpose in the removal so the code change ships without a destructive migration |
+| **Cost of leaving it** | Dead tables and a dead column that read as live to the next reader of the schema; the cron keeps doing a no-op sweep every tick |
+| **Trigger** | Any schema cleanup pass, or once PPE has no `'preset'` deck rows |
+| **References** | `database/migrations/141-create-decks.sql`, `148-create-study-challenges.sql`, `169-create-daily-words.sql`; `server/dal/implementations/VocabEntryDAL.ts` → `delete`; `database/cron/expire-study-challenges.sql` (passes 3, 4); `server/dal/implementations/StudyChallengeDAL.ts` (the column list) |
 
-### 31. Remove review and challenge modes
+### 35. Uncalled endpoints and orphan client files
 
-**What:** Review and Challenge are deprecated (decided 2026-10-31); Study Mix is the only
-mode that stays. They are marked `@deprecated` but still work. Removing them touches the
-flp's `?mode=` (`StudyMode`, `parseStudyMode`, server `MODE_CONFIGS`,
-`getDistributedWorkingLoop`, `getFlpReadyCounts`), the fdp and Center study hands
-(`StudyHand`, `FlpStudyHand`, `HAND_LAUNCH_REQUESTS`), Match Speed's modes (`MatchSpeedMode`,
-`MODE_CONFIGS`, `widenedMode`, `relaxed`) and `FlpBreakContext.studyMode`.
+*Added 2026-11-04. These predate the Decks / Home removal; found during it.*
 
-**Not in scope:** the Study Challenge feature ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)),
-whose ids also contain the word "challenge". Mode rows in `wins` (levels 2, 3) and
-`game_personal_bests` (`review`, `challenge`) need a keep-or-delete decision.
+| | |
+|---|---|
+| **What** | Server endpoints with no client caller: `GET /api/onDeck/libraryCards` (`server/routes/onDeckRoutes.ts` → `OnDeckVocabController.getLibraryCards`), `GET /api/changelog` (`server/routes/metaRoutes.ts`), `POST /api/starterPacks/quickMarkBatch` (`server/routes/starterPacksRoutes.ts` → `StarterPacksController.quickMarkBatch`). Client files with no importer: `src/features/discover/QuickMarkPanel.tsx` (see item 27 — `quickMarkBatch` is its endpoint, so they go or stay together), `src/features/studyChallenge/ChallengeScoreTable.tsx`, `src/games/shared/useLocalGameSettings.ts`, `src/utils/arenaWeek.ts`. Delete each, or wire it back up |
+| **Why deferred** | Out of scope for the removal that found them |
+| **Cost of leaving it** | Dead code that type-checks and drifts; an uncalled authenticated endpoint is attack surface with no owner |
+| **Trigger** | A dead-code sweep, or item 27's decision |
+| **References** | the files above |
 
-**Why deferred:** only the marking was requested so far. **Cost of leaving:** a fan of three
-cards offering modes that are on their way out. **Trigger:** the removal is scheduled.
+### 33. Spanish long-dd fixes (paused with all Spanish work, 2026-11-03)
+
+| | |
+|---|---|
+| **What** | The Spanish half of the 2026-11-03 long-dd fix, which shipped for zh only. (1) Run `server/scripts/backfill/shared/patch-long-cluster-glosses.js --lang=es` on the 449 es cluster leads over 20 displayed chars (dry-run verified, never written). (2) Change the es step 4 manifest gate in `server/scripts/backfill/shared/lib/requiredScripts.js` from `when: 'multiDef'` to `'multiDefOrLongLead'`; zh got this fix and es did not, so **no single-gloss es row is ever planned for step 4** (34 discoverable rows, e.g. *agradecido* "grateful, thankful, appreciative, obliged, indebted"). Add the long-lead disjunct to `HAS_WORK_CLAUSE` in `spanish/backfill-process-definitions-array.js` too. (3) Port zh's "a failed short gloss leaves the row unstamped" fix to the es step 4. (4) Replace the es step 4's hand-copied `generateShortGloss` / `pass1Sort` with the shared ones (`chinese/lib/orderGlosses.js`, `shared/lib/senseShortGloss.js` → `askShortGloss`). That duplication is how fix (2) was missed. (5) `ddt` strips `(…)` but not Wiktionary's `[+…]` usage notes: 51 es cluster leads show e.g. *acabar* "to end up [+gerund]". (6) *venir*'s clusters lead with Wiktionary sense headings ("Senses relating to literal movement."), which is a source-import defect |
+| **Already in place** | The es clusterer already runs the per-sense short-gloss step on every new clustering (`spanish/backfill-cluster-definitions.js` → `run`, `shortenLongLeads`). That code was dry-run tested but has not written a row |
+| **Why deferred** | All Spanish work is paused until further notice (CLAUDE.md § Multi-Language Support) |
+| **Cost of leaving it** | Spanish cards and sense lists keep their long headlines; every es word the cron promotes with a single long gloss arrives without a short one |
+| **Trigger** | Spanish work resumes |
+| **References** | [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense"; [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § 3 |
 
 ## Recently closed
+
+### 31. Remove review and challenge modes (closed 2026-11-04 — DONE)
+
+The flp and Match Speed have one mode, Study Mix. `StudyMode` / `parseStudyMode`, the
+server `MODE_CONFIGS`, `REVIEW_BANDS`, `reviewNextReadyMs`, the `?mode=` / `?category=`
+working-loop params and Match Speed's modes are gone; `server/contracts/studyMode.ts` is
+the world axis only. Migration 182 (`182-delete-review-challenge-mode-history.sql`)
+deletes Match Speed's `wins` levels 2/3 and the `review` / `challenge`
+`game_personal_bests` rows.
+
+### 25. Retire `/flashcards/learn` (closed 2026-11-04 — DONE)
+
+The route is deleted. `FlashcardsLearnPage` requires its `tower` host (`FlpTowerHost`) and
+renders only inside the Deck Tower; `FlashcardsLearnHeader` and the fdp ⇄ flp choreography
+(`flpLaunch.ts`) are gone. The game-break motion lives in
+`FlashcardsLearnPage/gameBreak/breakMotion.ts`.
+
+### 30. Analyse how long sense names run (closed 2026-11-03 — DONE for zh)
+
+Measured on `ddt(cluster)` (what the card, the eip header's sense list and the
+`SensePicker` show). The fix is write-time, not display-side: a per-sense ≤20-char short
+gloss in both clusterers, plus a one-off repair of existing rows
+([DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense"). zh
+cluster leads over 20 chars went 1,621 → 16; 明's ~120-char Flame Emperor line now
+headlines "Flame Emperor Ming". The Spanish half is item 33.
 
 ### 32. Store Superposition's stroke groups on det (closed 2026-11-03 — DONE)
 

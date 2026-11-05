@@ -23,6 +23,7 @@ import { lookupVocabEntry } from '../../api/dictionary';
 import EipSheet from '../flashcards/FlashcardsLearnPage/EipSheet';
 import { useEipTabs } from '../flashcards/FlashcardsLearnPage/useEipTabs';
 import { dictionaryBrowseState } from './dictionaryBrowseState';
+import { registerDictionarySearchFocus } from './dictionarySearchFocus';
 import { DEFAULT_SOURCE_ATTRIBUTE } from '../beginnerKeyboard';
 import { useTier2Look } from '../../timeOfDay/useTier2Look';
 import type { Tier2Look } from '../../timeOfDay/tier2Look';
@@ -139,6 +140,19 @@ function DictionaryPage() {
     // to raise a keyboard. The 2026-10-10 auto-focus effect was deferred one frame to
     // dodge BeginnerKeyboardProvider's close-on-pathname-change — see
     // docs/BEGINNER_KEYBOARD.md § 6z-3a if it is ever reinstated.
+    //
+    // The one exception is a DOUBLE TAP on the footer's Dictionary tab, which asks for
+    // focus (dictionarySearchFocus.ts). While mounted, the page focuses synchronously
+    // inside that tap's gesture; a request made before mount is applied one frame late.
+    useEffect(() => {
+        const focusSearch = () => searchInputRef.current?.focus();
+        const { unregister, hadPending } = registerDictionarySearchFocus(focusSearch);
+        const frame = hadPending ? requestAnimationFrame(focusSearch) : 0;
+        return () => {
+            if (frame) cancelAnimationFrame(frame);
+            unregister();
+        };
+    }, []);
 
     // Keep the persisted query in sync so a drill-in → back restores it. Results load
     // continuously now (no page to persist): only the first page is restored, so a
@@ -229,7 +243,7 @@ function DictionaryPage() {
 
     return (
         // Dictionary is a FOOTER TAB (it took Account's slot on 2026-10-09; it used to be
-        // a node page drilled into from the old Home hub). Like Home/Menu/Discover it
+        // a node page drilled into from the old Home hub). Like Deck/Menu/Arena it
         // renders a bare MobileTabScreen: no back arrow, no slide — the footer switches
         // instead. MobileTabScreen's scroll area owns scrolling, so the page does not
         // wrap its content in its own scroll box.

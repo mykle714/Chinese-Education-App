@@ -25,8 +25,7 @@ There are two types of definitions stored per vocab entry.
 ## Worlds and bars
 
 A **world** is one of the three mastery tracks a card is studied on: `core` (the
-Main world: recognition + production), `reading` (the Reading Center) and `writing`
-(the Writing Center). Type: `MasteryWorldId` in `server/contracts/wire.ts`; the list is
+Main world: recognition + production), `reading` and `writing`. Type: `MasteryWorldId` in `server/contracts/wire.ts`; the list is
 `MASTERY_WORLDS`; a mark's world is `worldForMarkType` (`server/contracts/mastery.ts`).
 The Deck Tower draws each world as its own platform (docs/DECK_TOWER.md § Worlds).
 

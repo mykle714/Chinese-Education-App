@@ -114,6 +114,39 @@ export function ddt(cluster: { glosses: string[] }): string {
 }
 
 /**
+ * The fixed label every classifier (measure-word) sense's gloss starts with — house
+ * style agreed 2026-11-03: "classifier for books". Rendered in italics by `GlossText`
+ * (src/components/GlossText.tsx) so the label reads as a tag, not part of the meaning.
+ * Kept in lockstep with CLASSIFIER_PREFIX in
+ * server/scripts/backfill/shared/lib/senseShortGloss.js, which writes these glosses
+ * (and excludes the label from the 20-char headline budget).
+ * See docs/DEFINITION_CLUSTERS.md § "Classifier senses".
+ */
+export const CLASSIFIER_LABEL = 'classifier for';
+
+/**
+ * Split a display gloss into its italic classifier label and the rest, or return
+ * `label: null` when it is not a classifier gloss.
+ *
+ * The gloss text alone decides on surfaces that only hold a flattened dd string (a
+ * mini card, the writing card), which is safe because the backfill validator lets ONLY
+ * a classifier sense start with "classifier" (`validateShortGloss`), and on dev
+ * (2026-11-03) no non-classifier sense's lead does. Where the sense's `pos` is at hand
+ * (sense picker, eip sense list) pass it: then a gloss is split only when that sense is
+ * tagged `classifier`, so a word with both a classifier and a non-classifier sense gets
+ * italics on the classifier one alone.
+ */
+export function splitClassifierLabel(
+  text: string,
+  pos?: readonly string[] | null,
+): { label: string | null; rest: string } {
+  const isLabelled = text.toLowerCase().startsWith(`${CLASSIFIER_LABEL} `);
+  const posAllows = pos == null || pos.includes('classifier');
+  if (!isLabelled || !posAllows) return { label: null, rest: text };
+  return { label: text.slice(0, CLASSIFIER_LABEL.length), rest: text.slice(CLASSIFIER_LABEL.length) };
+}
+
+/**
  * The short grammatical tag for ONE sense — "v", "n · m", "adj" — or null when the
  * cluster carries neither pos nor gender.
  *
@@ -207,7 +240,7 @@ export function resolveSelectedSenseIndex(
  * any future re-scoring of which sense is the most common one.
  *
  * Shared by every sense picker host — the flp card face (FlashCardSection), the cdp
- * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / SortCardsPage) — so the
+ * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / AddNewCardsPage) — so the
  * index→label conversion can't drift between them. See docs/DEFINITION_CLUSTERS.md.
  */
 export function senseLabelForIndex(

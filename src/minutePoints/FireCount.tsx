@@ -192,7 +192,7 @@ const FireCount: React.FC<FireCountProps> = ({
                             willChange: "height",
                         }}
                         // The level in `style`, not `sx`: it changes every second on the
-                        // live badge and every FRAME during the hp banking run, and each
+                        // live badge and every FRAME during the td banking run, and each
                         // distinct sx value mints a new emotion CSS class.
                         style={{ height: `${fillPct}%` }}
                     >

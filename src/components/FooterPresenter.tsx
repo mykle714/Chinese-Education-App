@@ -61,7 +61,7 @@ const FooterPresenter: React.FC = () => {
 
     // Keep showing the last active tab while sliding OUT, so the bar doesn't
     // blank or flip its highlight as it leaves.
-    const lastActive = useRef<FooterTab>("home");
+    const lastActive = useRef<FooterTab>("deck");
     if (activePage) lastActive.current = activePage;
     // The same for the style: a slab leaving for a footerless route slides out AS a slab.
     // Between two footer routes of different styles the swap is instant — tab changes

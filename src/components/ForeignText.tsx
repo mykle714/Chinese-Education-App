@@ -70,6 +70,11 @@ interface ForeignTextBaseProps {
     // Latin-script languages, neither of which renders the per-column pinyin
     // overlay this scales.
     bigPinyin?: boolean;
+    // Center the glyph in its cell when all pinyin is hidden (see
+    // CPCDRow.centerGlyphWhenPinyinHidden). Row layout only — ignored by the block
+    // and inline layouts and by Latin-script languages. For hosts that flex-center
+    // the word in a fixed box (board tiles, game cards).
+    centerGlyphWhenPinyinHidden?: boolean;
     // Apply 一/不 tone sandhi to the pronunciation before rendering (default true), so the
     // overlay shows what a speaker SAYS rather than the dictionary's citation form
     // (一流 → yì liú, not yī liú). Set false on surfaces that must show the citation
@@ -83,6 +88,11 @@ interface ForeignTextBaseProps {
     // text. High-level API only (`text`); `items` callers set `masked` per item.
     // First user: the writing flp's used-in bubbles (docs/WRITING_PRACTICE_REWORK.md § 3b).
     maskChar?: string;
+    // Font for every LATIN glyph this renders: the cpcd pinyin overlay (all three
+    // layouts) and the Latin-script plain-text word (es). Defaults to FONTS.sans. Pass
+    // FONTS.cjk (975 Maru SC) on a surface set entirely in the app's Chinese face —
+    // MiniCard and the flp card face (CardFace.tsx). See CPCDRow.latinFontFamily.
+    latinFontFamily?: string;
 }
 
 interface ForeignTextProps extends ForeignTextBaseProps {
@@ -184,8 +194,10 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     firstTwoAreSegment,
     plainFontSize,
     bigPinyin = false,
+    centerGlyphWhenPinyinHidden = false,
     sandhi = true,
     maskChar,
+    latinFontFamily = FONTS.sans,
 }) => {
     // Resolve language: explicit prop wins, otherwise the user's selection.
     const { user } = useAuth();
@@ -218,7 +230,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                     justifyContent: justifyContent ?? "flex-start",
                     fontSize,
                     fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
-                    fontFamily: FONTS.sans,
+                    fontFamily: latinFontFamily,
                     // Per-card Contrast override (docs/CARD_ICON_LAYOUT.md); theme default otherwise.
                     color: characterColor ?? "text.primary",
                     lineHeight: 1.21,
@@ -250,6 +262,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                 bold={bold}
                 className={className}
                 characterColor={characterColor}
+                latinFontFamily={latinFontFamily}
             />
         );
     }
@@ -265,6 +278,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
                 bold={bold}
                 className={className}
                 characterColor={characterColor}
+                latinFontFamily={latinFontFamily}
             />
         );
     }
@@ -283,6 +297,8 @@ const ForeignText: React.FC<ForeignTextProps> = ({
             tapToCopy={tapToCopy}
             characterColor={characterColor}
             bigPinyin={bigPinyin}
+            centerGlyphWhenPinyinHidden={centerGlyphWhenPinyinHidden}
+            latinFontFamily={latinFontFamily}
         />
     );
 };

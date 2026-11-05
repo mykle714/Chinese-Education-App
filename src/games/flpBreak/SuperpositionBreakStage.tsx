@@ -17,7 +17,6 @@ const SuperpositionBreakStage: React.FC<FlpBreakStageProps<SuperpositionWord[]>>
     onCardCleared,
 }) => (
     <SuperpositionStage
-        host="flpBreak"
         Frame={Frame}
         dealRequest={superpositionBreakRequest(context)}
         prefetchedWords={prefetched}

@@ -32,7 +32,7 @@ import type {
  *
  * Every method takes an optional PoolClient so a caller inside a transaction can
  * enlist the query. This feature genuinely needs it: the accept path flips the
- * status, materialises vet rows and creates two decks atomically (§ 3.3), and the
+ * status and materialises vet rows atomically (§ 3.3), and the
  * unfriend path resolves in-flight challenges in the same transaction as the
  * friendship delete (§ 6).
  */
@@ -101,7 +101,7 @@ export interface IStudyChallengeDAL {
    *     unique index expresses either.
    * Both were read-then-write, and both are reachable: a crossing pair in two
    * timezones can compute DIFFERENT week indices (so `study_challenges_pair_week_uniq`
-   * does not collide) and end up with two live challenges, two decks and two cap
+   * does not collide) and end up with two live challenges and two cap
    * slots — the migration-150 defect, re-opened by a race.
    *
    * Locks are ACQUIRED IN SORTED ORDER, which is what makes concurrent A→B and B→A
@@ -165,17 +165,16 @@ export interface IStudyChallengeDAL {
   ): Promise<StudyChallengeRow>;
 
   /**
-   * Flip a `pending` challenge to `accepted`, storing the final word sets and the
-   * two generated deck ids.
+   * Flip a `pending` challenge to `accepted`, storing the final word sets.
+   * (Until 2026-11-04 it also stored the two generated study-deck ids in
+   * `presetDeckIds`; accepting no longer creates decks and the column is left alone.)
    *
    * `status = 'pending'` in the WHERE makes it idempotent — a second accept matches
-   * nothing and returns null rather than re-stamping `acceptedAt` and orphaning the
-   * first pair of decks.
+   * nothing and returns null rather than re-stamping `acceptedAt`.
    */
   acceptChallenge(
     id: string,
     words: Record<string, ChallengeWord[]>,
-    presetDeckIds: Record<string, number>,
     client?: PoolClient
   ): Promise<StudyChallengeRow | null>;
 
@@ -200,7 +199,7 @@ export interface IStudyChallengeDAL {
    * Delete a `pending` challenge outright — the challenger's withdraw (§ 1).
    *
    * A withdraw leaves NO history entry and no `withdrawn` status: nothing was
-   * agreed and no decks exist, so there is nothing to record. Deleting also frees
+   * agreed, so there is nothing to record. Deleting also frees
    * the pair's (pair, week) slot immediately, which is the stated behaviour and the
    * one repair for a challenge issued to the wrong friend or into the wrong
    * language.
@@ -225,9 +224,6 @@ export interface IStudyChallengeDAL {
     round: ChallengeRound,
     client?: PoolClient
   ): Promise<boolean>;
-
-  /** Forget one player's generated deck id, after that deck has been dropped (§ 4). */
-  clearPresetDeckId(id: string, userId: string, client?: PoolClient): Promise<void>;
 
   /**
    * Rank challenge candidates for a pair (§ 3.1), newest exclusions applied.

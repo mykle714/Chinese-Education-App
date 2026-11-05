@@ -157,7 +157,7 @@ function findWordStart(sentenceChars: string[], wordChars: string[]): number {
  * altering one character of the headword where it stands in the sentence.
  *
  * Exported because the queue reserves the finale's cards at LOAD time
- * (useSpeedReadingQueue) — the two sentence rounds are chosen before the run
+ * (useSpeedReadingQueue) — the sentence round is chosen before the run
  * starts, so they can never depend on what a mid-run top-up happens to return.
  */
 export function usableSentences(entry: VocabEntry): ExampleSentence[] {

@@ -37,7 +37,7 @@ import { SHADOW } from "../theme/shadows";
  * because refusing would mean not playing — the exact outcome the baseline rework
  * removed.
  *
- * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingPage, WordSearchPage,
+ * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingStage, WordSearchPage,
  * FlashcardsLearnPage.
  */
 export interface ProvisionalCardsNoticeProps {

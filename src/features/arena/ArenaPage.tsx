@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
-import NodePage from "../../components/NodePage";
+import MobileTabScreen from "../../components/MobileTabScreen";
 import ArenaCountdown from "./ArenaCountdown";
 import ArenaEntryRow from "./ArenaEntryRow";
 import ArenaJoinButton from "./ArenaJoinButton";
@@ -24,7 +24,6 @@ import {
 import type { ArenaBoardResponse, ArenaEntry } from "../../api/arena";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { FooterSpacer } from "../../components/MobileFooter";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
@@ -122,7 +121,6 @@ function renderZoneDivider(prev: ArenaEntry, cur: ArenaEntry) {
  */
 function ArenaPage() {
     usePageTitle("Arena");
-    const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
     // The app has no LanguageContext; the selected language lives on the user.
     // /arena follows it rather than offering a combined view (settled as Q17),
@@ -353,9 +351,9 @@ function ArenaPage() {
     };
 
     return (
-        <NodePage
+        // A FOOTER TAB since 2026-11-04 (it was a Menu drill-in): no back arrow, no slide.
+        <MobileTabScreen
             title="Arena"
-            onBack={() => slideNavigate("/menu")}
             contentClassName="arena-page"
             // MobileTabScreen's content column defaults to `flex: 1; minHeight: 0`, which
             // pins it to the viewport height and lets content overflow it. Arena's column
@@ -433,7 +431,7 @@ function ArenaPage() {
                 resolveShot={resolveArenaShot}
                 onClose={closeHelp}
             />
-        </NodePage>
+        </MobileTabScreen>
     );
 }
 

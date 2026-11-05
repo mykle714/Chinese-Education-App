@@ -19,7 +19,7 @@ dotenv.config({ path: '.env' });
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 
-// Mirrored by src/features/discover/SortCardsPage.tsx → MAX_CARDS_PER_PACK (undo depth +
+// Mirrored by src/features/discover/AddNewCardsPage.tsx → MAX_CARDS_PER_PACK (undo depth +
 // the compact dock layout, docs/SORT_CARDS_REQUIREMENTS.md §4.5, are sized off it).
 const MAX_CARDS_PER_PACK = 4;
 

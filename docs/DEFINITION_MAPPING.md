@@ -52,6 +52,16 @@ Child docs:
      session that has not round-tripped yet;
   2. otherwise (unclustered, single cluster, or a cluster with no usable gloss) →
      the legacy dd, `stripParentheses(definitions[0])` (form #2 → clean headline).
+- **Length budget (20 displayed chars), enforced at write time on both branches.**
+  Branch 2 by step 4's word-level short gloss (`generateShortGloss`,
+  `MAX_FIRST_GLOSS_LEN`); branch 1 by the clusterers' per-sense short gloss
+  (`scripts/backfill/shared/lib/senseShortGloss.js`, see
+  [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense").
+  Nothing shortens at read time — the resolver renders what is stored.
+- **Classifier senses** read "classifier for …"; the label is excluded from the budget
+  and rendered in italics by `GlossText` (`src/components/GlossText.tsx`), from a prefix
+  test on plain text, never stored markup. See
+  [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Classifier senses".
 - **`stripParentheses` is depth-scanning, not regex** (fixed 2026-08-24). It tracks paren
   nesting, eats the whitespace preceding an aside, swallows an unmatched `(` to end of
   string and drops an unmatched `)`. The old `/\s*\([^)]*\)/g` stopped at the first `)`,
@@ -351,7 +361,10 @@ list each pass must echo (`pasar`: 22 → 36).
 The ordering and frequency cores are extracted so steps 4, 6, and 7 share one
 implementation instead of duplicating prompts:
 - `lib/orderGlosses.js` — Pass-1 reorder/prune + Pass-2 critic + short-gloss
-  synthesis. Used by step 4 (whole array) and step 6 (per cluster).
+  synthesis. Step 4 uses all three on the whole array; step 6 uses only the two
+  ordering passes per cluster. Step 6's per-SENSE short gloss is a separate,
+  sense-scoped prompt in `scripts/backfill/shared/lib/senseShortGloss.js` (zh + es) —
+  see [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense".
 - `lib/frequencyScore.js` — the 1–5 conversation-frequency rubric + scorer. Used by
   step 5 (word level) and step 6 (per cluster). Band labels live in
   `scripts/backfill/shared/lib/frequencyLabels.js` (language-neutral, shared with the
@@ -430,8 +443,8 @@ still scores as frequent when the compounds carrying that meaning are common —
 heard daily via 自己/自由/自动. Only genuine rarity (兮, 翌日) scores low.
 
 **Surfaced to users as "Commonality"** — a 5-dot meter (`src/components/FrequencyScoreDots.tsx`)
-on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), scp
-(`SortCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
+on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), ancp
+(`AddNewCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
 (`QuickMarkCard.tsx`).
 
 **Deployed.** Migration 122 (the rename) is on PPE; its temporary deploy runbook has
@@ -488,8 +501,9 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-s
 
 | Surface | Form used |
 |---|---|
-| Flashcard face, bubble-match, eip header, cdp, mini cards, /decks previews, related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
-| Discover sort cards (scp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
+| Flashcard face, bubble-match, eip header, cdp, mini cards (td's cards page), related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
+| Discover sort cards (ancp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
+| Memory Map prompt | the eip header's form: every sense's dd (`sortedSenseClusters` order, chosen underlined, default starred, `buildSenseSegments`), or the plain dd (#3) for a single-sense word — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 3.1 |
 | Dictionary row | each sense's dd in `sortedSenseClusters` order, plain dd (#3) with no choice of sense (`resolveSearchRowView`, `src/utils/definitionUtils.ts`) |
 | Vocab card | `definitions` array (#1), `shortDefinition` (#4) |
 | eip / card detail expanded view | header dd (#3); the CURRENT sense's `longDefinition`/`longDefinitionParts` (#5, resolved by `resolveLongDefinitionForSense`), `synonyms`/`breakdown` (#7-segment) |

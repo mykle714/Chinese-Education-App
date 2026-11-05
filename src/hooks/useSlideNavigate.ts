@@ -2,7 +2,15 @@ import { useCallback } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { armSkipNextEnter } from "./usePageSlide";
-import { routeSlideDir, supportsViewTransitions } from "../utils/pageTransition";
+import {
+    CIRCLE_MOTION,
+    circleClip,
+    circleCoverRadius,
+    prefersReducedMotion,
+    routeSlideDir,
+    supportsViewTransitions,
+    type ScreenPoint,
+} from "../utils/pageTransition";
 
 // Navigate INTO a leaf/node page so the destination slides OVER the current page
 // (which the browser holds beneath as a view-transition snapshot). See
@@ -22,17 +30,48 @@ export function useSlideNavigate() {
         // it when the current page has just been CONSUMED by a one-shot action (sending
         // or accepting a challenge): leaving it on the stack lets Back return to a form
         // whose button would fire the same action a second time.
-        (to: string, options?: { state?: unknown; replace?: boolean }) => {
+        //
+        // `circleFrom` swaps the slide for the CIRCLE transition (pageTransition.ts →
+        // CIRCLE_MOTION): the destination is revealed in a circle growing out of that
+        // viewport point, over the held old page. The VT pseudo-elements are animated
+        // from JS once the transition is ready, since the point is only known at the tap.
+        (to: string, options?: { state?: unknown; replace?: boolean; circleFrom?: ScreenPoint }) => {
+            const { circleFrom, ...navOptions } = options ?? {};
+            if (circleFrom) {
+                if (!supportsViewTransitions() || prefersReducedMotion()) {
+                    navigate(to, navOptions);
+                    return;
+                }
+                document.documentElement.dataset.vtDir = "circle";
+                armSkipNextEnter();
+                const transition = document.startViewTransition(() => {
+                    flushSync(() => {
+                        navigate(to, navOptions);
+                    });
+                });
+                const viewport = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+                const r = circleCoverRadius(circleFrom, viewport);
+                transition.ready
+                    .then(() => {
+                        document.documentElement.animate(
+                            { clipPath: [circleClip(circleFrom, 0), circleClip(circleFrom, r)] },
+                            { duration: CIRCLE_MOTION.ms, easing: CIRCLE_MOTION.growEasing, pseudoElement: "::view-transition-new(root)" },
+                        );
+                    })
+                    // A skipped transition (another one started) just navigates — nothing to clip.
+                    .catch(() => {});
+                return;
+            }
             const dir = routeSlideDir(to);
             if (!dir || !supportsViewTransitions()) {
-                navigate(to, options);
+                navigate(to, navOptions);
                 return;
             }
             document.documentElement.dataset.vtDir = dir;
             armSkipNextEnter();
             document.startViewTransition(() => {
                 flushSync(() => {
-                    navigate(to, options);
+                    navigate(to, navOptions);
                 });
             });
         },

@@ -412,9 +412,7 @@ missed to a reboot):
 
 1. **Expire unaccepted challenges** past the challengee's Wednesday 04:00 local.
 2. **Close finished windows** → `complete` (a winner is resolvable) or `no_contest`.
-3. **Drop generated decks** at each player's own window close. Note the
-   *completion*-triggered drop is synchronous in `StudyChallengeService`, not here; this
-   pass only catches windows that closed without completion.
+3. **Drop generated decks** at each player's own window close.
 4. **Sweep orphaned generated decks** — decks whose owning challenge row is gone (an
    account deletion cascades the challenge away and takes the pointer with it, leaving a
    deck the user has no control to delete).
@@ -426,6 +424,12 @@ missed to a reboot):
 * **ignore decks younger than a grace period (~1 hour)**, or write the deck row and the
   challenge's `presetDeckIds` in one transaction — otherwise the sweep can delete a deck
   created microseconds before its pointer was written.
+
+**Passes 3–4 are legacy cleanup.** Accepting a challenge stopped generating a `vs <name>`
+study deck on 2026-11-04, when Decks left the app (`StudyChallengeService.acceptChallenge`;
+the `decks` / `deck_cards` tables and `study_challenges."presetDeckIds"` are retained).
+They only clear decks left by challenges accepted before then, and are no-ops once none
+remain; dropping them is a [DEFERRED_WORK.md](./DEFERRED_WORK.md) item.
 
 Passes 1–3 are naturally idempotent (each filters on the status it is leaving); pass 4 is
 idempotent because a deleted deck simply stops matching.

@@ -7,7 +7,6 @@ import { useTTS } from "../../hooks/useTTS";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { fetchWordSearchGrid } from "../../api/wordSearchGrid";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
@@ -62,10 +61,9 @@ export interface WordSearchStageProps {
     /** The board mode: the hub's sub-card, or the flp bar's (docs/FLP_GAME_BREAKS.md § 3).
         Fixed for the Stage's lifetime. */
     modeConfig: WordSearchModeConfig;
-    /** The grid this run deals on. Default `standard`; a Deck Tower break plays `compact`. */
+    /** The grid this run deals on. Default `standard` (the route); an flp break plays
+        `compact` (flpBreak/wordSearchBreak.ts → WORD_SEARCH_BREAK_BOARD). */
     board?: WordSearchBoardId;
-    /** Launch collection; rides every grid request. */
-    collection: CollectionRef | null;
     /** Page host only: restore this mode's saved board instead of dealing a new one. */
     resume?: boolean;
     /** flp break only: the working loop to seed the board with (§ 4). */
@@ -80,7 +78,7 @@ export interface WordSearchStageProps {
     /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the win popup. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
-    onCardCleared?: () => void;
+    onCardCleared?: (cardId: number) => void;
 }
 
 /**
@@ -113,7 +111,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     headerRight,
     modeConfig,
     board = "standard",
-    collection: launchCollection,
     resume: resumeIntent = false,
     seedIds,
     prefetchedBoard,
@@ -316,7 +313,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
             // (`wordSearchGridParams`).
             return adoptBoard(await fetchWordSearchGrid(wordSearchGridRequest({
                 mode,
-                collection: launchCollection,
                 challengeParams: challengeParamsRef.current,
                 seedIds,
                 flpBreak: isBreak,
@@ -550,7 +546,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
                         && !result.suppressed
                         && !board?.provisionalWords?.includes(word.entryKey)
                         && !board?.outsideFocusWords?.includes(word.entryKey)
-                    ) onCardClearedRef.current?.();
+                    ) onCardClearedRef.current?.(word.id);
                 })
                 .catch((err) => console.error(`[WordSearch] ${type} mark failed → card ${word.id}:`, err));
         });

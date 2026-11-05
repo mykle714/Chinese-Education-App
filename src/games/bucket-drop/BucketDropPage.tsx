@@ -2,9 +2,8 @@ import React, { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
-import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { GameLeafPage } from "../shared/GameSurface";
-import { useGameExit } from "../runtime/gameExit";
+import { GAMES_HUB_EXIT } from "../runtime/gameExit";
 import type { GameStageFrameProps } from "../types";
 import BucketDropStage from "./BucketDropStage";
 import { GAME_HUE, modeConfigFor } from "./constants";
@@ -23,11 +22,12 @@ const BucketDropPageFrame: React.FC<GameStageFrameProps> = ({ title, onExitReque
 /**
  * Bucket Drop — the game's own ROUTE (`/games/bucket-drop`). A thin host around
  * `BucketDropStage`, which owns the run; this file owns only what belongs to being a page:
- * the title, the edge-swipe block, the launch's mode + collection, and where "Back to …"
- * goes. The same Stage also runs inside an flp game break (docs/FLP_GAME_BREAKS.md § 6).
+ * the title, the edge-swipe block, the launch's mode, and where "Back to …" goes. The same Stage also runs inside an flp game break (docs/FLP_GAME_BREAKS.md § 6).
  *
- * `state.mode` from the launch: the Games hub tile sends nothing (Pinyin), the Reading
- * Center carousel sends `no-pinyin`. See docs/BUCKET_DROP_GAME.md § 1.
+ * `state.mode` from the launch: the Games hub tile sends nothing (Pinyin). Nothing launches
+ * `no-pinyin` on this route any more — the Reading Center carousel that did was deleted
+ * 2026-11-04; the mode lives on for the flp break adapter (flpBreak/bucketDropBreak.ts, not
+ * yet in the rotation). See docs/BUCKET_DROP_GAME.md § 1.
  */
 const BucketDropPage: React.FC = () => {
     usePageTitle("Bucket Drop");
@@ -35,22 +35,17 @@ const BucketDropPage: React.FC = () => {
     useBlockEdgeSwipe(true);
     const navigate = useNavigate();
     const location = useLocation();
-    const gameExit = useGameExit();
-    // Which collection the hub was pointed at (docs/DECKS_FEATURE.md). Null for the
-    // Reading Center launch.
-    const launchCollection = useLaunchCollection();
     const modeConfig = modeConfigFor((location.state as { mode?: unknown } | null)?.mode);
 
-    const leave = useCallback(() => navigate(gameExit.path, { state: gameExit.state }), [navigate, gameExit.path, gameExit.state]);
+    const leave = useCallback(() => navigate(GAMES_HUB_EXIT.path), [navigate]);
 
     return (
         <BucketDropStage
             host="page"
             Frame={BucketDropPageFrame}
             modeConfig={modeConfig}
-            collection={launchCollection}
             onDone={leave}
-            doneLabel={gameExit.label}
+            doneLabel={GAMES_HUB_EXIT.label}
         />
     );
 };

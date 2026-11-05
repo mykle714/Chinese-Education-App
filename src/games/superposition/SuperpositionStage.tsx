@@ -20,31 +20,28 @@ import SuperpositionExitButton from "./SuperpositionExitButton";
 import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
 import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
-import type { GameStageFrameProps, GameStageHost } from "../types";
+import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
 export interface SuperpositionStageProps {
-    host: GameStageHost;
-    /** The host's chrome: `GameLeafPage` on the route, `GameBreakFrame` in the flp. */
+    /** The break's chrome: `GameBreakFrame` in the flp (docs/FLP_GAME_BREAKS.md § 6). */
     Frame: ComponentType<GameStageFrameProps>;
-    /** flp break only: what its deals add (the seed, the focus rule). */
+    /** What the break's deals add (the seed, the focus rule). */
     dealRequest?: WritingGridDealRequest;
-    /** flp break only: the board prefetched for it. Null = the Stage deals its own. */
+    /** The board prefetched for the break. Null = the Stage deals its own. */
     prefetchedWords?: SuperpositionWord[] | null;
-    /** The page's Back; a break's close with no run to report. */
+    /** Close the break with no run to report. */
     onDone: () => void;
-    /** The destination `onDone` names, for "Back to …". */
+    /** The destination `onDone` names, for the empty screen's "Back to …". */
     doneLabel: string;
-    /** flp break only: FlpBreakStageProps `onRunEnded` — the run's one ending, the td flp's end card. */
+    /** FlpBreakStageProps `onRunEnded` — the run's one ending, the td flp's end card. */
     onRunEnded?: (results: FlpBreakResults) => void;
-    /** flp break only: FlpBreakStageProps `onCardCleared`. */
-    onCardCleared?: () => void;
+    /** FlpBreakStageProps `onCardCleared`. */
+    onCardCleared?: (cardId: number) => void;
 }
 
-/** The hint button's top edge on the game's own route, where the corner is empty. */
-const ROUTE_HINT_TOP_PX = 6;
-/** In a break the button sits on the Leave arrow's row, centred on the arrow. */
-const BREAK_HINT_TOP_PX = GAME_FRAME_EXIT_ARROW_BOTTOM_PX - (BACK_ARROW_PX + HINT_BUTTON_PX) / 2;
+/** The hint button's top edge: on the Leave arrow's row, centred on the arrow. */
+const HINT_TOP_PX = GAME_FRAME_EXIT_ARROW_BOTTOM_PX - (BACK_ARROW_PX + HINT_BUTTON_PX) / 2;
 /** The gap between the hint button and the word info below it. */
 const INFO_GAP_PX = 4;
 
@@ -68,16 +65,17 @@ async function loadCharacters(words: readonly SuperpositionWord[]): Promise<Boar
 
 /**
  * Superposition — every stroke of four characters is scattered on a snapping grid, and the
- * learner stacks them back into place (docs/SUPERPOSITION_GAME.md). Runs on its route and
- * as an flp game break (docs/FLP_GAME_BREAKS.md § 6).
+ * learner stacks them back into place (docs/SUPERPOSITION_GAME.md). BREAK-ONLY: the game
+ * has no route of its own (src/games/registry.ts), so it runs only as an flp game break
+ * (docs/FLP_GAME_BREAKS.md § 6).
  *
  * Flow: loading → (empty) → playing → (inspecting) → ended.
  *
  * A WIN does not end the run on the spot: it enters "inspecting", where the finished board
  * stays on screen, locked, so the learner can look over what they built. The → button in the
- * bottom-right corner (or a break's Leave) moves on to "ended", whose only ending is the
- * Deck Tower flp's end card (`onRunEnded`). There is no end popup: on the deprecated route
- * (no flp to report to) → simply leaves via `onDone`. Leaving early skips inspection.
+ * bottom-right corner (or the break's Leave) moves on to "ended", whose only ending is the
+ * Deck Tower flp's end card (`onRunEnded`). There is no end popup. Leaving early skips
+ * inspection.
  *
  * Untimed on screen: no clock is drawn and a run cannot be lost. The stopwatch still runs,
  * as ACCUMULATED active time so a backgrounded app is not billed, for the personal best.
@@ -86,7 +84,6 @@ async function loadCharacters(words: readonly SuperpositionWord[]): Promise<Boar
  * rebuilt does not mark again. All four finished ends the run.
  */
 const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
-    host,
     Frame,
     dealRequest,
     prefetchedWords = null,
@@ -95,7 +92,6 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     onRunEnded,
     onCardCleared,
 }) => {
-    const isBreak = host === "flpBreak";
     const onCardClearedRef = useRef(onCardCleared);
     onCardClearedRef.current = onCardCleared;
     const { isAuthenticated } = useAuth();
@@ -271,7 +267,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                     writing: { level: WRITING_LEVEL_COUNT, perChar: [true] },
                 })
                     .then((result) => {
-                        if (!result.suppressed && character.ownCard && !character.outsideFocus) onCardClearedRef.current?.();
+                        if (!result.suppressed && character.ownCard && !character.outsideFocus) onCardClearedRef.current?.(character.cardId);
                     })
                     .catch((err) => console.error(`[Superposition] writing mark failed → card ${character.cardId}:`, err));
             });
@@ -289,14 +285,10 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [finishedChars, phase]);
 
-    // Inspection over (the → button): a break reports to the td flp's end card; the
-    // deprecated route has no end card, so it just leaves.
-    const finishInspecting = () => {
-        if (isBreak) setPhase("ended");
-        else onDone();
-    };
+    // Inspection over (the → button): the run reports to the td flp's end card.
+    const finishInspecting = () => setPhase("ended");
 
-    // The flp break's Leave: a live run ends with what stands finished; during inspection
+    // The break's Leave: a live run ends with what stands finished; during inspection
     // it acts as the → button, so a won run is still reported.
     const leaveBreak = () => {
         if (running) endRun(finishedChars.size);
@@ -304,10 +296,10 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         else if (phase !== "ended") onDone();
     };
 
-    // A break reports to the flp instead of showing the end popup. A won run's best-before
+    // The run reports to the flp (there is no end popup). A won run's best-before
     // was captured at the win (`bestBeforeRunRef`); a left run reports no best.
     useEffect(() => {
-        if (!isBreak || phase !== "ended") return;
+        if (phase !== "ended") return;
         const bestBefore = bestBeforeRunRef.current;
         const left = leftWith !== null;
         onRunEnded?.({
@@ -325,16 +317,14 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         });
         // Once per run.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isBreak, phase]);
+    }, [phase]);
 
     const speakWord = (word: SuperpositionWord) => {
         void tts.speakSentence(word.entryKey, word.pinyin ?? undefined);
     };
 
-    const hintTopPx = isBreak ? BREAK_HINT_TOP_PX : ROUTE_HINT_TOP_PX;
-
     return (
-        <Frame title="Superposition" onExitRequest={isBreak ? leaveBreak : onDone}>
+        <Frame title="Superposition" onExitRequest={leaveBreak}>
             {phase === "loading" && (
                 <GameCentered className="superposition__loading">
                     <DelayedCircularProgress className="superposition__spinner" />
@@ -353,9 +343,10 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
             )}
 
             {(phase === "playing" || phase === "inspecting" || phase === "ended") && (
-                // The grid is the whole play area, so the panel's inset, corner and line go on
-                // the route too; a break's frame already drops them. The word info is drawn
-                // on the grid, and in a break it starts below Leave's arrow, top-left.
+                // The grid is the whole play area, so the panel's inset, corner and line go
+                // (the break's frame already drops them; stated here so the board never
+                // depends on that). The word info is drawn on the grid, starting below
+                // Leave's arrow, top-left.
                 <GameFrame className="superposition__frame" sx={{ touchAction: "none", margin: 0, borderRadius: 0, border: "none" }}>
                     <SuperpositionBoard
                         tiles={tiles}
@@ -366,7 +357,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                                 <SuperpositionHints
                                     words={words}
                                     finishedChars={finishedChars}
-                                    topInsetPx={hintTopPx + HINT_BUTTON_PX + INFO_GAP_PX}
+                                    topInsetPx={HINT_TOP_PX + HINT_BUTTON_PX + INFO_GAP_PX}
                                     onSpeak={speakWord}
                                 />
                                 {/* Nothing left to hint once the board is complete. */}
@@ -374,7 +365,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                                     <SuperpositionHintButton
                                         secondsLeft={hintSecondsLeft}
                                         ready={hintSecondsLeft === 0 && hintPair !== null}
-                                        topPx={hintTopPx}
+                                        topPx={HINT_TOP_PX}
                                         onHint={showHint}
                                     />
                                 )}

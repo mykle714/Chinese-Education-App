@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { onDeckVocabService, flashcardMarkService, focusModeService } from '../dal/setup.js';
 import { FOCUS_ENDED_HEADER } from '../contracts/focusMode.js';
-import { MODE_CONFIGS, parseStudyMode, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import { parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { ReviewMark, MarkType, MARK_TYPES } from '../types/index.js';
 import { DALError } from '../types/dal.js';
 import { handle } from './asyncHandler.js';
@@ -19,9 +18,11 @@ import { handle } from './asyncHandler.js';
  *
  * THE ONE PIECE OF ORCHESTRATION LEFT HERE is the composition below: `mark` records
  * the mark and, for the flp only, hands back a replacement card. Those are two
- * concerns riding one URL — seven of the eight client call sites send `excludeIds: []`
- * and discard `newCard`, and three request fields (`mode`, `deckId`, `collection`)
- * exist solely to steer a refill the games never read. Splitting the
+ * concerns riding one URL — most client call sites send `excludeIds: []` and discard
+ * `newCard`, and the `world` request field exists solely to steer a refill the games
+ * never read. (Three more refill-steering fields — `mode`, `deckId`, `collection` — were
+ * removed 2026-11-04 with the Review/Challenge study modes and the Decks feature.)
+ * Splitting the
  * refill onto its own endpoint is now a routing change and nothing more, because the
  * service returns `categoryBeforeMark` rather than picking the card itself. It is not
  * done here because it changes the flp's wire contract and needs its call site
@@ -55,7 +56,6 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   const userId = (req as any).user?.userId;
   const {
     cardId, isCorrect, type: rawType, excludeIds: rawExcludeIds,
-    mode: rawMode, deckId: rawDeckId, collection: rawCollection,
     surface: rawSurface, writing: rawWriting,
   } = req.body || {};
 
@@ -107,41 +107,18 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
     return res.status(200).json(response);
   }
 
-  // Optional study mode (Review/Challenge). When set, the replacement card must stay
-  // within the mode's allowed categories so a banned category never leaks back into the
-  // loop via a correct-mark refill.
-  const mode = parseStudyMode(rawMode);
   // The session's flp bar (studyMode.ts): a reading session's replacement is chosen by
-  // the READING bar, the bar its queue is built on. Echoed by the client like `mode`.
+  // the READING bar, the bar its queue is built on. Echoed by the client.
   const refillWorld = parseFlpWorld(req.body?.world);
 
-  // Optional collection restriction (docs/DECKS_FEATURE.md). The client echoes back
-  // the collection the session was launched from, because THIS endpoint refills the
-  // working loop — without it, the first correct answer in a deck session would pull
-  // a replacement from the user's whole library.
-  //
-  // No ownership check is needed here (unlike the launch endpoints, which 404 on a
-  // foreign deck id): the replacement query is already filtered by `ve."userId"`, so
-  // a deck the caller does not own selects nothing and the picker falls through to
-  // its normal never-stall behaviour. Coerced defensively — a malformed value must
-  // mean "no restriction", never a crash mid-review.
-  const markedBuiltin = parseBuiltinCollectionId(rawCollection);
-  let collection: CollectionFilter | undefined =
-    Number.isInteger(rawDeckId) && rawDeckId > 0
-      ? { kind: 'deck', deckId: rawDeckId }
-      : markedBuiltin
-        ? { kind: 'builtin', id: markedBuiltin }
-        : undefined;
-
-  // FOCUS MODE (docs/FOCUS_MODE.md § 4): an unrestricted session in a focused world
-  // refills only from today's remaining set — resolved AFTER the mark committed, so a
-  // card just marked correct is already out of it. Same rule as
+  // FOCUS MODE (docs/FOCUS_MODE.md § 4): a session in a focused world refills only
+  // from today's remaining set — resolved AFTER the mark committed, so a card just
+  // marked correct is already out of it. Same rule as
   // OnDeckVocabController.applyFocus, which builds the loop being refilled here.
-  if (!collection) {
-    const focus = await focusModeService.resolveWorld(userId, markResult.language, refillWorld);
-    if (focus.active) collection = { kind: 'focus', ids: focus.ids };
-    else if ('ended' in focus && focus.ended) res.setHeader(FOCUS_ENDED_HEADER, refillWorld);
-  }
+  let collection: CollectionFilter | undefined;
+  const focus = await focusModeService.resolveWorld(userId, markResult.language, refillWorld);
+  if (focus.active) collection = { kind: 'focus', ids: focus.ids };
+  else if ('ended' in focus && focus.ended) res.setHeader(FOCUS_ENDED_HEADER, refillWorld);
 
   // excludeIds is the list of card ids currently in the client's working loop, so the
   // replacement picker avoids handing back a duplicate.
@@ -152,7 +129,6 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // The replacement comes from the band the learner just LEFT, not the one they
   // reached: the flp presents recognition/production, so its pool is paced by the
   // core bar as it stood before this mark.
-  const allowedCategories = mode ? MODE_CONFIGS[mode].allowed : undefined;
   // A reading session paces the refill on the READING band the learner just left, since
   // its pool is banded by the reading bar; every other session uses the core band.
   const preferredCategory = refillWorld === 'core' ? markResult.categoryBeforeMark : markResult.markedBarCategoryBefore;
@@ -166,7 +142,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   try {
     newCard = await onDeckVocabService.getNextLibraryCardWithFallback(
       userId, preferredCategory, markResult.language,
-      excludeIds, allowedCategories, collection, refillWorld
+      excludeIds, collection, refillWorld
     );
   } catch (refillError) {
     console.error(`Replacement pick failed after a committed mark (card ${cardId}):`, refillError);
@@ -176,7 +152,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // "No eligible replacement" is an expected end-of-pool state for EVERY kind of
   // session, not an error, so it is always a 200 with newCard:null and the client
   // winds the loop down. It means one of:
-  //   - a mode / deck / Mastered round whose allowed pool is exhausted;
+  //   - a focused round whose day's set is exhausted;
   //   - an unrestricted round where every card is cooling AND the dictionary has no
   //     more words to lend (the service already tried — getNextLibraryCardWithFallback).
   // Study used to 404 here on the assumption it could always find a card. It can't any

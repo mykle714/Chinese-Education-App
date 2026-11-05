@@ -5,10 +5,10 @@ import { ISO } from "./iso";
 
 /**
  * ShootingStars — occasional meteors streaking across the night sky of the Deck Tower and
- * of the Sort Cards page (docs/DECK_TOWER.md § "Time of day" → "Shooting stars").
+ * of the Add New Cards page (docs/DECK_TOWER.md § "Time of day" → "Shooting stars").
  *
  * Layer: feature component (feature module `src/features/deckTower`), also mounted by
- * features/discover/SortCardsPage.tsx. Drawn in SCREEN space behind its page's content:
+ * features/discover/AddNewCardsPage.tsx. Drawn in SCREEN space behind its page's content:
  * inside SpaceBackdrop on the tower, over the star field and behind the scene's svg, so
  * the tower and platform pass in front of a meteor rather than under it.
  *
@@ -29,7 +29,7 @@ import { ISO } from "./iso";
  * never the backdrop's scroll-driven DOM writes or the scene.
  *
  * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx,
- * features/discover/SortCardsPage.tsx. Fills its nearest positioned ancestor.
+ * features/discover/AddNewCardsPage.tsx. Fills its nearest positioned ancestor.
  */
 
 /** Mean gap between bursts, and its ± fraction of jitter (uniform): 15 s ± 40%. */

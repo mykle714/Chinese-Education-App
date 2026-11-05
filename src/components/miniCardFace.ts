@@ -2,12 +2,12 @@
  * The mini preview card FACE — the one 92×132 tile every "here is a word" surface in
  * the app draws.
  *
- * ⚠️ THIS FILE EXISTS BECAUSE THE FACE WAS WRITTEN THREE TIMES. `MiniVocabCard` (the
- * fdp panel, collections, search), `QuickMarkCard` (Quick Mark triage) and
+ * ⚠️ THIS FILE EXISTS BECAUSE THE FACE WAS WRITTEN THREE TIMES. `MiniVocabCard` (td's
+ * cards page, the provisional-card previews), `QuickMarkCard` (Quick Mark triage) and
  * `ChallengeWordCard` (the challenge word set) each re-declared the same size, radius,
  * fill, elevation and containment, and each one's comment said it was matching the
  * other two. They had already drifted: only `MiniVocabCard` carried the design's 1px
- * inset ring, so the same word rendered with a hairline border on `/decks` and without
+ * inset ring, so the same word rendered with a hairline border on the decks page and without
  * one in Quick Mark and in a challenge — visible side by side, and impossible to
  * attribute to any decision.
  *
@@ -23,7 +23,7 @@
  * `MiniCard` (src/components/MiniCard.tsx), which also owns the card's CONTENTS. Render
  * that instead of spreading this into a new card.
  *
- * Referenced by docs/DECKS_FEATURE.md (the fdp card previews), docs/QUICK_MARK.md and
+ * Referenced by docs/DECK_TOWER.md (the cards page), docs/QUICK_MARK.md and
  * docs/STUDY_CHALLENGE.md § 3.2.
  */
 import { COLORS } from "../theme/colors";
@@ -39,8 +39,8 @@ export const MINI_CARD_HEIGHT = 132;
  * re-lays its contents for it with smaller type — rather than a CSS `scale()` of the
  * regular face, so the text stays crisp and legible at the smaller size.
  *
- * Only the scp dock uses it, and only when the pack will not fit across at the regular
- * size (a 4-card sort pack on a phone narrower than ~430px — see SortCardsPage's
+ * Only the ancp dock uses it, and only when the pack will not fit across at the regular
+ * size (a 4-card sort pack on a phone narrower than ~430px — see AddNewCardsPage's
  * `dockFitsRegular`). Every other surface stays on `regular`; a new caller should
  * only reach for `compact` when a row genuinely cannot fit, never as a style choice.
  *
@@ -75,8 +75,8 @@ export interface MiniCardFaceOptions {
     /** The tile's fill. Almost always the theme's `palette.flashcard.flashCard`. */
     background: string;
     /**
-     * Raise the card one step on hover. For a card whose tap OPENS something (the fdp
-     * previews). Omit where the tap acts in place — Quick Mark cycles a mark, so a
+     * Raise the card one step on hover. For a card whose tap OPENS something (td's
+     * cards page, where a tap opens the cdp). Omit where the tap acts in place — Quick Mark cycles a mark, so a
      * "raised, will take you somewhere" affordance would be a lie.
      */
     hoverLift?: boolean;
@@ -106,7 +106,7 @@ export const miniCardFaceSx = ({ background, hoverLift = false, animationDelayMs
     position: "relative" as const,
     overflow: "hidden" as const,
     // CSS containment: the browser skips layout/paint for cards scrolled out of view
-    // (a real account's /decks holds hundreds). They stay in the DOM and tappable, and
+    // (a real account's library holds hundreds). They stay in the DOM and tappable, and
     // `containIntrinsicSize` reserves the footprint so scroll height stays stable.
     contentVisibility: "auto" as const,
     containIntrinsicSize: `${MINI_CARD_DIMENSIONS[size].width}px ${MINI_CARD_DIMENSIONS[size].height}px`,

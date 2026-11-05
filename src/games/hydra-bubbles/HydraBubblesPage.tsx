@@ -8,7 +8,6 @@ import { useTTS } from "../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { markFlashcard } from "../../api/flashcards";
-import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import type { Language, VocabEntry } from "../../types";
 import { CHALLENGE_WORD_COUNT } from "../../types";
 import { GameLeafPage } from "../shared/GameSurface";
@@ -47,7 +46,6 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
  * only renders the fire badge.
  */
 const HydraBubblesPage: React.FC = () => {
-    const launchCollection = useLaunchCollection();
     usePageTitle("Hydra Bubbles");
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -105,7 +103,7 @@ const HydraBubblesPage: React.FC = () => {
     // params as a dependency. Same pattern as Bubble Match / Match Speed / Word Search.
     const challengeParamsRef = useRef("");
     challengeParamsRef.current = challengeRound.poolParams;
-    const buffers = useColorBuffers(launchCollection, challengeCards);
+    const buffers = useColorBuffers(challengeCards);
     /** Contested words still unmatched — the run ends when this empties (§ 7.5). */
     const remainingContestedRef = useRef<Set<string>>(new Set());
 

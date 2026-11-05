@@ -3,7 +3,7 @@ import { MODE_CONFIGS, modeConfigFor } from "../word-search/constants";
 import WordSearchStage from "../word-search/WordSearchStage";
 import type { WordSearchResponse } from "../word-search/types";
 import type { FlpBreakStageProps } from "./types";
-import { wordSearchBreakBoard } from "./wordSearchBreak";
+import { WORD_SEARCH_BREAK_BOARD } from "./wordSearchBreak";
 
 /**
  * The lazy entry point the flp loads for a Word Search break: maps the break host's props
@@ -23,8 +23,7 @@ const WordSearchBreakStage: React.FC<FlpBreakStageProps<WordSearchResponse>> = (
         host="flpBreak"
         Frame={Frame}
         modeConfig={modeConfigFor(candidate.mode) ?? MODE_CONFIGS[0]}
-        board={wordSearchBreakBoard(context)}
-        collection={context.collection}
+        board={WORD_SEARCH_BREAK_BOARD}
         seedIds={context.seedIds}
         prefetchedBoard={prefetched}
         onDone={onDone}

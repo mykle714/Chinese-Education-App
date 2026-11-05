@@ -15,13 +15,12 @@ interface NewGameConfirmDialogProps {
 }
 
 /**
- * "Start a new game?" — the clobber confirm shown when a launch surface's fresh-game
- * action would overwrite a parked Word Search board (one save slot per mode, §5b).
- * Shared by both launch surfaces: the Games hub's mode tile (`WordSearchHubItem`,
- * Pinyin slot) and the Reading Center carousel's play button (`ReadingGamesCarousel`,
- * No Pinyin slot). The caller clears the slot and navigates in `onConfirm`.
+ * "Start a new game?" — the clobber confirm shown when the Games hub's fresh-game action
+ * would overwrite a parked Word Search board (one save slot per mode, §5b). Raised by
+ * `useWordSearchLauncher` for the hub's card (`WordSearchHubItem`, Pinyin slot). The
+ * caller clears the slot and navigates in `onConfirm`.
  *
- * Docs: docs/WORD_SEARCH_GAME.md §3 / §5b, docs/READING_WRITING_CENTERS.md.
+ * Docs: docs/WORD_SEARCH_GAME.md §3 / §5b.
  */
 const NewGameConfirmDialog: React.FC<NewGameConfirmDialogProps> = ({ open, savedGame, onCancel, onConfirm, classPrefix }) => (
     <Dialog className={`${classPrefix}__confirm-dialog`} open={open} onClose={onCancel} maxWidth="xs">

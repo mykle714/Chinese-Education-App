@@ -75,8 +75,10 @@
 // The card-headline length budget, owned by the gloss-ordering core and imported
 // (not re-declared) so the manifest's `multiDefOrLongLead` condition and the
 // short-gloss synthesis that condition exists to reach can never disagree on the
-// number. orderGlosses.js has no imports of its own, so this stays cheap for the
-// server, which loads this manifest at request time via LazyEnrichmentService.
+// number. orderGlosses.js imports only shared/lib/senseShortGloss.js, which imports
+// only the dependency-free stripParentheses.js (no SDK, no DB), so this stays cheap
+// for the server, which loads this manifest at request time via
+// LazyEnrichmentService. Keep that chain free of heavy or side-effecting imports.
 import { MAX_FIRST_GLOSS_LEN } from '../../chinese/lib/orderGlosses.js';
 
 /** Ordered pipeline steps (order encodes mark-discoverable §A3 constraints). */

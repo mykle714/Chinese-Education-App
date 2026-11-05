@@ -45,7 +45,7 @@ import { COLORS } from "../theme/colors";
  * Callers: `GameSurfaceProvider` (src/games/shared/GameSurface.tsx) — every game page
  * gets this for free through `GameLeafPage`, which is what makes the header and the
  * status bar impossible to leave out of sync.
- * `MasteryCenterPage` and `DivisionBanner` claim the ground they paint under the clock;
+ * `DivisionBanner` claims the ground it paints under the clock;
  * `SheetPanel` claims its own surface while fully merged (`claimThemeColor`).
  * `DeckTowerPage` (src/features/deckTower) claims its world's sky, so iOS Safari's
  * top scroll-edge effect is tinted sky rather than paper, and a night sky flips the

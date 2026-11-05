@@ -1,4 +1,4 @@
-# Speed Reading (`/games/speed-reading`)
+# Speed Reading (flp break only)
 
 > **STATUS: BUILT.** The game is registered in `GAME_REGISTRY` and playable. What
 > remains is **tuning by eye**: the medal thresholds and the wrong-answer penalty
@@ -8,11 +8,11 @@ Fourth game. The player is shown a word's pinyin, definition, and audio, plus
 **two word options**: the real word and a wrong one that differs by exactly one
 character. Tap the real one, twenty times, as fast as you can.
 
-**The last two rounds are sentences.** For rounds 19 and 20 the two options are
-the same **example sentence**, differing at one character *inside* the target
-word, and the prompt switches to that sentence's pinyin, translation and audio —
-so the run ends on reading in context. See
-[§ The last two rounds are sentences](#the-last-two-rounds-are-sentences).
+**The last round is a sentence.** For round 20 the two options are the same
+**example sentence**, differing at one character *inside* the target word, and the
+prompt switches to that sentence's pinyin, translation and audio — so the run ends
+on reading in context. See
+[§ The last round is a sentence](#the-last-round-is-a-sentence).
 
 Because both options are real characters of the same length, the player cannot get
 there by shape alone — they have to actually **read**. Where Bubble Match tests
@@ -25,7 +25,14 @@ finishing time — **lower is better**. There is no time cap. This replaced the
 original one-minute / count-the-correct-picks format; see
 [§ Scoring and medals](#scoring-and-medals) for what a wrong answer costs.
 
-There are **no difficulty levels**. One mode, one hub row.
+There are **no difficulty levels**. One mode.
+
+**It is BREAK-ONLY**: the registry entry has no `route` / `Component`
+(`src/games/registry.ts`, `GameDef` in `src/games/types.ts`), so there is no hub tile and
+no standalone page. It is played only as an flp game break on the reading flp (zh) inside
+the Deck Tower's study session: `SpeedReadingStage` runs under the break host, and the
+break's card and results card turn sideways with it. See
+[§ As an flp game break](#as-an-flp-game-break).
 
 > **History.** This game shipped as *Mandela*, with three levels: level 1 (a real
 > different character, what survives here) plus levels 2 and 3, which corrupted
@@ -49,14 +56,15 @@ There are **no difficulty levels**. One mode, one hub row.
 - [Round state machine](#round-state-machine)
 - [Answer feedback: half tint](#answer-feedback-half-tint)
 - [The one-character invariant](#the-one-character-invariant)
-- [The last two rounds are sentences](#the-last-two-rounds-are-sentences)
+- [The last round is a sentence](#the-last-round-is-a-sentence)
 - [Choosing the wrong character](#choosing-the-wrong-character)
 - [Rendering a glyph](#rendering-a-glyph) (historical)
 - [Card selection: queue + top-up](#card-selection-queue--top-up)
 - [`markType` on the game pool](#marktype-on-the-game-pool)
 - [Marks](#marks)
 - [Scoring and medals](#scoring-and-medals)
-- [Page shell and chrome](#page-shell-and-chrome)
+- [Shell and chrome](#shell-and-chrome)
+- [As an flp game break](#as-an-flp-game-break)
 - [Files](#files)
 - [What still needs tuning](#what-still-needs-tuning)
 - [Dependencies (docs ↔ code)](#dependencies-docs--code)
@@ -70,9 +78,8 @@ substituting **one character** of the headword, which presupposes a
 character-based script; "a different character" has no Spanish analogue that isn't
 just "a different word", which would be a different game.
 
-The hub **hides** a game whose `languages` exclude the learner's selection rather
-than showing it and blocking on entry — a visible row that dead-ends reads as a
-bug. This is the only game that declares `languages` today.
+`isGameAvailable` hides a game whose `languages` exclude the learner's selection, so the
+flp break picker (`flpBreakCandidates`) never offers it to a non-zh learner.
 
 `SpeedReadingDAL.getLibraryDistractors` enforces the same rule server-side,
 returning an empty pool for any non-`zh` caller rather than throwing: an empty pool
@@ -139,16 +146,12 @@ edge.
 > (the float indicator that did has been removed); the hook keeps it because the
 > trap is real for anything tap-positioned added later.
 
-### The header moves inside the stage
+### Leave moves inside the stage
 
-An upright header on a sideways game is unreadable, so `LeafPage` grew a
-`hideHeader` prop and a **render-prop form of `children`** that hands back the
-exit-aware back handler. The page then draws `LeafPageHeader` (title + clock)
-itself, inside the rotated stage. The slide-in/out, the clone-on-exit and the
-no-footer rule are untouched — see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
-
-**A `hideHeader` page MUST wire the render-prop `onBack` to its own back
-control**, or there is no way off the page.
+An upright control on a sideways game is unreadable, so the chrome is drawn inside the
+rotated stage: `GameFrame` draws the break's Leave arrow and title
+(`GameFrameExitContext`). The frame is inside the rotated stage, so Leave turns with the
+game and sits at the game's top-left.
 
 ### Known rough edge
 
@@ -165,11 +168,7 @@ short viewports, which is a shell-wide change.
 
 ```
 ┌─────────────────────────────┐
-│ ⌄  Speed Reading       0:14 │  header: back · title · count-up clock
-├─────────────────────────────┤
-│ ROUND 7 OF 20               │  GameHud (a COLUMN, not a row of facts)
-│ ▮▮▮▮▮▮▯▯▯▯▯▯▯▯▯▯▯▯▯▯        │  SpeedReadingRoundTicks — 1 row of 20
-│                             │  green = right, red = wrong, grey = unplayed
+│ ←  Speed Reading            │  GameFrame: Leave · title (no clock, no HUD)
 ├─────────────────────────────┤
 │                             │  ← .speed-reading__board starts HERE
 │         nǐ  hǎo             │  pinyin (large)
@@ -183,57 +182,29 @@ short viewports, which is a shell-wide change.
 └─────────────────────────────┘
 ```
 
-**The round counter lives in the HUD, not in the header** (changed 2026-08-23 with
-[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A6b). It used to sit left of the clock as
-`speed-reading__progress`; the HUD's `Round n of 20` says the same thing beside the pips
-that expand on it, and two statements of it a few millimetres apart made the header read
-as two clocks. The clock keeps the header slot alone — it IS the score in this game.
+**Nothing about the run's progress is drawn** (changed 2026-11-04). There is no clock
+(Match Speed, Word Search and Writing Grid show none either), no `Round n of 20` label and
+no round-tick strip: the board is the prompt and the two halves, nothing else. The run is
+still timed exactly as before (pauses, penalties, `endRun`); the finishing time and the
+accuracy appear only on the break's results card.
 
-**It counts the round you are ON, not rounds completed** (`currentRound` in
-`SpeedReadingPage`): the first word on screen reads `Round 1 of 20` and the last reads
-`Round 20 of 20`. That is `answered + 1` while a round awaits its answer and plain
-`answered` once it has been answered — the same word is still on screen during
-the `FEEDBACK_MS` window, so the number must not tick to the next round early.
-Clamped at both ends: never `Round 0` on the loading header, never past the target.
+> **History.** The panel used to open with a `GameHud` COLUMN: `Round n of 20` over
+> `SpeedReadingRoundTicks`, one 8px pip per round (green right, red wrong, wood pending).
+> The pips existed because a time score hides how the run is going — a slow clean run and
+> a fast sloppy one read the same. Both were removed by request on 2026-11-04, together
+> with the `results: RoundTick[]` state and the component file, and the red "past bronze"
+> clock pill and the 200ms display interval went with the clock. `elapsedMs` is now written
+> only when a pause ends and when the run ends. If a live read-out comes back, the miss is
+> what it most needs to show (see § ~~The float indicator~~).
 
-The clock sits on a **red MID-tier pill** (`COLORS.redM`, ink text) once `totalMs`
-passes the **bronze** threshold, i.e. once the run can no longer medal; that is the
-count-up equivalent of the old "last ten seconds" red. A fill rather than red text because
-v2 never puts text in a pastel (it was pastel-red text before v2). The pill's padding is
-permanent, so the clock never shifts when it appears (`SpeedReadingPage.tsx` → `clockEl`).
+**In a break** the panel starts with a spacer the height of Leave's row
+(`GAME_FRAME_EXIT_CLEARANCE_PX`, `SpeedReadingStage` → `exitClearance`), as Match Speed's
+does, so the arrow and the title never sit over the prompt or a tap zone. On the page the
+header above the panel already clears it.
 
-### The round ticks (`SpeedReadingRoundTicks`)
-
-One pip per round, in answer order, one row of twenty at 8px tall.
-
-**Why the run needs them.** The score here is a TIME and a wrong answer is paid for in
-seconds rather than in a lost round, so before this there was nothing on screen saying how
-the run was actually going: a slow clean run and a fast sloppy one read identically. The
-pips are the run's shape, and because they hold their position they also say WHERE it went
-wrong, which `17/20 correct` on the end card does not.
-
-**One row of twenty (changed 2026-09-25).** The design's revision drew two rows of ten so
-pips could be counted as tens; it went back to a single row so the strip reads as one
-left-to-right timeline and the HUD loses a row. The **8px height** from that revision is
-kept — it is what lets a colour be seen peripherally, which is the only way it will be seen
-at all with the player's eyes on the words. A single row makes pips narrower, not shorter.
-The component still wraps into a grid if given a smaller `perRow`
-(`SpeedReadingRoundTicks.tsx` → `perRow`, which defaults to `total`).
-
-**The colours (v2, artboard 15).** Correct `COLORS.grnM`, wrong `COLORS.redM`, pending
-`COLORS.wood`, each lit pip with the `markOutline` inset ring (`SpeedReadingRoundTicks.tsx`
-→ `TICK_COLOR`). They were `successInk` / `dangerInk`, which v2 made plain ink — right and
-wrong would have drawn identically. The same two tokens fill the tap-zone flash, so a pip
-and the flash that produced it are one colour.
-
-**State:** `results: RoundTick[]` in `SpeedReadingPage`, APPENDED on every pick (never
-indexed by ordinal — `answeredRef` is the source of truth for "which round is this", and a
-push cannot disagree with itself). Reset by the replay path alongside `score`/`answered`.
-
-> ⚠️ **`GameHud` is a SIBLING of `.speed-reading__board`, not a child.** The tap zones are
-> `position: absolute; inset: 0` of their container, so anything sharing that container is
-> UNDER them and every tap on it answers the round. The board box exists to bound the zones
-> below the HUD, and the centring that used to be on `GameFrame` moved onto it.
+> ⚠️ **The clearance is a SIBLING of `.speed-reading__board`, not a child.** The tap zones
+> are `position: absolute; inset: 0` of their container, so anything sharing that container
+> is UNDER them and every tap on it answers the round.
 
 > **Two options is final; artboard 15's four is superseded (2026-08-24).** The Shelf
 > Redesign's artboard for this game draws an upright 2×2 grid of FOUR options with an
@@ -252,8 +223,8 @@ page between them.
 **Options sit side by side**, so the pair reads as a single comparison — which is
 what the game asks for, since they differ by exactly one character. The finale's
 **sentence** rounds keep the same two halves and the same side-by-side pair; only
-the cpcd size drops (see [§ The last two rounds are
-sentences](#the-last-two-rounds-are-sentences)).
+the cpcd size drops (see [§ The last round is a
+sentence](#the-last-round-is-a-sentence)).
 
 > ⚠️ **This was originally the opposite, deliberately.** The options used to stack
 > vertically on the grounds that side-by-side halves the width, and a
@@ -284,8 +255,9 @@ The play area is two layers:
 > (`speed-reading__prompt-speaker`). Forget this and a new control looks live
 > and silently does nothing.
 
-A hairline (`ZONE_DIVIDER`, drawn on the left zone's inner edge) runs down the
-middle so the halves read as two targets before either has been tapped.
+**There is no line down the middle** (the `ZONE_DIVIDER` hairline was removed
+2026-11-04). Each word sits centred on its half, which is what tells the two targets
+apart before either has been tapped.
 
 **The tint is the answer feedback.** The tapped half fills green when it was
 correct and red when it was wrong, for `FEEDBACK_MS` — `ZONE_TINT_CORRECT` /
@@ -318,7 +290,7 @@ the typeface and scale the rest of the app uses.
 A **sentence** round drops to `OPTION_SENTENCE_GLYPH_SIZE = "sm"` (32px columns,
 ~10 characters per line in a half). At `xl` a sentence would wrap to five or six
 lines per half and the pair would stop being scannable side by side. **Both
-halves of a round always get the same size** (`SpeedReadingPage` passes one value
+halves of a round always get the same size** (`SpeedReadingStage` passes one value
 to both) — a per-option size would leak the answer through layout.
 
 `showPinyin` is **false** and must stay false: the prompt already shows the
@@ -340,7 +312,7 @@ never wraps.
 > SVG) at a size **measured** off the options row via a `ResizeObserver`, with
 > `MIN_GLYPH_PX`/`MAX_GLYPH_PX` clamps and an `OPTION_CHAR_GAP_PX` term in the
 > arithmetic. All of that is gone: the size is a constant, the observer is
-> removed, and `SpeedReadingPage` no longer prefetches the stroke corpus a round
+> removed, and `SpeedReadingStage` no longer prefetches the stroke corpus a round
 > ahead (it still prefetches the round's **audio**). `GlyphSvg` itself is
 > untouched but now has **no remaining call site**.
 
@@ -351,7 +323,7 @@ never wraps.
 ```
         load ──► ready ──tap──► feedback ──(FEEDBACK_MS)──► ready(next)
 
-  20th round answered ──► ended ──Play Again──► load
+  20th round answered ──► ended ──► results card (onRunEnded)
   queue drained       ──► ended (unfinished: no time, no medal)
 ```
 
@@ -360,7 +332,7 @@ never wraps.
 | `loading` | blocked | Initial 20-card fetch + distractor fetch. **No card-count block** — the blocked screen is now only reachable when signed out or on a fetch failure (PROVISIONAL_CARDS.md). |
 | `ready` | live | Both options and the speaker are tappable — there is no Skip. The word auto-narrates on entry — see § Auto-narration. |
 | `feedback` | **blocked** | Frozen so a double-tap can't mark the next round. |
-| `ended` | blocked | `GameEndPopup`. |
+| `ended` | blocked | Results handed to the flp's card (`onRunEnded`); no end popup. |
 
 **The clock does not pause during `feedback`.** Feedback time is charged to the
 player; that's what makes `FEEDBACK_MS` a real cost. Note that at a fixed 20
@@ -373,12 +345,8 @@ count is held in a ref as well as in state because `onPick` must know in the sam
 tick whether that answer was the 20th — reading it from state there would see the
 previous render and let a 21st round start.
 
-**Play Again resets in place; it does NOT navigate.** `navigate("/games/speed-reading")`
-from the same route matches the same route, so React Router never unmounts the
-page and no run state would clear. Instead `playAgain()` clears the state and
-bumps a `runId` counter, which is a dependency of the queue hook's load effect and
-so re-fetches a fresh card batch and distractor pool. (`runId` is a plain counter
-by design — see the CLAUDE.md rule about never keying a load effect on `token`.)
+**One run per mount.** There is no Play Again: a break is one run, and the next break
+mounts a fresh Stage.
 
 ### Constants
 
@@ -399,7 +367,6 @@ by design — see the CLAUDE.md rule about never keying a load effect on `token`
 | `OPTION_GLYPH_SIZE` | `"xl"` | cpcd size the option word renders at; wraps rather than shrinking |
 | `OPTION_WORD_PADDING_X_PX` | 12 | breathing room around one word, per side |
 | `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | `COLORS.grnM` / `COLORS.redM` | fill of a half during feedback |
-| `ZONE_DIVIDER` | `COLORS.rowBorder` (`--line`) | hairline between the two halves |
 | ~~`OPTION_ROW_GAP_PX`~~, ~~`OPTION_PADDING_X_PX`~~, ~~`MIN_OPTION_HEIGHT_PX`~~ | — | **Removed** with the option cards |
 | ~~`OPTION_CHAR_GAP_PX`~~, ~~`MIN_GLYPH_PX`~~, ~~`MAX_GLYPH_PX`~~ | — | **Removed** with the measured-`GlyphSvg` options; cpcd owns the intra-word spacing now |
 
@@ -421,7 +388,7 @@ may be too short to register — re-evaluate on a device.
 
 | Cue | Where it comes from | Why |
 |---|---|---|
-| **Half tint** | `SpeedReadingTapZone.tsx` (`OptionFeedback`), driven by `SpeedReadingPage.feedbackFor` | The tapped half fills green or red under the thumb that just tapped it — no saccade needed. |
+| **Half tint** | `SpeedReadingTapZone.tsx` (`OptionFeedback`), driven by `SpeedReadingStage.feedbackFor` | The tapped half fills green or red under the thumb that just tapped it — no saccade needed. |
 
 ### Only the tapped half is painted
 
@@ -448,7 +415,7 @@ Two other things used to sit between the tap and a readable next card. Both are
 fixed; **check them before shortening `FEEDBACK_MS` again**, because they were
 each larger than the constant itself.
 
-**1. The next round's assets loaded on mount.** `SpeedReadingPage` keeps a
+**1. The next round's assets loaded on mount.** `SpeedReadingStage` keeps a
 `pendingRoundRef`: the moment a round goes on screen, the round AFTER it is
 built and its **audio** prefetched, so advancing is a single synchronous
 `setState`. It consumes one extra card off the queue (the top-up already covers
@@ -482,7 +449,7 @@ effectively never used. Narrating on arrival makes the word's SOUND a third cue
 alongside the pinyin and the definition, which is the point: the game is a
 reading drill, and the reading includes the pronunciation.
 
-**Where it lives** (`SpeedReadingPage.tsx`):
+**Where it lives** (`SpeedReadingStage.tsx`):
 
 - **The effect** fires only in phase `ready` (never during `feedback`, never
   after `ended`) and is guarded on **round identity** via `spokenRoundRef`, not
@@ -515,7 +482,10 @@ the only visual answer cue left.
 Two consequences worth carrying forward:
 
 - **The `+3s` penalty is now invisible at the moment it is charged.** It shows up
-  only as the clock reading higher than the wall-clock elapsed time. A cost the
+  only on the results, as the accuracy line's `+Ns penalty` (the clock that used to
+  run ahead of the elapsed time is no longer drawn, and neither is the round-tick strip
+  whose red pip used to mark a miss). During play the tapped half's red flash is the only
+  sign of a miss. A cost the
   player cannot see is a cost they cannot learn from — if play-testing shows
   misses going unnoticed, this is the thing to re-add (in some form), not the
   penalty value to change.
@@ -549,15 +519,16 @@ Enforced in `src/games/speed-reading/buildRound.ts`; pinned by
 
 ---
 
-## The last two rounds are sentences
+## The last round is a sentence
 
-The final `SENTENCE_ROUNDS` (**2**) rounds of a run — rounds 19 and 20 of 20 —
-escalate from *read this word* to **read this word in context**. The card and the
+The final `SENTENCE_ROUNDS` (**1**) round of a run — round 20 of 20 — escalates
+from *read this word* to **read this word in context** (it was the last two rounds
+until 2026-11-04). The card and the
 mark are unchanged; what changes is what is drawn and what is spoken.
 
 ```
 ┌─────────────────────────────┐
-│ ⌄               19/20  1:07 │
+│ ⌄  Speed Reading            │
 ├─────────────────────────────┤
 │   wǒ jīntiān qù mǎi shū     │  the SENTENCE's pinyin (per segment)
 │ "I'm going to buy books     │  the SENTENCE's English translation
@@ -569,7 +540,7 @@ mark are unchanged; what changes is what is drawn and what is spoken.
 └─────────────────────────────┘
 ```
 
-| | Word round (1–18) | Sentence round (19–20) |
+| | Word round (1–19) | Sentence round (20) |
 |---|---|---|
 | Options | the headword, `xl` | the whole example sentence, `sm` |
 | Prompt pinyin | `resolveDisplayPronunciation(entry)` | `buildSentencePronunciation(sentence)` — per-segment, space separated |
@@ -606,10 +577,10 @@ same length, wrap identically, and differ at one position.
 > about it is claimed to be grammatical. That is the same bargain the word rounds
 > strike with 你妤.
 
-### The finale's cards are reserved AT LOAD
+### The finale's card is reserved AT LOAD
 
 The run's whole card set arrives on the **first** pool call, so the finale is
-decided there and then rather than at round 19:
+decided there and then rather than at round 20:
 `useSpeedReadingQueue` splits the opening pool with `reserveFinaleCards`, holding
 back the first `SENTENCE_ROUNDS` cards that pass `hasSentenceRound` (a det row
 carrying an example sentence that contains the headword). `dequeue` never returns
@@ -621,14 +592,13 @@ Consequences worth knowing:
 
 - The finale **never depends on a mid-run top-up** returning a card that happens
   to have example sentences.
-- If the opening pool has fewer than 2 eligible cards, the queue logs a
-  `console.warn` and the unfilled finale rounds **degrade to ordinary word
-  rounds** rather than ending the run. This should not happen for a normal
+- If the opening pool has no eligible card, the queue logs a `console.warn` and
+  the finale **degrades to an ordinary word round** rather than ending the run. This should not happen for a normal
   library — discoverable det rows are enriched with example sentences — but the
   path exists because a pool made mostly of provisional cards could in principle
   reach it.
 
-### Which round is round 19
+### Which round is round 20
 
 A round's kind follows from its **ordinal**, and the ordinal is
 `answeredRef.current + 1` — computed in `nextRound` at the moment the round is
@@ -642,7 +612,7 @@ Skip).
 > dev**, so such a counter starts ahead before the first tap. The first cut of
 > this feature did exactly that and the finale landed in the middle of the run.
 > Deriving from answers is self-correcting: however many rounds were built and
-> thrown away, round 19 is still the one shown after 18 answers.
+> thrown away, round 20 is still the one shown after 19 answers.
 
 The prebuilt round is **tagged with the ordinal it was built for**
 (`pendingRoundRef = { ordinal, round }`) and discarded if the run has moved under
@@ -906,8 +876,8 @@ never pauses the game; `FEEDBACK_MS` is 180ms whether the answer was right or
 wrong.
 
 > ⚠️ **The charge is not announced anywhere.** It used to float up from the tap
-> as a red **+3s**; with the float indicator removed, the only trace is the
-> clock running ahead of the elapsed time. Treat this as a known gap when tuning
+> as a red **+3s**; with the float indicator and the live clock both removed, the only
+> trace during play is the miss's red tick, and the seconds appear only on the results. Treat this as a known gap when tuning
 > `WRONG_PENALTY_MS` — players may not connect a miss to the seconds it cost.
 
 **Why a wrong answer still counts as a round.** Under a count-up clock a blind tap
@@ -921,12 +891,11 @@ which lands outside every medal.
 
 The fastest **finished** run (`totalMs` — wall clock plus penalties, lower wins) is kept
 under the single mode key `"default"` (the game has one difficulty). An effect in
-`SpeedReadingPage` records it only when `phase === "ended"` **and** `finished`
+`SpeedReadingStage` records it only when `phase === "ended"` **and** `finished`
 (`answered >= TARGET_ROUNDS`) — the same guard `medalFor` relies on, because a run cut
 short by a drained queue has a small time that would otherwise become an unbeatable best.
-`playAgain` calls `resetPersonalBest`. The line renders in the end `GameEndPopup` under
-the "N/20 correct" row, and only on a finished run (the "Ran out of cards" branch shows
-no time and no best).
+The line renders on the break's results card, and only on a finished run (the "Out of
+cards" / "Run ended" branches show no time and no best).
 
 The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
 
@@ -959,30 +928,25 @@ game's score thresholds — the metric is time.
 format.
 
 **A medal requires a FINISHED run.** `medalFor` is a pure time→medal mapping and
-does not know the round count, so `SpeedReadingPage` gates it on
+does not know the round count, so `SpeedReadingStage` gates it on
 `answered >= TARGET_ROUNDS`. Without that gate a run cut short by a drained queue
-(three rounds in 8 seconds) would take gold. The unfinished end popup shows no
+(three rounds in 8 seconds) would take gold. The unfinished results card shows no
 time at all.
 
 A medal — any medal — records one win via `useGameWins(GAME_KEY).recordWin(WIN_LEVEL)`,
-guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
+guarded by a ref so it fires once per run.
 
 ---
 
-## Page shell and chrome
+## Shell and chrome
 
-- **Leaf page.** `LeafPage` — down arrow → `/games`, no footer, slides up on enter.
-- **Hub entry:** a plain `HubMenuRow`, from the generic branch of `GamesPage.tsx`.
-  No special-case, because there are no levels to fan out into a strip.
-- **No per-page `IPhoneFrame`** — the frame comes from `MobileDemoFrame` via
-  `Layout.tsx`, automatic once the route is in `GAME_ROUTES`.
-- **`useBlockEdgeSwipe(true)`** — mandatory for every game page
-  ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)).
+- **Stage only.** `SpeedReadingStage` owns the run; its one host is the flp break adapter
+  (`SPEED_READING_BREAK`, `src/games/flpBreak/speedReadingBreak.ts`), which mounts it
+  inside `GameBreakFrame` ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6). There is no
+  route, no `LeafPage` and no end popup.
 - **`touchAction: "none"`** on the whole surface; nothing here scrolls.
-- **Minute points:** `/games/speed-reading` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
-  (`src/constants.ts`). The `/games` prefix already covers it in
-  `MINUTE_POINTS_AUTO_ACTIVE_PAGES`, which is right — the player reads the prompt
-  before their first tap.
+- **Minute points** are earned through the Deck Tower study session hosting the break
+  (the studySurface claim), not through a route of this game's own.
 - **Definitions:** the prompt's definition **must** resolve through
   `resolveDisplayDefinition(entry)` (`src/utils/definitionUtils.ts`) — `gamePool`
   ships `definitionClusters` + `selectedSense`, so resolve client-side as Bubble
@@ -990,7 +954,25 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 - **Audio:** `useTTS().speakSentence(entry.entryKey, entry.pronunciation)` behind
   the shared `SpeakerButton`, with `isLoading={tts.speakingKey === entry.entryKey}`.
   **Autoplays every round** — see § Auto-narration.
-- **End popup:** `GameEndPopup` with `classPrefix="speed-reading"`.
+
+---
+
+## As an flp game break
+
+Speed Reading is in the reading flp's break rotation (zh only), adapter
+`SPEED_READING_BREAK` (`src/games/flpBreak/speedReadingBreak.ts`). The general mechanism
+is [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md); what is specific to this game:
+
+| Concern | Behaviour |
+|---|---|
+| Run | The full 20 rounds with the sentence finale (round 20); medals and the personal best under the one `"default"` mode key. |
+| Prefetch | The seeded pool **and** the distractor list (`SpeedReadingOpening`), both fetched while card 10 is up. `isPlayable` rejects an empty pool or an empty distractor list, so the flp picks another game instead. |
+| Pool | `speedReadingPoolRequest` (`poolRequest.ts`): `seedIds` on the opening batch only, `flpBreak` on every request. The game's own `GAME_DISTRIBUTION`. |
+| Marks | Reading marks. A correct, recorded mark on an owned card fires `onCardCleared`, skipping lent cards and `outsideFocus` cards. |
+| Chrome | No header and no panel. Leave + the title come from `GameFrame`, inside the rotated stage. No HUD; the board starts below Leave's row (see § Screen layout). |
+| Leave | During a live round: the run ends as **Run ended**, with no time, medal, win or personal best. In the 20th answer's feedback window the run just ends finished. After the run: dismisses the lent-card offer. Before a deal: closes the break. |
+| Results | `onRunEnded` instead of the end popup: the medal / "Finished!" / "Out of cards" / "Run ended" heading, the time (or `n of 20 rounds`), the accuracy line, and the personal best. A lent-card sort offer holds the report until it is answered. |
+| Sideways cards | `sideways: true` on the adapter turns the break's card (buttons included) and its results card 90° the game's way (`SidewaysCardFace`, FLP_GAME_BREAKS.md § 5). |
 
 ---
 
@@ -1000,7 +982,8 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 
 | File | Role |
 |---|---|
-| `SpeedReadingPage.tsx` | phase machine, clock, marks, scoring, run reset |
+| `SpeedReadingStage.tsx` | the run: phase machine, clock (not drawn), marks, scoring, run reset, host branches (chrome, results, Leave) |
+| `poolRequest.ts` | `speedReadingPoolRequest` — every pool request, shared with the break's prefetch |
 | `SpeedReadingPrompt.tsx` | pinyin + English + speaker; presentational only (takes strings, not a round) |
 | `roundPrompt.ts` | derives the prompt's pinyin / English / narration from the round's KIND |
 | `SpeedReadingTapZone.tsx` | one half of the screen as a tap target + its green/red feedback tint (hands the click event up for the tap coordinates) |
@@ -1015,14 +998,12 @@ guarded by a ref so it fires once per run. The hub shows the lifetime `×N`.
 | File | Role |
 |---|---|
 | `src/games/runtime/useSidewaysStage.ts` | container-shape-driven 90° rotation + tap-coordinate inverse |
-| `src/components/LeafPage.tsx` | `hideHeader` + render-prop children (added for this game) |
-| `src/components/LeafPageHeader.tsx` | rendered by the page itself, inside the stage |
+| `src/api/speedReading.ts` | `fetchSpeedReadingDistractors` |
+| `src/games/flpBreak/speedReadingBreak.ts`, `SpeedReadingBreakStage.tsx` | the flp break adapter and its lazy Stage entry |
 | `src/components/ForeignText.tsx` | the option text (row layout → `CPCDRow`), `showPinyin={false}` |
 | `src/utils/sentencePronunciation.ts` | `buildSentencePronunciation` — per-segment pinyin for a sentence round's prompt and TTS hint (shared with the flp est list). Skips punctuation segments; see [EXAMPLE_SENTENCES.md § Punctuation is skipped](./EXAMPLE_SENTENCES.md#punctuation-is-skipped-not-a-missing-pronunciation) |
 | ~~`src/components/handwriting/GlyphSvg.tsx`~~ | **no longer used here** — the options were per-character SVG glyphs until they moved to cpcd |
-| `src/games/registry.ts` | `GameDef` entry (route, colour, `languages`) |
-| `src/games/GamesPage.tsx` | renders it via the generic `HubMenuRow` branch |
-| `src/constants.ts` | `MINUTE_POINTS_ELIGIBLE_PAGES` |
+| `src/games/registry.ts` | `GameDef` entry (break-only: no route; colour, `languages`) |
 
 **Server**
 
@@ -1053,7 +1034,7 @@ one-character invariant, the ladder, and the sentence-round builder).
 | `TARGET_ROUNDS` | 20 | Long enough that one lucky guess doesn't decide the run, short enough to replay. Changing it invalidates the medal thresholds. |
 | `FEEDBACK_MS` | 180 | Long enough to see the answer, short enough not to feel like a tax. Cut from 600 once the sound carried the outcome. ⚠️ With the float indicator gone the tint is the only thing to *see*, and 180ms is short for a colour change — **lengthen** this if the reveal starts reading as nothing happening. |
 | `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | green / red MID tier | The sole visual cue now. If the flash goes unnoticed on a bright screen, the next step is the MARK tier (`grnMk` / `redMk`). |
-| `SENTENCE_ROUNDS` | 2 | How much of the run is the sentence finale. Raising it needs more eligible cards in the opening pool (20 cards, so there is headroom) and makes the run meaningfully harder. |
+| `SENTENCE_ROUNDS` | 1 | How much of the run is the sentence finale (cut from 2 on 2026-11-04). Raising it needs more eligible cards in the opening pool (20 cards, so there is headroom) and makes the run meaningfully harder. |
 | `OPTION_SENTENCE_GLYPH_SIZE` | `"sm"` | Fits ~10 characters per half-screen line. Drop to `"xs"` if long sentences wrap past two lines; raise to `"md"` if they read as too small next to the `xl` word rounds. |
 
 ---
@@ -1063,19 +1044,21 @@ one-character invariant, the ladder, and the sentence-round builder).
 | This doc's section | Code it describes |
 |---|---|
 | Scope: Chinese only | `src/games/registry.ts` (`languages`), `src/games/types.ts`, `SpeedReadingDAL.getLibraryDistractors` |
-| Sideways rendering | `src/games/runtime/useSidewaysStage.ts`, `SpeedReadingPage.tsx` (`stage`, `speed-reading__frame`), `src/components/LeafPage.tsx` (`hideHeader`) |
-| Screen layout, tap zones, option text | `SpeedReadingPage.tsx` (`speed-reading__play`, `speed-reading__zones`, `speed-reading__stack`), `SpeedReadingTapZone.tsx`, `SpeedReadingOptionText.tsx`, `SpeedReadingPrompt.tsx` (`speed-reading__prompt-speaker`), `constants.ts` (`OPTION_GLYPH_SIZE`, `OPTION_SENTENCE_GLYPH_SIZE`, `ZONE_TINT_*`, `ZONE_DIVIDER`), `types.ts` (`OptionFeedback`), `src/components/ForeignText.tsx`, `src/components/CPCDRow.tsx` |
-| Round state machine | `SpeedReadingPage.tsx` (`Phase`, `playAgain`), `useSpeedReadingQueue.ts` (`runId`) |
-| Answer feedback: half tint | `SpeedReadingPage.tsx` (`onPick`, `feedbackFor`), `SpeedReadingTapZone.tsx`, `constants.ts` (`FEEDBACK_MS`, `ZONE_TINT_CORRECT`, `ZONE_TINT_WRONG`) |
+| Sideways rendering | `src/games/runtime/useSidewaysStage.ts`, `SpeedReadingStage.tsx` (`stage`, `speed-reading__frame`), `src/games/shared/GameFrame.tsx` |
+| Screen layout, tap zones, option text | `SpeedReadingStage.tsx` (`speed-reading__play`, `speed-reading__zones`, `speed-reading__stack`), `SpeedReadingTapZone.tsx`, `SpeedReadingOptionText.tsx`, `SpeedReadingPrompt.tsx` (`speed-reading__prompt-speaker`), `constants.ts` (`OPTION_GLYPH_SIZE`, `OPTION_SENTENCE_GLYPH_SIZE`, `ZONE_TINT_*`), `types.ts` (`OptionFeedback`), `src/components/ForeignText.tsx`, `src/components/CPCDRow.tsx` |
+| Round state machine | `SpeedReadingStage.tsx` (`Phase`, `advance`, `answeredRef`), `useSpeedReadingQueue.ts` |
+| Answer feedback: half tint | `SpeedReadingStage.tsx` (`onPick`, `feedbackFor`), `SpeedReadingTapZone.tsx`, `constants.ts` (`FEEDBACK_MS`, `ZONE_TINT_CORRECT`, `ZONE_TINT_WRONG`) |
 | One-character invariant, ladder | `buildRound.ts`, `src/__tests__/speedReadingBuildRound.test.ts` |
-| The last two rounds are sentences | `buildRound.ts` (`buildSentenceRound`, `usableSentences`, `hasSentenceRound`, `findWordStart`), `roundPrompt.ts`, `useSpeedReadingQueue.ts` (`reserveFinaleCards`, `finaleRef`, `dequeueSentenceCard`), `SpeedReadingPage.tsx` (`nextRound` ordinals, `pendingRoundRef`, `armedRunRef`, `takeRound`), `constants.ts` (`SENTENCE_ROUNDS`, `OPTION_SENTENCE_GLYPH_SIZE`), `types.ts` (`SentenceRound`), `src/utils/sentencePronunciation.ts`; [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
+| The last round is a sentence | `buildRound.ts` (`buildSentenceRound`, `usableSentences`, `hasSentenceRound`, `findWordStart`), `roundPrompt.ts`, `useSpeedReadingQueue.ts` (`reserveFinaleCards`, `finaleRef`, `dequeueSentenceCard`), `SpeedReadingStage.tsx` (`nextRound` ordinals, `pendingRoundRef`, `armedRunRef`, `takeRound`), `constants.ts` (`SENTENCE_ROUNDS`, `OPTION_SENTENCE_GLYPH_SIZE`), `types.ts` (`SentenceRound`), `src/utils/sentencePronunciation.ts`; [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) |
 | Selection query, Endpoint | `SpeedReadingDAL.ts`, `SpeedReadingService.ts`, `SpeedReadingController.ts`, `speedReadingRoutes.ts` |
 | Rendering a glyph (historical) | `src/components/handwriting/GlyphSvg.tsx` — no call site left; see also [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md) |
 | Queue + top-up | `useSpeedReadingQueue.ts`, `OnDeckVocabController.getGamePool` |
 | `markType` | `server/controllers/OnDeckVocabController.ts`; [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Marks | `src/api/flashcards.ts`, [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
-| Scoring and medals | `constants.ts` (`TARGET_ROUNDS`, `WRONG_PENALTY_MS`, `MEDAL_THRESHOLDS`, `medalFor`, `formatClock`), `SpeedReadingPage.tsx` (`totalMs`, `finished`, `endRun`, `addPenalty`), `src/hooks/useGameWins.ts` |
+| As an flp game break | `src/games/flpBreak/speedReadingBreak.ts` (`SPEED_READING_BREAK`), `SpeedReadingBreakStage.tsx`, `SpeedReadingStage.tsx` (`leaveBreak`, `hud`, the `onRunEnded` effect, `mark`), `poolRequest.ts`, `useSpeedReadingQueue.ts` (`SpeedReadingOpening`, `prefetched`), `src/features/flashcards/FlashcardsLearnPage/gameBreak/SidewaysCardFace.tsx` |
+| Scoring and medals | `constants.ts` (`TARGET_ROUNDS`, `WRONG_PENALTY_MS`, `MEDAL_THRESHOLDS`, `medalFor`, `formatClock`), `SpeedReadingStage.tsx` (`totalMs`, `finished`, `endRun`, `addPenalty`), `src/hooks/useGameWins.ts` |
 
 Referenced by: [GAMES_FEATURE.md](./GAMES_FEATURE.md),
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md),
 [MASTERY_REWORK.md](./MASTERY_REWORK.md),
 [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md).

@@ -277,7 +277,7 @@ parity bugs — headword underline, English-gloss underline, and the per-sentenc
 speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
-  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, scp, the saved-card
+  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, ancp, the saved-card
   cdp (which since 2026-08-24 raises the eip in a sheet, `VocabCardDetailPage` →
   `InfoCardSection`) and the read-only dictionary cdp (which since 2026-10-10 mounts the
   panel inline, `features/dictionary/DictionaryCardDetailPage.tsx`; its old
@@ -316,7 +316,7 @@ use it. `ExampleSentenceList` just never passes it.)
 | Read path | `UserDAL.findById` select list (`server/dal/implementations/UserDAL.ts`); `User` / `UserUpdateData` in `server/types/index.ts` |
 | Write path | `PUT /api/users/displaySettings` → `UserController.updateDisplaySettings` → `UserService.updateDisplaySettings` (`server/routes/userRoutes.ts`) |
 | Client state | `AuthContext` `User.showSegmentSpaces` + `updateDisplaySettings()` (`src/AuthContext.tsx`) |
-| Toggle UI | Settings page → **Display** section (`settings-page__display-section` / `settings-page__segment-spaces-row`, `src/pages/SettingsPage.tsx`), a `Paper` + `Switch` row matching the Narration section. **Chinese only** — rendered when `(user.selectedLanguage ?? 'zh') === 'zh'`, because Latin-script sentences always render spaced (`SegmentedSentenceDisplay`'s `isLatin` branch) so the switch would be a no-op for Spanish. `selectedLanguage` is nullable with a `'zh'` DB default, hence the `??`. |
+| Toggle UI | Settings page → **Display** section (`settings-page__display-section` / `settings-page__segment-spaces-row`, `src/pages/settings/SettingsBody.tsx`), a `SwitchRow` in the Display section. The ROW is **Chinese only** (the section itself shows for every language since the weather switch joined it, docs/DECK_TOWER.md § "Weather") — rendered when `(user.selectedLanguage ?? 'zh') === 'zh'`, because Latin-script sentences always render spaced (`SegmentedSentenceDisplay`'s `isLatin` branch) so the switch would be a no-op for Spanish. `selectedLanguage` is nullable with a `'zh'` DB default, hence the `??`. |
 | Consumer | `ExampleSentenceList` reads `useAuth().user?.showSegmentSpaces` directly |
 
 It was previously a device-local flp toggle in
@@ -367,7 +367,7 @@ tapped segment's headword.
 - **Wiring.** New prop `onSegmentOpen?(segment)` on `SegmentedSentenceDisplay`. It is threaded
   through the est call site only (`InfoCardPanelBody.tsx` Examples tab, prop
   `onExampleSegmentClick`) → `InfoCardSection` → the two consumers
-  (`FlashcardsLearnPage.tsx`, `SortCardsPage.tsx`), each passing
+  (`FlashcardsLearnPage.tsx`, `AddNewCardsPage.tsx`), each passing
   `(segment) => eip.openForEntryKey(segment)`. The expansion-tab `SegmentedSentenceDisplay`
   omits `onSegmentOpen`, so that popup stays a passive tooltip.
 - **Tap absorption.** The popup renders through a Popper portal but is still a **React child
@@ -498,7 +498,7 @@ definitions).
 
 | Surface | What it uses | Where |
 |---|---|---|
-| **Speed Reading finale** (rounds 19–20 of a run) | `foreignText` (both options are that sentence, one character apart), `english` (the prompt's translation line), and `_segments` + `segmentMetadata` via `buildSentencePronunciation` (the prompt's pinyin line **and** the TTS pinyin hint) | [SPEED_READING_GAME.md § The last two rounds are sentences](./SPEED_READING_GAME.md#the-last-two-rounds-are-sentences), `src/games/speed-reading/buildRound.ts`, `src/games/speed-reading/roundPrompt.ts` |
+| **Speed Reading finale** (round 20, the last of a run) | `foreignText` (both options are that sentence, one character apart), `english` (the prompt's translation line), and `_segments` + `segmentMetadata` via `buildSentencePronunciation` (the prompt's pinyin line **and** the TTS pinyin hint) | [SPEED_READING_GAME.md § The last round is a sentence](./SPEED_READING_GAME.md#the-last-round-is-a-sentence), `src/games/speed-reading/buildRound.ts`, `src/games/speed-reading/roundPrompt.ts` |
 | **Immersive World speech bubbles** (2026-09-07) | Not `exampleSentences` at all — the **component and the segmenter**. An NPC's spoken line is rendered by `SegmentedSentenceDisplay` from segments built by `DictionaryDAL.segmentTexts`, so a word tapped in a bubble opens the same popup and the same drill chain as the same word tapped here | [IMMERSIVE_WORLD.md § 5.3b](./IMMERSIVE_WORLD.md), `server/services/iw/lineSegments.ts`, `src/features/immersiveworld/play/IWSpeechBubbles.tsx` |
 
 Two consequences for this pipeline: a sentence is only usable there if it

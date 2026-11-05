@@ -19,10 +19,6 @@ import { RAMP } from "../../../theme/colors";
  * the canvas, so the editor passes a thinner `lineWidth` (NotebookCellEditor →
  * GUIDE_LINE_WIDTH). Only the weight changes; the rays and dashes still line up.
  *
- * The Word of the Day card draws its own DASHED blue 米 grid (WordOfTheDayCard →
- * `guideGridSvg`) as a CSS background; that one is a glyph backdrop, not a writing
- * guide, and is deliberately a different look.
- *
  * Used by: NotebookCell, NotebookCellEditor, ShadowCell (this folder). Lives here, not under
  * src/components/handwriting, because the notebook is its only importer
  * (docs/FRONTEND_LAYERING.md § 1); move it up if a second feature wants the guide.

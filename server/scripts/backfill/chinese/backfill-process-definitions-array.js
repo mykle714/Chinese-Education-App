@@ -23,7 +23,13 @@
  *   MAX_FIRST_GLOSS_LEN (20) chars, a single short (≤20 char) gloss for the word
  *   is synthesized (Sonnet, Opus on retry) and PREPENDED, keeping the long gloss
  *   right behind it. This is the only step that intentionally writes a
- *   NON-source string, so every generated gloss is surfaced in the review log.
+ *   NON-source string, so every generated gloss is surfaced in the review log and
+ *   as a "⚠ SHORT GLOSS REVIEW" stdout line. The attempt loop (4 attempts, each retry
+ *   told the previous answer's exact overrun) is shared with the clusterers' per-sense
+ *   step: shared/lib/senseShortGloss.js → askShortGloss.
+ *   If every attempt fails, any reorder is still written but the row is left
+ *   UNSTAMPED, so the planner re-selects it. (Until 2026-11-03 a failure was stamped
+ *   like a success and the row was never retried.)
  *
  * Row selection (HAS_WORK_CLAUSE): >1 gloss (something to reorder) OR a lead gloss
  *   longer than MAX_FIRST_GLOSS_LEN (something to shorten). A SINGLE-gloss row can
@@ -56,6 +62,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { createGlossOrderer, MAX_FIRST_GLOSS_LEN } from './lib/orderGlosses.js';
+import { SHORT_GLOSS_MARKER } from '../shared/lib/senseShortGloss.js';
 const SCRIPT_VERSION = 3; // bump when this script's logic/prompt changes
 
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -250,11 +257,20 @@ async function run() {
         // (keeping the long one right behind it). This is the one place we write a
         // non-source string, so it is always surfaced for human review.
         let generatedFirst = null;
+        // A failed short gloss means this step did NOT finish its job, so the row must
+        // not be stamped: a stamp at the current SCRIPT_VERSION tells the planner the
+        // step is done, and it never re-selects the row. Before 2026-11-03 a failure
+        // here fell through to the "unchanged" branch and was stamped like a success,
+        // leaving 35 discoverable rows permanently headlining a 21–200-char gloss.
+        let shortGlossFailed = false;
         if (finalOrder.length && finalOrder[0].length > MAX_FIRST_GLOSS_LEN) {
           const sg = await generateShortGloss(row.word1, finalOrder);
           if (sg.retried) opusRetries++;
           if (sg.error) {
-            console.log(`short-gloss fail (${sg.error}) — leaving long gloss first`);
+            shortGlossFailed = true;
+            // stdout review channel (the /tmp review file alone is lost with the container).
+            console.log(`\n${SHORT_GLOSS_MARKER} ${row.word1} (id=${row.id}): FAILED — ${sg.error}; row left unstamped for retry`);
+            console.log(`short-gloss fail — leaving long gloss first`);
             logReview({
               id: row.id, word: row.word1, action: 'short_gloss_failed',
               original: definitions, pass1: pass1Order, final: finalOrder,
@@ -262,6 +278,7 @@ async function run() {
             });
           } else {
             generatedFirst = sg.gloss;
+            console.log(`\n${SHORT_GLOSS_MARKER} ${row.word1} (id=${row.id}): "${finalOrder[0]}" → "${sg.gloss}" (${sg.model})`);
             // De-dupe: if the model echoed an existing gloss, promote it rather
             // than inserting a duplicate.
             finalOrder = [generatedFirst, ...finalOrder.filter(d => d !== generatedFirst)];
@@ -286,6 +303,12 @@ async function run() {
             original: definitions, pass1: pass1Order, final: finalOrder,
             dropped: droppedGlosses, generated: generatedFirst, reason,
           });
+        }
+
+        if (!orderChanged && shortGlossFailed) {
+          // Nothing to write, and the step is unfinished — no stamp (see shortGlossFailed).
+          if (!isSpotCheck) failed++;
+          continue;
         }
 
         if (!orderChanged) {
@@ -314,6 +337,13 @@ async function run() {
           `UPDATE dictionaryentries_zh SET definitions = $1::jsonb WHERE id = $2`,
           [JSON.stringify(finalOrder), row.id]
         );
+        // The reorder/prune is still worth keeping, but the step is unfinished while the
+        // headline is too long — write it, leave the row unstamped so it is retried.
+        if (shortGlossFailed) {
+          failed++;
+          console.log(`processed [${action}] — UNSTAMPED (short gloss failed)`);
+          continue;
+        }
         await stampEntries(client, 'dictionaryentries_zh', row.id);
 
         updated++;

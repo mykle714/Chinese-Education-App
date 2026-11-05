@@ -18,10 +18,7 @@ const { BUCKET_DROP_BREAK } = await import('../bucketDropBreak');
 const context: FlpBreakContext = {
   language: 'es',
   world: 'reading',
-  studyMode: null,
-  collection: null,
   seedIds: [1, 2],
-  towerSession: true,
 };
 const candidate = { mode: 'no-pinyin', markType: 'reading', showPinyin: false } as FlpBreakCandidate;
 

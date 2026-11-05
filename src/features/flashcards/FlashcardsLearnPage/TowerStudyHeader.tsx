@@ -2,15 +2,14 @@ import React from "react";
 import PageHeader, { HeaderIconButton } from "../../../components/PageHeader";
 import AudioModeChip from "../../../components/AudioModeChip";
 import { COLORS } from "../../../theme/colors";
-import { TOWER_STUDY_FONT } from "../../../theme/towerPlate";
 import type { LastMarkUndoSnapshot } from "../types";
 
 /**
- * TowerStudyHeader — the flp's header when the session runs inside the Deck Tower, over
- * the tower's sky (docs/DECK_TOWER.md § "Studying the tower"; FlpTowerHost).
+ * TowerStudyHeader — the flp's header. The flp runs only inside the Deck Tower, so this
+ * is drawn over the tower's sky (docs/DECK_TOWER.md § "Studying the tower"; FlpTowerHost).
  *
- * The same controls as FlashcardsLearnHeader — back, undo, the narration chip, and the
- * minute-points flame PageHeader always draws — in the Deck Tower's own header style: the
+ * Its controls — back, undo, the narration chip, and the minute-points flame PageHeader
+ * always draws — are in the Deck Tower's own header style: the
  * shelf-redesign PageHeader with no bar, its title and back arrow in white so they read
  * on the sky and on space (`titleColor`), like the tower page's own header. The title
  * names the deck being studied rather than a category: a tower session is always the
@@ -18,17 +17,16 @@ import type { LastMarkUndoSnapshot } from "../types";
  *
  * Its AUDIO CHIP is the shared AudioModeChip's `outlined` skin in white: no fill, its glyph
  * and label in plain white, the same in every audio mode — the label carries the state —
- * held together by a thin white pill outline so they read as one button. The scp uses the
+ * held together by a thin white pill outline so they read as one button. The ancp uses the
  * same skin in its ground's ink. The box is sized to the longest label, so it does not
- * resize as it cycles.
+ * resize as it cycles. Its label face (975 Maru, like the session's other lettering) comes
+ * from the shared outlined skin (`outlinedChipSx`), not from this header.
  * A filled chip (it was a grey floor plate until 2026-10-26) drew the eye off the card.
  *
- * Kept separate from FlashcardsLearnHeader (rather than a `tone` flag on it) because the
- * two headers stand on different grounds and are expected to diverge — this one belongs
- * to the tower's look.
+ * (The plain-paper FlashcardsLearnHeader it once sat beside was deleted with the
+ * standalone flp route on 2026-11-04.)
  *
- * Layer: feature view (src/features/flashcards). Rendered by FlashcardsLearnPage when it
- * has a `tower` host.
+ * Layer: feature view (src/features/flashcards). Rendered by FlashcardsLearnPage.
  */
 interface TowerStudyHeaderProps {
     title: string;
@@ -37,15 +35,12 @@ interface TowerStudyHeaderProps {
     isUndoing: boolean;
     onBack: () => void;
     onUndo: () => void;
-    /** The icon-layout editor is open: undo is meaningless then (see FlashcardsLearnHeader). */
+    /** The icon-layout editor is open: undo is disabled while it is. */
     editMode: boolean;
 }
 
 /** The header's ink over the sky — the tower page header's (DeckTowerPage `headerTitleColor`). */
 const ON_SKY_INK = COLORS.white;
-
-/** The chip's label face, layered over its mono default. `outlined` fits the box to it. */
-const AUDIO_CHIP_FONT_SX = { fontFamily: TOWER_STUDY_FONT };
 
 const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     title,
@@ -76,9 +71,7 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
                 />
                 <AudioModeChip
                     className="tower-study-header__audio-chip"
-                    outlined
                     ink={ON_SKY_INK}
-                    sx={AUDIO_CHIP_FONT_SX}
                 />
             </>
         }

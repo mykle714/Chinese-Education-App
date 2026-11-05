@@ -18,8 +18,10 @@
  *     sentence + longDefinition part are folded into the "zero" sense.
  *   - 比 "Taiwan reading note": a pronunciation note, not a meaning.
  *
- * INVARIANT KEPT. `definitionClusters` must stay an EXACT PARTITION of `definitions`
- * (validatePartition / checkShape, docs/DEFINITION_CLUSTERS.md), so each rewrite
+ * INVARIANT KEPT. Every source gloss a cluster holds must also be in `definitions`
+ * (the clusterers' validatePartition / checkShape check this on their model output;
+ * clusters may additionally have pruned glosses or carry a synthesized per-sense short
+ * gloss — docs/DEFINITION_CLUSTERS.md § Ownership), so each rewrite
  * replaces the old glosses in BOTH columns in one UPDATE: the new glosses take the
  * flat-array slot of the first old gloss, and the remaining old glosses are removed.
  * Sense LABELS are never changed (they are addresses: vet.selectedSense, est sentence

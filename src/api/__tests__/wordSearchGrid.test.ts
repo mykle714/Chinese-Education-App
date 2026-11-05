@@ -2,26 +2,25 @@ import { describe, expect, it } from "vitest";
 import { wordSearchGridParams } from "../wordSearchGrid";
 import { wordSearchGridRequest } from "../../games/word-search/gridRequest";
 import { medalForTime, personalBestMode, runResultScore, runResultTitle } from "../../games/word-search/constants";
-import { WORD_SEARCH_BREAK, wordSearchBreakBoard } from "../../games/flpBreak/wordSearchBreak";
+import { WORD_SEARCH_BREAK, WORD_SEARCH_BREAK_BOARD } from "../../games/flpBreak/wordSearchBreak";
 import type { FlpBreakContext } from "../../games/flpBreak/types";
 import type { WordSearchResponse } from "../../games/word-search/types";
 import { cpcdNaturalSize } from "../../components/CPCDRow";
 
 describe("wordSearchGridParams", () => {
     it("sends the mode and the board's band mix", () => {
-        const params = wordSearchGridParams(wordSearchGridRequest({ mode: "pinyin", collection: null }));
+        const params = wordSearchGridParams(wordSearchGridRequest({ mode: "pinyin" }));
         expect(params).toEqual({ mode: "pinyin", Unfamiliar: 1, Target: 5, Comfortable: 2, Mastered: 1 });
     });
 
     it("sends the compact board and its smaller band mix", () => {
-        const params = wordSearchGridParams(wordSearchGridRequest({ mode: "pinyin", collection: null, board: "compact" }));
+        const params = wordSearchGridParams(wordSearchGridRequest({ mode: "pinyin", board: "compact" }));
         expect(params).toEqual({ mode: "pinyin", board: "compact", Unfamiliar: 1, Target: 4, Comfortable: 1, Mastered: 1 });
     });
 
     it("carries an flp break's seed and flag", () => {
         const params = wordSearchGridParams(wordSearchGridRequest({
             mode: "no-pinyin",
-            collection: null,
             seedIds: [4, 9],
             flpBreak: true,
         }));
@@ -32,7 +31,6 @@ describe("wordSearchGridParams", () => {
     it("lets a challenge round's mode replace the board's, as one key", () => {
         const params = wordSearchGridParams(wordSearchGridRequest({
             mode: "no-pinyin",
-            collection: null,
             challengeParams: "&challengeId=7&gameId=word-search&mode=pinyin",
         }));
         expect(params.mode).toBe("pinyin");
@@ -54,16 +52,14 @@ describe("WORD_SEARCH_BREAK.isPlayable", () => {
 });
 
 describe("Word Search break board", () => {
-    const context = (towerSession: boolean) => ({ towerSession }) as FlpBreakContext;
+    const context = {} as FlpBreakContext;
 
-    it("plays compact in a Deck Tower session and standard on the routed flp", () => {
-        expect(wordSearchBreakBoard(context(true))).toBe("compact");
-        expect(wordSearchBreakBoard(context(false))).toBe("standard");
+    it("always plays the compact board (the flp runs only inside the Deck Tower)", () => {
+        expect(WORD_SEARCH_BREAK_BOARD).toBe("compact");
     });
 
-    it("needs only the compact board's words from a focused tower session", () => {
-        expect(WORD_SEARCH_BREAK.focusMinimum?.(context(true))).toBe(7);
-        expect(WORD_SEARCH_BREAK.focusMinimum?.(context(false))).toBe(9);
+    it("needs only the compact board's words from a focused session", () => {
+        expect(WORD_SEARCH_BREAK.focusMinimum?.(context)).toBe(7);
     });
 });
 

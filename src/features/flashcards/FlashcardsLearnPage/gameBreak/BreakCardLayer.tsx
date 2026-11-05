@@ -6,8 +6,6 @@ import { CARD_SURFACE } from "../../../../theme/surfaces";
 import { useSwipeCommit, type SwipeDirection } from "../../../../hooks/useSwipeCommit";
 import { cardThrowSteps } from "../cardThrow";
 
-/** A plain flp's back-card pose (FlashCardSection's back slot). The tower's lies flush. */
-const PLAIN_BACK_CARD_SX = { transform: "scale(0.97)", opacity: 0.9 } as const;
 /** The results card springing back from a swipe that didn't commit. */
 const SNAP_BACK_TRANSITION = `transform ${CARD_FLY_OUT_MS / 2}ms ease`;
 
@@ -44,14 +42,13 @@ function swipePose(dx: number): string {
  */
 const BreakCardLayer: React.FC<{
     hold: "due" | "title" | "skipping" | "growing" | "shrinking" | "results";
-    towerStock: boolean;
     /** The front card is edge-on mid-flip: blank this face, as for a back word card. */
     contentHidden: boolean;
     onGone?: () => void;
     /** The results card was swiped or tapped off: the parent moves the hold on to `skipping`. */
     onSwiped?: () => void;
     children: React.ReactNode;
-}> = ({ hold, towerStock, contentHidden, onGone, onSwiped, children }) => {
+}> = ({ hold, contentHidden, onGone, onSwiped, children }) => {
     const layerRef = useRef<HTMLDivElement | null>(null);
     // Where a swipe let go, so the fly-off carries on from there. Skip starts at rest.
     const releaseRef = useRef<{ dx: number; direction: SwipeDirection } | null>(null);
@@ -122,7 +119,9 @@ const BreakCardLayer: React.FC<{
                 inset: 0,
                 zIndex: hold === "due" ? 1 : 2,
                 borderRadius: CARD_SURFACE.borderRadius,
-                boxShadow: towerStock ? "none" : CARD_SURFACE.boxShadow,
+                // On the tower's card stock: no drop shadow, it lies flush on the deck (a `due`
+                // card lies flush under the front one too, like any back card).
+                boxShadow: "none",
                 // `shrinking` takes touches and does nothing with them (the swipe and the tap
                 // both wait for `results`). The game area has stopped taking input by then,
                 // so without this a learner reaching for the results card as the circle
@@ -130,7 +129,6 @@ const BreakCardLayer: React.FC<{
                 // then marks it, and it flies (z 3) over this card in its green wash.
                 pointerEvents: hold === "title" || hold === "shrinking" || hold === "results" ? "auto" : "none",
                 touchAction: "none",
-                ...(hold === "due" && !towerStock && PLAIN_BACK_CARD_SX),
             }}
         >
             <CardFaceSide
@@ -139,7 +137,6 @@ const BreakCardLayer: React.FC<{
                 showIcon={false}
                 inert={false}
                 contentHidden={contentHidden}
-                towerStock={towerStock}
                 fill={children}
             />
         </Box>

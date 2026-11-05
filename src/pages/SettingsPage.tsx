@@ -15,7 +15,8 @@ function SettingsPage() {
     const navigate = useNavigate();
     return (
         // Settings is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back arrow
-        // (→ Home, since it opens from the gear beside the avatar in the Home header), slides
+        // (→ `/`, the Deck Tower, whose avatar raises the AccountSheet that also carries
+        // Settings as a tab; this route is where /settings/account's Back lands), slides
         // up on enter / down on exit. Phone-frame sizing comes from MobileDemoFrame via
         // Layout.tsx (/settings is in MOBILE_DEMO_PATHS).
         <LeafPage title="Settings" onBack={() => navigate("/")} className="settings-page">

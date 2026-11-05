@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Popper, Typography } from "@mui/material";
 import ForeignText from "../../components/ForeignText";
-import { cpcdNaturalSize, GLYPH_DROP_PX, type CPCDSize } from "../../components/CPCDRow";
+import { type CPCDSize } from "../../components/CPCDRow";
 import { stripParentheses } from "../../utils/definitionUtils";
 import { getToneColor } from "../../utils/toneColors";
 import { FONTS } from "../../theme/fonts";
@@ -246,24 +246,6 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
      * keeps its space), so `reservePinyin` stays true.
      */
     const cellSide = boardCellSide(cellSize, showPinyin);
-
-    /**
-     * No Pinyin mode: how far (px) to drop the glyph so it sits at the tile's
-     * optical center. The cpcd cell keeps its pinyin band (as padding-bottom
-     * under the glyph) even when the syllable is hidden, and the tile
-     * flex-centers that whole glyph+band stack — so with the band empty the
-     * character rides half a band above center. Half the band, measured from
-     * the same tables the cell renders with, puts it back. Zero when pinyin
-     * shows, because then the band is real content and the stack IS the thing
-     * to center. See docs/WORD_SEARCH_GAME.md §3.
-     */
-    const hiddenPinyinGlyphOffset = useMemo(() => {
-        if (showPinyin) return 0;
-        const withBand = cpcdNaturalSize(cellSize, { bigPinyin: false, reservePinyin: true }).height;
-        const withoutBand = cpcdNaturalSize(cellSize, { bigPinyin: false, reservePinyin: false }).height;
-        // The cell paints its glyph GLYPH_DROP_PX low, with or without pinyin.
-        return (withBand - withoutBand) / 2 - GLYPH_DROP_PX[cellSize];
-    }, [cellSize, showPinyin]);
 
     const scale = useFitScale(containerRef, innerRef, [grid, showPinyin, cellSide], GRID_MARGIN);
 
@@ -1055,19 +1037,6 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                         : "none",
                                 }}
                             >
-                                {/* Wrapper exists only to drop the glyph to center in
-                                    No Pinyin mode (`hiddenPinyinGlyphOffset`). A
-                                    transform, not padding, so the tile's square track
-                                    and the fit-scaler's measured box are untouched. */}
-                                <Box
-                                    className="word-search__cell-glyph"
-                                    sx={{
-                                        display: "flex",
-                                        transform: hiddenPinyinGlyphOffset
-                                            ? `translateY(${hiddenPinyinGlyphOffset}px)`
-                                            : undefined,
-                                    }}
-                                >
                                 <ForeignText
                                     size={cellSize}
                                     justifyContent="center"
@@ -1083,8 +1052,14 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
                                     // the syllable is hidden — enlarging it in No Pinyin
                                     // mode would push every glyph up for nothing.
                                     bigPinyin={showPinyin}
+                                    // No Pinyin mode keeps the (empty) pinyin band, so
+                                    // the tile's flex-centering would leave the glyph
+                                    // half a band high; CPCDRow drops it to center as a
+                                    // paint offset, so the square track and the
+                                    // fit-scaler's measured box are untouched.
+                                    // See docs/WORD_SEARCH_GAME.md §3.
+                                    centerGlyphWhenPinyinHidden
                                 />
-                                </Box>
                             </Box>
                         );
                     })

@@ -19,12 +19,12 @@ interface FrequencyScoreDotsProps {
  * Five-dot meter for a word's `frequencyScore` — how often it comes up in everyday
  * conversation (1 = would stop the conversation … 5 = everyday): `score` dots
  * filled, the rest hollow. Shared by the eip frequency row (InfoCardPanelBody) and the
- * discover sort-card mini badge (SortCardsPage) so the two stay visually identical —
+ * discover sort-card mini badge (AddNewCardsPage) so the two stay visually identical —
  * presentation layer, colors passed in by the caller so it adapts to the flashcard
  * theme vs. the app palette.
  *
  * The user-facing caption above this meter reads "Commonality" (VocabCardDetailBody,
- * InfoCardPanelBody) — kept because it now matches the data. SortCardsPage instead
+ * InfoCardPanelBody) — kept because it now matches the data. AddNewCardsPage instead
  * labels each card with its tier ("Used sometimes", …; `COMMONALITY_TIER_LABELS`).
  * Until migration 122 this scored REGISTER, not frequency.
  */

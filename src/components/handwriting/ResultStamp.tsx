@@ -35,7 +35,7 @@ interface ResultStampProps {
     /** Distance from the cell's top and right edges (px). */
     inset: number;
     /**
-     * Wait before stamping (ms) — e.g. the writing flp passes CARD_FLIP_MS so the stamp
+     * Wait before stamping (ms) — e.g. the writing flp passes TOWER_CARD_FLIP_MS so the stamp
      * lands once the back face has turned toward the learner, not mid-flip. The icon is
      * hidden during the wait (`animation-fill-mode: both` holds the 0 % frame).
      */

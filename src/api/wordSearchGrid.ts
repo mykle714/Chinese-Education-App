@@ -8,7 +8,6 @@
  * Docs: docs/WORD_SEARCH_GAME.md, docs/FLP_GAME_BREAKS.md § 4.
  */
 import { apiGet, type QueryParams } from './http';
-import { collectionLaunchParams, type CollectionRef } from '../features/flashcards/collectionRef';
 import type { GamePoolDistribution } from './gamePool';
 import type { WordSearchResponse } from '../games/word-search/types';
 import type { WordSearchBoardId } from '../../server/contracts/wire';
@@ -20,8 +19,6 @@ export interface WordSearchGridRequest {
     board?: WordSearchBoardId;
     /** Band quotas. */
     distribution: GamePoolDistribution;
-    /** Launch collection. */
-    collection?: CollectionRef | null;
     /** `useChallengeRound().poolParams`, the `&`-prefixed suffix, passed through verbatim. */
     challengeParams?: string;
     /** An flp game break's working loop (docs/FLP_GAME_BREAKS.md § 4). */
@@ -40,7 +37,6 @@ export interface WordSearchGridRequest {
 export function wordSearchGridParams(req: WordSearchGridRequest): QueryParams {
     const params: QueryParams = { mode: req.mode };
     for (const [cat, n] of Object.entries(req.distribution)) params[cat] = n;
-    if (req.collection) Object.assign(params, collectionLaunchParams(req.collection));
     if (req.seedIds?.length) params.seedIds = req.seedIds.join(',');
     if (req.flpBreak) params.flpBreak = 1;
     if (req.board && req.board !== 'standard') params.board = req.board;

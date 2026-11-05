@@ -11,7 +11,6 @@ import { useGameWins } from "../../hooks/useGameWins";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { markFlashcard } from "../../api/flashcards";
 import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import { isProvisional, provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
 import { formatTimeMs } from "../../utils/timeUtils";
 import type { Language, MarkType, VocabEntry } from "../../types";
@@ -54,8 +53,6 @@ interface BucketDropStageProps {
      * where it is `runTrackFor(language, modeConfig)`.
      */
     track?: MarkType;
-    /** The launch's deck/collection; rides the pool request. */
-    collection: CollectionRef | null;
     /** An flp break's working loop, seeding the board (docs/FLP_GAME_BREAKS.md § 4). */
     seedIds?: number[];
     /** An flp break's board, fetched while the card before it was up, so Play has no spinner. */
@@ -67,7 +64,7 @@ interface BucketDropStageProps {
     /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
-    onCardCleared?: () => void;
+    onCardCleared?: (cardId: number) => void;
 }
 
 /**
@@ -119,7 +116,6 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     Frame,
     modeConfig,
     track,
-    collection,
     seedIds,
     prefetchedPool,
     onDone,
@@ -188,7 +184,6 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
         try {
             const data = await fetchGamePool(bucketDropPoolRequest({
                 markType: lockRunTrack(),
-                collection,
                 challengeParams: challengeParamsRef.current,
                 seedIds,
                 flpBreak: isBreak,
@@ -196,7 +191,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
             // NO CARD-COUNT GATE: the server has already lent cards up to the baseline
             // (docs/PROVISIONAL_CARDS.md). Only an empty pool cannot be played.
             if (!data.cards.length) {
-                setBlockMessage("No cards are playable right now. Sort a few words in Discover and try again.");
+                setBlockMessage("No cards are playable right now. Sort a few words in Add New Cards and try again.");
                 setPhase("blocked");
                 return null;
             }
@@ -207,9 +202,8 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
             setPhase("blocked");
             return null;
         }
-        // `collection`, `seedIds` and `isBreak` are fixed for the Stage's lifetime (the
-        // page's URL; the break's dealt loop); `tts` is read at call time. No token
-        // anywhere (CLAUDE.md ⛔).
+        // `seedIds` and `isBreak` are fixed for the Stage's lifetime (the break's dealt
+        // loop); `tts` is read at call time. No token anywhere (CLAUDE.md ⛔).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lockRunTrack]);
 
@@ -320,7 +314,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
             markFlashcard({ cardId: entry.id, isCorrect: correct, type: runTrackRef.current ?? modeConfig.markType, surface: GAME_ID })
                 .then((result) => {
                     // The Deck Tower's tally: a recorded correct mark on a card that was on it.
-                    if (correct && !result.suppressed && !isProvisional(entry) && !entry.outsideFocus) onCardClearedRef.current?.();
+                    if (correct && !result.suppressed && !isProvisional(entry) && !entry.outsideFocus) onCardClearedRef.current?.(entry.id);
                 })
                 .catch((err) => console.error(`[BucketDrop] mark failed → card ${entry.id}:`, err));
         }

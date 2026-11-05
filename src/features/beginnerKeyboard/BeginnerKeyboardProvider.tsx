@@ -75,6 +75,7 @@ import {
   asEditableField,
   defaultSourceOf,
   isEligibleField,
+  lockedSourceOf,
   isKeepOpenTarget,
   isKeyboardDisabledPath,
   type EditableField,
@@ -170,10 +171,21 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
    * would otherwise snap the learner's choice straight back to the default.
    */
   const [fieldSource, setFieldSource] = useState<KeyboardSource | null>(null);
-  const effectiveSource = fieldSource ?? source;
+  /**
+   * § 6z-3b: the ONE keyboard the current field allows (`data-beginner-keyboard-lock`),
+   * or null. Wins over both the field default and the session choice, and makes a
+   * source change a no-op — the switch bar hides its toggle for such a field, so
+   * the guard only matters if something else asks. Re-seeded with `fieldSource`.
+   */
+  const [fieldLock, setFieldLock] = useState<KeyboardSource | null>(null);
+  const effectiveSource = fieldLock ?? fieldSource ?? source;
   const changeSource = useCallback(
-    (next: KeyboardSource) => (fieldSource !== null ? setFieldSource(next) : setSource(next)),
-    [fieldSource, setSource],
+    (next: KeyboardSource) => {
+      if (fieldLock !== null) return;
+      if (fieldSource !== null) setFieldSource(next);
+      else setSource(next);
+    },
+    [fieldLock, fieldSource, setSource],
   );
 
   /**
@@ -246,7 +258,10 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
         // The trigger. Also the retarget path: moving between two eligible
         // fields swaps the insertion target without an exit/enter flicker,
         // because `open` never goes false.
-        if (candidate !== fieldRef.current) setFieldSource(defaultSourceOf(candidate));
+        if (candidate !== fieldRef.current) {
+          setFieldSource(defaultSourceOf(candidate));
+          setFieldLock(lockedSourceOf(candidate));
+        }
         setField(candidate);
         setOpen(true);
         return;
@@ -341,6 +356,7 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
           field={field}
           open={open}
           source={effectiveSource}
+          locked={fieldLock !== null}
           onSourceChange={changeSource}
           onDismiss={close}
           onClosed={release}

@@ -75,7 +75,7 @@ function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
 
     const unused = {} as never;
     return new StudyChallengeService(
-        challengeDAL, unused, userDAL as never, unused, unused, unused, unused
+        challengeDAL, unused, userDAL as never, unused, unused
     );
 }
 

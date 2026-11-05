@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Box, Button, Typography, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -8,12 +8,11 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { fetchGamePool, type GamePoolDistribution, type GamePoolResponse } from "../../api/gamePool";
-import { collectionTitle, type CollectionRef } from "../../features/flashcards/collectionRef";
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 import { matchSpeedPoolRequest } from "./poolRequest";
 import { COLORS } from "../../theme/colors";
-import type { Language, VocabEntry } from "../../types";
+import type { Language, MarkType, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
 import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
 import { usePersonalBest } from "../shared/usePersonalBest";
@@ -30,20 +29,23 @@ import {
     topUpRequest,
     type CardBuffer,
 } from "./cardBuffer";
-import type { CardPair, GameCategory, ModeConfig, Phase } from "./types";
+import type { CardPair, GameCategory, Phase } from "./types";
 import { dealChallengePairs, emptyDealState, type ChallengeDealState } from "./challengeDeal";
 import {
     COUNTDOWN_STEPS,
     COUNTDOWN_STEP_MS,
     GAME_KEY,
     MARK_TYPE,
+    PERSONAL_BEST_MODE,
+    POOL_DISTRIBUTION,
     TARGET_PAIRS,
+    WIN_LEVEL,
     medalForTime,
     runResultAccuracy,
     runResultScore,
     runResultTitle,
-    widenedMode,
     BREAK_CARD_ASPECT,
+    CATEGORY_FALLBACK_ORDER,
     BREAK_CARD_SCALE,
     CARD_ASPECT,
 } from "./constants";
@@ -65,13 +67,13 @@ export interface MatchSpeedStageProps {
     Frame: ComponentType<GameStageFrameProps>;
     /** Header controls, passed through to `Frame` (the page's pinyin chip). */
     headerRight?: ReactNode;
-    /** The difficulty mode's config — the hub's `state.mode`, or the flp's study mode. */
-    baseModeConfig: ModeConfig;
     /** Pinyin on the board. The page passes the learner's setting; an flp break passes
         the flp bar's answer (core ⇒ shown — docs/FLP_GAME_BREAKS.md § 5a). */
     showPinyin: boolean;
-    /** Launch collection; rides EVERY pool request, top-ups included. */
-    collection: CollectionRef | null;
+    /** The track this run marks (and draws its pool by). Omitted ⇒ `MARK_TYPE`
+        (recognition) — the page host. An flp break passes its candidate's track:
+        `reading` on the reading flp, where pinyin is hidden (docs/FLP_GAME_BREAKS.md § 3). */
+    markType?: MarkType;
     /** flp break only: the working loop to seed the OPENING board with (§ 4). */
     seedIds?: number[];
     /** flp break only: the opening pool, already fetched while card 10 was on screen,
@@ -83,7 +85,7 @@ export interface MatchSpeedStageProps {
     /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
-    onCardCleared?: () => void;
+    onCardCleared?: (cardId: number) => void;
 }
 
 /**
@@ -109,12 +111,9 @@ export interface MatchSpeedStageProps {
  * Flow: loading → (blocked) → countdown → playing → ended → (popup minimized =
  * cleanup) → Play Again → countdown …
  *
- * The difficulty MODE (Study Mix / Review / Challenge) arrives as `baseModeConfig` —
- * the Games hub's `location.state.mode` (read by MatchSpeedPage), or the flp session's
- * study mode in a game break (same slugs: `review` / `challenge`, else Mix); it only narrows which mastery buckets the pool may
- * draw from (the /decks rule) — the clock, board and medals are identical across
- * modes. Everything mode-dependent is read off one `ModeConfig`; see
- * docs/MATCH_SPEED_GAME.md § Difficulty modes.
+ * One difficulty (the Study Mix weight table, constants.ts → CATEGORY_WEIGHTS): the
+ * Review/Challenge modes were removed (docs/DEFERRED_WORK.md § 31), so every host deals
+ * the same distribution (`POOL_DISTRIBUTION`).
  *
  * Layer split: this stage owns ALL I/O (the pool fetch, the buffer, marks, the
  * clock) and the phase machine; `MatchSpeedBoard` owns board/selection state and
@@ -131,9 +130,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     host,
     Frame,
     headerRight,
-    baseModeConfig,
     showPinyin,
-    collection: launchCollection,
+    markType = MARK_TYPE,
     seedIds,
     prefetchedPool,
     onDone,
@@ -153,38 +151,14 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     const { showPinyinColor } = settings;
     const { recordWin } = useGameWins(GAME_KEY);
 
-    // `baseModeConfig` is a module constant (MODE_CONFIGS), so its identity is stable
-    // across renders and it is safe in effect/callback dep arrays.
-
-    // RELAXED MODE (docs/PROVISIONAL_CARDS.md § Nothing blocks on card count).
-    //
-    // Review/Challenge restrict the board to their own mastery buckets (MODE_CONFIGS in
-    // constants.ts — Review = Comfortable + Mastered, Challenge = Unfamiliar + Target).
-    //
-    // A lent card starts with an EMPTY mark history, so it is Unfamiliar. That means
-    // provisioning fills CHALLENGE's buckets for free, but can never fill REVIEW's:
-    // Comfortable and Mastered are earned, not granted, so a learner with no real
-    // progress has nothing on-mode no matter how many cards we lend them.
-    //
-    // Rather than blocking Review for everyone who hasn't got a card comfortable yet, a
-    // run with nothing on-mode widens the fallback order to all four buckets, so the
-    // server's cross-bucket top-up actually reaches the board.
-    //
-    // The mode's WEIGHTS are untouched: once the learner has real on-mode cards the
-    // widened fallback stops being reached and the mode plays exactly as designed.
-    const [relaxed, setRelaxed] = useState(false);
-    // Fastest finish per difficulty mode, keyed on the mode slug
-    // (docs/MATCH_SPEED_GAME.md § Personal best).
+    // Fastest finish, keyed on the Study Mix slug every existing best was recorded
+    // under (docs/MATCH_SPEED_GAME.md § Personal best).
     const {
         best: personalBestPairs,
         isNewBest,
         record: recordPersonalBest,
         reset: resetPersonalBest,
-    } = usePersonalBest("match-speed-30", baseModeConfig.mode);
-    const modeConfig = useMemo(
-        () => (relaxed ? widenedMode(baseModeConfig) : baseModeConfig),
-        [relaxed, baseModeConfig]
-    );
+    } = usePersonalBest("match-speed-30", PERSONAL_BEST_MODE);
 
     // Temporary cards are in play this run. Match Speed deals from a rolling buffer, so
     // the played set isn't known up front — the notice is the GENERIC form (no word
@@ -300,7 +274,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             const data = await fetchGamePool(matchSpeedPoolRequest({
                 distribution,
                 exclude: [...onBoardIdsRef.current, ...bufferedEntryIds(bufferRef.current)],
-                collection: launchCollection,
                 challengeParams: challengeParamsRef.current,
                 // MID-RUN TOP-UPS ARE FILLER ONLY (§ 5.3). The contested words
                 // are dealt once, from the opening fetch, and are never recycled back
@@ -310,6 +283,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                 // An flp break seeds the OPENING board only; a top-up is a refill of
                 // what the run has used, never another pass over the working loop.
                 seedIds: topUp ? undefined : seedIds,
+                markType,
                 // On every request, top-ups included: a focused flp break stays outside
                 // the day's set for the whole run (docs/FOCUS_MODE.md § 4a).
                 flpBreak: isBreak,
@@ -320,8 +294,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         },
         // apiGet reads the token at call time, so this callback's identity stays
         // stable across a silent token refresh. See CLAUDE.md "Never reload on token
-        // refresh". `launchCollection`, `seedIds` and `isBreak` are likewise omitted: all
-        // are fixed for the stage's lifetime (the page's URL; the break's dealt loop).
+        // refresh". `seedIds`, `markType` and `isBreak` are likewise omitted: all are
+        // fixed for the stage's lifetime (the break's dealt loop).
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -338,7 +312,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         // Enough cards are already in hand to finish the run: stop fetching.
         const inHand = bufferSize(bufferRef.current) + dealStateRef.current.contested.length;
         if (TARGET_PAIRS - dealtPairsRef.current <= inHand) return;
-        const request = topUpRequest(bufferRef.current, modeConfig);
+        const request = topUpRequest(bufferRef.current);
         if (!request) return;
         topUpInFlightRef.current = true;
         fetchPool(topUpDistribution(request), true)
@@ -349,17 +323,11 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                     // reaction-time game clock and lands over a board the player is
                     // mid-tap on. Lent cards arriving mid-run are visible instead
                     // through the corner badge on the card itself (MatchSpeedCard).
-                    fillBuffer(bufferRef.current, data.cards, modeConfig);
+                    fillBuffer(bufferRef.current, data.cards);
                     // A RUN MUST ALWAYS BE ABLE TO FINISH: with no clock, a board that
-                    // stops being fed would hang forever. So when this mode's own
-                    // buckets are spent, widen to what the server did send (a
-                    // relaxed run, so it sets no personal best)…
-                    if (bufferSize(bufferRef.current) === 0 && data.cards.length > 0) {
-                        fillBuffer(bufferRef.current, data.cards, widenedMode(modeConfig));
-                        setRelaxed(true);
-                    }
-                    // …and when the server has nothing at all and the board has
-                    // drained, end the run where it stands.
+                    // stops being fed would hang forever. So when the server has
+                    // nothing at all and the board has drained, end the run where it
+                    // stands.
                     if (
                         bufferSize(bufferRef.current) === 0
                         && dealStateRef.current.contested.length === 0
@@ -373,7 +341,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             .finally(() => {
                 topUpInFlightRef.current = false;
             });
-    }, [fetchPool, modeConfig]);
+    }, [fetchPool]);
 
     /**
      * Hand the board `count` pairs, remembering them as on-board for `exclude`.
@@ -389,7 +357,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
      */
     const drawPairs = useCallback((count: number): CardPair[] => {
         const takeFiller = (n: number): CardPair[] =>
-            takePairs(bufferRef.current, n, Math.random, modeConfig, (pair) =>
+            takePairs(bufferRef.current, n, Math.random, (pair) =>
                 onBoardIdsRef.current.has(pair.entry.id)
             );
 
@@ -404,7 +372,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         dealtPairsRef.current += pairs.length;
         pairs.forEach((p) => onBoardIdsRef.current.add(p.entry.id));
         return pairs;
-    }, [modeConfig, challengeRound.active]);
+    }, [challengeRound.active]);
 
     // The flp break's prefetched opening pool, handed over ONCE: the first run adopts
     // it, and anything after (there is no Play Again on that host, but a remount-less
@@ -424,26 +392,12 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             const handedOver = prefetchedRef.current;
             prefetchedRef.current = null;
             if (handedOver) handedOver.cards.forEach((c) => tts.prefetch(c));
-            const data = handedOver ?? await fetchPool(baseModeConfig.poolDistribution);
+            const data = handedOver ?? await fetchPool(POOL_DISTRIBUTION);
             if (!data) return;
             // NO CARD-COUNT GATE. The server topped the player up to the Match Speed
             // baseline before building this pool, so `sufficient` can only be false
             // when the dictionary itself ran dry — and a short buffer still deals a
             // playable run. See docs/PROVISIONAL_CARDS.md.
-            // How much the player has inside the mode's OWN buckets. This used to be a
-            // second block ("you have no Comfortable or Mastered cards"); it now only
-            // decides whether this run needs the widened fallback — in practice that is
-            // Review, whose buckets provisioning cannot fill.
-            // Read off the BASE config: `modeConfig` may still be the last run's widened copy.
-            const inModeAvailable = baseModeConfig.categories.reduce(
-                (sum: number, cat: GameCategory) => sum + (data.available[cat] ?? 0),
-                0
-            );
-            // Nothing on-mode: widen the fallback for this run instead of blocking (see
-            // `relaxed` above). The board fills from whatever the server could give,
-            // which for a new learner is a set of freshly-lent Unfamiliar cards.
-            const runMode = inModeAvailable === 0 ? widenedMode(baseModeConfig) : baseModeConfig;
-            setRelaxed(inModeAvailable === 0);
 
             // Generic notice only — Match Speed cannot name its set up front. Fired
             // from HERE and nowhere else: this is the one moment before the clock
@@ -462,15 +416,15 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                         pairId: `pair-${card.id}`,
                         entry: card,
                         // The buffer's category stamp is a BAND, and a contested pair
-                        // is not drawn by band — it is dealt by the alternation. Any
-                        // in-mode value keeps `CardPair` honest without implying the
-                        // roll could have produced it.
-                        category: (card.gameCategory ?? runMode.fallbackOrder[0]) as GameCategory,
+                        // is not drawn by band — it is dealt by the alternation. The
+                        // first fallback bucket stands in for a missing stamp, as in
+                        // `fillBuffer`.
+                        category: (card.gameCategory ?? CATEGORY_FALLBACK_ORDER[0]) as GameCategory,
                     });
                     return false;
                 })
                 : data.cards;
-            fillBuffer(bufferRef.current, dealt, runMode);
+            fillBuffer(bufferRef.current, dealt);
             setScore(0);
             setAttempts(0);
             setFinishMs(0);
@@ -486,7 +440,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         // `challengeRound`'s members are stable by construction; the object identity
         // is not, and listing it would re-create `beginRun` on every render.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchPool, baseModeConfig, resetMarkedLent]);
+    }, [fetchPool, resetMarkedLent]);
 
     // A challenge round that cannot be played is stated, never silently downgraded
     // to a casual run that scores nothing.
@@ -513,11 +467,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         // ordinary launch nothing (`active` is false and the guard never fires).
         if (challengeRound.active && !challengeRound.ready) return;
         void beginRun();
-        // Keyed on the mode too: navigating from one hub sub-card to another lands
-        // on the SAME route with only `state.mode` changed, so without this a
-        // remount-less switch would keep playing the previous mode's buffer.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, modeConfig.mode, challengeRound.active, challengeRound.ready]);
+    }, [user?.id, challengeRound.active, challengeRound.ready]);
 
     // ── Popup pause gate ─────────────────────────────────────────────────────
     // No game clock may run while a MODAL popup is covering the board: the
@@ -567,9 +518,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     }, [phase, clockPaused]);
 
     // Bank the win badge on a gold run only, once the run has ended. Gold-only
-    // keeps the hub badge an achievement rather than a play counter. The win is
-    // logged under the MODE's level key, so the hub stars the mode that was
-    // actually cleared (Mix keeps key 1 — the game's pre-modes key).
+    // keeps the hub badge an achievement rather than a play counter. Logged under
+    // WIN_LEVEL (1), the key the game's win history has always used.
     useEffect(() => {
         if (phase !== "ended") return;
         // `won: true` unconditionally: Match Speed has no win/loss and no survival
@@ -578,12 +528,10 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         challengeRound.finish(true);
         // An unfinished run (left early, or out of cards) has no finish time to judge.
         const finished = score >= TARGET_PAIRS;
-        if (finished && medalForTime(finishMs)?.medal === "gold") recordWin(modeConfig.winLevel);
+        if (finished && medalForTime(finishMs)?.medal === "gold") recordWin(WIN_LEVEL);
         // A challenge round's deal is the round's shared word set, not the player's
-        // own pool, so it does not compete with their personal best. Nor does a
-        // RELAXED run: a Review/Challenge run that widened to every bucket was a
-        // different (easier) board than its mode's, and must not set that mode's best.
-        newBestRef.current = finished && !challengeRound.active && !relaxed
+        // own pool, so it does not compete with their personal best.
+        newBestRef.current = finished && !challengeRound.active
             ? recordPersonalBest(finishMs)
             : Promise.resolve(false);
         // Runs once per run end; recordWin's identity is not stable across renders.
@@ -598,12 +546,12 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
      */
     const markCard = useCallback(
         (entry: VocabEntry, isCorrect: boolean) => {
-            // Match Speed is a recognition drill (foreign → meaning), same track
-            // as Bubble Match. excludeIds defaults to []: the game doesn't use the
-            // replacement card the endpoint returns.
-            markFlashcard({ cardId: entry.id, isCorrect, type: MARK_TYPE, surface: "match-speed" })
+            // A foreign → meaning drill: recognition with pinyin, reading on the
+            // reading flp's no-pinyin break (`markType` prop). excludeIds defaults to
+            // []: the game doesn't use the replacement card the endpoint returns.
+            markFlashcard({ cardId: entry.id, isCorrect, type: markType, surface: "match-speed" })
                 .then((result) => {
-                    if (isCorrect && !result.suppressed && !isProvisional(entry) && !entry.outsideFocus) onCardClearedRef.current?.();
+                    if (isCorrect && !result.suppressed && !isProvisional(entry) && !entry.outsideFocus) onCardClearedRef.current?.(entry.id);
                 })
                 .catch((err) => console.error(`[MatchSpeed] mark failed → card ${entry.id}:`, err));
             // Feeds the end-of-run "keep these cards?" offer. Recorded on the ATTEMPT,
@@ -623,7 +571,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         // No `token` dep — markFlashcard reads the header at call time, so this
         // callback's identity is stable across a silent refresh (CLAUDE.md ⛔ rule).
         // The challenge round's emit/isContested are stable by construction, as is
-        // `noteMarkedLent` (useCallback with no deps).
+        // `noteMarkedLent` (useCallback with no deps). `markType` is fixed for the
+        // stage's lifetime (the page's constant, or the break's dealt candidate).
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -788,19 +737,16 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
 
                 {showBoard && (
                     <GameFrame className="match-speed__frame">
-                        {/* What this run IS, and how it is going. The mode is chosen on
-                            the hub and the collection on /decks, so neither is visible
-                            anywhere else once the run starts. An flp break has no strip:
-                            the session already picked the mode and deck, and a blank row
-                            keeps the board clear of Leave's arrow at the top-left
+                        {/* How the run is going: the score, pinned right like Writing
+                            Grid's one-label strip (the game has one mode and no launch
+                            collection, so there is nothing to name on the left). An flp
+                            break has no strip: a blank row keeps the board clear of
+                            Leave's arrow at the top-left
                             (docs/MATCH_SPEED_GAME.md § The HUD strip and the hint line). */}
                         {isBreak ? (
                             <Box className="match-speed__exit-clearance" sx={{ flexShrink: 0, height: GAME_FRAME_EXIT_CLEARANCE_PX }} />
                         ) : (
-                            <GameHud className="match-speed__hud">
-                                <GameHudLabel className="match-speed__hud-mode">
-                                    {modeConfig.label} · {launchCollection ? collectionTitle(launchCollection) : "All cards"}
-                                </GameHudLabel>
+                            <GameHud className="match-speed__hud" sx={{ justifyContent: "flex-end" }}>
                                 <GameHudLabel className="match-speed__hud-score">{score}/{TARGET_PAIRS} matched</GameHudLabel>
                             </GameHud>
                         )}

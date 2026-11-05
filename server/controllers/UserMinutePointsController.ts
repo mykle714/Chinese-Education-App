@@ -94,7 +94,7 @@ export class UserMinutePointsController {
   /**
    * GET /api/users/minutePoints/summary?language=<lang>&tz=<IANA>&timestamp=<ISO>
    * That language's lifetime total, today's and yesterday's minutes, NET wallet, streak,
-   * and whether today's hp banking run is still owed (`bankingPending`) — every figure
+   * and whether today's td banking run is still owed (`bankingPending`) — every figure
    * scoped to the one language (migration 130). Powers the home screen, the fire badge
    * and the daily banking animation (docs/DAILY_MINUTE_BANKING.md).
    */
@@ -120,7 +120,7 @@ export class UserMinutePointsController {
   /**
    * POST /api/users/minutePoints/bankingSeen
    * Body: { language: <supported>, timestamp: ISO-8601, tz: IANA }
-   * Marks the hp daily banking animation as started for this (user, language) today,
+   * Marks the td daily banking animation as started for this (user, language) today,
    * so it plays once per account across devices. 204 on success. Sent when the run
    * STARTS (docs/DAILY_MINUTE_BANKING.md § 5).
    */

@@ -47,10 +47,11 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 | `mastered` | Mastered | MASTERED | `RAMP[MASTERY_BAR_HUES.core].mid` (`bluM`) for both — blue in every world | `builtinCollectionCount({ kind: "mastered", bar }, …)`: `useMasteredCounts().counts[bar]` |
 
 `bar` is the world's id (`core` / `reading` / `writing`, towerWorlds.ts). Learning
-is the ready cards of all four bands, by the flp's readiness rule — the study hand's Mix
-figure — NOT the fdp's Learning tile, which counts cooling cards and leaves out
-Mastered. Mastered matches the Mastered tile. A band is the deck's fdp hue at the `mid` tier, because the pale
-`surface` tier washes out on the cream card face.
+is the ready cards of all four bands, by the flp's readiness rule — NOT the cards page's
+Learning filter key, which counts cooling cards and leaves out Mastered
+(`builtinCollectionCount({ kind: "learn-now" })`). Mastered matches the Mastered filter
+key. A band is the deck's hue at the `mid` tier, because the pale `surface` tier washes
+out on the cream card face.
 
 `titleDeck` is the deck face-up on the plate; it changes at the moment the plate's face
 changes (the pawn's shaded copy of the plate follows it). The page title names the world,
@@ -152,7 +153,10 @@ area is the plate grown by 0.5 units on every side (`labelPlateHit`), because th
 ### The plate button
 
 `usePlatePress` (spread on the plate's `<g>` by `DeckTowerPlatform`). At rest the plate
-stands slightly raised (`IsoFloorLabel` `raised` = 1) so it reads as a push button.
+stands slightly raised (`IsoFloorLabel` `raised` = 1) so it reads as a push button. Its walls
+are its band shaded down; the yellow Learning plate takes deeper steps (`towerDecks.ts` →
+`TOWER_DECKS` `plateWallSteps`, carried on `PlateFace.wallSteps` to `IsoFloorLabel` `wallSteps`)
+so its edges stand out from the face.
 
 1. **Press** (pointer down, or Enter / Space down): it sinks flush with the floor over
    `PRESS_MS` (80 ms, ease-out).

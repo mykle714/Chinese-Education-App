@@ -4,13 +4,13 @@ import {
     IsoScene,
     IsoSolid,
     bandMaterial,
+    deckUnderLayerMaterial,
     faceTransform,
     flatPath,
     makeProjector,
     platformTone,
     prism,
     shadeHex,
-    type Material,
     type WorldRect,
 } from "../deckTower/iso";
 import { COLORS } from "../../theme/colors";
@@ -20,7 +20,7 @@ import type { SortLook } from "./sortTimeOfDay";
 import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
 
 /**
- * SortBins — scp's two drop targets drawn as iso decks on floating platforms
+ * SortBins — ancp's two drop targets drawn as iso decks on floating platforms
  * (docs/SORT_CARDS_REQUIREMENTS.md § 4.5 "Bins"; Claude Design "Tower Tier 2 - Time of
  * Day", the "Sort ·" artboards → `sbins` / `sdeck`).
  *
@@ -39,7 +39,7 @@ import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
  *
  * The page hit-tests drops against each bin's group (`registerBin`), which rides the bob.
  *
- * Depends on: deckTower/iso, sortTimeOfDay.ts. Depended on by: SortCardsPage.tsx.
+ * Depends on: deckTower/iso, sortTimeOfDay.ts. Depended on by: AddNewCardsPage.tsx.
  */
 
 export interface SortBinSpec {
@@ -91,20 +91,19 @@ const MAX_LAYERS = 20;
 const COUNT_AT = { x: 2.2, y: 3 };
 /** The count's type size in world units (the artboard's 26px under a 0.9 face scale). */
 const COUNT_SIZE = 1.8;
-/** The name's type size in world units (≈ 13px on screen). */
-const NAME_SIZE = 0.9;
-/** Line pitch of a two-line name. */
-const NAME_LINE = 1.05;
+/** The name's type size in world units (≈ 12px on screen; was 0.9 ≈ 13px until 2026-11-04). */
+const NAME_SIZE = 0.8;
+/** Line pitch of a two-line name — kept at ~1.17 × NAME_SIZE, so it shrinks with the type. */
+const NAME_LINE = 0.93;
 /**
  * The count + name block, centred on COUNT_AT along world y (the face's "down" in reading
  * order): the count sits half a block above the centre, the name's lines below it.
- * A name longer than NAME_LINE_MAX_CHARS ("Already Know") breaks onto one line per word —
- * the deck's top is only 4.4 units wide, too narrow for it on one line at a legible size.
- * A shorter one ("To Learn") stays on one line.
+ * Every name breaks onto one line per word ("To / Learn", "Already / Learned") — the deck's
+ * top is only 4.4 units wide, too narrow for "Already Learned" on one line at a legible size,
+ * and "To Learn" stacks the same way so the two bins print as a matching pair
+ * (user request 2026-11-04; it used to stay on one line).
  */
 const COUNT_NAME_GAP = 0.35;
-/** The longest name kept on one line (≈ 0.58 em per character × NAME_SIZE ≤ the deck's 4.4 width). */
-const NAME_LINE_MAX_CHARS = 8;
 
 /** Screen x of each bin's origin in the scene's 390-wide box (the artboard's bin centres + 10.5). */
 const BIN_ORIGIN_X = [115.5, 295.5] as const;
@@ -169,15 +168,6 @@ const BIN_CSS = `
 @media (prefers-reduced-motion: reduce) { .sort-bins__bin { transition: none; } }
 `;
 
-/** A lower layer's material: the card colour stepped down, alternating so the seams read. */
-function underLayerMaterial(color: string, k: number): Material {
-    return {
-        top: shadeHex(color, 0.2),
-        left: shadeHex(color, k % 2 ? 0.1 : 0.15),
-        right: shadeHex(color, k % 2 ? 0.18 : 0.23),
-    };
-}
-
 const proj = makeProjector(UNIT);
 
 interface SortBinProps {
@@ -199,7 +189,7 @@ function prefersReducedMotion(): boolean {
  */
 const BinPrint: React.FC<{ count: number; z: number; label: string; ink: string }> = ({ count, z, label, ink }) => {
     // Count over name, the pair centred on COUNT_AT (see COUNT_NAME_GAP).
-    const nameLines = label.length > NAME_LINE_MAX_CHARS ? label.split(" ") : [label];
+    const nameLines = label.split(" ");
     const blockHeight = COUNT_SIZE + COUNT_NAME_GAP + nameLines.length * NAME_LINE;
     const countY = COUNT_AT.y - blockHeight / 2 + COUNT_SIZE / 2;
     const nameY = countY + COUNT_SIZE / 2 + COUNT_NAME_GAP + NAME_LINE / 2;
@@ -246,7 +236,7 @@ const SortBin: React.FC<SortBinProps> = ({ spec, count, active, look, registerBi
         () =>
             Array.from({ length: shown }, (_, k) => ({
                 geometry: prism(proj, DECK, k * LAYER_PITCH, k * LAYER_PITCH + LAYER_SOLID),
-                material: k === shown - 1 ? bandMaterial(spec.color) : underLayerMaterial(spec.color, k),
+                material: k === shown - 1 ? bandMaterial(spec.color) : deckUnderLayerMaterial(spec.color, k),
             })),
         [shown, spec.color],
     );

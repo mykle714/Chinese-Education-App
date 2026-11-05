@@ -12,8 +12,8 @@ import { BAND_COLORS } from "../utils/categoryColors";
 // tile is gone app-wide and the spine is the single visual for a set of cards.
 //
 // A "compact" preset plus an `onDeckClick` interactive mode used to live here for a
-// tappable row on the /decks page. That page renders its own shelf now, so this file
-// no longer carries a second variant for it.
+// tappable row on the old decks page; that page (deleted 2026-11-04) had long since
+// rendered its own shelf, so this file carries one display-only variant.
 
 /**
  * `Shelf`'s own page gutter, in px (components/shelf/Shelf.tsx). Restated here
@@ -138,11 +138,10 @@ const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
  * (don't know it) → a target (working on it) → a check (comfortable) → a trophy
  * (done).
  *
- * ⚠️ The trophy USED to be the same glyph the fdp gave its Mastered collection, so
- * "mastered" read as one idea across both pages. The fdp moved to `check_circle` on
- * 2026-08-31 (`features/flashcards/collectionGlyph.ts`), which is the glyph this row
- * already spends on *Comfortable* — so the two pages now disagree and this row cannot
- * simply follow without colliding with itself. See docs/DECKS_FEATURE.md § glyphs.
+ * ⚠️ The trophy is NOT the glyph the Mastered collection wears elsewhere: that is
+ * `check_circle` (`features/flashcards/collectionGlyph.ts`, read by the Deck Tower's
+ * cards-page filter keys), which this row already spends on *Comfortable* — so the two
+ * disagree and this row cannot simply follow without colliding with itself.
  *
  * Material Symbols names rather than icon elements (decision D3) — the spine sizes
  * the glyph in `cqw` against its own width, which it cannot do to an opaque
@@ -172,11 +171,10 @@ interface DeckBucketsProps {
 
 /**
  * The four flashcard deck buckets (Unfamiliar / Target / Comfortable / Mastered),
- * each showing its per-category card count. Display-only — the tappable equivalents
- * are the fdp's collection spines. Rendered only through
+ * each showing its per-category card count. Display-only. Rendered only through
  * `components/velocity/LibraryShelfWithVelocity`, which hangs the Velocity card's
- * boundary arrows off these spines. Its hosts are the Account sheet
- * (`src/pages/AccountSheet.tsx`) and, per language, the user profile's stats card
+ * boundary arrows off these spines. Its hosts are the Account sheet's Account
+ * pane (`src/pages/account/AccountPane.tsx`) and, per language, the user profile's stats card
  * (`src/features/profile/ProfileStatsCard.tsx`). The profile is the narrow host that the
  * `gutter` prop and the fitted spine width exist for.
  *

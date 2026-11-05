@@ -57,8 +57,8 @@ export const FLP_CARD_CORNER_RATIO = 0.09375;
  * The Deck Tower card's STOCK RIM as a fraction of the card's WIDTH: how far the beige
  * printed panel sits in from the card's cream edge, on every side. The tower draws it as
  * IsoCard's `FACE_PAD` (0.34 world units on a 4.8-wide card — keep the two in step); the
- * tower-hosted flp paints the same rim + panel on its faces (CardFaceSide `towerStock`,
- * FlashCardSection's `--card-stock-inset`), so the study card and the tower's own cards
+ * flp paints the same rim + panel on every face (CardFaceSide, FlashCardSection's
+ * `--card-stock-inset`), so the study card and the tower's own cards
  * are one card stock. Docs: docs/TOWER_STYLE_SHIFT.md § "Card stock".
  */
 export const FLP_CARD_STOCK_INSET_RATIO = 0.34 / 4.8;
@@ -89,7 +89,7 @@ export const CARD_FLIP_MS = 250;
 // at CARD_FLIP_MS / 2, so the hide fires precisely at edge-on — no flash.
 export const cardFlipTransition = (flipMs: number): string => `transform ${flipMs}ms linear`;
 
-// The Deck Tower's flip (FlashCardSection `towerStack`) is slower. Every place that times
+// The flp's flip in the Deck Tower (FlashCardSection) is slower than CARD_FLIP_MS. Every place that times
 // off the flip takes the duration as a parameter (`flipMs`) so the tower's lockout and mid-flip face hide stay in lock-step
 // with its own rotation. Docs: docs/DECK_TOWER.md § "Studying the tower".
 export const TOWER_CARD_FLIP_MS = 350;

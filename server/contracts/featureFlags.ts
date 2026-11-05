@@ -67,8 +67,8 @@ export const FEATURE_FLAGS = {
    * Study Challenge — the weekly head-to-head between friends
    * (docs/STUDY_CHALLENGE.md). Gates `/api/studyChallenges/*`, the `?challengeId=`
    * challenge-board branch on `/api/onDeck/gamePool` + `/wordSearchGrid`, the three
-   * `/friends/challenges*` routes, the Challenges tile + badge on /friends, the
-   * Challenges shelf on /decks, and the per-pair block toggle on a user profile.
+   * `/friends/challenges*` routes, the Challenges tile + badge on /friends, and
+   * the per-pair block toggle on a user profile.
    *
    * NOT gated: the hourly `database/cron/expire-study-challenges.sql` maintenance
    * pass. It keeps running so that any challenge already live when the flag went
@@ -82,7 +82,7 @@ export const FEATURE_FLAGS = {
   /**
    * Community — SHARING card designs with other learners (docs/COMMUNITY_PAGE.md).
    * Gates `/api/community/*` (the feeds, vote/unvote, and applyDesign — copying
-   * someone else's design onto your own card), the `/community` page and its Home
+   * someone else's design onto your own card), the `/community` page and its Menu
    * tile, and the designs grid on another person's profile along with the endpoint
    * that feeds it (`GET /api/users/:userId/designs`, which lives in `userRoutes.ts`
    * rather than `communityRoutes.ts`).
@@ -98,7 +98,8 @@ export const FEATURE_FLAGS = {
 
   /**
    * Arena — the weekly global division leaderboard (docs/ARENA_FEATURE.md).
-   * Gates `/api/arena/*`, the `/arena` route and the Arena tile on the Home hub.
+   * Gates `/api/arena/*`, the `/arena` route and the Arena footer tab (MobileFooter →
+   * `ARENA_TAB_ON`).
    *
    * NOT gated: the hourly `cow-arena` systemd timer, for the same reason the
    * challenge expiry pass is left running — an arena week that is already live
@@ -152,8 +153,8 @@ export const FEATURE_FLAGS = {
   /**
    * Writing Notebook — endless per-word handwriting practice sheets
    * (docs/WRITING_NOTEBOOK.md). Gates `/api/writingNotebook/*`, the
-   * `/flashcards/writing/notebook` route, and its card on the Writing Center's games
-   * belt (`WritingGamesCarousel`). There is no second entry point.
+   * `/flashcards/writing/notebook` route, and its paper stack on the Deck Tower's
+   * writing world (DeckTowerPage → `NOTEBOOK_EXIT`). There is no second entry point.
    */
   writingNotebook: true,
 

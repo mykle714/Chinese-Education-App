@@ -31,17 +31,20 @@ games; each game lives as its own page linked from the hub.
   `Bento`/`BentoTile` primitive ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
   deleted 2026-08-21); the empty state is now only a fallback for when every game is gated
   out (public/demo accounts, a language gate, or every `GAME_FLAGS` entry off).
-- Games — **nine shipped**, all registered in `src/games/registry.ts` (Memory Map is the
-  bullet below this list; Writing Grid is [WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2;
-  Superposition, a writing-flp break hidden from the hub, is [SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md)):
+- Games — **nine shipped**, all registered in `src/games/registry.ts`. Two kinds
+  (`GameDef`, `src/games/types.ts`; `isRoutedGame`, `ROUTED_GAMES` in the registry):
+  **routed** games have a `route` + `Component` and a hub tile (Bubble Match, Word Search,
+  Match Speed, Hydra Bubbles, Bucket Drop); **break-only** games have neither and are
+  played only as flp game breaks inside the Deck Tower's study session
+  ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)) — Speed Reading, Memory Map (the bullet below
+  this list), Writing Grid ([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2)
+  and Superposition ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md)):
   - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
-    Fans out on the hub into three difficulty modes (Study Mix / Review / Challenge), which
-    restrict the pool to the same mastery buckets the `/decks` study buttons use.
-    A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
+    One hub tile, one mode (Study Mix). A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
     English), how fast can you complete 30 pairs, board refills every 3s until they are all dealt, medals by finish time.
-  - **Speed Reading** (`/games/speed-reading`) — see
+  - **Speed Reading** (break-only) — see
     [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). A **reading** drill: pinyin
     + definition + audio at the top, then two word options — the real word and
     one where a single character has been swapped for another real character from
@@ -61,8 +64,8 @@ games; each game lives as its own page linked from the hub.
     play panel is lined with grey square keycap-hole buckets each holding an English dd, the
     run's 20 foreign words are dealt as a pile in the middle, and the player drags any word
     into its meaning's bucket (or leaves it anywhere) — medals by finishing time. **Moded** like Word Search:
-    the hub tile is Pinyin (recognition, challenge-eligible), the Reading Center card is
-    No Pinyin (reading, zh only).
+    the hub tile is Pinyin (production, challenge-eligible); No Pinyin (reading, zh only)
+    has no host today (its flp break adapter is built but switched off).
 
   Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
   Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
@@ -79,7 +82,7 @@ games; each game lives as its own page linked from the hub.
   where the options differ along one axis only (tones, c/ch/q · s/sh/x · z/zh/j, -n/-ng,
   u/ü). Moded hub tile. It is the first game that emits **no marks**, but it still accrues minutes.
 
-- **Memory Map** (`/games/memory-map`) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
+- **Memory Map** (break-only, zh only) — see [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md).
   **DEPLOYED to PPE (migration 151).** A persistent, pan/zoom **reading** map:
   every card the learner sorted that is **not reading-mastered** owns a permanent spot
   (capped at 100, chosen by the flp offering priority list evaluated on the reading
@@ -114,9 +117,6 @@ almost everything below follows from that one difference:
   always filled to 50 — rested cards, then cooling ones, then lent ones by name
   (MEMORY_MAP_GAME.md § 2.1). Originally it declared no baseline at all ("a small library
   is a small map"); that was overruled.
-- **A game that opts out of the collection selector.** The hub HIDES the Memory Map row
-  whenever the selected collection is anything but All Cards, rather than showing a row
-  that would silently ignore it. Same hide-don't-block principle as the language gate.
 - **A game that deliberately skips pause-on-background.** No `useBackgroundPause`, no
   pause at all. That rule exists to stop a CLOCK draining while backgrounded;
   this game has no clock, so the pause would protect nothing. Recorded so it is not
@@ -182,9 +182,9 @@ same control appears in every other narrating surface's header
 **Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
 no footer, slides up on enter).
 
-**Match Speed and Speed Reading are leaf pages too** — every shipped game is. Games
+**Every routed game is a leaf page** (break-only games have no page at all). Games
 are classified `chrome: "leaf"` in bulk by `GAME_ROUTE_META` in
-`src/routes/routeMeta.ts`, which derives one row per `GAME_REGISTRY` entry, so a new
+`src/routes/routeMeta.ts`, which derives one row per `ROUTED_GAMES` entry, so a new
 game gets leaf chrome without touching the route tables. A game that should keep the
 footer would need a `chrome` field on `GameDef` first; none exists.
 
@@ -196,129 +196,61 @@ was wrong for a leaf page; it was deleted unused. See § Layer 2.)
 is split into its **page** (the route: `GameLeafPage`, `useBlockEdgeSwipe`, launch
 `state`) and a **Stage** (the run itself), and the Stage renders inside a host-injected
 `Frame` (`GameStageFrameProps`, `GameStageHost` in `src/games/types.ts`). This is NOT a
-generic shell: there is no shared stage, each game keeps its own, and the page stays the
-standalone experience unchanged. Match Speed (`MatchSpeedStage`) and Word Search (`WordSearchStage`) are split; the rest
-follow one at a time. The flp side — adapters and candidate derivation — is
+generic shell: there is no shared stage, each game keeps its own. Match Speed
+(`MatchSpeedStage`), Word Search (`WordSearchStage`) and Bucket Drop (`BucketDropStage`)
+have both hosts (page + break, switched by `GameStageHost`); Speed Reading, Memory Map,
+Writing Grid and Superposition are **break-only** — a Stage with no page and no `host`
+prop. Bubble Match and Hydra are not split yet. The flp side — adapters and candidate derivation — is
 `src/games/flpBreak/`; the break's opening card is an flp card, not a game surface; see
 [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
-## Launching a game with one collection of cards
+## Every game plays the whole library
 
-Every game is played with **the collection selected in the Games hub header**.
-
-| Collection | Param | Effect |
-| --- | --- | --- |
-| All Cards *(default)* | *(none)* | Every playable card — the pool games have always drawn from |
-| Learning | `?collection=learn-now` | Sorted cards that aren't core-mastered |
-| Mastered (per bar) | `?collection=mastered[-reading|-writing]` | Pool restricted to that bar's mastered cards |
-| A deck | `?deck=<id>` | Pool restricted to that deck, plus any card lent to reach the game's baseline |
-
-### Collection selector (hub header)
-
-`src/games/GamesCollectionSelector.tsx`, rendered by `src/games/GamesPage.tsx` at the
-top of the `NodePage` content, directly below the TipBox and above the game `Bento`: a
-half-width, right-justified pill (it spans the Bento's right column — the width and
-`marginLeft: auto` are set on the anchor wrapper in `GamesCollectionSelector`, not on the
-shared `CollectionChip`; its menu opens right-aligned to match) reading **"Playing with: &lt;collection&gt;"** that
-opens a menu of exactly two kinds of row: **All Cards** (uncaptioned, at the top) and
-the learner's **Decks** (`fetchDecks` — custom decks and generated Study Challenge decks
-alike, under a *Decks* caption).
-
-**Hidden when there is nothing to pick.** If the learner has no decks (or the deck
-fetch is still in flight / failed), the menu would hold All Cards alone, so
-`GamesCollectionSelector` returns `null` and the hub renders no chip; games launch
-with All Cards, the store's default. The chip appears once a deck exists.
-
-**Deliberately narrower than the fdp (2026-10-03).** Learning and the Mastered
-collections (core / reading / writing) are NOT offered here — the hub's choice is
-"everything, or one deck". They are browsed from the fdp and the Mastery Centers. Their
-`?collection=` ids still work end to end, so a game launched from a collection page
-still honors them; only the hub stopped listing them. The All Cards row is built
-in `GamesCollectionSelector` itself (`ALL_CARDS` + `BAND_COLORS.All.main`), since the
-fdp has no All Cards tile to share (see
-[DECKS_FEATURE.md § "Which collections exist"](./DECKS_FEATURE.md)). A deck's dot uses
-`deckTileColors(id).main`, the same identifying color as its fdp spine.
-
-The choice lives in **`src/features/flashcards/selectedCollection.ts`** — a module
-singleton + `useSyncExternalStore`, the same shape as `minutePointsPause`:
-
-* **Session-scoped, never persisted.** It survives leaving the hub for a game and
-  coming back (otherwise every round would silently reset to All Cards mid-session),
-  and is gone on reload — a learner returning tomorrow is not still locked to one
-  deck they picked once. That rules out both `localStorage` and page-level state.
-* **No game page knows it exists.** `GamesPage` wraps every card's `to` in
-  `withCollectionParams(route, selected)`, so a game arrives with the same
-  `?deck=` / `?collection=` a collection-page launch always sent.
-  `WordSearchHubItem` passes them to `useWordSearchLauncher` as `newGamePath`, because
-  that launcher navigates imperatively (to confirm before clobbering a saved board); its
-  **resume** card deliberately carries **no** params — that board was built from
-  whatever set was selected when it started.
-* **Stale decks self-heal.** After loading the deck list the selector calls
-  `clearSelectedDeckIfMissing`, dropping back to All Cards when the selected deck was
-  deleted or belongs to the learner's other language (decks are per-language).
-
-> **Removed:** the collection view page's "Study these cards" button used to open a
-> sheet listing the flp **and every game**. That put the two choices in the wrong
-> order — a learner picks the activity first — so the sheet is gone and the button is
-> now a plain one-tap launch into the **flp** with that collection. Games are chosen
-> on the Games hub, cards with the selector above.
-
-Each game page reads this back with `useLaunchCollection()` and appends
-`collectionQuerySuffix(...)` to **every** pool request — including partial refills
-(Bubble Match's "Play Again", Speed Reading's mid-run top-up). A refill that dropped
-the param would start serving cards from outside the set mid-game.
-
-Speed Reading's **distractor** endpoint is deliberately NOT restricted: the foils
-are meant to come from outside the set, or the deck becomes the answer key.
-
-Full details, including the server-side filter: [DECKS_FEATURE.md](./DECKS_FEATURE.md) § 3.
+A game's pool is the learner's whole sorted library (plus lent cards,
+[PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)); no game or game launch is scoped to a
+subset of cards. The only restriction a pool request can carry besides the game's own
+track/band parameters is a Study Challenge's word set (`?challengeId=`,
+[STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)) and, inside an flp break, the focus set
+([FOCUS_MODE.md](./FOCUS_MODE.md)). The hub has no collection selector.
 
 ## Navigation entry point
 
 Games is **not** a footer tab. It is a tile on the **Menu** hub (`/menu`,
 `src/pages/MenuPage.tsx`; see [NAVIGATION.md](./NAVIGATION.md)). The footer tabs are
-Home / Menu / Deck / Dictionary; the Games hub is reached by tapping **Games** on the
+Deck / Menu / Arena / Dictionary (Arena only while its flag is on); the Games hub is reached by tapping **Games** on the
 Menu, and `/games` lights the Menu tab (`footerTab: "menu"`).
 The hub is a **node page** (`NodePage`, see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)):
 its header shows a **left** back arrow returning to `/menu`, it keeps the floating
 footer, and it slides in from the right (out to the right only when the arrow is
 tapped — footer-tab nav does not animate).
 
-### Second entry point: the Reading Center, and the exit destination
+### Break-only games, and the exit destination
 
-> Code: `src/games/runtime/gameExit.ts` → `useGameExit` / `GAMES_HUB_EXIT`,
-> `src/games/runtime/useGameBack.ts`, `GameDef.hiddenFromHub` (`src/games/types.ts`),
-> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` → `readingCenterExit`.
+> Code: `src/games/types.ts` → `GameDef`, `RoutedGameDef`; `src/games/registry.ts` →
+> `isRoutedGame`, `ROUTED_GAMES`; `src/games/runtime/gameExit.ts` → `GAMES_HUB_EXIT`,
+> `readExit`; `src/games/runtime/useGameBack.ts` → `useGameBack`.
 
-The Reading Center's games carousel ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md))
-launches the reading-track variants of three games: Bubble Match pinned to pinyin-off,
-Word Search **No Pinyin**, and **Speed Reading**. Since 2026-10-03 those variants are
-launched **only** from there. **Memory Map** (reading by construction) joined the belt on
-2026-10-06 and, the same day, left the hub — it now launches only from the carousel. The hub hides Speed Reading and Memory Map (`hiddenFromHub: true`),
-offers Word Search's Pinyin mode only, and pins Bubble Match to Recognition.
+The hub lists **routed** games only (`ROUTED_GAMES`). Speed Reading, Memory Map, Writing
+Grid and Superposition have no route and no page: they are played only as flp game breaks
+inside the Deck Tower's study session ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), which
+also runs the reading-track variants of two routed games (Match Speed with pinyin hidden,
+Word Search **No Pinyin**). The hub offers Word Search's Pinyin mode only and pins Bubble
+Match to Recognition (`state.showPinyin: true`).
 
-**The Writing Center is a third entry point.** The **Writing Grid** (`writing-grid`,
-`hiddenFromHub`, zh only) launches from the Writing Center's games belt
-(`src/features/flashcards/centers/WritingGamesCarousel.tsx`), whose launch carries
-`exitTo` the Writing Center, and is the writing flp's game break (FLP_GAME_BREAKS.md). The belt's other card, the Writing Notebook, is not a game
-([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)). The game itself: [WRITING_PRACTICE_REWORK.md § 2](./WRITING_PRACTICE_REWORK.md).
-Every game but Bubble Match and Memory Map also keeps a per-mode **personal best**
-(§ 2a there).
+⚠️ **Two reading variants have no host at all.** Bubble Match with pinyin hidden and Bucket
+Drop **No Pinyin** were launched only from the deleted Reading Center carousel; Bubble
+Match has no flp break adapter yet, and Bucket Drop's (`BUCKET_DROP_BREAK`) is built but left
+out of `FLP_BREAK_GAMES` (`src/games/flpBreak/index.ts`). Their reading paths stay in code,
+unreachable, until one of those adapters is switched on.
+Every game but Bubble Match and Memory Map keeps a per-mode **personal best**
+([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2a).
 
-**Exits return to the launching surface.** A launch may carry
-`state.exitTo = { path, label }`. `useGameExit` reads it and falls back to the hub
-(`/games`, "Games") when it is absent. Back (`useGameBack`, after a challenge round's
-own destination) and every "Back to …" button in Bubble Match, Word Search and Speed
-Reading use it, so a carousel launch exits to "Back to Reading Center". The carousel
-supplies the destination itself, so `src/games` never imports the Center. An exit may
-also carry opaque `state` for its destination (`GameExit.state`), which every exit
-passes through unchanged. The Reading Center uses it to reopen scrolled to its carousel,
-parked on the game just played, and the Writing Center to reopen scrolled down to its
-Writing Grid card
-([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § "Returning from a game"). The
-"no level / no mode" bounces (a stray URL) still go to `/games`, because only the hub
-can pick a level or mode. Hydra Bubbles, Match Speed and Memory Map have no second
-entry point and still hard-code `/games`.
+**Exits.** A routed game's Back (`useGameBack`) and its "Back to …" buttons lead to the
+Games hub (`GAMES_HUB_EXIT`), or, for a challenge round, back to the challenge. No game
+launch carries `state.exitTo` any more; `readExit` is still read by the Writing Notebook
+and ancp, whose launches from the Deck Tower carry one
+([DECK_TOWER.md](./DECK_TOWER.md)). The "no level / no mode" bounces (a stray URL) go to
+`/games`, because only the hub can pick a level or mode.
 
 ## Design decisions
 
@@ -328,7 +260,7 @@ Every game is ONE entity, **`GameCard`** (`src/games/shared/GameCard.tsx`), in t
 
 | Variant | Shape | Body | Games (hub) |
 |---|---|---|---|
-| `tile` | half-width; name, ghost glyph, optional `WinCountPill` top-left; the whole tile is a router link | **is** a `BentoTile` (no outline) | Match Speed (with win pill), Hydra Bubbles, Memory Map |
+| `tile` | half-width; name, ghost glyph, optional `WinCountPill` top-left; the whole tile is a router link | **is** a `BentoTile` (no outline) | Match Speed (with win pill), Hydra Bubbles, Bucket Drop |
 | `card` | full row; header (name + win pill) over a row of option slots + optional `RoundPlayButton` | `CardShell` (`src/components/bento/CardShell.tsx`, the body `BentoTile` renders through), outlined | Bubble Match, Word Search |
 
 A card's options are `GameCardOption`s of two kinds, both drawn on the shared
@@ -339,26 +271,33 @@ the card ghost's ink/opacity/bleed scaled to the tile, `OPTION_GHOST` — worn b
 tiles and the resume tile alike. Options are measured in slots of one Bubble Match level's
 width (`slotFlex(span)`, which also swallows the gaps a multi-slot option covers): a level
 takes one, a resume option `slots` (Word Search's takes 2). Card data comes from `src/games/shared/gameCards.ts`
-(`gameCardBase`, `buildPlayCard`, `buildTileCard`) and the per-game builders that extend
-them. Visibility gating shared with the Reading Center carousel is
-`isGameAvailable` (`src/games/registry.ts`); the hub layers `hiddenFromHub` and Memory
-Map's collection gate on top (`GamesPage` → `visibleGames`). See
+(`gameCardBase`, `buildTileCard`) and the per-game builders that extend
+them. Visibility gating shared with the flp break picker (`flpBreakCandidates`) is
+`isGameAvailable` (`src/games/registry.ts`); the hub layers the routed-only rule on top
+(`GamesPage` → `visibleGames`, over `ROUTED_GAMES`). See
 [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "CardShell".
 
 Two games get a `card`, both special-cased in `GamesPage.tsx` rather
-than generalized onto `GameDef`: Bubble Match renders as the **same level card the
-Reading Center's games carousel uses** — `GameCard` (`src/games/shared/GameCard.tsx`)
+than generalized onto `GameDef`: Bubble Match renders as a level card — `GameCard` (`src/games/shared/GameCard.tsx`)
 fed by `buildBubbleMatchCard` (`src/games/bubble-match/bubbleMatchCard.ts`), spanning
 the grid's full row (`gridColumn: "1 / -1"`), one level tile per difficulty since the
-in-game level picker was removed. The two surfaces share the card verbatim (level
-hues, "Level N" titles with no subtitle — the Chill/Hustle/Torture names are in-game only since 2026-10-03 — weekly ⭐, the game's `bubble_chart` glyph as a small ghost on each level tile for texture, lifetime win pill) and differ only in
-the launch: the hub passes `showPinyin: true` + the selected collection's params, the
-carousel `showPinyin: false` + its `exitTo`. Word
+in-game level picker was removed (level hues, "Level N" titles with no subtitle — the
+Chill/Hustle/Torture names in `LEVEL_CONFIGS` are in-game only (HUD + win screen) — weekly
+⭐, the game's `bubble_chart` glyph as a small ghost on each level tile for texture,
+lifetime win pill); every level launches with `state.showPinyin: true`. Word
 Search is the same shared card, fed by `buildWordSearchCard`
 (`src/games/word-search/wordSearchCard.tsx`) through `useWordSearchLauncher`
 (`src/games/word-search/useWordSearchLauncher.tsx` — save slot, resume, erase,
-confirm-before-clobber; shared verbatim with the carousel) and rendered by
-`WordSearchHubItem` (Pinyin only since 2026-10-03).
+confirm-before-clobber) and rendered by
+`WordSearchHubItem` (Pinyin only).
+
+**Card rules** (`GameCard`): a `card` whose options row is EMPTY draws its title at the
+hero tile's size (`TILE_VARIANTS.hero.title`), one carrying option tiles keeps
+`CARD_TITLE_SX`'s smaller title — so Word Search drops to the small title the moment a
+board is parked. **A card with a play button is tappable as a whole**: a tap anywhere no
+inner control claims acts as the play button (`GameCard` root `onClick`; option slots and
+the play button stop propagation). The card is not itself a button — the play button
+(`RoundPlayButton`, `size="card"`) stays the keyboard control.
 
 ### 2. Empty state instead of placeholder cards
 When the registry yields no visible rows — every game gated out by `requiresAuth`
@@ -406,9 +345,8 @@ content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
 The frame routes are every `routeMeta` row with `shell: "frame"` — the four footer tabs
-(`/`, `/menu`, `/deck-tower`, `/dictionary`), their drill-ins, the game routes (generated
-from `GAME_REGISTRY`), `/flashcards/learn`, `/settings`, and the legacy redirects
-(`/flashcards/decks`, `/flashcards/mastered`). `src/routes/routeMeta.ts` is the list.
+(`/` (td), `/menu`, `/arena`, `/dictionary`), their drill-ins, the routed game routes
+(generated from `ROUTED_GAMES`), and `/settings`. `src/routes/routeMeta.ts` is the list.
 
 ## Mobile demo header (shared header hierarchy)
 
@@ -434,16 +372,14 @@ the footer tabs + the Menu hub):
 
 Rules of thumb:
 
-- Footer-tab pages (Home, Menu, Deck, Dictionary) → use
+- Footer-tab pages (Deck, Menu, Arena, Dictionary) → use
   `MobileDemoHeader` inside `MobileTabScreen`; pass `title` and optional
   `headerExtraActions`. (There is no `activePage` any more — A2b removed the
   header's tab badge, its only reader.)
 - Back-arrow drill-ins → use the `LeafPage` (down arrow, no footer) or `NodePage`
   (left arrow, keeps footer) wrapper instead of composing the header by hand.
-  Games + the Mastered page are node pages; Sort Cards, Dictionary, and Card Detail
-  are leaf pages.
-- Specialty in-page headers (`FlashcardsLearnHeader` with fire icon + seconds
-  counter) → compose `PageHeader` directly and own their own `rightContent`. Build
+  Games is a node page.
+- Specialty in-page headers (the flp's `TowerStudyHeader`, the game headers) → compose `PageHeader` directly and own their own `rightContent`. Build
   that `rightContent` from `HeaderToggleChip` / `HeaderIconButton` — the three game
   and flp headers each used to carry a byte-identical private `toggleSx` helper, and
   that is exactly what those exports exist to prevent.
@@ -460,7 +396,7 @@ Rules of thumb:
   (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it). Since 2026-10-29 it is
   an alias of the app-wide invalid-operation shake, `src/theme/invalidShake.ts` →
   `INVALID_SHAKE_KEYFRAMES` / `INVALID_SHAKE_ANIMATION` (keyframes `invalidShake`). That
-  shake moved to theme/ so features/ can use it too: scp shakes a dragged sorted card.
+  shake moved to theme/ so features/ can use it too: ancp shakes a dragged sorted card.
 - **The first game whose pool fetch goes through `src/api/http.ts`** (`apiGet`), as
   [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) requires. ⚠️ Bubble Match, Match Speed,
   Hydra Bubbles and Speed Reading still call `fetch(API_BASE_URL + "/api/onDeck/gamePool?…")`
@@ -515,15 +451,15 @@ inherits a shell from it.
   layer owning the scrim, the card chrome (× button), the corner puck, and the
   FLIP-style collapse animation between them. The **page** owns the `minimized`
   flag and the card's content (title / message / actions), passed as `children`;
-  `classPrefix` keeps each game's BEM classes distinct. Word Search and Speed
-  Reading render it directly; Bubble Match wraps it in `BubbleMatchEndPopup` to pin
-  `classPrefix="bubble-match"`, and Match Speed wraps it the same way.
+  `classPrefix` keeps each game's BEM classes distinct. Word Search renders it
+  directly; Bubble Match, Match Speed and Bucket Drop wrap it (`BubbleMatchEndPopup`,
+  `MatchSpeedEndPopup`, `BucketDropEndPopup`) to pin their prefix. Routed pages only — a
+  break-only game has no end popup (its results go to the flp's card).
   **Minimizing is opt-in**: pass `onMinimize`/`onRestore` and the × button and the
-  corner puck appear; omit them (as **Speed Reading** does) and neither is rendered,
-  so the popup is modal and its own buttons are the only exits. The rule is
-  "minimizable iff the board is still worth uncovering" — Bubble Match, Match Speed
-  and Word Search all have a post-run cleanup mode, and **Writing Grid** uncovers its
-  finished board (every cell's ink over its shadow) to look over; Speed Reading has none.
+  corner puck appear; omit them and neither is rendered, so the popup is modal and its
+  own buttons are the only exits. The rule is "minimizable iff the board is still worth
+  uncovering" — Bubble Match, Match Speed and Word Search all have a post-run cleanup
+  mode.
   **The puck docks into the game frame's corner**, not the screen's: `GameEndPopup`
   passes `puckAnchorSelector=".game-frame"` to `MinimizablePopup`, which measures that
   element (the enclosing match, else one inside the popup's parent — the phone frame,
@@ -532,9 +468,9 @@ inherits a shell from it.
   **The scrim covers the ENTIRE screen**, the leaf header included: `MinimizablePopup`
   portals it to the phone frame (`useScreenOverlayHost`, z 200) instead of pinning it to
   the game's `position: relative` content box, which left the back arrow and title lit
-  above the dim until 2026-10-06. Speed Reading is the one exception — it passes
-  `inPlace`, because its sideways stage rotates the popup along with the board
-  (docs/UX_AND_NAVIGATION.md § Dimming the background).
+    above the dim until 2026-10-06. (`inPlace` keeps a popup inside its parent instead; Speed
+  Reading's sideways stage used it before the game became break-only —
+  docs/UX_AND_NAVIGATION.md § Dimming the background.)
 - **Answer-feedback sound** — there is none. Every game marks silently; narration
   (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
 - **`useBackgroundPause.ts`** — the app-wide backgrounding pause, which resumes by
@@ -589,8 +525,8 @@ Presentational only; nothing here holds state.
   host's exit as a back arrow at the study header's arrow position — only the flp game break provides one
   (its Leave; docs/FLP_GAME_BREAKS.md § 6), so on a game's own route nothing extra shows.
   A provider also means the game is the whole screen, so the frame drops its inset, corner
-  and line, and `GameTimer` / `GameHud` drop their tint and hairline. `tone="tower"` draws the panel as the tower's gold slab and restyles its strips
-  through context; no game uses it today (TOWER_STYLE_SHIFT.md § The play slab).
+  and line, and `GameTimer` / `GameHud` drop their tint and hairline. (A `tone="tower"` gold-slab
+  variant existed unused and was removed 2026-11-04.)
 - **`GameHud`** (`.hud`) + **`GameHudLabel`** (`.hud .lab`) — the bordered strip of mono
   facts across the panel's top. `space-between`, so the child count is load-bearing: two
   children pin to the edges, three put one in the middle — and so is the ORDER: only a
@@ -708,11 +644,10 @@ the text and each field's measured bounds were larger than the area a bubble cou
 actually be read in; both stages now return a fragment — HUD row, then measured field.
 Match Speed shows no clock during play; its finish time appears on the end card.
 
-Speed Reading has a `GameHud` as of the A6b pass: a round counter over
-`SpeedReadingRoundTicks`. Its HUD is the one that is a COLUMN rather than a row of facts
-(`GameHud`'s `sx` escape hatch), and it is a SIBLING of a new `.speed-reading__board` box
-rather than a child — the tap zones are `inset: 0` of their container, so anything sharing
-that container is under them and every tap on it would answer the round.
+Speed Reading draws no `GameHud` (removed 2026-11-04, with its round counter and
+round-tick strip; SPEED_READING_GAME.md § Screen layout). Its board is still its own
+`.speed-reading__board` box: the tap zones are `inset: 0` of their container, so anything
+sharing that container is under them and every tap on it would answer the round.
 
 ### Layer 3 — Data hooks
 
@@ -753,10 +688,10 @@ Every `GET /api/onDeck/gamePool` call goes through **one** function,
 | `distribution` | `Unfamiliar`/`Target`/`Comfortable`/`Mastered` | Band quotas |
 | `need` | `need` | Present = partial refill (no baseline top-up) |
 | `exclude` / `avoid` | `exclude` / `avoid` | Hard exclude / soft demote, comma-joined; omitted when empty |
-| `seedIds` | `seedIds` | Put these on the board FIRST if they can take the game's marks (`isCardGameEligible`); the rest are a fallback after every fresh card. An flp game break's working loop — docs/FLP_GAME_BREAKS.md § 4. Capped at 40 server-side |
+| `seedIds` | `seedIds` | Put these on the board FIRST if the game's mark on them counts and they are under pbh 6 on the game's bar (`isBreakSeedPlayable`); the rest are never dealt. An flp game break's working loop — docs/FLP_GAME_BREAKS.md § 4. Capped at 40 server-side |
 | `strictBuckets` | `strictBuckets=1` | "These bands or nothing" (Hydra) |
 | `lendLevelOffset` | `lendLevelOffset` | Lend tier offset (Hydra) |
-| `collection` | `deck` / `collection` | Via `collectionLaunchParams` — must ride refills too |
+| `flpBreak` | `flpBreak=1` | This board is an flp game break — in a focused world the server draws from outside today's set (FOCUS_MODE.md § 4a). Sent on the opening board and every top-up |
 | `challengeParams` | `challengeId`/`gameId`/`mode`/`anytime` | `useChallengeRound().poolParams`, passed verbatim |
 | `excludeContested` | `contested=exclude` | Sent only when `challengeParams` is set |
 
@@ -767,7 +702,7 @@ a refill never lends unless its `surface` is in `ROLLING_SUPPLY_SURFACES` (Hydra
 caller always sends its real `surface`.
 
 Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
-(`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`),
+(`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`, built by `speedReadingPoolRequest`),
 Bucket Drop (`BucketDropStage` → `fetchPool`), Hydra (`HydraBubblesPage` →
 `fetchChallengeCards`; `useColorBuffers` → `fetchColor`), and Immersive World
 (`iwPlayApi.fetchKnownWords`). **Not** through it: Word Search
@@ -930,7 +865,7 @@ it to whatever moves on its own:
 | --- | --- | --- | --- |
 | Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the run clock | `MatchSpeedStage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
 | Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchStage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
-| Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingPage.tsx` (`clockPaused`, `pausedAtRef`, the clock effect) |
+| Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingStage.tsx` (`clockPaused`, `pausedAtRef`, the pause effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
 | Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropStage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropBoard` (`paused`) |
 
@@ -1216,7 +1151,8 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    in `src/constants.ts` so play time accrues points and streak.
 6. Reuse `GameEndPopup` for the won/lost card. Pass `onMinimize`/`onRestore` only
    if the game has a post-run cleanup mode worth uncovering the board for;
-   otherwise omit them and the popup is modal (Speed Reading).
+   otherwise omit them and the popup is modal. (A break-only game skips this step: its
+   results go to the flp's card through `onRunEnded`.)
 7. **Derive one `clockPaused` boolean from every pause source** — input-blocking
    popups *and* backgrounding — and feed it to everything that advances on its own.
    Express elapsed time as accumulated active time, never `now − startedAt`. See
@@ -1287,18 +1223,16 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 
 ## Files
 
-- `src/components/MobileFooter.tsx` — footer tabs (Home / Menu / Deck / Dictionary)
+- `src/components/MobileFooter.tsx` — footer tabs (Deck / Menu / Arena / Dictionary)
 - `src/components/MobileDemoFrame.tsx` — shared phone-frame container
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)
 - `src/components/Layout.tsx` — wires `MobileDemoFrame` into demo routes; spreads `GAME_ROUTES` into `MOBILE_DEMO_PATHS`
-- `src/games/GamesPage.tsx` — hub page; renders `GAME_REGISTRY`, wraps every link in `withCollectionParams`
-- `src/games/GamesCollectionSelector.tsx` — hub-header "Playing with …" collection pill + menu
-- `src/features/flashcards/selectedCollection.ts` — the session-only store behind that pill
+- `src/games/GamesPage.tsx` — hub page; renders `ROUTED_GAMES` gated by `isGameAvailable`
 - `src/App.tsx` — `/games` route + per-game routes from registry
-- `src/games/registry.ts` — central `GAME_REGISTRY` + `GAME_ROUTES`
-- `src/games/types.ts` — `GameDef`, `GameAsset`, `GameProgress`
-- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (all four games)
+- `src/games/registry.ts` — central `GAME_REGISTRY`, `ROUTED_GAMES`, `isRoutedGame`, `GAME_ROUTES`
+- `src/games/types.ts` — `GameDef` (routed vs break-only), `RoutedGameDef`, `GameAsset`, `GameProgress`
+- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (routed games' pages)
 - `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
 - `src/games/shared/GameFrame.tsx` — `GameFrame` / `GameHud` / `GameHudLabel` / `GameHudBar` / `GameHint` / `GameTimer`; the `.play` panel every game plays inside (§ Layer 2b)
 - `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry
@@ -1356,7 +1290,7 @@ Sharing it leaks in two directions, and both are real today:
   pinyin — also strips pinyin from Hydra Bubbles and Match Speed, neither of which the
   learner touched, and neither of which changes track to match.
 * **Between a drill and its reference material.** The flp owns
-  `flashcard.learn-settings`, and the cdp, the scp and the dictionary cdp read it as a
+  `flashcard.learn-settings`, and the cdp, the ancp and the dictionary cdp read it as a
   *reading* preference. A game that writes that key is editing the learner's flashcard
   display from inside a game.
 
@@ -1364,7 +1298,7 @@ The rule, and how much of it already holds:
 
 | Surface | Where its pinyin preference lives |
 |---|---|
-| flp (+ cdp, scp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
+| flp (+ cdp, ancp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
 | **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
 | **Memory Map** | ✅ already per-game — never draws pinyin at all (since 2026-10-06 it renders bare measured characters, not `ForeignText`); it is a reading map |
 | **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |
@@ -1397,8 +1331,8 @@ they are dropped by the § "next markable at" guard
 ### Bubble Match: pinyin picks the track
 
 > Code: `src/games/GamesPage.tsx` (the hub's pinned `showPinyin: true`),
-> `src/features/flashcards/centers/ReadingGamesCarousel.tsx` (the Reading Center's
-> pinned `showPinyin: false`), `BubbleMatchPage`'s `runTrack` / `lockRunTrack` / `boardShowPinyin`,
+> `src/games/flpBreak/candidates.ts` → `flpBreakCandidates` (`noPinyinMarkType` on the
+> reading flp), `BubbleMatchPage`'s `runTrack` / `lockRunTrack` / `boardShowPinyin`,
 > `foreignPromptTrack` (`server/contracts/wire.ts`).
 > Full rationale: [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
 
@@ -1414,10 +1348,11 @@ Three consequences worth knowing before touching this game:
    pinyin control in the game header, and since 2026-10-03 none on the hub either
    (the `BubbleMatchTrackToggle` strip control was deleted). Each launch **pins**
    the track for its run with `location.state.showPinyin` (`BubbleMatchPage` →
-   `pinnedShowPinyin`): the Games hub pins `true` (Recognition), the Reading
-   Center's games carousel pins `false` (Reading —
-   [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)). Only an unpinned
-   launch (a Study Challenge round) still falls back to the shared `showPinyin`
+   `pinnedShowPinyin`): the Games hub pins `true` (Recognition). Nothing launches the
+   Reading track today: its one launcher (the Reading Center carousel) was deleted, and
+   Bubble Match has no flp break adapter yet — `noPinyinMarkType` is declared so the reading
+   flp can offer it once one exists ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 3). Only an
+   unpinned launch (a Study Challenge round) still falls back to the shared `showPinyin`
    setting.
 2. **The run latches the track at deal time** (`lockRunTrack`, called from the first
    pool fetch and reused by every Play-Again refill). The pool is bucketed AND cooled
@@ -1548,8 +1483,7 @@ with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
   preserves the unmatched words.
 - **Levels do not chain** — the level is picked **on the Games hub** (one
   `GameCard` level tile per `LEVEL_CONFIGS` entry, built by
-  `src/games/bubble-match/bubbleMatchCard.ts` → `buildBubbleMatchCard`; the Reading
-  Center carousel shows the same card) and arrives via
+  `src/games/bubble-match/bubbleMatchCard.ts` → `buildBubbleMatchCard`) and arrives via
   `location.state.level`; there is no in-game picker any more, and a direct visit
   with no valid level redirects back to the hub rather than defaulting. The level
   sets difficulty only (launch cadence + ceiling-shrink speed); all levels use the
@@ -1664,7 +1598,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   emits (Bubble Match `recognition`; Word Search `reading`/`production` by mode) and
   candidates are bucketed by that track's own recent mark history
   (`compute_type_category`), not by the whole-card **core** mastery bar the flp
-  and decks page use — so each game's difficulty distribution reflects the skill it
+  and the Deck Tower use — so each game's difficulty distribution reflects the skill it
   actually trains. That same per-type category also selects the card's cooldown
   window. See [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
   **Each returned card carries `gameCategory`** — the bucket it was actually drawn
@@ -1716,10 +1650,6 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   it skipped the cross-bucket tiers and lent cards to a learner with ~700 sorted cards.
   **A request without the flag now always borrows across buckets before it lends**,
   however many buckets it names (`OnDeckVocabService.getGameVocabPool` → `substituting`).
-  **Note:** Match Speed's Review and Challenge modes
-  also request a two-band subset and do *not* set the flag, so a "Review" board can be
-  topped up with `Unfamiliar` cards — pre-existing, and the flag is how to fix it if
-  those mode names are meant as promises.
 
   ⚠️ **Lending is the LAST resort, below cooling cards** (2026-08-20). A learner whose
   cards are merely *resting* is not short of cards, so the board re-serves those instead
@@ -1739,8 +1669,10 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   reads the rows with `fetchRowsByIds`, and the controller's baseline top-up threads its
   own `lentIds` into the pool call.
 
-  Tier 5 is **skipped for a collection-restricted round** (a deck round made of
-  non-deck words is not that deck) and, historically, for any **partial refill**.
+  Tier 5 is **skipped for a focus-scoped round** (`opts.collection`, the
+  `CollectionFilter` slot, which only focus mode fills — a focused round padded with words
+  outside the day's set is not that set; [FOCUS_MODE.md](./FOCUS_MODE.md) § 4) and,
+  historically, for any **partial refill**.
   That second exemption is now per-game: a surface in `ROLLING_SUPPLY_SURFACES`
   (`server/contracts/wire.ts`) may lend on a refill, because its whole supply model
   IS the refill. Hydra Bubbles is the only one today. Such a surface may also send
@@ -1768,7 +1700,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   every Mastered cooled card — which is exactly how the first cut of this feature
   handed back the cards the player had just cleared.
 - `GET /api/onDeck/categoryCounts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
-  also surfaced under each bucket label on the decks page.
+  read by the Deck Tower's cards page (`useCardLibrary`) and the Account page.
 
 ---
 

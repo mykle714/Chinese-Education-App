@@ -30,8 +30,12 @@ export type { MemoryMapGraduateResponse, MemoryMapResponse, MemoryMapSlot, Memor
  * parameter for it. Each language owns an independent map (Q28), and a client that
  * could name the language could read and mutate the other one.
  */
-export async function fetchMemoryMap(): Promise<MemoryMapResponse> {
-    return apiGet<MemoryMapResponse>('/api/memoryMap');
+export async function fetchMemoryMap(frameAspect?: number | null): Promise<MemoryMapResponse> {
+    // `frameAspect` (game viewport width ÷ height) frames a learner who has none yet
+    // (docs/MEMORY_MAP_GAME.md § 2.4b). Rounded: the server stores a REAL, and three
+    // places is far finer than any screen difference that matters.
+    const query = frameAspect ? `?frameAspect=${frameAspect.toFixed(3)}` : '';
+    return apiGet<MemoryMapResponse>(`/api/memoryMap${query}`);
 }
 
 /**

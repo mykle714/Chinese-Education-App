@@ -48,8 +48,8 @@ export function useFooterSuppressed(): boolean {
  * mounted. Releasing on unmount is automatic, so a page that navigates away with its
  * modal still open can't strand the footer off-screen.
  *
- * Callers: the fdp's launch exit (FlashcardsDecksPage → `useFlpLaunch`, flpLaunch.ts),
- * which slides the bar down with the rest of the page before navigating to the flp.
+ * Callers: the Deck Tower (DeckTowerPage), which hides the bar while a study session is
+ * laid over the tower (`study.active`).
  * No DIM uses it any more (since 2026-10-06): every dim hosts at the phone frame above
  * the bar and dims it in place instead of sliding it away (src/components/overlayHost.ts
  * § "THE RULE FOR A DIM").

@@ -4,19 +4,17 @@ import { fetchFlpReadyCounts, type FlpReadyCounts } from "../api/flpReadyCounts"
 import type { FlpWorld } from "../../server/contracts/studyMode";
 
 /**
- * The fdp study-hand figures (Challenge/Review/Study Mix), fetched independently of
+ * One bar's OFF-COOLDOWN card counts per utcm band — the Deck Tower world's Learning
+ * deck height (DeckTowerPage `learningCount`, useFocusLever), fetched independently of
  * the full card library. See `src/api/flpReadyCounts.ts` and
- * `OnDeckVocabService.getFlpReadyCounts` — the same `flpReadyCountsByBand` /
- * `nextFlpReadyMs` formula the client used to run against `panel.allCards`, now
- * computed server-side against a narrow `{ id, typedMarkHistory }` read so the hand's
- * three figures no longer wait on the fully-enriched collection fetch.
+ * `OnDeckVocabService.getFlpReadyCounts` (the shared `flpReadyCountsByBand` formula,
+ * server/contracts/flpReadiness.ts, run against a narrow `{ id, typedMarkHistory }` read).
  */
 export function useFlpReadyCounts(
     world: FlpWorld = "core"
 ): FlpReadyCounts & { loaded: boolean; focusOn: boolean; reload: () => void; version: number } {
     const { isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
-    const [reviewNextReadyMs, setReviewNextReadyMs] = useState<number | null>(null);
     const [focusOn, setFocusOn] = useState(false);
     const [loaded, setLoaded] = useState(false);
     // Bumped each time a fetch SETTLES (success or failure), so a caller waiting on a
@@ -36,7 +34,6 @@ export function useFlpReadyCounts(
                 const result = await fetchFlpReadyCounts(world);
                 if (cancelled) return;
                 setCounts(result.counts ?? {});
-                setReviewNextReadyMs(result.reviewNextReadyMs ?? null);
                 setFocusOn(result.focusOn === true);
             } catch (err) {
                 console.error("Error fetching flp-ready counts:", err);
@@ -53,5 +50,5 @@ export function useFlpReadyCounts(
     // refresh".
     }, [isAuthenticated, world, reloadKey]);
 
-    return { counts, reviewNextReadyMs, focusOn, loaded, reload, version };
+    return { counts, focusOn, loaded, reload, version };
 }

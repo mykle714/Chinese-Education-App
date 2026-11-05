@@ -1,13 +1,16 @@
 import { memo, useLayoutEffect, useSyncExternalStore } from "react";
 import {
     IsoCloud,
+    IsoCloudShadow,
     IsoWind,
     sortCloudsBackToFront,
     useCloudDrifts,
     useWindGusts,
     type CloudSky,
+    type IsoSurface,
     type Projector,
     type WindSky,
+    type WorldRect,
 } from "./iso";
 import type { SkyTrafficStore } from "./skyTrafficStore";
 
@@ -25,7 +28,9 @@ import type { SkyTrafficStore } from "./skyTrafficStore";
  *   - `SkyTrafficSource` runs the schedulers (useCloudDrifts / useWindGusts) and renders
  *     nothing; it publishes the travellers into a small store.
  *   - `SkyTrafficLayer side=…` subscribes to that store and draws its side.
- * All three are memoised, so a crossing starting re-renders only the two layers, and a page
+ *   - `SkyTrafficCloudShadows` subscribes to the same store and draws every cloud's shadow
+ *     on one surface (the floor, the ground), wherever the platform slots that surface.
+ * All four are memoised, so a crossing starting re-renders only the two layers, and a page
  * render re-renders none of them (their props are stable).
  *
  * Layer: page-private components (feature module `src/features/deckTower`).
@@ -85,6 +90,33 @@ export const SkyTrafficLayer = memo(function SkyTrafficLayer({ store, side, opac
         <g className={`deck-tower-page__sky-${side}`} opacity={opacity < 1 ? opacity : undefined}>
             {side === "behind" ? cloudEls : windEls}
             {side === "behind" ? windEls : cloudEls}
+        </g>
+    );
+});
+
+interface SkyTrafficCloudShadowsProps {
+    store: SkyTrafficStore;
+    /** The surface the shadows fall on. */
+    receiver: IsoSurface;
+    /** Its outline (at `receiver.z`) to clip to; undefined for the unbounded ground. */
+    clip?: WorldRect;
+    /** The whole layer's opacity — the same fade as the clouds themselves. */
+    opacity: number;
+}
+
+/**
+ * Every cloud's shadow on one surface (iso/IsoCloudShadow.tsx), from BOTH sides of the
+ * tower: a back-side cloud's shadow lands on the floor behind the tower, which the tower
+ * then hides where it stands over it. Glazes of one ink, so their order is free.
+ */
+export const SkyTrafficCloudShadows = memo(function SkyTrafficCloudShadows({ store, receiver, clip, opacity }: SkyTrafficCloudShadowsProps) {
+    const { clouds } = useSyncExternalStore(store.subscribe, store.get);
+    if (clouds.length === 0) return null;
+    return (
+        <g className="deck-tower-page__cloud-shadows" opacity={opacity < 1 ? opacity : undefined}>
+            {clouds.map((c) => (
+                <IsoCloudShadow key={`cloud-shadow-${c.id}`} drift={c} receiver={receiver} clip={clip} />
+            ))}
         </g>
     );
 });

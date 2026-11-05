@@ -46,16 +46,19 @@ the one strip of the face nothing else claims. It stops short of the `•••`
 gap — 49px on the cdp), so the note and the card-ops control share the edge rather than
 overlap. The editor uses the same berth, so a note is typed at the width it is displayed at.
 
-On the flp both the note and the `•••` sit just BELOW the card's top band
-(`constants.ts` → `cardChromeInsetCss`, the `--card-chrome-inset` the flp's card frame sets;
-`CARD_NOTE_INSET_CSS`, CardOpsRail `CARD_OPS_INSET_CSS`), because the flp's swipe-hint labels
-take the band's corners (docs/DECK_TOWER.md § "Studying the tower" → "Hint labels in the
-card's corners"). Where no frame sets it (the cdp) they keep 10px / 11px.
+Both the note and the `•••` sit just BELOW the card stock's cream rim
+(`constants.ts` → `cardChromeInsetCss`, reading the `--card-chrome-inset` that
+`card/cardStock.ts` → `cardStockVars` sets on the card frame — the flp's `FlashCardSection`
+and the cdp's hero card in `VocabCardDetailPage` both set it; `CARD_NOTE_INSET_CSS`, CardOpsRail
+`CARD_OPS_INSET_CSS`). On the flp the swipe-hint labels take the band's corners
+(docs/DECK_TOWER.md § "Studying the tower" → "Hint labels in the card's corners"). A frame
+that sets no stock vars falls back to 10px / 11px.
 
 ### Why delete left the rail
 
 `CardOpsRail` had three cells: customize / add to deck / **delete**. The note took delete's
-slot. Deleting a card is rare and takes it out of every deck, so it belongs on a surface the
+slot; the add-to-deck cell left with the Decks feature (2026-11-04), so the rail is now
+customize + note only (`src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx`). Deleting a card is rare, so it belongs on a surface the
 learner has navigated **to** — the cdp header — rather than one tap from the card they are
 drilling. (Since 2026-10-09 the cdp delete is no longer destructive: it demotes the card to
 `'provisional'`, keeping its review history — PROVISIONAL_CARDS.md § "Removing from Learn
@@ -230,6 +233,5 @@ code.
 
 * [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) — artboard 21, `CardOpsRail`'s cells
 * [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md) — the movable text blocks the note is NOT one of
-* [DECKS_FEATURE.md](./DECKS_FEATURE.md) — the rail's `add to deck` cell
 * [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — `selectedSense`, the per-card column
   this one is modelled on

@@ -6,6 +6,7 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { ISO, prefersReducedMotion } from "./iso";
+import { FLOAT_MS, floatPhaseDelay } from "./skyCueFloat";
 
 /**
  * WorldIndicator — the floating arrow in the Deck Tower's bottom-left or bottom-right
@@ -30,17 +31,8 @@ import { ISO, prefersReducedMotion } from "./iso";
 
 /** How far (px) the arrow drifts outward at the top of its float. */
 const FLOAT_PX = 4;
-const FLOAT_MS = 2800;
 /** Gap (px) between the indicator and the top of the footer bar. */
 const FOOTER_GAP_PX = 12;
-
-/**
- * A negative `animation-delay` that puts this mount's float on a shared page clock:
- * whenever an arrow mounts (a world change can mount one edge's arrow apart from the
- * other's), its cycle is at the same phase as every other arrow's — `performance.now()`
- * mod FLOAT_MS — so the pair always move together.
- */
-const floatPhaseDelay = () => `-${Math.round(performance.now() % FLOAT_MS)}ms`;
 
 const floatLeft = keyframes`
     0%, 100% { transform: translateX(0); }

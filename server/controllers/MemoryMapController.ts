@@ -1,6 +1,21 @@
 import { Request, Response } from 'express';
 import { MemoryMapService } from '../services/MemoryMapService.js';
 import { requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
+import { MEMORY_MAP_FRAME_ASPECT_RANGE } from '../contracts/wire.js';
+
+/**
+ * A client-reported viewport aspect (width ÷ height), or undefined when it is missing
+ * or outside `MEMORY_MAP_FRAME_ASPECT_RANGE` — a value that odd is a measurement fault
+ * (a viewport measured mid-layout), and storing it would pack the map for a screen
+ * nobody has.
+ */
+function parseFrameAspect(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return undefined;
+  if (value < MEMORY_MAP_FRAME_ASPECT_RANGE.min || value > MEMORY_MAP_FRAME_ASPECT_RANGE.max) return undefined;
+  return value;
+}
 
 /**
  * Memory Map HTTP layer — /api/memoryMap/*
@@ -22,8 +37,12 @@ export class MemoryMapController {
 
   /**
    * The learner's map, topped up to capacity.
-   * GET /api/memoryMap
-   *   → { words: [...], newlyPlaced: [ids], capacity: 100 }
+   * GET /api/memoryMap?frameAspect=0.56
+   *   → { slots: [...], words: [...], newlyPlaced: [ids], capacity: 50, frameAspect }
+   *
+   * `frameAspect` (optional) is the client's game viewport, width ÷ height. It frames a
+   * learner who has no frame yet (docs/MEMORY_MAP_GAME.md § 2.4b); an out-of-range value
+   * is ignored rather than rejected, so a bad measurement still loads the map.
    *
    * Called once on game entry. Spawning happens here rather than on a separate
    * "please spawn" call because the two are one thought — the map you are shown IS the
@@ -36,7 +55,7 @@ export class MemoryMapController {
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      res.json(await this.memoryMapService.loadMap(userId, language));
+      res.json(await this.memoryMapService.loadMap(userId, language, parseFrameAspect(req.query.frameAspect)));
     } catch (error: any) {
       handleControllerError(error, res, 'MemoryMapController.getMap');
     }

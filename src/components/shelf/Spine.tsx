@@ -20,12 +20,13 @@ import { SHADOW } from "../../theme/shadows";
  *
  * Purely presentational. It knows a label, a colour, an optional count and some
  * optional slots; it knows nothing about collections, decks, mastery bands or
- * routes. That is what lets one component serve a utcm band on Account, a user's
- * deck on the fdp and a Reader volume.
+ * routes. Its one caller today draws a utcm band on Account (DeckBuckets); it
+ * served user-authored decks on the old Home page until Decks were deleted 2026-11-04,
+ * which is why it still carries slots (`pin`, `caption`, `meta`, the `vol` variant)
+ * that nothing passes.
  *
  * Depended on by: src/components/shelf/Shelf.tsx (as the row's content),
- * src/components/DeckBuckets.tsx, src/features/flashcards/DecksPanelBody.tsx.
- * See docs/DECKS_FEATURE.md.
+ * src/components/DeckBuckets.tsx. See docs/SHELF_REDESIGN.md § A3.
  */
 
 export interface SpineProps {

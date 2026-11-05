@@ -7,7 +7,7 @@ import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx } from "../scrollE
  * Styled surfaces for `SheetPanel` — the app's modal/persistent bottom sheet.
  *
  * These moved out of `features/flashcards/FlashcardsLearnPage/styled.ts` when SheetPanel
- * itself became shared (the flp eip, the /decks sheet, the scp, both cdps and the
+ * itself became shared (the flp eip, the ancp, both cdps, the AccountSheet and the
  * compare sheet all mount one). Per docs/FRONTEND_LAYERING.md, a file a second feature
  * imports moves to a shared home rather than being reached across the feature boundary.
  * The `Eic`/`InfoSheet` names are kept verbatim: they are the eip's originals, they
@@ -110,8 +110,7 @@ export const InfoSheetGrabber = styled(Box)(({ theme }) => ({
 // included (see src/components/overlayHost.ts). Never put one on a box that
 // hosts an overlay — portal the overlay out first.
 //
-// Used by: DecksPanelBody (sheet variant), SheetBody, InfoCardPanelBody's tab
-// panes, ChallengeSheet's scroller. Documented in docs/SHELF_REDESIGN.md.
+// Used by: InfoCardPanelBody's tab panes, ChallengeSheet's scroller. Documented in docs/SHELF_REDESIGN.md.
 // BOTH edges, like a page: rows dissolve as they scroll up out of the panel just as
 // they do on the way down. The two bands are the page's 28/34 scaled to the panel's
 // tighter geometry, keeping the same top-is-slightly-shorter proportion — a panel is a

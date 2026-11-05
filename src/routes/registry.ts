@@ -1,5 +1,5 @@
 import { createElement, lazy, type ComponentType, type LazyExoticComponent } from "react";
-import { GAME_REGISTRY } from "../games/registry";
+import { ROUTED_GAMES } from "../games/registry";
 import { FLAGGED_OFF_PATHS, ROUTE_META, type RouteMeta } from "./routeMeta";
 
 /**
@@ -59,10 +59,9 @@ type RouteComponent = LazyExoticComponent<ComponentType>;
  * the arrow functions — the page itself is fetched when its route first matches.
  */
 const PAGE_COMPONENTS: Record<string, RouteComponent> = {
-  // Home = the fdp under the account header; Menu = the hub bento (swapped 2026-10-10).
-  "/": lazy(() => import("../pages/HomePage")),
+  // The Deck Tower is the landing page and first tab (2026-11-04); Menu is the hub bento.
+  "/": lazy(() => import("../features/deckTower/DeckTowerPage")),
   "/menu": lazy(() => import("../pages/MenuPage")),
-  "/flashcards/decks": lazy(() => import("../features/flashcards/DecksRedirect")),
   "/games": lazy(() => import("../games/GamesPage")),
   "/community": lazy(() => import("../features/community/CommunityPage")),
   "/arena": lazy(() => import("../features/arena/ArenaPage")),
@@ -81,32 +80,22 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/users/:userId": lazy(() => import("../features/profile/UserProfilePage")),
   "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),
   "/reader": lazy(() => import("../features/reader/ReaderPage")),
-  // Two routes, one component — see the routeMeta.ts note on collection paths.
-  "/flashcards/collection/:builtin": lazy(() => import("../features/flashcards/CollectionViewPage")),
-  "/flashcards/deck/:id": lazy(() => import("../features/flashcards/CollectionViewPage")),
-  "/flashcards/mastered": lazy(() => import("../features/flashcards/MasteredRedirect")),
-  // Two routes, one component — the Reading and Writing Centers differ only by the
-  // mastery bar the page reads its own path for (features/flashcards/masteryCenters.ts).
-  "/flashcards/reading": lazy(() => import("../features/flashcards/MasteryCenterPage")),
-  "/flashcards/writing": lazy(() => import("../features/flashcards/MasteryCenterPage")),
   "/flashcards/writing/notebook": lazy(() => import("../features/flashcards/writingNotebook/WritingNotebookPage")),
   "/reader/:id": lazy(() => import("../features/reader/ReaderDocumentPage")),
   "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),
   "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),
-  "/discover/sort/:language": lazy(() => import("../features/discover/SortCardsPage")),
+  "/discover/sort/:language": lazy(() => import("../features/discover/AddNewCardsPage")),
   "/night-market": lazy(() => import("../features/nightmarket/NightMarketEnginePage")),
   "/night-market/user/:userId": lazy(() => import("../features/nightmarket/NightMarketVisitPage")),
   "/tester-dashboard": lazy(() => import("../pages/TesterDashboardPage")),
   "/settings": lazy(() => import("../pages/SettingsPage")),
   "/settings/account": lazy(() => import("../pages/AccountSecurityPage")),
-  "/flashcards/learn": lazy(() => import("../features/flashcards/FlashcardsLearnPage")),
   "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
   "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),
   "/immersive-world/scene-editor": lazy(() => import("../features/immersiveworld/IWSceneEditorPage")),
   "/immersive-world": lazy(() => import("../features/immersiveworld/play/IWWorldPage")),
   "/immersive-world/:sceneId": lazy(() => import("../features/immersiveworld/play/IWPlayPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
-  "/deck-tower": lazy(() => import("../features/deckTower/DeckTowerPage")),
   "/flashcards": lazy(() => import("../features/flashcards/FlashcardsPage")),
   "/profile": lazy(() => import("../pages/ProfilePage")),
   "/login": lazy(() => import("../pages/LoginPage")),
@@ -114,12 +103,12 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "*": lazy(() => import("../pages/NotFoundPage")),
 };
 
-/** Game components, keyed by route, from the game registry. Already lazy there. */
+/** Game components, keyed by route, from the routed games. Already lazy there. */
 //
 // Each is wrapped in FocusGameGuard (docs/FOCUS_MODE.md § 5): a menu launch in a focused
 // world with too few of today's cards left is refused with a popup before the game mounts.
 const GAME_COMPONENTS: Record<string, RouteComponent> = Object.fromEntries(
-  GAME_REGISTRY.map((g) => [
+  ROUTED_GAMES.map((g) => [
     g.route,
     // Lazy like every route (the guard's module is fetched with the game's); the game's own
     // component inside stays the registry's lazy one.

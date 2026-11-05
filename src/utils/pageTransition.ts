@@ -46,3 +46,59 @@ export function routeSlideDir(to: string): SlideDir | null {
 export function supportsViewTransitions(): boolean {
     return typeof document !== "undefined" && "startViewTransition" in document;
 }
+
+// ── The circle transition ─────────────────────────────────────────────────────
+// A page revealed inside a circle that grows out of a point (the thing tapped) until it
+// passes the screen's corners, and closed again by the reverse: a circle shrinking back
+// onto that point. The motion is the flp game break's (docs/FLP_GAME_BREAKS.md, whose
+// `BREAK_AREA_MOTION` reads these numbers), so the two read as one transition.
+//
+//   enter  useSlideNavigate(to, { circleFrom })  — a view transition: the old page is held
+//          beneath as a snapshot while the new one's snapshot is clipped to the circle;
+//   exit   LeafPage `exitCircleTo` → usePageSlide `exit` — the leaving page's clone (the
+//          same clone the slide-down uses) shrinks into the circle over the destination.
+//
+// Used by: the Deck Tower's notebook paper stack ↔ the Writing Notebook
+// (docs/DECK_TOWER.md § "The notebook stack"), and its mini sort platform ↔ Add New Cards
+// (docs/DECK_TOWER.md § "The sort platform").
+
+/** A point on screen, in viewport px (a `getBoundingClientRect` centre). */
+export interface ScreenPoint {
+    x: number;
+    y: number;
+}
+
+/**
+ * `state.circleFrom` off a circle launch, validated (nav state is untyped). The opened page
+ * hands it back to its Back (LeafPage / NodePage `exitCircleTo`) so the circle closes onto
+ * the point it grew from. Undefined after a reload or deep link — Back slides then.
+ * Used by: WritingNotebookPage, AddNewCardsPage.
+ */
+export function readCirclePoint(state: unknown): ScreenPoint | undefined {
+    const p = (state as { circleFrom?: Partial<ScreenPoint> } | null)?.circleFrom;
+    return p && typeof p.x === "number" && typeof p.y === "number" ? { x: p.x, y: p.y } : undefined;
+}
+
+export const CIRCLE_MOTION = {
+    /** The circle's grow, and its shrink (the same length, played backwards). */
+    ms: 520,
+    growEasing: "cubic-bezier(0.5, 0, 0.3, 1)",
+    /** `growEasing` mirrored, so the shrink is the grow played backwards. */
+    shrinkEasing: "cubic-bezier(0.7, 0, 0.5, 1)",
+} as const;
+
+/** The radius that covers `box` (a rect in the same px as `at`) from `at`: the distance to its farthest corner, plus a pixel so no antialiased corner survives. */
+export function circleCoverRadius(at: ScreenPoint, box: { left: number; top: number; width: number; height: number }): number {
+    const dx = Math.max(at.x - box.left, box.left + box.width - at.x);
+    const dy = Math.max(at.y - box.top, box.top + box.height - at.y);
+    return Math.hypot(dx, dy) + 1;
+}
+
+/** `clip-path` for a circle of `r` px at `at` (px in the clipped box's own coordinates). */
+export function circleClip(at: ScreenPoint, r: number): string {
+    return `circle(${r.toFixed(1)}px at ${at.x.toFixed(1)}px ${at.y.toFixed(1)}px)`;
+}
+
+export function prefersReducedMotion(): boolean {
+    return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}

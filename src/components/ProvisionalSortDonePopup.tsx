@@ -10,13 +10,13 @@ import { COLORS, SIZE, WEIGHT } from "../theme";
  * empties. The page used to bounce straight back with `navigate(-1)`, which meant the
  * learner's last card vanished under an instant route change with no confirmation that
  * anything happened. Instead the page now stops on this popup and hands the exit back to
- * them: return to whatever opened the offer (a game's end screen, flp), or go Home.
+ * them: return to whatever opened the offer (a game's end screen, flp), or go to the Deck Tower.
  *
  * Deliberately NOT minimizable — there is no board left underneath to look at, so the
  * popup gates the exit the same way flp's offer does. Every route out of set mode goes
  * through one of these two buttons.
  *
- * Referenced by: src/features/discover/SortCardsPage.tsx. See docs/PROVISIONAL_CARDS.md § 7.
+ * Referenced by: src/features/discover/AddNewCardsPage.tsx. See docs/PROVISIONAL_CARDS.md § 7.
  */
 export interface ProvisionalSortDonePopupProps {
     /** How many cards the learner resolved in this pass — drives the summary line. */
@@ -29,15 +29,15 @@ export interface ProvisionalSortDonePopupProps {
     originLabel: string | null;
     /** Return to the origin page. */
     onBack: () => void;
-    /** Go Home (`/`, the decks page). */
-    onHome: () => void;
+    /** Go to the Deck Tower (`/`, the landing page). */
+    onDeckTower: () => void;
 }
 
 const ProvisionalSortDonePopup: React.FC<ProvisionalSortDonePopupProps> = ({
     sortedCount,
     originLabel,
     onBack,
-    onHome,
+    onDeckTower,
 }) => (
     <MinimizablePopup
         classPrefix="provisional-sort-done"
@@ -81,12 +81,12 @@ const ProvisionalSortDonePopup: React.FC<ProvisionalSortDonePopupProps> = ({
                 {originLabel ? `Back to ${originLabel}` : "Go back"}
             </Button>
             <Button
-                className="provisional-sort-done__home-btn"
+                className="provisional-sort-done__deck-tower-btn"
                 variant="outlined"
-                onClick={onHome}
+                onClick={onDeckTower}
                 sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
             >
-                Go to Home
+                Go to Deck Tower
             </Button>
         </Box>
     </MinimizablePopup>

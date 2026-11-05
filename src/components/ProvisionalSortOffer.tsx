@@ -15,7 +15,7 @@ import type { Language } from "../types";
  * offer rather than a silent cleanup: the player just spent a whole round with those
  * words, which is the best possible moment to ask whether they want to keep them.
  * Accepting opens the sort flow in SET MODE, seeded with exactly the words this round
- * used (`?set=provisional` in SortCardsPage), which ends on its own completion popup
+ * used (`?set=provisional` in AddNewCardsPage), which ends on its own completion popup
  * (ProvisionalSortDonePopup) once the last card of the set is resolved.
  *
  * SHAPE
@@ -39,7 +39,7 @@ import type { Language } from "../types";
  * the same offer appears after the next round, and sorting later still preserves the
  * progress (StarterPacksService.sortCard promotes the row in place).
  *
- * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingPage, WordSearchStage,
+ * Referenced by: BubbleMatchPage, MatchSpeedPage, SpeedReadingStage, WordSearchStage,
  * FlashcardsLearnPage.
  */
 export interface ProvisionalSortOfferProps {

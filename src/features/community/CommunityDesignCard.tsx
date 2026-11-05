@@ -9,7 +9,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 
 /**
  * One design thumbnail in a horizontal feed (docs/COMMUNITY_PAGE.md). The preview is the SAME
- * `MiniVocabCard` the /decks page renders (identical color + information layout), fed a
+ * `MiniVocabCard` the Deck Tower's cards page renders (identical color + information layout), fed a
  * VocabEntry built from the design. Tapping the card opens the zoom. Below it: the design owner's
  * name and an inline vote toggle (`VoteButton`).
  */

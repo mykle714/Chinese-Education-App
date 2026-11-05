@@ -1,52 +1,25 @@
 /**
- * builtinCollections.ts — the built-in collections a decks panel offers, and their
- * tile counts.
+ * builtinCollections.ts — the built-in collections one mastery LENS offers, and their
+ * figures.
  *
- * ── What a collection list is now ─────────────────────────────────────────────
- * Three ideas, and deliberately no more:
- *
- *   All Cards   — every sorted card, mastered or not
- *   Learning   — the ones still being learned (sorted, that bar not Mastered)
- *   Mastered    — the ones finished in that bar
- *
- * ── One list, for the lens-scoped surfaces ────────────────────────────────────
- *   `lensCollectionEntries(lens)` — ONE bar's two sets (Learning, Mastered).
- *       What a LENS-SCOPED surface renders: the fdp (core) and the two Mastery
- *       Centers (reading / writing). Always two tiles.
- *
- * The Games hub's "Playing with …" selector used to have a second, goal-driven list
- * here (`builtinCollectionEntries`). It was deleted on 2026-10-03 when that selector
- * was narrowed to All Cards + decks — see src/games/GamesCollectionSelector.tsx.
+ * `lensCollectionEntries(lens)` is ONE bar's two sets — that bar's Learning and that
+ * bar's Mastered — which the Deck Tower's cards page draws as its two filter keys
+ * (TowerFilterKeys), one world per lens. There is no **All Cards** entry: the page's
+ * unfiltered grid already IS the whole library.
  *
  * The per-band collections (Unfamiliar / Target / Comfortable) were removed: a utcm
- * band is a property of one card's progress, not a set a learner studies, and its
- * membership changes under you on every mark. See the note in server/contracts/wire.ts.
- *
- * ── Where Mastered sits ───────────────────────────────────────────────────────
- * Every lens's Mastered tile is a Collections entry beside its Learning — a lens
- * shows one bar, so there is no separate Mastered section.
- *
- * ⚠️ `lensCollectionEntries` has no **All Cards** entry, because every panel lists
- * those cards inline at the bottom of its own scroller. The collection itself still
- * exists — its route resolves and the Games hub selector offers it (building its own
- * row). Do not "fix" that by adding a tile back — see docs/DECKS_FEATURE.md
- * § "Which collections exist".
- *
- * Each surface still owns its own PRESENTATION and its own deck fetch; only the set
- * of built-in collections, their order and their colors live here.
+ * band is a property of one card's progress, not a set a learner studies. See the note
+ * in server/contracts/wire.ts.
  *
  * Layer: feature module (src/features/flashcards).
  *
  * Depended on by:
- *   src/features/flashcards/DecksPanelBody.tsx       (tiles + counts, all lenses)
- *   src/features/flashcards/useDecksPanel.ts         (the lens's entry list)
- * See docs/DECKS_FEATURE.md § "Which collections exist" and docs/GAMES_FEATURE.md.
+ *   src/features/flashcards/useCardLibrary.ts    (the lens's entry list + key figures)
+ *   src/features/deckTower/TowerFilterKeys.tsx   (the entry type)
+ *   src/features/deckTower/DeckTowerPage.tsx     (`builtinCollectionCount`)
+ * See docs/DECK_TOWER.md § "The cards page".
  */
 import type { MasteryWorldId } from '../../utils/masteryCompute';
-import {
-    LEARNING_COLORS, LEARNING_HUE, MASTERY_BAR_COLORS, MASTERY_BAR_HUES,
-} from '../../utils/categoryColors';
-import type { RampHue } from '../../theme/colors';
 import { collectionTitle, type CollectionRef } from './collectionRef';
 
 export interface BuiltinCollectionEntry {
@@ -54,36 +27,14 @@ export interface BuiltinCollectionEntry {
     key: string;
     ref: CollectionRef;
     label: string;
-    /** The tile's two-tone palette. */
-    colors: { main: string; accent: string };
-    /**
-     * The same colour as a RAMP hue KEY, for surfaces that need another tier of it —
-     * the MID. `LibraryDuo`'s ACTIVE (filtering) tile is the caller: a pastel fill
-     * cannot say "this filter is on" on its own, so the active tile takes an ink ring
-     * plus a halo in this hue's mid tier (v2 has no per-hue ink). Carried beside `colors`
-     * rather than replacing it because the two are derived from the same hue anyway
-     * (categoryColors.ts) and the menu surfaces only ever want the fill.
-     */
-    hue: RampHue;
 }
 
 /**
  * The built-in collections ONE LENS offers, in display order: that bar's Learning and
  * that bar's Mastered — two tiles, whichever bar it is.
  *
- * This is the list the decks PANEL renders on all three of its hosts: the fdp (lens
- * `core`) and the two Mastery Centers (lens `reading` / `writing`). A lens-scoped
- * surface never shows another bar's sets, which is the whole point of the split: the
- * fdp answers "how am I doing at KNOWING these words" and a Center answers the same
- * question about one skill.
- *
- * ⚠️ NO **All Cards** TILE, on any lens. The panel lists those cards inline at the
- * bottom of its own scroller, so a tile would cost a navigation to reach a grid the
- * learner is already scrolling toward — the same surface-local omission the fdp has
- * always made, now stated in the list rather than filtered out by the page. The
- * COLLECTION is untouched: its route still works and the Games hub selector still
- * offers it as a playable set. Do not "fix" this by adding it back —
- * see docs/DECKS_FEATURE.md § "Which collections exist".
+ * A lens-scoped surface never shows another bar's sets: each Deck Tower world answers
+ * its own skill's question. No **All Cards** entry — the unfiltered grid is it.
  */
 export function lensCollectionEntries(lens: MasteryWorldId): BuiltinCollectionEntry[] {
     const learning: CollectionRef = { kind: 'learn-now', world: lens };
@@ -93,31 +44,26 @@ export function lensCollectionEntries(lens: MasteryWorldId): BuiltinCollectionEn
             key: `learn-now-${lens}`,
             ref: learning,
             label: collectionTitle(learning),
-            colors: LEARNING_COLORS,
-            hue: LEARNING_HUE,
         },
         {
             key: `mastered-${lens}`,
             ref: mastered,
             label: collectionTitle(mastered),
-            colors: MASTERY_BAR_COLORS[lens],
-            hue: MASTERY_BAR_HUES[lens],
         },
     ];
 }
 
 /**
- * The card count shown on a built-in collection's tile, from the two count hooks the
- * fdp already loads — no extra request, and no third endpoint to keep in step.
+ * The card count shown for a built-in collection, from the two count hooks its host
+ * already loads — no extra request, and no third endpoint to keep in step.
  *
  *   all       — the sum of the four core bands, which is exactly what its page lists
  *   learn-now — the three UNMASTERED bands (the collection's own SQL is
  *               `<that bar's> category <> 'Mastered'`, so this mirrors it by
  *               construction — PROVIDED the caller hands in counts banded by the
- *               same bar, which is why useDecksPanel fetches them per lens)
+ *               same bar, which is why useCardLibrary fetches them per lens)
  *   mastered  — that bar's own total, from `useMasteredCounts`
  *
- * Returns undefined for a deck ref (decks carry their own `cardCount`).
  */
 export function builtinCollectionCount(
     ref: CollectionRef,
@@ -134,7 +80,5 @@ export function builtinCollectionCount(
             return unmastered;
         case 'mastered':
             return masteredCounts[ref.world];
-        case 'deck':
-            return undefined;
     }
 }

@@ -20,9 +20,9 @@ import { diagnosticsLimiter } from '../middleware/rateLimits.js';
 const router = Router();
 
 // Client performance diagnostics sink. Receives batched interaction-latency
-// telemetry from the browser (see src/utils/perfDiagnostics.ts). Used to diagnose
-// the PPE-only "buttons take 1–2s before working" lag on the mobile-demo
-// footer/decks.
+// telemetry from the browser (see src/utils/perfDiagnostics.ts). Built to diagnose
+// the PPE-only "buttons take 1–2s before working" lag on the mobile-demo footer
+// and landing page.
 router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
   try {
     const body = req.body || {};

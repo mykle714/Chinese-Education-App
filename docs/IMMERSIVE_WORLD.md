@@ -10,8 +10,7 @@
 > it is an ordinary optional parameter with no caller once the routes are gone.
 
 > **"hp" in this doc = the hub Bento**, which has been the **Menu** tab (`/menu`,
-> `src/pages/MenuPage.tsx`) since 2026-10-10, when Home and Menu swapped contents (Home `/`
-> is now the decks page). The iw tiles live there; iw's back arrows return to `/menu`.
+> `src/pages/MenuPage.tsx`) since 2026-10-10, when it moved off `/` (`/` is now the Deck Tower). The iw tiles live there; iw's back arrows return to `/menu`.
 
 > STATUS: **PHASE 1 COMPLETE AND ITS KILL CONDITION SURVIVED — 1a–1e are built, and an
 > author has assembled a whole scene in the tool with no engineering help (§ 12 phase 1).
@@ -1373,12 +1372,12 @@ bubble for the lookup makes the characters and the pinyin arrive in one render.
 ### 5.3c Drilling in — the eip over a scene, and the hold it takes (BUILT 2026-09-09)
 
 > **BUILT.** The caption card § 5.3b puts over a tapped word now carries the est's drill-in
-> chevron. Tapping it opens the **eip** — the same bottom sheet the flp, scp and the cdp
+> chevron. Tapping it opens the **eip** — the same bottom sheet the flp, ancp and the cdp
 > mount — on that word, with its tab strip, its drill-in trail and all of its sub-tabs.
 
 **iw is the fourth host of the panel, and it mounts the WHOLE panel.** § 5.3b's rule ("iw does
 not own a lookup UI") does not stop at the caption card: a cut-down, iw-only word view would be
-a second lookup UI by another name. So `IWPlayPage` mounts the same host block scp does —
+a second lookup UI by another name. So `IWPlayPage` mounts the same host block ancp does —
 `useEipTabs` for the trail, and the shared `EipSheet` (`FlashcardsLearnPage/EipSheet.tsx`:
 `InfoCardSection` for the sheet, `EipTabStrip` in its `tabStrip` slot, `TooManyTabsSnackbar`
 for the tab cap). It used to inline a copy of that block; it moved onto `EipSheet` 2026-10-03.
@@ -1387,9 +1386,9 @@ for the tab cap). It used to inline a copy of that block; it moved onto `EipShee
 |---|---|---|
 | The tappable caption card | `SegmentedSentenceDisplay` → `onSegmentOpen` | Already existed for the est; iw simply stopped passing `undefined` |
 | Threading it to each bubble | `IWSpeechBubbles.tsx` → `IWSpeechBubblesProps.onSegmentOpen`, `Bubble` | **Every** bubble, the learner's own echoed line included — one lookup behaviour, no per-speaker rule to remember |
-| Looking the word up, then opening | `IWPlayPage` → `handleSegmentOpen` | `lookupVocabEntry` first, `openForRoot` + `setEipOpen(true)` second, so a word with no det row leaves the scene alone instead of opening an empty sheet. A miss is silent, like scp's card-info tap |
+| Looking the word up, then opening | `IWPlayPage` → `handleSegmentOpen` | `lookupVocabEntry` first, `openForRoot` + `setEipOpen(true)` second, so a word with no det row leaves the scene alone instead of opening an empty sheet. A miss is silent, like ancp's card-info tap |
 | Holding the world | `useIWSceneRuntime` → `setPaused`, `whenResumed`, `sleep`, `sayLine`, `tick` | See below |
-| The scene's language, not the account's | `useEipTabs({ language: scene?.language })` | A scene can be played in a language the account is not set to — the same reason scp passes its route language |
+| The scene's language, not the account's | `useEipTabs({ language: scene?.language })` | A scene can be played in a language the account is not set to — the same reason ancp passes its route language |
 
 **The sheet takes a HOLD on the world, and that is not `frozen`.**
 
@@ -1421,7 +1420,7 @@ be sent again). What the hold gates:
 
 The learner cannot act during the hold anyway — `SheetPanel`'s scrim covers the stage and the
 composer — so reading about a word and playing the scene are separate modes, exactly as sorting
-and reading are on scp.
+and reading are on ancp.
 
 **No add-to-Learning control, on purpose.** A scene is the strongest case in the app for "I met
 this word, teach it to me", but it is a study action inside a play surface and it has not been
@@ -3611,7 +3610,7 @@ layer.
 **The chrome is the APP's; only the palette is the night market's.** Those are two separate
 decisions and the split is deliberate:
 
-- The **page** is a `LeafPage` like every other drill-in — back arrow out to Home (warning
+- The **page** is a `LeafPage` like every other drill-in — back arrow out to `/menu` (warning
   first if the draft is dirty), a light toolbar whose four scene actions (Load · New ·
   Delete · Save) sit together in the top-right corner, and plain theme-skinned MUI fields
   in both side panels. The editor briefly shipped as a fixed dark `#101418` shell borrowing
@@ -3984,7 +3983,7 @@ night-market templates, and a shared hue would say it did. ⚠️ Not to be conf
 copied from `NightMarketTemplateService.assertTemplateAuthor` down to the error code,
 because the two editors are the same grant. `immersiveWorldRoutes.ts` deliberately carries
 only `authenticateToken`, exactly as `nightMarketTemplateRoutes.ts` does. The page's own
-bounce-to-Home for a non-author is UX, not the boundary.
+bounce to `/` for a non-author is UX, not the boundary.
 
 ⚠️ **Every service method today is AUTHORING.** There is deliberately no ungated scene read:
 the runtime load ("give the learner today's scene") is phase 2 and needs a different

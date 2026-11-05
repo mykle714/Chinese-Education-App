@@ -47,8 +47,16 @@ function apply(tree: LayoutSlot[], plan: PlannedSlot[], words: { entryKey: strin
   ];
 }
 
-/** Grow a full map the way repeated loads would: in a few batches. */
-function growMap(seed: number, total = MEMORY_MAP_CAPACITY, batches = 5): LayoutSlot[] {
+/**
+ * Grow a full map the way repeated loads would: in a few batches. `frameAspect`
+ * (width ÷ height) is the screen it is packed for; omitted, the default portrait frame.
+ */
+function growMap(
+  seed: number,
+  total = MEMORY_MAP_CAPACITY,
+  batches = 5,
+  frameAspect?: number
+): LayoutSlot[] {
   const rng = seeded(seed);
   let tree: LayoutSlot[] = [];
   const perBatch = Math.ceil(total / batches);
@@ -57,7 +65,7 @@ function growMap(seed: number, total = MEMORY_MAP_CAPACITY, batches = 5): Layout
       entryKey: WORDS[Math.floor(rng() * WORDS.length)],
       language: 'zh',
     }));
-    tree = apply(tree, planSlots(tree, words, rng), words);
+    tree = apply(tree, planSlots(tree, words, rng, frameAspect), words);
   }
   return tree;
 }
@@ -177,6 +185,23 @@ describe('planSlots', () => {
     }
     expect(ratio / runs).toBeGreaterThan(0.35);
     expect(ratio / runs).toBeLessThan(0.75);
+  });
+
+  // The frame (docs/MEMORY_MAP_GAME.md § 2.4b): the map's shape follows the screen it
+  // is packed for, so a fixed camera can fit it without leaving most of the screen water.
+  it.each([
+    [0.55, 0.4, 0.8],
+    [1.0, 0.75, 1.3],
+    [1.8, 1.3, 2.4],
+  ])('packs toward a %s frame (width ÷ height)', (frameAspect, low, high) => {
+    let ratio = 0;
+    const runs = 20;
+    for (let seed = 1; seed <= runs; seed++) {
+      const b = mapBounds(allParts(layoutMap(growMap(seed, MEMORY_MAP_CAPACITY, 5, frameAspect))))!;
+      ratio += (b.maxX - b.minX) / (b.maxY - b.minY);
+    }
+    expect(ratio / runs).toBeGreaterThan(low);
+    expect(ratio / runs).toBeLessThan(high);
   });
 
   it('is deterministic for a given random source', () => {

@@ -14,7 +14,7 @@ code, `docker-compose.yml` / `docker-compose.ppe.yml`, `database/migrations/`
 dictionary seed dumps (`det_dump.dump`, `database/*.dump`).
 
 Everything below is **gitignored** and machine-local — it must be copied in by
-hand (scp, password manager, etc.) from an existing dev machine. None of it can
+hand (ancp, password manager, etc.) from an existing dev machine. None of it can
 be regenerated from the repo alone.
 
 | File | Consumed by | Contents |

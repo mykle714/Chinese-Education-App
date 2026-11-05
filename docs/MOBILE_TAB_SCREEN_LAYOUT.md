@@ -18,12 +18,12 @@ pages don't re-implement (or drift from) them.
      `rightContent` primitives are documented in
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header component hierarchy.
    - **Every scrollable content page must use `MobileTabScreen`** so this stays
-     consistent. Today that is `/` (Home — the fdp, `FlashcardsDecksPage` inside
-     `HomePage`), `/menu` (Menu hub), `/dictionary` (Dictionary), and `/games`
-     (Games hub); `/deck-tower` (Deck) also mounts it, with `scrollable={false}`.
-     The four footer tabs are Home / Menu / Deck / Dictionary (Account is
-     no longer a page — it is `AccountSheet`, raised over Home); Games is a
-     drill-in from the Menu. Games (and the Mastered page) are **node pages** —
+     consistent. Today that is `/menu` (Menu hub), `/arena` (Arena),
+     `/dictionary` (Dictionary), and `/games` (Games hub); `/` (Deck — the Deck
+     Tower) also mounts it, with `scrollable={false}`. The footer tabs are
+     Deck / Menu / Arena (flag-gated) / Dictionary (Account is not a page — it is
+     `AccountSheet`, raised from td's header avatar); Games is a drill-in from the
+     Menu. Games is a **node page** —
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +
      `arrowDirection="left"` and adds the horizontal slide. See
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
@@ -34,7 +34,10 @@ pages don't re-implement (or drift from) them.
    renders the footer itself** — a single persistent bar is rendered at the frame
    level by `FooterPresenter` (so it animates independently of the page slides;
    see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)). `MobileTabScreen` still reserves
-   the clearance; the footer resolves its own active tab from the route.
+   the clearance; the footer resolves its own active tab from the route. A route
+   whose `routeMeta` row sets `footerStyle: "slab"` (td, `/dictionary`, both cdps,
+   ancp) gets the floating **slab** footer instead of the bar (`MobileFooter`
+   `variant`, `SLAB_FOOTER_TOTAL_HEIGHT`).
 
    > It was a detached rounded **pill** (64px tall, inset 16px on every side, drop
    > shadow, icon + label per tab) until the shelf redesign's A2a
@@ -79,7 +82,7 @@ ScreenRoot            position: relative
   value worth passing is `"dense"` — see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header sizes.
 - `backdrop` (also on `NodePage`) is non-interactive decoration painted over `surfaceColor`
-  and behind the header and content; scp's night sky is the only user. Passing it makes the
+  and behind the header and content; ancp's night sky is the only user. Passing it makes the
   scroll area `position: relative`, which is why it is opt-in rather than always on.
 - `surfaceColor` paints `ScreenRoot` behind everything (header + content + the
   footer-clearance padding) so short pages have no color seams.
@@ -88,13 +91,11 @@ ScreenRoot            position: relative
   > is rendered at FRAME level by `FooterPresenter`, not inside the page, and it is
   > always painted `COLORS.background` (`--paper`) — the design gives `.fbar` no other
   > ground. A page that sets a distinctly different `surfaceColor` therefore gets a
-  > visible colour step across the bottom 74px of the frame. The fdp and the Mastery
-  > Centers used to pass the grey `COLORS.header` and did exactly that; both now use
-  > the default. If a page needs to feel tinted, tint an INNER surface — a card, a
-  > sheet, a section — not the page ground. The two card-detail pages used to pass
-  > `COLORS.yellowAccent` (harmless — within ~1% of paper) and now pass nothing at all.
-  > Pages that set it today: the Deck Tower, scp, the Dictionary and its card page, and
-  > the Mastery Centers.
+  > visible colour step across the bottom 74px of the frame. If a page needs to feel
+  > tinted, tint an INNER surface — a card, a sheet, a section — not the page ground.
+  > The rule binds bar-footer pages only: the pages that set a ground today (the Deck
+  > Tower, ancp, the Dictionary and both card pages, on the Tier 2 look) all wear the
+  > floating slab, which casts onto that ground instead of meeting it edge to edge.
 - `contentSx` styles only the content column (padding, `alignItems`, nested
   selectors). The header is intentionally excluded so it always stays flush and
   full-width regardless of content centering.
@@ -169,8 +170,7 @@ and some pages cancel exactly those with a non-passive listener (`useBlockEdgeSw
 
 ⚠️ **Every sideways scroller under this shell needs the flag**, not just pagers — a
 `ShelfRow scrollable`, a horizontally-scrolling toolbar, a filmstrip. Current opt-ins:
-`ChallengeDetailPage` (its pager), `MasteryCenterPage` (reading world, the games belt) and
-`DictionaryPage` (the swipeable result glosses, `DictionaryEntryRow` → `swipeGloss`).
+`ChallengeDetailPage` (its pager) and `DictionaryPage` (the swipeable result glosses, `DictionaryEntryRow` → `swipeGloss`).
 
 ### `wrapHeader` — a page that draws its own chrome AROUND the header
 
@@ -241,9 +241,7 @@ clearance contract is: **a scrollable surface reserves
 `FOOTER_TOTAL_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
 node page automatically, and a page laying out its own scroller must do it by hand.
 
-> Related: the Mastered page was generalized into `CollectionViewPage` (node page;
-> `/flashcards/mastered` is now a redirect — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)).
-> `VocabCardDetailPage` is a node page; the four game pages are **leaf pages**
+> Related: `VocabCardDetailPage` is a node page; the routed game pages are **leaf pages**
 > (`LeafPage`) with **no footer** at all. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 ## Game info screens

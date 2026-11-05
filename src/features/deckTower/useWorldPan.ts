@@ -149,8 +149,17 @@ function panView(plan: PanPlan, e: number, paletteOf: (id: TowerWorldId) => Worl
     };
 }
 
-export function useWorldPan(paletteOf: (id: TowerWorldId) => WorldPalette): WorldPanView & { go: (to: TowerWorldId, carry?: PanCarry) => void } {
-    const [world, setWorld] = useState<TowerWorldId>("core");
+/**
+ * `initialWorld` is the world the page opens on (read once, at mount): main unless the
+ * page was returned to on another — the Writing Notebook's Back lands on writing
+ * (DeckTowerPage → `NOTEBOOK_EXIT`). A world not shown (its goal off) falls back to main
+ * in DeckTowerPage.
+ */
+export function useWorldPan(
+    paletteOf: (id: TowerWorldId) => WorldPalette,
+    initialWorld: TowerWorldId = "core",
+): WorldPanView & { go: (to: TowerWorldId, carry?: PanCarry) => void } {
+    const [world, setWorld] = useState<TowerWorldId>(initialWorld);
     const [plan, setPlan] = useState<PanPlan | null>(null);
     const [now, setNow] = useState(0);
     // The latest settled values, read by `go` without re-creating it every frame.

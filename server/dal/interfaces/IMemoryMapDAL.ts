@@ -24,6 +24,8 @@ export interface MemoryMapSlotRow {
   definition: string | null;
   definitionClusters: unknown;
   selectedSense: string | null;
+  /** The occupant's `starterPackBucket` — `'provisional'` marks a lent card. Null for an empty slot. */
+  starterPackBucket?: string | null;
 }
 
 /**
@@ -125,4 +127,22 @@ export interface IMemoryMapDAL {
 
   /** Whether one card's READING track is mastered — the graduation test. */
   isReadingMastered(userId: string, language: string, vocabEntryId: number): Promise<boolean>;
+
+  /**
+   * The learner's stored map frame — `users."memoryMapFrameAspect"`, width ÷ height of
+   * the game viewport the map was generated for — or null if never framed.
+   */
+  getFrameAspect(userId: string): Promise<number | null>;
+
+  /**
+   * Set the learner's frame to `frameAspect` and delete every slot of this map, under
+   * the same per-map lock as `writeSpawn`, so the next spawn regenerates it from empty.
+   *
+   * `onlyIfUnframed` makes the whole reset conditional on the frame still being NULL
+   * (the first framed load wiping a pre-frame map); a concurrent load that framed it
+   * first wins and nothing is touched. Returns whether the reset happened. Its only
+   * caller (`MemoryMapService.loadMap`) always passes `true` since the unconditional
+   * regenerate path was removed 2026-11-04.
+   */
+  resetMap(userId: string, language: string, frameAspect: number, onlyIfUnframed: boolean): Promise<boolean>;
 }

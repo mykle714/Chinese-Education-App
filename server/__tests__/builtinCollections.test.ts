@@ -19,8 +19,8 @@ import {
  * WHERE fragment each one means (docs/DECKS_FEATURE.md § "Which collections exist").
  *
  * The interesting invariant is the PARTITION: a bar's Learning set and its Mastered
- * set must be exact complements, or a Mastery Center could show a card in neither
- * (or in both) and the two tile counts would stop summing to the library.
+ * set must be exact complements, or the Deck Tower's cards page could show a card under
+ * neither filter key (or both) and the two key counts would stop summing to the library.
  */
 describe('built-in collections', () => {
   it('offers a Learning and a Mastered id for every bar', () => {

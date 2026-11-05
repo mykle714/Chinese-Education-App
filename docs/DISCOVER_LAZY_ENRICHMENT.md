@@ -30,7 +30,7 @@
 
 ## 1. Goal
 
-Today the discover flows (Sort Cards, Quick Mark, Skipped) only surface the tiny
+Today the discover flows (Add New Cards, Quick Mark, Skipped) only surface the tiny
 curated set of **fully-enriched, `discoverable = TRUE`** Chinese entries (148 on
 dev). The rest of `dictionaryentries_zh` (~114k rows) is invisible.
 

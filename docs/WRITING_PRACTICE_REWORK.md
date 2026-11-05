@@ -10,8 +10,8 @@ every card read. The pre-wipe data (writing tracks + stars) is kept on PPE in
 
 Parent doc: [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) (the drill's UX). Related:
 [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md) (top-1 grading, Hanzi Writer
-guide), [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) (the Writing Center hosts
-the writing hand and the Writing Grid), [MASTERY_REWORK.md](./MASTERY_REWORK.md) (the
+guide), [DECK_TOWER.md](./DECK_TOWER.md) (the writing world hosts the writing flp, whose
+game breaks are the Writing Grid and Superposition), [MASTERY_REWORK.md](./MASTERY_REWORK.md) (the
 writing bar), [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (hidden character rows).
 
 | § | Piece | Where |
@@ -90,16 +90,15 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
 
 ## 2. Writing Grid game
 
-8 single characters in a grid of 4 rows × 2 columns (3 columns on a vertically tight frame — see Flow step 2); grid **position i is Level i + 1**, and each slot has its level name written beneath it. Launched from the Writing Center, and offered as the writing
-flp's game break ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), never from the hub
-(`GameDef.hiddenFromHub`, `languages: ["zh"]`, game flag `writing-grid`).
+8 single characters in a grid of 4 rows × 2 columns (3 columns on a vertically tight frame — see Flow step 2); grid **position i is Level i + 1**, and each slot has its level name written beneath it. **Break-only**: played only as the writing
+flp's game break ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)) — the registry entry has no route
+or hub tile (`src/games/registry.ts`; `languages: ["zh"]`, game flag `writing-grid`).
 
-`WritingGridStage` owns the run. `WritingGridPage` is the route's thin host; `WRITING_GRID_BREAK`
-and `WritingGridBreakStage` (`src/games/flpBreak/`) are the break's. A break differs in four ways:
-no give-up chip; a seeded, prefetched deal; Leave ends a live run as give up
-does, with no confirm; and the run reports to the flp's results card in place of the End
-board and popup, so steps 4 and 5's popup, puck and practice redraw are route-only. The personal
-best still records on a finished run, and a win still logs on a medalled one.
+`WritingGridStage` owns the run; `WRITING_GRID_BREAK` and `WritingGridBreakStage`
+(`src/games/flpBreak/`) are its one host. The deal is seeded with the working loop and may
+arrive prefetched; the run reports to the flp's results card (`onRunEnded`) — there is no
+end popup and no Play Again. The personal best records on a finished run, and a win logs on
+a medalled one.
 
 ### Flow (`src/games/writing-grid/WritingGridStage.tsx`)
 `loading → (empty) → countdown → arrange → write → ended`
@@ -164,10 +163,9 @@ best still records on a finished run, and a win still logs on a medalled one.
    cell's **own canvas** — the learner's ink over the character's **full still shadow**
    on every slot regardless of level (L4–L8 included, though they never showed one while
    writing; Snap keeps its snapped strokes), pinyin at the bottom centre
-   (`WritingGridBoard`, the `phase === "ended"` branch). The end popup is **minimizable**
-   (`GameEndPopup`'s `onMinimize` / `onRestore`, `WritingGridStage` → `popupMinimized`):
-   its × collapses it to the top-right puck so the finished board can be looked over.
-   **Practice redraw** — on the End board every cell is tappable (any verdict): it reopens
+   (`WritingGridBoard`, the `phase === "ended"` branch), while the break shrinks back onto
+   its results card. **Practice redraw** — a cell tapped on the End board in that moment
+   reopens
    `WritingFocusEditor` at the slot's level with the cell's ink **as drawn** (unlike a
    Phase 2 ✗ reopen, which wipes it). Clear / Undo and redraw; on tap-out a **changed**
    drawing is verified (top-1) and the cell's ✓ / ✗ updates, but **no mark is sent** —
@@ -175,15 +173,13 @@ best still records on a finished run, and a win still logs on a medalled one.
    `handleCellDone`, its `practice` branch). Closing unchanged, or cleared and left empty,
    keeps the cell's drawing and verdict (`sameInk`). The time, medal and personal best are
    final and never change.
-5. **Give up** — a mono **"give up"** chip in the header's right slot (`HeaderToggleChip`,
-   class `writing-grid__give-up`), shown only while the stopwatch runs (Phase 1 and 2; not
-   on the countdown or at End). It confirms first (`useConfirmation` — "Give up this
-   grid?"), then stops the stopwatch, discards any open canvas unchecked, and jumps to the
-   **same End board** — so every character's full shadow is revealed and practice redraw
-   works as above. The popup reads **"Gave up"** with "*N* of 8 written" (the ✓ count frozen
-   at the moment of giving up) instead of the time; **no medal, no personal best, no win,
-   and no marks** beyond the cells already checked during the run
-   (`WritingGridStage` → `handleGiveUp`, `endRunEarly`, `gaveUpCorrect`).
+5. **Leave** — the break's Leave ends a live run early, with no confirm
+   (`WritingGridStage` → `endRunEarly`): the stopwatch stops, any open canvas is discarded
+   unchecked, and the results card reads "*N* of 8 written" (the ✓ count frozen at that
+   moment, `gaveUpCorrect`) instead of the time — **no medal, no personal best, no win, and
+   no marks** beyond the cells already checked. Left during Phase 1, the screen keeps
+   showing Phase 1 on the way out (`leftDuringArrange`). Before the run has started, Leave
+   simply closes the break.
 
 ### Dealing (`GET /api/writingGrid/deal`)
 `WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`. An flp break adds
@@ -206,10 +202,9 @@ best still records on a finished run, and a win still logs on a medalled one.
 Medals (estimates, tune from play data): gold ≤ 2:00, silver ≤ 3:30, bronze ≤ 6:00, none
 beyond — `WRITING_GRID_MEDAL_THRESHOLDS_MS`.
 
-Code: `src/games/writing-grid/` (`WritingGridStage`, `WritingGridPage`, `WritingGridBoard`,
+Code: `src/games/writing-grid/` (`WritingGridStage`, `WritingGridBoard`,
 `gridOrder`, `constants`), `src/games/flpBreak/writingGridBreak.ts`, `WritingGridBreakStage.tsx`, `src/api/writingGrid.ts`, `server/contracts/writingGrid.ts`,
-`server/{dal/implementations/WritingGridDAL,services/WritingGridService,controllers/WritingGridController,routes/writingGridRoutes}.ts`,
-`src/features/flashcards/centers/WritingGamesCarousel.tsx` (the Writing Center belt card).
+`server/{dal/implementations/WritingGridDAL,services/WritingGridService,controllers/WritingGridController,routes/writingGridRoutes}.ts`.
 Tests: `server/__tests__/writingGrid.test.ts`, `src/__tests__/writingGridOrder.test.ts`,
 `src/games/flpBreak/__tests__/writingGridBreak.test.ts`.
 
@@ -220,7 +215,7 @@ Direction and unit per game: `server/contracts/personalBests.ts` → `PERSONAL_B
 | Game | Value | Mode key |
 |---|---|---|
 | Word Search | completion ms (lower) | `pinyin` / `no-pinyin` |
-| Match Speed (`match-speed-30`) | finish time, ms (lower) | `mixed` / `review` / `challenge` (not recorded when `relaxed`) |
+| Match Speed (`match-speed-30`) | finish time, ms (lower) | `mixed` (`PERSONAL_BEST_MODE`; the old `review` / `challenge` rows were deleted by migration 182) |
 | Speed Reading | total ms incl. penalties (lower) | `default`; finished runs only |
 | Hydra Bubbles | matches (higher) | `default` |
 | Writing Grid | completion ms (lower) | `default` |
@@ -233,16 +228,16 @@ are never recorded (they are dealt from the round's set).
   → `PersonalBestController` → `PersonalBestService.submit` (validation + direction) →
   `PersonalBestDAL.upsertIfBetter` (one atomic conditional upsert).
 - Client: `src/api/personalBests.ts`; `src/games/shared/usePersonalBest.ts` (`record` once
-  per run, `reset` on Play Again); `src/games/shared/PersonalBestLine.tsx` (end-screen row,
+  per run, `reset` on a new run); `src/games/shared/PersonalBestLine.tsx` (end-screen row,
   "New best!" pill, optional `unitLabel`).
 - Separate from `wins`, which only gets a row on a win/medal.
 
 ---
 
-## 3. Writing flp (`/flashcards/learn?world=writing`)
+## 3. Writing flp (the Deck Tower's writing world)
 
-Launched from the Writing Center's compact study hand (`FlpStudyHand bar="writing"` —
-Writing Challenge / Review / Mix). `FlpWorld` includes `writing`
+Studied in place on the Deck Tower's **writing** world (tap its Learning tower —
+[DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower"); always Study Mix. `FlpWorld` includes `writing`
 (`server/contracts/studyMode.ts`); the server deals only 1–4-character all-Han words
 (`WRITING_FLP_WORD_CLAUSE`) and bands, rests and refills on the writing bar.
 
@@ -426,8 +421,7 @@ Code:
 - **Every writing mark carries `{ level, perChar }`**; the server rejects a writing mark
   without it, and rejects any writing mark on a word longer than `WRITING_MAX_CHARS` (4,
   `server/contracts/writingLevels.ts`). That constant is the one limit every writing
-  surface reads: the popup's eligibility (`usePracticeWriting`), the Writing Center word
-  grid's pool (`WritingPracticeGrid`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`)
+  surface reads: the popup's eligibility (`usePracticeWriting`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`)
   and `FlashcardMarkService.applyWritingResult`.
 - Hidden character rows are ordinary provisional rows: never selected as the learner's own
   card, may be re-lent into a short round, promoted in place (keeping their writing

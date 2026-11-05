@@ -42,8 +42,8 @@ export interface PlateTones {
  *
  * Layer: shared theme style — in theme/ because the games draw plates too and may not
  * import features/. `towerPlateSx` is used by FlashcardsLearnPage.tsx (passed to
- * WordToolsRail `pillSx`), styled.ts → `MoreInfoPill` (`plate`), GameBreakCard.tsx,
- * games/shared/GameFrame.tsx (Leave, tower tone). `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
+ * WordToolsRail `pillSx`), styled.ts → `MoreInfoPill` (`plate`) and GameBreakCard.tsx.
+ * `towerPlatePressSx` + `TOWER_PLATE_PRINT` are its two halves,
  * exported for a control that wants only one of them (none does today — the study
  * header's audio chip used both until it became bare text, 2026-10-26).
  */
@@ -54,12 +54,13 @@ export const PLATE_WALL_PX = 5;
 /**
  * The Deck Tower study session's UI lettering: 975 Maru SC, the rounded face of the
  * app's Chinese text, reached through `FONTS.cjk` (useChineseFont owns which face that
- * is, and its slices cover Latin). Applied to the study header's audio chip and the
- * session's button labels — and ONLY there, so the header title stays in the UI sans and
+ * is, and its slices cover Latin). Applied to the session's button labels and
+ * HeaderActionChip — and ONLY there (every outlined chip, the audio chip included,
+ * takes the same face from `outlinedChipSx`), so the header title stays in the UI sans and
  * plates on game surfaces keep `TOWER_PLATE_PRINT`'s. The face ships one weight: anything
  * heavier is browser-synthesised bold.
  *
- * Used by: TowerStudyHeader.tsx, FlashcardsLearnPage.tsx.
+ * Used by: FlashcardsLearnPage.tsx, CardOpsRail.tsx (via prop), PageHeader.tsx → HeaderActionChip.
  * Documented in: docs/DECK_TOWER.md § "Studying the tower" → "The lettering".
  */
 export const TOWER_STUDY_FONT = FONTS.cjk;

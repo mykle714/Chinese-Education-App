@@ -1,7 +1,5 @@
 import { Box, ButtonBase } from "@mui/material";
-import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { TESTER_ROW_SX, testerChipSx } from "./testerChipStyle";
 
 /**
  * TesterChipRow — the Deck Tower's FEATURE-TESTER row of single-choice chips under the
@@ -15,12 +13,11 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * "solid-ink control" exception to the outline rule (CLAUDE.md § Buttons & cards).
  * A disabled chip is the same chip, faded.
  *
- * Depended on by: TimeOfDayToggle.tsx, ForcedBreakPicker.tsx
+ * Depended on by: TimeOfDayToggle.tsx, ForcedBreakPicker.tsx, WeatherToggle.tsx; its chip look
+ * lives in testerChipStyle.ts, shared with LightningStrikeChips.tsx
  * (docs/DECK_TOWER.md § "Time of day" → "Tester toggle", § "Forced game breaks").
  */
 
-/** A disabled chip's opacity: still legible, clearly not tappable. */
-const DISABLED_CHIP_OPACITY = 0.45;
 
 export interface TesterChipOption<V extends string> {
     value: V;
@@ -43,7 +40,7 @@ function TesterChipRow<V extends string>({ classBase, ariaLabel, options, value,
             className={`${classBase}-toggle`}
             role="radiogroup"
             aria-label={ariaLabel}
-            sx={{ display: "flex", justifyContent: "center", gap: 0.75, px: 2, pb: 1, flexWrap: "wrap" }}
+            sx={TESTER_ROW_SX}
         >
             {options.map((o) => {
                 const selected = o.value === value;
@@ -55,18 +52,7 @@ function TesterChipRow<V extends string>({ classBase, ariaLabel, options, value,
                         aria-checked={selected}
                         disabled={o.disabled}
                         onClick={() => onChange(o.value)}
-                        sx={{
-                            px: 1.25,
-                            py: 0.5,
-                            borderRadius: 999,
-                            fontFamily: FONTS.cjk,
-                            fontSize: SIZE.caption,
-                            fontWeight: WEIGHT.bold,
-                            color: selected ? COLORS.white : COLORS.onSurface,
-                            backgroundColor: selected ? COLORS.onSurface : COLORS.frost,
-                            border: selected ? `1px solid ${COLORS.onSurface}` : `1px solid ${COLORS.border}`,
-                            opacity: o.disabled ? DISABLED_CHIP_OPACITY : 1,
-                        }}
+                        sx={testerChipSx(selected, o.disabled)}
                     >
                         {o.label}
                     </ButtonBase>

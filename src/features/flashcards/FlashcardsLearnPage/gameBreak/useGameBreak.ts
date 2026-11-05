@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Language } from "../../../../types";
 import type { VocabEntry } from "../../types";
-import type { CollectionRef } from "../../collectionRef";
-import type { FlpWorld, StudyMode } from "../../../../../server/contracts/studyMode";
+import type { FlpWorld } from "../../../../../server/contracts/studyMode";
 import { focusGameMinimum } from "../../../../../server/contracts/focusMode";
 import { fetchFocusStatus } from "../../../../api/focusMode";
 import {
@@ -99,11 +98,7 @@ export interface UseGameBreakReturn {
 export function useGameBreak(args: {
     world: FlpWorld;
     language: Language;
-    studyMode: StudyMode | null;
-    collection: CollectionRef | null;
     workingLoop: readonly VocabEntry[];
-    /** This flp is a Deck Tower session (FlpBreakContext `towerSession`). */
-    towerSession: boolean;
     /** Suppress breaks entirely (e.g. while the card editor is open). */
     disabled?: boolean;
     /**
@@ -114,7 +109,7 @@ export function useGameBreak(args: {
      */
     forcedKey?: string | null;
 }): UseGameBreakReturn {
-    const { world, language, studyMode, collection, workingLoop, towerSession, disabled = false, forcedKey = null } = args;
+    const { world, language, workingLoop, disabled = false, forcedKey = null } = args;
 
     const [cardsSinceBreak, setCardsSinceBreak] = useState(0);
     const [phase, setPhase] = useState<GameBreakPhase>("cards");
@@ -166,17 +161,12 @@ export function useGameBreak(args: {
     // re-planning on one would swap the game under the learner's thumb.
     // FOCUS MODE (docs/FOCUS_MODE.md § 5): a focused break draws from outside today's set
     // and then from what is left of it (§ 4a); a game needing more cards than those two
-    // hold is SKIPPED. Read once per due break; undefined until read, null when focus does
-    // not apply (off, or a deck/collection session — a hand-picked set ignores focus). A
-    // failed read means "not focused": never lose a break to a network error.
+    // hold is SKIPPED. Read once per due break; undefined until read, null when focus is
+    // off. A failed read means "not focused": never lose a break to a network error.
     const [focusBreakCards, setFocusBreakCards] = useState<number | null | undefined>(undefined);
     useEffect(() => {
         if (!due) {
             setFocusBreakCards(undefined);
-            return;
-        }
-        if (collection) {
-            setFocusBreakCards(null);
             return;
         }
         let cancelled = false;
@@ -199,10 +189,7 @@ export function useGameBreak(args: {
         const context: FlpBreakContext = {
             language,
             world,
-            studyMode,
-            collection,
             seedIds: workingLoop.map((card) => card.id),
-            towerSession,
         };
         const breakMinimum = (c: FlpBreakCandidate) =>
             flpBreakGameFor(c.game.gameId)?.focusMinimum?.(context) ?? focusGameMinimum(c.game.gameId);

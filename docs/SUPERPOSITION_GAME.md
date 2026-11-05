@@ -1,7 +1,7 @@
 # Superposition (stroke-stacking game)
 
-> **Status: DEPLOYED to PPE 2026-11-01, no migration.** A writing-flp game break, hidden from
-> the hub. Grid and tile sizes are first-pass values, due to be tuned by hand. Parent doc:
+> **Status: DEPLOYED to PPE 2026-11-01, no migration.** A writing-flp game break and nothing else:
+> break-only, with no route or hub tile (`src/games/registry.ts`). Grid and tile sizes are first-pass values, due to be tuned by hand. Parent doc:
 > [GAMES_FEATURE.md](./GAMES_FEATURE.md). Break host: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
 The strokes of four characters are cut out onto transparent tiles, grouped into
@@ -19,7 +19,7 @@ stroke keeps its true place inside the tile, so an exact stack redraws the chara
 | Backfill (pipeline step) | Stroke groups: AI-authored, stored on det | `server/scripts/backfill/chinese/backfill-superposition-groups.js` |
 | Game logic (pure) | Tiles, stacks, tap cycle, snapping | `src/games/superposition/board.ts` |
 | Stage | The run: deal, stopwatch, marks, end | `src/games/superposition/SuperpositionStage.tsx` |
-| Page / break | Hosts | `src/games/superposition/SuperpositionPage.tsx`, `src/games/flpBreak/superpositionBreak.ts` |
+| Break | The one host | `src/games/flpBreak/superpositionBreak.ts`, `SuperpositionBreakStage.tsx` |
 
 ## Tuning
 
@@ -73,8 +73,7 @@ Refused: a character shared between words or repeated in one (two identical stac
   250 ms beat; none under reduced motion) — moves on to `onRunEnded` — the Deck Tower
   flp's end card, the game's **only** ending (there is no end popup and no Play Again). A
   break's Leave arrow during inspection does the same as Exit, so a won run is always reported.
-  Leaving early skips inspection. On the deprecated `/games/superposition` route (no flp to
-  report to) Exit simply leaves via `onDone`.
+  Leaving early skips inspection.
 - **Tap:** `nextTapSelection` walks the pile under the finger, the card icon editor's rule
   (`src/cardIcons/editor/CardIconCanvas.tsx` → `pickTapTarget`,
   [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)). The selected stroke is highlighted.

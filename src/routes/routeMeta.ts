@@ -1,6 +1,6 @@
 import { matchPath } from "react-router-dom";
 import type { FooterStyle, FooterTab } from "../components/MobileFooter";
-import { GAME_REGISTRY } from "../games/registry";
+import { ROUTED_GAMES } from "../games/registry";
 import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
 /**
@@ -95,7 +95,8 @@ export interface RouteMeta {
   footerTab?: FooterTab;
   /**
    * How the footer bar is drawn here. Omit for the app-wide flat `bar`; `slab` is the
-   * floating flashcard slab (Tower Style design), worn by /deck-tower, the Dictionary tab and scp.
+   * floating flashcard slab (Tower Style design), worn by the Deck Tower (`/`), the Dictionary tab, both
+   * card detail pages and ancp.
    * Meaningless without `footerTab`. See MobileFooter / docs/DECK_TOWER.md § Footer.
    */
   footerStyle?: FooterStyle;
@@ -111,19 +112,24 @@ export interface RouteMeta {
 
 /** Every non-game route. Order is irrelevant — React Router ranks by specificity. */
 const PAGE_ROUTES: RouteMeta[] = [
-  // ── Footer-tab destinations ──
-  // Home (`/`) is the decks page — the fdp — under the account header (banking flame,
-  // Settings, avatar); the hub bento that used to be Home is Menu (`/menu`). Swapped
-  // 2026-10-10 (docs/UX_AND_NAVIGATION.md).
-  { path: "/", access: "any", shell: "frame", chrome: "tab", footerTab: "home" },
-  { path: "/menu", access: "any", shell: "frame", chrome: "tab", footerTab: "menu" },
+  // ── Footer-tab destinations ── (left to right: Deck · Menu · Arena · Dictionary)
   {
-    path: "/flashcards/decks",
+    path: "/",
     access: "any",
     shell: "frame",
     chrome: "tab",
-    footerTab: "home",
-    note: "Legacy path of the fdp, which became Home (`/`) on 2026-10-10 — redirects there so older links and bookmarks keep working.",
+    footerTab: "deck",
+    footerStyle: "slab",
+    note: "The Deck Tower (docs/DECK_TOWER.md) — the app's landing page and first footer tab. It took `/` on 2026-11-04, when the old Home (the fdp), the Reading/Writing Centers, Decks and the collection pages were deleted; `/deck-tower`, its address until then, is gone.",
+  },
+  { path: "/menu", access: "any", shell: "frame", chrome: "tab", footerTab: "menu" },
+  {
+    path: "/arena",
+    access: "any",
+    shell: "frame",
+    chrome: "tab",
+    footerTab: "arena",
+    note: "A footer tab since 2026-11-04 (it was a Menu drill-in). Hidden with its row when the `arena` flag is off — see FLAGGED_OFF_PATHS and MobileFooter's ARENA_TAB_ON.",
   },
   {
     path: "/dictionary",
@@ -136,7 +142,7 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
   // ── Node pages (slide from the right) ──
-  // Reader, Games, Arena, Friends and Community are reached from Menu, so they keep
+  // Reader, Games, Friends and Community are reached from Menu, so they keep
   // the Menu tab lit.
   { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Was `chrome: "tab"`, which contradicted both this comment block and the page:
@@ -148,14 +154,12 @@ const PAGE_ROUTES: RouteMeta[] = [
   // four keep the Menu tab lit — they are reached from Menu, and the three
   // action pages drill in one level further (their back arrows return to /friends,
   // not to Menu). /friends itself is read-only; every mutation lives on a screen.
-  // Arena is a Menu drill-in, the same Node archetype as /friends.
-  { path: "/arena", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Study Challenge — four more Node drill-ins under /friends, all with back arrows
-  // that return to /friends/challenges rather than to Home (docs/STUDY_CHALLENGE.md § 1).
+  // that return to /friends/challenges (docs/STUDY_CHALLENGE.md § 1).
   { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
@@ -164,30 +168,12 @@ const PAGE_ROUTES: RouteMeta[] = [
   // arrow goes to actual history rather than a fixed parent (docs/USER_PROFILE_PAGE.md).
   { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
-  // Collection pages (docs/DECKS_FEATURE.md). Two routes, one component: a deck is
-  // addressed by NUMERIC id under its own segment, so a deck named "mastered" can
-  // never shadow the built-in collection route.
-  { path: "/flashcards/collection/:builtin", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/flashcards/deck/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  // Mastery Centers (docs/DECKS_FEATURE.md § "Mastery Centers") — the fdp's decks
-  // panel read through the reading / writing bar. Node drill-ins from Home (the fdp), so the
-  // Home tab stays lit and the back arrow returns there.
-  { path: "/flashcards/reading", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
-  { path: "/flashcards/writing", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
   {
     path: "/flashcards/writing/notebook",
     access: "any",
     shell: "frame",
     chrome: "leaf",
-    note: "Writing Notebook (docs/WRITING_NOTEBOOK.md) — an endless handwriting sheet launched from the Writing Center's games belt. A leaf like the games it sits beside: footerless, slides up, Back returns to the Writing Center.",
-  },
-  {
-    path: "/flashcards/mastered",
-    access: "any",
-    shell: "frame",
-    chrome: "node",
-    footerTab: "home",
-    note: "Legacy path for the Mastered collection — redirects to /flashcards/collection/mastered so older links and bookmarks keep working.",
+    note: "Writing Notebook (docs/WRITING_NOTEBOOK.md) — an endless handwriting sheet launched from the notebook stack on the Deck Tower's writing world. A leaf: footerless, slides up, Back returns to the tower's writing world.",
   },
 
   {
@@ -198,17 +184,18 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "The one FOOTERLESS node page (docs/UX_AND_NAVIGATION.md § Reader) — it still slides in from the right.",
   },
 
-  // Card-detail pages keep the tab of wherever they were reached from.
-  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "home" },
+  // Card-detail pages keep the tab of wherever they were reached from: a library card
+  // from the Deck Tower's cards page, a dictionary card from the Dictionary.
+  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
   { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary", footerStyle: "slab" },
 
-  // Sort Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so scp is a
-  // drill-in from Home (the decks rail's Sort shortcut) and lights the Home tab. The
+  // Add New Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so ancp is a
+  // drill-in from the Deck Tower (the main world's sort platform) and lights the Deck tab. The
   // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
   // Wears the floating `slab` footer since its Tower Tier 2 re-skin (2026-10-29): the page
   // is a tier-2 ground under the Deck Tower, and the slab casts its shadow on that ground
   // (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
-  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "home", footerStyle: "slab" },
+  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
 
   // ── Leaf pages (slide up, no footer) ──
   { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },
@@ -227,7 +214,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     access: "open",
     shell: "frame",
     chrome: "leaf",
-    note: "Opens from the Account header gear as a slide-up sheet. Has never had an auth wrapper.",
+    note: "The standalone Settings page. Settings is normally read as a tab of AccountSheet; this route is where /settings/account's Back lands. Has never had an auth wrapper.",
   },
   {
     path: "/settings/account",
@@ -237,14 +224,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "Artboard 11b — the write-heavy half of settings (password + delete). Reached only from the chevron row at the foot of /settings, so it matches its parent's access: the password form and the delete flow both authenticate on their own request.",
   },
 
-  // ── Footerless drill-in that does not slide ──
-  {
-    path: "/flashcards/learn",
-    access: "any",
-    shell: "frame",
-    chrome: "none",
-    note: "flp owns its own card animation; a page-level slide would fight it.",
-  },
 
   // ── Desktop-only Night Market authoring tools (plain shell) ──
   {
@@ -285,15 +264,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "One scene, running. A LEAF: the down-arrow is the only way out, and the page owns its whole surface (canvas + bubbles + composer). No footer — a walkable board must not lose its bottom rows to one.",
   },
 
-  {
-    path: "/deck-tower",
-    access: "any",
-    shell: "frame",
-    chrome: "tab",
-    footerTab: "deck",
-    footerStyle: "slab",
-    note: "Experimental: the Learning deck as an isometric card tower, in the \"Good Job!\" art style (docs/DECK_TOWER.md). The footer's Deck tab — it took Discover's slot 2026-10-17.",
-  },
 
   {
     path: "/font-lab",
@@ -325,7 +295,7 @@ const PAGE_ROUTES: RouteMeta[] = [
  * This is also where the `/games/word-search` transition bug was: the old
  * `LEAF_EXACT` set listed bubble-match by hand and simply omitted word-search.
  */
-const GAME_ROUTE_META: RouteMeta[] = GAME_REGISTRY.map((g) => ({
+const GAME_ROUTE_META: RouteMeta[] = ROUTED_GAMES.map((g) => ({
   path: g.route,
   access: g.requiresAuth ? ("account" as const) : ("any" as const),
   shell: "frame" as const,

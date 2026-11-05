@@ -1,9 +1,9 @@
 /**
  * shadeHex — the tower style's wall shading (docs/ISO_ART_FRAMEWORK.md § "Palette"). Lives
  * in theme/ rather than the iso kit because tower-style surfaces outside the scene use it
- * too: the game break's plates and the Match Speed slab (theme/towerSlab.ts).
+ * too: the game break's plates.
  *
- * Depended on by: src/features/deckTower/iso/palette.ts (re-exports both), towerSlab.ts,
+ * Depended on by: src/features/deckTower/iso/palette.ts (re-exports both),
  * src/timeOfDay/wash.ts,
  * features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakCard.tsx.
  */

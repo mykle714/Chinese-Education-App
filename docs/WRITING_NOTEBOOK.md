@@ -4,23 +4,22 @@
 Behind the `writingNotebook` feature flag (ON). zh only.
 
 An endless handwriting practice sheet, one per word. It is a **page, not a game**: no game
-framework, no rounds, no score. It is reached from the Writing Center's games belt.
+framework, no rounds, no score. It is reached from the paper stack on the Deck Tower's writing world.
 
-Parent docs: [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) (the Writing
-Center that launches it), [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) (the shared writing
+Parent docs: [DECK_TOWER.md](./DECK_TOWER.md) § The notebook stack (the entry point),
+[PRACTICE_WRITING.md](./PRACTICE_WRITING.md) (the shared writing
 panel and canvas it is built from).
 
 ---
 
 ## Page anatomy
 
-Route `/flashcards/writing/notebook` — a **leaf** page (footerless, slides up). Back always
-returns to the Writing Center, scrolled to the belt and parked on the notebook's card
-(`state.returnedFromGame = "writing-notebook"`).
+Route `/flashcards/writing/notebook` — a **leaf** page (footerless, slides up). Back returns to
+the Deck Tower's writing world (§ Entry point).
 
 ```
 ┌──────────────────────────────┐
-│ ⌄  Writing Notebook   ✎12  ⇄ │  LeafPage header — counter (flame-style) + change-word button
+│ ⌄  Writing Notebook  ✎12 (⇄ Change) │  LeafPage header — counter (flame-style) + labelled change-word chip
 │ ┌───┬───┐                    │  word bar — the writing shadows, 2 per row across the
 │ └───┴───┘                    │    sheet's width (2×2 for 3–4 chars); tapping one
 │                              │    cycles its stroke aid
@@ -30,9 +29,10 @@ returns to the Writing Center, scrolled to the belt and parked on the notebook's
 └──────────────────────────────┘
 ```
 
-- **Change-word button.** A bare `HeaderIconButton` in the header's right slot
-  (`writing-notebook-page__change-word`): an **add** glyph until a word is chosen, then
-  **swap_horiz**. Tapping it opens the word picker. Words are **one to four characters**
+- **Change-word button.** A labelled `HeaderActionChip` in the header's right slot
+  (`writing-notebook-page__change-word`): **add** + "Choose" until a word is chosen, then
+  **swap_horiz** + "Change" (its aria-label also names the current word). Styled as the
+  Deck Tower study header's outlined audio chip, in ink2 on the paper header. Tapping it opens the word picker. Words are **one to four characters**
   (all-Han; `NOTEBOOK_MAX_WORD_LENGTH`, enforced by the picker and the server).
   - Before any word has ever been chosen the page opens nothing on its own. Later visits
     reopen the most recently opened word, at the top of its sheet.
@@ -241,8 +241,8 @@ that character is the top-1 candidate** — the app-wide strict rule
 - **Sheet counter** = the minimum, over the word's **distinct** characters, of the cells
   credited to that character (`sheetCount`). 明天 with five 明 and two 天 reads 2; with no
   天 it reads 0. 谢谢 needs only 谢.
-- **Belt total** = the sum of every sheet's counter (`GET /summary` → `totalCount`), shown on
-  the notebook's belt card.
+- **Notebook total** = the sum of every sheet's counter (`GET /summary` → `totalCount`),
+  which sizes td's paper stack.
 - Counters are **derived on every read**, never stored, so reopening and closing a cell
   unchanged can never count twice.
 
@@ -325,11 +325,20 @@ Code: `server/routes/writingNotebookRoutes.ts`, `server/controllers/WritingNoteb
 
 ## Entry point
 
-The notebook's card sits on the Writing Center's **games belt** (`WritingGamesCarousel`,
-which replaced the single-card `WritingGridLauncher`), beside the Writing Grid. It is built
-by `buildNotebookCard` (`notebookBelt.ts`) as a play-only blue (`RAMP.blu`) `GameCard` whose header pill
-is the belt total (`GameCardData.tally` → `CountPill`, the generalised win pill). The notebook
-is not in `GAME_REGISTRY` and has no `GAME_FLAG`. This is its only entry point.
+The only entry is the **Deck Tower's paper stack** on the writing world's platform
+([DECK_TOWER.md](./DECK_TOWER.md) § The notebook stack): `1 + ⌊total / 20⌋` sheets of
+notebook paper in the floor's right corner, sized by the notebook total
+(`src/features/flashcards/writingNotebook/notebookEntry.ts` → `useNotebookTotal`; the
+route is `NOTEBOOK_PATH`, the header glyph `NOTEBOOK_GLYPH`). The notebook is not in
+`GAME_REGISTRY` and has no `GAME_FLAG`.
+
+The stack's launch carries `state.exitTo` (the games' `GameExit` shape, read with
+`src/games/runtime/gameExit.ts` → `readExit`), so Back returns to the tower's writing
+world. It also uses the circle transition both ways, from and back onto the stack
+(`state.circleFrom` → `LeafPage` `exitCircleTo`;
+[LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § The circle transition). With no `exitTo` (a
+deep link, a reload that lost state), Back goes to `/` with `state.towerWorld: "writing"`
+(`WritingNotebookPage` → `leave`).
 
 ---
 

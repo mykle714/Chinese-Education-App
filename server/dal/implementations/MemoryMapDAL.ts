@@ -58,6 +58,9 @@ export class MemoryMapDAL implements IMemoryMapDAL {
                s.language,
                ve."entryKey",
                ve."selectedSense",
+               -- A lent card's id must not be reported as cleared off the Deck Tower by
+               -- an flp break (docs/FLP_GAME_BREAKS.md § 4a), so the client needs it.
+               ve."starterPackBucket",
                -- Resolved in the SERVICE (resolveDisplayDefinition needs the clusters AND
                -- the learner's sense pick together), so both travel out unresolved.
                de.definition,
@@ -231,5 +234,61 @@ export class MemoryMapDAL implements IMemoryMapDAL {
     // No row = the card was deleted mid-run. Not mastered; its slot was already emptied
     // by the FK's ON DELETE SET NULL and the next load refills it.
     return result.recordset[0]?.mastered === true;
+  }
+
+  // ── The frame (docs/MEMORY_MAP_GAME.md § 2.4b, § 6a) ───────────────────────
+  //
+  // `users."memoryMapFrameAspect"` (migration 181) lives on the USERS row, not on the
+  // slot tables — one value per learner, shared by both languages' maps (owner,
+  // 2026-11-04; Memory Map is zh-only in practice). It is read and written here rather
+  // than through UserDAL because nothing but the map's spawn reads it, and keeping it
+  // beside the slot writes lets a reset change both under one lock.
+
+  async getFrameAspect(userId: string): Promise<number | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    const result = await this.dbManager.executeQuery<{ frameAspect: number | null }>(async (client) =>
+      client.query(`SELECT "memoryMapFrameAspect" AS "frameAspect" FROM users WHERE id = $1`, [userId])
+    );
+    const value = result.recordset[0]?.frameAspect;
+    return typeof value === 'number' ? value : null;
+  }
+
+  async resetMap(
+    userId: string,
+    language: string,
+    frameAspect: number,
+    onlyIfUnframed: boolean
+  ): Promise<boolean> {
+    if (!userId) throw new ValidationError('userId is required');
+
+    const table = this.slotsTableFor(language);
+
+    return this.dbManager.executeInTransaction(async (transaction) => {
+      const client = transaction.getClient();
+
+      // The SAME lock key as `writeSpawn`, so a reset and a spawn on this map can
+      // never interleave: a spawn that planned against the old tree either commits
+      // before the delete or sees the count change and writes nothing.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [
+        `${table}:${userId}`,
+      ]);
+
+      // Frame first, and conditionally when asked: of two concurrent first loads
+      // (React StrictMode fires two in dev) only the one that finds the column still
+      // NULL wipes the legacy map. The other leaves the map — possibly already
+      // respawned by the winner — alone.
+      const framed = await client.query(
+        `UPDATE users SET "memoryMapFrameAspect" = $2
+         WHERE id = $1 ${onlyIfUnframed ? 'AND "memoryMapFrameAspect" IS NULL' : ''}`,
+        [userId, frameAspect]
+      );
+      if ((framed.rowCount ?? 0) === 0) return false;
+
+      // One statement deletes the whole tree, which is what the self-FK's NO ACTION
+      // (checked at end of statement) requires — a row-by-row delete would refuse to
+      // remove a parent before its children (migration 173).
+      await client.query(`DELETE FROM ${table} WHERE "userId" = $1 AND language = $2`, [userId, language]);
+      return true;
+    });
   }
 }

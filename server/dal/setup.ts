@@ -21,9 +21,6 @@ import { VocabEntryController } from '../controllers/VocabEntryController.js';
 import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
 import { UserMinutePointsController } from '../controllers/UserMinutePointsController.js';
 import { DictionaryController } from '../controllers/DictionaryController.js';
-import { DailyWordDAL } from './implementations/DailyWordDAL.js';
-import { WordOfTheDayService } from '../services/WordOfTheDayService.js';
-import { WordOfTheDayController } from '../controllers/WordOfTheDayController.js';
 import { TextController } from '../controllers/TextController.js';
 import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
@@ -82,13 +79,12 @@ import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js'
 import { VelocityController } from '../controllers/VelocityController.js';
 import { FriendshipDAL } from './implementations/FriendshipDAL.js';
 import { ArenaDAL } from './implementations/ArenaDAL.js';
-import { DeckDAL } from './implementations/DeckDAL.js';
 import { FriendsService } from '../services/FriendsService.js';
 import { ArenaService } from '../services/ArenaService.js';
 import { ArenaController } from '../controllers/ArenaController.js';
-import { DeckService } from '../services/DeckService.js';
+import { WeatherService } from '../services/WeatherService.js';
+import { WeatherController } from '../controllers/WeatherController.js';
 import { FriendsController } from '../controllers/FriendsController.js';
-import { DecksController } from '../controllers/DecksController.js';
 import { ProvisionalCardDAL } from './implementations/ProvisionalCardDAL.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
 import { StudyChallengeDAL } from './implementations/StudyChallengeDAL.js';
@@ -138,9 +134,9 @@ const arenaService = new ArenaService(arenaDAL, userDAL);
 // Baseline top-up for games/flp: lends words as 'provisional' vet rows so no surface
 // ever blocks on card count (migration 140, docs/PROVISIONAL_CARDS.md).
 const provisionalCardDAL = new ProvisionalCardDAL();
-// User-authored card sets — decks and their membership rows (migration 141,
-// docs/DECKS_FEATURE.md).
-const deckDAL = new DeckDAL();
+// (The user Decks feature — DeckDAL / DeckService / DecksController — was removed
+// 2026-11-04. Its `decks` / `deck_cards` tables (migration 141) are retained;
+// VocabEntryDAL.delete still clears a deleted card's deck_cards rows.)
 // The weekly head-to-head between two friends — one table, everything about a
 // challenge on it (migration 148, docs/STUDY_CHALLENGE.md).
 const studyChallengeDAL = new StudyChallengeDAL();
@@ -148,14 +144,14 @@ const studyChallengeDAL = new StudyChallengeDAL();
 // for now — the run/rating/memory tables get their methods when phase 2 has a runtime to
 // call them.
 const immersiveWorldDAL = new ImmersiveWorldDAL();
-// The global Word of the Day — one pinned zh character per local date (migration 169,
-// docs/READING_WRITING_CENTERS.md § Phase 3).
-const dailyWordDAL = new DailyWordDAL();
+// (The global Word of the Day — DailyWordDAL / WordOfTheDayService / its controller and
+// GET /api/dictionary/word-of-the-day — was removed 2026-11-04 with the Reading/Writing
+// Mastery Centers, its only client surface. The `daily_words` table (migration 169)
+// is retained.)
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
 const dictionaryService = new DictionaryService(dictionaryDAL);
-const wordOfTheDayService = new WordOfTheDayService(dailyWordDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 // The single owner of "a learner reviewed a card" — cooldown gate, typed mark
 // windows, mastery crossings and the velocity log (docs/MASTERY_REWORK.md). Depends
@@ -203,16 +199,10 @@ const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, st
 // after provisionalCardService (the loop lends cards when every card it owns is
 // resting on cooldown). No cycle: ProvisionalCardService knows nothing of this one.
 const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService, provisionalCardService);
-// Constructed after onDeckVocabService: a deck's card list is the third collection
-// read and is delegated to it (see DeckService's class comment).
-const deckService = new DeckService(deckDAL, onDeckVocabService);
-// Constructed after deckService (it creates the generated study decks) and after
-// starterPacksService (it borrows estimateLevel for the candidate band, and the
-// shared "already known" write for a struck word). Takes deckDAL directly as well,
-// for the deck DROPS that happen outside any deck-service policy — when a player
-// finishes their test and when an unfriend ends a challenge.
+// Constructed after starterPacksService (it borrows estimateLevel for the candidate
+// band, and the shared "already known" write for a struck word).
 const studyChallengeService = new StudyChallengeService(
-  studyChallengeDAL, friendshipDAL, userDAL, deckDAL, deckService, starterPacksService
+  studyChallengeDAL, friendshipDAL, userDAL, starterPacksService
 );
 // User profile page (docs/USER_PROFILE_PAGE.md) — a pure COMPOSITION service: it owns
 // no table of its own and reads through five DALs plus onDeckVocabService, whose
@@ -240,20 +230,17 @@ const friendsService = new FriendsService(
 const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
 const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
-// Takes deckService as well: its game/flp endpoints accept an optional `?deck=`
-// restriction and must authorize that id before assembling a round.
 // Focus mode (docs/FOCUS_MODE.md): a per-world daily cap of 25 cards. Its own DAL; the
 // service is shared by its controller and by onDeckVocabController + flashcardRoutes,
-// which narrow every unrestricted flp/game round to the day's set.
+// which narrow every flp/game round to the day's set.
 const focusModeDAL = new FocusModeDAL();
 const focusModeService = new FocusModeService(focusModeDAL);
 const focusModeController = new FocusModeController(focusModeService);
 const onDeckVocabController = new OnDeckVocabController(
-  onDeckVocabService, provisionalCardService, deckService, studyChallengeService, focusModeService
+  onDeckVocabService, provisionalCardService, studyChallengeService, focusModeService
 );
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
-const wordOfTheDayController = new WordOfTheDayController(wordOfTheDayService);
 const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService);
@@ -286,9 +273,9 @@ const personalBestController = new PersonalBestController(personalBestService);
 // Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2): deals 8 characters, lending when short.
 const writingGridDAL = new WritingGridDAL();
 const writingGridService = new WritingGridService(writingGridDAL, provisionalCardService);
-const writingGridController = new WritingGridController(writingGridService, focusModeService);
+const writingGridController = new WritingGridController(writingGridService, focusModeService, onDeckVocabService);
 const superpositionService = new SuperpositionService(writingGridDAL, provisionalCardService);
-const superpositionController = new SuperpositionController(superpositionService, focusModeService);
+const superpositionController = new SuperpositionController(superpositionService, focusModeService, onDeckVocabService);
 // Writing Notebook (migration 174, docs/WRITING_NOTEBOOK.md): endless per-word practice
 // sheets; the service runs the handwriting recogniser on each saved cell.
 const writingNotebookDAL = new WritingNotebookDAL();
@@ -307,7 +294,10 @@ const usageDashboardController = new UsageDashboardController(usageDashboardServ
 const ttsController = new TTSController(ttsService);
 const friendsController = new FriendsController(friendsService);
 const arenaController = new ArenaController(arenaService);
-const decksController = new DecksController(deckService);
+// The Deck Tower's weather (docs/DECK_TOWER.md § "Weather"). Reads users."geoCell" through
+// arenaDAL — the cell is written by the arena's location opt-in, and one stored value serves both.
+const weatherService = new WeatherService(arenaDAL);
+const weatherController = new WeatherController(weatherService);
 const studyChallengeController = new StudyChallengeController(studyChallengeService);
 // The iw scene editor's service. Takes userDAL only for the `isTemplateAuthor` gate
 // (phase 1e) — the same grant the night market template editor uses.
@@ -357,7 +347,6 @@ export {
   onDeckVocabController,
   userMinutePointsController,
   dictionaryController,
-  wordOfTheDayController,
   textController,
   validationController,
   starterPacksController,
@@ -410,12 +399,11 @@ export {
   friendsController,
   arenaController,
   arenaService,
+  weatherService,
+  weatherController,
   arenaDAL,
   provisionalCardDAL,
   provisionalCardService,
-  deckDAL,
-  deckService,
-  decksController,
   studyChallengeDAL,
   studyChallengeService,
   studyChallengeController,

@@ -290,6 +290,9 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                     showPinyin={showPinyin}
                     useToneColor={showPinyinColor}
                     pinyinShift
+                    // The card flex-centers the word; with pinyin hidden its reserved
+                    // band would leave the glyph riding high. CPCDRow recenters it.
+                    centerGlyphWhenPinyinHidden
                 />
             ) : (
                 <Box

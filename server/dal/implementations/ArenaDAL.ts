@@ -453,6 +453,14 @@ export class ArenaDAL implements IArenaDAL {
     );
   }
 
+  async getGeoCell(userId: string): Promise<string | null> {
+    this.requireId(userId, 'userId');
+    const r = await this.run<{ geoCell: string | null }>(undefined, (c) =>
+      c.query(`SELECT "geoCell" FROM users WHERE id = $1`, [userId]),
+    );
+    return r.rows[0]?.geoCell ?? null;
+  }
+
   async setGeoCell(userId: string, geoCell: string | null, client?: PoolClient): Promise<void> {
     this.requireId(userId, 'userId');
     // Shape is validated in the service before it reaches here; the DB CHECK is

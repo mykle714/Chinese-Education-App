@@ -57,7 +57,7 @@ interface IsoCardProps {
  * the band's top corners sit flush in the panel's. The flp mirrors it as
  * `FLP_CARD_PANEL_RADIUS_RATIO` (= PANEL_RADIUS / CARD_W) — retune both together.
  *
- * The scp's "SORTED" head band (features/discover/SortCardsPage.tsx → `sortedBandSx`)
+ * The ancp's "SORTED" head band (features/discover/AddNewCardsPage.tsx → `sortedBandSx`)
  * copies the head band's BAND_DEPTH and the label's size and tracking as ratios of CARD_W.
  * Retune it together with this band.
  */

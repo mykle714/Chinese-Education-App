@@ -183,9 +183,13 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         classPrefix={classPrefix}
                     />
                     {/* `.pos` (Tower Tier 2, 2026-10-29): each part of speech is an
-                        outlined pill — 13px semibold in a 1px `edge` ring, 9px radius —
+                        outlined pill — 13px semibold in a 1px ring, 9px radius —
                         replacing the terms-joined-by-a-middle-dot line. Not tappable, so
-                        the ring is the palette's soft `edge`, not the button outline. */}
+                        the ring is the eip palette's `line` (its card-outline token, the
+                        same ring BreakdownRow / ExampleSentenceList use), not the button
+                        outline. NOT `edge`: that is the raised keys' drop lip, which at
+                        night is a near-black #121822 that vanishes on the slate shelf;
+                        `line` flips to a light hairline with the rest of the night ink. */}
                     <Box
                         className={`${classPrefix}__definition-facts-pos-list`}
                         sx={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "7px" }}
@@ -201,7 +205,7 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                                     lineHeight: 1.3,
                                     padding: "4px 10px",
                                     borderRadius: "9px",
-                                    boxShadow: `inset 0 0 0 1px ${colors.edge}`,
+                                    boxShadow: `inset 0 0 0 1px ${colors.line}`,
                                     color: fc.onSurface,
                                     whiteSpace: "nowrap",
                                 }}

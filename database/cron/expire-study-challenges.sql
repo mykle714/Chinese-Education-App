@@ -48,13 +48,16 @@
 -- of challenges pass 2 has just resolved, and pass 4 is the backstop for decks whose
 -- challenge row is gone entirely.
 --
+-- ⚠️ As of 2026-11-04 preset decks are NO LONGER CREATED: accepting a challenge stopped
+-- generating the "vs <name>" study deck when the Decks feature was removed
+-- (StudyChallengeService.acceptChallenge; the decks / deck_cards tables are retained).
+-- Passes 3 and 4 therefore only clean up decks left by challenges accepted before that
+-- date, and become no-ops once those are gone. Harmless to keep; delete them (and this
+-- note) in a later cleanup once no 'preset' deck rows remain on PPE.
+--
 -- EVERY PASS IS IDEMPOTENT, because the unit is `Persistent=true` and a tick missed
 -- to a reboot re-runs. Passes 1–3 filter on the status they are leaving; pass 4 is
 -- idempotent because a deleted deck simply stops matching.
---
--- NOT HERE, deliberately: the drop of a deck when its owner FINISHES the test. That
--- one happens synchronously in StudyChallengeService.submitRound, because it should
--- be immediate rather than up to an hour late.
 --
 -- Logging: each pass raises a NOTICE only when it did something, so an idle tick
 -- prints just BEGIN / DO / COMMIT.

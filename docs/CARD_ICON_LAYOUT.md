@@ -69,10 +69,11 @@ clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx
 
 **Narrower clip on the Deck Tower's card stock (`--card-panel-clip`).** The inner clip box
 and the canvas's `card-icon-canvas__clip` take `clipPath: var(--card-panel-clip, none)`.
-Only `CardFaceSide` `towerStock` sets it (to
-`inset(var(--card-stock-inset) round var(--card-panel-radius))`), so on the tower-hosted
-flp everything in the inner box (icons, text blocks, sense chip, speaker) is cut at the beige
-printed panel rather than the card edge. Everywhere else it is unset → `none`. Text also
+`CardFaceSide` always sets it (to
+`inset(var(--card-stock-inset) round var(--card-panel-radius))` — every vet card face is on
+card stock: the flp and the cdp hero card), so everything in the inner box (icons, text
+blocks, sense chip, speaker) is cut at the beige printed panel rather than the card edge. The
+rim width comes from the frame's `cardStockVars` (`src/features/flashcards/card/cardStock.ts`). Text also
 **wraps** at the panel: `textBlockMaxWidth` (`src/cardIcons/cardTextLayout.ts`) caps a block at
 `--card-panel-width` ÷ its scale (scale is a transform, so it happens after layout), and the
 front face's horizontal padding is `--card-stock-inset`. The canvas's text layer is **not**
@@ -111,8 +112,8 @@ flip animation runs there, and hiding would pop the freshly promoted card's cont
 ## Where else the layout renders (card-grid thumbnails)
 
 Beyond the flp flashcard, the saved arrangement also renders on the **mini card
-thumbnails** (`src/components/MiniVocabCard.tsx`, used by both the `/decks` card
-previews and the Mastered page via `MiniVocabCardGrid`). It reuses the same
+thumbnails** (`src/components/MiniVocabCard.tsx`, rendered through `MiniVocabCardGrid` — the Deck
+Tower's cards page, `TowerCardsPage`, is its main host). It reuses the same
 read-only `CardIconLayer`, which is fully percentage-based and therefore scales to
 the 92×132 thumbnail with no extra math.
 

@@ -82,8 +82,9 @@ export function selectFocusSet(
  * Callers:
  *   - FocusModeController (`/api/focus`): status, the lever's on/off, notice acks;
  *   - OnDeckVocabController + routes/flashcardRoutes.ts: `resolveWorld` before every
- *     unrestricted flp loop, flp refill, game pool and Word Search grid, and before the
- *     tower's ready counts.
+ *     flp loop, flp refill, game pool and Word Search grid (a Study Challenge round
+ *     excepted), and before the tower's ready counts. (Deck / `?collection=` launches,
+ *     which used to bypass focus, were removed 2026-11-04.)
  *
  * The snapshot is taken LAZILY by whichever of those asks first on a new streak day —
  * there is no cron.

@@ -1,5 +1,5 @@
 /**
- * bankingAnimation.ts — the PURE timeline of the hp daily banking animation
+ * bankingAnimation.ts — the PURE timeline of the td daily banking animation
  * (docs/DAILY_MINUTE_BANKING.md § 3–4). No React, no DOM, no clock.
  *
  * Everything on screen during a run — the flame's count, fill and scale, the avatar's
@@ -191,7 +191,7 @@ export function sampleBankingRun(plan: BankingPlan, elapsedMs: number): BankingF
         fillLevel = 0;
         displayCount = 0;
     } else {
-        // Phase 4 — today: the flame relights to the solid off-study flame the hp header
+        // Phase 4 — today: the flame relights to the solid off-study flame the td header
         // shows without a run (so the hand-back is invisible) while the count climbs to
         // today's minutes.
         const up = easeOutCubic(clamp01((t - countUpStart) / plan.countUpMs));

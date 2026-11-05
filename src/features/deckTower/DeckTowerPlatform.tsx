@@ -1,15 +1,24 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
     CARD_THICKNESS,
     IsoCardImprint,
     IsoCardRuns,
     IsoCardStack,
     IsoFloorLabel,
+    IsoFloorPrint,
+    IsoFog,
+    IsoRain,
+    IsoBurnMark,
+    IsoLightningBolt,
     IsoLever,
+    IsoPaperStack,
     IsoPawn,
     IsoPlatform,
     IsoSmokePuff,
+    IsoSortPlatform,
     RAISED_HEIGHT,
+    SORT_PLATFORM_JUMP,
+    sortPlatformTopZ,
     backToFront,
     depthRankAmong,
     flatPath,
@@ -17,18 +26,30 @@ import {
     insetRect,
     leverFootprint,
     IsoShadow,
+    paperStackHeight,
+    prism,
     shadowLandTiming,
     toOpenPath,
+    type IsoRainFall,
+    type IsoSurface,
+    type FogCloud,
     type PawnEntranceFrame,
     type PawnStep,
+    type WorldRect,
 } from "./iso";
 import { useIsoPalette, useIsoProjector, useIsoWash } from "./iso/sceneContext";
 import { PLATFORM_THICKNESS, TOWER_LAYOUT as layout } from "./towerPlatforms";
+import type { PlateWallSteps } from "./towerDecks";
 import type { TowerWorld } from "./towerWorlds";
+import type { ScreenPoint } from "../../utils/pageTransition";
+import type { PlatformLightning } from "./towerLightning";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
 import { IMPACT_MS, type TowerDrop } from "./towerResizes";
+import { LEARNING_COLORS } from "../../utils/categoryColors";
+import { COLORS } from "../../theme/colors";
 import type { TowerCollapse } from "./useTowerResize";
+import { useSoftIntro } from "../../softIntro/useSoftIntro";
 
 /**
  * DeckTowerPlatform — the Deck Tower's floating platform with everything on it: its
@@ -44,12 +65,15 @@ import type { TowerCollapse } from "./useTowerResize";
  * Draw order inside the platform (IsoPlatform):
  *   decals    the cards' imprint under the stack ("0 cards", IsoCardImprint — drawn
  *             whenever the count has loaded, so whatever clears the floor finds it
- *             already there; `showImprint`), then
+ *             already there; `showImprint`), lightning's burn marks, the corner
+ *             fixture's si floor print (IsoFloorPrint, `fixturePrint` — intro state only), then
  *             the floor plate (part of the floor, slightly raised as a push button —
  *             usePlatePress.ts — so it swings with the trap door; pawns step up onto it,
  *             IsoPawn `steps`, and sink with it when it is pressed);
- *   children  `behind` (sky travellers on the tower's back sides) → the stack and the
- *             focus lever (obstacles 0–1, in the CAMERA's back-to-front order —
+ *   children  `behind` (sky travellers on the tower's back sides) → the stack, the
+ *             focus lever and a corner fixture — the notebook's paper stack (writing
+ *             world) or the mini sort platform (main world)
+ *             (obstacles 0–2, in the CAMERA's back-to-front order —
  *             `backToFront`: the listed order under the fixed view, the tower last once
  *             the study camera is over it), and the pawns, each pawn
  *             slotted in front of every obstacle before the first one it stands behind
@@ -98,10 +122,27 @@ function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
  */
 const STARTLE_AT_CARDS = 50;
 
+/**
+ * The corner fixtures' soft-introduction floor prints (IsoFloorPrint; docs/DECK_TOWER.md
+ * § "Corner fixture labels", docs/SOFT_INTRODUCTION.md § 2): what each print says, and its
+ * type size. White (washed for the time of day). The sort bin's print is three lines, the
+ * notebook's two — towerPlatforms.ts → `labelUnder` places each block from its line count
+ * (`SORT_BIN_LABEL_LINES`, `NOTEBOOK_LABEL_LINES`) and this size; keep them in step. At this size a line is wider than the
+ * fixture's half-width to the rim, so the print is clamped inside it (`maxX`).
+ */
+const FIXTURE_PRINT = {
+    sortBin: ["ADD", "NEW", "CARDS"],
+    notebook: ["WRITING", "NOTEBOOK"],
+    fontSize: 0.4,
+    letterSpacing: 0.04,
+} as const;
+
 
 export interface PlateFace {
     text: string;
     band: string;
+    /** Deeper wall shading for a band whose default walls read too faint (towerDecks.ts → `plateWallSteps`). */
+    wallSteps?: PlateWallSteps;
 }
 
 interface DeckTowerPlatformProps {
@@ -197,10 +238,72 @@ interface DeckTowerPlatformProps {
         /** Taps are ignored (a popup is up, a swap is running, or it is sinking). */
         busy: boolean;
     };
+    /**
+     * The Writing Notebook's paper stack in the floor's right corner (writing world, while
+     * the Learning tower is drawn; docs/DECK_TOWER.md § "The notebook stack"). It moves
+     * with the tower: it falls with it on the trap door (`stackFalling`) and builds up with
+     * it (`progress`, the tower's own). Tapping it opens the notebook. Undefined: none, and
+     * the pawn roams the platform without it.
+     */
+    notebook?: {
+        sheets: number;
+        /** The tower's build-up (its `stack.progress`, frozen while it falls). */
+        progress: number;
+        ariaLabel: string;
+        /** `at` is the stack's centre on screen (viewport px): the circle transition grows from it. */
+        onTap: (at: ScreenPoint) => void;
+        /** Taps are ignored (a swap, pan, resize or study is running). */
+        busy: boolean;
+    };
+    /**
+     * The mini sort platform in the floor's right corner (main world, while the Learning
+     * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — ancp's To Learn bin in
+     * miniature (empty, lying flat on the floor), and its button. It moves with the tower like the notebook stack does.
+     * `hopping`: it jumps every 2 s, the "cards low — go sort" call. Never passed together
+     * with `notebook` (they take the same corner, on different worlds).
+     */
+    sortBin?: {
+        /** The tower's build-up (its `stack.progress`, frozen while it falls). */
+        progress: number;
+        hopping: boolean;
+        ariaLabel: string;
+        /** `at` is the platform's centre on screen (viewport px): the circle transition grows from it. */
+        onTap: (at: ScreenPoint) => void;
+        /** Taps are ignored (a swap, pan, resize or study is running). */
+        busy: boolean;
+    };
     /** Drawn before the tower (sky travellers on its back sides). */
     behind?: React.ReactNode;
+    /**
+     * The drifting clouds' shadows on one surface (SkyTraffic.tsx → `SkyTrafficCloudShadows`).
+     * Called twice: for the floor (clipped to the platform's top, drawn as the last floor
+     * decal, so it shades the print and the plate but sits under everything standing on
+     * the floor) and for the ground (unclipped, under the platform's own shadow and slab).
+     * Undefined: no cloud shadows.
+     */
+    cloudShadows?: (on: { receiver: IsoSurface; clip?: WorldRect }) => React.ReactNode;
     /** Drawn after everything (sky travellers on its front sides). */
     front?: React.ReactNode;
+    /**
+     * Fog rolling through (IsoFog): its opacity per height level — the weather's `WeatherEffect.fog`
+     * (towerWeather.ts) — and the field the page planned across the screen
+     * (iso/fogClouds.ts → `planFogClouds`). Undefined: none.
+     */
+    fog?: { opacity: number; clouds: FogCloud[] };
+    /**
+     * Rain falling in front of the tower and splashing on the floor and the tower's top
+     * (IsoRain) — the weather's rain in iso space; the sky's own rain is WeatherLayer's,
+     * behind the scene. Undefined: none (no rain, or a study session is up).
+     */
+    rain?: IsoRainFall;
+    /** The highest viewBox y that rain starts from (IsoRain `ceilingY`). */
+    rainCeilingY?: number;
+    /**
+     * This world's lightning strikes (towerLightning.ts): the burn marks on its floor, the
+     * bolt coming down now, and which pawns are crispy / being shocked. The page keeps it,
+     * so it survives this component remounting on a pan.
+     */
+    lightning?: PlatformLightning;
 }
 
 const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
@@ -218,8 +321,15 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     swapOutgoing,
     plate,
     lever,
+    notebook,
+    sortBin,
     behind,
+    cloudShadows,
     front,
+    fog,
+    rain,
+    rainCeilingY,
+    lightning,
     bobPaused = false,
     fadeOpacity = 1,
     keepDeck = false,
@@ -232,6 +342,25 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const plateBand = wash(plate.face.band);
     const stackBand = stack ? wash(stack.bandColor) : undefined;
     const floor = world.floor;
+    // A corner fixture is an obstacle only where it stands: the pawn walks round the
+    // notebook stack on the writing world and the sort platform on main, and has that
+    // corner to itself elsewhere.
+    const roam = notebook ? layout.notebookRoam : sortBin ? layout.sortBinRoam : layout.roam;
+
+    // The corner fixtures' si (docs/SOFT_INTRODUCTION.md): a floor print naming each one
+    // until the learner has met it 70 times over 14 days. A visit counts only while that
+    // fixture is actually drawn (`enabled`), so the main world cannot graduate the
+    // notebook's print, nor a Review-deck visit (no fixture) either.
+    const sortIntro = useSoftIntro("towerSortLabel", { enabled: sortBin !== undefined });
+    const notebookIntro = useSoftIntro("towerNotebookLabel", { enabled: notebook !== undefined });
+    // The print rides its fixture: shown only while the fixture is, fading in with its
+    // build-up (the fixture's `progress`). On the trap door it swings away with the floor.
+    const fixturePrint =
+        sortBin && sortIntro === "intro"
+            ? { at: layout.sortBinLabelAt, lines: FIXTURE_PRINT.sortBin, progress: sortBin.progress }
+            : notebook && notebookIntro === "intro"
+              ? { at: layout.notebookLabelAt, lines: FIXTURE_PRINT.notebook, progress: notebook.progress }
+              : null;
     const pawnKey = (p: SwapPawn) => String(p.key);
 
     // Each pawn's depth slot among the obstacles, by pawn key (mid-swap there are two).
@@ -276,6 +405,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 surface={floor}
                 text={plate.face.text}
                 bandColor={plateBand}
+                wallSteps={plate.face.wallSteps}
                 raised={platePress.raised}
             />
         </g>
@@ -288,6 +418,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             surface={floor}
             text={plate.face.text}
             bandColor={plateBand}
+            wallSteps={plate.face.wallSteps}
             shaded
             raised={platePress.raised}
         />
@@ -312,7 +443,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             <IsoPawn
                 at={layout.pawnAt}
                 surface={floor}
-                roam={layout.roam}
+                roam={roam}
                 startledBy={layout.card}
                 // The trap door's drop, in world units: the old pawn falls with it on its own,
                 // out of the air if the plate just launched it.
@@ -327,6 +458,10 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 tappable={!p.outgoing}
                 onSummitChange={(on) => setSummitPawn((k) => (on ? pawnKey(p) : k === pawnKey(p) ? null : k))}
                 summitSpot={p.outgoing ? undefined : summitSpot}
+                // Lightning (towerLightning.ts): an outgoing pawn is falling, never struck.
+                floorSpot={p.outgoing ? undefined : lightning?.pawnSpot(p.key)}
+                shockId={lightning?.shockIds[p.key]}
+                crispy={lightning?.crispyPawns.includes(p.key) ?? false}
             />
         </g>
     );
@@ -479,16 +614,110 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         </g>
     );
 
+    // A corner fixture as a button: obstacle 2. Its art rides `fallSx` — the trap door's
+    // fall, which also hides its shadow (the same DeckTowerPage rule as the tower's). A tap
+    // reports the art's centre on screen (`artSelector`), not the grown tap target's, so
+    // the circle transition grows from the object itself.
+    const cornerButton = (fixture: {
+        key: string;
+        ariaLabel: string;
+        tappable: boolean;
+        onTap: (at: ScreenPoint) => void;
+        artSelector: string;
+        hitPath: string;
+        art: React.ReactNode;
+    }) => {
+        const open = (target: Element) => {
+            const r = (target.querySelector(fixture.artSelector) ?? target).getBoundingClientRect();
+            fixture.onTap({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+        };
+        return (
+            <g
+                key={fixture.key}
+                className={`deck-tower-page__${fixture.key}`}
+                role="button"
+                aria-label={fixture.ariaLabel}
+                tabIndex={fixture.tappable ? 0 : -1}
+                onClick={(e) => fixture.tappable && open(e.currentTarget)}
+                onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    if (fixture.tappable) open(e.currentTarget);
+                }}
+                style={{ cursor: fixture.tappable ? "pointer" : "default", outline: "none" }}
+            >
+                <g {...fallSx(stackFalling)}>{fixture.art}</g>
+                {fixture.tappable && !stackFalling && (
+                    <path className={`deck-tower-page__${fixture.key}-hit`} d={fixture.hitPath} fill="transparent" />
+                )}
+            </g>
+        );
+    };
+
+    // The notebook's paper stack (writing world, Learning only). It builds up with the
+    // tower (`progress`). Its tap target is generous: one sheet is only ~1px thick and
+    // ~40px across.
+    if (notebook) {
+        const notebookTopZ = floor.z + paperStackHeight(notebook.sheets, notebook.progress);
+        layers.push(
+            cornerButton({
+                key: "notebook",
+                ariaLabel: notebook.ariaLabel,
+                tappable: !notebook.busy,
+                onTap: notebook.onTap,
+                artSelector: ".iso-paper-stack",
+                hitPath: prism(proj, insetRect(layout.notebook, -0.4), floor.z, notebookTopZ + 0.4).hull,
+                art: <IsoPaperStack rect={layout.notebook} sheets={notebook.sheets} progress={notebook.progress} surface={floor} />,
+            }),
+        );
+    }
+    // The mini sort platform (main world, Learning only): ancp's empty To Learn bin in
+    // miniature, lying flat on the floor — a white slab (ancp's day platform) with a dashed
+    // footprint in the bin's collection colour (LEARNING_COLORS.main, SortBins' "To Learn"),
+    // both washed for the time of day. Its tap target
+    // covers it from the floor to the top of its jump, so a hopping platform is still
+    // easy to catch.
+    if (sortBin) {
+        const sortTopZ = sortPlatformTopZ(floor.z, sortBin.progress);
+        layers.push(
+            cornerButton({
+                key: "sort-bin",
+                ariaLabel: sortBin.ariaLabel,
+                tappable: !sortBin.busy,
+                onTap: sortBin.onTap,
+                artSelector: ".iso-sort-platform__body",
+                hitPath: prism(
+                    proj,
+                    insetRect(layout.sortBin, -0.3),
+                    floor.z,
+                    sortTopZ + (sortBin.hopping ? SORT_PLATFORM_JUMP : 0) + 0.3,
+                ).hull,
+                art: (
+                    <IsoSortPlatform
+                        rect={layout.sortBin}
+                        surface={floor}
+                        deckColor={wash(LEARNING_COLORS.main)}
+                        slabColor={wash(COLORS.white)}
+                        progress={sortBin.progress}
+                        // Not while it falls with the trap door: it leaves the floor still.
+                        hopping={sortBin.hopping && !stackFalling}
+                        paused={bobPaused}
+                    />
+                ),
+            }),
+        );
+    }
+
     // The obstacles' layers in the CAMERA's back-to-front order: under the fixed view the
     // listed order, but as the study camera tips over the tower its top comes to hide the
     // lever in front of it, so the tower draws last (usePawnMotion.ts → `backToFront`; the
     // pawns rank themselves against this same order).
-    const obstacleOrder = backToFront(layout.roam.obstacles, proj);
+    const obstacleOrder = backToFront(roam.obstacles, proj);
     const ordered = obstacleOrder.map((i) => layers[i]);
     layers.splice(0, layers.length, ...ordered);
     const fallbackRank = depthRankAmong(
         layout.pawnAt,
-        obstacleOrder.map((i) => layout.roam.obstacles[i]),
+        obstacleOrder.map((i) => roam.obstacles[i]),
         proj,
     );
     // Insert from the deepest slot down, so earlier splices don't shift later ones. The sort
@@ -529,6 +758,24 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         );
     });
 
+    // The fog's piercer: the standing tower, up to its current top. Not while it falls with
+    // the trap door (it is leaving the floor), and none for an empty floor. Memoised on the
+    // numbers, so IsoFog's sheet geometry only rebuilds when the tower's height changes.
+    // The corner fixture (notebook stack or sort platform) pierces it too, by the same
+    // rules — the sort platform as a solid up to its slab's top.
+    const towerTopZ = stack && !stackFalling && cardsOnTower > 0 ? floor.z + cardsOnTower * CARD_THICKNESS : null;
+    const notebookPierceZ = notebook && !stackFalling ? floor.z + paperStackHeight(notebook.sheets, notebook.progress) : null;
+    const sortPierceZ = sortBin && !stackFalling ? sortPlatformTopZ(floor.z, sortBin.progress) : null;
+    const fogPiercers = useMemo(() => {
+        const out = towerTopZ === null ? [] : [{ rect: layout.card, zTop: towerTopZ }];
+        if (notebookPierceZ !== null) out.push({ rect: layout.notebook, zTop: notebookPierceZ });
+        if (sortPierceZ !== null) out.push({ rect: layout.sortBin, zTop: sortPierceZ });
+        return out;
+    }, [towerTopZ, notebookPierceZ, sortPierceZ]);
+    // The same standing solids are the rain's: drops land on their tops and the floor
+    // behind them is never rained on (IsoRain → "Which landing points"). Same shape.
+    const rainSolids = fogPiercers;
+
     // A landing drop sinks the platform and everything on it, on top of its bob.
     const sinkStyle = drop
         ? ({
@@ -550,9 +797,27 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 decals={
                     <>
                         {showImprint && <IsoCardImprint rect={layout.card} surface={floor} />}
+                        {/* Lightning's scorches: floor decals, under everything standing on it. */}
+                        {lightning?.burns.map((b) => <IsoBurnMark key={`burn-${b.id}`} at={b.at} z={floor.z} seed={b.id} />)}
+                        {fixturePrint && (
+                            <IsoFloorPrint
+                                at={fixturePrint.at}
+                                lines={fixturePrint.lines}
+                                surface={floor}
+                                fontSize={FIXTURE_PRINT.fontSize}
+                                letterSpacing={FIXTURE_PRINT.letterSpacing}
+                                color={wash(COLORS.white)}
+                                maxX={layout.fixtureLabelMaxX}
+                                opacity={Math.min(1, Math.max(0, fixturePrint.progress))}
+                            />
+                        )}
                         {plateButton}
+                        {/* Passing cloud shade, over the print and the plate (a glaze, so both
+                            still read) and under everything standing on the floor. */}
+                        {cloudShadows?.({ receiver: floor, clip: layout.platform })}
                     </>
                 }
+                groundDecals={cloudShadows?.({ receiver: world.ground })}
                 bodyStyle={sinkStyle}
                 bobPaused={bobPaused}
                 fadeStyle={fading ? fadeStyle : undefined}
@@ -562,6 +827,27 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                     {behind}
                 </g>
                 {wrapped}
+                {/* Fog over everything standing on the floor and the sky either side, with the standing tower cut out
+                    of every sheet it rises above (IsoFog → "Depth"); under the front sky
+                    travellers, which fly far above it. */}
+                {fog && fog.opacity > 0 && (
+                    <g className="deck-tower-page__layer deck-tower-page__layer--fog" style={layerFade}>
+                        <IsoFog clouds={fog.clouds} opacity={fog.opacity} piercers={fogPiercers} />
+                    </g>
+                )}
+                {/* Rain in front of everything standing on the floor, splashing on the floor
+                    and the tower's top; under the front sky travellers. */}
+                {rain && (
+                    <g className="deck-tower-page__layer deck-tower-page__layer--rain" style={layerFade}>
+                        <IsoRain rect={layout.platform} floorZ={floor.z} fall={rain} solids={rainSolids} ceilingY={rainCeilingY} />
+                    </g>
+                )}
+                {/* A lightning bolt coming down onto the floor, over everything on it. */}
+                {lightning?.bolt && (
+                    <g className="deck-tower-page__layer deck-tower-page__layer--lightning" style={layerFade}>
+                        <IsoLightningBolt key={`bolt-${lightning.bolt.id}`} at={lightning.bolt.at} z={floor.z} seed={lightning.bolt.id} onDone={lightning.onBoltDone} />
+                    </g>
+                )}
                 <g className="deck-tower-page__layer deck-tower-page__layer--front" style={layerFade}>
                     {front}
                 </g>

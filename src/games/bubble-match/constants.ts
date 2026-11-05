@@ -12,8 +12,8 @@ import type { LevelConfig } from "./types";
  * What is left here is Bubble Match's own: which cards it asks for, its level
  * table, its descending ceiling, and its kind-keyed bubble palette.
  *
- * Referenced by: BubbleMatchPage, BubbleStage, bubbleMatchCard (the shared level card
- * on GamesPage + ReadingGamesCarousel), shared/GameCard (LEVEL_SLOTS),
+ * Referenced by: BubbleMatchPage, BubbleStage, bubbleMatchCard (the level card on
+ * GamesPage), shared/GameCard (LEVEL_SLOTS),
  * games/registry.ts (mark type), games/word-search/constants.ts (distribution).
  * Docs: docs/GAMES_FEATURE.md.
  */
@@ -88,10 +88,8 @@ export const LEVEL_CONFIGS: LevelConfig[] = [
 ];
 
 /** Per-level ramp hues, keyed by LEVEL_CONFIGS' level number — a difficulty ramp, calm
-    green through to red. Read by every surface that offers a level: the Games hub's
-    strip (GamesPage) and the Reading Center's games carousel
-    (docs/READING_WRITING_CENTERS.md), so a level is the same colour wherever it is
-    picked. Hardcoded, not randomized. */
+    green through to red. Read by the Games hub's level card (GamesPage →
+    bubbleMatchCard) and the in-game level ground. Hardcoded, not randomized. */
 export const LEVEL_HUES: Record<number, "grn" | "org" | "red"> = {
     1: "grn",
     2: "org",

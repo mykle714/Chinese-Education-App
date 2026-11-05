@@ -36,7 +36,7 @@ const HAS_HAN = /\p{Script=Han}/u;
  *
  * Lives in `src/utils/` rather than under `features/flashcards/` because two
  * unrelated surfaces read it: the flp est list and the Speed Reading finale
- * (docs/SPEED_READING_GAME.md § The last two rounds are sentences).
+ * (docs/SPEED_READING_GAME.md § The last round is a sentence).
  */
 export function buildSentencePronunciation(sentence: SentenceLike): string | undefined {
     const segments = sentence._segments ?? sentence.segments;

@@ -76,7 +76,7 @@ const SpeedReadingPrompt: React.FC<SpeedReadingPromptProps> = ({
         >
             {english}
         </Typography>
-        {/* ⚠️ The prompt renders inside the page's content layer, which is
+        {/* ⚠️ The prompt renders inside the Stage's content layer, which is
             `pointer-events: none` in full so taps fall through to the
             left/right tap zones behind it. The speaker is the ONE control in
             that layer, so it has to opt back in explicitly — without this it

@@ -6,14 +6,11 @@ import { LEVEL_CONFIGS, levelHue } from "./constants";
 
 /**
  * Bubble Match's `GameCard` data — one level tile per LEVEL_CONFIGS entry, filled with
- * its LEVEL_HUES mid tier and starred when cleared this week. The ONE definition of the
- * card, shared by the Reading Center's games carousel and the Games hub, so the two can
- * only differ in what a level tap launches (`onSelectLevel`): the carousel pins reading
- * (`showPinyin: false`, exit back to the center), the hub pins recognition
- * (`showPinyin: true`, collection params).
+ * its LEVEL_HUES mid tier and starred when cleared this week. What a level tap launches
+ * is the caller's (`onSelectLevel`): the Games hub pins recognition (`showPinyin: true`).
  *
- * Referenced by: features/flashcards/centers/ReadingGamesCarousel, games/GamesPage.
- * Docs: docs/GAMES_FEATURE.md § "Games hub", docs/READING_WRITING_CENTERS.md.
+ * Referenced by: games/GamesPage.
+ * Docs: docs/GAMES_FEATURE.md § "Games hub".
  */
 export function buildBubbleMatchCard(
     game: GameDef,

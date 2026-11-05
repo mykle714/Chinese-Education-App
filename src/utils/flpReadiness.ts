@@ -7,14 +7,13 @@
  * it holds no logic of its own beyond adapting `VocabEntry` to the contract's minimal
  * `{ typedMarkHistory }` shape.
  *
- * Referenced by docs/DECKS_FEATURE.md § "The card hand".
+ * Referenced by docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md (the flp cooldown rule).
  */
 import type { VocabEntry } from "../types";
 import {
   flpCooldownRemainingMs as contractFlpCooldownRemainingMs,
   isFlpReady as contractIsFlpReady,
   flpReadyCountsByBand as contractFlpReadyCountsByBand,
-  nextFlpReadyMs as contractNextFlpReadyMs,
 } from "../../server/contracts/flpReadiness";
 
 export function flpCooldownRemainingMs(entry: VocabEntry, now: number): number {
@@ -30,12 +29,4 @@ export function flpReadyCountsByBand(
   now: number
 ): Record<string, number> {
   return contractFlpReadyCountsByBand(entries, now);
-}
-
-export function nextFlpReadyMs(
-  entries: readonly VocabEntry[],
-  bands: readonly string[],
-  now: number
-): number | null {
-  return contractNextFlpReadyMs(entries, bands, now);
 }

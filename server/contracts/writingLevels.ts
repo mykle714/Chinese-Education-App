@@ -69,8 +69,7 @@ export function modeOfLevel(level: number): WritingMode {
 /**
  * The longest word any writing surface accepts: the practice popup's 2×2 grid and the
  * writing flp card both hold four characters. Enforced on every path — the popup's
- * eligibility (`usePracticeWriting`), the Writing Center word grid's pool
- * (`WritingPracticeGrid`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`) and the
+ * eligibility (`usePracticeWriting`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`) and the
  * mark endpoint (`FlashcardMarkService.applyWritingResult`).
  * Referenced by docs/WRITING_PRACTICE_REWORK.md § 3 and docs/PRACTICE_WRITING.md.
  */

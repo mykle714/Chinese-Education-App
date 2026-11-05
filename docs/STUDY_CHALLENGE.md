@@ -15,11 +15,11 @@ mode, § 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE
 unchanged, but unreachable: `/api/studyChallenges/*` is not mounted, the `?challengeId=`
 challenge-board branch on `/api/onDeck/*` falls through to an ordinary pool, the three
 `/friends/challenges*` routes are filtered out of the route table, and the Challenges
-tile + badge, the `/decks` Challenges shelf and the profile block toggle are all hidden.
+tile + badge and the profile block toggle are hidden.
 **Two things are deliberately NOT gated**: the hourly
 `database/cron/expire-study-challenges.sql` pass keeps running so challenges that were
-already live still resolve rather than hanging mid-week, and no `study_challenges` row or
-generated preset deck is touched. Turning the flag back on restores the feature as it
+already live still resolve rather than hanging mid-week, and no `study_challenges` row is
+touched. Turning the flag back on restores the feature as it
 stood.
 
 ⚠️ **The 2026-09-01 redesign changed behaviour, not only appearance.** Four things a
@@ -41,14 +41,14 @@ became a full-bleed dark board (§ 5.5).
 | **Migration 148** — `study_challenges`, `decks."editMode"`, the two `friendships` block booleans, the partial name index | ✅ applied and verified on dev |
 | **Migration 150** — `weekStart` timestamptz → `weekIndex` integer, pair-week unique index rebuilt on it | ✅ applied and verified on dev (2026-08-17). Must ship in the SAME pass as 148 — the code reads only the new name |
 | **Contract** — `CHALLENGE_WORD_COUNT`/`ROUND_COUNT`, `MAX_ACTIVE_CHALLENGES`, `ProvisionMode`, `CHALLENGE_GAMES`, the scoring/breakdown types | ✅ `server/contracts/wire.ts` |
-| **Server** — DAL, service, controller, routes, DI, the preset-deck guard, the unfriend hook | ✅ smoke-tested end to end on dev |
+| **Server** — DAL, service, controller, routes, DI, the unfriend hook | ✅ smoke-tested end to end on dev |
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
 | **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it — Hydra included as of 2026-08-22, since a challenge round is the one timed variant it has |
 | **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) all four eligible games classify contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
 | **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A feature-tester-only switch on `/friends/challenges` that lifts the calendar gates (the Monday issue window, accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isFeatureTester` (migration 178). See § 2a |
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
 `challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
-on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge, the fifth `/decks` section | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
+on-screen consequences, and `ChallengeDetailPage`'s per-round Play buttons), the `/friends/challenges` NodePage + its badge | ✅ built. The detail page's round list is the test's entry point: one **Play** button per unplayed round, strictly sequential (§ 5.1a), launched through `src/games/runtime/challengeLaunch.ts` |
 | **Maintenance job** — `database/cron/expire-study-challenges.sql` and its `ExecStart` step | ✅ written; all four passes exercised on dev with backdated fixtures, and idempotent on re-run. ⚠️ **Inert on PPE until `install-timers.sh` re-renders the unit** — a git pull does not roll out a unit-template change, and until it does nothing expires |
 | **Runbook** | ✅ Retired 2026-08-17 — **shipped to PPE**. Migration 148 was applied before the container rebuild (the deck read selects `decks."editMode"`), and the systemd unit was **re-rendered** by `database/cron/install-timers.sh`, without which the whole time-triggered half stays inert |
 | **Week-counter follow-up (150)** | ✅ On PPE since 2026-08-17. `"weekStart"` → `"weekIndex"`; the rename was applied before the container rebuild (its temporary runbook has been deleted) |
@@ -74,7 +74,7 @@ which is a **different value in every timezone for the same calendar week** — 
 on 2026-08-19: `Asia/Shanghai` → `2026-08-16T20:00Z`, `America/New_York` →
 `2026-08-17T08:00Z`, `Europe/London` → `2026-08-17T03:00Z`. The unique index therefore
 never fired for a pair in two zones, and two friends challenging each other at the same
-moment both succeeded: one pair, one week, **two** live challenges, two generated decks,
+moment both succeeded: one pair, one week, **two** live challenges,
 two cap slots, and a crown that could change hands twice. A global counter forces the
 collision — every instant maps to exactly one index, so the second insert always hits
 the index and gets a 409. See Q77.
@@ -89,9 +89,9 @@ rest of the build is written from; § 7 (live mode) is phase 2.
 ```
  Mon (local)          Mon–Tue midnight        Tue–Thu              Fri–Sun            end of window
  ─────────────────────────────────────────────────────────────────────────────────────────────────
- challenger picks     challengee reviews      temp decks live      test window        results / expiry
- friend + type        the word set and        on both accounts     3 games, same      winner declared,
- + word set           accepts (or lets                             order, same set    or NO CONTEST
+ challenger picks     challengee reviews      study days           test window        results / expiry
+ friend + type        the word set and        (words are Learning  3 games, same      winner declared,
+ + word set           accepts (or lets        cards on both)       order, same set    or NO CONTEST
                       it expire)
 ```
 
@@ -102,7 +102,7 @@ Two variants, chosen by the challenger right after picking the friend:
 | **Same-word** | ONE set of 12, negotiated by both players, used by both | both players play the **same** language |
 | **Different-word** | each player gets their **own** 12, chosen by their own flow | may be **cross-language** (§ 8) |
 
-Everything else — the timeline, the temp decks, the three games, the scoring, live
+Everything else — the timeline, the study days, the three games, the scoring, live
 mode, expiry — is shared between the two variants.
 
 ### How many at once
@@ -112,7 +112,7 @@ challenge Bob, Carol and Dan on the same Monday and may simultaneously be challe
 Erin — but she may not be in more than **six live challenges** at once
 (`MAX_ACTIVE_CHALLENGES = 6`). Two limits doing two different jobs: the pair rule stops
 one friendship generating noise, the count stops the week itself becoming unmanageable
-(six challenges is six decks and up to eighteen rounds to play in one weekend — well past
+(six challenges is fifty-four words and up to eighteen rounds to play in one weekend — well past
 the point where any of them gets real preparation).
 
 Three rules make the cap behave (Q65):
@@ -129,7 +129,7 @@ Three rules make the cap behave (Q65):
   never asked for and lock you out of challenging anyone. Instead the cap is checked
   **twice** — when you issue, and again when you accept — so it is only ever spent by
   your own decisions.
-* **It is per (user, language)**, like decks, minute points (migration 130) and the vet
+* **It is per (user, language)**, like minute points (migration 130) and the vet
   layer. A learner studying Chinese and Spanish may have six of each; their Chinese week
   and their Spanish week are separate weeks in every other respect. A single account-wide
   budget was rejected because it would be the **only** place in the app where two
@@ -143,16 +143,14 @@ explain itself.
 
 Consequences the design must carry:
 
-* A player can hold **several challenge decks at once**, so the `/decks` "Challenges"
-  section (§ 4) is a list, not a single tile, and must stay tidy at its worst case of
-  **six** entries — which is exactly why the cap is six rather than open-ended.
+* A player can hold **several challenges at once**, so the `/friends/challenges` list
+  must stay tidy at its worst case of **six** live entries — which is exactly why the cap
+  is six rather than open-ended.
 * The results surface is a **list of this week's challenges**, not one page.
 * The uniqueness rule is `(challengerId, challengeeId, week)` **unordered** — Bob
   cannot counter-challenge Alice in a week she already challenged him. Enforce with a
   normalised pair key (`least(a,b), greatest(a,b)`), the same trick `friendships`
   already uses for its one-row-per-pair model.
-* Q30 (deck-name collisions) is **not** eliminated by this rule — it only pushes the
-  collision across weeks, where a `vs Bob` deck from last week may still be alive.
 
 ### Where it lives in the app
 
@@ -237,8 +235,8 @@ word set).
 everything green when the ball was in the viewer's court, which gave *Take Test* and
 *Incoming Challenge* the same fill despite being a routine step and a decision. Now:
 green is a decision that arrives unasked (`incoming` only), red is the page's one
-destructive control (`waiting`), orange is the state whose job is the deck rather than
-the challenge (`study`, matching the Challenges shelf spines on `/decks`), **purple is
+destructive control (`waiting`), orange is the state whose job is studying the words rather
+than the challenge (`study`), **purple is
 the one control that STARTS something** (`issue`), blue is the routine taps on a
 challenge that already exists (`test`, `results`), grey is inert. The fills are each
 hue's **MID** tier (Shelf System v2: pills are mid) — `challengeActionColor` in
@@ -250,8 +248,7 @@ it is the page's **main verb** — on a list of friends you have no live challen
 it is the only control most rows carry — and sharing a fill with *See results* made the
 row that offers a new challenge look like the row that reports an old one. Purple
 (`COLORS.purM`) is the ramp hue this lexicon had not already spent, so the split costs no
-new colour. (Learning on `/decks` is yellow since 2026-09-23, so purple is no longer
-shared with it.)
+new colour.
 
 **Accept and decline are not competing pills in a list.** One *Incoming Challenge* pill
 opens the sheet that holds both, next to the words they are about.
@@ -326,11 +323,10 @@ assumption for an engaged learner.
 
 A player who accepts a Chinese challenge on Monday and spends the week in Spanish
 **cannot see it** — the challenges page is language-scoped (Q38), so their zh challenge,
-its deck and its test entry point are all invisible until they switch back. Nothing is
+its words' status and its test entry point are all invisible until they switch back. Nothing is
 lost; the challenge is untouched and one switch reveals it.
 
-This is deliberate consistency rather than a special case: the deck is already invisible
-in Spanish, the words are zh vet rows, and the minute points it earns are zh points.
+This is deliberate consistency rather than a special case: the words are zh vet rows, and the minute points it earns are zh points.
 Making the *challenge* the one cross-language surface would be the anomaly.
 
 Two rejected alternatives and why: **auto-switching the language when the player taps
@@ -356,7 +352,7 @@ friends yet.
 
 * **Withdraw** — the challenger may cancel a `pending` challenge at any time before it
   is accepted, from the same friend row that issued it. The row is deleted outright (no
-  `withdrawn` status, no history entry): nothing was agreed, no decks exist, so there is
+  `withdrawn` status, no history entry): nothing was agreed, no words were added, so there is
   nothing to record. This is also the only repair for a challenge issued into the wrong
   language (Q39) or to the wrong friend.
 * **Decline** — the challengee may end a `pending` challenge explicitly rather than
@@ -439,7 +435,7 @@ challenger's **currently active** one. No language picker in the invite flow.
 The challenges page is likewise **language-scoped**: the challengee sees an invitation
 only while that language is active. A Chinese challenge is invisible to a friend
 sitting in Spanish; switching to Chinese reveals it. This is the same per-language
-partitioning that decks, minute points (migration 130) and the whole vet layer already
+partitioning that minute points (migration 130) and the whole vet layer already
 use, so it is consistent rather than special-cased. The **page** is scoped; the
 **badge** deliberately is not (§ 1, Q48), because a badge that hid cross-language
 challenges would be the very thing that makes them undiscoverable.
@@ -449,7 +445,7 @@ into a language the challengee does not study; the challengee never sees it and 
 expires (`expired`) with no feedback to either side. Nothing warns and nothing blocks.
 Rationale: both alternatives need a *friend's studied-languages* list that no endpoint
 exposes today, and adding one to prevent an uncommon, harmless dead end is not worth the
-payload. The damage is bounded — an expired challenge costs nothing, creates no deck,
+payload. The damage is bounded — an expired challenge costs nothing, adds no card,
 and the pair is free to try again the following Monday.
 
 Because of Q48, the challengee's badge *does* light up even in the wrong language, so
@@ -709,7 +705,7 @@ every deadline is exactly the kind of state that gets left on and then misread a
 | the accept deadline (Wed 04:00 local) | |
 | the test window (Fri 04:00 → Mon 04:00 local), including the rule that hides `gameSequence` until it opens (Q63) | the **per-pair block** — a person's decision about another person is not a clock |
 | **one challenge per pair per week** — the gate that actually blocks repeat testing | rounds are **strictly sequential, one attempt each** — claimed at the first mark, immutable once final (§ 5.1a) |
-| `MAX_ACTIVE_CHALLENGES` (6) | scoring, storage, deck creation and winner resolution are **identical** to a real week |
+| `MAX_ACTIVE_CHALLENGES` (6) | scoring, storage, word materialisation and winner resolution are **identical** to a real week |
 
 The second column is the point: a hatch that also relaxed the block or the round rules
 would be testing a game nobody plays.
@@ -721,11 +717,13 @@ whether to honour it by checking `isFeatureTester`
 consequences, both deliberate:
 
 **The client is gated on `isFeatureTester` too**, and fails closed. `challengeAnytime.ts`
-holds a module latch (`allowed`, fed by `useChallengeAnytime()` from the auth user);
+holds a module latch (`allowed`, fed by `useChallengeAnytime()` from `useTestingFeatures()` —
+the account flag AND the device's Settings testing switch, [FEATURE_TESTING.md](./FEATURE_TESTING.md));
 until a mounted hook says the account is a feature tester, `challengeAnytime()`,
 `anytimeParams()` and `anytimeQuerySuffix()` all read false regardless of what is in
 `localStorage`. The hook also **clears a stored request** when the current account is
-not a feature tester, so a flag left behind by a revoked account (or by a different user on
+not a feature tester (keyed on the account flag, not the switch — turning testing off
+suspends the request without discarding it), so a flag left behind by a revoked account (or by a different user on
 a shared browser) cannot linger. Without this the server would correctly ignore the
 flag while the client still drew anytime-flavoured labels and lifted deadlines — the
 worst of the two states.
@@ -761,7 +759,7 @@ tester would otherwise meet as a bug report against themselves:
 
 | What surprises a tester | Why it happens |
 |---|---|
-| a library that grew 12 cards they never sorted, and a deck they did not make | accepting materialises the contested set as `library` rows on BOTH accounts and creates the `vs <name>` deck (§ 3.3). The deck is dropped when that player finishes; an abandoned challenge leaves it on `/decks` |
+| a library that grew cards they never sorted | accepting materialises the contested set as `library` rows on BOTH accounts (§ 3.3) |
 | mastery moving during a test run | a challenge round is normal play — real typed marks, real minute points, real streak (§ 5.7) |
 | a challenge dated weeks out | a repeat challenge is parked in the pair's next free week (above) |
 | a friend who cannot accept, or cannot play | the hatch is spent PER REQUEST and is not attached to the challenge, so it covers the holder's own calls only. The other player's accept and their own rounds are judged against the real calendar unless they too are a feature tester with the switch on in their own browser — a two-sided test needs two feature-tester accounts and two switches |
@@ -998,7 +996,7 @@ feature; promote to `src/components/` if a second surface needs it),
 * **The words are drawn as the app's mini preview cards, not as text rows.** Both the
   confirmation sheet and the detail page's word set render each word through
   `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — literally the same tile
-  `MiniVocabCard` (decks) and `QuickMarkCard` (Quick Mark) draw, since all of them
+  `MiniVocabCard` (the Deck Tower's cards page) and `QuickMarkCard` (Quick Mark) draw, since all of them
   render the shared `MiniCard` (`src/components/MiniCard.tsx`; the face extracted
   2026-09-01 after the copies drifted apart, the contents on 2026-09-28), carrying the word +
   pinyin (always via `ForeignText`), the **English lead gloss**, the
@@ -1095,13 +1093,15 @@ the fix is **clearer copy on the strike gesture**, not a cap.
 
 ### 3.3 On accept
 
-Atomically, in one transaction:
+Atomically, in one transaction (`StudyChallengeService.acceptChallenge`, the DAL's `acceptChallenge` inside it):
 
 1. flip the challenge row to `accepted`;
 2. **materialise** the word set into **both** players' vet tables — any contested word a
    player does not already hold becomes a real vet row (`vocabentries_zh` / `_es`), in
-   bucket **`'library'`**, so it can carry marks and be pointed at by `deck_cards`;
-3. create the **temp deck** on each account (§ 4).
+   bucket **`'library'`**, so it can carry marks.
+
+Nothing else is created: the words join each player's Learning cards and are studied
+there (§ 4).
 
 ### Why `library` and not `provisional`
 
@@ -1112,16 +1112,14 @@ later "keep these cards?" prompt to ask. Handing them over as `provisional` woul
 asking the learner to re-approve words they had just explicitly approved.
 
 It is also the cheap option: `'library'` rows are visible to **every** existing read, so
-the challenge deck, All Cards, search, the flp and every game pool work with no clause
-changes at all. A `'provisional'` choice would have forced bucket-blind challenge-deck
-reads, and a third bucket value would have forced a decision at every call site of
+the Deck Tower, the cards page, search, the flp and every game pool work with no clause
+changes at all. A third bucket value would have forced a decision at every call site of
 `vetSortedClause` / `vetPlayableClause`.
 
 Three consequences to hold in mind:
 
-* **The words outlive the challenge.** The temp deck is dropped after the results week
-  (§ 4) but the cards stay in the learner's library forever. That is the intended
-  lasting value of a challenge — the deck was the container, the words are the point.
+* **The words outlive the challenge.** The cards stay in the learner's library forever.
+  That is the intended lasting value of a challenge.
 * **They leave the discover supply.** A sorted row is excluded from
   `StarterPacksService._fetchSupplyRows`, so a contested word is never also offered as a
   fresh sort card. Good: no double-offering.
@@ -1133,115 +1131,29 @@ Three consequences to hold in mind:
 
 ---
 
-## 4. Temp decks
+## 4. The study days
 
-A challenge's word set is delivered to each player as a **deck** so every existing
-surface — the flp, the games' collection selector, the collection view page — works
-against it with no new plumbing ([DECKS_FEATURE.md](./DECKS_FEATURE.md) § 3).
+Between accept and the test window the contested words are ordinary Learning cards: the
+flp (the Deck Tower) and every game deal them like any other card. There is no separate
+study set — no generated deck, no study-phase screen. The row's `study` state
+status line (`challengeLabels.ts` → `challengeStatusLine`) reads **"Study the words · test
+opens …"** and its action (`challengeAction` → `"study"`, labelled **See Cards**) opens the
+word set.
 
-A temp deck is a `decks` row carrying exactly **one** new column:
-**`decks."editMode"`** (`'custom' | 'preset'`, default `'custom'`).
-
-There is **no `challengeId` on `decks`.** The link runs the other way — the challenge
-row holds its two generated deck ids (§ 9) — because a deck does not need to know why it
-exists, and a column naming a foreign feature is not intrinsic to a deck. `editMode` is:
-it describes what the user may do to this deck, which is a property of the deck itself.
-It also generalises past this feature — any future generated set (a curated pack, a
-weakness drill) is `preset` without a second flag.
-
-| Property | User deck | Temp (challenge) deck |
-|---|---|---|
-| Created by | user | `StudyChallengeService` on accept |
-| Renamable / deletable by user | yes | **no** |
-| Card add/remove by user | yes | **no** |
-| Counts against `MAX_DECKS_PER_LANGUAGE` (100) | yes | **no** |
-| Lifetime | until deleted | **per player**: dropped the moment that player finishes the test, else at their window close (Monday 04:00 local) |
-
-**Lifetime:** the deck exists for the *preparation*, not for the record. It appears on
-accept, carries the player through the Tuesday–Thursday study days and into the test,
-and is dropped **as soon as that player completes their third round** — its job is done
-and leaving it on the decks list is clutter. A player who never takes the test loses the
-deck when their window closes.
-
-The drop is therefore **per player, not per challenge**: Alice's deck can disappear
-Friday evening while Bob's is still live on Sunday. This falls out of the rule and is
-correct — the deck is a personal study aid, not shared state.
-
-Nothing meaningful is lost — deleting a deck never deletes a
-card or a mark ([DECKS_FEATURE.md](./DECKS_FEATURE.md) § 1), the words stay on the
-account, and the set itself is stored permanently in `study_challenges.words`, so
-challenge history renders from the history table and never depends on the deck existing.
-If a "study this old set again" action is ever wanted, it rebuilds a deck from history
-rather than requiring one to have been kept.
-
-**Pre-study is the point.** Between accept and Friday the deck is fully playable — flp,
-any game, any drill. Both players get the same three days, so it is symmetric, and it
+**Pre-study is the point.** Both players get the same days, so it is symmetric, and it
 converts the competition into a reason to study. The test therefore measures
-**preparation plus performance**, deliberately, not raw ability. No gating of games on
-the deck before Friday: a player could study the same words from their library anyway,
-so a block would frustrate without protecting anything.
+**preparation plus performance**, deliberately, not raw ability. Nothing gates the words
+before Friday: a player could study them from their library anyway, so a block would
+frustrate without protecting anything.
 
-**"Their own pool of deck slots" means exactly one thing: they do not detract from the
-100.** There is no user-visible slot capacity to build — the count query behind
-`MAX_DECKS_PER_LANGUAGE` simply filters to `editMode = 'custom'`. A learner in three
-challenges still has all 100 of their own deck slots available.
+The set itself is stored permanently in `study_challenges.words`, so challenge history
+renders from the challenge row and never depends on the cards.
 
-Enforcement is one guard in `DeckService`: every mutation (`rename`, `delete`,
-`setMemberships`, and the membership PUT) rejects a deck whose `editMode <> 'custom'` with
-a `ValidationError`. Reads are unchanged, so a temp deck feeds the collection selector
-and the collection view page exactly like any other deck.
-
-### Where they render on `/decks`
-
-`/decks` is four sections today ([DECKS_FEATURE.md](./DECKS_FEATURE.md) § 3.11:
-study modes · Cards · Mastered · Decks). Challenge decks become a **fifth section,
-placed immediately BEFORE the user's own `Decks` section** — generated sets above
-authored ones, so the user's own decks keep a stable position at the bottom of the page
-and a new challenge never shuffles them.
-
-It renders the same `Spine` (`src/components/shelf/`) as every other set on the page —
-painted `COLORS.orgM` — the `study` pill's hue, at the MID tier every spine takes
-(`DecksPanelBody`, `decks-panel-body__challenge-spine`). The design paints a FINISHED
-challenge's spine `--grey`; that is not wired, because `DeckSummary` carries no challenge
-status and preset decks outlive their challenge. (The page's governing principle is that
-a built-in collection, a mastery bar and a user deck are all just "a set of your cards".) Section header: **"Challenges"**. The section is **omitted
-entirely** when the user has no active challenge deck, exactly as the `Mastered` section
-is when no reading/writing goal is set.
-
-**Each deck is named after the opponent — `vs Bob`** — because that is what the learner
-actually remembers about a set of nine words.
-
-**Duplicate names are allowed for challenge decks (Q30).** Two live challenges against
-the same friend in the same language may both be called `vs Bob`; they are distinguished
-by the challenge that owns them (§ 9) and, for the user, by the **friend's icon on the
-deck spine**. The name is not the identifier.
-
-> The glyph slot on a spine is its **foot row**, right-aligned opposite the count
-> (`glyph`, a Material Symbols name — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)
-> § "Slots, and the glyph on the foot"). A challenge spine passes the deck's generic
-> glyph today; wiring the OPPONENT's glyph there is the remaining work, and the
-> `deckId → opponent` map below is what feeds it.
-
-Rendering that icon needs a `deckId → opponent` map. Because `decks` carries no
-back-pointer, the `/decks` payload builds it from the other side: it already loads the
-user's active challenges to render the Challenges section, so it reads their
-`presetDeckIds` and inverts them in memory. Active challenges are few (at most one per
-friend), so this is cheap and needs no jsonb query.
-
-⚠️ **This requires relaxing an existing index.**
-`decks_user_language_name_uniq` (`database/migrations/141-create-decks.sql`) is a
-plain unique index on `("userId", language, lower(btrim(name)))`. It must become a
-**partial** index — `WHERE "editMode" = 'custom'` — so authored decks keep their uniqueness
-guarantee (its stated reason still holds: two decks called "Food" are indistinguishable
-in the add-to-deck checkbox menu) while generated challenge decks are exempt. Challenge
-decks are safe to exempt precisely because they never appear in that menu: they cannot
-be added to, so there is nothing to mistakenly tick. Dropping and recreating the index is
-part of the same migration that adds `decks."editMode"`.
-
-**There is no lock badge.** The restriction is expressed by the *absence* of controls:
-no `+` on the section, no rename or delete on the deck's collection view, no add-to-deck
-entry pointing at it. A lock icon would invite a tap that does nothing and would need
-its own explanatory copy; a control that isn't there needs neither.
+> **Legacy:** challenges accepted before 2026-11-04 also generated a per-player
+> `vs <name>` deck (`decks."editMode" = 'preset'`, its id in
+> `study_challenges."presetDeckIds"`). Decks are gone from the app; the column and the
+> `decks` table are retained, and the hourly job's passes 3–4 only clean up those
+> leftovers (§ 9 → "The maintenance job"). New rows write `presetDeckIds` as its `{}` default.
 
 ---
 
@@ -1307,8 +1219,8 @@ requesting player — a client that simply declines to render it still ships the
 anyone who opens the network tab. This is the only field in the feature with a
 time-gated visibility rule, so it needs an explicit note in the serializer.
 
-Note this does **not** weaken pre-study (Q36): the deck is the preparation, and it is
-fully playable in any game the learner likes all week. What is hidden is only which three
+Note this does **not** weaken pre-study (Q36): the nine words are the preparation, and
+they are ordinary Learning cards, playable in any game all week. What is hidden is only which three
 count.
 
 ### 5.1a Rounds are strictly sequential, one attempt each
@@ -1404,7 +1316,7 @@ No migration: `rounds` is jsonb, and every row written before this shape has a n
 
 Games already lend cards when the pool is short
 ([PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md)). A challenge round plays against a
-10-card temp deck, so **every game will be short** and will lend heavily. Today's
+9-word board, so **every game will be short** and will lend heavily. Today's
 lending picks by nearest level then commonality (the **`default`** algorithm).
 
 Challenges need a second algorithm, so provisioning becomes a **mode** passed down from
@@ -1736,8 +1648,7 @@ horizontally-swipeable pages, with dots under them saying which you are on:
 again 2026-09-02). The pager now holds `yourTest` / `theirTest` — **`ChallengeTestCard`
 alone**. (Two other blocks sat here and no longer do: `ChallengeTotalCard`, deleted
 2026-09-02 — see the removal note below — and the masthead, hoisted above the pager
-2026-09-02, next paragraph.) `sharedFooter` — the **"How to study this deck" button and
-the nine word cards** — is identical on both sides, so it renders ONCE, below the dots,
+2026-09-02, next paragraph.) `sharedFooter` — **the nine word cards** — is identical on both sides, so it renders ONCE, below the dots,
 outside the scroller. Swiping used to move two identical columns of word cards past the
 reader, which made the gesture read as though it had done nothing. The rule to keep:
 **a block goes in the pager only if it differs by side** — and, since 2026-09-02, only if
@@ -1894,18 +1805,15 @@ the second surface reading it went away. `roundsTotal` / `signedPoints` in
 
 ### 5.4c The two stepped explainers (F20/F21)
 
-Two overlays, ONE component — the shared `components/SteppedHelpPopup` (which /arena also uses) — so they read as one system:
-
-* **"How to study this deck"** — the orange button during the study days. It does NOT
-  launch play; it teaches a **filter**. Every surface it names already exists and the
-  learner has used them — what they do not know is how to point one at exactly these nine
-  cards. Hence an overlay, not a page.
-* **"How the test works"** — behind the test card's info button. These three rules used
+One overlay on the shared `components/SteppedHelpPopup` (which /arena also uses):
+**"How the test works"** (`HOW_THE_TEST_WORKS_STEPS`) — behind the test card's info button.
+(F20's "How to study this deck" went with the study deck; the words are studied as
+ordinary Learning cards, § 4.) These three rules used
   to sit as fine print under the round list; they moved because they are read once and
   then never again, while the round list is read every time.
 
-Neither remembers being read: no "seen" flag, no auto-open. Both are behind an explicit
-control, so a learner who wants them twice gets them twice.
+It does not remember being read: no "seen" flag, no auto-open. It is behind an explicit
+control, so a learner who wants it twice gets it twice.
 
 Each step pairs a screenshot with its instruction — the image is part of the
 instruction, since a sentence naming a surface the reader has never opened teaches
@@ -1913,7 +1821,7 @@ nothing. Steps and their shot filenames live in `challengeHelpSteps.ts`; the fil
 `src/assets/challengeHelp/` (see the README there) and are picked up by
 `import.meta.glob`, so adding a step is a data change plus a dropped file. **A step whose
 file does not exist yet renders a labelled placeholder frame**, which is why the
-explainers are usable before the screenshots are captured.
+explainer is usable before the screenshots are captured.
 
 Navigation is a footer of step dots, an outlined **Back** pill (absent on step 1, not
 disabled) and a solid **Next** that becomes **Done** on the last step; the scrim and the
@@ -2167,7 +2075,7 @@ optional to required on both `ChallengeSummary` types (server and the
   set both players agreed to.)
 * **Every challenge is recorded permanently**, including the words and the outcome, so
   a pair's history is browsable. That is what makes the word set worth storing on the
-  challenge row rather than only in the temp decks (which are cleaned up — Q9/Q36).
+  challenge row rather than only as vet rows (which the player may delete).
 
 ### 6a. Taunts — one canned line per player (built 2026-09-01, migration 156)
 
@@ -2207,7 +2115,7 @@ results screen (design F17/F17b).
   the server's answer would make the line stutter backwards between taps.
 * **Stored by SENDER, rendered on the TARGET's card.** `study_challenges.taunts` is
   `{ "<userId>": { tauntId, sentAt } }` — the same keyed-by-user shape as `words`,
-  `rounds` and `presetDeckIds`, so the results screen reads either side with no
+  `rounds` (and the legacy `presetDeckIds`), so the results screen reads either side with no
   `isChallenger` branch. Keying by sender (rather than by target, which would match the
   rendering more directly) makes "one per player, ever" a property of the object's shape.
 * **NOT write-once (rule dropped 2026-09-02).** `StudyChallengeDAL.setTaunt` used to
@@ -2252,8 +2160,8 @@ the leaderboard. That also keeps the read paths to one.
 ### Unfriending ends the challenge
 
 If either player unfriends the other while a challenge is in flight — at any stage,
-pending or accepted or mid-test — the challenge immediately becomes **`no_contest`**,
-both challenge decks are dropped, and no winner is declared. Unfriending withdraws you
+pending or accepted or mid-test — the challenge immediately becomes **`no_contest`**
+and no winner is declared. Unfriending withdraws you
 from everything shared with that person; a challenge is not an exception carved out of
 that.
 
@@ -2263,7 +2171,7 @@ that.
   resolve in-flight challenges for the pair, in the **same transaction** as the
   friendship delete, so there is no window in which a challenge outlives its friendship.
 * Marks and words already earned **stay** — the cards are the player's, in the `library`
-  bucket, and are not challenge state (§ 3.3). Only the challenge, its decks and its
+  bucket, and are not challenge state (§ 3.3). Only the challenge and its
   pending result go away.
 * ⚠️ Accepted knowingly: this is a **rage-quit button**. A player who is losing can
   unfriend to erase the result. It resolves to `no_contest`, not a forfeit win for the
@@ -2360,7 +2268,7 @@ Identical in every respect except word selection, and therefore in language scop
 | Language | must match | **may differ** (zh vs es), live mode included |
 | Game selection | any recognition/production game in that language | only games playable in **both** languages |
 | Accept step | accepting the word set **is** accepting the challenge | same — the challenge is not `accepted` until the challengee's set is picked |
-| Temp decks | same 10 on both accounts | each player's own 10 |
+| Words added on accept | the same 9 on both accounts | each player's own 9 |
 | Comparability | strong — same words, same games | same games and rules, different content, both at each player's own edge |
 
 ### 8.1 The set is still built by the server
@@ -2393,8 +2301,8 @@ transition to `accepted` happens on the **final confirm at the end of the picker
 on the first tap. Abandoning the picker leaves the challenge exactly `pending`, and the
 challengee can come back to it until their Wednesday 04:00 deadline.
 
-Consequences: **no temp deck exists before `accepted`** (§ 3.3 creates both decks in the
-accept transaction), and a declined or expired challenge leaves nothing behind on either
+Consequences: **no vet row is created before `accepted`** (§ 3.3 materialises the words in
+the accept transaction), and a declined or expired challenge leaves nothing behind on either
 account except the history row and any Mastered writes the players made while reviewing.
 
 **Issue and accept are serialised per pair.** Two of the issue-time gates cannot be
@@ -2403,7 +2311,7 @@ it is named after" is derived from both players' timezones, and the
 `MAX_ACTIVE_CHALLENGES` cap is a COUNT — so both were read-then-write and both were
 reachable concurrently. A crossing pair in two timezones can compute *different* week
 indices, which means `study_challenges_pair_week_uniq` does not collide and the pair
-ends up with two live challenges, two decks and two cap slots: the migration-150
+ends up with two live challenges and two cap slots: the migration-150
 defect, re-opened by a race. All four gates and the insert now run inside one
 transaction holding `pg_advisory_xact_lock` on **both** players (sorted, so crossing
 requests cannot deadlock), and the accept path's cap check moved *inside* its existing
@@ -2456,8 +2364,8 @@ numbers start at **147**. 145 is the `user_languages` rename and **146 is taken*
 
 **Guiding rule (Q52):** a table gets a column only when that column is a property of the
 object the table represents. Everything that is a property of *the challenge* lives on
-the challenge — including the word sets, the round scores and the generated deck ids, as
-jsonb — rather than being scattered across the vet and deck tables as foreign
+the challenge — including the word sets and the round scores, as
+jsonb — rather than being scattered across the vet tables as foreign
 bookkeeping. This is safe because a challenge is **bounded**: exactly 2 players, 9 words
 each, 3 rounds each, then it is finished forever. Unbounded collections would still
 deserve their own table.
@@ -2478,7 +2386,7 @@ is intrinsic to it, so everything lives on it.
 | `gameSequence` | jsonb | the 3 chosen game ids **in order**, drawn once, shared |
 | `words` | jsonb | **each player's 9 words**, keyed by user id — see below |
 | `rounds` | jsonb | **each player's played rounds**, keyed by user id — see below |
-| `presetDeckIds` | jsonb | `{ "<userId>": <deckId>, ... }` — the generated decks to drop on cleanup (§ 4) |
+| `presetDeckIds` | jsonb | **legacy, no longer written** (default `{}`). `{ "<userId>": <deckId>, ... }` — the generated study decks of challenges accepted before 2026-11-04, read only by the hourly job's passes 3–4 (§ 4) |
 | `issuedAt` | timestamptz | when it was sent; a log field, not a boundary anchor |
 | `weekIndex` | integer | **the week identity** — whole weeks since Monday 2026-01-05 00:00 UTC, and what every local boundary is derived from. Third column of `study_challenges_pair_week_uniq`. See § 2 "The week is a global counter" and Q77 (migration 150; shipped in 148 as a per-challenger `weekStart` timestamptz, which did not collide across timezones) |
 | `acceptedAt`, `completedAt` | timestamptz null | |
@@ -2516,8 +2424,8 @@ membership.** It may dangle. The challenge does not care whether the card still 
 The consequence is deliberate and good: **if a player deletes a contested word from their
 library mid-challenge, the challenge is unaffected.** The word is still one of the ten,
 still appears on the test, still scores as contested. What the player loses is the
-ability to *study* it — it drops out of their challenge deck (a deck is a set of vet
-cards), so they go into Friday having practised nine. They chose that; nothing is broken
+ability to *study* it — the flp and the games deal vet cards, so they go into Friday
+having practised eight. They chose that; nothing is broken
 and nothing needs repairing.
 
 #### Rendering a contested word: which list, which values (Q55)
@@ -2525,8 +2433,7 @@ and nothing needs repairing.
 **The list comes from the challenge; the values come from the player.** These are two
 separate lookups and they resolve in a fixed order:
 
-1. **Which words** — `study_challenges.words`, and only ever that. Never a vet query,
-   never a deck query. This is what guarantees all 12 appear on every board (§ 5.2)
+1. **Which words** — `study_challenges.words`, and only ever that. Never a vet query. This is what guarantees all 12 appear on every board (§ 5.2)
    regardless of the state of anyone's library.
 2. **What each word looks like** — hydrate from the player's own **vet row** first,
    falling back to the **det row** when there is no vet row.
@@ -2649,7 +2556,7 @@ value for history — does not work, for two reasons that are not about style:
    several of those sets. A vet row is unique per (user, word, language), so a scalar
    column cannot represent it; it would have to become an unbounded, ever-growing array
    of challenge ids on the **hottest table in the app** — the one read by every game
-   load, every deck query and every search.
+   load, every flp loop and every search.
 2. **A pending challenge has no vet rows yet.** The challenger's proposed set exists from
    the moment the invitation is issued, but words are only materialised as vet rows **on
    accept** (§ 3.3). A vet column has nowhere to store a set that has not been accepted —
@@ -2665,8 +2572,8 @@ pointed at (`vocabEntryId`).
 Kept to the minimum, and only where the column is genuinely a property of the object it
 sits on.
 
-* `decks."editMode" varchar(16) NOT NULL DEFAULT 'custom'` (`'custom' | 'preset'`) — § 4.
-  Describes what the user may do to this deck, so it is intrinsic to the deck. **No
+* `decks."editMode" varchar(16) NOT NULL DEFAULT 'custom'` (`'custom' | 'preset'`) — **legacy**:
+  the `decks` table is retained but unused by the app since 2026-11-04 (§ 4). Describes what the user may do to this deck, so it is intrinsic to the deck. **No
   `challengeId` on `decks`**: the pointer lives on the challenge (`presetDeckIds`), so
   `decks` learns nothing about challenges.
   ⚠️ Trade-off accepted: an id inside jsonb cannot carry a foreign key, so there is no
@@ -2743,24 +2650,20 @@ Its four passes, in order — the order matters, because each later pass consume
 earlier one leaves behind:
 
 1. **Expire unaccepted invitations.** `status = 'pending'` past the *challengee's*
-   Wednesday 04:00 → `expired`. No decks exist yet (§ 3.3), so nothing else to do.
+   Wednesday 04:00 → `expired`. No vet rows exist yet (§ 3.3), so nothing else to do.
 2. **Close finished windows.** `status = 'accepted'` past the *later* of the two
    players' Monday 04:00 → `complete` if both played all three rounds (stamping
    `winnerUserId`), else `no_contest` (§ 6).
-3. **Drop preset decks whose window has closed.** Per player, per that player's own
-   clock — Alice's deck can go while Bob's window is still open (§ 4). The
-   completion-triggered drop is *not* here: that one happens synchronously in
-   `StudyChallengeService` when the third round is submitted, because it should be
-   immediate rather than up to an hour late.
-4. **Sweep orphaned preset decks.** `decks` where `"editMode" = 'preset'` and no
+3. **Drop preset decks whose window has closed** (legacy cleanup). Per player, per that
+   player's own clock. Since 2026-11-04 no preset deck is created (§ 4), so passes 3–4
+   only clear decks left by older challenges and are no-ops once none remain.
+4. **Sweep orphaned preset decks** (legacy cleanup). `decks` where `"editMode" = 'preset'` and no
    surviving `study_challenges` row lists that id in `presetDeckIds`.
 
 **Why pass 4 exists.** Deleting an account CASCADEs the challenge row away (Q59), which
 destroys the only record of which decks belonged to it — while the *surviving* player's
-challenge deck lives on, and they **cannot delete it themselves** (preset decks expose no
-delete control, § 4). Without the sweep it sits on their `/decks` page forever. The same
-pass also cleans up after any future path that drops a challenge without its decks, so it
-is a genuine backstop rather than a fix for one bug.
+challenge deck lives on with nothing to delete it. The app no longer reads `decks`, so
+the leftover is invisible clutter in a retained table, not a user-facing bug.
 
 ⚠️ Pass 4 is the one that could **delete a deck it should not**, since it is defined
 negatively ("no challenge claims this"). Two safeguards, both mandatory:
@@ -2798,7 +2701,6 @@ client-side requirement is that challenge-eligible game pages can emit an idle s
 | DAL | `ProvisionalCardDAL` | new `mastered-first` candidate query |
 | Service | `server/services/StudyChallengeService.ts` | windows/time zones, candidate selection, replacement, accept transaction, scoring persistence, winner resolution |
 | Service | `server/services/ProvisionalCardService.ts` | `mode` parameter |
-| Service | `server/services/DeckService.ts` | temp-deck creation + the `editMode <> 'custom'` mutation guard |
 | Controller | `server/controllers/StudyChallengeController.ts` | HTTP edge only |
 | Routes | `server/routes/studyChallengeRoutes.ts` | ⚠️ static segments above `/:id`, as in `friendRoutes` |
 | Client API | `src/api/studyChallenges.ts` | typed calls, **no `token` param** |
@@ -2816,6 +2718,9 @@ incoming requests.
 ## 11. Question log
 
 ### Settled
+
+> Q9, Q10, Q11, Q30 and Q36 settled the generated study deck, which was removed on
+> 2026-11-04 with Decks (§ 4); their rows are kept as history.
 
 | # | Question | Decision |
 |---|---|---|
@@ -2921,7 +2826,6 @@ This document describes (phase 1 is fully built — see the status table at the 
 `server/dal/{interfaces,implementations}/StudyChallengeDAL`,
 `server/services/StudyChallengeService.ts`,
 `server/services/ProvisionalCardService.ts` (provision mode),
-`server/services/DeckService.ts` (temp decks),
 `server/controllers/StudyChallengeController.ts`,
 `server/routes/studyChallengeRoutes.ts`,
 `src/api/studyChallenges.ts`,
@@ -2970,9 +2874,6 @@ drifted since:
 * ✅ [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) — § 1b (the Challenges NodePage, and the
   badge chain with its deliberate language-scoping exception), the two block booleans in
   § 2, and § 8 rewritten (blocking is no longer "not built").
-* ✅ [DECKS_FEATURE.md](./DECKS_FEATURE.md) — `decks."editMode"` and the partial-index
-  change in § 1, the preset mutation guard in § 2, and the fifth `/decks` section
-  (Challenges) in § 4.
 * ✅ [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — the planned third
   `ExecStart` step with its four passes and pass-4 safeguards, the `Description=` update,
   and a new warning that a **unit-template** change (unlike a SQL change) is not rolled out
@@ -2983,7 +2884,6 @@ Related docs:
 half of this design: transport, room, invite, collapse),
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) (the friend graph this is built on),
 [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (lending, and the new mode),
-[DECKS_FEATURE.md](./DECKS_FEATURE.md) (temp decks, collection launch),
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) (the registry and the pause rule),
 [MASTERY_REWORK.md](./MASTERY_REWORK.md) (mark types, utcm bands),
 [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md), [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md),

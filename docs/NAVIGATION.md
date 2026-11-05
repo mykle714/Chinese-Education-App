@@ -5,35 +5,39 @@
 There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed —
 `MobileNavDrawer` is deleted and `Layout` carries no chrome). Navigation is:
 
-1. **Footer tabs** (`MobileFooter`) — the four top-level destinations, always the
-   flat full-width bar. Tabs are **text-only**; the icons were removed by the shelf
-   redesign's A2a/D5 ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md)), and the bar is laid
-   out left-to-right in the order below, matching the design's `.fbar`:
+1. **Footer tabs** (`MobileFooter`) — the top-level destinations, left to right in
+   the order below. Two footer looks: the flat full-width **bar** (text-only tabs — the
+   shelf redesign's A2a/D5, [SHELF_REDESIGN.md](./SHELF_REDESIGN.md)) and the floating
+   **slab** (with Material Symbols icons), chosen per route by `routeMeta`'s
+   `footerStyle` (`routeFooterStyle`). The slab is worn by `/`, `/dictionary`, both cdps
+   and ancp; every Menu-reached page keeps the bar.
 
    | Tab        | `FooterTab`   | Route         | Page                                                         |
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
-   | Home       | `home`        | `/`           | the fdp (`FlashcardsDecksPage`) wrapped by `HomePage`        |
+   | Deck       | `deck`        | `/`           | the Deck Tower (`DeckTowerPage` — [DECK_TOWER.md](./DECK_TOWER.md)), the app's landing page |
    | Menu       | `menu`        | `/menu`       | the hub bento (`MenuPage`)                                   |
-   | Deck       | `deck`        | `/deck-tower` | the Deck Tower (`DeckTowerPage`, experimental — [DECK_TOWER.md](./DECK_TOWER.md)) |
+   | Arena      | `arena`       | `/arena`      | the weekly arena (`ArenaPage` — [ARENA_FEATURE.md](./ARENA_FEATURE.md)); drawn only while the `arena` flag is on (`MobileFooter.tsx` → `ARENA_TAB_ON`) |
    | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
 
-   **Deck took Discover's slot on 2026-10-17**, and the Discover hub page (`/discover`,
-   `DiscoverPage`) was deleted the same day — its only tile was Sort Cards. Sort Cards
-   (scp, `/discover/sort/:language`, the `/discover/` prefix kept so existing links
-   work) is now a **Home drill-in**: reached from the decks rail's Sort shortcut
-   (`src/features/flashcards/DecksTopRail.tsx` → `goToSort`) and Memory Map's empty
-   state, it lights the Home tab and its back arrow returns to `/`
+   Add New Cards (ancp, `/discover/sort/:language` — the `/discover/` prefix is kept so
+   existing links work) is a **Deck drill-in**: reached from the main world's sort
+   platform on td (`DeckTowerPage` → `sortPath` with `state.exitTo` = `SORT_EXIT`), it
+   lights the Deck tab and its Back returns to `/` (main world)
    ([DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). Quick Mark has no route of its own — it
    is a panel inside the sort page ([QUICK_MARK.md](./QUICK_MARK.md)).
 
-   Dictionary took Account's slot on 2026-10-09. There is **no `/account` route** any
-   more — the account surface is a sheet raised from the Home header (see 2 below).
-   On 2026-10-10 Home and Menu **swapped contents**: the decks page (formerly the
-   Flashcards tab at `/flashcards/decks`) became Home, and the hub bento (formerly Home)
-   moved to the new Menu tab. The `flashcards` `FooterTab` key is gone, and
-   `/flashcards/decks` survives only as a legacy redirect to `/`
-   (`src/features/flashcards/DecksRedirect.tsx` → `DecksRedirect`, same pattern as
-   `MasteredRedirect`; its `routeMeta` row lights `home`).
+   There is **no `/account` route** — the account surface is a sheet raised from td's
+   header avatar (see 2 below).
+
+   **Double-tapping the Dictionary tab focuses the search field** (two taps within
+   `DOUBLE_TAP_WINDOW_MS`, 350 ms). A single tap only navigates — the page does not
+   auto-focus on visit. If the page is already mounted, the focus happens synchronously
+   inside the second tap's gesture (iOS raises the keyboard only for a focus made during a
+   gesture). If the page is still loading, the request waits and is applied one frame after
+   mount. Code: `src/features/dictionary/dictionarySearchFocus.ts` →
+   `registerDictionaryTabTap`, `requestDictionarySearchFocus`,
+   `registerDictionarySearchFocus`; `src/components/MobileFooter.tsx` → `TABS`;
+   `src/features/dictionary/DictionaryPage.tsx` (focus-registration effect).
 
    The **active** tab is resolved from the current route by `FooterPresenter`
    (`routeFooterTab` in `src/routes/routeMeta.ts`). Pages do not declare it: the
@@ -45,48 +49,39 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 
    | Lights | Routes |
    | --- | --- |
-   | `home` | `/`, `/flashcards/decks` (redirect), `/flashcards/collection/:builtin`, `/flashcards/deck/:id`, `/flashcards/reading`, `/flashcards/writing`, `/flashcards/mastered` (redirect), `/flashcards/card/:id`, `/discover/sort/:language` |
-   | `menu` | `/menu`, `/games`, `/community`, `/arena`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
-   | `deck` | `/deck-tower` |
+   | `deck` | `/`, `/flashcards/card/:id`, `/discover/sort/:language` |
+   | `menu` | `/menu`, `/games`, `/community`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
+   | `arena` | `/arena` |
    | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
    itself is the `TABS` array in that file.
 
-2. **Home** (`/`, `src/pages/HomePage.tsx` → `HomePage`) — the fdp. `HomePage` is a
-   thin wrapper: it mounts `DailyBankingProvider` (see
-   [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md)), renders
-   `FlashcardsDecksPage` with the account header passed in as props, and adds
-   `BankingEmbers` and the `AccountSheet`. The decks page takes the header controls as
-   props (`headerExtraActions`, `headerTrailingActions`) because `features/` must not
-   import `pages/` ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)). The header title
-   is **"Home"**; the browser tab title is just "Cow" (`usePageTitle()` with no name).
-   The header carries, around the minute-points flame:
-   - left of the flame: the feature-tester-only `SoftIntroToggle` and
-     `BankingAlwaysPlayToggle` (`headerExtraActions`; `users.isFeatureTester`, migration
-     178; both render null for everyone else);
-   - right of the flame (`headerTrailingActions` → `PageHeader`'s `trailingContent`),
-     in order **flame · Settings gear · avatar**:
-     - the **Settings gear** (outlined `HeaderIconButton`, `home-page__settings-button`)
-       → `slideNavigate("/settings")`;
-     - the learner's **profile picture** as a round 32px button in the far-right corner
-       (`src/minutePoints/dailyBanking/BankingAvatarButton.tsx` wrapping
-       `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
-       (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` over Home with three
-       tabs: Account, Friends and Settings (the last two are the `/friends` and
-       `/settings` bodies; their drill-ins leave the sheet and return to those routes). It shows
-       the icons8 `avatarIconId`, falling back to the name's initial on `COLORS.bluM`,
-       matching the sheet's own avatar row.
+2. **Deck** (`/`, `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage`) — the
+   Deck Tower ([DECK_TOWER.md](./DECK_TOWER.md)), in a non-scrolling `MobileTabScreen`
+   whose title names the world on screen. Its header carries, around the minute-points
+   flame:
+   - left of the flame: the feature-tester-only `SoftIntroToggle` (`headerExtraActions`;
+     `users.isFeatureTester`, migration 178, plus the Settings testing switch —
+     `useTestingFeatures`; renders null for everyone else);
+   - right of the flame (`headerTrailingActions`): the learner's **profile picture**
+     (`src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar`, over
+     `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
+     (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` with three tabs: Account,
+     Friends and Settings (the last two are the `/friends` and `/settings` bodies; their
+     drill-ins leave the sheet and return to those routes). It shows the icons8
+     `avatarIconId`, falling back to the name's initial on `COLORS.bluM`. Settings is
+     the sheet's Settings tab (there is no header gear).
 
 3. **Menu** (`/menu`, `src/pages/MenuPage.tsx` → `MenuPage`) — a `Bento` mosaic (the
    shared tile primitive, also used by the Games hub; `HubMenu` was deleted
    2026-08-21 — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
-   **Night Market**, **Games**, **Arena**, **Immersive World**, **Reader**,
+   **Night Market**, **Games**, **Immersive World**, **Reader**,
    **Community**, **Friends** (plus a feature-tester- or admin-only **Tester Dashboard** tile
-   and template-author-only tiles). There is **no Dictionary tile** — Dictionary is a
-   footer tab, and a tile would be a second door to the same room. Its header is just the
-   title "Menu" and the normal minute-points flame — no Settings gear, no avatar, no
-   banking run (those stayed with the Home tab). Classes are `menu-page__*`.
+   and template-author-only tiles), each flag-gated tile only while its flag is on. There
+   is **no Dictionary or Arena tile** — both are footer tabs, and a tile would be a second
+   door to the same room. Its header is just the title "Menu" and the normal minute-points
+   flame — no avatar, no banking run (both live on the Deck Tower). Classes are `menu-page__*`.
    There is deliberately **no Compare Words row**: Compare is a sheet raised over the
    word you are already looking at, not a destination — see
    [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
@@ -98,16 +93,14 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
    footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
    keep the footer, slide in-from-right / out-to-right via the arrow).
-   - Menu destinations → back to `/menu`: `/games`, `/arena`, `/friends`, `/community`,
+   - Menu destinations → back to `/menu`: `/games`, `/friends`, `/community`,
      `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the
      Template Editor / Sandbox and leaving the Scene Editor (leaf).
-   - Home (fdp) drill-ins → back to `/`: the Mastery Centers (`/flashcards/reading`,
-     `/flashcards/writing`), collection and deck pages
-     (`/flashcards/collection/:builtin`, `/flashcards/deck/:id`; the legacy
-     `/flashcards/mastered` redirects to the Mastered collection), Card Detail
-     (`/flashcards/card/:id`, saved-card cdp), Sort Cards (`/discover/sort/:language`,
-     node; set mode exits to its origin instead — [DISCOVER_FLOW.md](./DISCOVER_FLOW.md))
-     and leaving the flp. The cdp's
+   - Deck (td) drill-ins → back to `/`: Card Detail (`/flashcards/card/:id`, the
+     saved-card cdp, opened from td's cards page), Add New Cards
+     (`/discover/sort/:language`, node; set mode exits to its origin instead —
+     [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)) and the Writing Notebook (leaf, back to the
+     writing world). The flp has no route: it runs inside td. The cdp's
      breakdown/used-in/example drill-ins open the tapped word's saved card when the
      learner has one, else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
    - Dictionary result tap → **no navigation**: the eip rises as a bottom sheet over the
@@ -116,15 +109,15 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      leaves the reader on their results. The read-only dictionary cdp
      (`/dictionary/card/:word`) is now reached only from the saved-card cdp's drill-in
      fallback above. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp)".
-   - Settings (`/settings`) → back to `/` (leaf; opened from the Home header gear via
-     `slideNavigate`, so it slides up into the phone frame).
+   - Settings (`/settings`, leaf) → back to `/` (`SettingsPage`). Normally read as
+     AccountSheet's Settings tab; the route is where `/settings/account`'s Back lands.
 
 ## Where the old drawer's global controls live
 
 The drawer's two global controls first moved onto the Account page; since Account
 became a sheet (2026-10-09) they are:
-- **Settings** → the gear in the Home header, beside the avatar (see 2 above). Code:
-  `src/pages/HomePage.tsx` → `headerTrailingActions`.
+- **Settings** → the AccountSheet's Settings tab, raised from td's header avatar (see
+  2 above). Code: `src/pages/AccountSheet.tsx`; `DeckTowerAvatar.tsx`.
 - **Log Out** → a button at the bottom of the AccountSheet body
   (`account-sheet__logout-button`), with the same confirm-then-`logout()` flow the
   drawer used. Logging out unmounts the sheet immediately rather than animating it
@@ -144,7 +137,7 @@ became a sheet (2026-10-09) they are:
 
 `/tester-dashboard` (`TesterDashboardPage`) holds the **former landing-page**
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
-became the hub menu, which now lives at `/menu`; `/` is the fdp (see 1 above).
+became the hub menu, which now lives at `/menu`; `/` is the Deck Tower (see 1 above).
 
 **Feature-tester- or admin-gated.** The surface is for testers, not ordinary
 learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
@@ -154,7 +147,8 @@ learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
 Market template editor:
 
 - `src/pages/MenuPage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
-  spread in only when `user?.isFeatureTester || user?.isAdmin`, so nobody else sees the
+  spread in only when `useTestingFeatures() || user?.isAdmin` (the tester half also needs
+  the device's "Enable testing features" switch — [FEATURE_TESTING.md](./FEATURE_TESTING.md)), so nobody else sees the
   entry point.
 - `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved user who is
   neither to `/` (`replace: true`), covering deep links and bookmarks. Its back arrow
@@ -174,5 +168,5 @@ OTHER accounts' data, so it has a real server-side gate as well — see
 ## Related
 
 - [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) — hub layout shell
-- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Sort Cards (scp), a Home drill-in
+- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Add New Cards (ancp), a Deck drill-in
 - [GAMES_FEATURE.md](./GAMES_FEATURE.md) — Games hub + registry

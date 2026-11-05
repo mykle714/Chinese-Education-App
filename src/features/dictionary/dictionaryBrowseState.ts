@@ -6,7 +6,7 @@
 //
 // Lifetime: the state survives moves *within* the Dictionary space (the list ⇄
 // card-detail drill-ins) but is wiped the first time the user navigates OUT of
-// that space — the back arrow to Home, a footer-tab tap, or browser back. That
+// that space — a footer-tab tap, a back arrow out of it, or browser back. That
 // reset is driven by the route watcher in components/Layout.tsx using
 // isDictionarySpacePath below, so re-entering the Dictionary later starts fresh.
 export const dictionaryBrowseState = { search: "", scrollTop: 0 };

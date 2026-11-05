@@ -2,22 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     fetchMemoryMap,
     graduateMemoryMapWord,
+    type MemoryMapResponse,
     type MemoryMapSlot,
     type MemoryMapWord,
 } from "../../api/memoryMap";
 import { markFlashcard } from "../../api/flashcards";
 import { MARK_TYPE, MAX_TRIES, FADE_OUT_MS } from "./constants";
-import { clearRun, loadRun, saveRun } from "./runStorage";
-import type { Camera, PromptPhase, QueuedPrompt, RunTally, WordOutcome } from "./types";
+import { clearRun, loadRun, saveRun, type SavedMemoryMapRun } from "./runStorage";
+import type { PromptPhase, QueuedPrompt, WordOutcome } from "./types";
 import { nextPromptIndex } from "./promptQueue";
 
 /**
  * Memory Map's run state machine (docs/MEMORY_MAP_GAME.md § 3–§ 5).
  *
  * Everything about "which word is being asked, what happened when it was tapped, and
- * what colour it now wears" lives here; MemoryMapPage draws the result and owns the
- * camera gestures. Splitting them keeps the page a rendering concern and makes the
- * rules readable in one file.
+ * what colour it now wears" lives here; MemoryMapStage draws the result and owns the
+ * input affordances (selection, the word finder). Splitting them keeps the Stage a
+ * rendering concern and makes the rules readable in one file.
  *
  * ── THE ONE HARD RULE: never key a load effect on `token` ────────────────────
  * The load effect below keys on `userId`, never on the auth token. The token rotates
@@ -46,23 +47,40 @@ export interface MemoryMapRun {
     flashing: number[];
     /** Words fading off after graduating — rendered, but no longer answerable. */
     fading: number[];
-    /** How many words this run has coloured, and out of how many. */
-    answered: number;
-    total: number;
-    tally: RunTally;
     /** vet ids placed by the last load, for the growth toast. Cleared once shown. */
     newlyPlaced: number[];
     dismissGrowthToast: () => void;
-    camera: Camera | null;
-    setCamera: (camera: Camera) => void;
     /** Tap handler for a word on the map. Returns what the tap did, for sound/feedback. */
     tapWord: (word: MemoryMapWord) => "correct" | "wrong" | "ignored";
     /** Send the current word to the back of the queue (§ 3.2a). */
     skipWord: () => void;
     /** False when there is no other unanswered word to skip TO. */
     canSkip: boolean;
-    /** Wipe colours and reshuffle. The MAP is untouched — the slot tree is server-side. */
-    restart: () => void;
+}
+
+/**
+ * How the flp break (docs/FLP_GAME_BREAKS.md § 6, MEMORY_MAP_GAME.md § 4a) tunes the run.
+ */
+export interface MemoryMapRunOptions {
+    /**
+     * The map the host already fetched (the break's prefetch). Used for the FIRST load
+     * only, instead of `GET /api/memoryMap`; null/undefined fetches as usual.
+     */
+    prefetched?: MemoryMapResponse | null;
+    /**
+     * A correct mark the server RECORDED (not suppressed by cooldown) on this word. The
+     * break reports the learner's own card as cleared through it (§ 4a). Fired off the
+     * mark's response, so it can land after the host has unmounted.
+     */
+    onCorrectMarkRecorded?: (word: MemoryMapWord) => void;
+    /**
+     * The game viewport's width ÷ height, or null until it has been measured. The load
+     * WAITS for it: the first load of an unframed learner sends it to the server, which
+     * packs (and stores) the map for that shape (docs/MEMORY_MAP_GAME.md § 2.4b). The
+     * Stage mounts the empty world during loading precisely so this can be measured.
+     * Read once, at load time; a later resize does not re-frame the map.
+     */
+    viewportAspect?: number | null;
 }
 
 /** Fisher–Yates. Not `sort(() => Math.random() - 0.5)`, which is measurably biased. */
@@ -75,7 +93,18 @@ function shuffle<T>(items: T[]): T[] {
     return out;
 }
 
-export function useMemoryMapRun(userId: string | undefined, language: string): MemoryMapRun {
+export function useMemoryMapRun(
+    userId: string | undefined,
+    language: string,
+    options: MemoryMapRunOptions = {}
+): MemoryMapRun {
+    // Latest-ref: the load effect keys on userId + language only (see the docblock), and
+    // the mark callback must survive a host re-render without re-creating `resolve`.
+    const optionsRef = useRef(options);
+    optionsRef.current = options;
+    // The prefetched map serves ONE load; a language switch afterwards fetches.
+    const prefetchSpentRef = useRef(false);
+
     const [phase, setPhase] = useState<RunPhase>("loading");
     const [slots, setSlots] = useState<MemoryMapSlot[]>([]);
     const [words, setWords] = useState<MemoryMapWord[]>([]);
@@ -86,52 +115,75 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
     const [flashing, setFlashing] = useState<number[]>([]);
     const [fading, setFading] = useState<number[]>([]);
     const [newlyPlaced, setNewlyPlaced] = useState<number[]>([]);
-    const [camera, setCamera] = useState<Camera | null>(null);
 
     // Guards a resolve against double-taps: a word resolves once, emits one mark, and
     // one graduation check. Without this a fast double-tap on the target would write
     // two reading marks for one answer.
     const resolvingRef = useRef<Set<number>>(new Set());
 
+    /**
+     * Adopt a map from the server and reconcile the saved run against it.
+     *
+     * A saved queue can name words that have since left (graduated in an earlier
+     * session, the card was deleted, or a server-side regenerate re-chose the occupants), and the
+     * map can hold words the save has never seen (spawned by this very load). Both are
+     * normal: departed words drop out of the queue, newcomers are shuffled onto its end.
+     *
+     * Plain setters only, so it is stable and the load effect can call it without
+     * re-creating itself.
+     */
+    const applyMap = useCallback(
+        (map: MemoryMapResponse, forUserId: string) => {
+            setSlots(map.slots);
+            setWords(map.words);
+            setNewlyPlaced(map.newlyPlaced);
+
+            if (map.words.length === 0) {
+                setPhase("empty");
+                return;
+            }
+
+            const live = new Set(map.words.map((w) => w.vocabEntryId));
+            let saved = loadRun(forUserId, language);
+            // A finished map starts over (the break's "next occurrence starts again" rule,
+            // MEMORY_MAP_GAME.md § 4a): a break that finished the map leaves it complete,
+            // and the next break opens on a fresh shuffle with the colours gone.
+            if (saved && map.words.every((w) => saved?.outcomes[w.vocabEntryId])) {
+                clearRun(forUserId, language);
+                saved = { queue: [], position: 0, outcomes: {} };
+            }
+            const savedQueue = (saved?.queue ?? []).filter((q) => live.has(q.vocabEntryId));
+            const queued = new Set(savedQueue.map((q) => q.vocabEntryId));
+            const unqueued = map.words
+                .filter((w) => !queued.has(w.vocabEntryId))
+                .map((w) => ({ vocabEntryId: w.vocabEntryId }));
+
+            setQueue([...savedQueue, ...shuffle(unqueued)]);
+            setPosition(saved?.position ?? 0);
+            setOutcomes(saved?.outcomes ?? {});
+            setPhase("playing");
+        },
+        [language]
+    );
+
     // ── Load ─────────────────────────────────────────────────────────────────
     //
-    // Keyed on userId + language ONLY. See the hook docblock on `token`.
+    // Keyed on userId + language ONLY (plus the one-way "the viewport has been
+    // measured" flip, which gates the first fetch — see `viewportAspect`). See the hook
+    // docblock on `token`.
+    const viewportMeasured = options.viewportAspect != null;
     useEffect(() => {
-        if (!userId) return;
+        if (!userId || !viewportMeasured) return;
         let cancelled = false;
 
         (async () => {
             setPhase("loading");
             try {
-                const map = await fetchMemoryMap();
+                const prefetched = prefetchSpentRef.current ? null : optionsRef.current.prefetched;
+                prefetchSpentRef.current = true;
+                const map = prefetched ?? (await fetchMemoryMap(optionsRef.current.viewportAspect));
                 if (cancelled) return;
-
-                setSlots(map.slots);
-                setWords(map.words);
-                setNewlyPlaced(map.newlyPlaced);
-
-                if (map.words.length === 0) {
-                    setPhase("empty");
-                    return;
-                }
-
-                // Reconcile the saved run against the map that just arrived. A saved
-                // queue can name words that have since left (graduated in an earlier
-                // session, or the card was deleted), and the map can hold words the
-                // save has never seen (spawned by this very load). Both are normal.
-                const live = new Set(map.words.map((w) => w.vocabEntryId));
-                const saved = loadRun(userId, language);
-                const savedQueue = (saved?.queue ?? []).filter((q) => live.has(q.vocabEntryId));
-                const queued = new Set(savedQueue.map((q) => q.vocabEntryId));
-                const unqueued = map.words
-                    .filter((w) => !queued.has(w.vocabEntryId))
-                    .map((w) => ({ vocabEntryId: w.vocabEntryId }));
-
-                setQueue([...savedQueue, ...shuffle(unqueued)]);
-                setPosition(saved?.position ?? 0);
-                setOutcomes(saved?.outcomes ?? {});
-                setCamera(saved?.camera ?? null);
-                setPhase("playing");
+                applyMap(map, userId);
             } catch {
                 if (!cancelled) setPhase("error");
             }
@@ -140,7 +192,8 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
         return () => {
             cancelled = true;
         };
-    }, [userId, language]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- applyMap changes only with language, already a dep
+    }, [userId, language, viewportMeasured]);
 
     const wordsById = useMemo(() => {
         const map = new Map<number, MemoryMapWord>();
@@ -184,16 +237,31 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
 
     // ── Save ─────────────────────────────────────────────────────────────────
     //
-    // Debounced because the CAMERA is part of the save and a pan gesture changes it
-    // every frame; writing localStorage at 60 Hz would jank the very gesture it is
-    // recording. 400 ms is below the time it takes to leave the page by any route.
+    // Debounced (400 ms, below the time it takes to leave the break). It
+    // was debounced for the camera, which a pan changed every frame; the camera is gone
+    // (§ 6) but a burst of answers still need not mean a burst of writes.
+    //
+    // The debounce can still be pending when the Stage unmounts — the flp break closes
+    // itself the moment its last word is answered — so the newest snapshot is also
+    // written on unmount (`pendingSaveRef`). Without that the break's final answer
+    // would be coloured on screen and gone from the save.
+    const pendingSaveRef = useRef<{ userId: string; language: string; run: SavedMemoryMapRun } | null>(null);
     useEffect(() => {
-        if (!userId || phase !== "playing" || !camera) return;
+        if (!userId || phase !== "playing") return;
+        pendingSaveRef.current = { userId, language, run: { queue, position, outcomes } };
         const timer = window.setTimeout(() => {
-            saveRun(userId, language, { queue, position, outcomes, camera });
+            saveRun(userId, language, { queue, position, outcomes });
+            pendingSaveRef.current = null;
         }, 400);
         return () => window.clearTimeout(timer);
-    }, [userId, language, phase, queue, position, outcomes, camera]);
+    }, [userId, language, phase, queue, position, outcomes]);
+    useEffect(
+        () => () => {
+            const pending = pendingSaveRef.current;
+            if (pending) saveRun(pending.userId, pending.language, pending.run);
+        },
+        []
+    );
 
     /**
      * A word resolved: record its colour, emit its ONE reading mark, and ask the server
@@ -213,12 +281,15 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
             setPosition((prev) => prev + 1);
 
             try {
-                await markFlashcard({
+                const marked = await markFlashcard({
                     cardId: word.vocabEntryId,
                     isCorrect: outcome === "green",
                     type: MARK_TYPE,
                     surface: "memory-map",
                 });
+                if (outcome === "green" && !marked.suppressed) {
+                    optionsRef.current.onCorrectMarkRecorded?.(word);
+                }
             } catch {
                 // The colour stands even if the mark failed to persist. Rolling the
                 // colour back would be worse: the player answered, and re-prompting the
@@ -274,7 +345,7 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
      * Tapping a word on the map.
      *
      * Three cases, and the ordering matters:
-     *   • an ALREADY-COLOURED word is never an answer — the page opens its definition
+     *   • an ALREADY-COLOURED word is never an answer — the Stage opens its definition
      *     popup instead, and no try is burned (§ 3.4). Handled by returning "ignored".
      *   • the TARGET resolves the prompt, green / orange / red by how many tries it took.
      *   • any other uncoloured word is a miss: flash it red and burn a try.
@@ -377,28 +448,6 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
         return () => window.clearTimeout(timer);
     }, [flashing]);
 
-    /**
-     * Wipe the colours and reshuffle. Serves both Restart (§ 6) and Play Again (§ 5).
-     *
-     * The MAP is deliberately untouched: the slot tree is server-side and no client
-     * action can move a word. That is what makes the map feel permanent.
-     */
-    const restart = useCallback(() => {
-        if (userId) clearRun(userId, language);
-        resolvingRef.current.clear();
-        setOutcomes({});
-        setPosition(0);
-        setTries(0);
-        setQueue(shuffle(words.map((w) => ({ vocabEntryId: w.vocabEntryId }))));
-        setPhase(words.length === 0 ? "empty" : "playing");
-    }, [userId, language, words]);
-
-    const tally = useMemo<RunTally>(() => {
-        const counts: RunTally = { green: 0, orange: 0, red: 0 };
-        for (const outcome of Object.values(outcomes)) counts[outcome]++;
-        return counts;
-    }, [outcomes]);
-
     return {
         phase,
         slots,
@@ -409,20 +458,12 @@ export function useMemoryMapRun(userId: string | undefined, language: string): M
         tries,
         flashing,
         fading,
-        answered: Object.keys(outcomes).length,
-        // The denominator is the map's CURRENT size, so the `23 / 50` header stays
-        // truthful as words graduate off and replacements arrive.
-        total: words.length,
-        tally,
         newlyPlaced,
         dismissGrowthToast: useCallback(() => setNewlyPlaced([]), []),
-        camera,
-        setCamera,
         tapWord,
         skipWord,
         // A failed prompt always offers the button — there it means "accept the red",
         // which is available even when no other word is left.
         canSkip: canSkip || promptPhase === "failed",
-        restart,
     };
 }

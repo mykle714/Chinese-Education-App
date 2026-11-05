@@ -6,9 +6,9 @@ import { useEffect, useSyncExternalStore } from "react";
  *
  * LAYER: shared client state (src/minutePoints). Eligibility is otherwise decided by the
  * route alone (`./eligibility`): a page earns because its PATH is on a list. The Deck
- * Tower breaks that rule on purpose — its flp session mounts inside `/deck-tower`, over
- * the tower scene, without a route change (docs/DECK_TOWER.md § "Studying the tower"),
- * and `/deck-tower` itself must not earn (it is a menu: you pick a deck there). So the
+ * Tower breaks that rule on purpose — its flp session (the app's only flp) mounts inside
+ * `/`, over the tower scene, without a route change (docs/DECK_TOWER.md § "Studying the
+ * tower"), and `/` itself must not earn (it is a menu: you pick a deck there). So the
  * page CLAIMS the surface while the session is up, and `useMinutePoints` treats a claimed
  * surface exactly like an eligible path: interaction starts the clock, the usual idle
  * timeout stops it, and releasing the claim saves and deactivates as leaving a study

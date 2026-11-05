@@ -149,7 +149,7 @@ function NightMarketEnginePage() {
   const [showGrid, setShowGrid] = useState(false);
 
   // Night Market is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
-  // arrow (→ Home), slides up on enter / down on exit. All three states render
+  // arrow (→ /menu), slides up on enter / down on exit. All three states render
   // through one LeafPage so it stays a single instance and the enter slide plays once.
   if (isLoading) {
     return (

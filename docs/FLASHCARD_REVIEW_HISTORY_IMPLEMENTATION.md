@@ -70,9 +70,9 @@ markHistory?: ReviewMark[];  // Last 16 flashcard review marks
 `applyMark` deliberately does **not** pick a replacement card. Choosing the next card
 the learner sees is `OnDeckVocabService`'s job, and only one of the eight client call
 sites wants it; the route composes the two, using the `categoryBeforeMark` (core band)
-the service returns — or, for the reading flp (`world: 'reading'`, any mode), its
+the service returns — or, for a reading or writing flp (body `world` ≠ `core`), its
 `markedBarCategoryBefore` (the band of the bar the mark moved), since that loop is banded
-by the reading bar (docs/READING_WRITING_CENTERS.md § Phase 4). See "The refill is a second concern on the same URL" below.
+by its own bar ([MASTERY_REWORK.md](./MASTERY_REWORK.md) § "The reading flp"). See "The refill is a second concern on the same URL" below.
 
 The write path is **transactional and takes a row lock** (`findMarkState(…,
 forUpdate: true)`). Appending to `typedMarkHistory` is a read-modify-write over a whole
@@ -87,9 +87,9 @@ transaction and no lock, while `undoLastMark` had both.
 
 `POST /api/flashcards/mark` does two unrelated things: it records the mark (all eight
 call sites want this) and it hands back a replacement card (only the flp working loop
-wants it). Seven callers send `excludeIds: []` and discard `newCard`, and three request
-fields — `mode`, `deckId`, `collection` — exist solely to steer a refill the games never
-read. (`surface` is the one field every caller sends that the MARK itself reads: above
+wants it). Seven callers send `excludeIds: []` and discard `newCard`, and two request
+fields — `world` and `excludeIds` — exist solely to steer a refill the games never
+read (the refill's scope is otherwise server-decided: the world's focus set, if focused). (`surface` is the one field every caller sends that the MARK itself reads: above
 core pbh 6 a know mark is recorded only from `surface: 'flp'` — MASTERY_REWORK.md § 6.)
 
 Splitting the refill onto its own endpoint is now a **routing change only**, because

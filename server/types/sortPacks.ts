@@ -1,7 +1,7 @@
 /**
  * Sort-pack types.
  * Shared shapes used by the sort_packs DAL, the StarterPacksService supply logic,
- * and the discover/sort-cards controller.
+ * and the discover/add-new-cards controller.
  *
  * A "sort pack" is the on-deck unit of the discover sort flow: up to 4 cards to sort
  * (see docs/SORT_PACKS_IMPLEMENTATION.md, docs/SORT_CARDS_REQUIREMENTS.md §4.5).

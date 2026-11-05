@@ -12,7 +12,7 @@ interface WordSearchResumeTileProps {
     onResume: (e: React.MouseEvent) => void;
     /** The ✕ → Delete confirmation went through; the caller clears the save slot. */
     onErase: () => void;
-    /** BEM block of the launching surface (`games-page`, `reading-games-carousel`). */
+    /** BEM block of the launching surface (`games-page`). */
     classPrefix: string;
     /** The game's registry glyph — worn as the tile's corner ghost, echoing the
      *  parent card's ghost. */
@@ -20,11 +20,9 @@ interface WordSearchResumeTileProps {
 }
 
 /**
- * The parked-board RESUME tile — shared by both Word Search launch surfaces: the Games
- * hub (`WordSearchHubItem`, Pinyin slot) and the Reading Center games carousel
- * (`ReadingGamesCarousel`, No Pinyin slot), both placing it through
- * `buildWordSearchCard` as the `GameCard`'s "resume" option, so the two cannot drift
- * apart. Drawn on `GameOptionTile` — the SAME shell as a Bubble Match level tile, so
+ * The parked-board RESUME tile on the Games hub's Word Search card (`WordSearchHubItem`,
+ * Pinyin slot), placed through `buildWordSearchCard` as the `GameCard`'s "resume"
+ * option. Drawn on `GameOptionTile` — the SAME shell as a Bubble Match level tile, so
  * radius / padding / floor / outline / title type are shared, not copied. Spans TWO
  * of GameCard's option slots (two Bubble Match levels plus the gap between them,
  * ~180–207px × 62px): the delete face reads "Delete?" with Cancel / Delete stacked.
@@ -36,14 +34,13 @@ interface WordSearchResumeTileProps {
  * instead of under it.
  *
  * Normal face: just "Resume" and a ✕ in the top-right corner — no parked time or
- * found count (the tile is a plain way back in, not a progress readout). No mode label: each launch surface owns exactly one save
- * slot (hub = Pinyin, Reading Center = No Pinyin), so the mode is implied by where
- * the tile sits. The ✕ flips the tile in place to a
+ * found count (the tile is a plain way back in, not a progress readout). No mode label: the
+ * hub owns exactly one save slot (Pinyin), so the mode is implied by where the tile sits. The ✕ flips the tile in place to a
  * delete-confirm face; only its Delete calls `onErase`.
  *
  * Layer: feature component (src/games/word-search). The host owns the save slot and
  * navigation; this tile owns only the armed/unarmed face state.
- * Docs: docs/WORD_SEARCH_GAME.md § "Resume card", docs/READING_WRITING_CENTERS.md.
+ * Docs: docs/WORD_SEARCH_GAME.md § "Resume card".
  */
 /** The ghost's right offset: the ✕ button sits at right 4 and is ~20px wide (16px
  *  glyph + 2px padding each side), so a ghost whose right edge is at 26px clears it. */

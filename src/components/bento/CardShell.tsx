@@ -11,9 +11,9 @@ import { SHADOW } from "../../theme/shadows";
  * padding, the clipped ghost glyph bleeding off the top-right, and the corner pin slot.
  *
  * It exists so the family's look is defined ONCE. Two entities render through it:
- *   - `BentoTile` (this folder) — every hub destination (Home, Discover, Friends, Games);
+ *   - `BentoTile` (this folder) — every hub destination (Menu, Friends, Games);
  *   - `GameCard`'s `card` variant (games/shared/GameCard) — the full-width game card
- *     with a launch-options row (Games hub, Reading Center games carousel).
+ *     with a launch-options row (Games hub).
  * Change a number here and both move together; that is the point. Layout INSIDE the
  * shell (foot-aligned title vs. header + options row) is each caller's business.
  *

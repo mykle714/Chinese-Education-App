@@ -108,9 +108,9 @@ export function challengeStatusLine(
             const closes = asDate(challenge.deadlines.testClosesAt);
             const now = Date.now();
             if (!anytime && opens && now < opens.getTime()) {
-                // The study days. The deck is the point of this stretch, so the copy
-                // names it rather than just counting down.
-                return `Study your deck · test opens ${deadlineLabel(challenge.deadlines.testOpensAt)}`;
+                // The study days. Studying the nine words is the point of this stretch, so
+                // the copy names it rather than just counting down.
+                return `Study the words · test opens ${deadlineLabel(challenge.deadlines.testOpensAt)}`;
             }
             if (!anytime && closes && now >= closes.getTime()) return "Window closed";
 
@@ -230,8 +230,8 @@ export function challengeActionLabel(action: ChallengeAction): string {
  *   * GREEN — a decision that only arrives unasked. `incoming` alone.
  *   * RED   — the one destructive control on the page (`waiting` → Withdraw), which
  *             must not read as the neutral "nothing to do here" it replaced.
- *   * ORANGE — `study`, the one state where the row's job is the deck rather than the
- *             challenge, matching the Challenges shelf spines on /decks (§ 4).
+ *   * ORANGE — `study`, the one state where the row's job is studying the words rather
+ *             than the challenge itself.
  *   * PURPLE — `issue`, the one control that STARTS something. It was blue with the
  *             two routine taps below until 2026-09-01, which made the row that offers
  *             a new challenge look like the row that reports an old one — and it is the

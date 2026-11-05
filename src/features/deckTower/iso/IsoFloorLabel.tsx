@@ -16,7 +16,7 @@ import {
     type WorldRect,
 } from "./geometry";
 import { shadowTone, type IsoSurface } from "./light";
-import { bandMaterial, type Material } from "./palette";
+import { bandMaterial, shadeHex, type Material } from "./palette";
 import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
@@ -55,9 +55,14 @@ import { WEIGHT } from "../../../theme/scale";
 /** World height of a fully raised plate (`raised` = 1): ~5 px at the Deck Tower's scale. */
 export const RAISED_HEIGHT = 0.25;
 
-/** A plate's wall tones, from its band (palette.ts → `bandMaterial`), each a shadow step down when shaded. */
-const plateMaterial = (band: string, shaded: boolean): Material => {
-    const m = bandMaterial(band);
+/**
+ * A plate's wall tones, from its band (palette.ts → `bandMaterial`, or `shadeHex` at
+ * `wallSteps` when the band needs deeper walls), each a shadow step down when shaded.
+ */
+const plateMaterial = (band: string, shaded: boolean, wallSteps?: { left: number; right: number }): Material => {
+    const m = wallSteps
+        ? { top: band, left: shadeHex(band, wallSteps.left), right: shadeHex(band, wallSteps.right) }
+        : bandMaterial(band);
     return shaded ? { top: shadowTone(m.top), left: shadowTone(m.left), right: shadowTone(m.right) } : m;
 };
 interface IsoFloorLabelProps {
@@ -76,6 +81,12 @@ interface IsoFloorLabelProps {
      * May briefly exceed 1 (a spring overshoot).
      */
     raised?: number;
+    /**
+     * The walls' shading steps below the band (left, right), overriding `bandMaterial`'s
+     * 0.07 / 0.15 — for a band whose default walls read too faint (the Deck Tower's yellow
+     * Learning plate, towerDecks.ts → `plateWallSteps`).
+     */
+    wallSteps?: { left: number; right: number };
 }
 
 const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
@@ -86,6 +97,7 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
     bandColor,
     shaded = false,
     raised = 0,
+    wallSteps,
 }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
@@ -119,7 +131,7 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                 </g>
             )}
             <g className="iso-floor-label__body" transform={unswing}>
-                {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded)} />}
+                {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded, wallSteps)} />}
                 <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.cjk}>
                     <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandFill) : bandFill} />
                     <IsoSpacedText

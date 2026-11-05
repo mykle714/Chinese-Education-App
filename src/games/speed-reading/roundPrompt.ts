@@ -40,7 +40,7 @@ export interface RoundPrompt {
  * empty string (the translation still carries the round) and TTS is left to infer
  * the reading.
  *
- * Referenced by: SpeedReadingPage (render + narration), SpeedReadingPrompt.
+ * Referenced by: SpeedReadingStage (render + narration), SpeedReadingPrompt.
  * Documented in: docs/SPEED_READING_GAME.md § The prompt.
  */
 export function roundPrompt(round: Round): RoundPrompt {

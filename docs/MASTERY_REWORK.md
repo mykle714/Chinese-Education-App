@@ -123,17 +123,42 @@ Search's No-Pinyin mode makes.
 2026-09-25 a pinyin-off zh flp session wrote `reading` on its foreign-first face. That
 was reversed with the know merge (§ 6): the flp's two faces are now always
 `production` (English-first) and `recognition` (foreign-first), and "Show pinyin" is a
-display setting only. Reading marks come from the **dedicated reading flp** (built
-2026-10-02): `/flashcards/learn?world=reading` (plus `&mode=review|challenge`), launched
-from the Reading Center's card hand — the fdp's Challenge / Review / Study Mix hand
-(`FlpStudyHand`) on the reading bar. It always opens on the characters with no pinyin and no
-narration, the answer face always shows pinyin, every mark is `reading`, and the server
-bands, queues and cools that loop on the READING bar (the `world` parameter,
-`server/contracts/studyMode.ts` → `FlpWorld`, threaded through `OnDeckVocabService.ts`;
-the refill paces on `markedBarCategoryBefore`). See
-[READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) § Phase 4.
-`markTypeForSideOne` / `sideOneForCard` (`src/utils/flpFaceSteering.ts`, both now taking
-the session's `mode`) are the mapping.
+display setting only. Reading marks come from the **reading flp** — studying the Deck Tower's reading world
+(§ "The reading flp" below).
+`markTypeForSideOne` / `sideOneForCard` (`src/utils/flpFaceSteering.ts`, both taking the
+session's `FlpWorld`) are the mapping.
+
+### The reading flp
+
+`server/contracts/studyMode.ts` → `FlpWorld`, `parseFlpWorld`;
+`OnDeckVocabService.ts` (`fetchFlpCandidates`, `rankFlpEligible`,
+`getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`); `flpReadiness.ts`;
+`FlashcardMarkService.ts` → `markedBarCategoryBefore`; `src/utils/flpFaceSteering.ts`;
+`FlashcardsLearnPage.tsx` (`readingMode`, `narrateNow`); `FlashCardSection.tsx`
+(`readingMode`); `src/__tests__/flpFaceSteering.test.ts`.
+
+The flp has ONE axis, the **world** (`FlpWorld`: `core` | `reading` | `writing`), which
+picks the bar the loop's bands, queue and cooldown are read off. There are no study modes:
+every loop is Study Mix. The world comes from the Deck Tower world being studied
+(`FlpTowerHost`, the working-loop request `{ world }`; [DECK_TOWER.md](./DECK_TOWER.md)
+§ Studying the tower). On the wire it is `?world=` on the working loop and
+`GET /api/onDeck/flpReadyCounts`, and `bar` on the mark body, each parsed by
+`parseFlpWorld`. zh only.
+
+On the reading world:
+- The question face is the characters with **no pinyin and no speaker**; the answer face
+  shows pinyin (`FlashCardSection` `readingMode`). Every mark is `reading`
+  (`markTypeForSideOne(_, "reading")`; `sideOneForCard(_, "reading")` is always `zh`).
+- Autoplay narration plays on the answer face only (on the flip — `narrateNow`).
+- `readingMode` is the **only** input to flp pinyin: the flp has no pinyin chip and does
+  not read `useFlashcardLearnSettings().showPinyin`, so the core and writing flp show pinyin
+  on every face. That shared pref still drives the games that toggle it and the cdps.
+- A reading refill prefers the READING band just left (`markedBarCategoryBefore`).
+- ⚠️ Open: the eip ("More Info") is reachable on a reading card's question face and shows
+  the definition and readings — the same pre-flip leak the core flp has. Undecided
+  whether a reading session should lock it until the flip.
+
+The writing world's flp is the writing card (WRITING_PRACTICE_REWORK.md § 3).
 
 **Bubble Match is the rule's one consumer**: a pinyin-off zh board marks `reading`, and
 its pool is requested on that track. Two properties, both forced by it being a game —
@@ -144,8 +169,9 @@ see
   Play-Again refills), because a game's whole pool is bucketed and cooled up front;
 * so the toggle moved OUT of the game and onto the **Games hub**
   (`BubbleMatchTrackToggle`). Since 2026-10-03 there is no toggle at all: each
-  launcher **pins** the track (`state.showPinyin`). The Games hub pins Recognition and
-  the Reading Center's games carousel pins Reading
+  launcher **pins** the track (`state.showPinyin`). The Games hub — now Bubble Match's
+  only launcher (it has no flp-break adapter) — pins Recognition, so no live surface
+  launches a Reading run
   ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Bubble Match: pinyin picks the track").
   A reading run is silent — no autoplay, no narration — since hearing
   the word would supply the reading being tested.
@@ -156,7 +182,7 @@ see
 > 1. **Pinyin becomes a per-game setting.** Today Bubble Match, Hydra and Match Speed
 >    share the flp's one `showPinyin` boolean, so switching Bubble Match to Reading
 >    strips pinyin from the other two — neither of which changes track to match — and
->    a game writing that key also edits the cdp/scp/dictionary display. Each game gets
+>    a game writing that key also edits the cdp/ancp/dictionary display. Each game gets
 >    its own persisted preference; the flp keeps `flashcard.learn-settings` and becomes
 >    its only writer. Word Search, Memory Map and Speed Reading are already per-game.
 >    Full rule: [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).
@@ -320,22 +346,20 @@ users join**:
 | The `category` field on the wire | `VocabEntryBase.category` |
 
 ⚠️ **One deliberate exception: the flp's cooldown window.** Bucket *quotas* (which utcm
-tier a card counts toward, and therefore Review's Comfortable+Mastered eligibility) are
-still `core`. But the per-card, per-track cooldown check within that bucket is **not** —
+tier a card counts toward) are still `core`. But the per-card, per-track cooldown check within that bucket is **not** —
 since the "either category" fix (§ 6), each of recognition/production clears its OWN
 per-type window independently, matching what the cdp already displays per track. A card
 can sit in the core-Comfortable bucket while its production track is individually off
-cooldown under a weaker per-type category, and Review will serve it on that track alone.
+cooldown under a weaker per-type category.
 
 The per-bar reads are the exceptions, and each one is a *display* of that bar:
 the Mastered collections (`masteredBarClause(bar)`), the per-bar Learning collections
 (`unmasteredBarClause(bar)`), the sort options, the bars themselves, and velocity.
 
-**Since the Mastery Centers, EVERY SURFACE carries exactly one bar.** A *lens* is a
-`MasteryWorldId` a page is read through: the fdp, its collections, its decks and search
-are `core`; the Reading and Writing Centers are their own skill
-(docs/DECKS_FEATURE.md § "Mastery Centers"). The band counts, the collection
-membership, the sort keys, the mini-card strip and the cdp's Mastery section all come
+**EVERY SURFACE carries exactly one bar.** A *lens* is a `MasteryWorldId` a page is
+read through: the Deck Tower's main world (its tower, its cards page) and search are
+`core`; the reading and writing worlds are their own skill (DECK_TOWER.md § Worlds,
+[CARD_LIBRARY.md](./CARD_LIBRARY.md)). The band counts, the collection membership, the sort keys, the mini-card strip and the cdp's Mastery section all come
 from the lens bar.
 
 (There used to be a mini-card *badge* here too — a corner U/T/C/M letter disc — and it
@@ -344,10 +368,10 @@ rather than joined. It is **gone**; see "Mini cards — the eight-mark window" b
 
 ⚠️ **A surface never shows a bar it is not about.** `core` is not "no lens", it is the
 recognition/production lens, and it draws ONE bar. Drawing a track per *goal* — which
-is what the fdp, its collections and the cdp did until 2026-08-19 — put reading and
-writing progress onto pages that were asking neither question, which is the whole
-reason the Centers exist. The account's goal flags still decide whether a Center's
-BUTTON appears (`activeMasteryCenters`) and which sort rows a core surface offers; they
+is what the old decks page, its collections and the cdp did until 2026-08-19 — put
+reading and writing progress onto pages that were asking neither question. The
+account's goal flags still decide whether a skill world is shown on td and which sort
+rows a core surface offers; they
 no longer decide how many bars get drawn anywhere.
 It is computed on the client from `typedMarkHistory` (`masteryBar(history, lens)`), not
 fetched: the wire's `category` field is core by definition (`CORE_CATEGORY_SELECT`), and
@@ -435,7 +459,7 @@ Date mastered** (one row per active bar, each reading `masteredAtForBar(mastered
 **removed** from `src/utils/vocabSort.ts`: the column was never backfilled, so for every
 card mastered before migration 142 the key is missing, and the ordering sank most of the
 library to the bottom in both directions. See
-[DECKS_FEATURE.md](./DECKS_FEATURE.md) § "Sort by". `masteredAtForBar` survives and is
+[CARD_LIBRARY.md](./CARD_LIBRARY.md) § "Sort by". `masteredAtForBar` survives and is
 still read by the cdp's mastery window. No query orders or filters on `masteredAt`, so
 it carries no index.
 
@@ -483,9 +507,9 @@ ticked between them. Reading a card's state is counting, not estimating.
 
 **Which track is on screen — the learner's choice (D6, amended).** A `Segmented` control
 (`Know / Read / Write`, the design's `.trkseg`) sits at the end of the section's rule. It
-**defaults to the surface's lens** — `core` from the fdp / a deck / a search result,
-`reading` or `writing` for a card reached from that Mastery Center (`?world=`,
-`lensFromSearch`) — so an untouched page still reports exactly one track, the one the
+**defaults to the surface's lens** — `core` from td's main world / a search result,
+`reading` or `writing` for a card reached from that td world's cards page (`?world=`,
+`withLens` → `lensFromSearch`) — so an untouched page still reports exactly one track, the one the
 surface that opened it was asking about. Only one track is ever on screen; the learner is
 simply allowed to say which.
 
@@ -497,7 +521,7 @@ Two rules inside that:
   gets surfaced, sorted and counted elsewhere; it does not decide whether this card's
   history exists.
 - **The switch re-seeds on the LENS, not on the entry.** Paging between cards keeps the
-  track the learner chose; re-opening a card from a different Center moves it.
+  track the learner chose; re-opening a card from a different world moves it.
 
 **Cooldown.** Inline in the heading, right after the band pill (`MasteryWindow.tsx` →
 `CooldownTimer`): **one countdown for the shown bar** — a clock belongs to a bar since the
@@ -634,16 +658,14 @@ window, and its colour is the band.
   strip colour every filled cell by the track's utcm **band** (`getBandMark`,
   `src/utils/categoryColors.ts`) — see § "Mini cards — the eight-mark window" above.
   `masteryWindowCells` still returns the owning mark type. Since **2026-10-02** only the
-  two learner-facing skills own a hue — the Reading / Writing Centers' colours
-  ([READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)):
+  two learner-facing skills own a hue:
   - Reading → **Green** `COLORS.grnMk` (`MARK_TYPE_COLORS.reading`)
   - Writing → **Purple** `COLORS.purMk` (`MARK_TYPE_COLORS.writing`)
   - Recognition, Production → **no hue** — neutral `COLORS.greyA`. They are the two
     halves of the "know" bar and are no longer learner-facing concepts.
 
   The skill's bar uses the same hue key (`MASTERY_BAR_HUES`, `src/utils/categoryColors.ts`
-  — reading `grn`, writing `pur`, core `blu`), so a skill's Mastered tile, its Center and
-  its dot agree. (Before 2026-10-02: recognition blue, production green, reading red,
+  — reading `grn`, writing `pur`, core `blu`), so a skill's bar and its dot agree. (Before 2026-10-02: recognition blue, production green, reading red,
   writing orange; v1 used four off-palette literals, `#779BE7` / `#05C793` / `#EF476F` /
   `#FF8E47`.) The
   cooldown-elapsed check icon is `MASTERY_READY_COLOR`, beside them in the same file —
@@ -667,7 +689,7 @@ window, and its colour is the band.
 >   `barReadyAt`, `barCooldownRemainingMs`, `isBarOnCooldown`, `isMarkOnCooldown`);
 >   `server/contracts/mastery.ts` (`FLP_ONLY_CORE_PBH`, `isFlpOnlyMark`);
 >   `server/contracts/wire.ts` (`FLP_MARK_SURFACE`); `server/contracts/flpReadiness.ts`
->   (the fdp ready counts, now just the know clock).
+>   (the flp ready counts, now just the know clock).
 > - **Service:** `server/services/FlashcardMarkService.ts` → `applyMark` (both gates);
 >   `server/services/OnDeckVocabService.ts` → `FLP_WORLD`, `rankFlpEligible`,
 >   `isCardGameEligible`; `server/services/cardQueueRanking.ts` (`rankCardQueue` /
@@ -712,7 +734,7 @@ passed. Consequences:
 - The cdp shows **one** Know countdown (§ 5), the collection "Sort by → Cooldown" key is
   that same number, and the flp queues on it — one function
   (`barCooldownRemainingMs`), so the three can no longer disagree. (Under the per-type
-  rule the cdp/sort used per-type windows while the fdp count used the core window;
+  rule the cdp/sort used per-type windows while the flp count used the core window;
   that split is gone.)
 
 > **History.** Until 2026-09-05 the flp used one whole-card core-band window for both
@@ -834,7 +856,7 @@ same way, so a loop and its replacements cannot diverge.
 > (`FocusModeService` → `selectFocusSet`, [FOCUS_MODE.md](./FOCUS_MODE.md) § 3). A
 > further consumer of the primitives is the collection "Sort by → Cooldown" key
 > (`cooldownKey`, `src/utils/vocabSort.ts`), which is the shown bar's
-> `barCooldownRemainingMs` — see [DECKS_FEATURE.md § "Sort by"](./DECKS_FEATURE.md).
+> `barCooldownRemainingMs` — see [CARD_LIBRARY.md § "Sort by"](./CARD_LIBRARY.md).
 
 Rested cards split on **whether the bar saw any mark — right or wrong — in the last 30
 days** (`lastMarkOnBar`, `RECENT_MARK_WINDOW_MS`; decided 2026-10-28):
@@ -891,15 +913,15 @@ A quota its own category could not fill is covered, in order, by:
 2. **cooling** cards, nearest-to-ready first (`rankCardQueueCooled`) — the learner's own
    words, shown again early. They earn nothing: the mark is dropped by the cooldown gate;
 3. **lent** provisional cards — only in an unrestricted session (`canLendProvisional`:
-   `Unfamiliar` is servable **and** no collection restriction).
+   no `CollectionFilter` — i.e. not a focus-mode session).
 
 | Session | After tiers 1–2 are spent ⇒ |
 |---|---|
-| Mix, Challenge (unrestricted) | **lend provisional cards** (`lendIntoLoop` → `ProvisionalCardService.acquireLentCards`) |
-| Review, `?collection=mastered`, `?deck=` | return **short or empty**; the client shows a "resting" empty state |
+| Study Mix (unfocused) | **lend provisional cards** (`lendIntoLoop` → `ProvisionalCardService.acquireLentCards`) |
+| A focused world (FOCUS_MODE.md) | return **short or empty**; the client shows a "resting" empty state |
 
 `POST /api/flashcards/mark` returns **200 with `newCard: null`** when there is nothing to
-refill with, for every session type. See docs/PROVISIONAL_CARDS.md § 4b and § 6.
+refill with. See docs/PROVISIONAL_CARDS.md § 4b and § 6.
 
 ### Notes / caveats
 
@@ -1050,7 +1072,7 @@ utcm category.
 
 The core band answers *"how far along is this card overall?"* by blending
 recognition and production through the pbh formula. That is right for the flp (which
-presents two mark types on one card) and the decks page, but wrong for a game that exercises
+presents two mark types on one card) and the library counts, but wrong for a game that exercises
 exactly one track. A card with a maxed Recognition window and an empty Reading
 window reads as **Comfortable** overall, so Word Search No-Pinyin used to serve it
 as a Comfortable word even though the learner has never once read it. The game's
@@ -1094,7 +1116,7 @@ category expression joins `users` — bands are goal-independent across the boar
 | Word Search — No-Pinyin | `reading` per-type category | reading band |
 | Speed Reading | `reading` per-type category | reading band |
 | flp working loop | **core** band (bucket/quota only) | **core** band (know clock, § 6) |
-| decks page counts | **core** band (unchanged) | — |
+| library band counts (`getCategoryCounts`, core lens) | **core** band (unchanged) | — |
 
 The flp buckets on the whole-card core band — it presents **two** mark types on one
 card, and those two are exactly the core bar's tracks, so "which utcm quota a card
@@ -1131,7 +1153,7 @@ No-Pinyin may serve it again. For recognition/production it is the core band (§
 
 The `available` map both game endpoints return still comes from
 `getCategoryCounts`, which uses the **core** band (it is shared with the
-decks page). So the client's "you have N Comfortable cards" hint can disagree with
+card library's counts). So the client's "you have N Comfortable cards" hint can disagree with
 the pool the same request assembled. This is a deliberate trade (one shared count
 source); if the hints ever need to match, add a per-type count variant for the game
 callers rather than switching `getCategoryCounts` itself.
@@ -1385,8 +1407,8 @@ Implications to work through:
 - ✅ **Goal toggles demote nothing.** The account-page warning copy is replaced.
 - ✅ **Whole-card questions are CORE ONLY**: deck counts, level estimate, the
   community Learning feed drop-out, the mini-card badge, flp quotas.
-- ✅ **Three Mastered collections** on the fdp, goal-gated rows; counts from
-  `GET /api/onDeck/masteredCounts`.
+- ✅ **Three Mastered collections**, one per bar; counts from
+  `GET /api/onDeck/masteredCounts` (the cards page's Mastered filter key per world).
 - ✅ **Sort options are per bar**, and a bar's rows appear only when its goal is set.
   The menu is BUNDLED — one row per dimension, both directions as toggles — so every
   ordering is readable in reverse without doubling the menu.
@@ -1467,8 +1489,7 @@ Settled since:
   `MASTERED_COLLECTION_IDS`, `parseMasteryWorld`, `MasteredAtByBar`, the pinyin-off
   track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
   `FLP_MARK_SURFACE` (§ 6).
-- `src/games/GamesPage.tsx` / `ReadingGamesCarousel.tsx` (the launchers that pin the
-  track), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
+- `src/games/GamesPage.tsx` (the launcher that pins the track), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
   `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
   now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
 - `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`) and
@@ -1494,9 +1515,9 @@ Settled since:
   `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window.
 - `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by
   `src/__tests__/formatDuration.test.ts`).
-- `src/features/flashcards/collectionRef.ts`, `FlashcardsDecksPage.tsx`,
-  `CollectionViewPage.tsx`, `src/hooks/useMasteredCounts.ts` — the three Mastered
-  collections. See [DECKS_FEATURE.md](./DECKS_FEATURE.md).
+- `src/features/flashcards/collectionRef.ts`, `builtinCollections.ts`,
+  `useCardLibrary.ts`, `src/hooks/useMasteredCounts.ts` — the three Mastered
+  collections. See [CARD_LIBRARY.md](./CARD_LIBRARY.md).
 - `src/utils/vocabSort.ts` — the per-bar sort keys.
 - `src/utils/categoryColors.ts`, `src/theme/colors.ts` — colors.
 - `src/pages/AccountSheet.tsx` / `SettingsPage.tsx` — Goals settings section.

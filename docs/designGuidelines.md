@@ -191,7 +191,7 @@ HSK levels, and the UI re-adds an HSK badge from them.
 ##### Relationships
 
 - Each entry belongs to a user through the `userId` foreign key
-- `deck_cards` references entries to build user-authored decks — see [DECKS_FEATURE.md](./DECKS_FEATURE.md)
+- `deck_cards` still references entries (the retired user-authored Decks feature; the table is kept unused and `VocabEntryDAL.delete` still cascades it — see [DEFERRED_WORK.md](./DEFERRED_WORK.md))
 
 #### UserMinutePoints
 

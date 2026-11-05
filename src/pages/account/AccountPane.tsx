@@ -196,7 +196,7 @@ function AccountPane({ onClose }: AccountPaneProps) {
 
                     {/* The minute bank — NET through yesterday, with today's minutes as
                         a corner chip. Directly under the profile row, tying it to the
-                        avatar the hp banking embers fly into (Q4). */}
+                        avatar the td banking embers fly into (Q4). */}
                     <BankBanner className="account-sheet__bank-banner" />
 
                     <SectionHeader

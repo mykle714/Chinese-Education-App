@@ -9,7 +9,6 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
-import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
 import { fetchGamePool as requestGamePool } from "../../api/gamePool";
 import type { Language, MarkType, VocabEntry } from "../../types";
 import { foreignPromptTrack } from "../../../server/contracts/wire";
@@ -30,7 +29,7 @@ import { provisionalEntries, provisionalWords } from "../../utils/provisionalCar
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
-import { useGameExit } from "../runtime/gameExit";
+import { GAMES_HUB_EXIT } from "../runtime/gameExit";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 
 type Phase =
@@ -66,7 +65,7 @@ const POOL_SURFACE = "bubble-match";
  *
  * Flow: loading → (blocked) → playing → (won | lost) → playing (replay) …
  * The level is chosen on the Games hub (one `GameCard` level tile per
- * LEVEL_CONFIGS entry — see bubbleMatchCard.ts) or the Reading Center carousel, and passed in via `location.state.
+ * LEVEL_CONFIGS entry — see bubbleMatchCard.ts) and passed in via `location.state.
  * level`; this page no longer has its own in-game level picker. A run locks
  * in a single set of TOTAL_PAIRS cards (20 pairs = 40 bubbles); the chosen
  * level only sets the launch cadence + ceiling-shrink speed (there is no clock —
@@ -79,14 +78,8 @@ const POOL_SURFACE = "bubble-match";
  * list), so this page only needs to render the badge — no per-page hook.
  */
 const BubbleMatchPage: React.FC = () => {
-    // Which collection this game was launched from (docs/DECKS_FEATURE.md) — null
-    // for an ordinary launch from the Games hub. Appended to every pool request so
-    // the round stays inside the set the learner picked.
-    const launchCollection = useLaunchCollection();
     usePageTitle("Bubble Match");
     const navigate = useNavigate();
-    // Where Back / "Back to …" land: the hub, or the surface that launched us.
-    const gameExit = useGameExit();
     const location = useLocation();
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -109,10 +102,10 @@ const BubbleMatchPage: React.FC = () => {
     // language — arrives asynchronously, and the fetch effect already waits for it.
     //
     // A launch may PIN the track via `location.state.showPinyin`, overriding the shared
-    // setting for this run only (the setting itself is not written). The Reading Center's
-    // games carousel launches with `showPinyin: false`, because a reading-skill page must
-    // deal a reading board whatever the learner's flp pinyin preference is
-    // (docs/READING_WRITING_CENTERS.md). The Games hub passes nothing and keeps the setting.
+    // setting for this run only (the setting itself is not written). The Games hub's level
+    // tiles launch with `showPinyin: true` (GamesPage), so a hub run is always a
+    // recognition board; a launch with no pin (a challenge round, a direct visit) keeps
+    // the shared setting.
     const pinnedShowPinyin = (location.state as { showPinyin?: boolean } | null)?.showPinyin;
     const effectiveShowPinyin = pinnedShowPinyin ?? showPinyin;
     const trackInputRef = useRef({ language: user?.selectedLanguage, showPinyin: effectiveShowPinyin });
@@ -226,9 +219,6 @@ const BubbleMatchPage: React.FC = () => {
         refill?: { need: number; keepIds: number[]; avoidIds: number[] }
     ): Promise<VocabEntry[] | null> => {
         try {
-            // The collection (docs/DECKS_FEATURE.md) goes on BOTH the full board and
-            // the Play-Again refill: a deck-launched game that dropped it on refill
-            // would start pulling replacements from the whole library.
             // `lockRunTrack()` latches the run's track on the FIRST fetch and reuses it
             // for every Play-Again refill, so a refilled board stays on the track its
             // kept cards were selected for.
@@ -239,7 +229,6 @@ const BubbleMatchPage: React.FC = () => {
                 need: refill?.need,
                 exclude: refill?.keepIds,
                 avoid: refill?.avoidIds,
-                collection: launchCollection,
                 challengeParams: challengeParamsRef.current,
             });
 
@@ -261,9 +250,7 @@ const BubbleMatchPage: React.FC = () => {
         }
         // apiGet reads the token at call time, so this callback's identity stays
         // stable across a silent token refresh. See CLAUDE.md "Never reload on token
-        // refresh". `launchCollection` is likewise omitted: it comes from this page's
-        // own URL, which cannot change without remounting the page, so the closure
-        // can never go stale.
+        // refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -492,10 +479,10 @@ const BubbleMatchPage: React.FC = () => {
             <Button
                 className="bubble-match__replay-btn bubble-match__replay-btn--back"
                 variant="outlined"
-                onClick={() => navigate(gameExit.path, { state: gameExit.state })}
+                onClick={() => navigate(GAMES_HUB_EXIT.path)}
                 sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
             >
-                Back to {gameExit.label}
+                Back to {GAMES_HUB_EXIT.label}
             </Button>
         </Box>
     );
@@ -514,8 +501,8 @@ const BubbleMatchPage: React.FC = () => {
                 <Typography className="bubble-match__block-msg" sx={{ fontSize: SIZE.subtitle, lineHeight: LEADING.normal }}>
                     {blockMessage}
                 </Typography>
-                <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate(gameExit.path, { state: gameExit.state })}>
-                    Back to {gameExit.label}
+                <Button className="bubble-match__block-back" variant="contained" onClick={() => navigate(GAMES_HUB_EXIT.path)}>
+                    Back to {GAMES_HUB_EXIT.label}
                 </Button>
             </>
         );

@@ -38,7 +38,7 @@ one transaction, and the action must be reversible.
 ## 2. Where it lives (navigation)
 
 > ⚠️ **The dp this section proposes was deleted 2026-10-17** (`/discover` is no longer
-> a route; Sort Cards is a Home drill-in — [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The
+> a route; Add New Cards is a Deck Tower drill-in — [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The
 > placement below is therefore open again and should be re-decided before building;
 > the `/discover/test-out` paths would now be orphaned under a prefix with no hub.
 
@@ -47,7 +47,7 @@ a Node page `/discover/test-out` that lists the six levels with per-level state
 (*available* / *passed on <date>* / *locked until <date>*), each opening the Leaf test
 runner at `/discover/test-out/:language/:level`.
 
-Rationale: dp is where the app already asks "where are you?" (scp lives there, and the
+Rationale: dp is where the app already asks "where are you?" (ancp lives there, and the
 level estimate is computed for that flow). Games hub is wrong — this is not a game, it
 does not lend provisional cards, and it must not be replayable for fun.
 

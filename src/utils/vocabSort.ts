@@ -12,13 +12,13 @@ import {
 
 /**
  * Client-side "Sort by" for an already-loaded collection of cards
- * (docs/DECKS_FEATURE.md § "Sort by").
+ * (the Deck Tower cards page's sort menu — docs/DECK_TOWER.md § "The cards page").
  *
  * ── Why the client and not the server ─────────────────────────────────────────
- * The three collection reads (Learning / Mastered / one deck) each return the WHOLE
- * collection in a single response — there is no pagination to respect — and every
- * key below is computable from fields already on the returned rows. Pushing an
- * `orderBy` parameter into three endpoints would buy a network round trip per sort
+ * The library read (`GET /api/onDeck/collectionCards`) returns the WHOLE library in a
+ * single response — there is no pagination to respect — and every key below is
+ * computable from fields already on the returned rows. Pushing an `orderBy` parameter
+ * into the endpoint would buy a network round trip per sort
  * change and force the pinyin/dd keys (both of which depend on the card's
  * `selectedSense`) to be reimplemented in SQL, where the sense resolvers do not
  * exist. So the sort lives beside `filterVocabEntries`, next to the search it shares
@@ -52,9 +52,6 @@ export type VocabSortKey =
   // date the card entered the library
   | "recent"
   | "oldest"
-  // date the card entered THIS deck
-  | "deckAdded"
-  | "deckAddedOldest"
   // alphabetical
   | "alphaPronunciation"
   | "alphaPronunciationDesc"
@@ -101,9 +98,8 @@ const MASTERY_KEY_WORLD: Partial<Record<VocabSortKey, MasteryWorldId>> = {
  * The bar each COOLDOWN key measures its rest across.
  *
  * The core keys span recognition + production (the two tracks a flp card exercises
- * at once); reading and writing span their single track. Bar-scoped since the Mastery
- * Centers shipped: in a Center, "what has rested longest" must mean the skill the page
- * is about — a card whose recognition has been resting for months tells a learner
+ * at once); reading and writing span their single track. Bar-scoped: on a skill
+ * world's cards page, "what has rested longest" must mean the skill the page is about — a card whose recognition has been resting for months tells a learner
  * nothing about when they last read it.
  */
 const COOLDOWN_KEY_WORLD: Partial<Record<VocabSortKey, MasteryWorldId>> = {
@@ -127,7 +123,6 @@ const ASCENDING_KEYS: readonly VocabSortKey[] = [
   "cooldownReady",
   "cooldownReadyReading",
   "cooldownReadyWriting",
-  "deckAddedOldest",
   "masteryAsc",
   "masteryReadingAsc",
   "masteryWritingAsc",
@@ -140,8 +135,6 @@ const ASCENDING_KEYS: readonly VocabSortKey[] = [
 const DATE_KEYS: readonly VocabSortKey[] = [
   "recent",
   "oldest",
-  "deckAdded",
-  "deckAddedOldest",
 ];
 
 /** Per-bar key lookups, so a bar's four keys are named in exactly one place. */
@@ -158,37 +151,9 @@ const COOLDOWN_KEYS: Record<MasteryWorldId, { asc: VocabSortKey; desc: VocabSort
 };
 
 /**
- * The default ordering a COLLECTION opens in (CollectionViewPage).
- *
- * Under the CORE lens: a deck orders by when you put cards IN it, everything else by
- * card age — a collection opens in its natural order, and nothing is being asked of
- * it yet.
- *
- * Under a SKILL lens (a Mastery Center) it opens on that bar's mastery, LOWEST first.
- * A Center is opened with one question — "what still needs reading / writing work?" —
- * and card age does not answer it. The lens overrides the deck rule too: inside the
- * Reading Center a deck is being read through that same question.
- *
- * ⚠️ The DECKS PANEL does not use this — see `masteryLowestKey`.
- */
-export const defaultSortKey = (isDeck: boolean, lens: MasteryWorldId = "core"): VocabSortKey =>
-  lens !== "core" ? MASTERY_KEYS[lens].asc : isDeck ? "deckAdded" : "recent";
-
-/**
- * A bar's Mastery · Lowest key — the ordering the DECKS PANEL's Cards section opens in,
- * under every lens (`useDecksPanel`).
- *
- * The panel is not a collection you chose to look at; it is the whole library, and the
- * errand that opens it is "what should I work on". Card age answers that only by
- * accident, and the core-lens panel used to open on `recent` purely because it inherited
- * the collection rule. Both Mastery Centers already opened on their bar's mastery
- * (`defaultSortKey`'s skill-lens branch) — this makes the fdp consistent with them
- * rather than a third behaviour, so ALL THREE panels open on the same question.
- *
- * Deliberately NOT folded into `defaultSortKey`: the collection page still wants a
- * collection to open in its natural order (a deck by when you filled it, Learning and
- * Mastered by card age). The two surfaces genuinely differ, so they call different
- * functions rather than sharing one with a flag.
+ * A bar's Mastery · Lowest key — the ordering the Deck Tower's cards page opens in, on
+ * every world (`useCardLibrary`). The page is the whole library, and the errand that
+ * opens it is "what should I work on"; card age answers that only by accident.
  */
 export const masteryLowestKey = (world: MasteryWorldId = "core"): VocabSortKey =>
   MASTERY_KEYS[world].asc;
@@ -213,12 +178,10 @@ export interface SortBundle {
   /** The dimension, direction-neutral ("Pinyin", "Mastery", "Cooldown"). */
   label: string;
   directions: SortDirection[];
-  /** Deck-only rows are hidden on Learning / Mastered, where the key is absent. */
-  deckOnly?: boolean;
   /**
    * The mastery bar this row reads, when it reads one. Lets a surface drop the
-   * PER-SKILL rows (reading / writing) without matching on `id` strings — the /decks
-   * sheet's Cards section does exactly that, keeping its menu to the orderings that
+   * PER-SKILL rows (reading / writing) without matching on `id` strings — the Deck
+   * Tower's main-world cards page does exactly that, keeping its menu to the orderings that
    * apply to every card. Absent = the row is bar-independent.
    */
   world?: MasteryWorldId;
@@ -234,27 +197,26 @@ export interface SortBundle {
 export const sortBundles = (
   language: string | null | undefined,
   goals: MasteryGoals,
-  // The surface's LENS. `core` (the default) is the fdp and every collection opened
-  // from it: the menu then offers one bar-scoped row set per ACTIVE bar, gated on the
-  // goals. A skill lens is a Mastery Center, where the menu offers that ONE bar and
-  // nothing else — the page is about that skill, and a core-mastery row inside it
-  // would order the list by the question the learner just navigated away from.
+  // The surface's LENS — the Deck Tower world whose cards page this is. `core` (the
+  // default, the main world) offers one bar-scoped row set per ACTIVE bar, gated on the
+  // goals. A skill lens (the reading / writing world) offers that ONE bar and nothing
+  // else — the page is about that skill.
   lens: MasteryWorldId = "core"
 ): SortBundle[] => {
   // Reading/writing rows appear ONLY when that goal is set — the same gate that decides
   // whether the bar is drawn at all (`activeWorlds`). Offering "Mastery (Write)" to a
   // learner with no writing bar would sort by a number they cannot see anywhere.
-  // Under a skill lens the account has that goal by construction (the Center's button
-  // is gated on it), so the lens bar is simply the whole list.
+  // Under a skill lens the account has that goal by construction (the world is shown
+  // only with the goal on), so the lens bar is simply the whole list.
   const worlds = lens === "core" ? activeWorlds(goals) : [lens];
   // Two conditions, both required, before a row label names its bar:
   //   • there is more than one bar to tell apart (a lone bar needs no qualifier — a
-  //     Center's menu reads "Mastery", because the page title already said the skill);
+  //     skill world's menu reads "Mastery", because the world already said the skill);
   //   • the bar is a PER-SKILL one. The core bar is never named: the unqualified label
   //     IS the core bar, so a learner reads "Mastery" / "Mastery (Read)" /
-  //     "Mastery (Write)" and never "Mastery (Know)". The fdp's Cards section is why —
-  //     it offers the core rows ALONE (`allowPerSkillBars={false}`), so a "(Know)"
-  //     suffix there named a distinction the menu was not drawing.
+  //     "Mastery (Write)" and never "Mastery (Know)". The main world's cards page is
+  //     why — it offers the core rows ALONE (`allowPerSkillBars={false}`), so a
+  //     "(Know)" suffix there named a distinction the menu was not drawing.
   const qualify = (base: string, world: MasteryWorldId): string =>
     worlds.length > 1 && world !== "core" ? `${base} (${WORLD_LABELS[world]})` : base;
 
@@ -268,7 +230,7 @@ export const sortBundles = (
     ],
   });
 
-  // Cooldown is bar-scoped like the other two since the Centers shipped: the key is
+  // Cooldown is bar-scoped like the other two: the key is
   // the longest-resting track WITHIN the bar (see `cooldownKey`), so "what have I been
   // neglecting" is answered about the skill the surface is about.
   const cooldownRow = (world: MasteryWorldId): SortBundle => ({
@@ -288,15 +250,6 @@ export const sortBundles = (
       directions: [
         { key: "recent", label: "Newest" },
         { key: "oldest", label: "Oldest" },
-      ],
-    },
-    {
-      id: "deckAdded",
-      label: "Added to this deck",
-      deckOnly: true,
-      directions: [
-        { key: "deckAdded", label: "Newest" },
-        { key: "deckAddedOldest", label: "Oldest" },
       ],
     },
     {
@@ -396,7 +349,7 @@ const pronunciationKey = (entry: VocabEntry): string => {
  *                 an Unfamiliar one 5 minutes).
  *
  * ── Why per BAR and not all four types ────────────────────────────────────────
- * A surface has a LENS (the fdp reads core, a Mastery Center reads its own skill), and
+ * A surface has a LENS (each Deck Tower world reads its own bar), and
  * a single all-bars number cannot answer "what reading have I been neglecting": a card
  * whose know clock is six months deep would outrank one whose reading is genuinely the
  * stalest thing on the page. The key stays goal-independent — it names its bar; a goal
@@ -451,8 +404,7 @@ export function sortVocabEntries(
     num:
       heightWorld ? barProgressBarHeight(entry.typedMarkHistory, heightWorld, entry.writingMastery)
         : cooldownWorld ? cooldownKey(entry, cooldownWorld, now)
-          : key === "deckAdded" || key === "deckAddedOldest" ? timeOrZero(entry.deckAddedAt)
-            : timeOrZero(entry.createdAt),
+          : timeOrZero(entry.createdAt),
   }));
 
   // Ties break on the ORIGINAL position, which is the server's ordering — so equal
@@ -469,8 +421,8 @@ export function sortVocabEntries(
 
     // A DATE key's 0 means "no date", not "the epoch" — so a dateless card sinks to the
     // bottom in BOTH directions rather than leading the ascending half of the bundle.
-    // Now only the two "date added" dimensions: a card whose `createdAt` or
-    // `deckAddedAt` did not come back sinks rather than leading the ascending half.
+    // Only the "date added" dimension: a card whose `createdAt` did not come back sinks
+    // rather than leading the ascending half.
     // A mastery HEIGHT of 0 is a real value and gets no such treatment — "Lowest"
     // starts there.
     if (isDate) {

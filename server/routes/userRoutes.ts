@@ -49,7 +49,7 @@ router.get('/api/users/minutePoints/calendar/:yearMonth', authenticateToken, han
 // Minute Points — per-language summary (lifetime total + today's/yesterday's minutes + streak + bankingPending)
 router.get('/api/users/minutePoints/summary', authenticateToken, handle(userMinutePointsController.getSummary, userMinutePointsController));
 
-// Minute Points — mark today's hp banking animation as started (docs/DAILY_MINUTE_BANKING.md)
+// Minute Points — mark today's td banking animation as started (docs/DAILY_MINUTE_BANKING.md)
 router.post('/api/users/minutePoints/bankingSeen', authenticateToken, handle(userMinutePointsController.markBankingSeen, userMinutePointsController));
 
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { handleControllerError, requireUserId } from '../utils/controllerUtils.js';
 import type { FocusModeService } from '../services/FocusModeService.js';
 import type { SuperpositionService } from '../services/SuperpositionService.js';
+import type { OnDeckVocabService } from '../services/OnDeckVocabService.js';
 import { parseWritingDealOptions } from './WritingGridController.js';
 
 /**
@@ -12,14 +13,16 @@ import { parseWritingDealOptions } from './WritingGridController.js';
 export class SuperpositionController {
   constructor(
     private superpositionService: SuperpositionService,
-    private focusModeService: FocusModeService
+    private focusModeService: FocusModeService,
+    // Filters a break's seed words (`parseWritingDealOptions`).
+    private onDeckVocabService: OnDeckVocabService
   ) {}
 
   async deal(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const options = await parseWritingDealOptions(req, res, userId, this.focusModeService);
+      const options = await parseWritingDealOptions(req, res, userId, this.focusModeService, this.onDeckVocabService);
       const words = await this.superpositionService.deal(userId, options);
       res.json({ words });
     } catch (error) {

@@ -24,7 +24,6 @@ const BucketDropBreakStage: React.FC<FlpBreakStageProps<GamePoolResponse>> = ({
         Frame={Frame}
         modeConfig={modeConfigFor(candidate.mode)}
         track={candidate.markType}
-        collection={context.collection}
         seedIds={context.seedIds}
         prefetchedPool={prefetched}
         onDone={onDone}

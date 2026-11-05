@@ -20,50 +20,6 @@ export type CardSide = "foreign" | "english";
  */
 export type GameCategory = "Unfamiliar" | "Target" | "Comfortable" | "Mastered";
 
-/**
- * Difficulty mode, chosen on the Games hub (one sub-card per mode) and carried
- * into the page via nav `state.mode`.
- *
- * The buckets each mode may draw from mirror the /decks study buttons exactly
- * (FlashcardsDecksPage.tsx): Review = Comfortable + Mastered, Challenge = Unfamiliar
- * + Target, Study Mix = everything. See docs/MATCH_SPEED_GAME.md § Difficulty modes.
- *
- * @deprecated `review` and `challenge` are being removed; only `mixed` stays
- * (docs/DEFERRED_WORK.md § 31).
- */
-export type MatchSpeedMode = "mixed" | "review" | "challenge";
-
-/**
- * Everything that differs between the three modes. One frozen entry per mode
- * lives in `constants.ts` (MODE_CONFIGS) and is threaded through the pure buffer
- * module, so no code below the page branches on the mode name itself.
- */
-export interface ModeConfig {
-    mode: MatchSpeedMode;
-    /** Sub-card subtitle on the Games hub ("Study Mix" / "Review" / "Challenge"). */
-    label: string;
-    /** Level key this mode's wins are logged under in the shared `wins` table.
-     *  Study Mix is 1 — the key single-difficulty Match Speed already used — so the
-     *  existing win history stays attached to the default mode. */
-    winLevel: number;
-    /** Buckets this mode may draw from. A hard restriction, not a preference:
-     *  an off-mode card is dropped on arrival (see `fillBuffer`). */
-    categories: GameCategory[];
-    /** Per-draw weights over `categories` (see CATEGORY_WEIGHTS' doc comment). */
-    weights: Record<GameCategory, number>;
-    /** Walk order when the rolled bucket is empty; restricted to `categories`. */
-    fallbackOrder: GameCategory[];
-    /** Target depth of EACH in-mode bucket, sized so total buffered pairs stay
-     *  ~BUFFER_TOTAL_TARGET regardless of how many buckets the mode uses. */
-    bufferDepth: number;
-    /** `{ Comfortable: 10, Mastered: 10 }` — the initial pool request's bucket quotas
-     *  (sent by `fetchGamePool`, src/api/gamePool.ts). */
-    poolDistribution: Partial<Record<GameCategory, number>>;
-    /** Human phrase naming the buckets, for the "you have none of these" block
-     *  message (e.g. "Comfortable or Mastered"). */
-    categoryLabel: string;
-}
-
 /** One card sitting in a board slot. */
 export interface BoardCard {
     /** Stable id for React keys + animation identity (`${pairId}-${side}`). */

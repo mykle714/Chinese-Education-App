@@ -16,6 +16,25 @@
  */
 export const SLAB_CAST_SHADOW_VAR = "--footer-slab-cast-shadow";
 
+/**
+ * A TRANSLUCENT black that darkens `ground` to (about) `shaded` — for a cast shadow that
+ * must fall on whatever passes under it, not just on the ground it was tuned on. An opaque
+ * `shaded` reads right on that ground but paints a solid ground-coloured patch over
+ * anything else (the Deck Tower's cards page scrolling under the slab, 2026-11-04). Black
+ * at alpha `a` scales every channel by `1 − a`, so `a` is taken from the channel sums: the
+ * hue keeps, the darkening matches to within the HSL shade's small saturation shift.
+ */
+export function translucentShadow(ground: string, shaded: string): string {
+    const sum = (hex: string) => {
+        const n = parseInt(hex.replace("#", ""), 16);
+        return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255);
+    };
+    const groundSum = sum(ground);
+    if (!(groundSum > 0)) return "transparent";
+    const alpha = Math.max(0, Math.min(1, 1 - sum(shaded) / groundSum));
+    return `rgba(0, 0, 0, ${alpha.toFixed(3)})`;
+}
+
 /** Sets (or, with null, clears) the colour of the slab footer's cast shadow. */
 export function setFooterCastShadow(color: string | null): void {
     setRootProperty(SLAB_CAST_SHADOW_VAR, color);

@@ -183,14 +183,13 @@ Searches the user's vocab entries.
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/libraryCards`
-Returns all library cards (`starterPackBucket = 'library'`).
+Returns all library cards (`starterPackBucket = 'library'`). No client caller
+(DEFERRED_WORK.md § 35).
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/collectionCards`
-Returns the cards of one collection (Learning, a Mastered bar, or a deck), selected by
-query param. This replaced the separate `masteredLibraryCards` /
-`non-mastered-library-cards` endpoints when collections were generalized — see
-[DECKS_FEATURE.md](./DECKS_FEATURE.md).
+Returns the cards of one built-in collection (`?collection=` `all`, a Learning bar or a
+Mastered bar). The client reads only `all` — see [CARD_LIBRARY.md](./CARD_LIBRARY.md).
 - **Response:** `VocabEntry[]`
 
 ### `GET /api/onDeck/masteredCounts`

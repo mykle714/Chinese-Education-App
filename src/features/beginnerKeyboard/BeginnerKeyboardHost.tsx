@@ -103,6 +103,11 @@ interface BeginnerKeyboardHostProps {
    * remounted per field, and the learner's choice must outlive that (§ 6z-3).
    */
   source: KeyboardSource;
+  /**
+   * § 6z-3b: the field allows only `source` (`data-beginner-keyboard-lock`). The
+   * switch bar then drops its 写 · ā · ABC toggle and keeps only the close chevron.
+   */
+  locked?: boolean;
   /** The learner flipped the switch bar; the provider remembers it for the session. */
   onSourceChange: (source: KeyboardSource) => void;
   /** The close chevron was pressed. The provider decides what dismissal means. */
@@ -157,6 +162,7 @@ export default function BeginnerKeyboardHost({
   field,
   open,
   source,
+  locked = false,
   onSourceChange,
   onDismiss,
   onClosed,
@@ -320,6 +326,7 @@ export default function BeginnerKeyboardHost({
   const switchBar = (
     <KeyboardSwitchBar
       source={source}
+      showToggle={!locked}
       up={barUp}
       onSelect={selectSource}
       onDismiss={onDismiss}

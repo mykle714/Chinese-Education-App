@@ -662,8 +662,8 @@ export function masteredCollectionWorld(raw: string | null | undefined): Mastery
  * "Learning" means "sorted, and not yet finished IN THIS BAR", so it is per-bar for
  * exactly the reason Mastered is: a card whose recognition is done but whose reading
  * has never been touched is finished for one bar and outstanding for another. The
- * Reading/Writing Centers (docs/DECKS_FEATURE.md § "Mastery Centers") list the
- * per-bar sets; the fdp lists the core one.
+ * Deck Tower's cards page filters by the set of the world it stands in (core, reading
+ * or writing — useCardLibrary / `lensCollectionEntries`).
  *
  * `core` keeps the bare `learn-now` value it has always had, so existing links and
  * bookmarks keep resolving to the same set.
@@ -693,7 +693,7 @@ export const ALL_COLLECTION_ID = 'all';
  * NOTE — the BAND collections are GONE.
  *
  * `unfamiliar` / `target` / `comfortable` used to be built-in collections, one per
- * unmastered utcm band of the core bar, and they were the fdp's top tile row. The
+ * unmastered utcm band of the core bar, and they were the old decks page's top tile row. The
  * collection vocabulary is now deliberately three ideas wide — every card (`all`),
  * the ones still being learned (`learn-now`), and the ones finished in a given bar
  * (`mastered*`) — because a BAND is a property of a single card's progress, not a set
@@ -1016,9 +1016,9 @@ export type CardBaselineSurface =
  * Single source of truth — previously duplicated across
  * `src/games/bubble-match/constants.ts` (distribution sum), `match-speed/constants.ts`
  * (ENTRY_GATE_CARDS), `speed-reading/constants.ts` (ENTRY_GATE_CARDS),
- * `word-search/constants.ts` (TOTAL_WORDS) and
- * `src/features/flashcards/FlashcardsDecksPage.tsx` (MIN_LIBRARY_CARDS), where they
- * could drift apart from the distributions the server actually served.
+ * `word-search/constants.ts` (TOTAL_WORDS) and the old decks page's MIN_LIBRARY_CARDS
+ * (that page was deleted 2026-11-04), where they could drift apart from the
+ * distributions the server actually served.
  *
  * Word Search is 9 rather than 20 because its grid holds nine words (10 → 12 on
  * 2026-08-23, then 12 → 9 on 2026-08-28 when the board shrank to 7×6); it
@@ -1042,8 +1042,7 @@ export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
  * board loses its placement fallback; server/__tests__/wordSearchTemplates.test.ts
  * pins them together.
  *
- *   standard — the game's own board: the hub, the Reading Center, a Study Challenge
- *              round, and a break on the routed flp.
+ *   standard — the game's own board: a Games-hub launch and a Study Challenge round.
  *   compact  — a break inside a Deck Tower session: one row shorter and one column
  *              narrower, so its tiles can be larger, and two words fewer. One word came off Target and one off Comfortable, so the
  *              board still leans on the band the learner is working on.
@@ -1071,19 +1070,20 @@ export const WORD_SEARCH_BOARDS = {
 export type WordSearchBoardId = keyof typeof WORD_SEARCH_BOARDS;
 
 /**
- * Learning supply thresholds — when the app nudges a learner toward Sort Cards.
+ * Learning supply thresholds — when the app nudges a learner toward Add New Cards.
  * Both are read against the CORE Learning count (Unfamiliar + Target + Comfortable,
- * `builtinCollectionCount` → `learn-now`), the same figure the fdp tile and the sort
- * page's Learning pill show.
+ * `builtinCollectionCount` → `learn-now`), the same figure td's cards-page Learning
+ * key shows.
  *
- *   LOW    — below this the fdp's Sort Cards tile glows ("card count low"). Tied to the flp baseline
+ *   LOW    — below this the Deck Tower's mini sort platform hops (DeckTowerPage →
+ *            `learningLow`), nudging the learner to Add New Cards. Tied to the flp baseline
  *            because that is the point where a Study Mix session starts being topped up
  *            with lent cards (docs/PROVISIONAL_CARDS.md).
- *   ENOUGH — the sort page's "you have enough" mark. LOW + one sort session's worth
- *            (10 cards), so a learner sent over at 19 sorts ~10 and is told they're done;
- *            the 10-card gap also keeps the two signals from flickering at one boundary.
+ *   ENOUGH — LOW + one sort session's worth (10 cards): the sort page's "you have
+ *            enough" mark. ⚠️ Nothing reads it today (the ancp's tally glow that did was
+ *            removed before 2026-11-04); the name is kept because it is a wire contract.
  *
- * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 5.3a, docs/DECKS_FEATURE.md § "Sort Cards tile".
+ * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 5.3a, docs/DECK_TOWER.md § "The sort platform".
  */
 export const LEARN_NOW_LOW_THRESHOLD = CARD_BASELINES.flp;
 export const LEARN_NOW_ENOUGH_THRESHOLD = LEARN_NOW_LOW_THRESHOLD + 10;
@@ -1195,9 +1195,10 @@ export const MEMORY_MAP_CAPACITY = 50;
  * Size carries NO meaning — not word length, not frequency, not mastery. It exists so
  * the archipelago looks hand-drawn rather than typeset.
  *
- * What the range controls is its RATIO, not its magnitude: the camera fits the map on
- * load, so scaling every word alike is a wash on screen. To make everything bigger, the
- * lever is the camera (`FIT_PADDING` / `FIT_ZOOM_BOOST`), not this.
+ * What the range controls is its RATIO, not its magnitude: the fixed camera fits the
+ * whole map to the screen, so scaling every word alike is a wash on screen. To make
+ * everything bigger, the levers are fewer words (`MEMORY_MAP_CAPACITY`), tighter packing
+ * (the frame, memoryMapSpawn.ts → `frameCost`) or less padding (`FIT_PADDING`), not this.
  */
 export const MEMORY_MAP_SCALE_RANGE = { min: 0.95, max: 1.8 } as const;
 
@@ -1307,8 +1308,23 @@ export interface MemoryMapWord {
   slotId: number;
   entryKey: string;
   pronunciation: string | null;
+  /** The dd — the prompt's identity (dd collision guard, inspect popup). */
   definition: string;
+  /**
+   * The det's sense clusters and the learner's sense pick, so the PROMPT can show the
+   * whole sense list the eip header shows — every sense's dd, the chosen one underlined,
+   * the default starred (`sortedSenseClusters` / `resolveSelectedSenseIndex` on the
+   * client, docs/MEMORY_MAP_GAME.md § 3.1). Null when unclustered.
+   */
+  definitionClusters: DefinitionCluster[] | null;
+  selectedSense: string | null;
   language: string;
+  /**
+   * `'provisional'` when the server lent this card to keep the map full (§ 2.1), so a
+   * client can tell it from the learner's own (`isProvisional`). An flp break reports
+   * only the learner's own cards as cleared (docs/FLP_GAME_BREAKS.md § 4a).
+   */
+  starterPackBucket: StarterPackBucket | null;
 }
 
 /** GET /api/memoryMap — the whole map, plus what just changed about it. */
@@ -1325,7 +1341,28 @@ export interface MemoryMapResponse {
   newlyPlaced: number[];
   /** `MEMORY_MAP_CAPACITY`, echoed so the header count needs no second import path. */
   capacity: number;
+  /**
+   * The FRAME the map was generated for: width ÷ height of the game viewport that
+   * first spawned it (`users."memoryMapFrameAspect"`, migration 181), or null when the
+   * map was never framed (a load that sent no aspect). Every later spawn packs toward
+   * this shape. The client does not read it today (its frame-mismatch offer went with
+   * the standalone route, 2026-11-04).
+   */
+  frameAspect: number | null;
 }
+
+/**
+ * The viewport aspects (width ÷ height) a client may send: anything outside is treated
+ * as a measurement fault and ignored rather than stored. 0.2 is a phone in a split
+ * screen; 5 is an ultra-wide window. Validated by `MemoryMapController`.
+ */
+export const MEMORY_MAP_FRAME_ASPECT_RANGE = { min: 0.2, max: 5 } as const;
+
+/**
+ * The frame a spawn packs toward when the client sent no aspect and none is stored:
+ * a phone held upright (the shape every map was packed for before migration 181).
+ */
+export const MEMORY_MAP_DEFAULT_FRAME_ASPECT = 0.5;
 
 /**
  * POST /api/memoryMap/graduate — a word left the map, so refill its SLOT.
@@ -1624,14 +1661,6 @@ export interface VocabEntryBase {
    */
   masteredAt?: MasteredAtByBar | null;
   /**
-   * When this card was added to the DECK currently being read (`deck_cards.addedAt`,
-   * migration 141). Present ONLY on rows from `OnDeckVocabService.getDeckCards` —
-   * absent on Learning, Mastered, game pools and dictionary lookups, because deck
-   * membership is a property of a (deck, card) pair rather than of the card.
-   * Powers the deck-only "Recently added to this deck" sort.
-   */
-  deckAddedAt?: Date | string | null;
-  /**
    * The game-pool bucket this card was drawn from, stamped only by
    * `getGameVocabPool` (absent everywhere else). NOT the same thing as `category`
    * above: this is the PER-MARK-TYPE category the game selected on (recognition for
@@ -1706,7 +1735,7 @@ export interface VocabEntryBase {
 // Discover / sort flow (docs/SORT_CARDS_REQUIREMENTS.md)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Discover Card — a curated dictionary entry shaped for the sort-cards UI. */
+/** Discover Card — a curated dictionary entry shaped for the add-new-cards UI. */
 export interface DiscoverCard {
   /** dictionaryEntry.id — sent in the sort POST. */
   id: number;
@@ -2496,7 +2525,7 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
     gameId: 'bucket-drop',
     mode: 'pinyin',
     title: 'Bucket Drop (Pinyin)',
-    // Eligible as Pinyin ONLY, like Word Search. The No-Pinyin mode (Reading Center)
+    // Eligible as Pinyin ONLY, like Word Search. The No-Pinyin mode (pinyin hidden)
     // marks READING, so a bare gameId here would let a challenge draw it.
     // Production: the English bucket is the prompt and the foreign word the answer
     // (src/games/bucket-drop/constants.ts → MODE_CONFIGS).
@@ -2546,3 +2575,51 @@ export function challengeGamesForLanguages(
       || (game.languages.includes(languageA) && game.languages.includes(languageB))
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weather (docs/DECK_TOWER.md § "Weather") — no migration
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The weather the Deck Tower's sky draws, folded down from Open-Meteo's WMO
+ * weather codes (server/services/WeatherService.ts → `weatherFromWmoCode`).
+ * Purely aesthetic: no game or study rule may read it.
+ *
+ *   clear    — sun / clear night; no effect
+ *   cloudy   — partly cloudy → overcast; the sky is greyed by `intensity`
+ *   fog      — drifting fog bands
+ *   drizzle  — sparse, short rain streaks
+ *   rain     — rain streaks (showers and freezing rain fold in here)
+ *   snow     — falling flakes (snow grains and snow showers fold in here)
+ *   storm    — heavy rain + an occasional lightning flash
+ */
+export const WEATHER_KINDS = ['clear', 'cloudy', 'fog', 'drizzle', 'rain', 'snow', 'storm'] as const;
+export type WeatherKind = typeof WEATHER_KINDS[number];
+
+/** One observation, as the tower draws it. */
+export interface WeatherNow {
+  /** The particle family WeatherLayer draws. */
+  kind: WeatherKind;
+  /** 0–1 strength within the kind (light / moderate / heavy rain, partly vs fully overcast). */
+  intensity: number;
+  /**
+   * The raw WMO weather code `kind` was folded from, kept for surfaces that need finer
+   * distinctions than the particle families — docs/TOWER_WEATHER_SKY.md picks the sky's
+   * hue per code (partly cloudy vs overcast, sleet vs rain). A tester pin carries a
+   * representative code for its kind.
+   */
+  wmoCode: number;
+  /** Cloud cover, 0–1, or null when the provider omitted it (and on tester pins). */
+  cloudCover: number | null;
+}
+
+/**
+ * GET /api/weather.
+ *   - `ok`          — the current weather at the caller's stored geoCell (cached per cell).
+ *   - `no-location` — the caller has no `users."geoCell"`; the Settings toggle asks for one.
+ *   - `unavailable` — the upstream call failed; draw nothing and try again later.
+ */
+export type WeatherResponse =
+  | { status: 'ok'; weather: WeatherNow }
+  | { status: 'no-location' }
+  | { status: 'unavailable' };

@@ -165,7 +165,7 @@ export function prefersReducedMotion(): boolean {
  * timeouts, so the sky holds 0..slots of them at irregular intervals. A slot's first
  * crossing waits `firstWaitMs(slot)` (stagger by slot), later ones `waitMs()`.
  * `plan(id, first)` builds one crossing; `first` is true for each slot's opening one
- * (a caller may start those partway across, see useCloudDrifts).
+ * (a caller may treat those specially; useCloudDrifts ignores it).
  *
  * React state changes only when a crossing starts or ends. Per-frame motion is the
  * object's own rAF loop. Turning `active` false clears the sky.

@@ -42,38 +42,51 @@ describe("timeOfDayAt", () => {
         expect(timeOfDayAt(Date.UTC(2026, 5, 21, 5), CHICAGO)).toEqual({ from: "night", to: "night", t: 0 });
     });
 
-    it("blends night → dawn before sunrise and peaks at it", () => {
-        const half = timeOfDayAt(rise - 15 * MIN, CHICAGO);
-        expect(half.from).toBe("night");
-        expect(half.to).toBe("dawn");
+    it("blends night → day across sunrise, half-way at it", () => {
+        const half = timeOfDayAt(rise, CHICAGO);
+        expect(half).toMatchObject({ from: "night", to: "day" });
         expect(half.t).toBeCloseTo(0.5, 2);
-        expect(timeOfDayAt(rise + 1, CHICAGO).from).toBe("dawn");
+        expect(timeOfDayAt(rise - 15 * MIN, CHICAGO).t).toBeCloseTo(0.25, 2);
+        expect(timeOfDayAt(rise + 31 * MIN, CHICAGO)).toEqual({ from: "day", to: "day", t: 0 });
     });
 
-    it("blends sunset → night after sunset", () => {
-        const q = timeOfDayAt(set + 7.5 * MIN, CHICAGO);
-        expect(q).toMatchObject({ from: "sunset", to: "night" });
-        expect(q.t).toBeCloseTo(0.25, 2);
+    it("blends day → night across sunset", () => {
+        const q = timeOfDayAt(set + 15 * MIN, CHICAGO);
+        expect(q).toMatchObject({ from: "day", to: "night" });
+        expect(q.t).toBeCloseTo(0.75, 2);
     });
 
-    it("holds day through a polar summer", () => {
-        expect(timeOfDayAt(Date.UTC(2026, 5, 21, 0), { lat: 78.2, lon: 15.6 })).toEqual({ from: "day", to: "day", t: 0 });
+    it("never yields a phase other than day or night", () => {
+        for (let m = 0; m < 24 * 60; m += 5) {
+            const time = timeOfDayAt(Date.UTC(2026, 5, 21) + m * MIN, CHICAGO);
+            expect(["day", "night"]).toContain(time.from);
+            expect(["day", "night"]).toContain(time.to);
+        }
+    });
+
+    it("meets both twilights at midday on a day too short for plain day", () => {
+        // Search north along one meridian on the December solstice for a day with sun for
+        // under an hour, so the two hour-long blends overlap.
+        const when = Date.UTC(2026, 11, 21, 11);
+        let where: { lat: number; lon: number } | undefined;
+        let sun: ReturnType<typeof sunDay> | undefined;
+        for (let lat = 60; lat < 70 && !where; lat += 0.05) {
+            const s = sunDay(when, { lat, lon: 18.96 });
+            if (!s.polar && s.set! - s.rise! < 60 * MIN) [where, sun] = [{ lat, lon: 18.96 }, s];
+        }
+        expect(where).toBeDefined();
+        const midday = (sun!.rise! + sun!.set!) / 2;
+        expect(timeOfDayAt(midday - 1, where!)).toMatchObject({ from: "night", to: "day" });
+        expect(timeOfDayAt(midday + 1, where!)).toMatchObject({ from: "day", to: "night" });
     });
 });
 
 describe("skies and light", () => {
-    it("keeps the day sky as the token, and darkens night below dawn", () => {
+    it("keeps the day sky as the token, and darkens it at night", () => {
         const blue = { sky: "#59BFFF" };
         expect(phaseSky(blue, "day")).toBe("#59BFFF");
         const lum = (hex: string) => parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
-        expect(lum(phaseSky(blue, "night"))).toBeLessThan(lum(phaseSky(blue, "dawn")));
-    });
-
-    it("lets a world override a phase's recipe", () => {
-        const green = { sky: "#78E292" };
-        const own = { ...green, skyRecipes: { sunset: { hue: 35, hueBy: 0.95, L: 0.68, C: 0.17 } } };
-        expect(phaseSky(own, "sunset")).not.toBe(phaseSky(green, "sunset"));
-        expect(phaseSky(own, "dawn")).toBe(phaseSky(green, "dawn"));
+        expect(lum(phaseSky(blue, "night"))).toBeLessThan(lum(phaseSky(blue, "day")));
     });
 
     it("leaves colours untouched at plain day", () => {
@@ -85,22 +98,21 @@ describe("skies and light", () => {
 
     it("flies shooting stars only while night outweighs the blend", () => {
         expect(towerLight({ from: "night", to: "night", t: 0 }).shootingStars).toBe(true);
-        expect(towerLight({ from: "sunset", to: "night", t: 0.4 }).shootingStars).toBe(false);
-        expect(towerLight({ from: "sunset", to: "night", t: 0.6 }).shootingStars).toBe(true);
-        expect(towerLight({ from: "night", to: "dawn", t: 0.6 }).shootingStars).toBe(false);
+        expect(towerLight({ from: "day", to: "night", t: 0.4 }).shootingStars).toBe(false);
+        expect(towerLight({ from: "day", to: "night", t: 0.6 }).shootingStars).toBe(true);
+        expect(towerLight({ from: "night", to: "day", t: 0.6 }).shootingStars).toBe(false);
     });
 
-    it("washes only at night: dawn, day and sunset leave the scene as drawn", () => {
-        for (const phase of ["dawn", "day", "sunset"] as const) {
-            expect(towerLight({ from: phase, to: phase, t: 0 }).wash).toBe(NO_WASH);
-        }
-        expect(towerLight({ from: "dawn", to: "day", t: 0.5 }).wash).toBe(NO_WASH);
+    it("washes only at night: day leaves the scene as drawn", () => {
+        expect(towerLight({ from: "day", to: "day", t: 0 }).wash).toBe(NO_WASH);
+        expect(towerLight({ from: "night", to: "day", t: 1 }).wash).toBe(NO_WASH);
+        expect(towerLight({ from: "night", to: "day", t: 0.5 }).wash).not.toBe(NO_WASH);
         expect(towerLight({ from: "night", to: "night", t: 0 }).wash).not.toBe(NO_WASH);
     });
 
     it("is exact at both ends of a blend", () => {
         const night = towerLight({ from: "night", to: "night", t: 0 });
-        const toNight = towerLight({ from: "sunset", to: "night", t: 1 });
+        const toNight = towerLight({ from: "day", to: "night", t: 1 });
         expect(toNight.wash("#FFB100")).toBe(night.wash("#FFB100"));
         const red = { sky: "#FF767D" };
         expect(toNight.skyOf(red)).toBe(night.skyOf(red));

@@ -1,3 +1,4 @@
+import { runFooterTabOverride } from "./footerTabOverride";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
@@ -9,6 +10,8 @@ import Icon from "./Icon";
 import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
 import { routeFooterStyle } from "../routes/routeMeta";
 import { tier2Var } from "../timeOfDay/tier2Chrome";
+import { isFeatureEnabled } from "../../server/contracts/featureFlags";
+import { registerDictionaryTabTap, requestDictionarySearchFocus } from "../features/dictionary/dictionarySearchFocus";
 
 // Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
 // so scroll containers (see MobileTabScreen) can reserve matching bottom padding and
@@ -45,9 +48,9 @@ export const FOOTER_TOTAL_HEIGHT = `calc(${FOOTER_HEIGHT}px + ${SAFE_BOTTOM})`;
 export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTOM})`;
 
 // ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
-// Worn only by routes whose registry row says `footerStyle: "slab"` (today: /deck-tower,
+// Worn only by routes whose registry row says `footerStyle: "slab"` (today: the Deck Tower at `/`,
 // and since 2026-10-29 the Dictionary tab — /dictionary and /dictionary/card/:word — and
-// scp, /discover/sort/:language).
+// ancp, /discover/sort/:language).
 // Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
 // off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
 // casting an iso shadow onto whatever is painted behind it (the tower's sky).
@@ -198,7 +201,10 @@ const SlabFooterFace = styled(Box)(() => ({
     borderRadius: "inherit",
     boxShadow: `0 ${SLAB_FOOTER_LIP}px 0 ${tier2Var("footerWall", COLORS.cardWall)}`,
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
+    // One equal column per tab — `grid-auto-flow: column` rather than a fixed count, so
+    // the slab stays balanced when a flagged tab (Arena) is absent.
+    gridAutoFlow: "column",
+    gridAutoColumns: "1fr",
     padding: 6,
     boxSizing: "border-box",
 }));
@@ -219,26 +225,33 @@ const SlabFooterItem = styled(Box, {
     boxShadow: active ? `inset 0 -3px 0 ${tier2Var("footerWall", COLORS.cardWall)}` : "none",
 }));
 
-// The four top-level footer tabs. Every other surface is a drill-in reached from
-// one of these — there is no separate Games tab anymore; Games lives under Menu.
+// The top-level footer tabs. Every other surface is a drill-in reached from one of
+// these — there is no separate Games tab; Games lives under Menu. Account is not a
+// destination either: it is a maximizable sheet (AccountSheet, with Settings as one of
+// its tabs) raised from the Deck Tower header's avatar.
 //
-// Dictionary took Account's slot (2026-10-09). Account is no longer a destination:
-// it is a maximizable sheet raised from the Home header's avatar button
-// (AccountSheet), with Settings as its own gear beside that avatar.
-//
-// Home and Menu swapped contents (2026-10-10): Home (`/`) is now the decks page (the
-// fdp — study hand + Cards/Decks sheets) under the account header, and the hub bento
-// that used to be Home moved to the second tab as Menu (`/menu`). The old
-// `"flashcards"` tab key is gone; its drill-ins light `"home"` now.
-//
-// Deck (the experimental Deck Tower, `/deck-tower`) took Discover's slot (2026-10-17),
-// and the Discover hub itself was deleted the same day; its one drill-in (Sort Cards)
-// now lights Home.
-export type FooterTab = "home" | "menu" | "deck" | "dictionary";
+// The four tabs, left to right: Deck · Menu · Arena · Dictionary (2026-11-04). Deck is
+// the Deck Tower, which renders at `/` — the old Home tab (the fdp) was deleted that day
+// and the tower took its place as the app's landing page and first tab. Arena moved out
+// of Menu's bento into its own tab at the same time; it is drawn only while the `arena`
+// feature flag is on (server/contracts/featureFlags.ts), like every other entry point
+// to a flagged feature.
+export type FooterTab = "deck" | "menu" | "arena" | "dictionary";
 
 // Which footer is drawn: the app-wide flat `bar`, or the floating `slab` a route opts
 // into through its registry row (`footerStyle`, src/routes/routeMeta.ts).
 export type FooterStyle = "bar" | "slab";
+
+/** One footer tab: its key, label, slab icon (Material Symbols name) and tap handler. */
+interface FooterTabRow {
+    tab: FooterTab;
+    label: string;
+    icon: string;
+    onClick: () => void;
+}
+
+// Read once at module load — a flag flip needs a rebuild anyway (docs/FEATURE_FLAGS.md).
+const ARENA_TAB_ON = isFeatureEnabled("arena");
 
 interface MobileFooterProps {
     activePage?: FooterTab;
@@ -250,19 +263,37 @@ interface MobileFooterProps {
     style?: React.CSSProperties;
 }
 
-const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "home", variant = "bar", style }) => {
+const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", variant = "bar", style }) => {
     const navigate = useNavigate();
 
     // One row per tab, in the design's left-to-right order. This used to be four
     // copy-pasted JSX blocks differing only in label, icon and handler; with the icons
     // gone (decision D5) there was nothing left to justify the repetition.
     // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
-    const TABS: { tab: FooterTab; label: string; icon: string; onClick: () => void }[] = [
-        { tab: "home", label: "Home", icon: "home", onClick: () => navigate("/") },
+    const baseTabs: FooterTabRow[] = [
+        { tab: "deck", label: "Deck", icon: "stacks", onClick: () => navigate("/") },
         { tab: "menu", label: "Menu", icon: "apps", onClick: () => navigate("/menu") },
-        { tab: "deck", label: "Deck", icon: "stacks", onClick: () => navigate("/deck-tower") },
-        { tab: "dictionary", label: "Dictionary", icon: "translate", onClick: () => navigate("/dictionary") },
+        ...(ARENA_TAB_ON
+            ? [{ tab: "arena", label: "Arena", icon: "emoji_events", onClick: () => navigate("/arena") } satisfies FooterTabRow]
+            : []),
+        {
+            tab: "dictionary", label: "Dictionary", icon: "translate",
+            // Single tap navigates only; a double tap also focuses the search field
+            // (src/features/dictionary/dictionarySearchFocus.ts).
+            onClick: () => {
+                navigate("/dictionary");
+                if (registerDictionaryTabTap()) requestDictionarySearchFocus();
+            },
+        },
     ];
+    const TABS: FooterTabRow[] = baseTabs.map((t) => ({
+        ...t,
+        // The page on screen may take over a tab's tap (footerTabOverride.ts — ancp opened
+        // from the Deck Tower plays its circle Back on the Deck tab); otherwise navigate.
+        onClick: () => {
+            if (!runFooterTabOverride(t.tab)) t.onClick();
+        },
+    }));
 
     if (variant === "slab") {
         return (

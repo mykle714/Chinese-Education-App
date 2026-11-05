@@ -6,6 +6,8 @@ import MiniCard from "../../components/MiniCard";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import HoldProgressRing from "../../components/HoldProgressRing";
 import { MINI_CARD_WIDTH, MINI_CARD_HEIGHT, MINI_CARD_RADIUS } from "../../components/miniCardFace";
+import { shadowTone } from "../deckTower/iso";
+import { sortCardStockSx, CARD_LEVITATE_MS, cardLevitateKeyframes, LEVITATE_PHASES_MS } from "./sortCardStock";
 import { useLongPress } from "../../hooks/useLongPress";
 import { fetchSkippedCards, recycleSkip, recycleSkips } from "./starterPacksApi";
 import { stripParentheses } from "../../utils/definitionUtils";
@@ -14,18 +16,19 @@ import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
 /**
- * SkippedCardsSheet — scp's HIDDEN skipped-cards panel (docs/SORT_CARDS_REQUIREMENTS.md
- * §5.1a). Opened only by holding the Skip button (SortCardsPage); nothing on screen hints
+ * SkippedCardsSheet — ancp's HIDDEN skipped-cards panel (docs/SORT_CARDS_REQUIREMENTS.md
+ * §5.1a). Opened only by holding the Skip button (AddNewCardsPage); nothing on screen hints
  * that it exists, and it is the ONLY way to reach skipped cards (the old Skipped Cards
  * page and its Discover tile were removed 2026-10-12). It sits over the sort flow, so a
- * learner can pull a skipped word back without leaving scp:
+ * learner can pull a skipped word back without leaving ancp:
  *
  *   - tap a card        → the eip for that word (the host's `onOpenInfo`, the same opener
  *                         the on-deck cards' info button uses; it stacks above this sheet)
  *   - hold a card       → a progress ring traces the card's outline over RECYCLE_HOLD_MS
  *                         with a "recycling…" label above it; when the ring closes the
  *                         card is recycled (its discover_skips row is cleared) and leaves
- *   - "Recycle all"     → every skipped card back to the supply at once
+ *   - "Recycle all"     → every skipped card back to the supply at once. It shares the
+ *                         header row with a one-line hold-to-recycle instruction (left)
  *
  * Recycled cards are NOT pushed into the current sort session. They rejoin the server's
  * supply and arrive through later fetchNextPack calls, exactly like the sheet's own
@@ -48,6 +51,12 @@ const CARD_EXIT_MS = 220;
 // MINI_CARD_RADIUS is a CSS string ("8px"); the ring's SVG geometry needs the number.
 const MINI_CARD_RADIUS_PX = parseFloat(MINI_CARD_RADIUS);
 const cardExit = keyframes({ to: { opacity: 0, transform: "scale(0.85)" } });
+
+// The cards wear ancp's on-deck stock (sortCardStock): cream rim + beige panel, 2px iso
+// wall, flat cast shadow. The sheet is white, so the shadow is the iso shadow rule's tone
+// for a white ground (shadowTone) rather than ancp's time-of-day `look.groundShadow`.
+const SHEET_GROUND_SHADOW = shadowTone(COLORS.white);
+const SKIPPED_CARD_STOCK_SX = sortCardStockSx("regular", false, SHEET_GROUND_SHADOW);
 
 interface SkippedCardsSheetProps {
     language: Language;
@@ -132,13 +141,25 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
                 }}
             >
                 {cards.length > 0 && (
-                    <Box className="skipped-cards-sheet__actions" sx={{ display: "flex", justifyContent: "flex-end" }}>
+                    // Header row: the hold instruction on the left, Recycle all on the right,
+                    // baseline-aligned. The sheet itself is a hidden gesture, so this is the
+                    // one place the card-level hold-to-recycle is spelled out.
+                    <Box
+                        className="skipped-cards-sheet__actions"
+                        sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}
+                    >
+                        <Typography
+                            className="skipped-cards-sheet__hold-instructions"
+                            sx={{ fontSize: SIZE.micro, lineHeight: LEADING.normal, color: COLORS.textSecondary, minWidth: 0 }}
+                        >
+                            Press and hold to recycle back into Add New Cards.
+                        </Typography>
                         <Button
                             className="skipped-cards-sheet__recycle-all"
                             variant="text"
                             size="small"
                             onClick={handleRecycleAll}
-                            sx={{ fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: COLORS.infoInk, textTransform: "none" }}
+                            sx={{ flex: "none", fontSize: SIZE.micro, fontWeight: WEIGHT.bold, color: COLORS.infoInk, textTransform: "none", whiteSpace: "nowrap" }}
                         >
                             Recycle all
                         </Button>
@@ -164,7 +185,9 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
                             display: "flex",
                             flexWrap: "wrap",
                             justifyContent: "center",
-                            columnGap: "10px",
+                            // ancp's compact dock gap; leaves room for each card's ≈ 5px
+                            // wall + cast shadow to the right.
+                            columnGap: "14px",
                             // Row gap leaves room for a card's "recycling…" label, which sits
                             // above the card in the gap rather than over the card above it.
                             rowGap: "26px",
@@ -172,10 +195,11 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
                             paddingTop: "20px",
                         }}
                     >
-                        {cards.map((card) => (
+                        {cards.map((card, index) => (
                             <RecyclableSkippedCard
                                 key={card.id}
                                 card={card}
+                                levitatePhaseMs={LEVITATE_PHASES_MS[index % LEVITATE_PHASES_MS.length]}
                                 leaving={leavingIds.has(card.id)}
                                 onOpenInfo={onOpenInfo}
                                 onRecycle={handleRecycleOne}
@@ -192,8 +216,10 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
 // One skipped card. Tap → eip; hold → recycle, with the ring tracing the outline and the
 // label above for the length of the hold. Letting go early abandons the hold and the ring
 // disappears (it restarts from zero on the next press, since it mounts per press).
-function RecyclableSkippedCard({ card, leaving, onOpenInfo, onRecycle, onExitDone }: {
+function RecyclableSkippedCard({ card, levitatePhaseMs, leaving, onOpenInfo, onRecycle, onExitDone }: {
     card: DiscoverCard;
+    /** This card's phase in the resting levitation, so neighbours never bob in lockstep. */
+    levitatePhaseMs: number;
     leaving: boolean;
     onOpenInfo: (card: DiscoverCard) => void;
     onRecycle: (card: DiscoverCard) => void;
@@ -251,7 +277,17 @@ function RecyclableSkippedCard({ card, leaving, onOpenInfo, onRecycle, onExitDon
                 pronunciation={card.pronunciation}
                 definition={stripParentheses(card.definition ?? "")}
                 iconId={card.iconId}
-                hoverLift
+                // ancp's on-deck card: the tower stock's cream rim (the panel is the
+                // stock's ::before), floating with the same levitation bob. The bob stops
+                // while held so the recycle ring traces a still outline.
+                background={COLORS.cardFace}
+                sx={{
+                    ...SKIPPED_CARD_STOCK_SX,
+                    animation: showHoldUi
+                        ? "none"
+                        : `${cardLevitateKeyframes} ${CARD_LEVITATE_MS}ms ease-in-out ${levitatePhaseMs}ms infinite`,
+                    "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                }}
             />
             {/* The hold timer (HoldProgressRing): a stroke tracing the card's rounded
                 outline once over the hold. Mounted only while pressing (so every press

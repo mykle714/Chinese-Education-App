@@ -11,6 +11,8 @@ import { useSlideNavigate } from '../../hooks/useSlideNavigate';
 import { AUDIO_MODE_ORDER, NARRATION_VOICE_ORDER, type AudioMode, type NarrationVoice } from '../../hooks/useTTSSettings';
 import { useTTS } from '../../hooks/useTTS';
 import { useFlashcardLearnSettings } from '../../hooks/useFlashcardLearnSettings';
+import { useWeatherEffectsSetting, type WeatherEnableError } from '../../hooks/useWeatherEffectsSetting';
+import { useTestingFeaturesSwitch } from '../../hooks/useTestingFeatures';
 import { COLORS } from '../../theme/colors';
 import { FONTS } from '../../theme/fonts';
 
@@ -103,7 +105,7 @@ const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> =
  *
  * Depended on by: SettingsPage, AccountSheet, docs/SHELF_REDESIGN.md entry 11,
  * docs/LEAF_NODE_PAGES.md, docs/UX_AND_NAVIGATION.md, docs/EXAMPLE_SENTENCES.md (the
- * word-spacing toggle).
+ * word-spacing toggle), docs/FEATURE_TESTING.md (the testing-features switch).
  */
 
 /**
@@ -116,6 +118,16 @@ const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> =
  * off-whites. Revisit when those palettes land; until then a swatch is a signpost, not
  * a preview.
  */
+/**
+ * The weather row's subtitle: its description, or why switching it on did not stick.
+ * Location stays as precise as the Arena's (a ~5 km cell, cut down on the device).
+ */
+const WEATHER_SUBTITLE: Record<WeatherEnableError | 'none', string> = {
+    none: 'Shows your local rain, snow and fog on the Deck Tower sky. Uses your approximate location (about 5 km).',
+    'location-declined': 'Location access is needed for local weather. Allow it in your browser settings and try again.',
+    failed: "Couldn't turn on weather right now. Please try again.",
+};
+
 const THEME_SWATCHES: Record<ThemeMode, string> = {
     light: COLORS.background,
     dark: COLORS.onSurface, // artboard 11: the swatch row is SURFACE — blu, grn, paper, ink
@@ -136,6 +148,12 @@ function SettingsBody() {
     // Tone coloring lives in the flp learn-settings blob (it is read by every surface
     // that renders a reading); this page is simply where it is now EDITED.
     const { settings: learnSettings, update: updateLearnSettings } = useFlashcardLearnSettings();
+
+    // "Enable testing features" (docs/FEATURE_TESTING.md). The row shows only for a
+    // `users.isFeatureTester` account. The switch itself is device-local and off by
+    // default, and every tester surface reads it through `useTestingFeatures()`.
+    const [testingFeaturesOn, setTestingFeaturesOn] = useTestingFeaturesSwitch();
+    const isFeatureTester = user?.isFeatureTester === true;
 
     const activeTheme = availableThemes.find((t) => t.value === themeMode);
 
@@ -170,6 +188,7 @@ function SettingsBody() {
     // switch would be a no-op for Spanish. selectedLanguage is nullable with a 'zh'
     // default in the DB, so treat "unset" as Chinese.
     const [displaySaving, setDisplaySaving] = useState(false);
+    const weather = useWeatherEffectsSetting();
     const showDisplaySettings = (user?.selectedLanguage ?? 'zh') === 'zh';
 
     const handleToggleSegmentSpaces = async (next: boolean) => {
@@ -213,6 +232,31 @@ function SettingsBody() {
 
     return (
         <>
+                {/* ── Testing features (feature-tester accounts only) ────────────────
+                    At the TOP so a tester can find it quickly: it changes what most of
+                    the app shows, unlike the display preferences below. Device-local, so
+                    the subtitle says so (a second phone needs it set too). */}
+                {isFeatureTester && (
+                    <SettingsSection
+                        className="settings-page__testing-section"
+                        icon="science"
+                        title="Testing"
+                    >
+                        <SwitchRow
+                            className="settings-page__testing-features-row"
+                            title="Enable testing features"
+                            subtitle="Shows tester-only controls such as the Deck Tower chips, the Tester Dashboard and Allow anytime for challenges. Saved on this device only."
+                            control={
+                                <Switch
+                                    checked={testingFeaturesOn}
+                                    onChange={(e) => setTestingFeaturesOn(e.target.checked)}
+                                    inputProps={{ 'aria-label': 'Enable testing features' }}
+                                />
+                            }
+                        />
+                    </SettingsSection>
+                )}
+
                 {/* ── Colour theme — a four-swatch row ────────────────────────────
                     The artboard's argument, and it is a good one: four full option
                     cards cost a third of the screen for a choice made once. The row
@@ -402,13 +446,32 @@ function SettingsBody() {
                     ))}
                 </SettingsSection>
 
-                {/* ── Display — Chinese only (see showDisplaySettings) ───────────── */}
+                {/* ── Display ───────────────────────────────────────────────────────
+                    The section shows for every language (weather is not a language
+                    setting); its two reading rows are Chinese only (showDisplaySettings). */}
+                <SettingsSection
+                    className="settings-page__display-section"
+                    icon="space_bar"
+                    title="Display"
+                >
+                    {/* Weather on the Deck Tower's sky (docs/DECK_TOWER.md § "Weather").
+                        Device-local like tone colouring; switching it on may ask for
+                        location (useWeatherEffectsSetting). */}
+                    <SwitchRow
+                        className="settings-page__weather-row"
+                        title="Weather effects"
+                        subtitle={WEATHER_SUBTITLE[weather.error ?? 'none']}
+                        control={
+                            <Switch
+                                checked={weather.enabled}
+                                disabled={weather.busy}
+                                onChange={(e) => { void weather.setEnabled(e.target.checked); }}
+                                inputProps={{ 'aria-label': 'Weather effects' }}
+                            />
+                        }
+                    />
                 {showDisplaySettings && (
-                    <SettingsSection
-                        className="settings-page__display-section"
-                        icon="space_bar"
-                        title="Display"
-                    >
+                    <>
                         <SwitchRow
                             className="settings-page__segment-spaces-row"
                             title="Show spaces between words"
@@ -442,8 +505,9 @@ function SettingsBody() {
                                 />
                             }
                         />
-                    </SettingsSection>
+                    </>
                 )}
+                </SettingsSection>
 
                 {/* ── Down to the write-heavy half (artboard 11b) ─────────────────
                     A `.set` with no body: the artboard collapses the section card into

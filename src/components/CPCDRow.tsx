@@ -105,6 +105,26 @@ interface CPCDRowProps {
     // dragging. Both the font size and the reserved pinyin band grow together, so
     // the glyph keeps its usual clearance and only the cell's total height changes.
     bigPinyin?: boolean;
+    // Center the glyph in its cell when the WHOLE row's pinyin is hidden. A cell keeps
+    // its pinyin band (padding-bottom) even with the syllable hidden, so toggling
+    // pinyin never resizes the row — but a host that flex-centers the cell (a board
+    // tile, a game card) then centers glyph+empty band, and the character rides half a
+    // band above center. With this on, the glyph is painted half a band lower instead
+    // (replacing GLYPH_DROP_PX for that cell). A paint offset like GLYPH_DROP_PX, so
+    // the cell box, cpcdNaturalSize and any fit-scaler's measurement are untouched.
+    // Row-level on purpose: it only engages when NO item shows pinyin, so a row mixing
+    // shown and hidden syllables never puts glyphs at different heights; cells with no
+    // syllable at all reserve no band and are not moved. Opt-in, because on prose and
+    // flashcard surfaces the glyph should hold still when pinyin toggles.
+    // Used by: Word Search tiles (WordSearchGrid), Match Speed foreign cards
+    // (MatchSpeedCard). Docs: docs/CPCD_PINYIN_SHIFT.md, docs/WORD_SEARCH_GAME.md §3.
+    centerGlyphWhenPinyinHidden?: boolean;
+    // Font for the LATIN half of the word — the pinyin overlay. Defaults to the UI sans
+    // (FONTS.sans). A surface whose whole face is set in the app's Chinese face passes
+    // FONTS.cjk (975 Maru SC; its slices cover Latin + tone-marked vowels) so the pinyin
+    // matches the characters: MiniCard and the flp card face (CardFace.tsx). Docs:
+    // docs/CJK_TYPEFACE_LAB.md § "The dd follows the face too".
+    latinFontFamily?: string;
 }
 
 // Per-size visual constants. Mirror the table that used to live in
@@ -246,6 +266,8 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     tapToCopy = false,
     characterColor,
     bigPinyin = false,
+    centerGlyphWhenPinyinHidden = false,
+    latinFontFamily = FONTS.sans,
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -308,6 +330,17 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
     const pinyinReservedHeight = bigPinyin
         ? Math.round(PINYIN_RESERVED_HEIGHT[size] * BIG_PINYIN_SCALE)
         : PINYIN_RESERVED_HEIGHT[size];
+
+    // See `centerGlyphWhenPinyinHidden`: engaged only when the row has pinyin to hide
+    // and every syllable is hidden.
+    const centerHiddenPinyinGlyph =
+        centerGlyphWhenPinyinHidden &&
+        items.some((item) => !!item.pinyin) &&
+        items.every((item) => item.showPinyin === false || !item.pinyin);
+    // Half the reserved band puts the glyph at the cell's center. It REPLACES the
+    // per-size GLYPH_DROP_PX (which only exists to tighten the glyph-to-pinyin gap,
+    // moot with the pinyin hidden) rather than adding to it.
+    const centeredGlyphDropPx = pinyinReservedHeight / 2;
 
     // Position each pinyin span over its corresponding char cell. Run on every
     // render and on size changes to the chars block (handled by ResizeObserver
@@ -581,7 +614,11 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 // Covers the masked mark too, which stands in for the glyph.
                                 "& .char-pinyin-display__character, & .char-pinyin-display__mask": {
                                     position: "relative",
-                                    top: `${GLYPH_DROP_PX[size]}px`,
+                                    top: `${
+                                        centerHiddenPinyinGlyph && item.pinyin
+                                            ? centeredGlyphDropPx
+                                            : GLYPH_DROP_PX[size]
+                                    }px`,
                                 },
                             }}
                         >
@@ -636,7 +673,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                                 width: `${cellWidth}px`,
                                 textAlign: "center",
                                 fontSize: pinyinFontSize,
-                                fontFamily: FONTS.sans,
+                                fontFamily: latinFontFamily,
                                 // Pinned, not inherited: the pinyin stays regular whatever
                                 // weight the host sets (e.g. the Deck Tower stage is bold,
                                 // and the tower flp session mounts inside it).
@@ -686,7 +723,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                             top: 0,
                             left: 0,
                             fontSize: pinyinFontSize,
-                            fontFamily: FONTS.sans,
+                            fontFamily: latinFontFamily,
                             fontWeight: WEIGHT.regular,
                             lineHeight: 1,
                             color: "currentColor",

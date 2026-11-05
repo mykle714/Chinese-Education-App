@@ -45,8 +45,9 @@ folder: any feature may consume it.
 
 | Id | Where | Intro | Graduated | Thresholds |
 |---|---|---|---|---|
-| `handCardCount` | fdp card hand (full variant) — `StudyHand` `figureMark`, chosen in `FlpStudyHand` | small "cards" under the big numeral | the design's 34×2px ink hairline (`.bignum:after`) | 15 visits + 7 days |
-| `sortDifficultyCaption` | scp toolbar level pill — `SortCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
+| `sortDifficultyCaption` | ancp toolbar level pill — `AddNewCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
+| `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD / NEW / CARDS" printed in white on the floor in front of it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
+| `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" printed into the floor in front of it | the stack alone | 70 visits + 14 days |
 
 ## 3. Storage
 
@@ -66,14 +67,14 @@ Writes re-read the map first, so two si mounting together cannot clobber each ot
   shows the intro; the graduated style arrives on the next mount.
 - **The visit is recorded after paint** (`useEffect`).
 - **`enabled: false`** records no visit. Use it when the host component mounts somewhere
-  the si's element is not actually shown. `FlpStudyHand` passes
-  `enabled: variant === "full"` so the Reading/Writing Centers' compact hands, which have
-  no numeral, cannot graduate the fdp's si unseen.
+  the si's element is not actually shown. `DeckTowerPlatform` passes
+  `enabled: sortBin !== undefined` / `notebook !== undefined`, so a visit counts only on the
+  world, and with the Learning deck, where that fixture stands.
 
 ## 5. Feature-tester viewing toggle
 
 `SoftIntroToggle` renders only for `users.isFeatureTester` (migration 178; it rode
-`isValidator` before that flag was split into data validation vs feature testing). Each tap cycles one app-wide
+`isValidator` before that flag was split into data validation vs feature testing) while its device's Settings → "Enable testing features" switch is on ([FEATURE_TESTING.md](./FEATURE_TESTING.md), `useTestingFeatures`). Each tap cycles one app-wide
 override:
 
 | Override | Icon | Effect |
@@ -87,16 +88,15 @@ override:
 - It **never touches the visit records**.
 - `useSoftIntro` ignores it for non-testers, so a stale key on a shared device cannot
   change a learner's experience.
-- It belongs in the header of any page hosting an si. Today that is the hp
-  (`src/pages/HomePage.tsx`, `headerExtraActions`, left of the banking always-play toggle)
-  and scp (`src/features/discover/SortCardsPage.tsx`, `headerExtraActions`, left of the
-  audio chip).
+- It belongs in the header of any page hosting an si. Today that is
+  ancp (`src/features/discover/AddNewCardsPage.tsx`, `headerExtraActions`, left of the
+  audio chip) and td (`src/features/deckTower/DeckTowerPage.tsx`, `headerExtraActions`,
+  left of the avatar, drawn in the sky ink via the toggle's `color` prop).
 
 ## 6. Adding a soft introduction
 
 1. Add an entry to `SOFT_INTROS` with thresholds and a one-line description.
 2. In the component, `const state = useSoftIntro("<id>")` and render either style. If
-   the swap changes layout that something measures, re-measure on the state (see
-   `StudyHand` → `useCrampedFigure`'s `figureMark` dep).
+   the swap changes layout that something measures, re-measure on the state.
 3. Make sure `SoftIntroToggle` is in that page's header.
 4. Add a row to the table in § 2.

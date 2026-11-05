@@ -1,8 +1,6 @@
 import type { IStudyChallengeDAL } from '../dal/interfaces/IStudyChallengeDAL.js';
 import type { IFriendshipDAL } from '../dal/interfaces/IFriendshipDAL.js';
-import type { IDeckDAL } from '../dal/interfaces/IDeckDAL.js';
 import type { StarterPacksService } from './StarterPacksService.js';
-import type { DeckService } from './DeckService.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import type { TransactionRunner } from '../types/dal.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
@@ -184,17 +182,16 @@ export interface ChallengeUserLookup {
  *     it where it stands.
  *
  * Depends on: StudyChallengeDAL (the table), FriendshipDAL (the friend graph and
- * the two block booleans), UserDAL (timezones + public identity), DeckService and
- * DeckDAL (the generated study decks), StarterPacksService (level estimate, and the
- * shared "already known" write).
+ * the two block booleans), UserDAL (timezones + public identity), StarterPacksService
+ * (level estimate, and the shared "already known" write). (DeckService / DeckDAL left
+ * 2026-11-04: the challenge STUDY phase — a generated "vs <name>" deck per player — was
+ * dropped with the Decks feature; scored play is unchanged.)
  */
 export class StudyChallengeService {
   constructor(
     private studyChallengeDAL: IStudyChallengeDAL,
     private friendshipDAL: IFriendshipDAL,
     private userDAL: ChallengeUserLookup,
-    private deckDAL: IDeckDAL,
-    private deckService: DeckService,
     private starterPacksService: StarterPacksService,
     /**
      * Injected, not the imported singleton — docs/BACKEND_LAYERING.md § 3. Defaulted
@@ -214,7 +211,7 @@ export class StudyChallengeService {
    * to look.
    *
    * Language-scoped, deliberately: the row set is "friends who study this
-   * language", matching the per-language partitioning decks, minute points and the
+   * language", matching the per-language partitioning minute points and the
    * whole vet layer already use. The BADGE is the one thing that is not scoped
    * (Q48) — see `countBadge`.
    */
@@ -605,7 +602,7 @@ export class StudyChallengeService {
     //     zones spends a few hours disagreeing about which week it is — and two
     //     different week indices never collide on `study_challenges_pair_week_uniq`,
     //     so without this check a crossing pair could once again end up with two live
-    //     challenges, two decks and two cap slots (the migration-150 defect).
+    //     challenges and two cap slots (the migration-150 defect).
     //
     //     "Unfinished" is DERIVED, never the stored status: a challenge whose test
     //     window has closed is over even if the hourly job has not rewritten it yet,
@@ -662,18 +659,22 @@ export class StudyChallengeService {
    * Accept a challenge — the ONE transaction that turns an agreement into state
    * (§ 3.3).
    *
-   * Atomically: flip to `accepted`, materialise every contested word the player does
-   * not already hold as a real `library` vet row, and create the generated study deck
-   * on BOTH accounts. All three or none: a challenge that was accepted but whose
-   * decks failed to appear would leave two players with no way to study and no way
-   * to repair it.
+   * Atomically: flip to `accepted` and materialise every contested word the player
+   * does not already hold as a real `library` vet row, on BOTH accounts. Both or
+   * neither: an accepted challenge whose words never reached the players' libraries
+   * would score boards the players never got to study.
+   *
+   * (Until 2026-11-04 this also created a generated "vs <name>" study deck per player
+   * and stored its id in `presetDeckIds`. The Decks feature was removed, so the
+   * challenge has no separate study phase any more; the words simply join each
+   * player's Learning cards.)
    *
    * Why `library` and not `provisional` (Q8): accepting the set IS the sorting
    * decision. Both players saw all ten words, were invited to strike any they
    * already knew, and confirmed the rest — a stronger act of choosing than a
    * discover swipe, so there is nothing left for a later "keep these cards?" prompt
    * to ask. It is also the cheap option: `library` rows are visible to every
-   * existing read, so the deck, All Cards, search, the flp and every game pool work
+   * existing read, so All Cards, search, the flp and every game pool work
    * with no clause changes at all.
    */
   async acceptChallenge(
@@ -782,7 +783,7 @@ export class StudyChallengeService {
       //
       // INSIDE the transaction, and inside the lock. It used to run before
       // `executeInTransaction` opened, so N simultaneous accepts all read the same
-      // pre-accept count, all passed, and all created their decks — the cap is a
+      // pre-accept count, all passed, and all accepted — the cap is a
       // COUNT, which no constraint can enforce, so the critical section is the only
       // thing holding it.
       const active = await this.countActiveChallenges(userId, myLanguage, now, client);
@@ -792,12 +793,7 @@ export class StudyChallengeService {
         );
       }
 
-      // Materialise both players' sets and create both decks inside the same
-      // transaction as the status flip. Note the deck insert and the
-      // `presetDeckIds` write are therefore atomic, which is what makes the
-      // maintenance job's orphan sweep (pass 4) a backstop rather than a fix for a
-      // window this code would otherwise leave open.
-      const presetDeckIds: Record<string, number> = {};
+      // Materialise both players' sets inside the same transaction as the status flip.
       for (const [playerId, playerWords] of Object.entries(words)) {
         const playerLanguage =
           playerId === row.challengerId ? row.challengerLanguage : row.challengeeLanguage;
@@ -811,26 +807,13 @@ export class StudyChallengeService {
         playerWords.forEach((word, index) => {
           word.vocabEntryId = vocabEntryIds[index] ?? null;
         });
-
-        const opponentName = await this.displayNameOf(
-          playerId === row.challengerId ? row.challengeeId : row.challengerId
-        );
-        const deckId = await this.deckService.createPresetDeck(
-          playerId,
-          playerLanguage,
-          `vs ${opponentName}`,
-          vocabEntryIds.filter((id): id is number => id != null),
-          client
-        );
-        presetDeckIds[playerId] = deckId;
       }
 
       const accepted = await this.studyChallengeDAL.acceptChallenge(
-        challengeId, words, presetDeckIds, client
+        challengeId, words, client
       );
       // Null means the row was no longer `pending` — another accept won the race.
-      // Throwing rolls back the decks this attempt just created, which is precisely
-      // why they are in the transaction.
+      // Throwing rolls back the vet rows this attempt just materialised.
       if (!accepted) throw new ValidationError('This challenge is no longer open');
       return accepted;
     });
@@ -860,7 +843,7 @@ export class StudyChallengeService {
   /**
    * Withdraw a pending challenge (challenger only) — the row is DELETED outright.
    *
-   * No `withdrawn` status and no history entry: nothing was agreed and no decks
+   * No `withdrawn` status and no history entry: nothing was agreed and nothing
    * exist, so there is nothing to record. Deleting also frees the pair's slot
    * immediately, which makes this the only repair for a challenge issued to the
    * wrong friend or into a language the challengee does not study (Q39).
@@ -935,10 +918,10 @@ export class StudyChallengeService {
    *   4. `startedAt` is preserved by the DAL, so a later write cannot backdate the
    *      claim.
    *
-   * On the player's LAST round the deck is dropped immediately and the challenge is
-   * resolved if the opponent has also finished. Both happen here rather than in the
-   * hourly job because both should be immediate rather than up to an hour late —
-   * and both only on a FINAL write, since a claimed round is still being played.
+   * On the player's LAST round the challenge is resolved if the opponent has also
+   * finished. That happens here rather than in the hourly job because it should be
+   * immediate rather than up to an hour late — and only on a FINAL write, since a
+   * claimed round is still being played.
    */
   async submitRound(
     userId: string,
@@ -1012,13 +995,9 @@ export class StudyChallengeService {
     const fresh = await this.studyChallengeDAL.findById(challengeId);
     if (!fresh) throw new NotFoundError('Challenge not found');
 
-    // A claim/progress write ends here: the player is mid-round, so there is no deck
-    // to drop and nothing to resolve.
+    // A claim/progress write ends here: the player is mid-round, so there is nothing
+    // to resolve.
     if (final && this.hasFinished(fresh, userId)) {
-      // The deck's job is done the moment this player finishes; leaving it on the
-      // decks list is clutter. Per PLAYER, not per challenge — the opponent's deck
-      // may well still be live (§ 4).
-      await this.dropPresetDeck(fresh, userId);
       const opponentId = fresh.challengerId === userId ? fresh.challengeeId : fresh.challengerId;
       if (this.hasFinished(fresh, opponentId)) {
         await this.resolveCompleted(fresh);
@@ -1145,8 +1124,10 @@ export class StudyChallengeService {
   }
 
   /**
-   * Resolve every in-flight challenge for a pair as `no_contest` and drop both
-   * decks — the unfriend hook (§ 6, Q41).
+   * Resolve every in-flight challenge for a pair as `no_contest` — the unfriend hook
+   * (§ 6, Q41). (It also dropped both generated study decks until those stopped being
+   * created on 2026-11-04; any left from older challenges are swept by the hourly job,
+   * database/cron/expire-study-challenges.sql passes 3/4.)
    *
    * ⚠️ CALLED FROM INSIDE FriendsService's delete transaction, and it takes the
    * caller's client for exactly that reason: there must be no window in which a
@@ -1174,17 +1155,8 @@ export class StudyChallengeService {
       await this.studyChallengeDAL.resolveChallenge(
         row.id, 'no_contest', null, ['pending', 'accepted'], client
       );
-      // Both decks go, not just the unfriender's: the challenge is over for both
-      // sides, so neither deck has a purpose. The words stay on both accounts —
-      // they are `library` cards now and are not challenge state.
-      for (const [playerId, deckId] of Object.entries(row.presetDeckIds ?? {})) {
-        await this.deckDAL.deleteDeck(playerId, deckId, client);
-        // Forget the pointer as well as dropping the deck, so `presetDeckIds` only
-        // ever names decks that exist. A stale id would be harmless (cleanup treats
-        // it as a no-op, and the orphan sweep is defined the other way round), but a
-        // column that lies is a column the next reader has to be warned about.
-        await this.studyChallengeDAL.clearPresetDeckId(row.id, playerId, client);
-      }
+      // The words stay on both accounts — they are `library` cards now and are not
+      // challenge state.
     }
   }
 
@@ -1309,7 +1281,6 @@ export class StudyChallengeService {
        * the client is what enforces that, since there is nothing here to protect.
        */
       taunts: row.taunts ?? {},
-      presetDeckId: row.presetDeckIds?.[userId] ?? null,
       // Rule 1. `undefined`, not an empty array: an empty array would read as "this
       // challenge has no games" and a client could not tell the two apart.
       gameSequence: windowOpen || row.completedAt ? sequence : undefined,
@@ -1477,8 +1448,8 @@ export class StudyChallengeService {
    * Has this player FINISHED every round of the test?
    *
    * A claimed-but-unfinished round does not count. It is a spent attempt, but the
-   * player is still in it, and treating it as finished would drop their deck and
-   * resolve the whole challenge out from under a live game.
+   * player is still in it, and treating it as finished would resolve the whole
+   * challenge out from under a live game.
    */
   private hasFinished(row: StudyChallengeRow, userId: string): boolean {
     const sequence = row.gameSequence ?? [];
@@ -1518,14 +1489,6 @@ export class StudyChallengeService {
         : challengerTotal > challengeeTotal ? row.challengerId : row.challengeeId;
 
     await this.studyChallengeDAL.resolveChallenge(row.id, 'complete', winnerUserId, ['accepted']);
-  }
-
-  /** Drop one player's generated deck and forget its id. Safe to call twice. */
-  private async dropPresetDeck(row: StudyChallengeRow, userId: string): Promise<void> {
-    const deckId = row.presetDeckIds?.[userId];
-    if (!deckId) return;
-    await this.deckDAL.deleteDeck(userId, deckId);
-    await this.studyChallengeDAL.clearPresetDeckId(row.id, userId);
   }
 
   /**
@@ -1731,12 +1694,6 @@ export class StudyChallengeService {
   private async selectedLanguageOf(userId: string): Promise<Language | null> {
     const user = await this.userDAL.findById(userId);
     return (user?.selectedLanguage as Language) ?? null;
-  }
-
-  /** What a generated deck is named after — the opponent, which is what learners remember. */
-  private async displayNameOf(userId: string): Promise<string> {
-    const user = await this.userDAL.findById(userId);
-    return user?.name || user?.email?.split('@')[0] || 'friend';
   }
 
   /** The opponent's public identity for a challenge row. */

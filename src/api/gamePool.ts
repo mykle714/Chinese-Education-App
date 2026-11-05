@@ -14,14 +14,13 @@
  *     (or to the distribution's sum when `surface` is absent) before selecting;
  *   - a REFILL (`need` set) never lends — unless `surface` is a rolling-supply surface
  *     (`ROLLING_SUPPLY_SURFACES`, server/contracts/wire.ts; today only Hydra);
- *   - a collection filter or a challenge round never lends.
+ *   - a challenge round never lends.
  * So a caller controls lending only through `surface` and `need`, and should always
  * send its real `surface`.
  *
  * Referenced by: docs/GAMES_FEATURE.md (§ Game pool request), docs/PROVISIONAL_CARDS.md.
  */
 import { apiGet, type QueryParams } from './http';
-import { collectionLaunchParams, type CollectionRef } from '../features/flashcards/collectionRef';
 import type { MarkType, VocabEntry } from '../types';
 
 /**
@@ -76,8 +75,6 @@ export interface GamePoolRequest {
     lendLevelOffset?: number;
     /** Challenge refill that must not re-serve the contested words (Match Speed § 5.3). */
     excludeContested?: boolean;
-    /** Launch collection — must ride EVERY request, refills included. */
-    collection?: CollectionRef | null;
     /**
      * `useChallengeRound().poolParams` — the `&`-prefixed `challengeId`/`gameId`/`mode`/
      * `anytime` suffix. Passed through verbatim so the tester `anytime` hatch can never be
@@ -97,7 +94,6 @@ export function gamePoolParams(req: GamePoolRequest): QueryParams {
     if (req.flpBreak) params.flpBreak = 1;
     if (req.strictBuckets) params.strictBuckets = 1;
     if (req.lendLevelOffset !== undefined) params.lendLevelOffset = req.lendLevelOffset;
-    if (req.collection) Object.assign(params, collectionLaunchParams(req.collection));
     if (req.challengeParams) {
         for (const [key, value] of new URLSearchParams(req.challengeParams.replace(/^&/, ''))) {
             params[key] = value;

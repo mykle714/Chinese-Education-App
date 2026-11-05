@@ -282,6 +282,18 @@ textarea,
   z-index: 1;
 }
 
+/* Circle enter (src/utils/pageTransition.ts → CIRCLE_MOTION): the new page's snapshot is
+   clipped to a circle growing from the tapped point (animated from JS in
+   useSlideNavigate, the point being known only at the tap) over the held old page. */
+:root[data-vt-dir="circle"]::view-transition-old(root) {
+  animation: none;
+  z-index: 0;
+}
+:root[data-vt-dir="circle"]::view-transition-new(root) {
+  animation: none;
+  z-index: 1;
+}
+
 /* Material Symbols Rounded — the app's icon face (docs/SHELF_REDESIGN.md, D3).
  *
  * Mirrors `.ms` in the design's shelf-system.css. Do NOT write this class by hand in a

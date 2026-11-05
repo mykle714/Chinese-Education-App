@@ -1,17 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet } from "../../api/http";
 import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
+import { fetchSpeedReadingDistractors } from "../../api/speedReading";
 import type { DistractorChar, VocabEntry } from "../../types";
 import { provisionalEntries, provisionalWords } from "../../utils/provisionalCards";
-import { useLaunchCollection } from "../../features/flashcards/useLaunchCollection";
-import {
-    GAME_DISTRIBUTION,
-    MARK_TYPE,
-    SENTENCE_ROUNDS,
-    TOPUP_BATCH,
-    TOPUP_THRESHOLD,
-} from "./constants";
+import { SENTENCE_ROUNDS, TOPUP_BATCH, TOPUP_THRESHOLD } from "./constants";
 import { hasSentenceRound } from "./buildRound";
+import { speedReadingPoolRequest } from "./poolRequest";
+
+/**
+ * A run's opening supply: the card pool and the distractor characters. The flp break
+ * adapter fetches exactly this pair while the card before the break is on screen
+ * (src/games/flpBreak/speedReadingBreak.ts), so Play has no spinner.
+ */
+export interface SpeedReadingOpening {
+    pool: GamePoolResponse;
+    distractors: DistractorChar[];
+}
+
+export interface SpeedReadingQueueOptions {
+    /** Signed in; nothing loads otherwise. */
+    enabled: boolean;
+    /** The working loop, sent on the opening batch (docs/FLP_GAME_BREAKS.md § 4). */
+    seedIds?: number[];
+    /** The opening supply, already fetched by the break adapter. */
+    prefetched?: SpeedReadingOpening | null;
+}
 
 /**
  * Split a freshly-loaded pool into the cards reserved for the run's sentence
@@ -56,25 +69,24 @@ function reserveFinaleCards(
  * updater twice in StrictMode, which would consume two cards per tap). The ref
  * is the source of truth; `queueLength` exists only so the UI can react.
  *
- * `runId` is the RELOAD KEY: Play Again bumps it, which re-runs the initial load
- * (fresh cards, fresh distractor pool) without remounting the page. It is a
- * plain counter, never a token or any other rotating value — see the effect's
- * dependency comment.
+ * Speed Reading is BREAK-ONLY (src/games/registry.ts): the hook serves exactly one run
+ * per mount, and every pool request is flagged as an flp break's.
  */
-export function useSpeedReadingQueue(enabled: boolean, runId: number) {
-    // Which collection this run was launched from (docs/DECKS_FEATURE.md) — null for
-    // an ordinary launch from the Games hub. Folded into every pool request so the
-    // round's headwords stay inside the set the learner picked. (Distractor
-    // characters are deliberately NOT restricted: they are foils, and drawing them
-    // from the deck would make the deck itself the answer key.)
-    const launchCollection = useLaunchCollection();
+export function useSpeedReadingQueue({
+    enabled,
+    seedIds,
+    prefetched = null,
+}: SpeedReadingQueueOptions) {
+    // The prefetched supply, captured at mount. Read rather than consumed: StrictMode
+    // runs the load effect twice in dev, and both passes must see the same supply.
+    const prefetchedRef = useRef(prefetched);
     const queueRef = useRef<VocabEntry[]>([]);
     /**
      * Cards held back for the run's SENTENCE rounds (the last SENTENCE_ROUNDS of
      * the run), reserved out of the very first pool response and never returned
      * by `dequeue`.
      *
-     * Reserved at LOAD rather than picked when round 19 comes up: the run's whole
+     * Reserved at LOAD rather than picked when round 20 comes up: the run's whole
      * card set is known on the first call, so the finale must not depend on
      * whether a mid-run top-up happens to return a card carrying an example
      * sentence. A card is eligible only if one of its example sentences actually
@@ -101,23 +113,16 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
     /** One pool request. Passing `opts` makes it a partial top-up. */
     const fetchPool = useCallback(
         async (opts?: { need: number; excludeIds: number[] }): Promise<GamePoolResponse> => {
-            return fetchGamePool({
-                markType: MARK_TYPE,
-                // Names the baseline the server tops the player up to before building
-                // the pool, so a small deck is filled with temporary cards instead of
-                // blocking (docs/PROVISIONAL_CARDS.md). Sent on top-ups too: `need`
-                // alone already stops a refill from lending (src/api/gamePool.ts).
-                surface: "speed-reading",
-                distribution: GAME_DISTRIBUTION,
+            return fetchGamePool(speedReadingPoolRequest({
                 need: opts?.need,
                 exclude: opts?.excludeIds,
-                // On BOTH the initial pool and a mid-run top-up: a refill that dropped
-                // the restriction would start serving off-collection words.
-                collection: launchCollection,
-            });
+                // The seed fills the OPENING batch only; a top-up is ordinary supply.
+                seedIds: opts ? undefined : seedIds,
+                flpBreak: true,
+            }));
         },
-        // `launchCollection` comes from the page's own URL, which cannot change
-        // without a remount, so the closure can never go stale.
+        // Every input is fixed for the break's lifetime: its context is captured when it
+        // falls due.
         // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
@@ -131,11 +136,12 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
 
         (async () => {
             try {
-                // The pool and the distractor list are independent, so overlap them.
-                const [pool, distractorRes] = await Promise.all([
-                    fetchPool(),
-                    apiGet<{ chars: DistractorChar[] }>("/api/games/speedReading/distractors"),
-                ]);
+                // The pool and the distractor list are independent, so overlap them. A
+                // break takes the pair its adapter already fetched.
+                const opening = prefetchedRef.current;
+                const [pool, distractors] = opening
+                    ? [opening.pool, opening.distractors]
+                    : await Promise.all([fetchPool(), fetchSpeedReadingDistractors()]);
                 if (cancelled) return;
 
                 // NO CARD-COUNT GATE (docs/PROVISIONAL_CARDS.md). The server has already
@@ -145,7 +151,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
                 // card — so we start the game rather than refusing it.
                 // Split the pool ONCE, here: the finale's cards come off the top
                 // of the eligible ones and the rest stay in the FIFO. Fewer than
-                // SENTENCE_ROUNDS eligible cards is not fatal — the page falls
+                // SENTENCE_ROUNDS eligible cards is not fatal — the Stage falls
                 // back to a word round for the rounds it can't fill — but it does
                 // mean the run quietly loses its finale, so say so out loud.
                 const { finale, rest } = reserveFinaleCards(pool.cards, SENTENCE_ROUNDS);
@@ -157,7 +163,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
                 }
                 queueRef.current = rest;
                 finaleRef.current = finale;
-                distractorsRef.current = distractorRes.chars;
+                distractorsRef.current = distractors;
                 setQueueLength(rest.length);
                 // Speed Reading plays a fixed, known set, so the notice can name the
                 // exact lent words (CARD_BASELINE_ITEMIZED).
@@ -175,13 +181,13 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
         return () => {
             cancelled = true;
         };
-        // Keyed on `enabled` + `runId` — both stable identities that change only
-        // on a deliberate action. NOT on `token`: a silent access-token refresh
+        // Keyed on `enabled` — a stable identity that changes only on a deliberate
+        // action. NOT on `token`: a silent access-token refresh
         // (~every 15 min) must not re-run this loader and wipe a run in progress.
         // apiGet reads the token at call time. See CLAUDE.md
         // "Never reload on token refresh".
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enabled, runId]);
+    }, [enabled]);
 
     // ── Top-up ───────────────────────────────────────────────────────────────
     /**
@@ -232,7 +238,7 @@ export function useSpeedReadingQueue(enabled: boolean, runId: number) {
 
     /**
      * Take the next card RESERVED for a sentence round, synchronously. Returns
-     * null once the reservation is used up (or was never filled), which the page
+     * null once the reservation is used up (or was never filled), which the Stage
      * treats as "build an ordinary word round instead".
      *
      * Deliberately does NOT fall back to the main queue: a card pulled from there

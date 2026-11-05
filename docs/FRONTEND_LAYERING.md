@@ -89,7 +89,7 @@ into every user's main chunk; it now lives in
 > feature boundary.
 
 `src/pages/` is **not** "where pages live". A page belongs to its feature; the
-Sort Cards, Dictionary, Games and Community pages all sit in their feature folders. What
+Add New Cards, Dictionary, Games and Community pages all sit in their feature folders. What
 survives in `src/pages/` is the handful of pages that belong to no feature.
 
 **Why this specific test, and not "pages here, parts there".** The old split was by
@@ -104,7 +104,7 @@ importers, and the correct home is determined.
 neither could change it safely. It now lives in `src/cardIcons/editor/`.
 
 **Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
-sat in the same folder while the /decks sheet and the scp already used it. That was still
+sat in the same folder while the old Home page's card sheets and the ancp already used it. That was still
 *within* the flashcards feature, so it was legal; it stopped being legal the moment
 `src/components/CompareSheet.tsx` (mounted by the dictionary cdp) needed it. It moved to
 `src/components/sheet/`, taking the four styled surfaces it renders
@@ -155,7 +155,7 @@ extracted alongside a component therefore needs its own module — which is why
 > ⚠️ **Status: aspirational, not yet true.** ~42 direct `fetch(...)` call sites across
 > ~35 files still bypass it (`AuthContext.tsx`, `FlashcardsPage.tsx`, `EntriesPage.tsx`,
 > `EditEntryPage.tsx`, the Reader dialogs, `useDictionarySearch.ts`,
-> `useSpeedReadingQueue.ts`, `CollectionViewPage.tsx`, …). They work — the global
+> `useSpeedReadingQueue.ts`, …). They work — the global
 > `fetchInterceptor` patch means they still get token refresh — but they re-hand-roll
 > the base URL, headers and error handling. Migrate them opportunistically; never add a
 > new one. Re-check with:
@@ -206,7 +206,7 @@ Existing feature-local modules: `features/community/communityApi.ts`,
 `cardIcons/cardIconApi.ts`, `utils/vocabApi.ts`.
 
 Cross-feature endpoint groups instead live directly under `src/api/`:
-`decks.ts`, `dictionary.ts`, `flashcards.ts`, `friends.ts`, `provisional.ts`,
+`collections.ts`, `dictionary.ts`, `flashcards.ts`, `friends.ts`, `provisional.ts`,
 `velocity.ts` (alongside the `http.ts` transport itself).
 
 ### 3.2 ⛔ No API function takes a `token`
@@ -236,7 +236,7 @@ through a wrapper that depends on it, so its raw `fetch` calls stay.
 ### 3.3 API paths are camelCase
 
 `/api/starterPacks/...`, `/api/nightMarketTemplates/...`, `/api/users/displaySettings`.
-User-facing SPA URLs are kebab-case (`/deck-tower`, `/tester-dashboard`) and are unrelated
+User-facing SPA URLs are kebab-case (`/tester-dashboard`, `/discover/sort/:language`) and are unrelated
 to API paths. A client API module must stay in step with its `server/routes/*.ts` file —
 these are the two halves of one contract with no compiler linking them.
 

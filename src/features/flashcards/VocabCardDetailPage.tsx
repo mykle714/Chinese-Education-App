@@ -9,7 +9,7 @@ import {
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
-import { FOOTER_TOTAL_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
+import { SLAB_FOOTER_TOTAL_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
 import { useAuth } from "../../AuthContext";
 import { removeFromLibrary } from "../../utils/vocabApi";
 import type { VocabEntry } from "../../types";
@@ -27,6 +27,8 @@ import { measureDefaultTextCenters } from "../../cardIcons/cardTextLayout";
 import { useToolbarInset } from "../../cardIcons/editor/useToolbarInset";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
 import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
+import { cardStockVars } from "./card/cardStock";
+import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
@@ -56,18 +58,21 @@ const ContentArea = styled(Box)(() => ({
     position: "relative",
 }));
 
-// The extra-info pill — the same capsule the flp and fdp raise their sheets from
-// (`SheetPill`). It is absolutely positioned at FRAME level, so the scrolling column
-// has to reserve its band itself or the last row hides behind it.
+// The extra-info pill — the same capsule the flp raises its eip from (`SheetPill`). It
+// is absolutely positioned at FRAME level, so the scrolling column has to reserve its
+// band itself or the last row hides behind it.
 //
-// Offset by the FULL footer clearance, exactly as the fdp's pill is, so it clears the
-// floating footer bar with the gap every other page's last row gets. The scroll area
+// Offset by the FULL (slab) footer clearance, so it clears the floating footer slab
+// with the gap every other page's last row gets. The scroll area
 // already pads FOOTER_CLEARANCE for that bar, so the column only owes the pill's own
 // height plus a breathing gap.
 const INFO_PILL_HEIGHT = 34;
 // A CSS string — see FOOTER_TOTAL_CLEARANCE: the footer bar grew by the
 // home-indicator inset, and the pill has to clear the bar's real top edge.
-const INFO_PILL_BOTTOM = FOOTER_TOTAL_CLEARANCE;
+const INFO_PILL_BOTTOM = SLAB_FOOTER_TOTAL_CLEARANCE;
+
+/** The hero card prints on the Deck Tower's card stock, scaled to the hero's width. */
+const HERO_CARD_STOCK_VARS = cardStockVars("100cqw");
 const INFO_PILL_CLEARANCE = INFO_PILL_HEIGHT + 12;
 
 const VocabCardDetailPage: React.FC = () => {
@@ -75,9 +80,12 @@ const VocabCardDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    // Tier 2 time of day: the ground tints with the hour and the slab footer follows
+    // (docs/SHELF_REDESIGN.md § 7b) — the same look as the dictionary cdp.
+    const look = useTier2Look();
     const { user } = useAuth();
-    // The mastery LENS this card was opened under (docs/DECKS_FEATURE.md § "Mastery
-    // Centers"). `?world=reading` means the learner came from the Reading Center, so the
+    // The mastery LENS this card was opened under (collectionRef.ts → `withLens`).
+    // `?world=reading` means the learner came from the Deck Tower's reading world, so the
     // Mastery section below shows the reading bar alone; absent it reads `core` and the
     // section shows recognition + production alone. Exactly one bar either way — this
     // page answers the question the surface that opened it was asking.
@@ -330,7 +338,12 @@ const VocabCardDetailPage: React.FC = () => {
         try {
             setActionLoading(true);
             await removeFromLibrary(entry.entryKey, entry.language ?? user?.selectedLanguage ?? 'zh');
-            navigate('/', { state: { refresh: Date.now() } });
+            // Back to wherever the card was opened from (the Deck Tower's cards page, which
+            // refreshes its library on return). A deep-linked page has no history entry to
+            // go back to (`idx === 0`), so it lands on the tower instead of leaving the app.
+            const idx = (window.history.state as { idx?: number } | null)?.idx;
+            if (idx == null || idx > 0) navigate(-1);
+            else navigate('/');
         } catch (err) {
             console.error('Error deleting card:', err);
             setActionLoading(false);
@@ -340,7 +353,7 @@ const VocabCardDetailPage: React.FC = () => {
     return (
         // Card Detail is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): keeps the footer,
         // LEFT back arrow (returns to the previous screen), slides in from the right.
-        // Reached from Home (the fdp) or a collection, so the Home tab stays active.
+        // Reached from the Deck Tower's cards page, so the Deck tab stays lit.
         <NodePage
             title="Card Detail"
             onBack={() => navigate(-1)}
@@ -349,10 +362,12 @@ const VocabCardDetailPage: React.FC = () => {
             // the card's own rail), because the read-only dictionary cdp is the SAME
             // surface and the two must not disagree on their title size.
             headerSize="dense"
-            // No `surfaceColor`: the cdp sits on the app's standard ground
-            // (COLORS.background / --paper, MobileTabScreen's default) like every other
-            // page. It used to paint itself yellowAccent, which made the one surface a
-            // learner reaches most often the only one with its own ground.
+            // The Tier 2 ground (useTier2Look), like the dictionary cdp and every surface
+            // the Deck Tower reaches: it tints with the hour, and the slab footer follows
+            // (docs/SHELF_REDESIGN.md § 7b "Time of day"). Since 2026-11-04 — before, the
+            // cdp sat on the standard paper ground under the flat footer bar.
+            surfaceColor={look.ground}
+            headerTitleColor={look.ink}
             // No top edge-fade: the hero card shouldn't dissolve at the top.
             topFade={false}
             // Frame-level furniture, rendered OUTSIDE the scroll area (see NodePage's
@@ -365,7 +380,7 @@ const VocabCardDetailPage: React.FC = () => {
                         onClick={() => setInfoOpen(true)}
                         ariaLabel="Open extra info"
                         ariaExpanded={infoOpen}
-                        // The cdp keeps the footer bar, so the pill floats above it
+                        // The cdp keeps the (slab) footer, so the pill floats above it
                         // rather than at the bottom of the frame.
                         bottom={INFO_PILL_BOTTOM}
                         height={INFO_PILL_HEIGHT}
@@ -374,7 +389,7 @@ const VocabCardDetailPage: React.FC = () => {
                         disabled={editMode}
                     />
                     {infoOpen && (
-                        /* THE eip — the exact component the flp and scp raise
+                        /* THE eip — the exact component the flp and ancp raise
                            (InfoCardSection → SheetPanel + InfoCardPanelBody), not a
                            cdp-shaped copy of its content. The panel brings the entry
                            header, the underline tab strip, swipe-between-tabs and the
@@ -557,8 +572,7 @@ const VocabCardDetailPage: React.FC = () => {
                             {/* WORD TOOLS — `Write it` and `Compare`, on their own rail
                                 above the card and outside its boundary. They act on the
                                 WORD, not on this card, which is why they are not in the
-                                header row above (add-to-deck / edit / delete, all card
-                                operations) — see WordToolsRail. */}
+                                header row above (delete — a card operation) — see WordToolsRail. */}
                             <WordToolsRail
                                 className="vocab-card-detail__word-tools"
                                 entry={entry}
@@ -591,7 +605,7 @@ const VocabCardDetailPage: React.FC = () => {
                                     mb: "8px",
                                     position: "relative",
                                     // Elevation for the hero: the face itself draws the
-                                    // hairline + radius (CARD_SURFACE, via CardFaceSide),
+                                    // card-stock face + radius (CARD_SURFACE, via CardFaceSide),
                                     // but the shadow has to sit on this wrapper — the face
                                     // is absolutely positioned inside it, and the wrapper is
                                     // what the page lays out. The radius is repeated here so
@@ -599,6 +613,11 @@ const VocabCardDetailPage: React.FC = () => {
                                     // than a rectangle's.
                                     borderRadius: CARD_SURFACE.borderRadius,
                                     boxShadow: CARD_SURFACE.boxShadow,
+                                    // The Deck Tower's card stock, sized off this box's own
+                                    // width (it is the container its `cqw` resolves against) —
+                                    // the same stock as the flp card (card/cardStock.ts).
+                                    containerType: "inline-size",
+                                    ...HERO_CARD_STOCK_VARS,
                                 }}
                             >
                                 <CardFaceSide
@@ -640,7 +659,6 @@ const VocabCardDetailPage: React.FC = () => {
                                     // fie is open: that toolbar already owns the card.
                                     topRail={(
                                         <CardOpsRail
-                                            entry={editingCurrentEntry!}
                                             onCustomize={() => enterEdit(() => heroCardRef.current ? measureDefaultTextCenters(heroCardRef.current) : null)}
                                             onEditNote={() => setNoteEditing(true)}
                                             disabled={editMode}
@@ -693,8 +711,9 @@ const VocabCardDetailPage: React.FC = () => {
                                 `MasteryWindow` renders the eight-mark window under its
                                 Know / Read / Write switch (no section label — the
                                 `Mastery` rule was dropped 2026-09-28); the
-                                `lens` is which track it opens on, so a card reached from a
-                                Mastery Center still reports that skill first. The old
+                                `lens` is which track it opens on, so a card reached from
+                                td's reading or writing cards page reports that
+                                skill first (`?world=`, collectionRef → `lensFromSearch`). The old
                                 vertical bar + its SectionCard wrapper are gone — see D6/D7
                                 in docs/SHELF_REDESIGN.md.
 

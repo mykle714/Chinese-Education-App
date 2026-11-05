@@ -1,4 +1,4 @@
-# Daily Minute Banking (hp banking animation + AccountSheet bank banner)
+# Daily Minute Banking (td banking animation + AccountSheet bank banner)
 
 > **Status: BUILT 2026-10-10 (migration 175); deployed to PPE 2026-10-10.** All design questions
 > are answered (see the [question log](#question-log)); the numbers in § 4 are first-pass
@@ -7,19 +7,18 @@
 
 Parent: [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md). Related:
 [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) (the `.hd .fire` treatment),
-[UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (the hp header and the AccountSheet).
+[UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (the AccountSheet),
+[DECK_TOWER.md](./DECK_TOWER.md) § "Daily banking" (how td hosts the run).
 
-> **"hp" in this doc = the Home tab (`/`)** — the page whose header carries the flame,
-> Settings gear and avatar. Since 2026-10-10 that tab's content is the decks page (the
-> fdp, `FlashcardsDecksPage`, wrapped by `src/pages/HomePage.tsx`); the hub bento moved
-> to Menu (`/menu`), which has no banking run. See [NAVIGATION.md](./NAVIGATION.md).
+> **The run lives on the Deck Tower (td, `/`, the footer's Deck tab).** Menu has no
+> banking run.
 
 ## 1. What it is
 
 Two surfaces that tell one story: **a day's minutes are banked into a running total.**
 
-1. **The banking animation (hp, once per streak day).** On the learner's first visit to the
-   Home tab (`/`) in a new streak day, the header flame opens on **yesterday's** minutes, swells
+1. **The banking animation (td, once per streak day).** On the learner's first visit to the
+   Deck Tower (`/`) in a new streak day, the header flame opens on **yesterday's** minutes, swells
    to draw the eye, then drains — the number counts down and the flame's fill empties —
    while embers fly from the flame into the profile-picture button, which charges up a glow.
    The count always drains to 0, which brings the flame back to its normal size. The
@@ -28,7 +27,7 @@ Two surfaces that tell one story: **a day's minutes are banked into a running to
 2. **The bank banner (AccountSheet).** A banner directly under the profile row showing
    the **banked** total — NET through the end of yesterday — with a small `+🔥 N` chip in
    its corner for today's not-yet-banked minutes. The real balance is banked + today;
-   tomorrow's first hp visit animates today's chip into the bank.
+   tomorrow's first td visit animates today's chip into the bank.
 
 Everything about the animation's magnitude — how far the flame swells, how long the drain
 takes, how bright the avatar glows, how many embers fly — is a function of yesterday's
@@ -55,9 +54,9 @@ happened. Consequences for the build:
 
 ## 3. The sequence
 
-Plays in the hp header, where the flame sits two controls in from the corner:
-`[flame] [⚙ gear] [avatar]` (PageHeader `trailingContent`, Home only). Embers therefore
-travel right, over the gear, into the avatar.
+Plays in td's header, where the flame sits right beside the corner avatar:
+`[flame] [avatar]` (PageHeader `trailingContent` → `DeckTowerAvatar`). td has no Settings
+gear, so the embers travel a short arc straight into the 40px avatar.
 
 | # | Phase | Flame badge | Avatar | Notes |
 |---|---|---|---|---|
@@ -86,8 +85,8 @@ boundary the ledger uses, so "yesterday" always means the previous `userminutepo
 Code: `src/minutePoints/dailyBanking/bankingAnimation.ts` → `sampleBankingRun` (the whole
 timeline as a pure function of elapsed ms). Two details the table leaves open, as built:
 
-- **Phase 4 relights the flame.** The drain ends on an empty (ghost-only) flame, but the hp
-  is off-study, where the header draws a solid flame. Phase 4 refills it alongside the
+- **Phase 4 relights the flame.** The drain ends on an empty (ghost-only) flame, but td
+  is off-study (it is a menu; only a session studied inside it earns), where the header draws a solid flame. Phase 4 refills it alongside the
   count-up, so the hand-back to the live badge is invisible.
 - **A hidden tab pauses the run.** The clock advances by real frame time, and a gap over
   100 ms (rAF stops in a background tab) is not counted (`MAX_FRAME_GAP_MS` in
@@ -141,17 +140,17 @@ and decay.
 | **Service** | `UserMinutePointsService.markBankingSeen` | Resolves the streak date from the client's (timestamp, tz), clamped to server time like the increment path, then stamps the marker. |
 | **Controller / API** | `GET /api/users/minutePoints/summary`, `POST /api/users/minutePoints/bankingSeen` (`UserMinutePointsController.markBankingSeen`) | Summary fields are additive. The POST body is `{ language, timestamp, tz }`. `language` is **required** (400 otherwise), because stamping the wrong language would silently suppress that language's run. Returns 204. The client sends it when the run **starts**. |
 | **Client API** | `src/minutePoints/minutePointsSync.ts` → `fetchLanguageSummary`, `markBankingSeen` | `markBankingSeen` goes through `src/api/http.ts` (no token). |
-| **Client state** | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider`, `useBankingFrame`, `useBankingAnchorRef`, `useBankingAnchors` | HomePage mounts the provider around the `FlashcardsDecksPage` it renders. On mount it fetches the summary itself and, if a run is owed, fires `markBankingSeen` (fire-and-forget) and drives the timeline with rAF. Frames go into a small external store read through `useSyncExternalStore`, so only the three leaf views re-render at 60 fps, never the Home hub. Outside the provider, `useBankingFrame()` is always null. |
+| **Client state** | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider`, `DailyBankingOptOut`, `useBankingFrame`, `useBankingAnchorRef`, `useBankingAnchors` | DeckTowerPage mounts the provider around its `MobileTabScreen`. On mount it fetches the summary itself and, if a run is owed, fires `markBankingSeen` (fire-and-forget) and drives the timeline with rAF. Frames go into a small external store read through `useSyncExternalStore`, so only the three leaf views re-render at 60 fps, never the tower scene. Outside the provider — or inside a `DailyBankingOptOut`, which td puts around its flp sessions so their own header flames neither draw the run nor steal the `flame` anchor — `useBankingFrame()` is always null. |
 | **Client view-model** | `src/minutePoints/dailyBanking/bankingAnimation.ts` → `BANKING_ANIMATION`, `bankingIntensity`, `planBankingRun`, `sampleBankingRun` | Pure maths for the timeline. Tests: `src/minutePoints/__tests__/bankingAnimation.test.ts`. |
 | **Client view** | `MinutePointsFireBadge` | While a frame is live, draws the run's `displayCount`, fill and scale instead of the live readout, and registers itself as the `flame` anchor. |
-| **Client view** | `HeaderAvatarButton` (`glowPx`, `buttonRef` props) + `src/minutePoints/dailyBanking/BankingAvatarButton.tsx` | `HeaderAvatarButton` draws a `fireActive` halo of `glowPx`. HomePage renders the `BankingAvatarButton` wrapper, which subscribes to the run and registers the `avatar` anchor, so per-frame updates stay inside that leaf. |
+| **Client view** | `HeaderAvatarButton` (`glowPx`, `buttonRef` props) + `src/minutePoints/dailyBanking/BankingAvatarButton.tsx` | `HeaderAvatarButton` draws a `fireActive` halo of `glowPx`, appended to any `restShadow`. `DeckTowerAvatar` renders the `BankingAvatarButton` wrapper (forwarding `sizePx` 40 and `SHADOW.float`), which subscribes to the run and registers the `avatar` anchor, so per-frame updates stay inside that leaf. |
 | **Client view** | `src/minutePoints/dailyBanking/BankingEmbers.tsx` | A `position: fixed` layer portaled to `<body>` that flies flame glyphs along a lifted Bézier between the two anchors' live rects. Rects are re-read every frame, so scrolling and the swell are tracked. |
 | **Client view** | `src/minutePoints/BankBanner.tsx`, rendered by `AccountSheet` | § 6. |
 
 **Why the provider fetches its own summary.** The original plan was to surface
 `yesterdayMinutes` through `useMinutePoints`. But that hook's instance belongs to the badge
-inside `PageHeader`, so HomePage could not read it, and a second instance would start a
-second 1-second accrual tick. So the hp makes one extra summary GET on mount.
+inside `PageHeader`, so the host page could not read it, and a second instance would start a
+second 1-second accrual tick. So td makes one extra summary GET on mount.
 
 ## 6. The AccountSheet bank banner
 
@@ -173,7 +172,7 @@ flew into.
 - Both figures come from one `fetchLanguageSummary` call made when the banner mounts. The
   sheet is mounted only while open, so every open is fresh, like its library counts and
   velocity. It does **not** call `useMinutePoints` (that would add a second accrual tick).
-  The figures are a snapshot. The sheet only opens from the hp, which accrues nothing, so
+  The figures are a snapshot. The sheet opens only from td's avatar, which does not accrue, so
   they cannot go stale while it is open.
 - The banked figure only moves at the 04:00 rollover (or on a penalty).
 - Caption: "Minutes banked through yesterday. Today's join at 4 AM." The chip sits on
@@ -201,24 +200,26 @@ Constraints:
 
 ## 8. Feature-tester "always play" toggle (test tool)
 
-Feature-tester accounts (`users.isFeatureTester`, migration 178; `isValidator` before) get a toggle in the hp header: `repeat` when off,
-`repeat_on` when on. It sits in the header's `extraActions`, to the left of the flame and
-off the embers' path.
+Feature-tester accounts (`users.isFeatureTester`, migration 178; `isValidator` before) get a
+chip row under td's header, the last of its tester rows: **Bank daily** · **Bank every
+visit** (`TesterChipRow`, `deck-tower-page__banking-*`).
 
-While it is **on**, the banking run plays on **every** landing on Home: the provider ignores
-the server's once-per-day `bankingPending`. The toggle itself never plays anything. To see
-the run as a learner meets it, on page entry, leave Home and come back. A forced run still
+While **Bank every visit** is chosen, the banking run plays on **every** landing on td: the
+provider ignores the server's once-per-day `bankingPending`. The chip itself never plays
+anything. To see the run as a learner meets it, on page entry, leave td and come back
+(returning from a study session inside td is not a landing and does not replay it). A forced run still
 POSTs `bankingSeen`, so after turning the toggle off, today counts as seen.
 
 - **Storage:** localStorage key `dailyBanking.alwaysPlay`, per device, with every access
   wrapped in try/catch. It has no server state because nothing about it needs to follow
   the account.
-- **Gate:** the provider honors the flag only when `user.isFeatureTester`, so a stale key on a
+- **Gate:** the provider honors the flag only when `useTestingFeatures()` (`user.isFeatureTester`
+  AND the Settings testing switch — [FEATURE_TESTING.md](./FEATURE_TESTING.md)), so a stale key on a
   shared device cannot change a learner's experience.
 - **Still needs yesterday > 0.** With an empty yesterday there is nothing to drain, so
   nothing plays even with the toggle on (Q11a).
 
-Code: `src/minutePoints/dailyBanking/BankingAlwaysPlayToggle.tsx` →
+Code: `src/features/deckTower/BankingAlwaysPlayToggle.tsx` →
 `BankingAlwaysPlayToggle`; `src/minutePoints/dailyBanking/bankingAlwaysPlay.ts` →
 `readBankingAlwaysPlay`, `writeBankingAlwaysPlay`; `DailyBankingContext.tsx` →
 `useDailyBankingRun` (the `forced` override).
@@ -237,10 +238,19 @@ Answered 2026-10-10:
 | Q10 | Seen-today column shape? | **`user_languages."lastBankingShownDate" DATE NULL`** (per language). |
 | Q6 | Does anything count up as embers land? | **No — only the avatar glow grows.** |
 | Q8 | Avatar glow color? | **Flame orange** (`COLORS.fireActive` halo); not the `lowSupplyGlow` recipe. |
-| Q9 | Plays if the learner reaches Home later in the day after other pages? | **Yes** — the first hp visit of the streak day, whenever it happens. |
+| Q9 | Plays if the learner reaches Home later in the day after other pages? | **Yes** — the first visit of the streak day, whenever it happens (now td's, § 1). |
 | Q11a | Yesterday had 0 minutes? | **No animation**; the flame renders as normal. |
 | Q7 | Honor `prefers-reduced-motion`? | **Ignored for now** — the run plays regardless; deferred. |
 | Q11b | Banner's `+🔥` corner chip when nothing has been earned today? | **Not rendered** — the banner shows the banked figure alone until the first minute of the day lands. |
+
+Answered 2026-11-04 (the move to td):
+
+| # | Question | Answer |
+|---|---|---|
+| Q12 | Move the run to td, or run it on both Home and td? | **Move** — td only; Home's avatar is plain. |
+| Q13 | Wait for the tower's opening animation before starting? | **No** — start on arrival. |
+| Q14 | A dive into study mid-run? | **Let it finish unseen** — no tap blocking. |
+| Q15 | Where does the tester always-play switch go? | **td's tester chip row**, not the header. |
 
 ## Code this doc depends on
 
@@ -253,15 +263,16 @@ Answered 2026-10-10:
 - `server/utils/streakDate.ts` → `streakDateOf`, `addDaysToDateString`
 - `src/minutePoints/minutePointsSync.ts` → `LanguageMinuteSummary`, `fetchLanguageSummary`, `markBankingSeen`
 - `src/minutePoints/dailyBanking/bankingAnimation.ts` → `BANKING_ANIMATION`, `planBankingRun`, `sampleBankingRun`
-- `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider`, `useBankingFrame`, `useBankingAnchorRef`
+- `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider`, `DailyBankingOptOut`, `useBankingFrame`, `useBankingAnchorRef`
 - `src/minutePoints/dailyBanking/BankingEmbers.tsx` → `BankingEmbers`
 - `src/minutePoints/dailyBanking/BankingAvatarButton.tsx` → `BankingAvatarButton`
 - `src/minutePoints/BankBanner.tsx` → `BankBanner`
-- `src/minutePoints/dailyBanking/BankingAlwaysPlayToggle.tsx` → `BankingAlwaysPlayToggle` (§ 8)
+- `src/features/deckTower/BankingAlwaysPlayToggle.tsx` → `BankingAlwaysPlayToggle` (§ 8)
 - `src/minutePoints/dailyBanking/bankingAlwaysPlay.ts` → `readBankingAlwaysPlay`, `writeBankingAlwaysPlay` (§ 8)
 - `src/minutePoints/MinutePointsFireBadge.tsx` → `MinutePointsFireBadge`
 - `src/minutePoints/FireCount.tsx` → `FireCount`, `INK_TOP_PCT`, `INK_BOTTOM_PCT`
 - `src/components/PageHeader.tsx` → `PageHeader` (`trailingContent`, right slot)
 - `src/components/HeaderAvatarButton.tsx` → `HeaderAvatarButton` (`glowPx`, `buttonRef`)
-- `src/pages/HomePage.tsx` → `HomePage`
+- `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` (mounts the provider, the embers and the opt-out)
+- `src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar`
 - `src/pages/AccountSheet.tsx` → `AccountSheet`

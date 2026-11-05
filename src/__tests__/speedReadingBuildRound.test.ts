@@ -166,8 +166,8 @@ describe("buildRound", () => {
 });
 
 /**
- * The FINALE rounds (docs/SPEED_READING_GAME.md § The last two rounds are
- * sentences). Same invariant as a word round — two options differing in exactly
+ * The FINALE round (docs/SPEED_READING_GAME.md § The last round is a
+ * sentence). Same invariant as a word round — two options differing in exactly
  * one position — but the sequence is a whole sentence and the differing position
  * must land INSIDE the target headword, so the round still tests the card's word.
  */

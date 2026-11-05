@@ -1,4 +1,3 @@
-import { createContext, useContext } from "react";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
@@ -18,18 +17,6 @@ import {
     DENSE_HEADER_TITLE_TRACKING,
     TOWER_STUDY_BACK_ARROW_TOP_PX,
 } from "../../components/pageHeaderSizing";
-import { TOWER_PLATE_PRINT } from "../../theme/towerPlate";
-import { TOWER_SLAB, TOWER_SLAB_WALL_PX } from "../../theme/towerSlab";
-import { useTowerWash } from "../../timeOfDay/useDayWash";
-
-/**
- * The panel's material. `tower` draws it as the Deck Tower's gold platform: the strips lose
- * their tint and hairline, the labels take the plate's print, and the clock's track becomes
- * a groove (docs/TOWER_STYLE_SHIFT.md § "The play slab"). Set once on `GameFrame`; its parts
- * read it from this context. Nothing uses `tower` now; every game is `bento`.
- */
-export type GameFrameTone = "bento" | "tower";
-const GameFrameToneContext = createContext<GameFrameTone>("bento");
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -70,8 +57,6 @@ export interface GameFrameProps {
     children: React.ReactNode;
     className?: string;
     sx?: SxProps<Theme>;
-    /** The panel's material. Default `bento`, the white panel. */
-    tone?: GameFrameTone;
 }
 
 /**
@@ -83,15 +68,12 @@ export interface GameFrameProps {
  * the CSS is the artboard's header height plus its gap, not a number the app should
  * hardcode.
  */
-export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, tone = "bento" }) => {
+export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => {
     const hue = useGameSurfaceHue();
     // A host-provided exit (an flp game break's Leave — gameFrameExit.ts). Null on a
     // game's own route, where the page header's Back is the way out.
     const exit = useGameFrameExit();
-    const tower = tone === "tower";
-    const wash = useTowerWash();
     return (
-    <GameFrameToneContext.Provider value={tone}>
     <Box
         className={className ? `game-frame ${className}` : "game-frame"}
         sx={[
@@ -111,13 +93,6 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, t
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                ...(tower && {
-                    backgroundColor: wash(TOWER_SLAB.top),
-                    border: "none",
-                    marginBottom: `${14 + TOWER_SLAB_WALL_PX}px`,
-                    // The bevel round the top edge, then the wall.
-                    boxShadow: `inset 0 0 0 2px ${wash(TOWER_SLAB.rim)}, 0 ${TOWER_SLAB_WALL_PX}px 0 ${wash(TOWER_SLAB.right)}`,
-                }),
                 // A host's exit means the game is the screen (an flp break): the panel's
                 // boundary would be the phone's, so its inset, corner and line go. Its strips
                 // lose their band too (GameTimer, GameHud): they sit straight on the ground.
@@ -134,7 +109,6 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, t
             </>
         )}
     </Box>
-    </GameFrameToneContext.Provider>
     );
 };
 
@@ -226,11 +200,11 @@ export interface GameHudProps {
     divider?: boolean;
     className?: string;
     /**
-     * Escape hatch for a HUD that is not one row of facts. Speed Reading's is a
-     * COLUMN — a round label over the run's tick grid — which is what artboard 15
-     * draws (`.hud` with `flex-direction:column;align-items:stretch`). Reach for this
-     * only when the strip genuinely holds a widget rather than labels; the row form is
-     * the one every other game should use.
+     * Escape hatch for a HUD that is not the default row of facts — e.g. Writing Grid's
+     * break strip, pinned right and sized to the Leave arrow's row. (Speed Reading's
+     * COLUMN HUD, a round label over a tick grid, was the original user; it was removed
+     * 2026-11-04.) Reach for this only when the strip genuinely differs; the row form is
+     * the one every game should start from.
      */
     sx?: SxProps<Theme>;
 }
@@ -245,9 +219,8 @@ export interface GameHudProps {
  */
 export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className, sx }) => {
     const hue = useGameSurfaceHue();
-    const tone = useContext(GameFrameToneContext);
-    const onScreen = useGameFrameExit() !== null;
-    const flat = tone !== "bento" || onScreen;
+    // On screen (an flp break's frame) the strip sits straight on the ground: no band.
+    const flat = useGameFrameExit() !== null;
     return (
     <Box
         className={className ? `game-hud ${className}` : "game-hud"}
@@ -303,12 +276,11 @@ export interface GameHudLabelProps {
 
 /** `.hud .lab` — one fact. A `Label` that refuses to wrap; the strip is one line. */
 export const GameHudLabel: React.FC<GameHudLabelProps> = ({ children, color = COLORS.onSurface, className, sx }) => {
-    const tone = useContext(GameFrameToneContext);
     return (
         <Label
             className={className}
             color={color}
-            sx={[{ whiteSpace: "nowrap", ...(tone === "tower" && TOWER_PLATE_PRINT) }, ...(Array.isArray(sx) ? sx : [sx])]}
+            sx={[{ whiteSpace: "nowrap" }, ...(Array.isArray(sx) ? sx : [sx])]}
         >
             {children}
         </Label>
@@ -375,12 +347,9 @@ export interface GameHintProps {
  * `flexShrink: 0` so it survives a board that wants all the height.
  */
 export const GameHint: React.FC<GameHintProps> = ({ children, className }) => {
-    // The faint label ink turns muddy on the gold slab.
-    const tone = useContext(GameFrameToneContext);
     return (
         <Label
             className={className ? `game-hint ${className}` : "game-hint"}
-            color={tone === "tower" ? COLORS.onSurface : undefined}
             sx={{ flexShrink: 0, display: "block", textAlign: "center", padding: "8px 12px 11px" }}
         >
             {children}
@@ -458,9 +427,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     className,
 }) => {
     const hue = useGameSurfaceHue();
-    const tower = useContext(GameFrameToneContext) === "tower";
     const onScreen = useGameFrameExit() !== null;
-    const wash = useTowerWash();
     return (
     <Box
         className={className ? `game-timer ${className}` : "game-timer"}
@@ -475,7 +442,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
             // stack on one panel and have to read as one band of chrome.
             backgroundColor: hue ? RAMP[hue].tint : "transparent",
             borderBottom: `1px solid ${hue ? COLORS.onSurface : COLORS.rowBorder}`,
-            ...((tower || onScreen) && { backgroundColor: "transparent", borderBottom: "none" }),
+            ...(onScreen && { backgroundColor: "transparent", borderBottom: "none" }),
             opacity: dimmed ? 0.35 : 1,
             transition: "opacity 200ms linear",
         }}
@@ -522,9 +489,9 @@ export const GameTimer: React.FC<GameTimerProps> = ({
         <Box
             className="game-timer__track"
             sx={{
-                height: tower ? "8px" : "4px",
-                borderRadius: tower ? "4px" : "2px",
-                backgroundColor: tower ? wash(TOWER_SLAB.right) : COLORS.card,
+                height: "4px",
+                borderRadius: "2px",
+                backgroundColor: COLORS.card,
                 marginTop: "7px",
                 overflow: "hidden",
             }}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, CARD_FLIP_MS } from "../constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, TOWER_CARD_FLIP_MS } from "../constants";
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -41,9 +41,9 @@ export function useCardDrag(
     onDismiss: (direction: 'left' | 'right') => void,
     // resetKey should change whenever a new card is shown so flip-tracking resets
     resetKey: number = 0,
-    // The flip's duration — the lockout below lasts exactly this long. The Deck Tower's
-    // slower flip passes TOWER_CARD_FLIP_MS.
-    flipMs: number = CARD_FLIP_MS,
+    // The flip's duration — the lockout below lasts exactly this long. The flp's card is
+    // the Deck Tower's, with its slower flip (TOWER_CARD_FLIP_MS).
+    flipMs: number = TOWER_CARD_FLIP_MS,
 ): UseCardDragReturn {
     const cardRef = useRef<HTMLDivElement>(null);
     const dragStart = useRef({ x: 0, y: 0 });
@@ -86,7 +86,7 @@ export function useCardDrag(
     // intentionally don't translate the card before it's been flipped).
     const lastMousePos = useRef({ x: 0, y: 0 });
 
-    // Flip-animation lockout. The one-way flip plays a CARD_FLIP_MS linear
+    // Flip-animation lockout. The one-way flip plays a `flipMs` linear
     // transition; a second tap during that window would otherwise be treated as a
     // tap on an already-flipped card and bump shakeNonce, which remounts the front
     // card (key=`front-${shakeNonce}`) and cuts the flip short into a shake. We hold

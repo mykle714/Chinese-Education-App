@@ -16,17 +16,20 @@ const router = Router();
 router.get('/api/onDeck/libraryCards', authenticateToken, handle(onDeckVocabController.getLibraryCards, onDeckVocabController));
 
 // The contents of one built-in collection (?collection=all|learn-now|mastered|
-// mastered-reading|mastered-writing). Replaces the old
-// masteredLibraryCards / nonMasteredLibraryCards pair — see docs/DECKS_FEATURE.md.
+// mastered-reading|mastered-writing) — the Deck Tower's card library reads `all`.
 router.get('/api/onDeck/collectionCards', authenticateToken, handle(onDeckVocabController.getCollectionCards, onDeckVocabController));
 
 // Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target)
 router.get('/api/onDeck/distributedWorkingLoop', authenticateToken, handle(onDeckVocabController.getDistributedWorkingLoop, onDeckVocabController));
 
-// Per-category library card counts (drives the decks page bucket counts)
+// Replacements for the loop cards an flp game break cleared (docs/FLP_GAME_BREAKS.md § 4a)
+router.get('/api/onDeck/loopRefill', authenticateToken, handle(onDeckVocabController.getLoopRefill, onDeckVocabController));
+
+// Per-category library card counts (the card library's band figures, the Account page)
 router.get('/api/onDeck/categoryCounts', authenticateToken, handle(onDeckVocabController.getCategoryCounts, onDeckVocabController));
-// Mastered counts per mastery bar — the fdp's up-to-three Mastered rows (migration 143).
+// Mastered counts per mastery bar (migration 143).
 router.get('/api/onDeck/masteredCounts', authenticateToken, handle(onDeckVocabController.getMasteredCounts, onDeckVocabController));
+// Off-cooldown counts per band of one bar — the Deck Tower's Learning deck.
 router.get('/api/onDeck/flpReadyCounts', authenticateToken, handle(onDeckVocabController.getFlpReadyCounts, onDeckVocabController));
 
 // Bubble-match game pool (15 Target + 10 Comfortable by default)

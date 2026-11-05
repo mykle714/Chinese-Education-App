@@ -2,7 +2,8 @@ import React from "react";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { HeaderCycleChip } from "./PageHeader";
 import { cycleChipWidthCh } from "./cycleChipSizing";
-import { OUTLINED_CHIP_ICON_PX, OUTLINED_CHIP_PAD_Y_PX } from "./pageHeaderSizing";
+import { OUTLINED_CHIP_ICON_PX, outlinedChipSx } from "./pageHeaderSizing";
+import { COLORS } from "../theme/colors";
 import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
 
 /**
@@ -22,18 +23,23 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  *
  * Reads `useTTSSettings`, NOT `useTTS`. The chip never plays anything, and `useTTS`
  * is the playback hook — mounting a playback instance here once let the chip's
- * StrictMode remount cancel the scp's first autoplay word (docs/AUDIO_PLAYBACK.md
+ * StrictMode remount cancel the ancp's first autoplay word (docs/AUDIO_PLAYBACK.md
  * § "Only the speaker stops on unmount").
  *
- * `tone`, `ink`, `sx`, `fitLabels` and `iconPx` let ONE surface reskin it without forking
- * it. `outlined` is the one named reskin: the bare glyph + label in `ink`, bundled by a
- * thin pill outline in that same ink (`OUTLINED_SX`) — it floats as plain text on a
- * scene ground rather than drawing the eye as a filled chip. Used by the Deck Tower study
- * header (TowerStudyHeader, white ink on the sky) and the scp (the ground look's ink).
- * Everywhere else takes the blue mono default.
+ * ONE skin everywhere (since 2026-11-04): the bare glyph + label in `ink`, bundled by a
+ * thin pill outline in that same ink (pageHeaderSizing.ts → `outlinedChipSx`, shared with
+ * HeaderActionChip), the label in 975 Maru SC (`FONTS.cjk`) at its one regular weight. It floats as plain text
+ * rather than drawing the eye as a filled chip. Before 2026-11-04 only the Deck Tower and
+ * the ancp used this skin and every other surface had a filled blue mono chip; the label
+ * now carries the state on every surface (there is no fill to light up when audio is on).
  *
- * Used by: TowerStudyHeader (tower flp), FlashcardsLearnHeader (flp), SortCardsPage (scp), BubbleMatchHeader
- * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeaderControls,
+ * `ink` is the one per-surface choice: it defaults to `COLORS.iconColor` (--ink2, the
+ * header's icon ink) for paper grounds; the tower passes white for the sky and the ancp
+ * its ground look's ink. On a game's accent ground `gameSurfaceSx` re-inks it to full ink
+ * like the header's other icons.
+ *
+ * Used by: TowerStudyHeader (the flp), AddNewCardsPage (ancp), BubbleMatchHeader
+ * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage,
  * IWPlayPage (Immersive World).
  * Documented in: docs/AUDIO_PLAYBACK.md.
  */
@@ -101,57 +107,16 @@ const MODE_CHIP: Record<AudioMode, { icon: string; label: string; ariaLabel: str
 const MODE_LABELS = Object.values(MODE_CHIP).map((m) => m.label);
 const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(MODE_LABELS);
 
-/**
- * The `outlined` skin's label type and glyph, px — a step up from the header chip's
- * 10 px / 13 px now that there is no fill to carry it.
- */
-const OUTLINED_TEXT_PX = 12;
-
-/**
- * The `outlined` skin's pill: a 1px outline in the chip's own `ink` (not `COLORS.border`
- * — the --line2 hairline is built for paper and goes muddy on a scene ground), pill ends
- * like the tower's plates.
- */
-const OUTLINED_SX = (ink: string) =>
-    ({
-        border: `1px solid ${ink}`,
-        borderRadius: "999px",
-        padding: `${OUTLINED_CHIP_PAD_Y_PX}px 10px`,
-        fontSize: OUTLINED_TEXT_PX,
-    }) as const;
 
 const AudioModeChip: React.FC<{
     className?: string;
-    /** The active-state skin (HeaderCycleChip `tone`); blue unless a surface overrides it. */
-    tone?: "ink" | "blu" | "bare";
-    /** The `bare` tone's text colour (HeaderCycleChip `ink`). */
+    /** Glyph, label and outline colour — pick the one that reads on the surface's ground. */
     ink?: string;
-    /** Layered over the chip's own skin (HeaderCycleChip `sx`). */
+    /** Layered over the outlined skin (HeaderCycleChip `sx`). */
     sx?: SxProps<Theme>;
-    /** Size to the labels in the chip's actual font — pass when `sx` changes the font. */
-    fitLabels?: boolean;
-    /** The glyph's size, px (HeaderCycleChip `iconPx`). */
-    iconPx?: number;
-    /**
-     * The scene-ground skin: bare glyph + label in `ink` inside a thin `ink` pill outline,
-     * 12 px type / 15 px glyph, boxed to the longest label. Overrides `tone`, `fitLabels`
-     * and `iconPx`; requires `ink`.
-     */
-    outlined?: boolean;
-}> = ({ className, tone = "blu", ink, sx, fitLabels = false, iconPx, outlined = false }) => {
+}> = ({ className, ink = COLORS.iconColor, sx }) => {
     const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
     const chip = MODE_CHIP[mode];
-
-    // `outlined` resizes the label's font, so the default `ch` width would be wrong:
-    // it always sizes the box to the real labels (fitLabels).
-    const skin = outlined && ink
-        ? {
-              tone: "bare" as const,
-              sx: [OUTLINED_SX(ink), ...(Array.isArray(sx) ? sx : sx ? [sx] : [])] as SxProps<Theme>,
-              fitLabels: true,
-              iconPx: OUTLINED_CHIP_ICON_PX,
-          }
-        : { tone, sx, fitLabels, iconPx };
 
     return (
         <HeaderCycleChip
@@ -159,13 +124,15 @@ const AudioModeChip: React.FC<{
             // surface can restyle one state.
             className={["audio-mode-chip", `audio-mode-chip--${mode}`, className ?? ""].filter(Boolean).join(" ")}
             active={chip.active}
-            // Mid blue rather than the shared ink inversion when audio is on (mute
-            // stays grey). Holds on game grounds too — see gameSurfaceSx.
-            tone={skin.tone}
+            // `bare`: no fill in any state — glyph and label in `ink`, the outline below.
+            tone="bare"
             ink={ink}
-            sx={skin.sx}
-            fitLabels={skin.fitLabels ? MODE_LABELS : undefined}
-            iconPx={skin.iconPx}
+            sx={[outlinedChipSx(ink), ...(Array.isArray(sx) ? sx : sx ? [sx] : [])] as SxProps<Theme>}
+            // The outlined skin resizes the label's font, so `widthCh` (measured in the
+            // chip's mono `ch`) would be wrong: the box is sized to the real labels instead.
+            fitLabels={MODE_LABELS}
+            iconPx={OUTLINED_CHIP_ICON_PX}
+            // Required by HeaderCycleChip but unused once `fitLabels` is set.
             widthCh={MODE_LABEL_WIDTH_CH}
             icon={chip.icon}
             ariaLabel={chip.ariaLabel}

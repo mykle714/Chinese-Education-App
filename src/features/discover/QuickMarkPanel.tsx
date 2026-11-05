@@ -51,7 +51,7 @@ import { SAFE_TOP } from "../../theme/safeArea";
 // The ghosts portal to <body> in viewport coordinates, so the clip never cuts them off.
 //
 // LAYER: feature view (features/discover). Its grid state is `useQuickMarkGrid`; every
-// pack-level consequence of a swipe is the HOST's (SortCardsPage), through the callbacks.
+// pack-level consequence of a swipe is the HOST's (AddNewCardsPage), through the callbacks.
 // Mounted only while expanded, in NodePage's `overlay` slot — a sibling of the page's
 // scroll area, whose `touch-action: none` would otherwise forbid the grid's vertical pan.
 //
@@ -59,7 +59,7 @@ import { SAFE_TOP } from "../../theme/safeArea";
 
 // The grid container's class (passed as MiniVocabCardGrid's `containerClassName`): how
 // the gap-fill slide, the draw window and the morph find the cards.
-const GRID_CLASS = "sort-cards-quick-mark__grid";
+const GRID_CLASS = "add-new-cards-quick-mark__grid";
 
 // OnDeckSection's rounded top — the panel's corners while it is still the slab. Fully
 // open they are square (a maximized page), so the radius only lives in the clip keyframes.
@@ -187,7 +187,7 @@ const MorphGhost = memo(function MorphGhost({ flight, onLanded }: {
     return createPortal(
         <Box
             ref={ref}
-            className="sort-cards-quick-mark__morph-ghost"
+            className="add-new-cards-quick-mark__morph-ghost"
             aria-hidden
             sx={{
                 position: "fixed",
@@ -419,17 +419,17 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
     return (
         <PanelSurface
             ref={panelRef}
-            className="sort-cards-quick-mark"
+            className="add-new-cards-quick-mark"
             sx={{ pointerEvents: phase === "collapsing" ? "none" : undefined }}
         >
-            <Box ref={contentRef} className="sort-cards-quick-mark__content" sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <Box ref={contentRef} className="add-new-cards-quick-mark__content" sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
                 {/* PANEL HEADER — the same final state as a maximized SheetPanel: the
                     app's real PageHeader, no back chevron (the ✕ is the close), and the
                     close cluster in its right slot. The flame rides in the cluster, not
                     PageHeader's own slot, so it sits inboard of the ✕ — and it is shown
-                    because the panel covers scp's header, the study surface's one
+                    because the panel covers ancp's header, the study surface's one
                     "your time is counting" indicator (SheetPanel's showMinutePoints rule). */}
-                <SheetHeaderSlot className="sort-cards-quick-mark__header">
+                <SheetHeaderSlot className="add-new-cards-quick-mark__header">
                     <PageHeader
                         title="Quick Mark"
                         size="node"
@@ -440,7 +440,7 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                             <>
                                 <MinutePointsFireBadge />
                                 <SheetCloseX
-                                    className="sort-cards-quick-mark__close"
+                                    className="add-new-cards-quick-mark__close"
                                     ariaLabel="Back to sorting"
                                     onClick={handleClose}
                                 />
@@ -449,9 +449,9 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                     />
                 </SheetHeaderSlot>
 
-                <PanelLevelRow className="sort-cards-quick-mark__level-row">
+                <PanelLevelRow className="add-new-cards-quick-mark__level-row">
                     <Chip
-                        className="sort-cards-quick-mark__level-chip"
+                        className="add-new-cards-quick-mark__level-chip"
                         label={
                             <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
                                 {difficultyLabel(language, level)}
@@ -466,14 +466,14 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                         }}
                     />
                     <Menu
-                        className="sort-cards-quick-mark__level-menu"
+                        className="add-new-cards-quick-mark__level-menu"
                         anchorEl={levelMenuAnchor}
                         open={Boolean(levelMenuAnchor)}
                         onClose={() => setLevelMenuAnchor(null)}
                     >
                         {DIFFICULTY_LEVELS.map((lvl) => (
                             <MenuItem
-                                className="sort-cards-quick-mark__level-menu-item"
+                                className="add-new-cards-quick-mark__level-menu-item"
                                 key={lvl}
                                 selected={level === lvl}
                                 onClick={() => {
@@ -488,15 +488,15 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                 </PanelLevelRow>
 
                 {/* Legend — what each swipe direction does. */}
-                <Box className="sort-cards-quick-mark__legend" sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 2, px: 2, pb: 0.5 }}>
-                    <LegendItem className="sort-cards-quick-mark__legend-learning" direction="left" />
-                    <LegendItem className="sort-cards-quick-mark__legend-mastered" direction="right" />
+                <Box className="add-new-cards-quick-mark__legend" sx={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 2, px: 2, pb: 0.5 }}>
+                    <LegendItem className="add-new-cards-quick-mark__legend-learning" direction="left" />
+                    <LegendItem className="add-new-cards-quick-mark__legend-mastered" direction="right" />
                 </Box>
 
-                <PanelScroll ref={scrollRef} className="sort-cards-quick-mark__scroll">
+                <PanelScroll ref={scrollRef} className="add-new-cards-quick-mark__scroll">
                     <MiniVocabCardGrid
                         containerClassName={GRID_CLASS}
-                        classPrefix="sort-cards-quick-mark"
+                        classPrefix="add-new-cards-quick-mark"
                         loading={grid.loading}
                         error={grid.error}
                         entries={entries}
@@ -511,10 +511,10 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                                 {grid.hasMore && (
                                     <Box
                                         ref={sentinelRef}
-                                        className="sort-cards-quick-mark__load-sentinel"
+                                        className="add-new-cards-quick-mark__load-sentinel"
                                         sx={{ width: "100%", display: "flex", justifyContent: "center", py: 2 }}
                                     >
-                                        {grid.loadingMore && <DelayedCircularProgress className="sort-cards-quick-mark__load-spinner" />}
+                                        {grid.loadingMore && <DelayedCircularProgress className="add-new-cards-quick-mark__load-spinner" />}
                                     </Box>
                                 )}
                                 {/* Bottom clearance so the last row clears the floating footer pill. */}
@@ -527,7 +527,7 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
 
             <Snackbar
                 key={toast?.seq}
-                className="sort-cards-quick-mark__toast"
+                className="add-new-cards-quick-mark__toast"
                 open={toast !== null}
                 autoHideDuration={QUICK_MARK_UNDO_TOAST_MS}
                 // Ignore clickaway: a swipe on another card is a "click away", and it
@@ -540,7 +540,7 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                 }
                 action={toast?.kind === "undo" ? (
                     <Button
-                        className="sort-cards-quick-mark__undo-button"
+                        className="add-new-cards-quick-mark__undo-button"
                         size="small"
                         onClick={grid.handleUndo}
                         sx={{ color: COLORS.white, fontSize: SIZE.micro, fontWeight: WEIGHT.bold, textTransform: "lowercase" }}

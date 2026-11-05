@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ROUTE_META, findRoute, routeChrome, routeFooterTab, routeShell } from "../routes/routeMeta";
 import { APP_ROUTES } from "../routes/registry";
 import { routeSlideDir } from "../utils/pageTransition";
-import { GAME_REGISTRY } from "../games/registry";
+import { ROUTED_GAMES } from "../games/registry";
 import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
 /**
@@ -73,7 +73,6 @@ describe("findRoute", () => {
   });
 
   it("does not let a parent path swallow its children", () => {
-    expect(findRoute("/flashcards/decks")?.path).toBe("/flashcards/decks");
     expect(findRoute("/flashcards")?.path).toBe("/flashcards");
     expect(findRoute("/dictionary")?.path).toBe("/dictionary");
   });
@@ -88,12 +87,21 @@ describe("findRoute", () => {
     expect(findRoute("/no/such/page")).toBeUndefined();
     // The Discover hub was deleted 2026-10-17; only its /discover/sort drill-in remains.
     expect(findRoute("/discover")).toBeUndefined();
+    // Deleted 2026-11-04 with the old Home page: its legacy paths, the Centers, the
+    // collection/deck pages, the standalone flp, and the tower's old address.
+    for (const gone of [
+      "/flashcards/decks", "/flashcards/mastered", "/flashcards/reading", "/flashcards/writing",
+      "/flashcards/collection/all", "/flashcards/deck/7", "/flashcards/learn", "/deck-tower",
+      "/games/speed-reading", "/games/memory-map", "/games/writing-grid", "/games/superposition",
+    ]) {
+      expect(findRoute(gone)).toBeUndefined();
+    }
   });
 });
 
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
-    "/", "/menu", "/flashcards/decks", "/flashcards/mastered", "/flashcards/learn",
+    "/", "/menu",
     "/games", "/reader", "/dictionary",
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
@@ -102,7 +110,7 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/sort/es",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
-    ...GAME_REGISTRY.map((g) => g.route),
+    ...ROUTED_GAMES.map((g) => g.route),
   ];
   const PLAIN = [
     "/login", "/register", "/flashcards",
@@ -127,27 +135,26 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
 
 describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
   const EXPECTED: Array<[string, string | undefined]> = [
-    // Home and Menu swapped contents (2026-10-10): "/" is the fdp, "/menu" the hub,
-    // and the fdp's old path is a redirect that still lights Home.
-    ["/", "home"],
+    // "/" is the Deck Tower (2026-11-04), the first tab; "/menu" the hub.
+    ["/", "deck"],
     ["/menu", "menu"],
-    ["/flashcards/decks", "home"],
+    ...(isFeatureEnabled("arena")
+      ? ([["/arena", "arena"]] as Array<[string, string | undefined]>)
+      : []),
     // Dictionary took Account's footer slot (2026-10-09); /account is no longer a route.
     ["/dictionary", "dictionary"],
     ["/games", "menu"],
     ...(isFeatureEnabled("community")
       ? ([["/community", "menu"]] as Array<[string, string | undefined]>)
       : []),
-    ["/flashcards/mastered", "home"],
     ["/reader", "menu"],
-    // Prefix-matched node pages.
-    // Sort Cards lights Home since the Discover hub was deleted (2026-10-17).
-    ["/discover/sort/zh", "home"],
-    ["/flashcards/card/7", "home"],
+    // Prefix-matched node pages. Add New Cards and the card detail page are drill-ins
+    // from the Deck Tower, so they light the Deck tab.
+    ["/discover/sort/zh", "deck"],
+    ["/flashcards/card/7", "deck"],
     ["/dictionary/card/好", "dictionary"],
     // Footerless.
     ["/reader/abc", undefined],
-    ["/flashcards/learn", undefined],
     ...(isFeatureEnabled("nightMarket")
       ? ([["/night-market", undefined]] as Array<[string, string | undefined]>)
       : []),
@@ -163,7 +170,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
-    "/games", "/flashcards/mastered", "/reader",
+    "/games", "/reader",
     "/discover/sort/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
@@ -172,7 +179,7 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/settings",
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
   ];
-  const NO_SLIDE = ["/", "/menu", "/dictionary", "/flashcards/decks", "/login", "/flashcards/learn"];
+  const NO_SLIDE = ["/", "/menu", "/dictionary", "/login", ...(isFeatureEnabled("arena") ? ["/arena"] : [])];
 
   it.each(NODE)("%s slides in from the right", (path) => {
     expect(routeSlideDir(path)).toBe("right");
@@ -199,9 +206,9 @@ describe("FIXED: every game page slides up", () => {
    * and simply omitted "/games/word-search" — so Word Search returned null and
    * silently lost the slide-up view transition, even though WordSearchPage renders
    * <LeafPage> exactly like Bubble Match does. Game routes are now derived from
-   * GAME_REGISTRY, so a new game cannot be forgotten.
+   * ROUTED_GAMES, so a new game cannot be forgotten.
    */
-  it.each(GAME_REGISTRY.map((g) => g.route))("%s slides up", (route) => {
+  it.each(ROUTED_GAMES.map((g) => g.route))("%s slides up", (route) => {
     expect(routeSlideDir(route)).toBe("up");
     expect(routeChrome(route)).toBe("leaf");
   });

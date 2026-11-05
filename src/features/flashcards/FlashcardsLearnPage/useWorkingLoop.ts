@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useLaunchCollection } from "../useLaunchCollection";
-import { collectionLaunchParams, collectionMarkFields } from "../collectionRef";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
-import { fetchDistributedWorkingLoop, workingLoopKey, type WorkingLoopRequest } from "../../../api/workingLoop";
-import { peekLaunchLoop, clearLaunchLoop } from "../flpLaunch";
+import { fetchDistributedWorkingLoop, fetchLoopRefill, type WorkingLoopRequest } from "../../../api/workingLoop";
+import { insertBehindFront, removeFromLoop } from "./loopSplice";
 import { CARD_FLY_OUT_MS } from "../constants";
 import { provisionalWords } from "../../../utils/provisionalCards";
 import { useMarkedLentWords } from "../../../hooks/useMarkedLentWords";
@@ -40,20 +38,14 @@ export interface CardDragControls {
     resetDragPosition: () => void;
 }
 
-// Study modes (server/contracts/studyMode.ts): Review/Challenge from the fdp hand, Reading
-// from the Reading Center. null = Study Mix.
-export type { StudyMode, FlpWorld } from "../../../../server/contracts/studyMode";
-import type { StudyMode, FlpWorld } from "../../../../server/contracts/studyMode";
+// The session's flp bar (server/contracts/studyMode.ts) — the Deck Tower world studied.
+export type { FlpWorld } from "../../../../server/contracts/studyMode";
+import type { FlpWorld } from "../../../../server/contracts/studyMode";
 
 interface UseWorkingLoopArgs {
     token: string | null;
-    selectedCategory: string | null;
-    // Difficulty mode for this session, or null for the default Mix distribution.
-    // Drives the loop-fetch distribution, the mark replacement pool, and the
-    // wind-down behavior when the eligible pool is exhausted.
-    mode: StudyMode | null;
-    // The session's flp bar (server/contracts/studyMode.ts): `reading` for the reading flp
-    // (any mode). Drives the loop fetch, the refill, the face and the mark type.
+    // The session's flp bar (server/contracts/studyMode.ts): `reading` for the reading flp.
+    // Drives the loop fetch, the refill, the face and the mark type. Always Study Mix.
     world: FlpWorld;
     // TTS prefetch — warms the in-session blob cache for newly loaded cards.
     prefetch: (entry: VocabEntry) => void;
@@ -114,6 +106,12 @@ export interface UseWorkingLoopReturn {
      * after three would otherwise offer ten. See docs/PROVISIONAL_CARDS.md § 5.
      */
     provisionalReviewed: string[];
+    /**
+     * Take the cards an flp game break cleared out of the loop and refill their slots
+     * (docs/FLP_GAME_BREAKS.md § 4a). Ids not in the loop are ignored. The cards leave at
+     * once; replacements are spliced in behind the front card when they arrive.
+     */
+    replaceGameCleared: (cardIds: readonly number[]) => void;
 }
 
 /**
@@ -128,8 +126,6 @@ export interface UseWorkingLoopReturn {
  */
 export function useWorkingLoop({
     token,
-    selectedCategory,
-    mode,
     world,
     prefetch,
     cardDragRef,
@@ -140,30 +136,11 @@ export function useWorkingLoop({
     // Latest-ref for the counter callbacks (see UseWorkingLoopArgs.onDismissed).
     const countersRef = useRef({ onDismissed, onUndone, onMarked });
     countersRef.current = { onDismissed, onUndone, onMarked };
-    // Which collection this session was launched from (docs/DECKS_FEATURE.md) — null
-    // for an ordinary launch from the Review/Study/Challenge buttons. Read from the flp's own
-    // URL, and threaded into BOTH the initial loop fetch and every mark call (which
-    // is what refills the loop).
-    const launchCollection = useLaunchCollection();
-    // The initial deal's request — the SAME builder the fdp's prefetch uses, so a
-    // handoff from it matches by key (src/api/workingLoop.ts).
-    const loopRequest: WorkingLoopRequest = {
-        category: selectedCategory,
-        mode,
-        world,
-        collection: launchCollection ? collectionLaunchParams(launchCollection) : null,
-    };
-    // A loop Home preloaded for exactly this request (flpLaunch.ts), captured once per
-    // mount. The clear drops EVERY preloaded loop, not just this one — this session is
-    // about to mark cards, which makes the other modes' deals stale. Peeked in an initializer and cleared in an effect — StrictMode may run
-    // the initializer twice, and consuming it there would leave the second run empty.
-    const [handoff] = useState(() => peekLaunchLoop(loopRequest));
-    const [handoffKey] = useState(() => workingLoopKey(loopRequest));
-    useEffect(() => { clearLaunchLoop(); }, []);
-    const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>(() => handoff ?? []);
+    // The deal's request: just the session's world (src/api/workingLoop.ts).
+    const loopRequest: WorkingLoopRequest = { world };
+    const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
-    // No spinner frame when the loop was handed over: the page mounts dealt.
-    const [loading, setLoading] = useState(() => handoff === null);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isUndoing, setIsUndoing] = useState(false);
@@ -174,6 +151,14 @@ export function useWorkingLoop({
     // Used to re-anchor on the card actually on front when a slot is removed.
     const currentIndexRef = useRef(0);
     currentIndexRef.current = currentIndex;
+    // Latest loop, for `replaceGameCleared` (called from an effect after a break, so it
+    // must not close over a stale loop, and must not rebuild on every loop change).
+    const workingLoopRef = useRef(workingLoop);
+    workingLoopRef.current = workingLoop;
+    // Break refills in flight. While one is and the loop is EMPTY (the game cleared every
+    // card), the hook reports `loading`, so neither the empty state nor the Deck Tower's
+    // "loop ran dry → climb out" fires before the replacements land.
+    const [breakRefillsInFlight, setBreakRefillsInFlight] = useState(0);
 
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
     // which slot is currently animating off-screen.
@@ -182,10 +167,9 @@ export function useWorkingLoop({
 
     // Side 1 language for the current card and the next (back-slot) card. Rolled
     // forward on dismiss so the peeking card's language matches what it will be
-    // once promoted to front.
-    // Seeded from the handoff too, so the first dealt frame already shows the right face.
-    const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>(() => handoff ? sideOneForCard(handoff[0], world) : "zh");
-    const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>(() => handoff ? sideOneForCard(handoff[1], world) : "zh");
+    // once promoted to front. Set from the dealt cards when the loop lands (`dealLoop`).
+    const [currentSideOneLanguage, setCurrentSideOneLanguage] = useState<SideOneLanguage>("zh");
+    const [nextSideOneLanguage, setNextSideOneLanguage] = useState<SideOneLanguage>("zh");
 
     // Current entry derived from the working loop.
     const currentEntry: VocabEntry | null = workingLoop.length > 0 ? workingLoop[currentIndex] : null;
@@ -221,10 +205,6 @@ export function useWorkingLoop({
     }, [workingLoop]);
 
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
-    //
-    // A loop the fdp ALREADY fetched (its hand shook while it loaded — flpLaunch.ts) is
-    // adopted instead: `handoff` seeded the state above, so the first render has cards
-    // and no spinner, and the effect below only runs the per-deal side effects for it.
     useEffect(() => {
         // Only the LATEST fetch may apply. Without this, two overlapping fetches (React
         // StrictMode's dev double-mount, or a dep change while one is in flight) BOTH
@@ -234,8 +214,7 @@ export function useWorkingLoop({
         // greyed" bug, 2026-10-06).
         let cancelled = false;
 
-        // Everything a freshly dealt loop needs beyond `setWorkingLoop` — shared by the
-        // adopted handoff and the network fetch so the two cannot drift.
+        // Everything a freshly dealt loop needs beyond `setWorkingLoop`.
         const dealLoop = (cards: VocabEntry[]) => {
             setWorkingLoop(cards);
             setLastMarkUndoSnapshot(null);
@@ -260,14 +239,6 @@ export function useWorkingLoop({
             setNextSideOneLanguage(sideOneForCard(cards[1], world));
         };
 
-        // The handoff answers only the request it was fetched for. A later dep change
-        // (a different category/mode/bar) builds a different key and fetches normally.
-        if (handoff && handoffKey === workingLoopKey(loopRequest)) {
-            dealLoop(handoff);
-            setLoading(false);
-            return () => { cancelled = true; };
-        }
-
         const fetchInitialCards = async () => {
             try {
                 setLoading(true);
@@ -276,9 +247,7 @@ export function useWorkingLoop({
                 const cards = await fetchDistributedWorkingLoop(loopRequest);
                 if (cancelled) return;
 
-                console.log(
-                    `Loaded ${cards.length} cards in distributed working loop${selectedCategory ? ` (category: ${selectedCategory})` : ""}${mode ? ` (mode: ${mode})` : ""}`
-                );
+                console.log(`Loaded ${cards.length} cards in distributed working loop (${world})`);
                 dealLoop(cards);
             } catch (err) {
                 if (cancelled) return;
@@ -298,10 +267,9 @@ export function useWorkingLoop({
     // on `token` would re-fetch the working loop and reset the card stack
     // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
     // "Never reload on token refresh". prefetch/cardDragRef are stable refs;
-    // `loopRequest` is rebuilt every render, but it is a pure function of
-    // selectedCategory/mode/bar + the launch collection (stable per URL).
+    // `loopRequest` is rebuilt every render, but it is a pure function of `world`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [Boolean(token), selectedCategory, mode, world]);
+    }, [Boolean(token), world]);
 
     // Mark card with retry logic.
     // `excludeIds` tells the server which cards are already in the working loop,
@@ -315,25 +283,18 @@ export function useWorkingLoop({
         retryCount = 0
     ): Promise<MarkCardResult | null> => {
         try {
-            // `mode` lets the server cap the replacement card to the mode's
-            // allowed categories (and return newCard:null when exhausted).
-            //
-            // The collection fields matter just as much: THIS call is what refills the
-            // working loop, so a deck-launched session that omitted them would serve
-            // an off-deck card the moment the learner answered correctly
-            // (docs/DECKS_FEATURE.md).
+            // THIS call is what refills the working loop: the server returns a
+            // replacement card (`newCard`) drawn on the session's bar.
             const data = await markFlashcard({
                 cardId,
                 isCorrect,
                 type: markType,
                 excludeIds,
-                mode: mode ?? undefined,
                 world: world === "core" ? undefined : world,
                 // NOT merely diagnostic: once a card's core pbh reaches 6 the server
                 // records know marks ONLY from this surface (docs/MASTERY_REWORK.md § 6).
                 surface: FLP_MARK_SURFACE,
                 writing,
-                ...collectionMarkFields(launchCollection),
             });
 
             // A SUPPRESSED mark (the card's know clock had not finished cooling —
@@ -364,12 +325,7 @@ export function useWorkingLoop({
         }
         // No `token` dep: markFlashcard reads the header at call time, so this
         // callback's identity survives a silent refresh (CLAUDE.md ⛔ rule).
-        // `launchCollection` is likewise omitted: it is parsed from this page's own
-        // URL, which cannot change without remounting the flp, so the closure can
-        // never go stale — and listing it would rebuild this callback on every
-        // render that re-parses the query string.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, world]);
+    }, [world]);
 
     // Removes `cardId` from the loop and re-anchors currentIndex on whichever card is
     // on front RIGHT NOW (read via currentIndexRef), so the visible card does not jump.
@@ -481,13 +437,12 @@ export function useWorkingLoop({
                     // Card passed, but the server has no replacement — wind the loop
                     // down by removing the just-passed card instead of recycling it.
                     //
-                    // This is no longer mode-only. The server honors the know
-                    // cooldown rather than re-serving a resting card, so ANY session can
-                    // legitimately run out: a mode/deck/Mastered round when its allowed
-                    // pool is spent, and even an unrestricted round when every card is
-                    // cooling and the dictionary has no more words to lend. Keeping the
-                    // old `mode &&` guard would recycle the passed card forever in those
-                    // sessions, re-showing a card the server just declined to serve.
+                    // The server honors the know cooldown rather than re-serving a resting
+                    // card, so a session can legitimately run out — a reading/writing
+                    // session when every card is cooling on its bar, and even a core one
+                    // when every card is cooling and the dictionary has no more words to
+                    // lend. Recycling the passed card instead would re-show a card the
+                    // server just declined to serve.
                     //
                     // Remove by id (the optimistic currentIndex has already advanced, so
                     // index math would be brittle) and re-anchor on the card now on
@@ -522,7 +477,7 @@ export function useWorkingLoop({
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
-    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, removeCardAndReanchor, noteMarkedLent, prefetch, cardDragRef, mode, world]);
+    }, [workingLoop, isAnimating, currentIndex, activeFrontSlot, currentSideOneLanguage, nextSideOneLanguage, markCard, removeCardAndReanchor, noteMarkedLent, prefetch, cardDragRef, world]);
 
     const handleUndoLastMark = useCallback(async () => {
         if (!lastMarkUndoSnapshot || isAnimating || isUndoing) return;
@@ -561,12 +516,71 @@ export function useWorkingLoop({
 
     const clearUndo = useCallback(() => setLastMarkUndoSnapshot(null), []);
 
+    // ── Break clears (docs/FLP_GAME_BREAKS.md § 4a) ─────────────────────────────
+    // A correct game mark on a loop card is the game's version of a right swipe, so the
+    // card leaves the loop and its slot is refilled — otherwise the flp dealt the same
+    // cards straight after the game (2026-11-03 report). Removed at once, refilled in one
+    // `GET /api/onDeck/loopRefill` rather than per mark, because the games' mark calls
+    // know nothing of the loop's session params.
+    //
+    // Runs between the game and the next card (the stack is behind the break's results
+    // card, so no swipe is in flight); only the refill can land later, which is why the
+    // insert goes through an updater against the live loop.
+    const replaceGameCleared = useCallback((cardIds: readonly number[]) => {
+        const before = { loop: workingLoopRef.current, index: currentIndexRef.current };
+        const inLoop = new Set(cardIds.filter((id) => before.loop.some((card) => card.id === id)));
+        if (inLoop.size === 0) return;
+
+        const after = removeFromLoop(before, inLoop);
+        setWorkingLoop(after.loop);
+        setCurrentIndex(after.index);
+        // The undo snapshot holds the old loop, cleared cards and all.
+        setLastMarkUndoSnapshot(null);
+        // A new front card opens on its own weaker face, unflipped; a new back card
+        // peeks with its own face. An unchanged card keeps the face it is showing.
+        const ringAt = (state: typeof after, offset: number) =>
+            state.loop.length > offset ? state.loop[(state.index + offset) % state.loop.length] : null;
+        const front = ringAt(after, 0);
+        const back = ringAt(after, 1);
+        if (front && front.id !== ringAt(before, 0)?.id) {
+            setCurrentSideOneLanguage(sideOneForCard(front, world));
+            cardDragRef.current?.resetCard();
+        }
+        if (back && back.id !== ringAt(before, 1)?.id) setNextSideOneLanguage(sideOneForCard(back, world));
+
+        setBreakRefillsInFlight((n) => n + 1);
+        fetchLoopRefill(loopRequest, [...inLoop], before.loop.map((card) => card.id))
+            .then((cards) => {
+                if (cards.length === 0) return; // pool spent: the loop winds down, as for a swipe
+                const wasEmpty = workingLoopRef.current.length === 0;
+                const wasSingle = workingLoopRef.current.length === 1;
+                setWorkingLoop((prevLoop) => {
+                    const next = insertBehindFront({ loop: prevLoop, index: currentIndexRef.current }, cards);
+                    setCurrentIndex(next.index); // idempotent, as in removeCardAndReanchor
+                    return next.loop;
+                });
+                cards.forEach((card) => prefetch(card));
+                // Only an emptied loop gets a new front; a one-card loop gets a new back.
+                if (wasEmpty) {
+                    setCurrentSideOneLanguage(sideOneForCard(cards[0], world));
+                    setNextSideOneLanguage(sideOneForCard(cards[1] ?? cards[0], world));
+                    cardDragRef.current?.resetCard();
+                } else if (wasSingle) {
+                    setNextSideOneLanguage(sideOneForCard(cards[0], world)); // the ring wraps to the first insert
+                }
+            })
+            .catch((err) => console.error("Break refill failed; the loop keeps its remaining cards:", err))
+            .finally(() => setBreakRefillsInFlight((n) => n - 1));
+        // `loopRequest` is a pure function of stable session inputs (see the fetch effect).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [world, prefetch, cardDragRef]);
+
     return {
         workingLoop,
         currentIndex,
         currentEntry,
         nextEntry,
-        loading,
+        loading: loading || (breakRefillsInFlight > 0 && workingLoop.length === 0),
         error,
         isAnimating,
         isUndoing,
@@ -583,5 +597,6 @@ export function useWorkingLoop({
         provisionalSeen,
         /** Lent words this session REVIEWED; drives the "keep these" offers. */
         provisionalReviewed,
+        replaceGameCleared,
     };
 }

@@ -25,8 +25,10 @@ interface FakeCard {
   definition?: string;
 }
 
-function fakeDal(cards: FakeCard[], initialSlots: MemoryMapSlotRow[] = []) {
+function fakeDal(cards: FakeCard[], initialSlots: MemoryMapSlotRow[] = [], initialFrame: number | null = null) {
   const slots = [...initialSlots];
+  // users."memoryMapFrameAspect" for the one fake user.
+  const frame = { aspect: initialFrame };
   let nextId = Math.max(0, ...slots.map((s) => s.slotId)) + 1;
   const byId = new Map(cards.map((c) => [c.id, c]));
 
@@ -92,8 +94,17 @@ function fakeDal(cards: FakeCard[], initialSlots: MemoryMapSlotRow[] = []) {
     async isReadingMastered(_u, _l, id) {
       return byId.get(id)?.mastered === true;
     },
+    async getFrameAspect() {
+      return frame.aspect;
+    },
+    async resetMap(_u, _l, aspect, onlyIfUnframed) {
+      if (onlyIfUnframed && frame.aspect !== null) return false;
+      frame.aspect = aspect;
+      slots.length = 0;
+      return true;
+    },
   };
-  return { dal, slots, cards };
+  return { dal, slots, cards, frame };
 }
 
 /** A lender that mints new lent cards on demand, recording what it was asked for. */
@@ -246,5 +257,41 @@ describe('MemoryMapService.graduate', () => {
       replacement: null,
     });
     expect(slots.map((s) => s.vocabEntryId)).toEqual(before);
+  });
+});
+
+/**
+ * The frame (docs/MEMORY_MAP_GAME.md § 2.4b, § 6a): the first framed load stores the
+ * client's aspect and wipes a pre-frame map; after that the stored frame governs and a
+ * load's aspect is ignored.
+ */
+describe('MemoryMapService frame', () => {
+  it('frames an unframed learner and wipes their pre-frame map, announcing no growth', async () => {
+    const cards = ownCards(80);
+    const { dal, frame } = fakeDal(cards);
+    const service = new MemoryMapService(dal, fakeLender(cards).lender, seeded(20));
+    // A map spawned before frames existed: no aspect sent, nothing stored.
+    const legacy = await service.loadMap('u', 'zh');
+    expect(legacy.frameAspect).toBeNull();
+    const legacySlotIds = legacy.slots.map((s) => s.slotId);
+
+    const framed = await service.loadMap('u', 'zh', 0.55);
+    expect(frame.aspect).toBe(0.55);
+    expect(framed.frameAspect).toBe(0.55);
+    expect(framed.words).toHaveLength(MEMORY_MAP_CAPACITY);
+    // Regenerated: every slot is new, and the wipe is not announced as growth.
+    expect(framed.slots.some((s) => legacySlotIds.includes(s.slotId))).toBe(false);
+    expect(framed.newlyPlaced).toEqual([]);
+  });
+
+  it('ignores a load’s aspect once the learner is framed', async () => {
+    const cards = ownCards(80);
+    const { dal, frame } = fakeDal(cards, [], 0.5);
+    const service = new MemoryMapService(dal, fakeLender(cards).lender, seeded(21));
+    const first = await service.loadMap('u', 'zh', 0.5);
+    const again = await service.loadMap('u', 'zh', 1.9);
+    expect(frame.aspect).toBe(0.5);
+    expect(again.frameAspect).toBe(0.5);
+    expect(again.slots.map((s) => s.slotId)).toEqual(first.slots.map((s) => s.slotId));
   });
 });

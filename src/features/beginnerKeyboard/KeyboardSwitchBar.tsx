@@ -76,6 +76,12 @@ const SEGMENTS: { source: KeyboardSource; label: string; ariaLabel: string; cjk:
 interface KeyboardSwitchBarProps {
   /** The keyboard the learner is on now; the other segment is the offer. */
   source: KeyboardSource;
+  /**
+   * False hides the 写 · ā · ABC toggle and leaves only the close chevron — for a
+   * field locked to one keyboard (§ 6z-3b, `data-beginner-keyboard-lock`), where a
+   * toggle with one usable segment would be a control that does nothing.
+   */
+  showToggle?: boolean;
   /** False parks the row behind the keyboard; true slides it out. */
   up: boolean;
   /** Switch to another keyboard. Never called for the one already up. */
@@ -84,7 +90,7 @@ interface KeyboardSwitchBarProps {
   onDismiss: () => void;
 }
 
-export default function KeyboardSwitchBar({ source, up, onSelect, onDismiss }: KeyboardSwitchBarProps) {
+export default function KeyboardSwitchBar({ source, showToggle = true, up, onSelect, onDismiss }: KeyboardSwitchBarProps) {
   return (
     <Box
       className="keyboard-switch-bar__slot"
@@ -117,34 +123,36 @@ export default function KeyboardSwitchBar({ source, up, onSelect, onDismiss }: K
           transition: switchBarTransition(up),
         }}
       >
-        <Box
-          className="keyboard-switch-bar__toggle"
-          role="group"
-          aria-label="Keyboard"
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            p: '2px',
-            gap: '2px',
-            borderRadius: 2,
-            backgroundColor: KEYBOARD_COLORS.well,
-          }}
-        >
-          {SEGMENTS.map((segment) => (
-            <SwitchSegment
-              key={segment.source}
-              className={`keyboard-switch-bar__segment keyboard-switch-bar__segment--${segment.modifier}`}
-              label={segment.label}
-              ariaLabel={segment.ariaLabel}
-              // 写 takes the app's CJK face rather than ForeignText: this is a key
-              // CAP, not a word the learner is being taught, so it must not carry
-              // pinyin above it.
-              fontFamily={segment.cjk ? FONTS.cjk : FONTS.sans}
-              active={source === segment.source}
-              onClick={() => onSelect(segment.source)}
-            />
-          ))}
-        </Box>
+        {showToggle && (
+          <Box
+            className="keyboard-switch-bar__toggle"
+            role="group"
+            aria-label="Keyboard"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              p: '2px',
+              gap: '2px',
+              borderRadius: 2,
+              backgroundColor: KEYBOARD_COLORS.well,
+            }}
+          >
+            {SEGMENTS.map((segment) => (
+              <SwitchSegment
+                key={segment.source}
+                className={`keyboard-switch-bar__segment keyboard-switch-bar__segment--${segment.modifier}`}
+                label={segment.label}
+                ariaLabel={segment.ariaLabel}
+                // 写 takes the app's CJK face rather than ForeignText: this is a key
+                // CAP, not a word the learner is being taught, so it must not carry
+                // pinyin above it.
+                fontFamily={segment.cjk ? FONTS.cjk : FONTS.sans}
+                active={source === segment.source}
+                onClick={() => onSelect(segment.source)}
+              />
+            ))}
+          </Box>
+        )}
 
         {/* Pushes the dismissal to the far edge, away from the switch: the two
             are different kinds of exit and a mis-tap between them is costly —

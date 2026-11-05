@@ -5,6 +5,9 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import MobileTabScreen from "./MobileTabScreen";
 import { type PageHeaderSize } from "./PageHeader";
 import { usePageSlide } from "../hooks/usePageSlide";
+import type { ScreenPoint } from "../utils/pageTransition";
+import type { FooterTab } from "./MobileFooter";
+import { useFooterTabOverride } from "./footerTabOverride";
 
 // NODE PAGE — a hub that is still part of lateral navigation. See
 // docs/LEAF_NODE_PAGES.md.
@@ -33,13 +36,27 @@ interface NodePageProps {
     // Where the back arrow goes. Invoked IMMEDIATELY (the destination mounts beneath)
     // while a clone of this page slides right on top — see usePageSlide's `exit`.
     onBack: () => void;
+    /**
+     * Close Back with the circle transition onto this viewport point instead of the slide
+     * to the right — for a page opened WITH the circle (useSlideNavigate `circleFrom`),
+     * the same as LeafPage's prop (docs/LEAF_NODE_PAGES.md § The circle transition).
+     * Today: ancp opened from the Deck Tower's mini sort platform. Undefined: the slide.
+     */
+    exitCircleTo?: ScreenPoint;
+    /**
+     * A footer tab whose tap plays this page's Back (the back arrow's exit, circle
+     * included) instead of the footer's plain jump — for a page whose Back leads where that
+     * tab does (footerTabOverride.ts). Today: ancp opened from the Deck Tower, on "deck".
+     * Undefined: the footer navigates as usual.
+     */
+    backOnFooterTab?: FooterTab;
     headerExtraActions?: ReactNode;
     // Forwarded to MobileTabScreen -> PageHeader. Pass "dense" on a node page whose
     // header carries three or more right-slot actions (e.g. Card Detail).
     headerSize?: PageHeaderSize;
     // Header title + back-arrow ink, forwarded to MobileTabScreen → PageHeader
     // `titleColor`. Only for a node page whose ground the default ink cannot read on —
-    // today scp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
+    // today ancp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
     headerTitleColor?: string;
     surfaceColor?: string;
     // Decoration behind the header and content. See MobileTabScreen.backdrop.
@@ -81,6 +98,8 @@ interface NodePageProps {
 const NodePage: React.FC<NodePageProps> = ({
     title,
     onBack,
+    exitCircleTo,
+    backOnFooterTab,
     headerExtraActions,
     headerSize,
     headerTitleColor,
@@ -99,9 +118,10 @@ const NodePage: React.FC<NodePageProps> = ({
     const { surfaceRef, style, exit } = usePageSlide({ axis: "x" });
 
     // Only the back arrow animates: navigate (destination mounts beneath) while a
-    // clone of this page slides out to the right on top. Footer-tab taps inside
-    // MobileTabScreen navigate normally (no slide).
-    const handleBack = () => exit(onBack);
+    // clone of this page slides out to the right on top. Footer-tab taps navigate
+    // normally (no slide) — except `backOnFooterTab`, which plays this same exit.
+    const handleBack = () => exit(onBack, exitCircleTo);
+    useFooterTabOverride(backOnFooterTab, handleBack);
 
     return (
         <Surface ref={surfaceRef} className="node-page" style={style}>

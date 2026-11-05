@@ -7,7 +7,7 @@
  * `POST /api/diagnostics/perf` endpoint in server.ts, which receives batches
  * emitted by src/utils/perfDiagnostics.ts — and prints per-route percentile
  * breakdowns so we can diagnose the PPE-only "buttons take 1–2s before
- * working" lag on the mobile-demo footer/decks.
+ * working" lag on the mobile-demo footer and landing page.
  *
  * The key question this answers: of the total tap→paint lag, how much is
  *   inputDelay   (main thread busy BEFORE the handler — click delay / stall)
@@ -18,7 +18,7 @@
  *
  * Usage (from server/):
  *   npx tsx scripts/analyze-client-perf.ts                 # all data
- *   npx tsx scripts/analyze-client-perf.ts --path /flashcards/decks
+ *   npx tsx scripts/analyze-client-perf.ts --path /
  *   npx tsx scripts/analyze-client-perf.ts --since 2026-06-13
  *   npx tsx scripts/analyze-client-perf.ts --min 500       # only taps ≥500ms
  *

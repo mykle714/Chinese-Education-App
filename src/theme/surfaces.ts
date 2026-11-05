@@ -7,8 +7,7 @@ import { COLORS } from "./colors";
 import { SHADOW } from "./shadows";
 
 /**
- * The corner radius of a CARD-SIZED surface (~the width of a flashcard face or a
- * Mastery Center tile). Exported as a number as well as through `CARD_SURFACE` because
+ * The corner radius of a CARD-SIZED surface (~the width of a flashcard face). Exported as a number as well as through `CARD_SURFACE` because
  * several places have to clip children to the same curve — the card's inner clip box,
  * the icon layer, the fie canvas — and a mismatch there shows as a hairline of icon
  * poking past the corner.

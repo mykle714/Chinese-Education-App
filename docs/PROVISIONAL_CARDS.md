@@ -22,7 +22,7 @@ punished exactly the learner who most needed to practise — the new one:
 | Match Speed | 20 (`ENTRY_GATE_CARDS`) + "no on-mode cards" | `src/games/match-speed/constants.ts` |
 | Speed Reading | 20 (`ENTRY_GATE_CARDS`) | `src/games/speed-reading/constants.ts` |
 | Word Search | 9 distinct-character words | `src/games/word-search/constants.ts` |
-| flp | 20 (`MIN_LIBRARY_CARDS`) | `src/features/flashcards/FlashcardsDecksPage.tsx` |
+| flp | 20 (`MIN_LIBRARY_CARDS`) | the old Home page (`FlashcardsDecksPage.tsx`, since deleted) |
 
 They are now **baselines** — how many cards the surface *wants*, not a bar the learner
 must clear — and they live in exactly one place:
@@ -89,7 +89,7 @@ Current classification (all call sites):
 | `findHeldProvisional` (the re-lend source) | PROVISIONAL | `ProvisionalCardDAL.ts` |
 | `getLibraryDistractors` (Speed Reading filler characters) | PLAYABLE | `SpeedReadingDAL.ts` |
 | `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts` |
-| `getCategoryCounts` (decks page deck sizes) | SORTED | `OnDeckVocabService.ts` |
+| `getCategoryCounts` (band figures: td's cards page filter keys, Account) | SORTED | `OnDeckVocabService.ts` |
 | `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
 | community feed | SORTED | `CommunityLayoutDAL.ts` |
 | `estimateLevel`, discover supply, quick-mark supply, `_hydrateCards.sorted`, `getProgress` | SORTED | `StarterPacksService.ts` |
@@ -258,7 +258,7 @@ The end-of-session "sort these cards" CTA remains the pressure valve.
 |---|---|---|
 | `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading, Bucket Drop | Skipped when `need` is set (a partial refill — see below) |
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
-| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`. Also called by Home's **preload** (`preloadFlpSessions`, `src/features/flashcards/flpLaunch.ts`), so a learner can be lent cards on landing without tapping Start; an unplayed lent card is re-lent next time (§ 3b), not re-minted |
+| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`. Called when a Deck Tower study session deals its loop (`useWorkingLoop`); an unplayed lent card is re-lent next time (§ 3b), not re-minted |
 
 **Partial refills provision only if the game opts in.** Bubble Match's *Play Again*
 sends `need=N` to swap out only the pairs the player matched; lending on every tap
@@ -278,8 +278,8 @@ guard from `need === undefined` to `need === undefined || lendOnRefill`. Hydra B
 is the only such surface today (built 2026-08-18). This is
 deliberately a **separate list from `CardBaselineSurface`**: "how many cards do you need
 up front" and "may you lend mid-run" are orthogonal, and Hydra answers the first with
-"none". The collection/deck restriction has **no** opt-out — a restricted round plays
-the set the learner chose, rolling supply or not.
+"none". The focus restriction has **no** opt-out — a focused round plays
+the day's set, rolling supply or not.
 
 An unrecognized or missing `surface` param (an older client) falls back to the requested
 distribution's own total, so it still never blocks.
@@ -344,7 +344,7 @@ That is the intended shape: the cooldown exists precisely so that re-answering a
 inside its window earns nothing, and a learner who has reviewed their whole deck today
 should reach the end of the session rather than be handed an endless supply of borrowed
 words. It is tracked, not silent — the `[MarkSuppressed]` log carries the serving
-surface so tier-3 suppression can be told apart from the deck/collection suppression
+surface so tier-3 suppression can be told apart from the focus-mode suppression
 that is intended.
 
 #### Provisional rows are not ordinary candidates
@@ -397,9 +397,8 @@ same 16 on every subsequent entry.
 
 Two sessions never reach it:
 
-* **collection-restricted rounds** (`?deck=`, `?collection=`) — a deck round made of
-  non-deck words is not that deck. They *do* reach tier 3 now, so a deck whose cards are
-  all resting replays them instead of showing an empty round;
+* **focused rounds** (`CollectionFilter` `{ kind: 'focus' }`, [FOCUS_MODE.md](./FOCUS_MODE.md)) —
+  a round padded with words outside the day's set is not that day's set;
 * **partial game refills** (`need` is set) for games that keep the exemption — Bubble
   Match's *Play Again*. A rolling-supply surface (Hydra Bubbles) opts out and may lend
   on a refill.
@@ -429,7 +428,7 @@ Whether the notice can **name** the words is a per-surface property, shared as
 
 An itemized notice shows a **grid of the app's real mini vocab cards, two per row**,
 one per lent card (`src/components/ProvisionalCardGrid.tsx`). The cards are
-`MiniVocabCard` itself — the same 92×132 thumbnail the decks page, the collection view,
+`MiniVocabCard` itself — the same 92×132 thumbnail the Deck Tower's cards page,
 Quick Mark and the flashcard back render — not a preview-only card design. A bare word
 list was the first version and was not enough: a learner handed words they never sorted
 cannot judge them without the meaning, and cannot recognise them later if the preview
@@ -635,79 +634,34 @@ Reaching the end of that ladder is a genuine dead end, so the copy says so plain
 ("there aren't enough words with distinct characters left — try another game") rather
 than the old, now-false "study more cards to unlock it".
 
-Match Speed has a related wrinkle. Its restricted modes are
-**Review = Comfortable + Mastered** and **Challenge = Unfamiliar + Target**
-(`MODE_CONFIGS` in `src/games/match-speed/constants.ts`).
-
-A lent card starts with an **empty mark history**, so it is Unfamiliar. Provisioning
-therefore fills **Challenge's** buckets for free — but it can never fill **Review's**:
-Comfortable and Mastered are *earned*, not granted, so a learner with no real progress
-has nothing on-mode however many cards we lend them.
-
-Rather than block Review for everyone who hasn't got a card comfortable yet, a run with
-nothing on-mode **widens its fallback order** to all four buckets for that run only
-(`relaxed` in `MatchSpeedStage.tsx`). The mode's weights are untouched, so once real
-on-mode cards exist it plays exactly as designed.
-
-### The same asymmetry on flp
-
-flp's study modes split identically (`MODE_CONFIGS`, `OnDeckVocabService.ts`):
-**Review = Comfortable + Mastered**, **Challenge = Unfamiliar + Target**. (The third mode,
-**Reading**, allows all four bands like Study Mix but reads them off the READING bar, so a
-lent card — empty history — bands reading-Unfamiliar and the mode may lend.)
-
-`FlashcardsDecksPage` therefore treats them differently:
-
-* **Challenge has no eligibility check at all.** Its buckets are exactly what provisioning
-  fills, so the server can always build a Challenge loop. The old check read `categoryCounts`,
-  which is SORTED-only and therefore `0` for a brand-new learner — gating on it would
-  have quietly re-introduced a card-count block on a flp entry point.
-* **Review keeps its check.** Comfortable and Mastered are *earned* bands that no amount
-  of lending can populate, so greying Review is an honest statement about the learner's
-  progress rather than a card-count wall — the same category of restriction as Word
-  Search being zh-only.
-
-**Settled:** flp Review does **not** degrade. `MODE_CONFIGS.review.allowed` stays exactly
-`['Comfortable','Mastered']` and `MODE_CONFIGS.challenge.allowed` exactly
-`['Unfamiliar','Target']` — the `allowed` list is a hard filter on both the initial loop
-and every refill, so a Review loop can never serve an Unfamiliar card no matter how empty
-the buckets are. Do not "fix" a thin Review loop by widening `fillOrder`: a Review session
-padded with cards the learner has never seen is not a review session.
-
-The consequence is deliberate — Match Speed Review degrades (widened fallback) where flp
-Review greys out. Match Speed can degrade because its board only needs *pairs*, and a pair
-of unfamiliar cards is still a playable board; flp Review's whole purpose is "show me cards
-I mostly know", which has no meaningful degraded form.
+Match Speed and the flp both play **Study Mix** only — all four utcm bands — so a lent
+card (empty history, Unfamiliar) is always on-mode. (The Review / Challenge band subsets
+that once made lending unable to fill a round were removed with
+[DEFERRED_WORK.md](./DEFERRED_WORK.md) § 31.)
 
 ### Which flp sessions may be topped up with lent cards
 
-The same asymmetry decides who gets a mid-loop top-up when every card is cooling. One rule,
-`canLendProvisional` (`OnDeckVocabService.ts`), governs both the initial loop and the refill:
+When every card is cooling, one rule — `canLendProvisional` (`OnDeckVocabService.ts`) —
+decides whether the initial loop and the refill may lend:
 
-> Lend only when **`Unfamiliar` is a servable category** for this round **and** the round is
-> **unrestricted** (no `?deck=`, no `?collection=mastered`).
+> Lend only when the round is **unrestricted** (`collection` unset). A focused world's
+> round (`CollectionFilter` `{ kind: 'focus' }`) never lends.
 
-This same predicate now gates the **tier-2 lend** described in § 4b, not just the
-all-cards-cooling case below — the two are the same call site.
+This same predicate gates the **tier-2 lend** described in § 4b — the two are the same
+call site.
 
 | Session | All cards cooling ⇒ |
 |---|---|
-| Study (Mix) | lend to fill the 10-card loop |
-| Challenge | lend — `Unfamiliar` is one of its buckets |
-| Review | **empty**; `Comfortable`/`Mastered` are earned, and a lent card is neither |
-| `?collection=mastered` | **empty**; the collection filter would drop the lent card anyway |
-| `?deck=<id>` | **empty**; a lent card *would* pass `vetDeckOrProvisionalClause`, but a round named after a deck must not be made of non-deck words |
+| Study Mix (every flp session) | lend to fill the 10-card loop |
+| Focused world | **short / empty**; a lent card is outside the day's set |
 
-Written as one predicate rather than a mode/collection switch, so a future mode or
-collection gets the right answer by construction.
-
-The restricted rows come back **short or empty on purpose** — there is no cooled-card last
+The focused case comes back **short or empty on purpose** — there is no cooled-card last
 resort any more (`fetchCooledFallbackCards` and `pickLeastRecentlyCorrectFlp` are deleted).
 The client shows a "resting" empty state (`emptyMessage` in `FlashcardsLearnPage.tsx`), and
 `POST /api/flashcards/mark` returns **200 with `newCard: null`** rather than a 404 so
-`useWorkingLoop` winds the loop down cleanly. Note the *baseline* `ensureBaseline('flp')`
-call still runs for restricted sessions — that is the pre-existing cold-start guard and is
-unchanged; only the mid-loop top-up is gated by `canLendProvisional`.
+`useWorkingLoop` winds the loop down cleanly. A focused loop also skips the *baseline*
+top-up (`OnDeckVocabController.getDistributedWorkingLoop` → `ensureBaselineForSurface` is
+not called for `collection.kind === 'focus'`), so it never lends at any point.
 
 ---
 
@@ -720,12 +674,12 @@ promoted into the real deck.
 
 ### Set mode
 
-`/discover/sort/:language?set=provisional&words=a,b,c` hands `SortCardsPage` a **fixed
+`/discover/sort/:language?set=provisional&words=a,b,c` hands `AddNewCardsPage` a **fixed
 set** instead of the open-ended level-based supply. Each card becomes its own pack-of-1,
 so all the existing pack machinery (drag, undo, resolved markers) works unchanged.
 
 Two differences: the queue is **never replenished**, and the page **ends itself** as
-soon as the queue empties. The ending is an effect on `queue.length` (SortCardsPage's
+soon as the queue empties. The ending is an effect on `queue.length` (AddNewCardsPage's
 set-mode exit effect), not a call inside the sorting handler, so *every* way of
 emptying the set is covered: the last card sorted, the last card skipped, a failed sort
 POST, or a set that came back already empty because the cards were sorted in another tab.
@@ -739,7 +693,7 @@ How it ends depends on whether the learner resolved anything (`resolvedCount`, s
 
 | Case | Behaviour |
 |---|---|
-| At least one card sorted/skipped | The page holds still on **`ProvisionalSortDonePopup`** (`src/components/ProvisionalSortDonePopup.tsx`) — a non-minimizable popup over an otherwise empty board offering two exits: **Back to \<origin\>** and **Go to Home** (`/`). |
+| At least one card sorted/skipped | The page holds still on **`ProvisionalSortDonePopup`** (`src/components/ProvisionalSortDonePopup.tsx`) — a non-minimizable popup over an otherwise empty board offering two exits: **Back to \<origin\>** and **Go to Deck Tower** (`/`, main world; `onDeckTower`). |
 | Nothing resolved (the set was already empty) | Silent exit, exactly as before — there is nothing to confirm. |
 
 The popup exists because the old unconditional `navigate(-1)` fired on the same beat as
@@ -747,13 +701,13 @@ the last card leaving the board: the learner's final sort read as the card vanis
 an instant route change, with no acknowledgement that anything landed.
 
 **Back** runs `exitToOrigin`: `navigate(-1)` normally, falling back to the recorded origin
-and then `/` (Home) when this page is the first history entry (deep-link or reload). The
+and then `/` (the Deck Tower) when this page is the first history entry (deep-link or reload). The
 same callback backs the NodePage back arrow in this state, so there is one exit path.
 
 **Naming the origin.** `ProvisionalSortOffer` appends `&from=<pathname>` when it opens the
 flow, and `originLabelFor` (`src/utils/originLabel.ts`) turns that into a label — game
 titles read out of `GAME_REGISTRY` (so a renamed game renames the button), plus a small map
-for the non-game origins (flp, the fdp at `/`, labelled "Home"; games hub). An unrecognised or missing
+for the non-game origins (`/`, labelled "Deck Tower" — the td-hosted flp; games hub). An unrecognised or missing
 origin degrades to a plain **Go back**.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding
@@ -791,7 +745,7 @@ Dictionary page's eip and as `LearningToggle` on the dictionary cdp — LEAF_NOD
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
 confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
-its history and deck memberships; `vetSortedClause()` reads stop seeing it, and a re-add
+its history (and any legacy `deck_cards` rows); `vetSortedClause()` reads stop seeing it, and a re-add
 via `addToLibrary` promotes it back in place. Because it is now an ordinary held
 provisional row, it can be re-lent into a short round like any other (`findHeldProvisional`).
 Code: `VocabEntryService.removeFromLibrary` → `VocabEntryDAL.demoteLibraryRowToProvisional`;
@@ -799,22 +753,6 @@ re-add: `VocabEntryService.addToLibrary` → `VocabEntryDAL.findBucketRowByUserA
 `insertLibraryRow` / `promoteRowToLibrary`.
 
 ---
-
-## 7b. Playing a deck that is too small
-
-A game or flp launched from a user-authored deck (`?deck=<id>`,
-[DECKS_FEATURE.md](./DECKS_FEATURE.md)) uses this same top-up. Two rules keep the
-two features honest about each other:
-
-* **Lent cards ARE servable in a deck-restricted round.** The selection clause is
-  `vetDeckOrProvisionalClause` — "in the deck, OR lent for this session" — so a
-  four-card deck still yields a full board rather than a degraded one.
-* **Lent cards are NEVER written into the deck.** Playing an under-sized deck does
-  not silently grow it. The learner still sees the ordinary provisional notice
-  naming the borrowed words, and sorting one still promotes it in place.
-
-The strict `vetDeckClause` (no provisional branch) is used by every read that means
-"the deck itself" — the deck's card list, its count — so those never show a lent card.
 
 ## 7c. Memory Map lends to stay full — without a `CARD_BASELINES` entry
 
@@ -872,7 +810,7 @@ others, admits lent rows by id when it has to borrow.
 | Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup (which records `?from=` for the exit) |
 | Client (shared) | `src/components/LentCardBadge.tsx` | `LENT_ICON_ID` + the two forms of the borrowed mark (`LentCardIcon`, `LentCardBadge`) — § 5 |
 | Client (shared) | `src/hooks/useMarkedLentWords.ts` | which lent words a session actually REVIEWED — the source for every offer on a streaming surface (§ 5) |
-| Client (shared) | `src/components/ProvisionalSortDonePopup.tsx`, `src/utils/originLabel.ts` | the set-mode completion popup (Back to \<origin\> / Go to Home) and its origin label |
+| Client (shared) | `src/components/ProvisionalSortDonePopup.tsx`, `src/utils/originLabel.ts` | the set-mode completion popup (Back to \<origin\> / Go to Deck Tower) and its origin label |
 
 ---
 

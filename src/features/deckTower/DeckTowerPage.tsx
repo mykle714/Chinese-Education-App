@@ -1,7 +1,5 @@
-import React, { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import { FONTS } from "../../theme/fonts";
-import { WEIGHT } from "../../theme/scale";
 import MobileTabScreen from "../../components/MobileTabScreen";
 import { SLAB_FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
 import {
@@ -9,19 +7,24 @@ import {
     CARD_THICKNESS,
     ISO,
     IsoScene,
+    prefersReducedMotion,
     boundsOf,
     cardStackMetrics,
     makeCameraProjector,
     makeProjector,
+    planFogClouds,
     prism,
+    type FogCover,
     type Projector,
     projectOutline,
     roundedRectWorld,
     shadowFootprint,
     type CloudSky,
+    type IsoRainFall,
     type WindSky,
 } from "./iso";
 import { useAuth } from "../../AuthContext";
+import { useTestingFeatures } from "../../hooks/useTestingFeatures";
 import { useFlpReadyCounts } from "../../hooks/useFlpReadyCounts";
 import { useFocusLever, type FocusLever } from "./useFocusLever";
 import { useMasteredCounts } from "../../hooks/useMasteredCounts";
@@ -30,11 +33,15 @@ import { builtinCollectionCount } from "../flashcards/builtinCollections";
 import SpaceBackdrop, { type SpaceBand } from "./SpaceBackdrop";
 import SpeedLines from "./SpeedLines";
 import WorldIndicator from "./WorldIndicator";
+import CardsCue from "./CardsCue";
 import DeckTowerAvatar from "./DeckTowerAvatar";
+import BankingAlwaysPlayToggle from "./BankingAlwaysPlayToggle";
+import { DailyBankingOptOut, DailyBankingProvider } from "../../minutePoints/dailyBanking/DailyBankingContext";
+import BankingEmbers from "../../minutePoints/dailyBanking/BankingEmbers";
 import TapToStartHint from "./TapToStartHint";
 import { TOWER_DECKS, otherTowerDeck, type TowerDeckId } from "./towerDecks";
 import CardSplat from "./CardSplat";
-import { SkyTrafficLayer, SkyTrafficSource } from "./SkyTraffic";
+import { SkyTrafficCloudShadows, SkyTrafficLayer, SkyTrafficSource } from "./SkyTraffic";
 import { useSkyTrafficStore } from "./skyTrafficStore";
 import DeckTowerPlatform, { type PlateFace } from "./DeckTowerPlatform";
 import { useDeckSwap } from "./useDeckSwap";
@@ -48,20 +55,49 @@ import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
 import { useTowerStudy } from "./useTowerStudy";
 import { litWorld } from "./timeOfDay";
 import { useTimeOfDay } from "./useTimeOfDay";
+import { useTowerWeather } from "./useTowerWeather";
+import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, isEffectless, weatherCloudCount, weatherEffect } from "./towerWeather";
+import WeatherToggle from "./WeatherToggle";
+import LightningStrikeChips from "./LightningStrikeChips";
+import { useLightningFlashes } from "./useLightningFlashes";
+import {
+    NO_LIGHTNING,
+    STRIKE_CHANCE,
+    pickStrikePoint,
+    struckPawn,
+    withStrike,
+    type PlatformLightning,
+    type TowerStrike,
+    type WorldLightning,
+} from "./towerLightning";
+import { weatherDaySky, worldsUnderWeather } from "./weatherSky";
+import { TOWER_TYPE_SX } from "./towerType";
 import TimeOfDayToggle from "./TimeOfDayToggle";
+import SoftIntroToggle from "../../softIntro/SoftIntroToggle";
 import ForcedBreakPicker from "./ForcedBreakPicker";
 import type { Language } from "../../types";
 import TowerCoverCard from "./TowerCoverCard";
 import { readTowerHeight, writeTowerHeight } from "./towerHeightStore";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { useThemeColor } from "../../hooks/useThemeColor";
+import { useSlideNavigate } from "../../hooks/useSlideNavigate";
+import { useLocation } from "react-router-dom";
+import { NOTEBOOK_PATH, useNotebookTotal } from "../flashcards/writingNotebook/notebookEntry";
+import { useDiscoverNavigation } from "../../hooks/useDiscoverNavigation";
+import { useCategoryCounts } from "../../hooks/useCategoryCounts";
+import { LEARN_NOW_LOW_THRESHOLD } from "../../../server/contracts/wire";
+import type { GameExit } from "../../games/runtime/gameExit";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useClaimStudySurface } from "../../minutePoints/studySurface";
+import TowerCardsPage from "./TowerCardsPage";
+import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
+import { withLens } from "../flashcards/collectionRef";
+import type { VocabEntry } from "../../types";
 
 /**
  * The flp session a study lays over the tower (docs/DECK_TOWER.md § "Studying the tower"):
- * the flp page itself, in its `tower` host mode. Lazy — the same chunk as the
- * `/flashcards/learn` route, loaded when the first world's session mounts parked — and
+ * the flp page itself, given its `tower` host contract (flpTowerHost.ts). Lazy — its own
+ * chunk, loaded when the first world's session mounts parked — and
  * memoised, so the camera's per-frame re-renders of this page never re-render a session.
  */
 const StudySession = lazy(() =>
@@ -69,7 +105,7 @@ const StudySession = lazy(() =>
 );
 
 /**
- * /deck-tower — the learner's Learning deck drawn as a stack of cards standing on an
+ * `/` — the app's landing page and the footer's Deck tab: the learner's Learning deck drawn as a stack of cards standing on an
  * isometric platform (docs/DECK_TOWER.md), built from the iso art framework in ./iso
  * (docs/ISO_ART_FRAMEWORK.md).
  *
@@ -89,8 +125,8 @@ const StudySession = lazy(() =>
  * `writingGoal`). One world is on screen at a time — the same platform in that world's
  * colours. A horizontal swipe (or the floating corner arrow, WorldIndicator) dashes the camera to the
  * neighbour: the scene whips off, speed lines stream past, the sky turns the new world's
- * colour and the new platform slides in (useWorldPan.ts, SpeedLines.tsx). The main tower
- * builds up on page load; a skill world's tower is already standing when you arrive.
+ * colour and the new platform slides in (useWorldPan.ts, SpeedLines.tsx). Every world's
+ * tower is already standing when you arrive (main's at its last stored height — below).
  *
  * Every world has its OWN floor plate and deck: tapping the plate swaps that world's
  * tower between its two decks — the plate turns over, a transition clears the old tower,
@@ -104,12 +140,18 @@ const StudySession = lazy(() =>
  * height it last stood at on this device and animates to today's figure
  * (towerHeightStore.ts, § "Opening at the last height").
  *
+ * DAILY BANKING (docs/DAILY_MINUTE_BANKING.md): td carries the once-per-streak-day banking
+ * run (moved here from the old Home page on 2026-11-04). `DailyBankingProvider` wraps
+ * the whole screen so the header flame, the avatar (DeckTowerAvatar → BankingAvatarButton) and `BankingEmbers` read
+ * the one run; the study sessions sit inside `DailyBankingOptOut`, because their own
+ * headers' flames would otherwise draw the run and steal the embers' launch anchor.
+ *
  * This file only LAYS OUT the scene: which world is up, what stands on it, and the
  * viewBox. The platform draws itself (DeckTowerPlatform.tsx).
  *
- * The footer's Deck tab (it took Discover's slot 2026-10-17), so it renders in a
- * non-scrolling MobileTabScreen and ends with a FooterSpacer: the scene shrinks to fit
- * above the footer bar rather than sliding under it. Still experimental.
+ * The footer's Deck tab (first tab; it took `/` from the old Home page on 2026-11-04), so
+ * it renders in a non-scrolling MobileTabScreen and ends with a FooterSpacer: the scene
+ * shrinks to fit above the footer bar rather than sliding under it.
  */
 
 /** Screen px per world unit before the viewBox scales the scene to the frame. */
@@ -133,9 +175,10 @@ const LEVER_LANDS_AFTER_PAWN_MS = 500;
 
 /**
  * Gap between the platform's shadow and the scene's bottom edge (= the footer bar's top),
- * in world units.
+ * in world units. Raised from 0.4 (2026-11-04) to lift the platform off the footer and
+ * leave sky for the bottom row of cues (WorldIndicator, CardsCue).
  */
-const BOTTOM_MARGIN = 0.4;
+const BOTTOM_MARGIN = 1.2;
 
 /**
  * Clear sky kept above the top card, in world units, so a tower scrolled to its top
@@ -166,6 +209,8 @@ const DROP_MIN_LIFT = 8;
  * under its arrow; a taller one stands in front of it and covers it.
  */
 const TAP_HINT_FIT_CARDS = 40;
+/** The cards cue's glide down to the cards page (CardsCue → `toCards`), ms. */
+const TO_CARDS_MS = 650;
 
 /** The study header's title: the deck, named with its world off the main one. */
 const studyTitleFor = (world: TowerWorldId) =>
@@ -204,28 +249,29 @@ const DRAG_SNAP_BACK = "translate 220ms ease-out";
 /**
  * The tower's cloud band: cloud BASES sit at the height of these cards on the tower
  * (card k's underside is (k − 1) · CARD_THICKNESS above the floor), and the clouds
- * drift slowly past the tower's four sides (useCloudDrifts). They fade in when the
- * build-up puts the `from`-th card on the tower, so a deck under 250 never has clouds.
- * On a deck that stops short of `to`, the band's top is lowered to SKY_CEILING_ABOVE_TOP
- * over the settled tower's top, so the clouds drift by the tower rather than empty sky.
+ * drift slowly past the tower's four sides (useCloudDrifts). Clouds are WEATHER, not
+ * altitude: they fly only under the `cloudy` kind (towerWeather.ts → `weatherCloudCount`,
+ * which also sets how many), in every world, whatever the card count. On a deck that stops
+ * inside the band, its top is lowered to SKY_CEILING_ABOVE_TOP over the settled tower's
+ * top, so the clouds drift by the tower rather than empty sky; on a deck under `from` the
+ * band stays whole, above the framed scene and so out of sight (`skyBand`).
  */
-const CLOUD_BAND_CARDS = { from: 250, to: 300 };
-/** How many clouds may be in the sky at once (2–3 is the look; 3 slots, with gaps between drifts). */
-const CLOUDS_IN_SKY_MAX = 3;
+const CLOUD_BAND_CARDS = { from: 150, to: 200 };
 
 /**
  * The tower's wind band: gusts (streaks ending in a curl, IsoWind) sweep past the tower's
  * four sides with their baselines at the height of these cards (useWindGusts). They start
  * blowing when the build-up puts the `from`-th card on the tower, so a deck under 350
  * never has wind; a deck short of `to` lowers the band's top the same way as the clouds'.
- * It sits in the empty sky between the clouds (250–300) and space (450+).
+ * It sits in the empty sky between the clouds (150–200) and space (450+).
  */
 const WIND_BAND_CARDS = { from: 350, to: 400 };
 /** How many gusts may be playing at once. Two keeps the band breezy without clutter. */
 const WIND_GUSTS_MAX = 2;
 
 /**
- * The reading and writing worlds always have their clouds and wind, however short
+ * The reading and writing worlds always have their wind (and, under cloudy weather, their
+ * clouds — which every world gets), however short
  * their tower (for now — their decks are usually far smaller than main's): their sky is
  * measured at least this many cards high (the wind band's top), the travellers' bands stay
  * at their card heights instead of shrinking to the tower, and they fly whatever the
@@ -244,6 +290,14 @@ const SKILL_WORLD_SKY_CARDS = WIND_BAND_CARDS.to;
 const SPACE_BAND_CARDS = { from: 450, to: 650 };
 
 /**
+ * The rain's cloud base, as a card height on the tower's axis: IsoRain's drops (in front of
+ * the tower) start no higher than this. It sits a quarter of the way into the space band,
+ * the middle of the sky rain's own fade (SpaceBackdrop → `WEATHER_FADE_TO`, gone by half
+ * way), so a climbed tower leaves both rains behind together.
+ */
+const RAIN_CEILING_CARD = SPACE_BAND_CARDS.from + (SPACE_BAND_CARDS.to - SPACE_BAND_CARDS.from) * 0.25;
+
+/**
  * On a tower that stops inside a sky band (clouds, wind), the band's top is lowered to
  * this many world units over the settled tower's top, so its travellers stay beside the
  * tower rather than in empty sky above it.
@@ -251,13 +305,26 @@ const SPACE_BAND_CARDS = { from: 450, to: 650 };
 const SKY_CEILING_ABOVE_TOP = 3;
 
 /**
+ * World units (as screen height) the fog's field reaches above the platform's back corner
+ * (§ Weather → fog). Over the band from there to the scene's bottom edge the fog covers the
+ * screen's full width, so it rolls over the sky either side of the slab, not just over it.
+ */
+const FOG_ABOVE_SLAB = 3;
+
+/**
  * A card band → world-z band: card k's underside is (k − 1) · CARD_THICKNESS over the
  * floor. The top is capped at SKY_CEILING_ABOVE_TOP over the tower's settled top
  * (`towerTopZ`, measured from the floor).
  */
 function skyBand(cards: { from: number; to: number }, towerTopZ: number): { zMin: number; zMax: number } {
-    const top = Math.min(cards.to * CARD_THICKNESS, towerTopZ + SKY_CEILING_ABOVE_TOP);
-    return { zMin: FLOOR_Z + (cards.from - 1) * CARD_THICKNESS, zMax: FLOOR_Z + top };
+    const bottom = (cards.from - 1) * CARD_THICKNESS;
+    const fullTop = cards.to * CARD_THICKNESS;
+    // A tower that stops below the band leaves it whole rather than inverting it (the cap
+    // would put its top under its bottom). Only the weather-driven clouds fly over such a
+    // tower; the card-gated wind never starts there.
+    const cappedTop = Math.min(fullTop, towerTopZ + SKY_CEILING_ABOVE_TOP);
+    const top = cappedTop > bottom ? cappedTop : fullTop;
+    return { zMin: FLOOR_Z + bottom, zMax: FLOOR_Z + top };
 }
 
 /**
@@ -315,6 +382,11 @@ function fitScene(proj: Projector, towerCount: number, skyCards: number) {
         cloudSky,
         windSky,
         spaceBand,
+        // IsoRain's cloud base (RAIN_CEILING_CARD), as a viewBox y.
+        rainCeilingY: axisY(RAIN_CEILING_CARD),
+        // The screen box the fog must cover (IsoFog, planFogClouds): the scene's full width,
+        // from FOG_ABOVE_SLAB over the slab's back corner down to the scene's bottom edge.
+        fogCover: { minX: centreX - halfWidth, maxX: centreX + halfWidth, minY: slab.minY - UNIT * FOG_ABOVE_SLAB, maxY } as FogCover,
         fallDistance,
         // Where a transition's card splat bursts from (CardSplat): the scene's bottom
         // edge, across the tower's screen-x span.
@@ -333,8 +405,53 @@ function fitScene(proj: Projector, towerCount: number, skyCards: number) {
     };
 }
 
+/** The route state that opens the page on a given world (`{ towerWorld }`), validated (nav state is untyped). */
+function readTowerWorldState(state: unknown): TowerWorldId | undefined {
+    const w = (state as { towerWorld?: unknown } | null)?.towerWorld;
+    return typeof w === "string" && (WORLD_ORDER as readonly string[]).includes(w) ? (w as TowerWorldId) : undefined;
+}
+
+/**
+ * Where the Writing Notebook's Back leads when it was opened from the writing world's
+ * paper stack (docs/DECK_TOWER.md § "The notebook stack"): back here, on the writing
+ * world. The notebook reads it as `state.exitTo` (WritingNotebookPage → `leave`).
+ */
+const NOTEBOOK_EXIT: GameExit = { path: "/", label: "Deck Tower", state: { towerWorld: "writing" } };
+
+/**
+ * Where Add New Cards' Back leads when it was opened from the main world's mini sort platform
+ * (docs/DECK_TOWER.md § "The sort platform"): back here, on main. ancp reads it as
+ * `state.exitTo` (AddNewCardsPage → `leave`).
+ */
+const SORT_EXIT: GameExit = { path: "/", label: "Deck Tower", state: { towerWorld: "core" } };
+
+/** Notebook points per sheet on the writing world's paper stack — keeps a busy notebook's stack small. */
+const NOTEBOOK_POINTS_PER_SHEET = 20;
+
+/**
+ * The paper stack's sheets for a notebook total: one to start, so it is a button before
+ * anything is written, plus one per full NOTEBOOK_POINTS_PER_SHEET points (0–19 → 1,
+ * 20–39 → 2, …).
+ */
+function notebookSheets(total: number): number {
+    return 1 + Math.floor(Math.max(0, total) / NOTEBOOK_POINTS_PER_SHEET);
+}
+
 const DeckTowerPage: React.FC = () => {
     const { user } = useAuth();
+    const slideNavigate = useSlideNavigate();
+    // The Writing Notebook's total: the writing world's paper stack stands 1 + this many
+    // sheets. Undefined while loading, on failure, with the `writingNotebook` flag off or
+    // for a non-Chinese account — no stack is drawn then.
+    const notebookTotal = useNotebookTotal();
+    // Add New Cards (ancp) for the account's language — the main world's mini sort platform opens it.
+    const { sortPath } = useDiscoverNavigation();
+    // "Cards low": the core Learning count (U+T+C, cooling or not — NOT the tower's own
+    // off-cooldown figure) under LEARN_NOW_LOW_THRESHOLD. It makes the main world's mini
+    // sort platform hop (`hopping` below), nudging the learner toward Add New Cards.
+    // Keyed on `ok`, not `loaded`: a failed fetch reads as 0 and must not make it jump.
+    // (`learningLow` itself is derived below, once `mastered` is in scope.)
+    const coreCategoryCounts = useCategoryCounts("core");
     // Ready-now (off-cooldown) counts per band of each bar. Fetched once on open: a card
     // coming off cooldown while the page is up does not grow the tower.
     const readyCounts: Record<TowerWorldId, ReturnType<typeof useFlpReadyCounts>> = {
@@ -353,16 +470,17 @@ const DeckTowerPage: React.FC = () => {
     };
 
     // ── Worlds ────────────────────────────────────────────────────────────────────
-    // The skill worlds follow the account's goals — the same gate as the fdp's Centers.
+    // The skill worlds follow the account's goals (`users.readingGoal` / `writingGoal`).
     const worldShown = (id: TowerWorldId) =>
         id === "core" || (id === "reading" ? user?.readingGoal === true : user?.writingGoal === true);
     const shownWorlds = WORLD_ORDER.filter(worldShown);
     // ── Time of day (docs/DECK_TOWER.md § "Time of day") ─────────────────────────
     // The light every world is drawn under right now: each world's sky at this hour,
     // and the wash over everything on it. Feature testers can pin a phase
-    // (TimeOfDayToggle, users.isFeatureTester).
-    const isFeatureTester = user?.isFeatureTester === true;
-    const timeOfDay = useTimeOfDay(isFeatureTester);
+    // (TimeOfDayToggle). `testingFeatures` = a `users.isFeatureTester` account AND the
+    // Settings "Enable testing features" switch (useTestingFeatures).
+    const testingFeatures = useTestingFeatures();
+    const timeOfDay = useTimeOfDay(testingFeatures);
     const light = timeOfDay.light;
     // The page's own white things painted on the sky (title, arrows, speed lines) — lit too.
     const skyInk = light.wash(ISO.white);
@@ -371,14 +489,55 @@ const DeckTowerPage: React.FC = () => {
     // HTML on the CPU: every repaint inside the session (a key press, the eip opening)
     // re-filtered the whole layer, which made the flp's taps lag at night. Cut 2026-10-30
     // (docs/DECK_TOWER.md § "Time of day" → "The wash").
-    const pan = useWorldPan((id) => ({ sky: light.skyOf(TOWER_WORLDS[id]), space: TOWER_WORLDS[id].space }));
+    // ── Weather (docs/DECK_TOWER.md § "Weather") ──────────────────────────────────
+    // The learner's real weather, when the per-device Settings switch is on: particles in
+    // the backdrop (`weatherEffect` → WeatherLayer), fog over the platform (DeckTowerPlatform → IsoFog). Feature testers can pin a kind
+    // (WeatherToggle). The weather also sets main's day sky colour (weatherSky.ts,
+    // docs/TOWER_WEATHER_SKY.md); reading and writing keep their fixed skies.
+    const towerWeather = useTowerWeather(testingFeatures);
+    const weather = towerWeather.weather;
+    // Memoised on the observation's fields (a tester pin is a new object every render) so
+    // SpaceBackdrop's repaint effect and the particle loop don't restart on unrelated renders.
+    const weatherFx = useMemo(() => {
+        const fx = weatherEffect(weather);
+        return isEffectless(fx) ? undefined : fx;
+    }, [weather?.kind, weather?.intensity]); // eslint-disable-line react-hooks/exhaustive-deps
+    // The same rain in iso space: drops falling in front of the tower and splashing on the
+    // platform (DeckTowerPlatform → IsoRain). The sky's canvas rain is behind the svg, so
+    // without this the platform and the tower hid every drop that would have reached them.
+    // Drizzle, rain and storm all draw it; snow and fog do not.
+    const rainFall = useMemo<IsoRainFall | undefined>(
+        () =>
+            weatherFx && weatherFx.rainDensity > 0
+                ? {
+                      density: weatherFx.rainDensity,
+                      speed: weatherFx.rainSpeed,
+                      length: weatherFx.rainLength,
+                      lean: RAIN_LEAN,
+                      alpha: RAIN_ALPHA,
+                      strokePx: RAIN_STROKE_PX,
+                  }
+                : undefined,
+        [weatherFx],
+    );
+    // The worlds as the sky sees them: main's day sky follows the weather. Memoised on the
+    // hex, because `light.skyOf` caches per world object.
+    const mainDaySky = weatherDaySky(weather);
+    const skyWorlds = useMemo(() => worldsUnderWeather(mainDaySky), [mainDaySky]);
+    // A return from the Writing Notebook (opened from the writing world's paper stack) lands
+    // back on the writing world rather than main (`NOTEBOOK_EXIT`).
+    const location = useLocation();
+    const pan = useWorldPan(
+        (id) => ({ sky: light.skyOf(skyWorlds[id]), space: skyWorlds[id].space }),
+        readTowerWorldState(location.state),
+    );
     // The world on screen. One whose goal is switched off while it is up falls back to main.
     const worldId: TowerWorldId = shownWorlds.includes(pan.world) ? pan.world : "core";
     // The browser's top-edge colour follows the settled world's sky. Without a claim it is
     // the paper default, and iOS Safari draws its scroll-edge effect behind the clock as a
     // paper-white fade over the sky (and the top of a tall tower). Keyed on the world's
     // sky, not `pan.palette.sky`, so a pan does not rewrite the meta tag every frame.
-    useThemeColor(light.skyOf(TOWER_WORLDS[worldId]));
+    useThemeColor(light.skyOf(skyWorlds[worldId]));
 
     // ── Studying the tower (docs/DECK_TOWER.md § "Studying the tower") ────────────
     // The session is page state, not a route: useTowerStudy owns the dive, the camera and
@@ -408,6 +567,9 @@ const DeckTowerPage: React.FC = () => {
     // deal), in all four utcm bands (towerModes.ts → Mix). Mastered = that bar's whole
     // Mastered total, cooling or not. Undefined until loaded, so no tower builds from a
     // placeholder 0.
+    const learningLow = coreCategoryCounts.ok
+        // (The 'learn-now' kind never reads the mastered counts; `mastered.counts` only fills the slot.)
+        && (builtinCollectionCount({ kind: "learn-now", world: "core" }, coreCategoryCounts.counts, mastered.counts) ?? 0) < LEARN_NOW_LOW_THRESHOLD;
     const learningCount = (worldId: TowerWorldId): number | undefined =>
         readyCounts[worldId].loaded ? bandTotal(readyCounts[worldId].counts, TOWER_MODES.mix.bands) : undefined;
     const deckCountsFor = (worldId: TowerWorldId): Record<TowerDeckId, number | undefined> => ({
@@ -416,7 +578,7 @@ const DeckTowerPage: React.FC = () => {
         mastered: mastered.loaded ? builtinCollectionCount({ kind: "mastered", world: worldId }, readyCounts[worldId].counts, mastered.counts) ?? 0 : undefined,
     });
 
-    const world = useMemo(() => litWorld(TOWER_WORLDS[worldId], light), [worldId, light]);
+    const world = useMemo(() => litWorld(skyWorlds[worldId], light), [skyWorlds, worldId, light]);
     const worldIndex = shownWorlds.indexOf(worldId);
     const leftWorld = worldIndex > 0 ? shownWorlds[worldIndex - 1] : undefined;
     const rightWorld = worldIndex < shownWorlds.length - 1 ? shownWorlds[worldIndex + 1] : undefined;
@@ -503,6 +665,10 @@ const DeckTowerPage: React.FC = () => {
     const skyCardsFor = (count: number) => (alwaysHasSky ? Math.max(count, SKILL_WORLD_SKY_CARDS) : count);
     const skyCards = skyCardsFor(fitCount);
     const scene = useMemo(() => fitScene(proj, fitCount, skyCards), [proj, fitCount, skyCards]);
+    // The fog's field (iso/fogClouds.ts), planned per framing against the FIXED view so the
+    // study camera re-projects the same pills rather than re-planning them. Only under fog.
+    const fogOn = (weatherFx?.fog ?? 0) > 0;
+    const fogClouds = useMemo(() => (fogOn ? planFogClouds(proj, FLOOR_Z, scene.fogCover) : null), [fogOn, proj, scene.fogCover]);
     // The Tap to Start hint's fixed frame: a TAP_HINT_FIT_CARDS tower's. Its width and
     // bottom edge are every scene's (the platform's), so only its tower top differs.
     const hintFit = useMemo(() => fitScene(proj, TAP_HINT_FIT_CARDS, TAP_HINT_FIT_CARDS), [proj]);
@@ -513,17 +679,81 @@ const DeckTowerPage: React.FC = () => {
     // re-renders only the two sky layers, not the page (SkyTraffic.tsx header).
     const skyLive = !pan.busy && !study.active;
     const skyTraffic = useSkyTrafficStore();
-    const cloudsActive = skyLive && (alwaysHasSky || cardsOnTower >= CLOUD_BAND_CARDS.from);
+    // Clouds follow the weather, not the tower (CLOUD_BAND_CARDS): 0 = none in the sky.
+    const cloudsInSky = weatherCloudCount(weather);
+    const cloudsActive = skyLive && cloudsInSky > 0;
     const windActive = skyLive && (alwaysHasSky || cardsOnTower >= WIND_BAND_CARDS.from);
+
+    // ── Lightning strikes (docs/DECK_TOWER.md § "Weather" → "Lightning strikes") ───
+    // One clock for the sky's flash and the strike roll (useLightningFlashes), so a strike
+    // always lands on a flash. Each world remembers its burn marks and crispy pawns until
+    // the learner leaves the page (towerLightning.ts); the platform remounts per world, so
+    // the record lives here. Pawn keys restart at 0 per world — hence per world, too.
+    const [lightningByWorld, setLightningByWorld] = useState<Record<TowerWorldId, WorldLightning>>({
+        core: NO_LIGHTNING,
+        reading: NO_LIGHTNING,
+        writing: NO_LIGHTNING,
+    });
+    // The bolt coming down now, and the world it is in (a pan can start under it).
+    const [bolt, setBolt] = useState<{ world: TowerWorldId; strike: TowerStrike } | null>(null);
+    const strikeIds = useRef(0);
+    // Each pawn's live floor position (IsoPawn `floorSpot`), by world and swap key. Refs, so
+    // the motion loop writes them without renders; created on first ask and kept.
+    const pawnSpots = useRef(new Map<string, React.MutableRefObject<{ x: number; y: number } | null>>());
+    const pawnSpotFor = (world: TowerWorldId, key: number) => {
+        const id = `${world}:${key}`;
+        let ref = pawnSpots.current.get(id);
+        if (!ref) {
+            ref = { current: null };
+            pawnSpots.current.set(id, ref);
+        }
+        return ref;
+    };
+    /**
+     * Strikes the platform on screen: at a random visible floor spot, or with `atPawn` at the
+     * pawn (a tester chip; a random spot while it is not on the floor). Not while the camera
+     * is studying or dashing, nor mid deck swap (the floor may be swinging open). Returns
+     * whether it struck.
+     */
+    const strikePlatform = (atPawn: boolean): boolean => {
+        if (study.active || pan.busy || swap.busy) return false;
+        const pawns = swap.pawns.filter((p) => !p.outgoing).map((p) => ({ key: p.key, spot: pawnSpotFor(worldId, p.key).current }));
+        const aimed = atPawn ? pawns.find((p) => p.spot)?.spot : null;
+        const at = aimed ? { x: aimed.x, y: aimed.y } : pickStrikePoint();
+        if (!at) return false;
+        const strike: TowerStrike = { id: ++strikeIds.current, at };
+        const hit = struckPawn(at, pawns);
+        setLightningByWorld((all) => ({ ...all, [worldId]: withStrike(all[worldId], strike, hit) }));
+        setBolt({ world: worldId, strike });
+        return true;
+    };
+    const strikeRef = useRef(strikePlatform);
+    strikeRef.current = strikePlatform;
+    const lightningFlashes = useLightningFlashes(weatherFx?.lightning === true, () => {
+        if (Math.random() < STRIKE_CHANCE) strikeRef.current(false);
+    });
+    // A tester's forced strike: flash the sky with it, as a storm's would.
+    const forceStrike = (atPawn: boolean) => {
+        if (strikeRef.current(atPawn)) lightningFlashes.fire();
+    };
+    const platformLightning: PlatformLightning = {
+        ...lightningByWorld[worldId],
+        bolt: bolt?.world === worldId ? bolt.strike : null,
+        onBoltDone: () => setBolt(null),
+        pawnSpot: (key) => pawnSpotFor(worldId, key),
+    };
 
     // ── Scroll height, shared by every world ─────────────────────────────────────
     // The camera pans SIDEWAYS, so it keeps its height: arriving in a world opens at the
-    // altitude the learner last scrolled to (`climb`, px above the bottom — the svg's
+    // altitude the learner last scrolled to (`climb`, px above the PLATFORM LINE — the svg's
     // height differs per world, so a scrollTop would not carry over). A shorter tower clips
     // it at its top, but `climb` keeps the altitude asked for, so panning on to a taller
-    // world climbs back to it. A refit WITHIN a world (its counts arriving, a deck swap's
-    // refit) opens at the BOTTOM — the platform. Keyed on the world and the viewBox, which
-    // only change with those, so a silent token refresh or the build-up never yanks it.
+    // world climbs back to it. `climb` is NEGATIVE down in the cards page (towerScroll), and
+    // an arrival keeps that depth too, in the next world's cards. A refit WITHIN a world (its
+    // counts arriving, a deck swap's refit) opens on the platform — unless the learner is
+    // down in the cards, where the refit happens out of sight and keeps their place. Keyed
+    // on the world and the viewBox, which only change with those, so a silent token refresh
+    // or the build-up never yanks it.
     const scrollerRef = useRef<HTMLDivElement>(null);
     // The spacer under the footer bar at the scroller's bottom (see the scroller's note):
     // its px height is the footer's (a CSS calc with the safe area, so it is measured).
@@ -542,12 +772,44 @@ const DeckTowerPage: React.FC = () => {
     // The scrollTop the page itself last set: the scroll event that echoes it (or the
     // browser's clamp of it) is not the learner moving, so it must not overwrite `climb`.
     const placedScrollTop = useRef<number | null>(null);
+    // ── The cards page under the platform (§ "The cards page") ────────────────────
+    // Its root (the header hand-off measures its top; a world swipe slides it with the
+    // scene) and the page header's layer, which its title row pushes off. The platform stop
+    // and the hand-off are useTowerCardsScroll's (towerScroll.ts).
+    const cardsPageRef = useRef<HTMLDivElement>(null);
+    const headerLayerRef = useRef<HTMLDivElement>(null);
+    const cardsScroll = useTowerCardsScroll({
+        scrollerRef,
+        headerLayerRef,
+        cardsPageRef,
+        isPlaced: (top) => placedScrollTop.current !== null && Math.abs(top - placedScrollTop.current) < 1,
+        onPlaced: (top) => {
+            placedScrollTop.current = top;
+            climb.current = 0;
+        },
+        enabled: !study.active,
+    });
+    // The header layer remounts when a session's camera comes back up: re-apply the push.
+    useLayoutEffect(() => {
+        if (!study.cameraDown) cardsScroll.syncHeader();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- cardsScroll's methods read refs
+    }, [study.cameraDown]);
+    // A card in the cards page opens its cdp through that world's lens — the swipe's
+    // closing click (a desktop drag) is not a tap, the guard the tower's own tap uses.
+    // Read through a ref so the handler the memoized cards page receives keeps one identity:
+    // this page re-renders every frame of a build-up, a resize or a pan.
+    const openTowerCardRef = useRef<(entry: VocabEntry, cardWorld: TowerWorldId) => void>(() => {});
+    openTowerCardRef.current = (entry, cardWorld) => {
+        if (worldSwipe.wasDrag() || pan.busy || study.active) return;
+        slideNavigate(withLens(`/flashcards/card/${entry.id}`, cardWorld));
+    };
+    const onOpenTowerCard = useCallback((entry: VocabEntry, cardWorld: TowerWorldId) => openTowerCardRef.current(entry, cardWorld), []);
     // The scroller's own onScroll, so it is attached however late the scroller mounts.
     const recordClimb = (e: React.UIEvent<HTMLDivElement>) => {
         const el = e.currentTarget;
         if (placedScrollTop.current !== null && Math.abs(el.scrollTop - placedScrollTop.current) < 1) return;
         placedScrollTop.current = null;
-        climb.current = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+        climb.current = heightAbovePlatform(el);
     };
     // A tower resize's refit (to the taller frame as a grow starts, to the shorter one as a
     // shrink ends) keeps the altitude instead, like an arrival: the camera stays on
@@ -559,16 +821,19 @@ const DeckTowerPage: React.FC = () => {
         if (!el) return;
         const keepClimb = keepClimbFor.current === scene.viewBox;
         keepClimbFor.current = null;
-        if (scrolledWorld.current !== worldId || keepClimb) {
+        const line = platformScrollTop(el);
+        if (scrolledWorld.current !== worldId || keepClimb || climb.current < 0) {
             scrolledWorld.current = worldId;
-            el.scrollTop = el.scrollHeight - el.clientHeight - climb.current; // the browser clamps at the top
+            el.scrollTop = line - climb.current; // the browser clamps at both ends
             placedScrollTop.current = el.scrollTop;
         } else {
-            el.scrollTop = el.scrollHeight;
+            el.scrollTop = line;
             // Back on the platform: that is now the altitude to keep.
             climb.current = 0;
             placedScrollTop.current = el.scrollTop;
         }
+        cardsScroll.syncHeader();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- cardsScroll's methods read refs
     }, [worldId, scene.viewBox]);
 
     // ── The deck switch (the world's floor plate) ────────────────────────────────
@@ -584,7 +849,7 @@ const DeckTowerPage: React.FC = () => {
         if (swap.busy || pan.busy || resize.busy || study.active || !countsLoaded(worldId)) return;
         keepClimbFor.current = null;
         const el = scrollerRef.current;
-        if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        if (el) el.scrollTo({ top: platformScrollTop(el), behavior: "smooth" });
         swap.toggle({ fallDistance: scene.fallDistance, progress: progress[worldId], cards: cardsOnTower });
     };
 
@@ -720,7 +985,7 @@ const DeckTowerPage: React.FC = () => {
         const from = el.scrollTop;
         const to = cameraTarget.current;
         const settle = () => {
-            climb.current = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+            climb.current = heightAbovePlatform(el);
         };
         if (cameraMs <= 0 || Math.abs(to - from) < 1) {
             el.scrollTop = to;
@@ -741,6 +1006,42 @@ const DeckTowerPage: React.FC = () => {
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
     }, [cameraKey, cameraMs]);
+
+    // ── The cards cue's glide (CardsCue) ──────────────────────────────────────────
+    // Down to the cards page, its title row at the screen's top. A tween rather than
+    // `scrollTo({ behavior: "smooth" })`: a smooth scroll crosses the platform line with no
+    // finger down, which the platform stop would catch. Each frame is marked as the page's
+    // own (`placedScrollTop`), the way the resize camera above marks its frames, so the stop
+    // lets it through.
+    const toCardsRaf = useRef(0);
+    useEffect(() => () => cancelAnimationFrame(toCardsRaf.current), []);
+    const toCards = useCallback(() => {
+        const el = scrollerRef.current;
+        const cards = cardsPageRef.current;
+        if (!el || !cards) return;
+        const from = el.scrollTop;
+        const to = Math.min(cards.offsetTop, el.scrollHeight - el.clientHeight);
+        const place = (top: number) => {
+            el.scrollTop = top;
+            placedScrollTop.current = el.scrollTop;
+        };
+        cancelAnimationFrame(toCardsRaf.current);
+        if (prefersReducedMotion() || Math.abs(to - from) < 1) {
+            place(to);
+            climb.current = heightAbovePlatform(el);
+            return;
+        }
+        const start = performance.now();
+        const tick = (now: number) => {
+            const u = Math.min(1, (now - start) / TO_CARDS_MS);
+            const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; // ease-in-out cubic
+            place(from + (to - from) * eased);
+            if (u < 1) toCardsRaf.current = requestAnimationFrame(tick);
+            else climb.current = heightAbovePlatform(el);
+        };
+        toCardsRaf.current = requestAnimationFrame(tick);
+        // Refs only.
+    }, []);
 
     // ── Moving between worlds ────────────────────────────────────────────────────
     // Not while this world's deck swap runs: its fall is measured for the scene on screen.
@@ -768,10 +1069,11 @@ const DeckTowerPage: React.FC = () => {
                 velocity: (release.vx * DRAG_FOLLOW) / width,
             });
         },
-        // The scene's svg is the camera (the header title stays put).
+        // The scene's svg is the camera (the header title stays put), and the cards page
+        // under the platform rides along with it.
         paint: (scroller, dx, commit) => {
-            const movers = [scroller.querySelector<SVGSVGElement>(":scope > svg")].filter(
-                (el): el is SVGSVGElement => el !== null
+            const movers = [towerSceneOf(scroller), cardsPageRef.current].filter(
+                (el): el is SVGSVGElement | HTMLDivElement => el !== null
             );
             if (dx === null) {
                 // Committing toward a world: the pan takes the offset over, so drop it at
@@ -791,21 +1093,38 @@ const DeckTowerPage: React.FC = () => {
         },
     });
 
-    const faceFor = (deck: TowerDeckId): PlateFace => ({ text: TOWER_DECKS[deck].label, band: TOWER_DECKS[deck].band });
+    const faceFor = (deck: TowerDeckId): PlateFace => ({
+        text: TOWER_DECKS[deck].label,
+        band: TOWER_DECKS[deck].band,
+        wallSteps: TOWER_DECKS[deck].plateWallSteps,
+    });
     const splat = swap.splat;
 
     // ── The study's fades, all on the dive's eased position `e` (0 = tower view) ─────
     const e = study.e;
     const towerUiOpacity = 1 - clamp01(e / TOWER_UI_GONE_AT);
+    // The cards page's per-frame styling: the pan's slide (the scene's own transform) and
+    // the dive's fade. Memoized so a frame that changes neither keeps the page memoized.
+    const cardsPageShift = pan.sceneShiftX;
+    const studyActive = study.active;
+    const cardsPageStyle = useMemo<React.CSSProperties>(
+        () => ({
+            transform: cardsPageShift !== 0 ? `translateX(${(cardsPageShift * 100).toFixed(2)}%)` : undefined,
+            opacity: towerUiOpacity,
+            pointerEvents: studyActive ? "none" : undefined,
+        }),
+        [cardsPageShift, towerUiOpacity, studyActive]
+    );
     const sessionOpacity = study.cameraDown ? 1 : study.phase === "preparing" ? 0 : clamp01((e - SESSION_FADE_FROM) / (1 - SESSION_FADE_FROM));
     const skyTrafficOpacity = 1 - clamp01(e / SKY_TRAFFIC_GONE_AT);
-    // The sky's altitude while a session is up: from where the view stood at the tap to
-    // the camera's (the tower's top), so studying down a tall tower brings the sky back.
-    const studyAltitudeY = study.active ? study.startMidY + (scene.axisYAtZ(study.cameraZ) - study.startMidY) * e : null;
+    // The sky's altitude while a session is up: HELD where the view stood at the tap, so
+    // the sky (and its stars) stays as it was for the whole session — it does not follow
+    // the camera's dive or climb (docs/DECK_TOWER.md § "Studying the tower").
+    const studyAltitudeY = study.active ? study.startMidY : null;
 
     // ── Tap to Start (docs/DECK_TOWER.md § "Tap to Start") ───────────────────────
     // Only the Learning tower starts a session — the flp deals exactly that deck: this
-    // world's bar, in Mix (no `mode`), the same path FlpStudyHand's Mix card opens. Not
+    // world's bar, in Study Mix over the whole library (the only loop the flp deals). Not
     // mid-swap, mid-pan or mid-resize, and not on an empty or still-loading tower.
     const startable =
         swap.titleDeck === "learn-now" &&
@@ -815,16 +1134,16 @@ const DeckTowerPage: React.FC = () => {
         towerCounts[worldId] !== undefined &&
         towerCount > 0;
     // The tap STUDIES the tower in place (useTowerStudy): no navigation. The session is the
-    // world's bar in Mix — the same deal FlpStudyHand's Mix card opens — already mounted
+    // world's bar in Study Mix — already mounted
     // and dealt under the tower (useTowerStudy § "Studying the tower" → "Parked sessions").
     const onStackTap = () => {
         // The click that ends a world swipe (or a scroll) is not a tap.
         if (worldSwipe.wasDrag() || pan.busy || resize.busy || study.active) return;
         const el = scrollerRef.current;
-        const svg = el?.querySelector<SVGSVGElement>(":scope > svg");
+        const svg = towerSceneOf(el ?? null);
         if (!el || !svg) return;
-        // The sky's altitude right now — the viewBox y at the middle of the view — so the
-        // backdrop can blend from it to the camera's (SpaceBackdrop `altitudeY`).
+        // The sky's altitude right now — the viewBox y at the middle of the view — which the
+        // backdrop holds for the whole session (SpaceBackdrop `altitudeY`).
         const svgRect = svg.getBoundingClientRect();
         const elRect = el.getBoundingClientRect();
         const scale = svgRect.width / scene.width;
@@ -880,283 +1199,375 @@ const DeckTowerPage: React.FC = () => {
     }, [userId, language, coreSettledCount]);
 
     return (
-        <MobileTabScreen
-            // The world's title ("Flashcards", "Reading Flashcards", "Writing Flashcards")
-            // is the header's title. It stays put through a pan and swaps text mid-pan,
-            // while no scene is on screen; the deck shown is named by the plate and the
-            // top card. White, so it reads on the sky and on space.
-            title={world.title}
-            headerTitleColor={skyInk}
-            headerTrailingActions={<DeckTowerAvatar />}
-            // Lift the header above the scroller (zIndex 1) so its flame and avatar are
-            // tappable — see the two-layer note below.
-            // While a session is up the session's own header stands here, so this one fades
-            // with the dive and is UNMOUNTED once the camera is down: a minute-earning page
-            // must mount exactly one PageHeader (each runs its own minute-points tick).
-            wrapHeader={(header) =>
-                study.cameraDown ? null : (
-                    <Box
-                        className="deck-tower-page__header-layer"
-                        sx={{ position: "relative", zIndex: 2, fontFamily: FONTS.cjk, fontWeight: WEIGHT.bold, fontSynthesis: "weight", opacity: towerUiOpacity, pointerEvents: study.active ? "none" : undefined }}
-                    >
-                        {header}
-                        {isFeatureTester && <TimeOfDayToggle value={timeOfDay.override} onChange={timeOfDay.setOverride} />}
-                        {isFeatureTester && <ForcedBreakPicker world={worldId} language={language as Language} />}
-                    </Box>
-                )
-            }
-            scrollable={false}
-            surfaceColor={pan.palette.sky}
-            className="deck-tower-page"
-        >
-            {/* Two layers:
-                  - the SCROLLER (the scene) covers the WHOLE screen down to the footer bar —
-                    header included — so a tall tower climbs over the header and off the top
-                    of the screen;
-                  - the HEADER is lifted above the scroller (`wrapHeader`), so its controls
-                    (the minute-points flame, the profile picture) stay tappable. The
-                    trade-off: a drag that starts on the header strip does not scroll the
-                    tower, and a tall tower passes under the header's text.
-                ⚠️ The stage is deliberately NOT positioned. The scroller's containing block
-                is then MobileTabScreen's ScreenRoot (position: relative, the full screen),
-                which (a) puts its top at the top of the screen rather than under the
-                header, and (b) escapes the clipping of MobileTabScreen's ScrollArea, which
-                is overflow-hidden but unpositioned. Making the stage `position: relative`
-                would trap the scene under the header again. */}
-            <Box className="deck-tower-page__stage" sx={{ flex: 1, minHeight: 0, fontFamily: FONTS.cjk, fontWeight: WEIGHT.bold, fontSynthesis: "weight" }}>
-                {/* The sky behind the scene, in the world's colour (blending mid-pan), which
-                    darkens into space as a tall tower is climbed (SPACE_BAND_CARDS). Same
-                    box and z-index as the scroller but earlier in the DOM, so the scroller
-                    paints over it. */}
-                <SpaceBackdrop
-                    scrollerRef={scrollerRef}
-                    band={scene.spaceBand}
-                    palette={pan.palette}
-                    groundStars={light.groundStars}
-                    shootingStars={light.shootingStars}
-                    // To the screen's bottom edge, not the footer's top: the slab footer
-                    // floats, so sky shows in the gaps beside and below it.
-                    bottom={0}
-                    altitudeY={studyAltitudeY}
-                    scrollerBottomInset={footerSpacerPx}
-                />
-
-                {/* The one scroll surface (vertical only — the app's opt-in scrolling, see
-                    docs/UX_AND_NAVIGATION.md). It runs under the footer slab. The scene's
-                    `marginTop: auto` pins it to the bottom, so a short tower sits on the
-                    footer with sky above it; a tall one overflows and scrolls. (NOT
-                    `justify-content: flex-end` — that overflows past the TOP edge, where a
-                    scroll container cannot reach, and the tower's top would be lost.)
-                    It is also the world-swipe surface: `touch-action: pan-y` leaves the
-                    vertical scroll native and hands horizontal drags to `worldSwipe`.
-                    It runs to the screen's BOTTOM edge, its last SLAB_FOOTER_TOTAL_HEIGHT a
-                    spacer under the footer slab, so a fully-scrolled tower rests its platform
-                    on the slab's top. The band is NOT clipped: the slab floats, so a tall
-                    tower scrolling down passes behind it and shows in the gaps beside and
-                    below it. Locked (no scroll) while a session is up: the camera aims
-                    through the frame on screen. */}
-                <Box
-                    ref={scrollerRef}
-                    className="deck-tower-page__scroller"
-                    data-swipe-id="world"
-                    {...worldSwipe.handlers}
-                    onScroll={recordClimb}
-                    sx={{
-                        position: "absolute",
-                        zIndex: 1,
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        overflowX: "hidden",
-                        overflowY: study.active ? "hidden" : "auto",
-                        overscrollBehavior: "contain",
-                        touchAction: study.active ? "none" : "pan-y",
-                        // No visible scrollbar (desktop draws a chunky grey one over the sky).
-                        // Wheel / trackpad / touch scrolling all still work.
-                        scrollbarWidth: "none",
-                        "&::-webkit-scrollbar": { display: "none" },
-                        display: "flex",
-                        flexDirection: "column",
-                    }}
-                >
-                    {/* Falling things lose their floor shadows (the floor is gone from under
-                        them). Targets the shadow paths' own classes: the pawn's shadow GROUP
-                        has its opacity written inline every frame, which a class can't beat. */}
-                    <style>{`
-                        .deck-tower-page__falling .iso-card-stack__shadow,
-                        .deck-tower-page__falling .iso-pawn__shadow,
-                        .deck-tower-page__falling .iso-pawn__decal-anchor,
-                        .deck-tower-page__falling .iso-hatch__shadow { opacity: 0; transition: opacity 120ms ease-out; }
-                        /* A falling floor fixture (the lever) leaves its
-                           hatch behind: the lift top, hole and flaps belong to the swung-away
-                           floor, so only the fixture itself drops. */
-                        .deck-tower-page__falling .iso-hatch__lift-top,
-                        .deck-tower-page__falling .iso-hatch__hole,
-                        .deck-tower-page__falling .iso-hatch__flap { display: none; }
-                    `}</style>
-                    {/* Schedules the clouds and wind the scene's two sky layers draw; renders nothing. */}
-                    <SkyTrafficSource
-                        store={skyTraffic}
-                        proj={proj}
-                        cloudSky={scene.cloudSky}
-                        windSky={scene.windSky}
-                        cloudsActive={cloudsActive}
-                        windActive={windActive}
-                        maxClouds={CLOUDS_IN_SKY_MAX}
-                        maxGusts={WIND_GUSTS_MAX}
+        <DailyBankingProvider>
+            <MobileTabScreen
+                // The world's title ("Flashcards", "Reading Flashcards", "Writing Flashcards")
+                // is the header's title. It stays put through a pan and swaps text mid-pan,
+                // while no scene is on screen; the deck shown is named by the plate and the
+                // top card. White, so it reads on the sky and on space.
+                title={world.title}
+                headerTitleColor={skyInk}
+                // The soft-introduction viewer (tester-only, renders nothing for learners) for the
+                // corner fixtures' floor prints (docs/SOFT_INTRODUCTION.md § 5).
+                headerExtraActions={<SoftIntroToggle color={skyInk} />}
+                headerTrailingActions={<DeckTowerAvatar />}
+                // Lift the header above the scroller (zIndex 1) so its flame and avatar are
+                // tappable — see the two-layer note below.
+                // While a session is up the session's own header stands here, so this one fades
+                // with the dive and is UNMOUNTED once the camera is down: a minute-earning page
+                // must mount exactly one PageHeader (each runs its own minute-points tick).
+                wrapHeader={(header) =>
+                    study.cameraDown ? null : (
+                        <Box
+                            ref={headerLayerRef}
+                            className="deck-tower-page__header-layer"
+                            sx={{ position: "relative", zIndex: 2, ...TOWER_TYPE_SX, opacity: towerUiOpacity, pointerEvents: study.active ? "none" : undefined }}
+                        >
+                            {header}
+                            {testingFeatures && <TimeOfDayToggle value={timeOfDay.override} onChange={timeOfDay.setOverride} />}
+                            {testingFeatures && <WeatherToggle value={towerWeather.override} onChange={towerWeather.setOverride} />}
+                            {testingFeatures && <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />}
+                            {testingFeatures && <ForcedBreakPicker world={worldId} language={language as Language} />}
+                            {testingFeatures && <BankingAlwaysPlayToggle />}
+                        </Box>
+                    )
+                }
+                scrollable={false}
+                surfaceColor={pan.palette.sky}
+                className="deck-tower-page"
+            >
+                {/* Two layers:
+                      - the SCROLLER (the scene) covers the WHOLE screen down to the footer bar —
+                        header included — so a tall tower climbs over the header and off the top
+                        of the screen;
+                      - the HEADER is lifted above the scroller (`wrapHeader`), so its controls
+                        (the minute-points flame, the profile picture) stay tappable. The
+                        trade-off: a drag that starts on the header strip does not scroll the
+                        tower, and a tall tower passes under the header's text.
+                    ⚠️ The stage is deliberately NOT positioned. The scroller's containing block
+                    is then MobileTabScreen's ScreenRoot (position: relative, the full screen),
+                    which (a) puts its top at the top of the screen rather than under the
+                    header, and (b) escapes the clipping of MobileTabScreen's ScrollArea, which
+                    is overflow-hidden but unpositioned. Making the stage `position: relative`
+                    would trap the scene under the header again. */}
+                <Box className="deck-tower-page__stage" sx={{ flex: 1, minHeight: 0, ...TOWER_TYPE_SX }}>
+                    {/* The sky behind the scene, in the world's colour (blending mid-pan), which
+                        darkens into space as a tall tower is climbed (SPACE_BAND_CARDS). Same
+                        box and z-index as the scroller but earlier in the DOM, so the scroller
+                        paints over it. */}
+                    <SpaceBackdrop
+                        scrollerRef={scrollerRef}
+                        band={scene.spaceBand}
+                        palette={pan.palette}
+                        groundStars={light.groundStars}
+                        shootingStars={light.shootingStars}
+                        weather={weatherFx}
+                        flashId={lightningFlashes.flashId}
+                        // To the screen's bottom edge, not the footer's top: the slab footer
+                        // floats, so sky shows in the gaps beside and below it.
+                        bottom={0}
+                        altitudeY={studyAltitudeY}
+                        scrollerBottomInset={footerSpacerPx}
                     />
-                    <IsoScene
-                        proj={sceneProj}
-                        wash={light.wash}
-                        viewBox={scene.viewBox}
-                        className="deck-tower-page__scene"
-                        // `transform` is the world pan's slide (stage widths); a held swipe's
-                        // follow is written to the separate `translate` property (paint above),
-                        // so the two never overwrite each other.
-                        style={{
-                            width: "100%",
-                            aspectRatio: scene.aspectRatio,
-                            flexShrink: 0,
-                            marginTop: "auto",
-                            display: "block",
-                            overflow: "visible",
-                            transform: pan.sceneShiftX !== 0 ? `translateX(${(pan.sceneShiftX * 100).toFixed(2)}%)` : undefined,
-                        }}
-                    >
-                        {/* "Tap to Start", painted on the sky at a fixed height over the
-                            platform. First in the scene, so the tower paints over it. */}
-                        <TapToStartHint
-                            centreX={hintFit.minX + hintFit.width / 2}
-                            tipY={hintFit.towerTopY}
-                            visible={startable && !pan.busy}
-                        />
-                        {/* Keyed by world: arriving mounts a fresh platform and pawn. */}
-                        <DeckTowerPlatform
-                            key={worldId}
-                            world={world}
-                            hingeAngle={swap.hingeAngle}
-                            stack={
-                                stackDrawn
-                                    ? {
-                                          count: towerCount,
-                                          progress: stackProgress,
-                                          label: TOWER_DECKS[swap.towerDeck].label,
-                                          bandColor: TOWER_DECKS[swap.towerDeck].band,
-                                          collapse: resize.collapse,
-                                          drop: resize.drop,
-                                          dropFigure: resize.toCards ?? undefined,
-                                          onTap: startable && !pan.busy && !resize.busy ? onStackTap : undefined,
-                                          // Bare while the count card is its own layer or off the deck.
-                                          printOpacity: study.towerPrintShown ? 1 : 0,
-                                      }
-                                    : null
-                            }
-                            fadeOpacity={studying(worldId) ? study.platformOpacity : 1}
-                            // The deck itself never fades (§ "The platform fades").
-                            keepDeck={studying(worldId)}
-                            bobPaused={study.active}
-                            // Not while the count is loading: it reads as 0 then (towerCount's `?? 0`).
-                            showImprint={towerCounts[worldId] !== undefined}
-                            stackFalling={swap.outgoing !== null}
-                            dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
-                            pawns={swap.pawns}
-                            cardsOnTower={cardsOnTower}
-                            summitCards={resize.toCards !== null ? Math.min(cardsOnTower, resize.toCards) : cardsOnTower}
-                            summitHeld={study.active}
-                            summitSpot={summitSpot}
-                            swapOutgoing={swap.outgoing !== null}
-                            plate={{
-                                face: faceFor(swap.titleDeck),
-                                ariaLabel: `Show ${TOWER_DECKS[otherTowerDeck(swap.titleDeck)].title}`,
-                                onTap: onPlateTap,
-                                busy: swap.busy || pan.busy || resize.busy || study.active,
-                            }}
-                            lever={focusLevers[worldId].lever}
-                            // Clouds and wind on the tower's BACK sides (under it) and FRONT
-                            // sides (over it) — SkyTraffic.tsx.
-                            behind={<SkyTrafficLayer store={skyTraffic} side="behind" opacity={skyTrafficOpacity} />}
-                            front={<SkyTrafficLayer store={skyTraffic} side="front" opacity={skyTrafficOpacity} />}
-                        />
-                        {/* Over everything: the old tower hitting the floor below the screen. */}
-                        {splat && (
-                            <CardSplat
-                                key={`splat-${worldId}-${splat.id}`}
-                                elapsedMs={splat.elapsedMs}
-                                floorY={scene.splatFloor.y}
-                                minX={scene.splatFloor.minX}
-                                maxX={scene.splatFloor.maxX}
-                                unit={UNIT}
-                                cards={splat.cards}
-                                bandColor={TOWER_DECKS[splat.deck].band}
-                                cardW={CARD_W}
-                                cardD={CARD_D}
-                            />
-                        )}
-                    </IsoScene>
-                    {/* The band under the footer slab (see the scroller's note). */}
-                    <Box ref={footerSpacerRef} className="deck-tower-page__footer-spacer" sx={{ height: SLAB_FOOTER_TOTAL_HEIGHT, flexShrink: 0 }} />
-                </Box>
 
-                {/* The study session (docs/DECK_TOWER.md § "Studying the tower"): the flp,
-                    laid over the scene, its card exactly on the tower's top card. One per
-                    visited world, mounted PARKED on the visit and kept (§ "Studying the tower" → "Parked sessions"):
-                    a parked layer is laid out — so its card can be measured for the camera the
-                    moment its tower is tapped — but clipped away to nothing (clip-path also
-                    hides its children whatever their own visibility, and takes no hits). The
-                    studied one fades in with the dive and takes input once the camera is down. */}
-                {study.sessions.map(({ key, host }) => (
+                    {/* The one scroll surface (vertical only — the app's opt-in scrolling, see
+                        docs/UX_AND_NAVIGATION.md). It runs under the footer slab. The scene's
+                        `marginTop: auto` pins it to the bottom, so a short tower sits on the
+                        footer with sky above it; a tall one overflows and scrolls. (NOT
+                        `justify-content: flex-end` — that overflows past the TOP edge, where a
+                        scroll container cannot reach, and the tower's top would be lost.)
+                        It is also the world-swipe surface: `touch-action: pan-y` leaves the
+                        vertical scroll native and hands horizontal drags to `worldSwipe`.
+                        It runs to the screen's BOTTOM edge, its last SLAB_FOOTER_TOTAL_HEIGHT a
+                        spacer under the footer slab, so a fully-scrolled tower rests its platform
+                        on the slab's top. The band is NOT clipped: the slab floats, so a tall
+                        tower scrolling down passes behind it and shows in the gaps beside and
+                        below it. Locked (no scroll) while a session is up: the camera aims
+                        through the frame on screen. */}
                     <Box
-                        key={key}
-                        className={`deck-tower-page__study-layer deck-tower-page__study-layer--${host.parked ? "parked" : "studied"}`}
-                        aria-hidden={host.parked || undefined}
+                        ref={scrollerRef}
+                        className="deck-tower-page__scroller"
+                        data-swipe-id="world"
+                        {...worldSwipe.handlers}
+                        onScroll={recordClimb}
                         sx={{
                             position: "absolute",
-                            inset: 0,
-                            zIndex: 3,
+                            zIndex: 1,
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            overflowX: "hidden",
+                            overflowY: study.active ? "hidden" : "auto",
+                            overscrollBehavior: "contain",
+                            touchAction: study.active ? "none" : "pan-y",
+                            // No visible scrollbar (desktop draws a chunky grey one over the sky).
+                            // Wheel / trackpad / touch scrolling all still work.
+                            scrollbarWidth: "none",
+                            "&::-webkit-scrollbar": { display: "none" },
                             display: "flex",
                             flexDirection: "column",
-                            opacity: host.parked ? 0 : sessionOpacity,
-                            clipPath: host.parked ? "inset(50%)" : undefined,
-                            pointerEvents: !host.parked && study.phase === "studying" ? "auto" : "none",
                         }}
                     >
-                        <Suspense fallback={null}>
-                            <StudySession tower={host} />
-                        </Suspense>
+                        {/* Falling things lose their floor shadows (the floor is gone from under
+                            them). Targets the shadow paths' own classes: the pawn's shadow GROUP
+                            has its opacity written inline every frame, which a class can't beat. */}
+                        <style>{`
+                            .deck-tower-page__falling .iso-card-stack__shadow,
+                            .deck-tower-page__falling .iso-paper-stack__shadow,
+                            .deck-tower-page__falling .iso-sort-platform__shadow,
+                            .deck-tower-page__falling .iso-pawn__shadow,
+                            .deck-tower-page__falling .iso-pawn__decal-anchor,
+                            .deck-tower-page__falling .iso-hatch__shadow { opacity: 0; transition: opacity 120ms ease-out; }
+                            /* A falling floor fixture (the lever) leaves its
+                               hatch behind: the lift top, hole and flaps belong to the swung-away
+                               floor, so only the fixture itself drops. */
+                            .deck-tower-page__falling .iso-hatch__lift-top,
+                            .deck-tower-page__falling .iso-hatch__hole,
+                            .deck-tower-page__falling .iso-hatch__flap { display: none; }
+                        `}</style>
+                        {/* Schedules the clouds and wind the scene's two sky layers draw; renders nothing. */}
+                        <SkyTrafficSource
+                            store={skyTraffic}
+                            proj={proj}
+                            cloudSky={scene.cloudSky}
+                            windSky={scene.windSky}
+                            cloudsActive={cloudsActive}
+                            windActive={windActive}
+                            maxClouds={Math.max(1, cloudsInSky)}
+                            maxGusts={WIND_GUSTS_MAX}
+                        />
+                        {/* The TOWER SECTION: the scene and the band under the footer slab. At least
+                            a screen tall, the scene pinned to its bottom (`marginTop: auto`), so a
+                            short tower still rests on the footer with sky above it now that the
+                            cards page runs on below. Its bottom edge is the platform line
+                            (towerScroll). */}
+                        <Box
+                            className={TOWER_SECTION_CLASS}
+                            sx={{ minHeight: "100%", flexShrink: 0, display: "flex", flexDirection: "column" }}
+                        >
+                        <IsoScene
+                            proj={sceneProj}
+                            wash={light.wash}
+                            viewBox={scene.viewBox}
+                            className={TOWER_SCENE_CLASS}
+                            // `transform` is the world pan's slide (stage widths); a held swipe's
+                            // follow is written to the separate `translate` property (paint above),
+                            // so the two never overwrite each other.
+                            style={{
+                                width: "100%",
+                                aspectRatio: scene.aspectRatio,
+                                flexShrink: 0,
+                                marginTop: "auto",
+                                display: "block",
+                                overflow: "visible",
+                                transform: pan.sceneShiftX !== 0 ? `translateX(${(pan.sceneShiftX * 100).toFixed(2)}%)` : undefined,
+                            }}
+                        >
+                            {/* "Tap to Start", painted on the sky at a fixed height over the
+                                platform. First in the scene, so the tower paints over it. */}
+                            <TapToStartHint
+                                centreX={hintFit.minX + hintFit.width / 2}
+                                tipY={hintFit.towerTopY}
+                                visible={startable && !pan.busy}
+                            />
+                            {/* Keyed by world: arriving mounts a fresh platform and pawn. */}
+                            <DeckTowerPlatform
+                                key={worldId}
+                                world={world}
+                                hingeAngle={swap.hingeAngle}
+                                stack={
+                                    stackDrawn
+                                        ? {
+                                              count: towerCount,
+                                              progress: stackProgress,
+                                              label: TOWER_DECKS[swap.towerDeck].label,
+                                              bandColor: TOWER_DECKS[swap.towerDeck].band,
+                                              collapse: resize.collapse,
+                                              drop: resize.drop,
+                                              dropFigure: resize.toCards ?? undefined,
+                                              onTap: startable && !pan.busy && !resize.busy ? onStackTap : undefined,
+                                              // Bare while the count card is its own layer or off the deck.
+                                              printOpacity: study.towerPrintShown ? 1 : 0,
+                                          }
+                                        : null
+                                }
+                                fadeOpacity={studying(worldId) ? study.platformOpacity : 1}
+                                // The deck itself never fades (§ "The platform fades").
+                                keepDeck={studying(worldId)}
+                                bobPaused={study.active}
+                                // Not while the count is loading: it reads as 0 then (towerCount's `?? 0`).
+                                showImprint={towerCounts[worldId] !== undefined}
+                                stackFalling={swap.outgoing !== null}
+                                dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
+                                pawns={swap.pawns}
+                                cardsOnTower={cardsOnTower}
+                                summitCards={resize.toCards !== null ? Math.min(cardsOnTower, resize.toCards) : cardsOnTower}
+                                summitHeld={study.active}
+                                summitSpot={summitSpot}
+                                swapOutgoing={swap.outgoing !== null}
+                                plate={{
+                                    face: faceFor(swap.titleDeck),
+                                    ariaLabel: `Show ${TOWER_DECKS[otherTowerDeck(swap.titleDeck)].title}`,
+                                    onTap: onPlateTap,
+                                    busy: swap.busy || pan.busy || resize.busy || study.active,
+                                }}
+                                lever={focusLevers[worldId].lever}
+                                notebook={
+                                    // Only with the Learning tower drawn: swap.towerDeck is the OLD deck until
+                                    // the trap door clears, so leaving Learning it falls with the tower, and
+                                    // arriving it waits off stage, then builds up with the new tower.
+                                    worldId === "writing" && notebookTotal !== undefined && stackDrawn && swap.towerDeck === "learn-now"
+                                        ? {
+                                              sheets: notebookSheets(notebookTotal),
+                                              progress: stackProgress,
+                                              ariaLabel: "Open the Writing Notebook",
+                                              // In and out with the circle transition, from and back onto the stack
+                                              // (`circleFrom` — the notebook reads it back for its Back).
+                                              onTap: (at) =>
+                                                  slideNavigate(NOTEBOOK_PATH, { circleFrom: at, state: { exitTo: NOTEBOOK_EXIT, circleFrom: at } }),
+                                              busy: swap.busy || pan.busy || resize.busy || study.active,
+                                          }
+                                        : undefined
+                                }
+                                sortBin={
+                                    // The notebook's rules, on main: only with the Learning tower drawn,
+                                    // falling and building up with it (docs/DECK_TOWER.md § "The sort platform").
+                                    worldId === "core" && stackDrawn && swap.towerDeck === "learn-now"
+                                        ? {
+                                              progress: stackProgress,
+                                              hopping: learningLow,
+                                              ariaLabel: "Add new cards",
+                                              // In with the circle from the platform; ancp's Back closes it onto
+                                              // the same point and returns here (`SORT_EXIT`).
+                                              onTap: (at) =>
+                                                  slideNavigate(sortPath, { circleFrom: at, state: { exitTo: SORT_EXIT, circleFrom: at } }),
+                                              busy: swap.busy || pan.busy || resize.busy || study.active,
+                                          }
+                                        : undefined
+                                }
+                                // Clouds and wind on the tower's BACK sides (under it) and FRONT
+                                // sides (over it) — SkyTraffic.tsx.
+                                behind={<SkyTrafficLayer store={skyTraffic} side="behind" opacity={skyTrafficOpacity} />}
+                                // The clouds' shadows on the floor and the ground (iso/IsoCloudShadow.tsx).
+                                cloudShadows={({ receiver, clip }) => (
+                                    <SkyTrafficCloudShadows store={skyTraffic} receiver={receiver} clip={clip} opacity={skyTrafficOpacity} />
+                                )}
+                                front={<SkyTrafficLayer store={skyTraffic} side="front" opacity={skyTrafficOpacity} />}
+                                // Fog lies over the platform in iso space, not on the sky (iso/IsoFog.tsx).
+                                fog={fogClouds && weatherFx ? { opacity: weatherFx.fog, clouds: fogClouds } : undefined}
+                                // Not during a study: the camera's projector moves every frame, and
+                                // the session covers the platform anyway.
+                                rain={study.active ? undefined : rainFall}
+                                rainCeilingY={scene.rainCeilingY}
+                                lightning={platformLightning}
+                            />
+                            {/* Over everything: the old tower hitting the floor below the screen. */}
+                            {splat && (
+                                <CardSplat
+                                    key={`splat-${worldId}-${splat.id}`}
+                                    elapsedMs={splat.elapsedMs}
+                                    floorY={scene.splatFloor.y}
+                                    minX={scene.splatFloor.minX}
+                                    maxX={scene.splatFloor.maxX}
+                                    unit={UNIT}
+                                    cards={splat.cards}
+                                    bandColor={TOWER_DECKS[splat.deck].band}
+                                    cardW={CARD_W}
+                                    cardD={CARD_D}
+                                />
+                            )}
+                        </IsoScene>
+                        {/* The band under the footer slab (see the scroller's note). */}
+                        <Box ref={footerSpacerRef} className="deck-tower-page__footer-spacer" sx={{ height: SLAB_FOOTER_TOTAL_HEIGHT, flexShrink: 0 }} />
+                        </Box>
+
+                        {/* THE CARDS PAGE — the world's card library under the platform
+                            (§ "The cards page"). Keyed by world: a pan mounts the next world's
+                            page, on its own lens. It slides with the scene through a pan, and
+                            fades with the tower's UI on a study's dive. */}
+                        <TowerCardsPage
+                            key={worldId}
+                            ref={cardsPageRef}
+                            world={worldId}
+                            ink={skyInk}
+                            sky={pan.palette.sky}
+                            onOpenCard={onOpenTowerCard}
+                            onToPlatform={cardsScroll.toPlatform}
+                            style={cardsPageStyle}
+                        />
                     </Box>
-                ))}
-                {/* The tower's count card, over the session while it slides off the deck (and
-                    back on before the climb) — TowerCoverCard. */}
-                {study.cover && (
-                    <TowerCoverCard
-                        pawnAt={summitSpot.current}
-                        cover={study.cover}
-                        // The studied tower's deck: its top card's head band rides along. Only
-                        // Learning can be studied (onStackTap), so that is the fallback.
-                        deck={TOWER_DECKS[study.world ? swaps[study.world].towerDeck : "learn-now"]}
-                        wash={light.wash}
-                    />
-                )}
 
-                {/* The dash between worlds: streaks racing past, over the (empty) sky. */}
-                {pan.busy && pan.direction !== 0 && (
-                    <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
-                )}
+                    {/* The study session (docs/DECK_TOWER.md § "Studying the tower"): the flp,
+                        laid over the scene, its card exactly on the tower's top card. One per
+                        visited world, mounted PARKED on the visit and kept (§ "Studying the tower" → "Parked sessions"):
+                        a parked layer is laid out — so its card can be measured for the camera the
+                        moment its tower is tapped — but clipped away to nothing (clip-path also
+                        hides its children whatever their own visibility, and takes no hits). The
+                        studied one fades in with the dive and takes input once the camera is down. */}
+                    {study.sessions.map(({ key, host }) => (
+                        <Box
+                            key={key}
+                            className={`deck-tower-page__study-layer deck-tower-page__study-layer--${host.parked ? "parked" : "studied"}`}
+                            aria-hidden={host.parked || undefined}
+                            sx={{
+                                position: "absolute",
+                                inset: 0,
+                                zIndex: 3,
+                                display: "flex",
+                                flexDirection: "column",
+                                opacity: host.parked ? 0 : sessionOpacity,
+                                clipPath: host.parked ? "inset(50%)" : undefined,
+                                pointerEvents: !host.parked && study.phase === "studying" ? "auto" : "none",
+                            }}
+                        >
+                            {/* Out of the banking run's reach: this session's own header flame
+                                (mounted even while parked) must not draw the run or become the
+                                embers' launch point — DailyBankingContext § OPT-OUT BOUNDARY. */}
+                            <DailyBankingOptOut>
+                                <Suspense fallback={null}>
+                                    <StudySession tower={host} />
+                                </Suspense>
+                            </DailyBankingOptOut>
+                        </Box>
+                    ))}
+                    {/* The tower's count card, over the session while it slides off the deck (and
+                        back on before the climb) — TowerCoverCard. */}
+                    {study.cover && (
+                        <TowerCoverCard
+                            pawnAt={summitSpot.current}
+                            cover={study.cover}
+                            // The studied tower's deck: its top card's head band rides along. Only
+                            // Learning can be studied (onStackTap), so that is the fallback.
+                            deck={TOWER_DECKS[study.world ? swaps[study.world].towerDeck : "learn-now"]}
+                            wash={light.wash}
+                        />
+                    )}
 
-                {/* The way to the neighbouring worlds. Hidden while the camera dashes or a
-                    deck swap runs (neither swipe nor arrow works then). */}
-                {leftWorld && (
-                    <WorldIndicator side="left" name={TOWER_WORLDS[leftWorld].name} onTap={() => goTo(leftWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
-                )}
-                {rightWorld && (
-                    <WorldIndicator side="right" name={TOWER_WORLDS[rightWorld].name} onTap={() => goTo(rightWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
-                )}
-            </Box>
-            {focusLevers.core.dialog}
-            {focusLevers.reading.dialog}
-            {focusLevers.writing.dialog}
-        </MobileTabScreen>
+                    {/* The dash between worlds: streaks racing past, over the (empty) sky. */}
+                    {pan.busy && pan.direction !== 0 && (
+                        <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
+                    )}
+
+                    {/* The way to the neighbouring worlds. Hidden while the camera dashes or a
+                        deck swap runs (neither swipe nor arrow works then). */}
+                    {leftWorld && (
+                        <WorldIndicator side="left" name={TOWER_WORLDS[leftWorld].name} onTap={() => goTo(leftWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
+                    )}
+                    {rightWorld && (
+                        <WorldIndicator side="right" name={TOWER_WORLDS[rightWorld].name} onTap={() => goTo(rightWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
+                    )}
+                    {/* The way down to the cards page, between the two world arrows; it fades
+                        as the cards page rises. */}
+                    <CardsCue scrollerRef={scrollerRef} onTap={toCards} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
+                </Box>
+                {focusLevers.core.dialog}
+                {focusLevers.reading.dialog}
+                {focusLevers.writing.dialog}
+            </MobileTabScreen>
+            {/* The banking run's ember stream — portaled to <body>, so its place here is moot. */}
+            <BankingEmbers />
+        </DailyBankingProvider>
     );
 };
 

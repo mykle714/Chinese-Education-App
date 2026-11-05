@@ -67,6 +67,7 @@ import { SCALE_AND_GUIDELINES, POLYSEMY_GUIDELINE } from './lib/frequencyRubric.
 import { parseModelJson } from '../shared/lib/json.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
 import { reconcileFrequencyScore } from '../shared/lib/senseClusters.js';
+import { createSenseShortGlosser, printShortGlossReview } from '../shared/lib/senseShortGloss.js';
 
 const SCRIPT_VERSION = 5; // bump when this script's logic/prompt changes (v5: OVER-COMPACTION FIX — rule 3 (shared by generator, validator and regenerator) now decides cluster membership by a TRANSLATION TEST with Spanish worked examples (sacar take out vs take off, ir go vs come, hombre man vs mankind), and the validator applies it to every gloss. Mirrors zh v11; rows the 2026-10-29 audit judged fine were re-stamped at v5 without re-running (server/scripts/backfill/shared/restamp-cluster-version.js) — only the flagged rows re-cluster. v4: rule 7 gains the content-vs-grammatical-function tie test, mirroring zh Stage C.5 rule 3 (shared/lib/tiebreakOrder.js) — "which sense would a learner say the word MEANS?" — with function words learned AS their function (sobre, como, bajo) on the exception side. Order-only intent, but es has no --rescore-only: the whole generate call re-runs, so re-clustering can re-mint labels. v3: rule 7 — clusters must now be EMITTED most- to least-common, with same-score ties ordered by the marginal difference the 1-5 scale cannot record; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. zh does the same job in a separate Stage C.5 pass (shared/lib/tiebreakOrder.js) because its scorer never sees a cluster's siblings; here one call already sees them all. v2: Stage-C scoring now receives the FULL rubric from lib/frequencyRubric.js — it previously had only the five band names — and that rubric's axis changed to conversational commonality; pre-2026-08-28 cluster scores are stale)
 
@@ -76,6 +77,8 @@ const { stampEntries, staleClause, validatedClause } = initRunLog({
   version: SCRIPT_VERSION,
   anthropic,
 });
+
+const { shortenLongLeads } = createSenseShortGlosser({ anthropic, cachedSystem, language: 'Spanish' });
 
 const isSpotCheck = process.argv.includes('--spot-check');
 // --spot-check implies --dry-run: it is a "show me what this would do" mode.
@@ -565,7 +568,19 @@ async function run() {
           continue;
         }
 
-        const stored = result.clusters.map(toStoredCluster);
+        // Short lead gloss per sense (shared/lib/senseShortGloss.js): a multi-sense
+        // entry's cluster whose displayed lead exceeds 20 chars gets one synthesized
+        // ≤20-char gloss for THAT sense placed first. Runs after the generate/validate
+        // pipeline, so `checkShape`'s exact-partition check only ever sees source
+        // glosses. Added 2026-11-03 without a SCRIPT_VERSION bump — existing rows were
+        // repaired by shared/patch-long-cluster-glosses.js.
+        //
+        // ⚠ A later --force re-cluster seeds from the STORED clusters (buildSenseInput),
+        // so a synthesized gloss is fed back as a source gloss from then on. Harmless
+        // for the card (the lead is already short), but its provenance is lost.
+        const sg = await shortenLongLeads(row.word1, result.clusters.map(toStoredCluster));
+        const stored = sg.clusters;
+        printShortGlossReview(row.word1, row.id, sg);
         if (!isDryRun) await writeClusters(client, row.id, stored, row.frequencyScore);
 
         console.log(`  ${row.word1} → ${stored.length} cluster(s)${result.note ? '  (' + result.note + ')' : ''}`);

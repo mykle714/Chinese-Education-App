@@ -13,20 +13,19 @@ interface CategoryCountsResult {
     loaded: boolean;
     // Whether the fetch actually SUCCEEDED. `loaded` also flips true on a failed fetch,
     // leaving `counts` empty — which reads as "0 cards". Anything that would tell the
-    // learner they are LOW on cards (the fdp Sort Cards tile's glow, the sort page's Learn
-    // Now glow) must key on this instead, or a network blip nags a full library.
+    // learner they are LOW on cards (the Deck Tower's hopping sort platform, DeckTowerPage →
+    // `learningLow`) must key on this instead, or a network blip nags a full library.
     ok: boolean;
 }
 
 /**
  * Fetches the user's per-category flashcard library counts from the OnDeck service.
- * Shared by the decks panel (tile figures + the Review gate + the Sort Cards tile's "card count low" glow),
- * the sort page's tally, and the Account page.
+ * Shared by the Deck Tower's cards page (useCardLibrary — its filter-key figures), the
+ * Deck Tower's "cards low" test (DeckTowerPage → `learningLow`) and the Account page.
  *
- * `bar` is the mastery LENS the four bands are read through (docs/DECKS_FEATURE.md
- * § "Mastery Centers"). It defaults to `core`, which is what every caller meant before
- * the Mastery Centers existed — the whole-card question. A Center passes its own bar,
- * so its Learning tile counts what is left to READ rather than what is left to know.
+ * `world` is the mastery LENS the four bands are read through. It defaults to `core` —
+ * the whole-card question. td's reading / writing cards page passes its own bar, so its
+ * Learning key counts what is left to READ rather than what is left to know.
  */
 export function useCategoryCounts(world: MasteryWorldId = "core"): CategoryCountsResult {
     const { token, isAuthenticated } = useAuth();

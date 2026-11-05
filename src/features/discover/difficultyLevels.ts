@@ -1,7 +1,7 @@
 import type { Language } from "../../types";
 
 // The generalized 1..6 difficulty scale shared by every language (the server's
-// StarterPacksService._levelConfig, migration 79). Used by Sort Cards' level dropdown
+// StarterPacksService._levelConfig, migration 79). Used by Add New Cards' level dropdown
 // (which adds an "Auto" entry on top) and its expanded Quick Mark panel (concrete
 // levels only). One copy, so the two pickers can never offer different ranges.
 //

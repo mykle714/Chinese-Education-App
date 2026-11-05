@@ -13,6 +13,12 @@ import {
     DENSE_HEADER_PAD_X_PX,
     DENSE_HEADER_TITLE_PX,
     DENSE_HEADER_TITLE_TRACKING,
+    HUB_HEADER_PAD_TOP_PX,
+    HUB_HEADER_PAD_X_PX,
+    HUB_HEADER_TITLE_PX,
+    HUB_HEADER_TITLE_TRACKING,
+    OUTLINED_CHIP_ICON_PX,
+    outlinedChipSx,
 } from "./pageHeaderSizing";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS } from "../theme/fonts";
@@ -66,7 +72,7 @@ interface SizeSpec {
 }
 
 const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
-    hub: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.025em", rightGap: 11 },
+    hub: { padTop: HUB_HEADER_PAD_TOP_PX, padBottom: 0, padX: HUB_HEADER_PAD_X_PX, titleSize: HUB_HEADER_TITLE_PX, titleTracking: HUB_HEADER_TITLE_TRACKING, rightGap: 11 },
     node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
     dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: 10 },
@@ -174,11 +180,10 @@ interface PageHeaderProps {
     // Leaving the header's copy in as well would put two flames one row apart AND mount a
     // second `useMinutePoints` accrual tick — see the ⚠️ on the right slot.
     showFlame?: boolean;
-    // Rendered to the RIGHT of the flame — the one thing allowed past it. Exists for
-    // Home's Settings gear + profile-picture button (HeaderAvatarButton), which
-    // the user asked to sit in the far corner, gear beside the avatar — and for the Deck
-    // Tower's profile picture (DeckTowerAvatar). Every other page leaves this
-    // unset, so the flame keeps its fixed corner everywhere else; see the right slot.
+    // Rendered to the RIGHT of the flame — the one thing allowed past it. Exists for the
+    // Deck Tower's profile picture (DeckTowerAvatar → HeaderAvatarButton), which the user
+    // asked to sit in the far corner. Every other page leaves this unset, so the flame
+    // keeps its fixed corner everywhere else; see the right slot.
     trailingContent?: React.ReactNode;
     // Title ink — and the back arrow's, when set. Defaults to `COLORS.onSurface` (the
     // arrow to `COLORS.iconColor`). Only for a header drawn over a ground the default ink
@@ -248,8 +253,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 The FLAME IS RENDERED HERE, ONCE, FOR EVERY HEADER IN THE APP — pages do
                 not opt in. It is an ambient indicator ("is my time counting right now?"),
                 and a question the user can only ask where the answer is visible; when it
-                was opt-in the answer was simply absent on the menus (Home, Games,
-                Discover, Decks & Cards, Dictionary, Arena, Friends, …) and on two game
+                was opt-in the answer was simply absent on the menus (Menu, Games,
+                Dictionary, Arena, Friends, …) and on two game
                 pages that had forgotten it (Hydra Bubbles, Speed Reading). Off an
                 eligible page `useMinutePoints` forces `isActive` false, so the badge
                 draws its own IDLE state — grey flame, grey count — which is the correct
@@ -268,9 +273,9 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 that way rather than adding a second header to a page.
 
                 EXCEPTION (2026-10-09): `trailingContent` renders AFTER the flame. Only
-                Home passes it (the Settings gear + the profile picture that
-                raises the AccountSheet), so on Home alone the flame sits two controls
-                in from the corner. */}
+                the Deck Tower passes it (the profile picture that raises the
+                AccountSheet), so on td alone the flame sits one control in from the
+                corner. */}
             <Box
                 className="page-header__right-content"
                 sx={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: `${spec.rightGap}px` }}
@@ -339,8 +344,14 @@ export const HeaderIconButton: React.FC<{
     color?: string;
     disabled?: boolean;
     variant?: "outlined" | "bare";
+    /**
+     * The `outlined` skin's ring colour. Defaults to the paper hairline (`COLORS.border`);
+     * a button standing on a SCENE ground (td's sky) passes its own ink instead, because
+     * --line2 goes muddy off paper — the same rule as `outlinedChipSx`.
+     */
+    outlineColor?: string;
     className?: string;
-}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", className }) => (
+}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", outlineColor = COLORS.border, className }) => (
     <Box
         className={className ? `page-header__btn ${className}` : "page-header__btn"}
         onClick={disabled ? undefined : onClick}
@@ -355,7 +366,7 @@ export const HeaderIconButton: React.FC<{
             cursor: disabled ? "default" : "pointer",
             opacity: disabled ? 0.4 : 1,
             ...(variant === "outlined"
-                ? { width: 32, height: 32, borderRadius: "11px", border: `1px solid ${COLORS.border}` }
+                ? { width: 32, height: 32, borderRadius: "11px", border: `1px solid ${outlineColor}` }
                 : {}),
         }}
     >
@@ -416,6 +427,52 @@ export const HeaderToggleChip: React.FC<{
 );
 
 /**
+ * A LABELLED action in the header — HeaderIconButton with its words spelled out, for an
+ * action whose glyph alone does not say what it does (the Writing Notebook's "Change").
+ * Styled as AudioModeChip's `outlined` skin (the Deck Tower study header's audio chip): no
+ * fill, glyph + label in `ink`, held together by a thin pill outline in that same ink
+ * (`outlinedChipSx`, which also sets its face). An action, not
+ * a state: no `aria-pressed`. `ariaLabel` may say more than the visible text (e.g. the
+ * current word).
+ *
+ * Its outline is the chip's own ink, not `COLORS.border` (CLAUDE.md § Buttons & cards) —
+ * copied from the audio chip, so the two read as one control family.
+ */
+export const HeaderActionChip: React.FC<{
+    children: React.ReactNode;
+    onClick?: () => void;
+    icon?: string;
+    ariaLabel?: string;
+    /** Glyph, text and outline colour. Default ink2 (`COLORS.iconColor`), the header icons' ink. */
+    ink?: string;
+    disabled?: boolean;
+    className?: string;
+}> = ({ children, onClick, icon, ariaLabel, ink = COLORS.iconColor, disabled = false, className }) => (
+    <Box
+        className={className ? `page-header__action ${className}` : "page-header__action"}
+        onClick={disabled ? undefined : onClick}
+        role="button"
+        aria-label={ariaLabel}
+        aria-disabled={disabled || undefined}
+        sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+            lineHeight: LEADING.none,
+            color: ink,
+            ...outlinedChipSx(ink),
+            cursor: disabled ? "default" : "pointer",
+            opacity: disabled ? 0.4 : 1,
+        }}
+    >
+        {icon && <Icon name={icon} size={OUTLINED_CHIP_ICON_PX} color={ink} />}
+        {children}
+    </Box>
+);
+
+/**
  * Horizontal breathing room inside a HeaderCycleChip, in `ch` of its mono face, on
  * top of the longest label's exact width. Tuned by eye rather than derived: a chip
  * sized to its text to the character reads as clipped even when it is not, and a
@@ -468,12 +525,12 @@ const CYCLE_CHIP_ICON_ALLOWANCE_PX = CYCLE_CHIP_ICON_PX + CYCLE_CHIP_ICON_GAP_PX
  * inversion — solid ink, white text. `"blu"` is a mid-blue (`COLORS.bluM`) fill
  * with ink text and NO outline (a deliberate exception to the buttons-and-cards
  * outline rule, by design call 2026-10-06). The inactive state is grey in both
- * tones. The blu tone also tags the chip `page-header__toggle--blu`, which is what
- * gameSurfaceSx reads to leave it blue rather than re-inking it on a game ground.
+ * tones. The blu tone also tags the chip `page-header__toggle--blu`.
  * `"bare"` drops the chip entirely — no fill, no padding, no corners — leaving the glyph
  * and label as floating text in `ink` in EVERY state, so the label alone carries the
  * state. A surface that still wants the pair read as ONE control draws its own outline
- * through `sx` (the Deck Tower study header does). For a surface where a filled chip draws too much attention (the Deck Tower study
+ * through `sx` (AudioModeChip does, via `outlinedChipSx`). It also tags the chip
+ * `page-header__toggle--bare`, which gameSurfaceSx reads to leave it unfilled on a game ground. For a surface where a filled chip draws too much attention (the Deck Tower study
  * header over the sky, 2026-10-26).
  *
  * `sx` is layered LAST, over the chip's own skin.
@@ -549,6 +606,9 @@ export const HeaderCycleChip: React.FC<{
             "page-header__cycle",
             active ? "page-header__toggle--active" : "",
             isBlu ? "page-header__toggle--blu" : "",
+            // Lets a surface's descendant rules (gameSurfaceSx) tell a fill-less chip
+            // from a filled toggle.
+            isBare ? "page-header__toggle--bare" : "",
             className ?? "",
         ].filter(Boolean).join(" ")}
         onClick={onClick}

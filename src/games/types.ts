@@ -3,8 +3,17 @@ import type { RampHue } from "../theme/colors";
 import type { LazyExoticComponent, ComponentType, ReactNode } from "react";
 
 /**
- * A single registered game. The hub menu renders one row per GameDef, and
- * `src/App.tsx` mounts each game at its `route` via `Component`.
+ * A single registered game. Two kinds:
+ *
+ *   ROUTED     — has a `route` + `Component`: a Games hub tile, mounted standalone at
+ *                its route (`src/App.tsx` via routes/registry.ts).
+ *   BREAK-ONLY — no `route`, no `Component`: played only as an flp game break inside
+ *                the Deck Tower's study session (src/games/flpBreak, which reads the
+ *                registry for candidates). Speed Reading, Memory Map, Writing Grid and
+ *                Superposition, since 2026-11-04 — their standalone pages were launched
+ *                only from the Reading/Writing Centers, which were deleted that day.
+ *
+ * `isRoutedGame` (registry.ts) tells them apart; `ROUTED_GAMES` is the routed subset.
  */
 export interface GameDef {
     /** Stable slug shared with the backend `gameassets.gameId` column. */
@@ -22,8 +31,8 @@ export interface GameDef {
      * six identical icons and one dead code path.
      */
     glyph: string;
-    /** Frontend route, e.g. "/games/memory-match". */
-    route: string;
+    /** Frontend route, e.g. "/games/bubble-match". Absent on a BREAK-ONLY game. */
+    route?: string;
     /**
      * Persistent ramp hue for this game's hub tile — a KEY into `RAMP`, not a colour,
      * so the tile's pastel body and the matching ink of its ghost glyph can never
@@ -34,10 +43,10 @@ export interface GameDef {
      * difficulty ramp on the hub, so its value here is only a fallback.
      */
     hue: RampHue;
-    /** Lazy-loaded page component for the game. Page components take no props,
-        so the default `ComponentType` ({}-props) is what `React.lazy` of a plain
-        `React.FC` resolves to. */
-    Component: LazyExoticComponent<ComponentType>;
+    /** Lazy-loaded page component for the game, set exactly when `route` is. Page
+        components take no props, so the default `ComponentType` ({}-props) is what
+        `React.lazy` of a plain `React.FC` resolves to. */
+    Component?: LazyExoticComponent<ComponentType>;
     /** When true, hide the game from public/demo accounts. Defaults to false. */
     requiresAuth?: boolean;
     /**
@@ -70,9 +79,11 @@ export interface GameDef {
     modes?: { mode: string; markType: MarkType }[];
     /**
      * The track a run marks when PINYIN IS HIDDEN on a zh board, for a game whose track
-     * follows its pinyin display rather than a named mode. Bubble Match is the one such
-     * game (pinyin shown ⇒ `markType` recognition, hidden ⇒ reading — docs/GAMES_FEATURE.md
-     * § "Bubble Match: pinyin picks the track").
+     * follows its pinyin display rather than a named mode. Bubble Match (pinyin shown ⇒
+     * `markType` recognition, hidden ⇒ reading — docs/GAMES_FEATURE.md § "Bubble Match:
+     * pinyin picks the track") and Match Speed — but Match Speed honours it ONLY as an flp
+     * break; its standalone page's pinyin chip is display-only (docs/MATCH_SPEED_GAME.md
+     * § Marks).
      *
      * Deliberately NOT expressed as `modes`: a challenge stores Bubble Match as
      * `(bubble-match, mode: null)` (CHALLENGE_GAMES), and making it moded would orphan
@@ -80,14 +91,6 @@ export interface GameDef {
      * hides pinyin on the reading flp (docs/FLP_GAME_BREAKS.md § 3).
      */
     noPinyinMarkType?: MarkType;
-    /**
-     * Keep the game OUT of the Games hub. Its route, page and registry metadata are
-     * unchanged — it is just launched from somewhere else. Speed Reading is the one
-     * such game: a reading drill, launched only from the Reading Center's games
-     * carousel (ReadingGamesCarousel), which reads the registry directly and ignores
-     * this flag. Read by GamesPage's `visibleGames`.
-     */
-    hiddenFromHub?: boolean;
     /**
      * Languages this game can be played in. Omit for language-agnostic games
      * (the default — the first three games all work in any language).
@@ -125,6 +128,12 @@ export interface GameDef {
      */
     challengeScoring?: ChallengeScoringSpec;
 }
+
+/** A ROUTED game: a Games hub tile with its own standalone page. */
+export type RoutedGameDef = GameDef & {
+    route: string;
+    Component: LazyExoticComponent<ComponentType>;
+};
 
 /** A single asset row fetched from `/api/games/:gameId/assets`. */
 export interface GameAsset {

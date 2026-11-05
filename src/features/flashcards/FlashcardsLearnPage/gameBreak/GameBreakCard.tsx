@@ -9,11 +9,18 @@ import { SHADOW } from "../../../../theme/shadows";
 import { shadeHex } from "../../../../theme/shadeHex";
 import { CREAM_PLATE_TONES } from "../../../../theme/towerSlab";
 import { PLATE_WALL_PX, towerPlateSx, type PlateTones } from "../../../../theme/towerPlate";
+import SidewaysCardFace from "./SidewaysCardFace";
 
 /** The glyph token: a slab like the tower's plates, cut thicker so it is the card's one object. */
 const TOKEN = { size: 104, wall: 9, radius: 26, glyph: 58 } as const;
 /** Clear space between the panel's edge and the card's content. */
 const PANEL_PAD = "calc(var(--card-stock-inset, 0px) + 16px)";
+/**
+ * The Skip / Play row's widest, on a sideways face. Turned, the card's long side becomes
+ * the row's, and full-width plates that long read as a bar rather than two buttons; this
+ * keeps them near their upright size.
+ */
+const SIDEWAYS_ACTIONS_MAX_PX = 340;
 
 /** A game hue as slab tones: the face is its mid tier, the wall a shade down. */
 function hueTones(mid: string): PlateTones {
@@ -37,6 +44,10 @@ const plateButtonSx = (tones: PlateTones) => ({
  * Tower plates have no `COLORS.border` outline: their edge is their wall
  * (docs/TOWER_STYLE_SHIFT.md § "The outline rule").
  *
+ * A game played landscape (`FlpBreakGame.sideways`, Speed Reading) turns the WHOLE face
+ * 90°, buttons included (`SidewaysCardFace`): the learner turns the phone before Play, so
+ * they are already holding it the game's way when it opens.
+ *
  * Layer: feature component (features/flashcards): it needs towerPlate, so it can't sit in
  * the games engine. Reads the game through its `FlpBreakGame` adapter.
  */
@@ -50,8 +61,10 @@ const GameBreakCard: React.FC<{
     const { game } = candidate;
     const adapter = flpBreakGameFor(game.gameId);
     const tones = hueTones(RAMP[game.hue].mid);
+    const sideways = adapter?.sideways === true;
 
     return (
+        <SidewaysCardFace sideways={sideways}>
         <Box
             className="game-break-card"
             sx={{ width: "100%", height: "100%", boxSizing: "border-box", padding: PANEL_PAD, display: "flex", flexDirection: "column", textAlign: "center" }}
@@ -84,7 +97,15 @@ const GameBreakCard: React.FC<{
                     {adapter?.rulesLine}
                 </Typography>
             </Box>
-            <Box className="game-break-card__actions" sx={{ display: "flex", gap: 1.25, paddingTop: 2 }}>
+            <Box
+                className="game-break-card__actions"
+                sx={{
+                    display: "flex",
+                    gap: 1.25,
+                    paddingTop: 2,
+                    ...(sideways && { width: "100%", maxWidth: SIDEWAYS_ACTIONS_MAX_PX, alignSelf: "center" }),
+                }}
+            >
                 <ButtonBase className="game-break-card__skip" onClick={onSkip} sx={{ ...plateButtonSx(CREAM_PLATE_TONES), flex: 1 }}>
                     Skip
                 </ButtonBase>
@@ -98,6 +119,7 @@ const GameBreakCard: React.FC<{
                 </ButtonBase>
             </Box>
         </Box>
+        </SidewaysCardFace>
     );
 };
 

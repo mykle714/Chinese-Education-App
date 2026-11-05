@@ -4,50 +4,48 @@
 > → Card supply / lazy enrichment: [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md)
 > (which det entries appear, and on-first-sort enrichment).
 
-"Discover" is the card-intake flow: **Sort Cards** (scp) — the drag-to-sort page — plus
-the Quick Mark panel and skipped-cards sheet that live inside it. It is a single
-**drill-in from Home** (`/`), not a hub.
+"Discover" is the card-intake flow: **Add New Cards** (ancp) — the drag-to-sort page — plus
+the skipped-cards sheet that lives inside it. It is a single **drill-in from the Deck
+Tower** (`/`), not a hub.
 
-The Discover hub page (`/discover`, `DiscoverPage`) was **deleted 2026-10-17**; its only
-tile was Sort Cards. Its footer tab had already been replaced by **Deck** (`/deck-tower`,
-[DECK_TOWER.md](./DECK_TOWER.md)). `/discover` is no longer a route (`findRoute("/discover")`
-is undefined) and `"discover"` is no longer a `FooterTab` key
-(`src/components/MobileFooter.tsx` → `FooterTab`). Only the `/discover/` **URL prefix**
-survives, as scp's path, so existing links (e.g. `?set=provisional` sort offers) keep
-working.
+The Discover hub page (`/discover`, `DiscoverPage`) was **deleted 2026-10-17**.
+`/discover` is no longer a route (`findRoute("/discover")` is undefined) and `"discover"`
+is not a `FooterTab` key (`src/components/MobileFooter.tsx` → `FooterTab`). Only the
+`/discover/` **URL prefix** survives, as ancp's path, so existing links (e.g.
+`?set=provisional` sort offers) keep working.
 
 ```
-Home (/) — decks rail "Sort Cards" tile          Memory Map empty state
-  (DecksTopRail → goToSort)                       "Find words" (goToSort)
-        │                                                   │
-        └──────────────────────┬────────────────────────────┘
+Deck Tower (/) — main world's mini sort platform
+  (DeckTowerPage → sortBin, state.exitTo = SORT_EXIT)
+                               │
                                ▼
 /discover/sort/:language
-  ← Sort Cards (SortCardsPage): drag-to-sort.
-    Node page (keeps footer, Home tab lit). Back → Home (/).
+  ← Add New Cards (AddNewCardsPage): drag-to-sort.
+    Node page (keeps footer, Deck tab lit). Back → / (main world).
     Hold Skip 2 s → skipped-cards sheet (hidden).
-    ⊞ beside Skip → Quick Mark panel (QuickMarkPanel):
-      bulk-triage grid at one level; swipe a card
-      ← Learning / → Mastered, saved per swipe.
-      ✕ collapses back to the on-deck platform.
 ```
 
 ## Pages
 
 | Route                          | Component          | Header                                  | Footer        |
 | ------------------------------ | ------------------ | --------------------------------------- | ------------- |
-| `/discover/sort/:language`      | `SortCardsPage`    | `NodePage` (← back arrow) → `/`          | Floating pill, **Home** tab lit |
+| `/discover/sort/:language`      | `AddNewCardsPage`    | `NodePage` (← back arrow) → `/`          | Slab, **Deck** tab lit |
 
 - **`/discover/sort/:language` (sort):** a **node page** (see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
   the footer** (lateral nav stays available while sorting), owns the ← back arrow and
   the horizontal slide. Its `ROUTE_META` row (`src/routes/routeMeta.ts`) sets
-  `footerTab: "home"`, so the Home tab lights — scp is a Home drill-in.
-  - **Back arrow:** in normal mode `onBack` navigates to `/` (Home), the only screen
-    that links here besides Memory Map's empty state. In **set mode**
-    (`?set=provisional`, a sort offer) it calls `exitToOrigin` instead
-    (`src/features/discover/SortCardsPage.tsx` → `exitToOrigin`): `navigate(-1)` when
-    there is history, else the recorded `?from=` origin, else `/`.
+  `footerTab: "deck"` and `footerStyle: "slab"` — ancp is a Deck Tower drill-in.
+  - **Back arrow:** in normal mode `onBack` (`AddNewCardsPage` → `leave`) follows the
+    launch's `state.exitTo`: the Deck Tower's mini sort platform opens ancp with the
+    circle transition and `exitTo` = the tower's main world (`SORT_EXIT`), and Back closes
+    the circle onto that platform and returns there ([DECK_TOWER.md](./DECK_TOWER.md)
+    § The sort platform). Without `exitTo` (a deep link) Back goes to `/` with
+    `state.towerWorld: "core"`. With `exitTo`, the footer's Deck tab plays Back too
+    (`backOnFooterTab = "deck"`). In **set mode** (`?set=provisional`, a sort offer) it
+    calls `exitToOrigin` instead (`src/features/discover/AddNewCardsPage.tsx` →
+    `exitToOrigin`): `navigate(-1)` when there is history, else the recorded `?from=`
+    origin, else `/`.
   - The **Skip** button sits on the on-deck platform's top-right (`OnDeckToolbar`), not
     in the header.
   - **Skipped cards live here, hidden:** holding Skip for 2 s opens
@@ -55,15 +53,9 @@ Home (/) — decks rail "Sort Cards" tile          Memory Map empty state
     card → recycle it, Recycle all). The old `/discover/skipped/:language` page
     (`SkippedCardsPage`) and its hub tile were removed 2026-10-12. See
     [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §5.1a and §7.
-  - **Quick Mark lives here too:** the ⊞ button beside Skip maximizes the on-deck
-    platform into the Quick Mark grid (`src/features/discover/QuickMarkPanel.tsx` →
-    `QuickMarkPanel`; state in `src/features/discover/useQuickMarkGrid.ts` →
-    `useQuickMarkGrid`), maximized over the whole frame (page header included), with the on-deck
-    pack's unsorted cards pinned first. A level chip (no Auto) filters to not-yet-sorted
-    discoverable words at that level; each card is swiped (axis-locked): left = Add to
-    Learning, right = Mastered, saved immediately, with an Undo toast. The panel's ✕
-    collapses it back. See [QUICK_MARK.md](./QUICK_MARK.md) and
-    [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 4.8.
+  - **Quick Mark is not mounted.** `src/features/discover/QuickMarkPanel.tsx` (with
+    `useQuickMarkGrid`) is still in the tree but nothing renders it — ancp has no ⊞
+    button. See [QUICK_MARK.md](./QUICK_MARK.md).
 
 ## Card supply gate
 
@@ -117,12 +109,11 @@ rest of the manifest lands.
 ## Navigation helper
 
 `src/hooks/useDiscoverNavigation.ts` → `useDiscoverNavigation` centralizes the sort
-route + default language:
+route + default language. It returns only `sortPath`:
 
 | Member          | Value                          | Used by                              |
 | --------------- | ------------------------------ | ------------------------------------ |
-| `sortPath`      | `/discover/sort/{language}`    | — (returned for link-style callers)  |
-| `goToSort()`    | navigate → `sortPath`          | Home decks rail Sort Cards tile (`src/features/flashcards/DecksTopRail.tsx`), Memory Map's empty-state "Find words" CTA (`src/games/memory-map/MemoryMapPage.tsx`) |
+| `sortPath`      | `/discover/sort/{language}`    | the Deck Tower's mini sort platform (`DeckTowerPage` → `sortBin`) |
 
 `language` resolves from `user.selectedLanguage`, defaulting to `zh`. The hub members
 `discoverPath` / `goToDiscover` were removed with the hub (2026-10-17).
@@ -130,6 +121,6 @@ route + default language:
 ## Related
 
 - Node-page (drill-in) archetype: [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)
-- Footer tabs / Home: [NAVIGATION.md](./NAVIGATION.md)
+- Footer tabs: [NAVIGATION.md](./NAVIGATION.md)
 - Hand-crafted beginner card order (CSV export + authored `sort_packs`): [DISCOVER_BEGINNER_CURATION.md](./DISCOVER_BEGINNER_CURATION.md)
 - Sort packs rework build plan (multi-card packs + Skipped page): [SORT_PACKS_IMPLEMENTATION.md](./SORT_PACKS_IMPLEMENTATION.md)

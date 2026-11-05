@@ -97,61 +97,6 @@ export function vetProvisionalClause(alias = 've'): string {
   return `${alias}."starterPackBucket" = 'provisional'`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Deck membership (migration 141, docs/DECKS_FEATURE.md)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Restricts a vet read to the cards in one user-authored deck.
- *
- * COMPOSES WITH, NEVER REPLACES, the bucket clauses above. A deck-filtered game
- * pool is still `vetPlayableClause() AND vetDeckClause(...)`: the deck says WHICH
- * cards the learner picked, the bucket clause says which of them the surface is
- * allowed to serve. Dropping the bucket clause because a deck filter is present
- * would let a game serve a card the user has since removed from Learning.
- *
- * EXISTS rather than a JOIN: `deck_cards` has at most one row per (deck, card), so
- * a join could not duplicate rows today — but a semi-join states the intent, keeps
- * the clause spliceable into any WHERE without touching the caller's FROM, and
- * cannot start duplicating results if the membership table ever grows a second
- * dimension.
- *
- * @param deckIdParam  A BIND PLACEHOLDER (e.g. `'$3'`), never a literal id. Callers
- *                     bind the deck id alongside; nothing user-controlled is
- *                     interpolated into SQL here.
- * @param alias        The caller's vet alias (`ve` by default, `v` in
- *                     SpeedReadingDAL, `lib` in CommunityLayoutDAL).
- *
- * NOTE ON PROVISIONAL CARDS: a card lent to top a small deck up to a surface's
- * baseline is deliberately NOT written into `deck_cards`, so it does NOT satisfy
- * this clause. Deck-filtered selection therefore ORs the two — "in the deck, or
- * lent for this session" — at the call site rather than here, so that every read
- * that means strictly "the deck" keeps meaning that. See
- * `vetDeckOrProvisionalClause` below.
- */
-export function vetDeckClause(deckIdParam: string, alias = 've'): string {
-  return `EXISTS (
-    SELECT 1 FROM deck_cards dc
-    WHERE dc."deckId" = ${deckIdParam} AND dc."vocabEntryId" = ${alias}.id
-  )`;
-}
-
-/**
- * What a deck-filtered GAME or flp round may draw from: the deck's cards, plus any
- * provisional card lent to reach the surface's baseline.
- *
- * The lent cards are the answer to "the user launched a game from a four-card
- * deck". They are real vet rows that accept marks, they are itemized to the player
- * by the existing provisional notice, and they stay out of the deck itself — so
- * playing an under-sized deck never silently grows it.
- *
- * Pair with `vetPlayableClause()`, not instead of it: this decides membership,
- * that decides servability.
- */
-export function vetDeckOrProvisionalClause(deckIdParam: string, alias = 've'): string {
-  return `(${vetDeckClause(deckIdParam, alias)} OR ${vetProvisionalClause(alias)})`;
-}
-
 // In-query utcm category (migration 143, docs/MASTERY_REWORK.md). The `category`
 // column is not stored — it is derived from the card's typedMarkHistory. A query
 // that needs a card's category splices CORE_CATEGORY_EXPR into its SELECT (aliased
@@ -261,7 +206,9 @@ export function unmasteredBarClause(world: MasteryWorldId, alias = 've'): string
 }
 
 /**
- * Every built-in (non-deck) collection id, in fdp display order.
+ * Every built-in collection id, in the order the old decks page displayed them. Read only by
+ * `GET /api/onDeck/collectionCards` (the Deck Tower card library) since the
+ * `?collection=` launch param was removed from the study/game endpoints (2026-11-04).
  *
  * Three ideas wide, and deliberately no wider: the whole library (`all`), the part of
  * it still being learned in a given bar (`learn-now*`) and the part finished in that
@@ -306,8 +253,8 @@ export function builtinCollectionClause(collection: BuiltinCollectionId, alias =
   const masteredWorld = masteredCollectionWorld(collection);
   if (masteredWorld) return masteredBarClause(masteredWorld, alias);
 
-  // 'learn-now*' — every sorted card whose named bar is unfinished. One id per bar
-  // since the Mastery Centers shipped: the core set is "what is left to know", the
+  // 'learn-now*' — every sorted card whose named bar is unfinished. One id per bar:
+  // the core set is "what is left to know", the
   // reading set "what is left to read", and a card is routinely in one and not the
   // other. `learn-now` (unqualified) is still the core bar.
   const learnNowWorld = learnNowCollectionWorld(collection);

@@ -4,7 +4,7 @@ import PageHeader, { type PageHeaderSize } from "./PageHeader";
 // Shared header for mobile-demo surfaces. Composes the base `PageHeader`.
 //
 // There is no longer a hamburger/nav drawer — global navigation lives entirely
-// in the footer tabs (Home / Menu / Discover / Dictionary).
+// in the footer tabs (Deck / Menu / Arena / Dictionary).
 // This header therefore only owns: the title, an optional back button
 // (`showBack`), and page-specific `extraActions` rendered flush-right.
 //
@@ -26,8 +26,8 @@ interface MobileDemoHeaderProps {
     arrowDirection?: "down" | "left";
     // Title scale override. Only "dense" is ever worth passing — see PageHeader.
     size?: PageHeaderSize;
-    // Forwarded to PageHeader's `trailingContent` (right of the flame). Home and the
-    // Deck Tower only.
+    // Forwarded to PageHeader's `trailingContent` (right of the flame). Deck Tower
+    // only (its avatar, DeckTowerAvatar).
     trailingActions?: ReactNode;
     // Forwarded to PageHeader's `titleColor`. Deck Tower only (white over its sky).
     titleColor?: string;

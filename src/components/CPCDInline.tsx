@@ -20,6 +20,12 @@ interface CPCDInlineProps {
     bold?: boolean;
     className?: string;
     characterColor?: string;
+    // Font for the LATIN half of the word — the pinyin overlay. Defaults to the UI sans
+    // (FONTS.sans). A surface whose whole face is set in the app's Chinese face passes
+    // FONTS.cjk (975 Maru SC; its slices cover Latin + tone-marked vowels) so the pinyin
+    // matches the characters: MiniCard and the flp card face (CardFace.tsx). Docs:
+    // docs/CJK_TYPEFACE_LAB.md § "The dd follows the face too".
+    latinFontFamily?: string;
 }
 
 /**
@@ -63,6 +69,7 @@ const CPCDInline: React.FC<CPCDInlineProps> = ({
     bold = false,
     className,
     characterColor,
+    latinFontFamily = FONTS.sans,
 }) => {
     const characters = items.map((item) => item.character).join("");
     // One syllable per item, in order, dropping the items that have nothing to say.
@@ -107,7 +114,7 @@ const CPCDInline: React.FC<CPCDInlineProps> = ({
                     className="cpcd-inline__pinyin"
                     style={{
                         fontSize: PINYIN_FONT_SIZE[size],
-                        fontFamily: FONTS.sans,
+                        fontFamily: latinFontFamily,
                         fontStretch: "condensed",
                         whiteSpace: "nowrap",
                         // The run can be clipped when the caption is narrower than the name;

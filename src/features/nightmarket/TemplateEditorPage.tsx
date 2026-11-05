@@ -289,7 +289,7 @@ function TemplateEditorPage() {
   const { user, isAuthenticated } = useAuth();
   const { confirm } = useConfirmation();
 
-  // Template-author-only surface. Once auth resolves, bounce non-authors to Home.
+  // Template-author-only surface. Once auth resolves, bounce non-authors to `/`.
   // (The backend also enforces isTemplateAuthor on every endpoint — this is UX, not
   // the security boundary.)
   useEffect(() => {

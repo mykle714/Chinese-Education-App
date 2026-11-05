@@ -2,12 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import { Box, Button, Typography } from "@mui/material";
 import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
-import GameEndPopup from "../runtime/GameEndPopup";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { usePersonalBest } from "../shared/usePersonalBest";
-import PersonalBestLine from "../shared/PersonalBestLine";
-import { HeaderToggleChip } from "../../components/PageHeader";
-import { useConfirmation } from "../../contexts/ConfirmationContext";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { recognizeHandwriting } from "../../components/handwriting/recognize";
 import type { Ink } from "../../components/handwriting/types";
@@ -18,37 +14,37 @@ import { useGameWins } from "../../hooks/useGameWins";
 import { DENSE_HEADER_PAD_TOP_PX, DENSE_HEADER_PAD_X_PX } from "../../components/pageHeaderSizing";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { COLORS } from "../../theme/colors";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { WEIGHT } from "../../theme/scale";
 import { medalForWritingGrid } from "../../../server/contracts/writingGrid";
 import WritingGridBoard, { type BoardPhase, type CellResult } from "./WritingGridBoard";
 import WritingFocusEditor from "../../components/handwriting/WritingFocusEditor";
 import { moveItem } from "./gridOrder";
 import { CANVAS_SIZE, COUNTDOWN_STEPS, COUNTDOWN_STEP_MS, GAME_ID, GAME_KEY, MEDAL_LABEL } from "./constants";
-import type { GameStageFrameProps, GameStageHost } from "../types";
+import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
 export interface WritingGridStageProps {
-    host: GameStageHost;
-    /** The host's chrome: `GameLeafPage` on the route, `GameBreakFrame` in the flp. */
+    /** The break's chrome: `GameBreakFrame` in the flp (docs/FLP_GAME_BREAKS.md § 6). */
     Frame: ComponentType<GameStageFrameProps>;
-    /** flp break only: what its deals add (the seed, the focus rule). */
+    /** What the break's deals add (the seed, the focus rule). */
     dealRequest?: WritingGridDealRequest;
-    /** flp break only: the board prefetched for it. Null = the Stage deals its own. */
+    /** The board prefetched for the break. Null = the Stage deals its own. */
     prefetchedCells?: WritingGridCharacter[] | null;
-    /** The page's Back; a break's close with no run to report. */
+    /** Close the break with no run to report. */
     onDone: () => void;
-    /** The destination `onDone` names, for "Back to …". */
+    /** The destination `onDone` names, for the empty screen's "Back to …". */
     doneLabel: string;
-    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
+    /** FlpBreakStageProps `onRunEnded`: hands the results to the flp's card. */
     onRunEnded?: (results: FlpBreakResults) => void;
-    /** flp break only: FlpBreakStageProps `onCardCleared`. */
-    onCardCleared?: () => void;
+    /** FlpBreakStageProps `onCardCleared`. */
+    onCardCleared?: (cardId: number) => void;
 }
 
 /**
  * Writing Grid — write eight characters, each at a different level of help
- * (docs/WRITING_PRACTICE_REWORK.md § 2). Runs on its route (the Writing Center's launch)
- * and as an flp game break (docs/FLP_GAME_BREAKS.md § 6).
+ * (docs/WRITING_PRACTICE_REWORK.md § 2). BREAK-ONLY: the game has no route of its own
+ * (src/games/registry.ts), so it runs only as an flp game break (docs/FLP_GAME_BREAKS.md
+ * § 6).
  *
  * Flow: loading → (empty) → countdown → arrange (Phase 1) → write (Phase 2) → ended
  *
@@ -60,29 +56,21 @@ export interface WritingGridStageProps {
  *               out → top-1 Verify → ✓ / ✗ and a writing mark on the character's own
  *               card (the server applies the anti-farming gate). A ✗ cell can be
  *               reopened and rewritten (a fresh attempt: new ink, new Level 8 clock).
- *   ended     — every cell ✓ (or the learner gave up); the stopwatch stops. Time, medal, personal best. The
- *               popup minimizes to the corner puck so the finished board (every cell's
- *               ink over its full shadow) can be viewed. Tapping a cell reopens its
- *               canvas as drawn; a redraw is verified (✓ / ✗) but never marked.
+ *   ended     — every cell ✓ (or the learner left); the stopwatch stops. Time, medal and
+ *               personal best go to the flp's results card (`onRunEnded`) — there is
+ *               no end popup. A cell tapped while the break shrinks away is verified
+ *               (✓ / ✗) but never marked.
  *
- * Give up — the header's "give up" chip (Phase 1 or 2, after a confirm) ends the run
- * early onto the same End board, which reveals every character's full shadow. No
- * medal, no personal best, no win, and no marks beyond the cells already checked.
+ * Leave — the break's Leave ENDS a live run early (no confirm, as Leave does in every
+ * game). No medal, no personal best, no win, and no marks beyond the cells already
+ * checked. Before the run has started it simply closes the break.
  *
  * The stopwatch is ACCUMULATED active time, so a backgrounded app (useBackgroundPause)
  * is not billed — the app-wide games rule.
  *
- * What differs by host:
- *   - the chrome (`Frame`), and with it the give-up chip, which only the page's header
- *     has room for;
- *   - the opening board: a break seeds it and may hand over the prefetched cells;
- *   - the way out: the page's Back leaves; a break's Leave ENDS a live run like give up,
- *     with no confirm, as Leave does in every game;
- *   - the end: a break reports to the flp (`onRunEnded`) in place of the popup, so it has
- *     no End board and no Play Again.
+ * The opening board is seeded with the working loop and may arrive prefetched.
  */
 const WritingGridStage: React.FC<WritingGridStageProps> = ({
-    host,
     Frame,
     dealRequest,
     prefetchedCells = null,
@@ -91,12 +79,10 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     onRunEnded,
     onCardCleared,
 }) => {
-    const isBreak = host === "flpBreak";
     const onCardClearedRef = useRef(onCardCleared);
     onCardClearedRef.current = onCardCleared;
     const { token, isAuthenticated } = useAuth();
     const { recordWin } = useGameWins(GAME_KEY);
-    const { confirm } = useConfirmation();
     const personalBest = usePersonalBest(GAME_ID, "default");
 
     const [phase, setPhase] = useState<"loading" | "empty" | BoardPhase>("loading");
@@ -107,16 +93,14 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     // The open cell's element — the editor grows out of it and shrinks back into it.
     const [openOrigin, setOpenOrigin] = useState<HTMLElement | null>(null);
     const [countdownStep, setCountdownStep] = useState(0);
-    const [loadNonce, setLoadNonce] = useState(0);
-    // Set when the run ended through "give up" rather than an all-✓ board: the number of
-    // cells that were ✓ at that moment (frozen, so End-board practice redraws cannot
-    // change it). null = not given up. The End board is the same either way; only the
-    // popup (no time / medal / best) differs.
+    // Set when the run ended through Leave rather than an all-✓ board: the number of
+    // cells that were ✓ at that moment (frozen, so a late redraw cannot change it).
+    // null = the run finished. Only the results (no time / medal / best) differ.
     const [gaveUpCorrect, setGaveUpCorrect] = useState<number | null>(null);
     const gaveUp = gaveUpCorrect !== null;
     // A break's Leave during Phase 1. The run still ends and reports, but the screen stays
     // as Phase 1 while the break shrinks away, so "ended" never flashes the Phase 2 label
-    // or the revealed End board on the way out. A break has no Play Again to reset this.
+    // or the revealed End board on the way out.
     const [leftDuringArrange, setLeftDuringArrange] = useState(false);
 
     // ── Deal ─────────────────────────────────────────────────────────────────────
@@ -125,9 +109,8 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         if (!isAuthenticated) return;
         let cancelled = false;
         setPhase("loading");
-        // Keyed on the nonce, not spent through a ref, so a StrictMode re-run uses it too.
-        // A break never bumps the nonce: it has no Play Again.
-        const deal = prefetchedCells && loadNonce === 0 ? Promise.resolve(prefetchedCells) : dealWritingGrid(dealRequest);
+        // Read from the prop, not spent through a ref, so a StrictMode re-run uses it too.
+        const deal = prefetchedCells ? Promise.resolve(prefetchedCells) : dealWritingGrid(dealRequest);
         deal
             .then((dealt) => {
                 if (cancelled) return;
@@ -148,7 +131,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         };
         // The request and the prefetch are fixed for a Stage's life.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, loadNonce]);
+    }, [isAuthenticated]);
 
     // ── Countdown ────────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -196,9 +179,9 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     }, []);
 
     // ── Phase 2: check a cell on tap-out ─────────────────────────────────────────
-    // Also the End board's practice redraw: once the board is finished, a tapped cell
-    // reopens with its ink as drawn; a CHANGED drawing is re-verified (✓ / ✗ on the
-    // cell) but emits no mark — the run's marks were already sent while it was timed.
+    // Once the run has ended (the break is shrinking away) a tapped cell reopens with its
+    // ink as drawn; a CHANGED drawing is re-verified (✓ / ✗ on the cell) but emits no
+    // mark — the run's marks were already sent while it was timed.
     const handleCellDone = async (index: number, ink: Ink) => {
         const cell = cells[index];
         setOpenIndex(null);
@@ -218,7 +201,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
             console.warn("[WritingGrid] verify failed", err);
         }
         setResults((prev) => ({ ...prev, [cell.char]: correct ? "correct" : "wrong" }));
-        if (practice) return; // End-board redraws are evaluated, never marked
+        if (practice) return; // post-run redraws are evaluated, never marked
         const level = index + 1;
         // Every check marks the character's own card; the server drops it when
         // level ≤ that character's mastery (farming) or the card is resting.
@@ -233,14 +216,14 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                 // Only the learner's own single-character card can leave a tower: a hidden
                 // row and a focused break's outside card were never on it, and a word's
                 // cards stay, since a character's mark does not start the word's clock.
-                if (correct && !result.suppressed && cell.ownCard && !cell.outsideFocus) onCardClearedRef.current?.();
+                if (correct && !result.suppressed && cell.ownCard && !cell.outsideFocus) onCardClearedRef.current?.(cell.cardId);
             })
             .catch((err) => console.error(`[WritingGrid] writing mark failed → card ${cell.cardId}:`, err));
     };
 
     // Phase 2: a ✗ cell reopened is a fresh attempt — drop its old ink (and with it the
-    // old Level 8 clock, which lives in the editor). On the End board a cell reopens
-    // with its canvas exactly as drawn (✓ or ✗); the editor's Clear starts it over.
+    // old Level 8 clock, which lives in the editor). After the run a cell reopens with
+    // its canvas exactly as drawn (✓ or ✗); the editor's Clear starts it over.
     const handleOpenCell = (index: number, el: HTMLElement) => {
         const cell = cells[index];
         if (phase === "write" && cell && results[cell.char] === "wrong") {
@@ -254,9 +237,6 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     // ── End: every cell correct ──────────────────────────────────────────────────
     const allCorrect = cells.length > 0 && cells.every((c) => results[c.char] === "correct");
     const [finalMs, setFinalMs] = useState(0);
-    // The end popup collapses to the top-right puck (its ×) so the finished board —
-    // every cell's ink over its shadow — can be looked over; the puck restores it.
-    const [popupMinimized, setPopupMinimized] = useState(false);
     // Settles once the server has judged the run; the break's results card waits on it.
     const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
     useEffect(() => {
@@ -272,11 +252,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
 
     const medal = phase === "ended" && !gaveUp ? medalForWritingGrid(finalMs) : null;
 
-    // ── Give up: end the run early and reveal the board ─────────────────────────
-    // Read through a ref so the confirm's async resolution sees the CURRENT phase —
-    // the closure's `phase` is whatever it was when the chip was tapped.
-    const phaseRef = useRef(phase);
-    phaseRef.current = phase;
+    // ── Leave: end the run early ────────────────────────────────────────────────
     const correctCountRef = useRef(0);
     correctCountRef.current = cells.filter((c) => results[c.char] === "correct").length;
     const endRunEarly = () => {
@@ -284,22 +260,10 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         // An open canvas is discarded unchecked: ending early sends no further marks.
         setOpenIndex(null);
         setGaveUpCorrect(correctCountRef.current);
-        setPopupMinimized(false);
         setPhase("ended");
     };
-    const handleGiveUp = () => {
-        void confirm("The run ends now and every character is revealed. It won't count for a medal or your personal best.", {
-            title: "Give up this grid?",
-            confirmText: "Give up",
-            cancelText: "Keep writing",
-        }).then((ok) => {
-            const live = phaseRef.current;
-            if (!ok || (live !== "arrange" && live !== "write")) return;
-            endRunEarly();
-        });
-    };
 
-    // The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2): a live run ends with what it
+    // The break's Leave (docs/FLP_GAME_BREAKS.md § 2): a live run ends with what it
     // wrote; before one has started there is nothing to show, so the break closes.
     const leaveBreak = () => {
         if (running) {
@@ -309,13 +273,12 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
             onDone();
         }
     };
-    const onExitRequest = isBreak ? leaveBreak : onDone;
 
-    // A break's run reports to the flp instead of showing the end popup, which is what
-    // starts the shrink back to the card. Read on the commit that entered "ended", where
+    // The run reports to the flp (there is no end popup), which is what starts the
+    // shrink back to the card. Read on the commit that entered "ended", where
     // `personalBest.best` is still the best from before this run.
     useEffect(() => {
-        if (!isBreak || phase !== "ended") return;
+        if (phase !== "ended") return;
         const bestBefore = personalBest.best;
         const heading = medal ? `${MEDAL_LABEL[medal]}!` : "Finished!";
         onRunEnded?.({
@@ -333,13 +296,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         });
         // Once per run: the board and the clock cannot move after the run ends.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isBreak, phase]);
-
-    const playAgain = () => {
-        personalBest.reset();
-        setPopupMinimized(false);
-        setLoadNonce((n) => n + 1);
-    };
+    }, [phase]);
 
     const openCell = openIndex !== null ? cells[openIndex] : null;
     // "countdown" is the board's read-only Phase 1: the same picture as "arrange", no drag.
@@ -349,16 +306,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     return (
         <Frame
             title="Writing Grid"
-            onExitRequest={onExitRequest}
-            headerRight={
-                // Only while the stopwatch runs: nothing to give up during the countdown,
-                // and the End popup owns replay / exit once the run is over.
-                running ? (
-                    <HeaderToggleChip className="writing-grid__give-up" active={false} onClick={handleGiveUp}>
-                        give up
-                    </HeaderToggleChip>
-                ) : undefined
-            }
+            onExitRequest={leaveBreak}
         >
             {phase === "loading" && (
                 <GameCentered className="writing-grid__loading">
@@ -379,17 +327,15 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
 
             {phase !== "loading" && phase !== "empty" && (
                 <GameFrame className="writing-grid__frame" sx={{ touchAction: "none" }}>
-                    {/* In a break the strip IS the study header's row, so the phase shares a
-                        line with Leave's arrow and the board starts below both. */}
+                    {/* The strip IS the study header's row, so the phase shares a line with
+                        Leave's arrow and the board starts below both. */}
                     <GameHud
                         className="writing-grid__phase-strip"
                         sx={{
                             justifyContent: "flex-end",
-                            ...(isBreak && {
-                                boxSizing: "border-box",
-                                height: GAME_FRAME_EXIT_CLEARANCE_PX,
-                                padding: `${DENSE_HEADER_PAD_TOP_PX}px ${DENSE_HEADER_PAD_X_PX}px 0`,
-                            }),
+                            boxSizing: "border-box",
+                            height: GAME_FRAME_EXIT_CLEARANCE_PX,
+                            padding: `${DENSE_HEADER_PAD_TOP_PX}px ${DENSE_HEADER_PAD_X_PX}px 0`,
                         }}
                     >
                         <GameHudLabel className="writing-grid__phase">
@@ -482,49 +428,6 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                 </GameFrame>
             )}
 
-            {phase === "ended" && !isBreak && (
-                <GameEndPopup
-                    classPrefix="writing-grid"
-                    minimized={popupMinimized}
-                    onMinimize={() => setPopupMinimized(true)}
-                    onRestore={() => setPopupMinimized(false)}
-                >
-                    <Typography className="writing-grid__popup-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                        {gaveUp ? "Gave up" : medal ? `${MEDAL_LABEL[medal]}!` : "Finished!"}
-                    </Typography>
-                    {gaveUp ? (
-                        // A given-up run has no time worth reporting — say how far it got.
-                        <Typography className="writing-grid__popup-progress" sx={{ fontSize: SIZE.bodyLg, color: COLORS.onSurface }}>
-                            {gaveUpCorrect} of {cells.length} written
-                        </Typography>
-                    ) : (
-                        <>
-                            <Typography className="writing-grid__popup-time" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: COLORS.onSurface }}>
-                                {formatTimeMs(finalMs)}
-                            </Typography>
-                            <PersonalBestLine game="writing-grid" best={personalBest.best} isNewBest={personalBest.isNewBest} className="writing-grid__personal-best" />
-                        </>
-                    )}
-                    <Box className="writing-grid__popup-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}>
-                        <Button
-                            className="writing-grid__popup-again"
-                            variant="contained"
-                            onClick={playAgain}
-                            sx={{ py: 1.25, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.bold }}
-                        >
-                            Play Again
-                        </Button>
-                        <Button
-                            className="writing-grid__popup-back"
-                            variant="outlined"
-                            onClick={onDone}
-                            sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
-                        >
-                            Back to {doneLabel}
-                        </Button>
-                    </Box>
-                </GameEndPopup>
-            )}
         </Frame>
     );
 };

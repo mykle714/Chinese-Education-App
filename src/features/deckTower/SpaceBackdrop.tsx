@@ -1,9 +1,12 @@
 import React, { useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { mixHex, shadeHex } from "./iso";
-import { setFooterCastShadow } from "../../components/footerCastShadow";
+import { setFooterCastShadow, translucentShadow } from "../../components/footerCastShadow";
 import ShootingStars from "./ShootingStars";
 import StarField, { STAR_LAYERS, starLayerTransform } from "./StarField";
+import WeatherLayer from "./WeatherLayer";
+import type { WeatherEffect } from "./towerWeather";
+import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
 
 /**
  * SpaceBackdrop — the Deck Tower's sky, which darkens into star-filled space as the
@@ -24,13 +27,16 @@ import StarField, { STAR_LAYERS, starLayerTransform } from "./StarField";
  *   - The time of day (timeOfDay.ts) arrives through `palette.sky` (the world's sky at
  *     this hour) and `groundStars` (night's faint stars from the ground). At night it
  *     also hosts the ShootingStars layer (`shootingStars`), over the star field.
+ *   - The learner's weather (towerWeather.ts) arrives as `weather` — the particles
+ *     WeatherLayer draws, over the stars. The weather FADES OUT on the first half of the climb
+ *     (`WEATHER_FADE_TO`): it belongs to the sky, not to space.
  *   - `palette` changes every frame during a world pan (useWorldPan blends one world's
  *     colours into the next); each change re-applies at once, without a scroll.
  *   - `altitudeY` OVERRIDES the scroll: while the tower is being studied
- *     (docs/DECK_TOWER.md § "Studying the tower") the camera has left the scroll behind
- *     and stands over the tower's top card, so the page hands in the altitude it is at —
- *     a viewBox y on the tower's axis in the same frame as `band` — and the sky follows
- *     it: studying down a tall tower brings the sky back from space, card by card.
+ *     (docs/DECK_TOWER.md § "Studying the tower") the page hands in the altitude the view
+ *     stood at when the stack was tapped — a viewBox y on the tower's axis in the same
+ *     frame as `band` — and the sky HOLDS it for the whole session. It does not follow
+ *     the camera's dive or the tower's growth, so the sky never changes mid-study.
  *
  * ⚡ Scroll handling writes the styles directly to the DOM (rAF-throttled), NOT through
  * React state. A state update per scroll frame would re-render the whole scene (tower,
@@ -40,7 +46,7 @@ import StarField, { STAR_LAYERS, starLayerTransform } from "./StarField";
  * same z-index, but earlier in the DOM, so the scroller (and the svg in it) paints over
  * it, and whatever covers the scroller covers it too.
  *
- * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; ShootingStars.tsx; towerWorlds.ts (the palettes, via the page).
+ * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; ShootingStars.tsx; WeatherLayer.tsx; towerWorlds.ts (the palettes, via the page).
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space".
  */
 
@@ -69,6 +75,10 @@ interface SpaceBackdropProps {
     groundStars?: number;
     /** Fire occasional meteors over the sky (timeOfDay.ts `shootingStars`: night). */
     shootingStars?: boolean;
+    /** Rain / snow / lightning to draw over the sky (fog is ignored here — DeckTowerPlatform draws it; towerWeather.ts `weatherEffect`), or undefined for none. */
+    weather?: WeatherEffect;
+    /** Bumps per lightning flash (DeckTowerPage → useLightningFlashes), for WeatherLayer. */
+    flashId?: number;
     /** The backdrop's bottom edge (the footer bar's height), matching the scroller's. */
     bottom: number | string;
     /** The altitude to show instead of the scroll's (see the header), or null to follow the scroll. */
@@ -84,6 +94,8 @@ interface SpaceBackdropProps {
 
 /** Stars only start to show once the blend is this far along, so they never sit on a light sky. */
 const STARS_FADE_FROM = 0.35;
+/** The weather is fully gone once the sky → space blend is this far along. */
+const WEATHER_FADE_TO = 0.5;
 
 /** Hermite smoothstep of `x` between `edge0` and `edge1`. */
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -91,10 +103,11 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
     return u * u * (3 - 2 * u);
 }
 
-const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false }) => {
+const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false, weather, flashId }) => {
     const backdropRef = useRef<HTMLDivElement>(null);
     const starsRef = useRef<HTMLDivElement>(null);
     const starLayerRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const weatherRef = useRef<HTMLDivElement>(null);
     // Read by `apply` through refs: the palette changes per frame during a pan, and
     // re-subscribing the scroll listener that often would be wasted work.
     const paletteRef = useRef(palette);
@@ -119,12 +132,13 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         // style write invalidates even when the value is the same).
         let lastSky = "";
         let lastStarsOpacity = "";
+        let lastWeatherOpacity = "";
         const lastStarTransforms: string[] = [];
         const apply = () => {
-            // The scene's svg, found by tag rather than position: the scroller also holds a
-            // <style> (DeckTowerPage's falling-shadow rule), whose empty rect would read as
-            // "not laid out yet" and silently freeze the sky.
-            const svg = scroller.querySelector(":scope > svg");
+            // The scene's svg, found by class (towerScroll → towerSceneOf): it sits in the
+            // tower section, and the scroller also holds a <style> whose empty rect would read
+            // as "not laid out yet" and silently freeze the sky.
+            const svg = towerSceneOf(scroller);
             if (!svg) return;
             const svgRect = svg.getBoundingClientRect();
             const scrollerRect = scroller.getBoundingClientRect();
@@ -141,17 +155,33 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             }
             // The floating slab footer stands on this sky and casts its shadow onto it: the
             // sky one iso step darker (the design's `shade(sky, .1)`), following the sky into
-            // space as the tower is climbed. See components/footerCastShadow.ts.
-            setFooterCastShadow(shadeHex(skyNow, 0.1));
+            // space as the tower is climbed. Painted as a translucent black of that depth, not
+            // the shaded colour itself, so it also falls on the cards page as that scrolls
+            // under the slab instead of covering it in a sky-coloured patch.
+            // See components/footerCastShadow.ts → `translucentShadow`.
+            setFooterCastShadow(translucentShadow(skyNow, shadeHex(skyNow, 0.1)));
             const starsOpacity = Math.max(groundStarsRef.current, smoothstep(STARS_FADE_FROM, 1, t)).toFixed(3);
             if (starsOpacity !== lastStarsOpacity) {
                 lastStarsOpacity = starsOpacity;
                 stars.style.opacity = starsOpacity;
             }
-            // Parallax: how far the learner has scrolled UP from the bottom. Content moves
+            // The weather thins out as the sky turns to space. Read through the ref: the
+            // layer mounts and unmounts with no weather, and this effect does not re-run.
+            const weatherEl = weatherRef.current;
+            if (weatherEl) {
+                const weatherOpacity = (1 - smoothstep(0, WEATHER_FADE_TO, t)).toFixed(3);
+                if (weatherOpacity !== lastWeatherOpacity || weatherEl.style.opacity === "") {
+                    lastWeatherOpacity = weatherOpacity;
+                    weatherEl.style.opacity = weatherOpacity;
+                }
+            }
+            // Parallax: how far the learner has scrolled UP from the platform. Content moves
             // down the screen as they climb; each star layer follows at its own fraction
-            // (starLayerTransform).
-            const climbed = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+            // (starLayerTransform). Measured from the platform LINE, not the scroll's end —
+            // the cards page runs on below it (towerScroll). Held at 0 down in the cards: the
+            // sky there is a backdrop at infinity, and a negative offset would pull a star
+            // tile up off its edge.
+            const climbed = Math.max(0, heightAbovePlatform(scroller));
             STAR_LAYERS.forEach((l, i) => {
                 const el = starLayerRefs.current[i];
                 const transform = starLayerTransform(climbed, l);
@@ -182,10 +212,10 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         };
     }, [scrollerRef, band, scrollerBottomInset]);
 
-    // A new palette (a world pan's colour blend), or a new study altitude, repaints straight away.
+    // A new palette (a world pan's colour blend), or a study starting / ending (`altitudeY`), repaints straight away.
     useLayoutEffect(() => {
         applyRef.current?.();
-    }, [palette.sky, palette.space, altitudeY, groundStars]);
+    }, [palette.sky, palette.space, altitudeY, groundStars, weather]);
 
     return (
         <Box
@@ -195,6 +225,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         >
             <StarField fieldRef={starsRef} layerRefs={starLayerRefs} opacity={0} />
             <ShootingStars active={shootingStars} />
+            {weather && <WeatherLayer effect={weather} rootRef={weatherRef} flashId={flashId} />}
         </Box>
     );
 };

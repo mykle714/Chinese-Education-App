@@ -8,6 +8,7 @@ import { fetchChallengesPage } from "../../api/studyChallenges";
 import type { ChallengeFriendRow, ChallengesPageResponse } from "../../api/studyChallenges";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useTestingFeatures } from "../../hooks/useTestingFeatures";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -68,6 +69,8 @@ function ChallengesPage() {
     usePageTitle("Challenges");
     const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
+    // The anytime row + notice show only while testing features are on (useTestingFeatures).
+    const testingFeatures = useTestingFeatures();
 
     const [page, setPage] = useState<ChallengesPageResponse | null>(null);
     const [loading, setLoading] = useState(true);
@@ -176,13 +179,14 @@ function ChallengesPage() {
                 </Button>
 
                 {/* ── TESTER: allow anytime (docs/STUDY_CHALLENGE.md § 2a) ──
-                    Feature-tester accounts only (users.isFeatureTester,
-                    migration 178). The row is rendered rather than hidden
+                    Feature-tester accounts only, while testing features are on
+                    (useTestingFeatures: users.isFeatureTester, migration 178, AND
+                    the Settings switch). The row is rendered rather than hidden
                     behind a menu because a tester needs to SEE whether the week is
                     being bypassed — a hidden flag that silently rewrites every
                     deadline is exactly the kind of state that gets left on and then
                     misread as a bug. */}
-                {user?.isFeatureTester && (
+                {testingFeatures && (
                     <Box
                         className="challenges-page__anytime"
                         sx={{
@@ -231,7 +235,7 @@ function ChallengesPage() {
                     unprepared (see the component). Only for a feature tester, and only
                     while the switch is on — the second condition is what keeps it from
                     becoming wallpaper. */}
-                {user?.isFeatureTester && anytime && <ChallengeAnytimeNotice />}
+                {testingFeatures && anytime && <ChallengeAnytimeNotice />}
 
                 {/* Hidden while the hatch is on: the cap is not being enforced, so a
                     count of slots "used this week" would be stating a rule that is not

@@ -4,7 +4,7 @@ import type { TimeOfDayOverride } from "./useTimeOfDay";
 
 /**
  * TimeOfDayToggle — the FEATURE-TESTER row of chips under the Deck Tower's header that
- * pins the sky to one time of day: Auto · Dawn · Day · Sunset · Night
+ * pins the sky to one time of day: Auto · Day · Night
  * (docs/DECK_TOWER.md § "Time of day" → "Tester toggle").
  *
  * Layer: page-private component (feature module `src/features/deckTower`). It draws and
@@ -16,9 +16,7 @@ import type { TimeOfDayOverride } from "./useTimeOfDay";
 
 const OPTIONS: readonly { value: TimeOfDayOverride; label: string }[] = [
     { value: "auto", label: "Auto" },
-    { value: "dawn", label: "Dawn" },
     { value: "day", label: "Day" },
-    { value: "sunset", label: "Sunset" },
     { value: "night", label: "Night" },
 ];
 

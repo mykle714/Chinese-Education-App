@@ -17,7 +17,6 @@ const WritingGridBreakStage: React.FC<FlpBreakStageProps<WritingGridCharacter[]>
     onCardCleared,
 }) => (
     <WritingGridStage
-        host="flpBreak"
         Frame={Frame}
         dealRequest={writingGridBreakRequest(context)}
         prefetchedCells={prefetched}

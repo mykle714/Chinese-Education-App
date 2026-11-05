@@ -30,7 +30,7 @@ export interface LanguageProgress {
   /** Last local day this language crossed RETENTION_MINUTES, as YYYY-MM-DD. */
   lastStreakDate: string | null;
   /**
-   * Streak date (YYYY-MM-DD) on which the hp daily banking animation last started for
+   * Streak date (YYYY-MM-DD) on which the td daily banking animation last started for
    * this language (migration 175). NULL = never. Presentational only — it records that
    * a re-enactment was shown, never that a balance moved. See docs/DAILY_MINUTE_BANKING.md.
    */

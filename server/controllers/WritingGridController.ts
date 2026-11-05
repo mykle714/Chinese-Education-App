@@ -3,25 +3,34 @@ import { MAX_SEED_IDS, parseIdCsv, requireUserId, handleControllerError } from '
 import { FOCUS_ENDED_HEADER } from '../contracts/focusMode.js';
 import type { FocusModeService } from '../services/FocusModeService.js';
 import type { WritingGridDealOptions, WritingGridService } from '../services/WritingGridService.js';
+import type { OnDeckVocabService } from '../services/OnDeckVocabService.js';
 
 /**
  * The break additions to a writing game's deal: `?seedIds=` and `?flpBreak=1`, the latter
  * resolving the writing world's focus state. Shared with SuperpositionController.
+ *
+ * The seed words go through the break seed rule first (`filterBreakSeedIds`,
+ * docs/FLP_GAME_BREAKS.md § 4): only loop words whose writing mark would count and whose
+ * writing bar is under 6 lend their characters the seed tier. A focused break ignores
+ * the seed, so it is not filtered there.
  */
 export async function parseWritingDealOptions(
   req: Request,
   res: Response,
   userId: string,
-  focusModeService: FocusModeService
+  focusModeService: FocusModeService,
+  onDeckVocabService: OnDeckVocabService
 ): Promise<WritingGridDealOptions> {
-  const options: WritingGridDealOptions = {
-    seedIds: parseIdCsv(req.query.seedIds).slice(0, MAX_SEED_IDS),
-  };
+  const options: WritingGridDealOptions = {};
   if (String(req.query.flpBreak ?? '') === '1') {
     const focus = await focusModeService.resolveWorld(userId, 'zh', 'writing');
     if (focus.active) options.focusBreak = { setIds: focus.setIds, remainingIds: focus.ids };
     else if ('ended' in focus && focus.ended) res.setHeader(FOCUS_ENDED_HEADER, 'writing');
   }
+  const seedIds = parseIdCsv(req.query.seedIds).slice(0, MAX_SEED_IDS);
+  options.seedIds = options.focusBreak
+    ? seedIds
+    : await onDeckVocabService.filterBreakSeedIds(userId, 'zh', seedIds, 'writing');
   return options;
 }
 
@@ -37,14 +46,16 @@ export async function parseWritingDealOptions(
 export class WritingGridController {
   constructor(
     private writingGridService: WritingGridService,
-    private focusModeService: FocusModeService
+    private focusModeService: FocusModeService,
+    // Filters a break's seed words (`parseWritingDealOptions`).
+    private onDeckVocabService: OnDeckVocabService
   ) {}
 
   async deal(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const options = await parseWritingDealOptions(req, res, userId, this.focusModeService);
+      const options = await parseWritingDealOptions(req, res, userId, this.focusModeService, this.onDeckVocabService);
       const characters = await this.writingGridService.deal(userId, options);
       res.json({ characters });
     } catch (error) {

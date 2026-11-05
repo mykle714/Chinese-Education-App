@@ -10,8 +10,9 @@ import { WRITING_LEVELS, WRITING_MAX_CHARS } from "../../../../server/contracts/
 import type { VocabEntry } from "../../../types";
 import { COLORS, FONTS } from "../../../theme";
 import { SIZE } from "../../../theme/scale";
-import { CARD_FLIP_MS, FC_FONT } from "../constants";
+import { TOWER_CARD_FLIP_MS, FC_FONT } from "../constants";
 import TonedPronunciation from "../../../components/TonedPronunciation";
+import GlossText from "../../../components/GlossText";
 import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
 import type { LookalikeMatch } from "../../../components/handwriting/lookalikes";
 import LookalikeNotice from "./LookalikeNotice";
@@ -96,10 +97,10 @@ export default function WritingCardFace({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                // On the Deck Tower the face is card stock: a cream rim round a beige panel
-                // (CardFaceSide `towerStock`, rim width `--card-stock-inset` set on the card
-                // frame). Every row is kept inside the panel, a little in from its edge;
-                // the plain flp sets no inset and keeps its old 20 / 24 / 20 px.
+                // The face is card stock: a cream rim round a beige panel (CardFaceSide, rim
+                // width `--card-stock-inset` set on the card frame — `cardStockVars`, card/cardStock.ts).
+                // Every row is kept inside the panel, a little in from its edge; the px
+                // figures are only floors (see `insetPad`).
                 px: insetPad(20),
                 pt: insetPad(24),
                 pb: insetPad(20),
@@ -133,7 +134,7 @@ export default function WritingCardFace({
                             overflow: "hidden",
                         }}
                     >
-                        {resolveDisplayDefinition(entry)}
+                        <GlossText text={resolveDisplayDefinition(entry)} />
                     </Box>
                 </Box>
                 {iconId && (
@@ -237,7 +238,7 @@ export default function WritingCardFace({
                                     )}
                                     {result && (
                                         // Delayed by the flip so the stamp lands on a face the learner can see.
-                                        <ResultStamp className="writing-card-face__result" result={result} size={24} inset={6} delayMs={CARD_FLIP_MS} />
+                                        <ResultStamp className="writing-card-face__result" result={result} size={24} inset={6} delayMs={TOWER_CARD_FLIP_MS} />
                                     )}
                                 </>
                             )}
@@ -247,7 +248,7 @@ export default function WritingCardFace({
             </Box>
             {notice && cellPx > 0 && (
                 <Box className="writing-card-face__notice-slot" sx={{ flex: `1 1 ${NOTICE_REACH_PX}px`, mb: `${-NOTICE_REACH_PX}px`, width: blockWidth, display: "flex", flexDirection: "column", justifyContent: "flex-end", pt: `${CELL_GAP}px` }}>
-                    <LookalikeNotice match={notice} width={blockWidth} height={cellPx} tellWidth={Math.round(areaPx * NOTICE_TELL_WIDTH_FRACTION)} delayMs={CARD_FLIP_MS} />
+                    <LookalikeNotice match={notice} width={blockWidth} height={cellPx} tellWidth={Math.round(areaPx * NOTICE_TELL_WIDTH_FRACTION)} delayMs={TOWER_CARD_FLIP_MS} />
                 </Box>
             )}
             </Box>
@@ -283,13 +284,13 @@ const HINT_ROW_PX = 36;
  * content box, so the notice is bottom-aligned on the card.
  */
 const NOTICE_REACH_PX = GRID_AREA_PAD_Y + FACE_ROW_GAP + HINT_ROW_PX;
-/** Gap between the tower stock's beige panel edge and the face's content, px. */
+/** Gap between the card stock's beige panel edge and the face's content, px. */
 const PANEL_CONTENT_GAP = 12;
 
 /**
- * A face padding that clears the tower stock's cream rim: the larger of the plain-flp
- * padding and rim + PANEL_CONTENT_GAP. Without a `--card-stock-inset` (the plain flp) it
- * is just `plainPx`.
+ * A face padding that clears the card stock's cream rim: the larger of `plainPx` and
+ * rim + PANEL_CONTENT_GAP. Without a `--card-stock-inset` in scope (no card-stock frame
+ * above the face) it is just `plainPx`.
  */
 function insetPad(plainPx: number): string {
     return `max(${plainPx}px, calc(var(--card-stock-inset, 0px) + ${PANEL_CONTENT_GAP}px))`;

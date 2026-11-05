@@ -58,7 +58,7 @@ export interface CompareWorkspaceProps {
  *
  * Shared by BOTH compare surfaces — it is presentational + request-driving only, and owns no slot
  * state of its own:
- *  - the eip Compare TAB (flp and scp, which have an entry-tab strip), where the state lives in the
+ *  - the eip Compare TAB (flp and ancp, which have an entry-tab strip), where the state lives in the
  *    tab object (useEipTabs) and slot A is pre-filled with the word the user came from;
  *  - the compare SHEET (`CompareSheet`, both cdps — no strip to put a tab in), where the state
  *    lives in that component and resets on every open.

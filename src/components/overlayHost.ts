@@ -52,7 +52,7 @@
  * The footer then stays exactly where it is and is dimmed with everything else; a dim
  * takes NO `useHideFooter` hold. (Until 2026-10-06 the convention was the reverse —
  * host inside the page surface and slide the footer away — which left headers lit above
- * game popups and the footer lit above scp's completion popup.)
+ * game popups and the footer lit above ancp's completion popup.)
  *
  * One deliberate exception: the Writing Notebook's cell canvas (NotebookCellEditor) dims
  * ONLY the scrollable sheet and leaves the header + word slot lit, by user decision
@@ -64,8 +64,8 @@
  *
  * `nearestOverlayHost` remains for an overlay that does NOT dim and must sit UNDER the
  * footer: a PERSISTENT SheetPanel (`minHeight > 0`, `showScrim={false}`), page furniture
- * the bar is meant to float over. No page mounts one today (the /decks sheets are modal),
- * so in practice every SheetPanel hosts at the frame.
+ * the bar is meant to float over. No page mounts one today, so in practice every
+ * SheetPanel hosts at the frame.
  *
  * The beginner keyboard also hosts at the frame (`frameOverlayHost`) and simply covers
  * the footer; it is not a dim, but it obeys the same paint-order reasoning.

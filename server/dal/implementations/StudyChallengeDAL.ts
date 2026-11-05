@@ -331,23 +331,25 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
   async acceptChallenge(
     id: string,
     words: Record<string, ChallengeWord[]>,
-    presetDeckIds: Record<string, number>,
     client?: PoolClient
   ): Promise<StudyChallengeRow | null> {
     this.requireId(id, 'id');
 
     // `status = 'pending'` is what makes a double-accept a no-op rather than a
-    // second pair of decks with the first pair orphaned.
+    // second write of the word sets over the first.
+    //
+    // "presetDeckIds" is no longer written: accepting stopped creating the "vs <name>"
+    // study decks on 2026-11-04 (Decks feature removed). The column is retained and
+    // stays at its '{}' default for every challenge accepted since.
     const { rows } = await this.run<StudyChallengeRow>(client, (c) =>
       c.query(
         `UPDATE study_challenges
             SET status = 'accepted',
                 "acceptedAt" = now(),
-                words = $2::jsonb,
-                "presetDeckIds" = $3::jsonb
+                words = $2::jsonb
           WHERE id = $1 AND status = 'pending'
           RETURNING ${ROW}`,
-        [id, JSON.stringify(words), JSON.stringify(presetDeckIds)]
+        [id, JSON.stringify(words)]
       )
     );
     return rows[0] ?? null;
@@ -512,21 +514,6 @@ export class StudyChallengeDAL implements IStudyChallengeDAL {
       )
     );
     return rowCount > 0;
-  }
-
-  async clearPresetDeckId(id: string, userId: string, client?: PoolClient): Promise<void> {
-    this.requireId(id, 'id');
-    this.requireId(userId, 'userId');
-
-    // `- $2` removes one key from the object. The deck row itself is dropped by the
-    // caller; this only forgets the pointer, so the orphan sweep (maintenance pass
-    // 4) has nothing left to find.
-    await this.run(client, (c) =>
-      c.query(
-        `UPDATE study_challenges SET "presetDeckIds" = "presetDeckIds" - $2 WHERE id = $1`,
-        [id, userId]
-      )
-    );
   }
 
   async findCandidates(

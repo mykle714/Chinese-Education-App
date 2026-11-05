@@ -12,14 +12,14 @@ import type { FlpWorld } from './studyMode.js';
  * ONE clock — the core bar's, started by a correct recognition OR production mark and
  * windowed by the core band (`barCooldownRemainingMs(…, 'core', …)`). That is the same
  * number the cdp prints under the Know bar and the same test `rankFlpEligible`
- * (`server/services/OnDeckVocabService.ts`) applies, so the figure on the fdp's study
- * hand cannot claim cards the flp would not deal.
+ * (`server/services/OnDeckVocabService.ts`) applies, so the Deck Tower's Learning-deck
+ * figure cannot claim cards the flp would not deal.
  *
  * ── Or the reading / writing clock ────────────────────────────────────────────
- * Every function takes the session's BAR (studyMode.ts), defaulting to core. The
+ * Every function takes the session's world (studyMode.ts), defaulting to core. The
  * READING flp (docs/READING_WRITING_CENTERS.md § Phase 4) bands and rests its cards on
- * the reading bar, so the Reading Center's study hand asks with `bar = 'reading'` and
- * gets figures for exactly the cards a reading session would deal. The WRITING flp does
+ * the reading bar, so a caller asks with `world = 'reading'` and gets figures for
+ * exactly the cards a reading session would deal. The WRITING flp does
  * the same on the writing bar — whose band and window come from the card's computed
  * `writingMastery` (the average over its characters, migration 170), so pass it.
  *
@@ -27,14 +27,17 @@ import type { FlpWorld } from './studyMode.js';
  * sibling contract modules, no enums, no Node or DOM globals; callers pass `now` rather
  * than the module reading a clock. Consumed directly by
  * `OnDeckVocabService.getFlpReadyCounts` (server) and re-exported by
- * `src/utils/flpReadiness.ts` (client) — one definition, so the fdp figure and the flp's
+ * `src/utils/flpReadiness.ts` (client) — one definition, so the tower figure and the flp's
  * own eligibility test cannot drift.
  *
  * ⚠️ Counts SORTED cards only. Every caller must feed it rows already filtered by
  * `vetSortedClause()` (docs/PROVISIONAL_CARDS.md) — so a figure never counts a card the
  * learner did not choose to keep.
  *
- * Referenced by docs/DECKS_FEATURE.md § "The card hand".
+ * `nextFlpReadyMs` (the Review card's "next ready" countdown) was deleted 2026-11-04 with
+ * the Review / Challenge study modes (docs/DEFERRED_WORK.md § 31).
+ *
+ * Referenced by docs/DECK_TOWER.md (the tower's ready counts, via `useFlpReadyCounts`).
  */
 
 /** The minimal shape every function here needs from a card row. */
@@ -95,29 +98,4 @@ export function flpReadyCountsByBand(
     counts[band] = (counts[band] ?? 0) + 1;
   }
   return counts;
-}
-
-/**
- * Time until the SOONEST card in `bands` becomes flp-ready, or null when none is
- * resting — either because one is already ready, or because the learner owns none at
- * all. The caller distinguishes those two by looking at the ready count itself; null
- * means only "there is no countdown worth showing".
- *
- * Drives the Review card's "everything is resting" message, which needs a *when*, not
- * just a *no*.
- */
-export function nextFlpReadyMs(
-  entries: readonly FlpReadinessCard[],
-  bands: readonly string[],
-  now: number,
-  world: FlpWorld = 'core'
-): number | null {
-  let soonest = Infinity;
-  for (const entry of entries) {
-    if (!bands.includes(barCategory(entry.typedMarkHistory, world, entry.writingMastery))) continue;
-    const remaining = flpCooldownRemainingMs(entry.typedMarkHistory, now, world, entry.writingMastery);
-    // 0 means this card is ready, so there is nothing to count down to.
-    if (remaining > 0 && remaining < soonest) soonest = remaining;
-  }
-  return Number.isFinite(soonest) ? soonest : null;
 }

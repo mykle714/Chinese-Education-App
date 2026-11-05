@@ -15,11 +15,11 @@ const game = (over: Partial<GameDef> & { gameId: string }): GameDef =>
   ({ title: over.gameId, glyph: 'x', route: `/games/${over.gameId}`, hue: 'blu', Component: null, ...over }) as unknown as GameDef;
 
 const REGISTRY: GameDef[] = [
-  game({ gameId: 'match-speed', markType: 'recognition' }),
+  game({ gameId: 'match-speed', markType: 'recognition', noPinyinMarkType: 'reading' }),
   game({ gameId: 'bubble-match', markType: 'recognition', noPinyinMarkType: 'reading' }),
-  game({ gameId: 'speed-reading', markType: 'reading', languages: ['zh'], hiddenFromHub: true }),
+  game({ gameId: 'speed-reading', markType: 'reading', languages: ['zh'] }),
   game({ gameId: 'word-search', modes: [{ mode: 'pinyin', markType: 'production' }, { mode: 'no-pinyin', markType: 'reading' }] }),
-  game({ gameId: 'writing-grid', markType: 'writing', languages: ['zh'], hiddenFromHub: true }),
+  game({ gameId: 'writing-grid', markType: 'writing', languages: ['zh'] }),
 ];
 const all = (_id: string): boolean => true; // eslint-disable-line @typescript-eslint/no-unused-vars
 const keys = (world: 'core' | 'reading' | 'writing', language: 'zh' | 'es' = 'zh', has = all) =>
@@ -31,8 +31,11 @@ describe('flpBreakCandidates', () => {
     expect(flpBreakCandidates(REGISTRY, all, 'core', 'zh').every((c) => c.showPinyin)).toBe(true);
   });
 
-  it('reading flp: reading games incl. hub-hidden ones and Bubble Match with pinyin hidden', () => {
-    expect(keys('reading')).toEqual(['bubble-match:', 'speed-reading:', 'word-search:no-pinyin']);
+  it('reading flp: reading games incl. hub-hidden ones, and Match Speed + Bubble Match with pinyin hidden', () => {
+    expect(keys('reading')).toEqual(['match-speed:', 'bubble-match:', 'speed-reading:', 'word-search:no-pinyin']);
+    const match = flpBreakCandidates(REGISTRY, all, 'reading', 'zh').find((c) => c.game.gameId === 'match-speed');
+    expect(match?.markType).toBe('reading');
+    expect(match?.showPinyin).toBe(false);
     const bubble = flpBreakCandidates(REGISTRY, all, 'reading', 'zh').find((c) => c.game.gameId === 'bubble-match');
     expect(bubble?.markType).toBe('reading');
     expect(bubble?.showPinyin).toBe(false);

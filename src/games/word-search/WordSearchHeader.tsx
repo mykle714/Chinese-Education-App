@@ -5,7 +5,7 @@ import AudioModeChip from "../../components/AudioModeChip";
  * Right-side header controls for Word Search: the narration audio-mode chip, and
  * nothing else.
  *
- * The audio chip is the SAME self-contained `AudioModeChip` the flp, scp, Bubble
+ * The audio chip is the SAME self-contained `AudioModeChip` the flp, ancp, Bubble
  * Match/Hydra Bubbles and Match Speed headers render — it reads the app-wide
  * `useTTSSettings` value itself, so there is nothing to wire and no way for this
  * surface's label, icon or cycle order to drift from the others. Word Search speaks

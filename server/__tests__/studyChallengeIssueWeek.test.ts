@@ -126,7 +126,7 @@ function serviceFor(
     };
     const unused = {} as never;
     const service = new StudyChallengeService(
-        challengeDAL, friendshipDAL, userDAL as never, unused, unused, starterPacks as never, txRunner as never
+        challengeDAL, friendshipDAL, userDAL as never, starterPacks as never, txRunner as never
     );
     return { service, created };
 }

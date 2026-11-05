@@ -18,7 +18,7 @@
  * language has its own map and its own independent save (Q28) — switching to Spanish
  * and back must find the Chinese run exactly as it was left.
  */
-import type { Camera, QueuedPrompt, WordOutcome } from "./types";
+import type { QueuedPrompt, WordOutcome } from "./types";
 
 const STORAGE_KEY_PREFIX = "memoryMap.run.";
 
@@ -44,10 +44,11 @@ export interface SavedMemoryMapRun {
      * subsequent index by one.
      */
     outcomes: Record<number, WordOutcome>;
-    camera: Camera;
+    // A saved `camera` field existed until the camera became fixed (2026-11-04). Old
+    // saves still carry it; it is simply ignored.
 }
 
-/** Persist the run so it survives leaving the page or the app being backgrounded. */
+/** Persist the run so it survives the break closing or the app being backgrounded. */
 export function saveRun(userId: string, language: string, run: SavedMemoryMapRun): void {
     try {
         window.localStorage.setItem(storageKey(userId, language), JSON.stringify(run));
@@ -79,7 +80,7 @@ export function loadRun(userId: string, language: string): SavedMemoryMapRun | n
     }
 }
 
-/** Clear the saved run — on Restart, and on Play Again after completion. */
+/** Clear the saved run — when a break opens on a complete map (useMemoryMapRun `applyMap`). */
 export function clearRun(userId: string, language: string): void {
     try {
         window.localStorage.removeItem(storageKey(userId, language));

@@ -127,27 +127,27 @@ export function gameSurfaceSx(hue: RampHue, ground: string = RAMP[hue].mid): SxP
         // 2px to each chip's width, and the leaf header is already tight enough that
         // "Hydra Bubbles" ellipsises beside two chips, a restart button and the streak
         // badge — an accent ground must not change the header's metrics.
-        "& .page-header__toggle": {
+        // Filled toggle chips only — `:not(--bare)` skips the outlined audio chip, which
+        // has no fill in any state and is re-inked below instead.
+        "& .page-header__toggle:not(.page-header__toggle--bare)": {
             backgroundColor: ON_ACCENT_CHIP_FILL,
             boxShadow: `inset 0 0 0 1px ${COLORS.border}`,
             color: ON_ACCENT_INK,
         },
-        "& .page-header__toggle .ms": { color: ON_ACCENT_INK },
-        "& .page-header__toggle--active": {
+        "& .page-header__toggle:not(.page-header__toggle--bare) .ms": { color: ON_ACCENT_INK },
+        "& .page-header__toggle--active:not(.page-header__toggle--bare)": {
             backgroundColor: COLORS.onSurface,
             boxShadow: `inset 0 0 0 1px ${COLORS.onSurface}`,
             color: COLORS.white,
         },
-        "& .page-header__toggle--active .ms": { color: COLORS.white },
-        // A blu-tone cycle chip (the audio-mode chip) keeps its mid-blue ON skin on a
-        // game ground too, so it reads the same on every surface. The doubled class
-        // outranks the ink rule above. See HeaderCycleChip's `tone` in PageHeader.tsx.
-        "& .page-header__toggle--blu.page-header__toggle--active": {
-            backgroundColor: COLORS.bluM,
-            // No outline: clears the ink ring the rule above paints on active chips.
-            boxShadow: "none",
-            color: COLORS.onSurface,
+        "& .page-header__toggle--active:not(.page-header__toggle--bare) .ms": { color: COLORS.white },
+        // The outlined (bare) chip — the audio-mode chip: glyph, label and outline in full
+        // ink, like the header's other icons here (its default --ink2 reads as disabled on
+        // a hue). The doubled class outranks the chip's own single-class `sx`.
+        "& .page-header__toggle.page-header__toggle--bare": {
+            color: ON_ACCENT_INK,
+            borderColor: ON_ACCENT_INK,
         },
-        "& .page-header__toggle--blu.page-header__toggle--active .ms": { color: COLORS.onSurface },
+        "& .page-header__toggle.page-header__toggle--bare .ms": { color: ON_ACCENT_INK },
     };
 }

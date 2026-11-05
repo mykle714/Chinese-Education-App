@@ -11,7 +11,7 @@ and the clock stops on the last drop. Medals by time.
 best rides the existing `game_personal_bests` (migration 171) under a new contract key.
 Deployed to PPE 2026-10-06. Medal thresholds are first guesses (§ 6).
 
-Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). Hub/launch: [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md).
+Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). flp break: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
 ## Files and layers
 
@@ -21,7 +21,7 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). Hub/launch: [READING_WRITING_CEN
 | Contract | `server/contracts/wire.ts` → `CARD_BASELINES`, `CARD_BASELINE_ITEMIZED`, `CHALLENGE_GAMES` (`bucket-drop` / `pinyin`) | provisioning baseline (20), itemized notice, challenge spec |
 | Contract | `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES['bucket-drop']` | lower-is-better ms, per mode |
 | Registry | `src/games/registry.ts` (entry + `modes`), `src/games/runtime/challengeLaunch.ts` → `LAUNCHES['bucket-drop']` | hub tile, router, challenge launch |
-| Page | `src/games/bucket-drop/BucketDropPage.tsx` | the route: title, edge-swipe block, launch mode + collection, exit |
+| Page | `src/games/bucket-drop/BucketDropPage.tsx` | the route: title, edge-swipe block, launch mode, exit |
 | Stage | `src/games/bucket-drop/BucketDropStage.tsx` | the run, on either host: pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups, break results |
 | Stage | `src/games/bucket-drop/BucketDropEndPopup.tsx` | end card (modal, not minimizable); route only |
 | Board | `src/games/bucket-drop/BucketDropBoard.tsx` | field measuring, queue state, hit-testing, drop/fall/leave animations |
@@ -30,7 +30,7 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). Hub/launch: [READING_WRITING_CEN
 | Pure | `src/games/bucket-drop/bucketQueue.ts` → `dealQueue`, `resolveDrop`, `resizeQueue` | run model: remaining words + which bucket is in each slot |
 | Pure | `src/games/bucket-drop/poolRequest.ts` → `bucketDropPoolRequest` | the pool request, for the Stage and the break's prefetch |
 | Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, medals, result lines (`runResultTitle`, `runResultDetail`), geometry, timing |
-| Launch | `src/games/GamesPage.tsx` (plain tile → Pinyin), `src/features/flashcards/centers/ReadingGamesCarousel.tsx` (No Pinyin, zh only) | the two route entry points |
+| Launch | `src/games/GamesPage.tsx` (plain tile → Pinyin) | the route's one entry point; No Pinyin has no launcher (§ 1) |
 | Break | `src/games/flpBreak/bucketDropBreak.ts` → `BUCKET_DROP_BREAK`, `BucketDropBreakStage.tsx` | the flp game break adapter (§ 8) |
 | Tests | `src/__tests__/bucketDropPerimeter.test.ts`, `src/__tests__/bucketDropQueue.test.ts`, `src/games/__tests__/challengePool.test.ts`, `src/games/flpBreak/__tests__/bucketDropBreak.test.ts` | geometry (squares, no overlap), the queue over full runs, eligibility |
 
@@ -43,21 +43,26 @@ game pool — two buckets can never show the same gloss.
 
 ## 1. Modes
 
-Chosen by the launch surface, never in-game — the Word Search pattern.
+Chosen by the host, never in-game — the Word Search pattern.
 
 | Mode | Launched from | Track (zh) | Challenge |
 |---|---|---|---|
 | `pinyin` | Games hub tile (a plain router link; no `state.mode` ⇒ Pinyin) | production | eligible |
-| `no-pinyin` | Reading Center carousel, `state.mode: "no-pinyin"`, **zh only** | reading | not eligible |
+| `no-pinyin` | **nothing today** — would be the reading flp's break (§ 8, switched off), **zh only** | reading | not eligible |
 
 Pinyin mode is **production**, not the recognition Bubble Match's pinyin rule would give: the
 English bucket is the prompt and the foreign word is the answer the learner finds (the same
 track Word Search's Pinyin mode marks). The run's track is `runTrackFor(language, mode)`
 (`constants.ts`), latched at the first pool fetch (`BucketDropStage` → `lockRunTrack`), because
 the pool is bucketed and cooled on that track. The board hides pinyin only on a reading run.
-Spanish is always production (it has no reading to hide), which is why the Reading
-Center card is gated to zh in the carousel rather than by `GameDef.languages` — the hub's
-Pinyin mode is playable in es (plain words via `ForeignText`).
+Spanish is always production (it has no reading to hide); the game carries no
+`GameDef.languages` gate because the hub's Pinyin mode is playable in es (plain words via
+`ForeignText`). No Pinyin is zh-only because only the zh reading flp would offer it.
+
+⚠️ **No Pinyin is currently unreachable.** Its only launcher was the Reading Center carousel
+(deleted 2026-11-04), and the break adapter that would host it is not in `FLP_BREAK_GAMES`
+(§ 8). The mode, its track and its personal-best key stay in code for when the break is
+switched on.
 
 Code: `constants.ts` → `MODE_CONFIGS`, `modeConfigFor`, `runTrackFor`; `registry.ts` → `modes`.
 
@@ -104,7 +109,7 @@ emptied would point at an answer.
 
 ## 4. Look
 
-- **Bucket** (`DropBucket`): the sort flow's bucket (`SortCardsPage` → `Bucket`) — inset
+- **Bucket** (`DropBucket`): the sort flow's bucket (`AddNewCardsPage` → `Bucket`) — inset
   `SHADOW.recessedDeep`, `1px COLORS.border` — with two asked-for departures: fill
   `COLORS.grey` (no hue), and a keycap corner (`BUCKET_RADIUS` 16; a `%` radius goes
   elliptical on a rectangle). Gloss in `FONTS.sans`, **fitted to the hole** (`DropBucket` →
@@ -189,10 +194,11 @@ pool request, wait for `ready`, `emit` hit/miss per drop, `finish(true)` on the 
 
 Bucket Drop can run as an flp break through the page + Stage split
 ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6): Pinyin on the core flp, No Pinyin on the
-reading flp, the same 20-word board as the route, with no tower-sized board.
+reading flp, the same 20-word board as the route, with no tower-sized board. Switching it on
+is the only way No Pinyin becomes playable again (§ 1).
 
 - **Pool:** the break prefetches through `bucketDropPoolRequest` with the working loop as
-  `seedIds` and `flpBreak`. The flp's study mode does not reach it (the game has no such modes).
+  `seedIds` and `flpBreak`.
 - **Track:** the candidate's (`BucketDropStage` → `track`), not `runTrackFor`, so the marks land
   on the session's bar. On a Spanish reading flp the route's rule would mark production.
 - **Leave** ends a live run with what it placed: "Run ended", "n of 20 words", no medal, win or

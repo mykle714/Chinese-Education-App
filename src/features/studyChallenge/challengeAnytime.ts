@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../AuthContext";
+import { useTestingFeatures } from "../../hooks/useTestingFeatures";
 
 /**
  * "Allow anytime" — the TESTER escape hatch for Study Challenge
@@ -132,6 +133,9 @@ export function anytimeQuerySuffix(): string {
 export function useChallengeAnytime(): [boolean, (on: boolean) => void] {
     const { user } = useAuth();
     const isFeatureTester = !!user?.isFeatureTester;
+    // The latch follows the EFFECTIVE tester gate (account flag AND the Settings
+    // "Enable testing features" switch), so with testing off no `?anytime=1` is sent.
+    const testingFeatures = useTestingFeatures();
     const [on, setOn] = useState(challengeAnytime);
 
     useEffect(() => {
@@ -140,12 +144,14 @@ export function useChallengeAnytime(): [boolean, (on: boolean) => void] {
     }, []);
 
     useEffect(() => {
-        setChallengeAnytimeAllowed(isFeatureTester);
+        setChallengeAnytimeAllowed(testingFeatures);
         // A revoked (or simply different) account should not leave a live-looking
         // request behind on this device — drop it rather than keeping it latent.
+        // Keyed on the ACCOUNT flag, not `testingFeatures`: switching testing features
+        // off only suspends the request, it should not discard the tester's choice.
         if (!isFeatureTester && storedChallengeAnytime()) setChallengeAnytime(false);
         setOn(challengeAnytime());
-    }, [isFeatureTester]);
+    }, [isFeatureTester, testingFeatures]);
 
     return [on, useCallback((next: boolean) => setChallengeAnytime(next), [])];
 }

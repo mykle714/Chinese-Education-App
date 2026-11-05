@@ -11,15 +11,16 @@ import { COLORS } from "../theme/colors";
 import { SAFE_BOTTOM } from "../theme/safeArea";
 
 /**
- * The Account panel — a MAXIMIZABLE BOTTOM SHEET raised from the Home header's avatar
- * button (HeaderAvatarButton → HomePage) and from the Deck Tower's floating avatar
- * (src/features/deckTower/DeckTowerAvatar.tsx). It used to be the `/account` footer tab;
- * Dictionary took that slot on 2026-10-09 and the route was deleted.
+ * The Account panel — a MAXIMIZABLE BOTTOM SHEET raised from the Deck Tower header's
+ * avatar (src/features/deckTower/DeckTowerAvatar.tsx). It used to be the `/account`
+ * footer tab; Dictionary took that slot on 2026-10-09 and the route was deleted. Its
+ * Settings tab is the app's only way into Settings (the old Home header's gear went
+ * with that page on 2026-11-04).
  *
  * THREE TABS on the eip's selector (SheetSegmentedTabs): Account · Friends · Settings. The
  * header title follows the tab, so a maximized panel reads as that page. Friends and
  * Settings are the same bodies their routes show; tapping a drill-in inside one (Send,
- * Account & security) leaves Home, which unmounts this sheet, and that page's back arrow
+ * Account & security) leaves the Deck Tower, which unmounts this sheet, and that page's back arrow
  * returns to `/friends` or `/settings` rather than here.
  *
  * Maximized, it is indistinguishable from a page: the header is a leaf PageHeader with a
@@ -30,7 +31,7 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
  * LAYER: app-level page surface (src/pages — not part of any one feature). This file owns
  * only the shell: the tab, the pane track and the SheetPanel wiring.
  *
- * Depended on by: HomePage, DeckTowerAvatar, docs/SHELF_REDESIGN.md entry 5,
+ * Depended on by: DeckTowerAvatar, docs/SHELF_REDESIGN.md entry 5,
  * docs/DECK_TOWER.md, docs/UX_AND_NAVIGATION.md, docs/NAVIGATION.md,
  * docs/FRIENDS_FEATURE.md, docs/EIP_SHEET_GESTURES.md § Page-style sheet header.
  */

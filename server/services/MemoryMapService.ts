@@ -6,6 +6,7 @@ import {
 } from '../dal/interfaces/IMemoryMapDAL.js';
 import {
   MEMORY_MAP_CAPACITY,
+  MEMORY_MAP_DEFAULT_FRAME_ASPECT,
   type MemoryMapGraduateResponse,
   type MemoryMapResponse,
   type MemoryMapSlot,
@@ -17,7 +18,7 @@ import { planSlots, type Rng } from './memoryMapSpawn.js';
 import type { LayoutSlot } from './memoryMapLayout.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation, ddCollisionKey } from '../utils/definitions.js';
 import { ValidationError } from '../types/dal.js';
-import type { MarkType } from '../contracts/wire.js';
+import type { DefinitionCluster, MarkType, StarterPackBucket } from '../contracts/wire.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
 
 /**
@@ -33,12 +34,23 @@ export type MemoryMapLender = Pick<ProvisionalCardService, 'acquireLentCards'>;
  * occupy the map's slots and in what order, delegates WHERE new slots hang to the pure
  * spawn module, and writes the result back. No SQL, no geometry.
  *
- * Two operations, and they are deliberately the whole API:
+ * Three operations, and they are deliberately the whole API:
  *
- *   • `loadMap`   — the game's entry point. Fill the map to MEMORY_MAP_CAPACITY and
- *                   return its slot tree plus occupants.
- *   • `graduate`  — a word was answered into reading mastery. A new word moves into its
- *                   slot.
+ *   • `loadMap`    — the game's entry point. Fill the map to MEMORY_MAP_CAPACITY and
+ *                    return its slot tree plus occupants.
+ *   • `graduate`   — a word was answered into reading mastery. A new word moves into its
+ *                    slot.
+ *   (`regenerate` — wipe and re-frame on request — was removed 2026-11-04 with the
+ *   standalone route's mismatch dialog, its only caller.)
+ *
+ * ── THE FRAME (2026-11-04) ───────────────────────────────────────────────────
+ * The camera is fixed: the client fits the whole map to its viewport. So a spawn packs
+ * the map toward the SHAPE of the screen it will be shown on (`frameAspect`, width ÷
+ * height, `planSlots`), stored on the learner (`users."memoryMapFrameAspect"`) the first
+ * time a load reports one. A map with no stored frame predates the fixed camera — it
+ * was packed for a pannable world and is larger than one screen — so the first framed
+ * load WIPES and regenerates it (§ 8.1, the third map wipe). Colours survive: the run
+ * is keyed by card, not slot.
  *
  * ── THE MAP IS ALWAYS FULL (2026-10-06) ──────────────────────────────────────
  * Every load fills empty slots and adds new ones until there are MEMORY_MAP_CAPACITY,
@@ -78,17 +90,47 @@ export class MemoryMapService {
    *
    * Idempotent where it matters: a full map writes nothing and returns an empty
    * `newlyPlaced`, so re-entering the game does not churn it.
+   *
+   * `viewportAspect` is the client's game viewport (width ÷ height), already
+   * range-checked by the controller; undefined when the caller could not measure one.
+   * It is STORED only when the learner has no frame yet — after that the stored frame
+   * governs every spawn; a different screen is simply fitted, never a silent re-frame.
    */
-  async loadMap(userId: string, language: string): Promise<MemoryMapResponse> {
+  async loadMap(userId: string, language: string, viewportAspect?: number): Promise<MemoryMapResponse> {
     if (!userId) throw new ValidationError('userId is required');
 
+    let frameAspect = await this.memoryMapDAL.getFrameAspect(userId);
+    // A growth toast for a map that was just wiped and respawned would announce all
+    // fifty words as "new"; the wipe is not growth.
+    let announce = true;
+    if (frameAspect === null && viewportAspect !== undefined) {
+      // First framed load: frame the learner, wiping any pre-frame map (see the class
+      // docblock). Conditional, so a concurrent load that framed it first wins.
+      const reset = await this.memoryMapDAL.resetMap(userId, language, viewportAspect, true);
+      frameAspect = reset ? viewportAspect : await this.memoryMapDAL.getFrameAspect(userId);
+      if (reset) announce = false;
+    }
+    return this.fill(userId, language, frameAspect, announce);
+  }
+
+  /**
+   * Top the map up to capacity, packing new slots toward `frameAspect` (the default
+   * portrait frame when the learner has none). `announce` false suppresses the growth
+   * toast's `newlyPlaced`.
+   */
+  private async fill(
+    userId: string,
+    language: string,
+    frameAspect: number | null,
+    announce: boolean
+  ): Promise<MemoryMapResponse> {
     const slots = await this.memoryMapDAL.getSlots(userId, language);
     const emptySlots = slots.filter((slot) => slot.vocabEntryId === null);
     const need = emptySlots.length + Math.max(0, MEMORY_MAP_CAPACITY - slots.length);
-    if (need === 0) return this.toResponse(slots, []);
+    if (need === 0) return this.toResponse(slots, [], frameAspect);
 
     const chosen = await this.selectOccupants(userId, language, slots, need);
-    if (chosen.length === 0) return this.toResponse(slots, []);
+    if (chosen.length === 0) return this.toResponse(slots, [], frameAspect);
 
     // Empty slots first (oldest first): they are holes in an existing island, and a
     // filled hole is better than a new coastline. The rest become new slots.
@@ -108,7 +150,8 @@ export class MemoryMapService {
     const plan = planSlots(
       tree,
       newcomers.map((card) => ({ entryKey: card.entryKey, language: card.language })),
-      this.rng
+      this.rng,
+      frameAspect ?? MEMORY_MAP_DEFAULT_FRAME_ASPECT
     );
     const inserts: NewSlot[] = plan.map((slot, i) => ({ ...slot, vocabEntryId: newcomers[i].vocabEntryId }));
 
@@ -118,7 +161,7 @@ export class MemoryMapService {
     // joined occupant columns. If a concurrent load won the race (`written` false), this
     // simply serves the map IT wrote, and announces no growth of our own.
     const fresh = await this.memoryMapDAL.getSlots(userId, language);
-    return this.toResponse(fresh, written ? chosen.map((card) => card.vocabEntryId) : []);
+    return this.toResponse(fresh, written && announce ? chosen.map((card) => card.vocabEntryId) : [], frameAspect);
   }
 
   /**
@@ -293,7 +336,7 @@ export class MemoryMapService {
     };
   }
 
-  private toResponse(rows: MemoryMapSlotRow[], newlyPlaced: number[]): MemoryMapResponse {
+  private toResponse(rows: MemoryMapSlotRow[], newlyPlaced: number[], frameAspect: number | null): MemoryMapResponse {
     const slots: MemoryMapSlot[] = rows.map((row) => ({
       slotId: row.slotId,
       parentSlotId: row.parentSlotId,
@@ -305,7 +348,7 @@ export class MemoryMapService {
       vocabEntryId: row.vocabEntryId,
     }));
     const words = rows.filter((row) => row.vocabEntryId !== null).map((row) => this.toWord(row));
-    return { slots, words, newlyPlaced, capacity: MEMORY_MAP_CAPACITY };
+    return { slots, words, newlyPlaced, capacity: MEMORY_MAP_CAPACITY, frameAspect };
   }
 
   /**
@@ -320,11 +363,15 @@ export class MemoryMapService {
       slotId: row.slotId,
       entryKey: row.entryKey ?? '',
       language: row.language,
+      // The column is free text in the DAL row; on the wire it is the bucket union.
+      starterPackBucket: (row.starterPackBucket ?? null) as StarterPackBucket | null,
       pronunciation: resolveDisplayPronunciation({
         pronunciation: row.pronunciation,
         definitionClusters: row.definitionClusters as never,
         selectedSense: row.selectedSense,
       }),
+      definitionClusters: (row.definitionClusters as DefinitionCluster[] | null) ?? null,
+      selectedSense: row.selectedSense ?? null,
       definition: resolveDisplayDefinition({
         definition: row.definition,
         definitionClusters: row.definitionClusters as never,

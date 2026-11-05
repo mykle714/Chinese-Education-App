@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./geometry";
-import { shadowSlide } from "./light";
+import { shadowSlide, shadowSpread } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
 import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
 import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
@@ -98,6 +98,11 @@ import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
  * flies back down to `at`; while it is `held` the pawn finishes its step and stands still,
  * so the Deck Tower's cover card can carry it off (`summitSpot`). It ignores startles up
  * there (there is nothing to leap away from).
+ *
+ * SHOCK: each change of `shockId` (a lightning strike landing on the pawn) stops it where
+ * it stands for SHOCK_MS + SHOCK_RECOVER_MS — the flicker itself is IsoPawn's CSS — then
+ * it walks on. `floorSpot` reports where it stands on the floor every frame (null when it
+ * is not on the floor), which is how the Deck Tower tests a strike against it.
  *
  * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle and
  * the poke are skipped.
@@ -356,6 +361,8 @@ function stepUnder(p: Pt2, steps: PawnStep[]): number {
 
 /** Where the pawn's shadow circle sits relative to its feet: it stands ON its surface (gap 0). */
 const SHADOW_SLIDE = shadowSlide(0, 0);
+/** How much further along +x and +y the shadow reaches than the foot circle (light.ts → `shadowSpread`). */
+const SHADOW_SPREAD = shadowSpread();
 
 /** Where a foot-sized circle's centre may be: the roam area shrunk by the foot radius (corners stay rounded). */
 function feetBox(roam: PawnRoam): WorldRect {
@@ -364,12 +371,15 @@ function feetBox(roam: PawnRoam): WorldRect {
 
 /**
  * Whether the feet may stand at `p`: both the foot circle and its shadow circle fit in
- * the roam area. Both regions are convex, so their intersection is too — any straight
- * walk between two legal points stays legal, and only the endpoints need checking.
+ * the roam area. The shadow is stretched SHADOW_SPREAD along +x and +y, so its centre is
+ * held that much further from the area's +x and +y edges (only those). Both regions are convex, so their
+ * intersection is too — any straight walk between two legal points stays legal, and only
+ * the endpoints need checking.
  */
 function onFloor(p: Pt2, roam: PawnRoam): boolean {
     const box = feetBox(roam);
-    return insideRoundedRect(p, box) && insideRoundedRect({ x: p.x + SHADOW_SLIDE.x, y: p.y + SHADOW_SLIDE.y }, box);
+    const shadowBox = { ...box, w: box.w - SHADOW_SPREAD.x, d: box.d - SHADOW_SPREAD.y };
+    return insideRoundedRect(p, box) && insideRoundedRect({ x: p.x + SHADOW_SLIDE.x, y: p.y + SHADOW_SLIDE.y }, shadowBox);
 }
 
 /**
@@ -506,6 +516,12 @@ export interface PawnEmote {
 export const EMOTE_DRAW_SCALE = 100;
 /** The "!" bubble's one-shot (IsoPawn's CSS); a poked pawn stands this long. */
 export const EMOTE_MS = 2000;
+/**
+ * A lightning shock (`shockId`, see the header's SHOCK): the pawn stands frozen this long
+ * while IsoPawn flickers it, then stands a beat more (SHOCK_RECOVER_MS) before walking on.
+ */
+export const SHOCK_MS = 1000;
+const SHOCK_RECOVER_MS = 900;
 
 /** An entrance to play on mount, and when to start it (a `performance.now()` timestamp). */
 export interface PawnEntranceCue {
@@ -536,6 +552,14 @@ export function usePawnMotion(opts: {
     summitSpot?: React.MutableRefObject<Pt2 | null>;
     /** World z of the surface the pawn stands on (its feet are drawn in absolute world space). */
     surfaceZ: number;
+    /**
+     * Kept at where the pawn stands on the FLOOR (its live ground point), every frame; null
+     * while it is not there to be hit (before its entrance, up on the summit, falling).
+     * The Deck Tower reads it to tell whether a lightning strike landed on the pawn.
+     */
+    floorSpot?: React.MutableRefObject<Pt2 | null>;
+    /** Freezes the pawn for a lightning shock each time this changes (see the header's SHOCK). */
+    shockId?: number;
 }): { refs: PawnMotionRefs; emote: PawnEmote | null; poke: () => void } {
     const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
@@ -616,6 +640,8 @@ export function usePawnMotion(opts: {
     onSummitRef.current = opts.onSummitChange;
     const summitSpotRef = useRef(opts.summitSpot);
     summitSpotRef.current = opts.summitSpot;
+    const floorSpotRef = useRef(opts.floorSpot);
+    floorSpotRef.current = opts.floorSpot;
     // Latest steps (their heights animate while the plate is pressed), read by the loop.
     const stepsRef = useRef(opts.steps ?? []);
     stepsRef.current = opts.steps ?? [];
@@ -780,6 +806,19 @@ export function usePawnMotion(opts: {
         s.mode = { kind: "startle", t0: performance.now(), from: { ...s.pos }, to: leapLanding(s.pos, startledBy, roam), leanSign };
         setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
     }, [startled, reduced, startledBy, roam]);
+
+    // SHOCK: a change of `shockId` (not its mount value) freezes the pawn where it stands
+    // for the flicker and the beat after it. An entrance or a throw keeps its own timeline
+    // (the strike only aims at a pawn on the floor, so neither is expected).
+    const lastShockId = useRef(opts.shockId);
+    useEffect(() => {
+        if (opts.shockId === lastShockId.current) return;
+        lastShockId.current = opts.shockId;
+        const s = state.current;
+        if (s.mode.kind === "entrance" || s.mode.kind === "flight" || s.mode.kind === "edgeHop") return;
+        s.stepPhase = 0;
+        s.mode = { kind: "pause", until: performance.now() + SHOCK_MS + SHOCK_RECOVER_MS };
+    }, [opts.shockId]);
 
     /** Throws the pawn to `to`, on a surface `toZ` high: the time is what the feet will take to land there. */
     const startFlight = (to: Pt2, toZ: number, now: number) => {
@@ -1152,6 +1191,10 @@ export function usePawnMotion(opts: {
 
             const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
             if (summitSpotRef.current) summitSpotRef.current.current = onSummit ? s.pos : null;
+            if (floorSpotRef.current) {
+                const onFloor = !onSummit && !hidden && s.mode.kind !== "entrance" && floorDropRef.current <= 0;
+                floorSpotRef.current.current = onFloor ? s.pos : null;
+            }
             if (onSummit !== s.onSummit) {
                 s.onSummit = onSummit;
                 onSummitRef.current?.(onSummit);

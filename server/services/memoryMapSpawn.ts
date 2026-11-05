@@ -1,4 +1,5 @@
 import {
+  MEMORY_MAP_DEFAULT_FRAME_ASPECT,
   MEMORY_MAP_BOW_RANGE,
   MEMORY_MAP_BOW_SIGMA,
   MEMORY_MAP_SCALE_RANGE,
@@ -82,21 +83,22 @@ const GROW_CANDIDATES = 8;
 const GROW_ATTEMPTS = 40;
 
 /**
- * Viewport shape the map is played in, as height / width — a phone held upright.
- * `frameCost` scores growth against a frame of this shape, not raw area: plain area
- * rewards a long thin map that then fits the phone at a tiny zoom (§ 2.4b).
+ * Portrait bias on bearings, PER DOUBLING of the frame's height ÷ width: the horizontal
+ * component of a uniformly drawn direction is multiplied by `bias ^ log2(height/width)`
+ * before the angle is taken back out (`bearingXScale`). So on the classic 2 : 1 portrait
+ * phone the factor is exactly `bias` (0.6 / 0.3, the values tuned before frames
+ * existed), on a square frame it is 1 (isotropic), and on a 1 : 2 landscape frame it is
+ * `1 / bias` — bearings then cluster toward horizontal instead. A BIAS, not a
+ * constraint — every bearing stays reachable, it is just rarer. `frameCost` does most of
+ * the shaping; this only makes the candidates it chooses between point the right way.
  */
-const VIEWPORT_ASPECT = 2;
+const GROW_BEARING_BIAS = 0.6;
+const ISLAND_BEARING_BIAS = 0.3;
 
-/**
- * Portrait bias on bearings: the horizontal component of a uniformly drawn direction is
- * multiplied by this before the angle is taken back out, so bearings cluster toward
- * straight up/down. 1 = isotropic. A BIAS, not a constraint — every bearing stays
- * reachable, it is just rarer. `frameCost` does most of the shaping; this only makes
- * the candidates it chooses between mostly vertical to begin with.
- */
-const GROW_BEARING_ASPECT = 0.6;
-const ISLAND_BEARING_ASPECT = 0.3;
+/** The x-scale `drawBearing` applies for a frame of `frameAspect` (width ÷ height). */
+function bearingXScale(bias: number, frameAspect: number): number {
+  return Math.pow(bias, Math.log2(1 / frameAspect));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Random draws
@@ -137,10 +139,13 @@ export function drawBow(rng: Rng): number {
   return drawTruncatedNormal(rng, MEMORY_MAP_BOW_SIGMA, MEMORY_MAP_BOW_RANGE);
 }
 
-/** A bearing in [0, 360), squashed toward vertical by `aspect` (see the constants). */
-function drawBearing(rng: Rng, aspect: number): number {
+/**
+ * A bearing in [0, 360). `xScale` < 1 squashes it toward vertical, > 1 toward
+ * horizontal (`bearingXScale`).
+ */
+function drawBearing(rng: Rng, xScale: number): number {
   const theta = rng() * 2 * Math.PI;
-  const degrees = (Math.atan2(Math.sin(theta), Math.cos(theta) * aspect) * 180) / Math.PI;
+  const degrees = (Math.atan2(Math.sin(theta), Math.cos(theta) * xScale) * 180) / Math.PI;
   return (degrees + 360) % 360;
 }
 
@@ -149,17 +154,23 @@ function drawBearing(rng: Rng, aspect: number): number {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How much of a phone-shaped frame the map would need with `candidate` added. Lower is
- * more compact; only comparisons mean anything.
+ * How big the map's FRAME would have to be with `candidate` added — the screen-shaped
+ * rectangle (`frameAspect`, width ÷ height, docs/MEMORY_MAP_GAME.md § 2.4b) the client
+ * fits the whole map into. Lower is more compact; only comparisons mean anything.
  *
- * Primary term: the frame's height — the taller of the map's height and
- * VIEWPORT_ASPECT × its width, i.e. whichever axis binds when the camera fits the map.
- * A candidate that fills slack without moving the binding edge costs nothing extra, so
+ * Since the camera became fixed (2026-11-04) this IS the font size: the client scales
+ * the map until its limiting dimension meets the viewport, so the smaller the frame
+ * the larger every word is drawn.
+ *
+ * Primary term: the frame's height — the taller of the map's height and its width
+ * converted through the aspect, i.e. whichever axis binds when the map is fitted. A
+ * candidate that fills slack without moving the binding edge costs nothing extra, so
  * new words fill coves before pushing the coastline out. The tiny area term breaks ties.
  */
 function frameCost(
   bounds: { minX: number; minY: number; maxX: number; maxY: number } | null,
-  candidate: Tile[]
+  candidate: Tile[],
+  frameAspect: number
 ): number {
   const own = mapBounds(candidate);
   if (!own) return Infinity;
@@ -169,7 +180,7 @@ function frameCost(
   const maxY = Math.max(bounds?.maxY ?? -Infinity, own.maxY);
   const width = maxX - minX;
   const height = maxY - minY;
-  return Math.max(VIEWPORT_ASPECT * width, height) + 1e-3 * width * height;
+  return Math.max(width / frameAspect, height) + 1e-3 * width * height;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,7 +209,8 @@ function chooseIsland(
   laid: LaidSlot[],
   shape: ShapePart[],
   tilt: number,
-  rng: Rng
+  rng: Rng,
+  frameAspect: number
 ): Choice | null {
   const obstacles = allParts(laid);
   const bounds = mapBounds(obstacles);
@@ -208,14 +220,14 @@ function chooseIsland(
   for (let probe = 0; probe < ISLAND_BEARING_PROBES; probe++) {
     const parentIndex = Math.floor(rng() * laid.length);
     const coast = laid[parentIndex];
-    const angle = drawBearing(rng, ISLAND_BEARING_ASPECT);
+    const angle = drawBearing(rng, bearingXScale(ISLAND_BEARING_BIAS, frameAspect));
 
     const landing = laySlot(shape, tilt, 'island', angle, coast, obstacles);
     const coastOnly = laySlot(shape, tilt, 'island', angle, coast, coast.parts);
     if (landing.distance - coastOnly.distance > ISLAND_MAX_DRIFT) continue;
 
     const parts = placeShape(shape, landing.x, landing.y, tilt);
-    const cost = frameCost(bounds, parts);
+    const cost = frameCost(bounds, parts, frameAspect);
     if (cost < bestCost) {
       bestCost = cost;
       best = { parentIndex, link: 'island', angle, x: landing.x, y: landing.y, parts };
@@ -241,7 +253,8 @@ function chooseGrowth(
   laid: LaidSlot[],
   shape: ShapePart[],
   tilt: number,
-  rng: Rng
+  rng: Rng,
+  frameAspect: number
 ): Choice {
   const obstacles = allParts(laid);
   const bounds = mapBounds(obstacles);
@@ -254,10 +267,10 @@ function chooseGrowth(
   for (let attempt = 0; attempt < GROW_ATTEMPTS && legalFound < GROW_CANDIDATES; attempt++) {
     const parentIndex = Math.floor(rng() * laid.length);
     const parent = laid[parentIndex];
-    const angle = drawBearing(rng, GROW_BEARING_ASPECT);
+    const angle = drawBearing(rng, bearingXScale(GROW_BEARING_BIAS, frameAspect));
     const landing = laySlot(shape, tilt, 'grow', angle, parent, obstacles);
     const parts = placeShape(shape, landing.x, landing.y, tilt);
-    const cost = frameCost(bounds, parts);
+    const cost = frameCost(bounds, parts, frameAspect);
     const choice: Choice = { parentIndex, link: 'grow', angle, x: landing.x, y: landing.y, parts };
 
     if (cost < bestAnyCost) {
@@ -295,11 +308,15 @@ function chooseGrowth(
  * server has no fonts, so this lays the map with `estimatedShape`; the client re-lays
  * the same tree with MEASURED glyph shapes (memoryMapLayout.ts docblock), which shifts
  * positions a little but cannot introduce an overlap.
+ *
+ * `frameAspect` (width ÷ height) is the screen the map is packed for — the learner's
+ * stored frame (§ 2.4b). Both the compactness score and the bearing bias read it.
  */
 export function planSlots(
   existing: LayoutSlot[],
   incoming: { entryKey: string; language: string }[],
-  rng: Rng
+  rng: Rng,
+  frameAspect: number = MEMORY_MAP_DEFAULT_FRAME_ASPECT
 ): PlannedSlot[] {
   const laid = layoutMap(existing);
   let nextTempId = existing.reduce((max, slot) => Math.max(max, slot.slotId), 0) + 1;
@@ -320,8 +337,8 @@ export function planSlots(
     }
 
     const choice =
-      (rng() < NEW_ISLAND_CHANCE ? chooseIsland(laid, shape, tilt, rng) : null) ??
-      chooseGrowth(laid, shape, tilt, rng);
+      (rng() < NEW_ISLAND_CHANCE ? chooseIsland(laid, shape, tilt, rng, frameAspect) : null) ??
+      chooseGrowth(laid, shape, tilt, rng, frameAspect);
     const parent = laid[choice.parentIndex];
 
     planned.push({

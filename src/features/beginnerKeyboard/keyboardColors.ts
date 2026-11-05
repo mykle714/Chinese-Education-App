@@ -4,8 +4,8 @@
  *
  * LAYER: client feature constants. The values are CSS strings
  * (`var(--tier2-…, <default>)`, src/timeOfDay/tier2Chrome.ts → tier2Var): over a Tier 2 page
- * (the Dictionary) the keyboard takes that page's ground, keys and ink — tinted at dawn,
- * day and sunset, slate at night — and everywhere else the variables are unset and it keeps
+ * (the Dictionary) the keyboard takes that page's ground, keys and ink — a pale sky tint
+ * by day, slate at night — and everywhere else the variables are unset and it keeps
  * the grey `COLORS.header` surface it always had (owner's choice 2026-10-29: "only on Tier 2
  * pages").
  *

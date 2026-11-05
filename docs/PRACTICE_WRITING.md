@@ -231,7 +231,7 @@ than `WRITING_MAX_CHARS` (4, `server/contracts/writingLevels.ts`) never reach th
 - **Single (`singleBody`)** — one `WritingPanel`: the **embedded** `LevelStepper` as its
   header, the canvas, and Clear / Undo + the level's assist button + **Verify** in its
   footer. It grows out of the launcher the learner tapped (the popup's `origin` prop —
-  a Writing Center tile, the Practice Writing button) and shrinks back into it on
+  the Practice Writing button) and shrinks back into it on
   close. The canvas is always present, so the guide is entered in the level/open effect.
 - **Multi (2–4)** — a **`WritingSelectorPanel`** (`gridBody`): the same rectangle as
   the single panel one zoom level up — the **embedded** `LevelStepper` as its header, a
@@ -244,8 +244,8 @@ than `WRITING_MAX_CHARS` (4, `server/contracts/writingLevels.ts`) never reach th
   There is **no Back button** — tapping the scrim collapses the slot (see below):
   `collapseFocus` writes the ink back into `inks` first (so the slot underneath already
   shows it), shrinks the panel back into the slot, then clears `focusedIndex`.
-  Verify (selector only) recognizes **all** characters at once. So a Writing Center
-  word tile goes tile → selector → canvas, two projections in one motion language.
+  Verify (selector only) recognizes **all** characters at once. So a multi-character
+  word goes launcher → selector → canvas, two projections in one motion language.
 
 **Coordinate space.** Every panel — focused or grid preview — captures/seeds ink in
 the same `FOCUS_SIZE` (300px) space; grid previews are the full-size stage CSS-scaled

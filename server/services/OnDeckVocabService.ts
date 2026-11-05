@@ -1,18 +1,18 @@
 import { PoolClient } from 'pg';
 import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
 import { WORD_SEARCH_BOARDS, type MasteryWorldId, type WordSearchBoardId } from '../contracts/wire.js';
-import { isFlpOnlyMark } from '../contracts/mastery.js';
+import { isFlpOnlyMark, FLP_ONLY_CORE_PBH, barProgressBarHeight, barCategory, worldForMarkType } from '../contracts/mastery.js';
 import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER } from '../contracts/studyMix.js';
-import type { StudyMode, FlpWorld } from '../contracts/studyMode.js';
+import type { FlpWorld } from '../contracts/studyMode.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
 import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, vetDeckOrProvisionalClause, WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE } from '../dal/shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
-import { flpReadyCountsByBand, nextFlpReadyMs } from '../contracts/flpReadiness.js';
+import { flpReadyCountsByBand } from '../contracts/flpReadiness.js';
 import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
@@ -29,29 +29,26 @@ import { resolveSenseGloss, resolveDisplayDefinition, resolveDisplayPronunciatio
 import { getAllSubstrings, buildDictMap, buildExcludeSet, buildDrillRungs, type SegmentDrillRung } from '../dal/shared/segmentString.js';
 import type { DictionaryEntry } from '../types/index.js';
 
-// Study modes and flp bars (server/contracts/studyMode.ts) — two independent axes. The
-// MODE shapes BOTH the initial working-loop distribution and the replacement-card pool
-// handed back by the mark endpoint, so banned categories never leak in via a refill; the
-// BAR decides which bar those categories, the queue and the cooldown are read off.
-export { parseStudyMode, parseFlpWorld, type StudyMode, type FlpWorld } from '../contracts/studyMode.js';
+// The flp's world axis (server/contracts/studyMode.ts): which bar a session's bands,
+// queue and cooldown are read off. Every session is Study Mix.
+export { parseFlpWorld, type FlpWorld } from '../contracts/studyMode.js';
 
 /**
- * Which collection a game/flp round was launched from (docs/DECKS_FEATURE.md).
- * `undefined` anywhere this appears means an ordinary, unrestricted launch.
+ * The scope a game/flp round is narrowed to, or `undefined`/null for an ordinary round.
  *
- * A deck is a STORED set (a `deck_cards` join); every other collection is a COMPUTED
- * one, so the eight built-ins collapse into a single variant carrying the id whose
- * WHERE fragment defines it. That is why launching from "Comfortable" needed no new
- * variant here — only a new id.
+ * Only FOCUS MODE produces one now. Until 2026-11-04 the slot also carried a
+ * user-authored deck (`?deck=`) and a built-in collection (`?collection=`); both launch
+ * paths were removed with the Decks feature and the collection pages. The slot keeps its
+ * `collection` name throughout this service because "a named set the round must stay
+ * inside" is still exactly what it means — and every lend tier still checks it
+ * (`canLendProvisional`, the game pool's `!opts.collection` gate).
  */
 export type CollectionFilter =
-  | { kind: 'deck'; deckId: number }
-  | { kind: 'builtin'; id: BuiltinCollectionId }
   /**
    * FOCUS MODE (docs/FOCUS_MODE.md § 4): the cards still playable today in a focused
    * world — the daily snapshot minus those already marked correct. Never sent by the
    * client: OnDeckVocabController / flashcardRoutes substitute it for an UNRESTRICTED
-   * launch when the round's world is focused. Riding the collection slot is what makes
+   * launch when the round's world is focused. Riding this slot is what makes
    * a focused round behave like a named set everywhere at once: every candidate query
    * narrows to `ids`, and every lend tier is skipped (`canLendProvisional`, the game
    * pool's `!opts.collection` gate), so nothing outside the day's set can appear.
@@ -68,53 +65,24 @@ export type CollectionFilter =
    *   remainingIds — the fallback. `getGameVocabPool` deals them through its seed tiers,
    *                  after the fresh outside cards.
    *
-   * Rides the collection slot for the same reason as `focus`: no lend tier can fire.
+   * Rides this slot for the same reason as `focus`: no lend tier can fire.
    */
   | { kind: 'outside-focus'; setIds: number[]; remainingIds: number[] };
 
-interface ModeLoopConfig {
+/** The shape of a working loop: ordered quotas plus the top-up priority. */
+interface LoopConfig {
   // Ordered initial fetch quotas (summing to the loop total).
   quotas: { category: string; count: number }[];
   // Priority order used to top the loop up to its total when a quota underfills.
   fillOrder: string[];
-  // The only categories this mode may ever serve (initial loop + refills).
-  allowed: string[];
 }
 
-// Single source of truth for mode distributions, shared by the working-loop
-// builder and the mark route's replacement picker.
-//
-// `allowed` is a HARD filter and is deliberately never widened. Review is exactly
-// Comfortable + Mastered, Challenge is exactly Unfamiliar + Target — the same split
-// Match Speed uses (src/games/match-speed/constants.ts). When a learner has
-// nothing in Review's buckets the loop comes back thin (or empty) and the decks
-// page greys the button; that is the intended answer, NOT a bug to fix by
-// falling back to other categories. A "review" session padded with cards the
-// learner has never seen is not a review session. Provisioned cards start with an
-// empty mark history, so lending can fill Challenge but can never fill Review.
-// See docs/PROVISIONAL_CARDS.md § 6.
-/** @deprecated With `StudyMode` (docs/DEFERRED_WORK.md § 31); `DEFAULT_LOOP_CONFIG` stays. */
-export const MODE_CONFIGS: Record<StudyMode, ModeLoopConfig> = {
-  // Review: ease the learner with cards they mostly know.
-  review: {
-    quotas: [{ category: 'Comfortable', count: 7 }, { category: 'Mastered', count: 3 }],
-    fillOrder: ['Comfortable', 'Mastered'],
-    allowed: ['Comfortable', 'Mastered'],
-  },
-  // Challenge: drill the cards the learner struggles with.
-  challenge: {
-    quotas: [{ category: 'Unfamiliar', count: 7 }, { category: 'Target', count: 3 }],
-    fillOrder: ['Target', 'Unfamiliar'],
-    allowed: ['Unfamiliar', 'Target'],
-  },
-};
-
-// Default (Mix) working-loop shape — the historical 1-2-2-5 distribution with a
-// Target-first top-up. Lives alongside the mode configs so the loop builder is
-// fully data-driven. The quotas themselves are a shared contract
-// (`STUDY_MIX_QUOTAS`, server/contracts/studyMix.ts): the Reading Center's word swipe
-// grid samples by the same proportions (docs/READING_WRITING_CENTERS.md).
-const DEFAULT_LOOP_CONFIG: Omit<ModeLoopConfig, 'allowed'> = {
+// The Study Mix working-loop shape — the historical 1-2-2-5 distribution with a
+// Target-first top-up. The quotas themselves are a shared contract
+// (`STUDY_MIX_QUOTAS`, server/contracts/studyMix.ts). Until 2026-11-04 the Review and
+// Challenge study modes had their own band-restricted configs beside this one
+// (`MODE_CONFIGS`, docs/DEFERRED_WORK.md § 31); Mix is now the only loop shape.
+const DEFAULT_LOOP_CONFIG: LoopConfig = {
   quotas: STUDY_MIX_QUOTAS.map((q) => ({ ...q })),
   fillOrder: [...STUDY_MIX_FILL_ORDER],
 };
@@ -158,13 +126,6 @@ export class OnDeckVocabService {
     private provisionalCardService: ProvisionalCardService
   ) {}
 
-  // The bands `getFlpReadyCounts`'s `reviewNextReadyMs` counts down over — the same
-  // Comfortable/Mastered split the fdp's Review card draws from
-  // (FlashcardsDecksPage.tsx's `reviewPool`), which decides which figure gets the
-  // "next ready" message. Kept here rather than derived from the counts payload so
-  // the two never quietly diverge.
-  private static readonly REVIEW_BANDS: readonly string[] = ['Comfortable', 'Mastered'];
-
   // The flp presents exactly the two KNOW tracks — English-first writes production,
   // foreign-first writes recognition (with or without pinyin, since 2026-09-25) — and
   // both rest on ONE clock, the core bar's (docs/MASTERY_REWORK.md § 6). So every flp
@@ -176,7 +137,7 @@ export class OnDeckVocabService {
   // pure module shared with Memory Map, which ranks the reading clock the same way
   // (docs/MEMORY_MAP_GAME.md § 13.1).
   //
-  // The ONE exception is the reading flp (`world: 'reading'`, any mode), which marks the
+  // The ONE exception is the reading flp (`world: 'reading'`), which marks the
   // reading track and therefore gates on the reading bar instead — every flp selection
   // helper below takes the bar as a parameter, defaulting to this one.
   private static readonly FLP_WORLD: MasteryWorldId = 'core';
@@ -209,26 +170,21 @@ export class OnDeckVocabService {
   /**
    * Whether a session may be topped up with LENT cards when its own pool is spent.
    *
-   * A provisional card has an empty mark history, so it computes as Unfamiliar and can
-   * only ever satisfy a pool that accepts that category. Lending into a session that
-   * would then filter the card straight back out is pure waste, and lending into a
-   * NAMED set is worse than waste — a Review round padded with words the learner has
-   * never seen is not a review, and a deck round made of non-deck words is not that
-   * deck. Those sessions honor the cooldown and come back empty instead.
+   * Lending into a NAMED set is worse than waste — a focused round padded with words
+   * outside the day's set is not that day's set. Such a session honors the cooldown
+   * and comes back short instead.
    *
-   *   Mix / Challenge, unrestricted → lend
-   *   Review, `?collection=mastered`, `?deck=` → never lend
+   *   Study Mix, unrestricted → lend
+   *   focused (docs/FOCUS_MODE.md § 4) → never lend
    *
-   * Expressed as one rule (Unfamiliar is servable AND the round is unrestricted)
-   * rather than a mode/collection switch, so a future mode or collection gets the
-   * right answer by construction.
+   * Until 2026-11-04 this also took the loop's category list and refused when
+   * Unfamiliar was not among them (a lent card bands Unfamiliar): that guarded the
+   * Review study mode and the legacy single-category `?category=` loop, both removed.
+   * Every flp session now draws from all four bands, so only the scope matters. The
+   * restricted cases also used to include `?collection=` and `?deck=` launches.
    */
-  private canLendProvisional(
-    loopCategories: string[],
-    collection?: CollectionFilter | null
-  ): boolean {
-    if (collection) return false;
-    return loopCategories.includes('Unfamiliar');
+  private canLendProvisional(collection?: CollectionFilter | null): boolean {
+    return !collection;
   }
 
   // A card is FRESH for a game when a mark of the type that game emits would actually
@@ -248,6 +204,75 @@ export class OnDeckVocabService {
       !isMarkOnCooldown(card.typedMarkHistory, markType, now, card.writingMastery) &&
       !isFlpOnlyMark(card.typedMarkHistory, markType)
     );
+  }
+
+  /**
+   * An flp game break's seed rule (docs/FLP_GAME_BREAKS.md § 4): a working-loop card goes
+   * on the break's board only if the game's mark on it COUNTS and will take it out of the
+   * loop. That is `isCardGameEligible` (off cooldown, not flp-only) PLUS a bar line on
+   * every bar, not just core: the card must sit below `BREAK_SEED_PBH_LIMIT` on the bar
+   * the game's mark lands in. A loop card at or above the line stays in the loop for the
+   * flp to finish. On core the extra test is the flp-only line itself; on reading/writing
+   * it is a product rule (2026-11-03), since game marks there would still be recorded.
+   */
+  private isBreakSeedPlayable(card: VocabEntry, markType: MarkType, now: number): boolean {
+    return (
+      this.isCardGameEligible(card, markType, now) &&
+      barProgressBarHeight(card.typedMarkHistory, worldForMarkType(markType), card.writingMastery)
+        < OnDeckVocabService.BREAK_SEED_PBH_LIMIT
+    );
+  }
+
+  /** The bar height a break seed must stay under — the Comfortable cut, = FLP_ONLY_CORE_PBH. */
+  private static readonly BREAK_SEED_PBH_LIMIT = FLP_ONLY_CORE_PBH;
+
+  /**
+   * Split a break's seed rows into the tier dealt FIRST (`markable`) and a last-resort
+   * `fallback`. Shared by `getGameVocabPool` and `getWordSearchGrid`.
+   *
+   *   - Unfocused break (the seed is the working loop): `markable` = `isBreakSeedPlayable`;
+   *     `fallback` is EMPTY. A loop card the game cannot clear is never on the board
+   *     (2026-11-03 — it used to fill a short board, recording nothing). Seeds are kept
+   *     out of the candidate query too, so a dropped seed cannot ride in another way.
+   *   - Focused break (the seed is today's remaining set, docs/FOCUS_MODE.md § 4a):
+   *     unchanged — `isCardGameEligible` splits it, and the unmarkable remainder is tier 2b.
+   */
+  private partitionBreakSeeds(
+    rows: VocabEntry[],
+    markType: MarkType,
+    now: number,
+    focused: boolean
+  ): { markable: VocabEntry[]; fallback: VocabEntry[] } {
+    const markable: VocabEntry[] = [];
+    const fallback: VocabEntry[] = [];
+    for (const row of rows) {
+      if (focused) (this.isCardGameEligible(row, markType, now) ? markable : fallback).push(row);
+      else if (this.isBreakSeedPlayable(row, markType, now)) markable.push(row);
+    }
+    return { markable, fallback };
+  }
+
+  /**
+   * The subset of `seedIds` an unfocused break may deal (`isBreakSeedPlayable`), in the
+   * given order. For the writing games, whose own services deal characters rather than
+   * cards and so filter the loop's WORDS here first (WritingGridController →
+   * `parseWritingDealOptions`).
+   */
+  async filterBreakSeedIds(
+    userId: string,
+    language: string,
+    seedIds: number[],
+    markType: MarkType
+  ): Promise<number[]> {
+    if (seedIds.length === 0) return [];
+    const now = Date.now();
+    const client = await db.getClient();
+    try {
+      const rows = await this.fetchRowsByIds(client, userId, language, seedIds, markType, now, undefined, true);
+      return rows.filter((row) => this.isBreakSeedPlayable(row, markType, now)).map((row) => row.id);
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -297,9 +322,9 @@ export class OnDeckVocabService {
   ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
     const eligible: Record<string, VocabEntry[]> = {};
     const cooled: Record<string, VocabEntry[]> = {};
-    // Optional collection restriction (docs/DECKS_FEATURE.md). $8 is the next free
+    // Optional focus-mode scope (docs/FOCUS_MODE.md § 4). $8 is the next free
     // placeholder after the seven bound below.
-    const deck = this.deckPlayFilter(collection, 8);
+    const scope = this.focusPlayFilter(collection, 8);
     // maxEntryKeyLen is a caller-supplied constant (never user input); coerce to a
     // safe integer before inlining, since it isn't a bind param.
     const lenClause = maxEntryKeyLen != null
@@ -320,7 +345,7 @@ export class OnDeckVocabService {
         AND ${typeCategoryExpr('$5')} = $2
         AND NOT (ve.id = ANY($6::int[]))
         ${lenClause}
-        ${deck.clause}
+        ${scope.clause}
         -- THE LEARNER'S OWN CARDS FIRST, then lent ones, then random within each.
         -- Without this the two are shuffled together, so a round that had to borrow
         -- could leave the learner's own cards on the bench in favour of words they
@@ -329,7 +354,7 @@ export class OnDeckVocabService {
         -- non-empty; otherwise every row is sorted and the first key is constant.
         ORDER BY (ve."starterPackBucket" = 'provisional') ASC, RANDOM()
         LIMIT $3
-      `, [userId, category, cap, language, markType, excludeIds, lentIds, ...deck.params]);
+      `, [userId, category, cap, language, markType, excludeIds, lentIds, ...scope.params]);
 
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
@@ -637,118 +662,35 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Every card in one user-authored deck, enriched exactly like the Learning and
-   * Mastered collections above, so one client component renders all three
-   * (docs/DECKS_FEATURE.md).
+   * WHERE fragment restricting a PLAYABLE read to a focus-mode scope
+   * (docs/FOCUS_MODE.md § 4 / § 4a), or the empty string for an ordinary round.
    *
-   * ── Why this read lives here and not in DeckDAL ───────────────────────────────
-   * It is the THIRD collection read, not a deck feature: it needs DICT_JOIN, the
-   * utcm category expression and `enrichEntriesPipeline`, all of which already sit
-   * on this service beside its two siblings. DeckDAL owns the deck tables and
-   * answers membership questions; DeckService owns the ownership check and calls
-   * this. See DeckService's class comment.
+   * The id list is bound as one int[] parameter, never interpolated (only the `$n`
+   * placeholder position is, and that is computed from the caller's own parameter list).
    *
-   * SORTED, not playable: this is a view of the user's own cards, so a card lent
-   * by the provisional top-up (which is never written into a deck anyway — see
-   * vetDeckOrProvisionalClause) must not appear in the list. `vetDeckClause` is
-   * the strict "in the deck" form for the same reason.
-   *
-   * ORDERED BY MEMBERSHIP, newest addition first — not by the card's `createdAt`
-   * like the other two collections. A deck is something the user assembled, so
-   * "what I most recently put in here" is the meaningful recency, and it matches
-   * the order DeckDAL.listDeckCardIds returns.
-   *
-   * The caller MUST have already established that `deckId` belongs to `userId`
-   * (DeckService.getDeck does). The `ve."userId" = $1` filter means a wrong deck
-   * id yields an empty list rather than another user's cards, but it is a backstop,
-   * not the check.
+   * Until 2026-11-04 this also narrowed a round to a user-authored deck (`?deck=`) or a
+   * built-in collection (`?collection=`); both launch paths were removed with the Decks
+   * feature, leaving focus mode as the only scope a round can carry.
    */
-  async getDeckCards(userId: string, language: string, deckId: number): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    const client = await db.getClient();
-    try {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT},
-               dc."addedAt" AS "deckAddedAt"
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        -- Joined rather than spliced as vetDeckClause's EXISTS: this read needs
-        -- the membership row's "addedAt" for its sort, which a semi-join cannot
-        -- expose. At most one deck_cards row matches (composite PK), so the join
-        -- cannot duplicate a card.
-        JOIN deck_cards dc ON dc."vocabEntryId" = ve.id AND dc."deckId" = $3
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        -- SORTED: deck read (a deck never contains a lent card).
-        AND ${vetSortedClause()}
-        ORDER BY dc."addedAt" DESC
-      `, [userId, language, deckId]);
-
-      return await this.enrichEntriesPipeline(result.rows, language);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * WHERE fragment restricting a PLAYABLE read to one collection, or the empty
-   * string when the launch was unrestricted.
-   *
-   * Every deck-filtered selection query composes this with its bucket clause; the
-   * deck id is bound, never interpolated (only the `$n` placeholder position is,
-   * and that is computed from the caller's own parameter list).
-   *
-   * For a DECK it uses the "deck OR provisional" form, not the strict one: a game
-   * launched from a four-card deck still gets topped up to its baseline, and those
-   * lent cards must be servable even though they are not deck members. See
-   * docs/DECKS_FEATURE.md § Playing a small deck.
-   *
-   * There is no 'learn-now' variant, and that is not an omission: the Learning
-   * collection IS every sorted card, which is exactly what these queries already
-   * select. Adding a clause for it would restate `vetPlayableClause()`.
-   */
-  private deckPlayFilter(
+  private focusPlayFilter(
     collection: CollectionFilter | null | undefined,
     nextParamIndex: number
-  ): { clause: string; params: Array<number | number[]> } {
+  ): { clause: string; params: Array<number[]> } {
     if (collection == null) return { clause: '', params: [] };
 
     if (collection.kind === 'focus') {
-      // Bound as one int[] parameter. Strict membership, no provisional escape hatch:
-      // a focused round never lends, so there is no lent card it would need to admit.
+      // Strict membership, no provisional escape hatch: a focused round never lends,
+      // so there is no lent card it would need to admit.
       return { clause: `AND ve.id = ANY($${nextParamIndex}::int[])`, params: [collection.ids] };
     }
 
-    if (collection.kind === 'outside-focus') {
-      return { clause: `AND NOT (ve.id = ANY($${nextParamIndex}::int[]))`, params: [collection.setIds] };
-    }
-
-    if (collection.kind === 'builtin') {
-      // Every built-in collection is a COMPUTED set, not a stored one, so it filters
-      // on the same expression its collection page lists by — one shared definition
-      // in `builtinCollectionClause`, so the round and the page can never disagree
-      // about what the set contains.
-      //
-      // Applied to EVERY candidate query, including the fallback buckets, so a round
-      // launched from Comfortable cannot quietly top itself up with Unfamiliar cards.
-      // Note this is the card's CORE/BAR band, not the game's per-track band — a card
-      // can therefore be core-Mastered and still land in the game's Unfamiliar bucket,
-      // which is correct: the set is what the user chose, the bucket is how the game
-      // paces it.
-      return { clause: `AND ${builtinCollectionClause(collection.id)}`, params: [] };
-    }
-
-    return {
-      clause: `AND ${vetDeckOrProvisionalClause(`$${nextParamIndex}`)}`,
-      params: [collection.deckId],
-    };
+    // 'outside-focus' — an flp break draws from everything but today's snapshot.
+    return { clause: `AND NOT (ve.id = ANY($${nextParamIndex}::int[]))`, params: [collection.setIds] };
   }
 
   /**
-   * How many sorted cards are mastered in EACH bar — the figures on the fdp's up-to-
-   * three Mastered rows (migration 143).
+   * How many sorted cards are mastered in EACH bar (migration 143) — the Deck Tower's
+   * Mastered deck per world and its cards page's Mastered key.
    *
    * One query with three FILTERed counts rather than three round trips, and rather
    * than a `world` parameter on getCategoryCounts: the page needs all three numbers at
@@ -792,34 +734,35 @@ export class OnDeckVocabService {
   }
 
   /**
-   * The fdp's three StudyHand figures (Challenge/Review/Mix): how many sorted cards
-   * could an flp session actually serve RIGHT NOW, per CORE utcm band, plus how long
-   * until the soonest Review-band card comes off cooldown.
+   * How many sorted cards an flp session could actually serve RIGHT NOW, per utcm band
+   * of the session's bar — the Deck Tower's Learning-deck figures (docs/DECK_TOWER.md).
+   * (Until 2026-11-04 it also returned `reviewNextReadyMs`, the Review study mode's
+   * countdown; that mode was removed — docs/DEFERRED_WORK.md § 31.)
    *
    * Deliberately the narrowest possible read — `id` + `typedMarkHistory` only, no
    * dictionary join, no enrichment pipeline (see `getBuiltinCollectionCards`, which
-   * needs both for DISPLAY and is why the fdp's card count used to be slow). Every
+   * needs both for DISPLAY and is why the old decks page's card count used to be slow). Every
    * figure here is computed from `typedMarkHistory` alone, so nothing else is fetched.
    *
    * The counting/cooldown arithmetic itself is the SHARED contract
    * (`server/contracts/flpReadiness.ts`) — the exact functions the client used to run
    * against the full `allCards` fetch, and the same ones `rankFlpEligible` above
-   * restates for actual queue ordering. One definition, so the fdp figure can never
+   * restates for actual queue ordering. One definition, so the tower figure can never
    * promise a card the flp would not deal.
    *
-   * Referenced by docs/DECKS_FEATURE.md § "The card hand".
+   * Referenced by docs/DECK_TOWER.md.
    */
   async getFlpReadyCounts(
     userId: string,
     language: string,
-    /** Which bar's bands and clock the figures are read off (the Reading Center: reading). */
+    /** Which bar's bands and clock the figures are read off. */
     world: FlpWorld = 'core',
     /**
      * Count only these vet ids — a focused world's remaining daily set
      * (docs/FOCUS_MODE.md § 4). Omitted = every sorted card.
      */
     onlyIds?: number[]
-  ): Promise<{ counts: Record<string, number>; reviewNextReadyMs: number | null }> {
+  ): Promise<{ counts: Record<string, number> }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -837,15 +780,11 @@ export class OnDeckVocabService {
         ${onlyIds ? 'AND ve.id = ANY($3::int[])' : ''}
       `, onlyIds ? [userId, language, onlyIds] : [userId, language]);
 
-      const now = Date.now();
       const rows = result.rows.map((row) => ({
         typedMarkHistory: row.typedMarkHistory ?? undefined,
         writingMastery: row.writingMastery,
       }));
-      return {
-        counts: flpReadyCountsByBand(rows, now, world),
-        reviewNextReadyMs: nextFlpReadyMs(rows, OnDeckVocabService.REVIEW_BANDS, now, world),
-      };
+      return { counts: flpReadyCountsByBand(rows, Date.now(), world) };
     } finally {
       client.release();
     }
@@ -934,8 +873,8 @@ export class OnDeckVocabService {
     /** The bar whose band `category` is read off — core except for the reading flp. */
     world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
-    // Optional collection restriction; $6 is the next free placeholder after the five below.
-    const deck = this.deckPlayFilter(collection, 6);
+    // Optional focus-mode scope; $6 is the next free placeholder after the five below.
+    const scope = this.focusPlayFilter(collection, 6);
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
@@ -947,13 +886,13 @@ export class OnDeckVocabService {
       AND ${barCategoryExpr(world)} = $2
       AND ve.id != ALL($3::int[])
       ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-      ${deck.clause}
+      ${scope.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code, which
       -- also puts own cards before lent ones in its stale tier. The tie is REAL for
       -- stale cards of equal ease, which keep this order — own-first is repeated here
       -- so the tiebreak agrees with the ranker.
       ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
-    `, [userId, category, excludeIds, language, lentIds, ...deck.params]);
+    `, [userId, category, excludeIds, language, lentIds, ...scope.params]);
     return result.rows;
   }
 
@@ -978,28 +917,24 @@ export class OnDeckVocabService {
    * POST /api/flashcards/mark: the cooldown exists precisely so re-answering a card
    * inside its window earns nothing, and the learner keeps studying their own deck.
    * Only when there is no resting card either does an unrestricted session lend
-   * (canLendProvisional); a restricted one returns null and the client winds the loop
-   * down.
+   * (canLendProvisional); a focused one returns null and the client winds the loop
+   * down. Enriches only the chosen card.
    *
-   * `allowedCategories` (Review/Challenge modes) restricts the pool to the given
-   * categories only — a banned category is never served, even as a last resort.
-   * When the allowed pool is empty, returns null so the caller can wind the loop
-   * down ("no more review/challenge cards remaining"). Enriches only the chosen card.
+   * `collection` is the session's focus-mode scope (docs/FOCUS_MODE.md § 4), resolved
+   * server-side by the caller — the mark endpoint is what refills the loop, so a
+   * focused session that omitted it here would start serving cards outside the day's
+   * set the moment the learner answered the first card correctly.
    *
-   * `collection` (docs/DECKS_FEATURE.md) restricts the replacement pool to the
-   * collection the session was launched from. IT MUST BE PASSED WHENEVER THE
-   * SESSION WAS LAUNCHED FROM ONE — the mark endpoint is what refills the loop, so a deck-launched session
-   * that omitted it here would start serving off-deck cards the moment the learner
-   * answered the first card correctly.
+   * (The `allowedCategories` band cap the Review / Challenge study modes passed was
+   * removed with those modes on 2026-11-04 — docs/DEFERRED_WORK.md § 31.)
    */
   async getNextLibraryCardWithFallback(
     userId: string,
     preferredCategory: string,
     language: string,
     excludeIds: number[] = [],
-    allowedCategories?: string[],
     collection?: CollectionFilter | null,
-    /** The session's flp bar (studyMode.ts) — core unless this is a reading session. */
+    /** The session's flp bar (studyMode.ts) — core unless this is a reading/writing session. */
     world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry | null> {
     if (!userId) {
@@ -1009,21 +944,11 @@ export class OnDeckVocabService {
       throw new ValidationError('Preferred category is required');
     }
 
-    // In a mode session, `allowedCategories` caps the pool: the preferred category
-    // is honored only if it's allowed, and the fallback list is the remaining
-    // allowed categories.
-    //
-    // ONE BORROW ORDER (2026-10-28): the fallback walks STUDY_MIX_FILL_ORDER (TCUM),
-    // filtered to the allowed set — the same order getDistributedWorkingLoop tops a
-    // short loop up in, so a loop and its refills borrow alike. Filtering (rather than
-    // using `allowedCategories` as given) also keeps a mode session in that order:
-    // Challenge's allowed list is [Unfamiliar, Target], but it borrows Target first.
-    const fallbackBase = STUDY_MIX_FILL_ORDER.filter(
-      (cat) => !allowedCategories || allowedCategories.includes(cat)
-    ) as string[];
-    const preferredFirst = !allowedCategories || allowedCategories.includes(preferredCategory)
-      ? [preferredCategory]
-      : [];
+    // ONE BORROW ORDER (2026-10-28): the fallback walks STUDY_MIX_FILL_ORDER (TCUM) —
+    // the same order getDistributedWorkingLoop tops a short loop up in, so a loop and
+    // its refills borrow alike.
+    const fallbackBase = [...STUDY_MIX_FILL_ORDER] as string[];
+    const preferredFirst = [preferredCategory];
     // Everything the preferred category may fall back to, in priority order.
     const borrowOrder = fallbackBase.filter(cat => cat !== preferredCategory);
 
@@ -1077,7 +1002,7 @@ export class OnDeckVocabService {
       // 1. The category the caller actually asked for.
       winner = await serveFrom(preferredFirst);
 
-      // 2. Borrow a FRESH card from the remaining allowed categories.
+      // 2. Borrow a FRESH card from the remaining categories.
       if (!winner) winner = await serveFrom(borrowOrder);
 
       // 3. Nothing is off cooldown anywhere — re-serve the card closest to ready,
@@ -1089,7 +1014,7 @@ export class OnDeckVocabService {
 
       // 4. Genuinely nothing to serve — the learner has too few cards. Lend one, if
       //    this session is allowed to show a lent card at all.
-      if (!winner && this.canLendProvisional(fallbackBase, collection)) {
+      if (!winner && this.canLendProvisional(collection)) {
         winner = await serveLent();
       }
 
@@ -1103,6 +1028,55 @@ export class OnDeckVocabService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Replacements for the working-loop cards an flp game break cleared
+   * (docs/FLP_GAME_BREAKS.md § 4a). The batch twin of the mark endpoint's per-swipe
+   * refill: one `getNextLibraryCardWithFallback` per cleared card, so a break's clears
+   * refill under the same focus / world / lending rules a correct swipe does.
+   *
+   * Differences from the swipe refill, both forced by when it runs (after the game):
+   *   - The preferred band is each cleared card's band on `world` AS IT STANDS — the
+   *     game's mark has already landed, so the pre-mark band (`categoryBeforeMark`) is
+   *     not known here. A card the game promoted asks one band up.
+   *   - `excludeIds` grows as winners are picked, so two clears never draw the same card.
+   *
+   * Returns at most one card per id in `replacedIds` (fewer when the pool is spent — the
+   * client winds those slots down, as for a swipe refill that came back empty).
+   */
+  async refillWorkingLoop(
+    userId: string,
+    language: string,
+    replacedIds: number[],
+    excludeIds: number[],
+    collection: CollectionFilter | null,
+    world: MasteryWorldId
+  ): Promise<VocabEntry[]> {
+    if (replacedIds.length === 0) return [];
+    const client = await db.getClient();
+    let replaced: VocabEntry[];
+    try {
+      // `markType` is only used for freshness, which `ignoreCooldown` skips, and for the
+      // `gameCategory` stamp, which is not read here.
+      replaced = await this.fetchRowsByIds(client, userId, language, replacedIds, 'recognition', Date.now(), undefined, true);
+    } finally {
+      client.release();
+    }
+
+    const exclude = new Set([...excludeIds, ...replacedIds]);
+    const winners: VocabEntry[] = [];
+    // Sequential on purpose: each pick must see the previous picks in `exclude`.
+    for (const card of replaced) {
+      const preferred = barCategory(card.typedMarkHistory, world, card.writingMastery);
+      const next = await this.getNextLibraryCardWithFallback(
+        userId, preferred, language, [...exclude], collection, world
+      );
+      if (!next) break; // the pool is spent; later picks would come back empty too
+      exclude.add(next.id);
+      winners.push(next);
+    }
+    return winners;
   }
 
   /**
@@ -1196,8 +1170,7 @@ export class OnDeckVocabService {
     //
     // FILTERED TO `lentIds` (not just excluded): passing `lentIds` widens the
     // candidate query to "sorted OR lent", so without this filter the pass could hand
-    // back an ordinary sorted card — and for a MODE session (Challenge allows only
-    // Unfamiliar/Target) that card could be from a category the mode forbids.
+    // back an ordinary sorted card instead of the lent row this call exists to place.
     // Goes through `fetchFlpCandidates` rather than `fetchEligibleCategoryCards`
     // because the latter applies its LIMIT before we could filter: a category holding
     // plenty of ordinary sorted cards would fill the slice with those and drop the
@@ -1218,12 +1191,10 @@ export class OnDeckVocabService {
 
   /**
    * Get distributed working loop with a category distribution.
-   * - Default (Mix): 1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target.
-   * - `mode` 'review'/'challenge': the difficulty-targeted distributions in MODE_CONFIGS
-   *   (Review = 7 Comfortable + 3 Mastered; Challenge = 7 Unfamiliar + 3 Target), each
-   *   topping up only from its allowed categories.
-   * - `categoryFilter`: returns up to 10 cards from that single category (legacy
-   *   deck-tap path), ignoring distribution.
+   * Study Mix is the only loop shape: 1 Mastered, 2 Comfortable, 2 Unfamiliar,
+   * 5 Target. (Removed 2026-11-04: the Review / Challenge study modes, and the legacy
+   * single-category `?category=` path whose only sender was the deleted standalone
+   * /flashcards/learn route.)
    *
    * KNOW COOLDOWN (docs/MASTERY_REWORK.md § 6): every fetch is eligibility-filtered —
    * a card is only offered once its know clock (shared by recognition and production)
@@ -1236,7 +1207,7 @@ export class OnDeckVocabService {
    * characters.
    *
    * WHEN A QUOTA IS SHORT the loop BORROWS, then COOLS, then LENDS (2026-08-20): the
-   * shortfall is covered from the mode's other categories first, then by re-showing
+   * shortfall is covered from the other categories first, then by re-showing
    * the learner's own cooling cards, and only then with lent cards. Lending exists to
    * get a learner started who has not sorted enough cards — not to paper over a quota
    * that a healthy deck simply cannot fill (the Mix loop asks for 1 Mastered + 2
@@ -1244,28 +1215,22 @@ export class OnDeckVocabService {
    *
    * The cooled tier deliberately re-serves resting cards: they are shown but earn
    * nothing, because a mark on a cooling track is dropped at POST /api/flashcards/mark.
-   * A restricted session (Review, a builtin collection, a deck) still cannot lend, but
-   * it does reach the cooled tier, so a deck whose cards are all resting replays them
-   * instead of showing the "nothing ready" state. See canLendProvisional and
-   * docs/PROVISIONAL_CARDS.md § 4b.
+   * A focused session (docs/FOCUS_MODE.md § 4) still cannot lend, but it does reach
+   * the cooled tier. See canLendProvisional and docs/PROVISIONAL_CARDS.md § 4b.
    *
-   * `deckId` (docs/DECKS_FEATURE.md) restricts the whole loop — quotas, top-up and
-   * the cooled last-resort fill alike — to one user-authored deck. It composes with
-   * `mode`: a deck launched in Challenge mode draws Unfamiliar/Target cards FROM THAT
-   * DECK. Note that the client must pass the same deck id to the mark endpoint,
-   * which is what refills the loop as cards are answered.
+   * `collection` is the server-resolved focus scope; it restricts the whole loop —
+   * quotas, top-up and the cooled fill alike. The mark endpoint re-resolves the same
+   * scope for its refills.
    */
   async getDistributedWorkingLoop(
     userId: string,
     language: string,
-    categoryFilter?: string | null,
-    mode?: StudyMode,
     collection?: CollectionFilter | null,
     /** Vet ids the caller's baseline top-up lent this session. Selection is
         sorted-only, so without these the lent cards are invisible and the loop would
         lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
     lentIds: number[] = [],
-    /** The session's flp bar — `reading` for the reading flp (any mode), else core. */
+    /** The session's flp bar — `reading` / `writing` for those flps, else core. */
     world: FlpWorld = 'core'
   ): Promise<VocabEntry[]> {
     if (!userId) {
@@ -1285,49 +1250,29 @@ export class OnDeckVocabService {
     const now = Date.now();
     const client = await db.getClient();
     try {
-      let workingLoop: VocabEntry[];
+      // Study Mix: fetch each quota in order, then top up to WORKING_LOOP_SIZE in the
+      // fill order. Mix may draw from all four bands, and walks its cooled tier in the
+      // same TCUM order it borrows in.
+      const config = DEFAULT_LOOP_CONFIG;
+      const loopCategories: string[] = [...STUDY_MIX_FILL_ORDER];
+      const workingLoop: VocabEntry[] = [];
 
-      // The categories this loop may draw from, in fallback priority — also the
-      // pool for the cooled fill below.
-      let loopCategories: string[];
-      // Cross-category borrow order, applied once the quotas are in. Empty for the
-      // legacy single-category path, which never borrows.
-      let fillOrder: string[] = [];
-
-      if (categoryFilter) {
-        // Legacy deck-tap path: up to WORKING_LOOP_SIZE eligible cards from the
-        // single tapped category.
-        loopCategories = [categoryFilter];
-        workingLoop = await this.fetchEligibleCategoryCards(
-          client, userId, language, categoryFilter, WORKING_LOOP_SIZE, [], now, collection, lentIds, world
+      // Initial quota fetches (eligibility-filtered).
+      for (const { category, count } of config.quotas) {
+        const rows = await this.fetchEligibleCategoryCards(
+          client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, world
         );
-      } else {
-        // Data-driven distribution: pick the per-mode config (or the Mix default),
-        // fetch each quota in order, then top up to WORKING_LOOP_SIZE using the
-        // mode's fill order. Mode loops only ever draw from their config's
-        // categories; Mix may draw from all four.
-        const config = mode ? MODE_CONFIGS[mode] : DEFAULT_LOOP_CONFIG;
-        // Mix walks its cooled tier in the same TCUM order it borrows in.
-        loopCategories = mode ? MODE_CONFIGS[mode].allowed : [...STUDY_MIX_FILL_ORDER];
-        workingLoop = [];
-
-        // Initial quota fetches (eligibility-filtered).
-        for (const { category, count } of config.quotas) {
-          const rows = await this.fetchEligibleCategoryCards(
-            client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, world
-          );
-          workingLoop.push(...rows);
-        }
-
-        // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
-        fillOrder = config.fillOrder;
+        workingLoop.push(...rows);
       }
+
+      // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
+      const fillOrder = config.fillOrder;
 
       // FILL ORDER: BORROW → COOL → LEND (2026-08-20, replacing "lend first, borrow
       // second" of 2026-08-17).
       //
       // A quota its own category could not fill is covered, in this order:
-      //   1. FRESH cards borrowed from the mode's other categories;
+      //   1. FRESH cards borrowed from the other categories;
       //   2. COOLING cards — the learner's own words, shown again early. They earn
       //      nothing (the mark is dropped at POST /api/flashcards/mark), which is
       //      exactly what a cooldown means;
@@ -1339,11 +1284,8 @@ export class OnDeckVocabService {
       // for a learner who has not sorted enough cards, not for one whose cards are
       // merely resting or unevenly distributed.
       //
-      // Restricted sessions (Review, a builtin collection, a deck) still never lend:
-      // a Review round padded with never-seen words is not a review, and a deck round
-      // made of non-deck words is not that deck. They come back short on purpose —
-      // but they DO now reach tier 2, so a deck whose cards are all resting replays
-      // them instead of showing an empty loop.
+      // A focused session never lends: it plays the day's set and nothing else. It
+      // comes back short on purpose — but it DOES reach tier 2.
       // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
       for (const category of fillOrder) {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
@@ -1355,7 +1297,7 @@ export class OnDeckVocabService {
       }
 
       // 2. COOLING cards, nearest-to-ready first, across every category this loop may
-      //    draw from (the legacy single-category path stays inside its own category).
+      //    draw from.
       for (const category of loopCategories) {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
         const rows = await this.fetchCooledCategoryCards(
@@ -1366,7 +1308,7 @@ export class OnDeckVocabService {
       }
 
       // 3. LEND — the learner really is short of cards.
-      if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(loopCategories, collection)) {
+      if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(collection)) {
         const lent = await this.lendIntoLoop(
           client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
           workingLoop.map(c => c.id), now, collection, world
@@ -1376,9 +1318,8 @@ export class OnDeckVocabService {
 
       // Randomize play order. The ranking above chose WHICH cards are in the loop;
       // the order they're played in is deliberately not the ranking, so a session
-      // doesn't march predictably from most- to least-recently-rested. The legacy
-      // single-category path keeps its original unshuffled order.
-      if (!categoryFilter) shuffleInPlace(workingLoop);
+      // doesn't march predictably from most- to least-recently-rested.
+      shuffleInPlace(workingLoop);
 
       // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
       const enriched = await this.enrichEntriesPipeline(workingLoop, language);
@@ -1399,7 +1340,7 @@ export class OnDeckVocabService {
 
   /**
    * Count library cards per category for the requested categories. Used by the
-   * decks page (per-bucket counts), the Account page's deck buckets and the scp
+   * decks page (per-bucket counts), the Account page's deck buckets and the ancp
    * tally.
    *
    * CORE BAR ONLY (migration 143). "How many Comfortable cards do I have" is a
@@ -1429,9 +1370,9 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
     // Which bar the four bands are read off. `core` for every historical caller —
-    // deck sizes, the level estimate, the account page. The Reading/Writing Centers
-    // pass their own bar, so their tile figures count the skill the page is about
-    // (docs/DECKS_FEATURE.md § "Mastery Centers"). `bar` is a validated union value,
+    // deck sizes, the level estimate, the account page. The card library
+    // (src/features/flashcards/useCardLibrary.ts) passes its lens's bar, so its band
+    // figures count the skill being viewed. `bar` is a validated union value,
     // so `barCategoryExpr` can only produce one of three fixed SQL fragments.
     const categoryExpr = barCategoryExpr(world);
     const client = await db.getClient();
@@ -1654,8 +1595,8 @@ export class OnDeckVocabService {
     language: string,
     distribution: Record<string, number>,
     gameMarkType: MarkType,
-    // `collection` (docs/DECKS_FEATURE.md) restricts the whole pool to one
-    // collection — for a deck, its cards plus any card lent to reach the baseline.
+    // `collection` is the server-resolved focus scope (docs/FOCUS_MODE.md § 4 / § 4a):
+    // today's set, or (an flp break) everything outside it.
     opts: {
       need?: number;
       excludeIds?: number[];
@@ -1681,12 +1622,11 @@ export class OnDeckVocabService {
           without these the lent cards are invisible to the pool. */
       lentIds?: number[];
       /** Vet ids the caller wants on the board FIRST — an flp game break's working
-          loop (docs/FLP_GAME_BREAKS.md § 4). Partitioned by `isCardGameEligible`: the
-          seeds that can take this game's marks fill the board before any bucket
-          quota; the ones that cannot (cooling, or flp-only at core pbh ≥ 6) are a
-          FALLBACK drawn only after every fresh card, ahead of the cooled tier. Ignored
-          on an `outside-focus` collection, which supplies its own (docs/FOCUS_MODE.md
-          § 4a). */
+          loop (docs/FLP_GAME_BREAKS.md § 4). Only the seeds that pass
+          `isBreakSeedPlayable` (the mark counts, and the card is under 6 on the game's
+          bar) are dealt, before any bucket quota; the rest are never on the board
+          (`partitionBreakSeeds`). Ignored on an `outside-focus` collection, which
+          supplies its own (docs/FOCUS_MODE.md § 4a). */
       seedIds?: number[];
     } = {}
   ): Promise<{
@@ -1725,9 +1665,10 @@ export class OnDeckVocabService {
 
     const client = await db.getClient();
     try {
-      // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so BOTH halves
-      // come back, then split on the same test the candidate query uses. Seeds that are
-      // already excluded (on the caller's board) are dropped — exclude always wins.
+      // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so every seed
+      // comes back, then split by `partitionBreakSeeds` — an unfocused break keeps only
+      // the seeds whose mark counts and that sit under pbh 6 on the game's bar. Seeds that
+      // are already excluded (on the caller's board) are dropped — exclude always wins.
       //
       // A FOCUSED BREAK SWAPS THE SEED (docs/FOCUS_MODE.md § 4a). The caller's seed is the
       // working loop, which is exactly the set the break is meant to get away from, so it
@@ -1739,11 +1680,8 @@ export class OnDeckVocabService {
       const seedRows = await this.fetchRowsByIds(
         client, userId, language, seedIds, gameMarkType, now, undefined, true
       );
-      const seedMarkable: VocabEntry[] = [];
-      const seedFallback: VocabEntry[] = [];
-      for (const row of seedRows) {
-        (this.isCardGameEligible(row, gameMarkType, now) ? seedMarkable : seedFallback).push(row);
-      }
+      const { markable: seedMarkable, fallback: seedFallback } =
+        this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
 
       // Per-category candidates split fresh (game type off cooldown) vs cooled. The
       // seed ids are kept OUT of this query so a seed can only enter through its own
@@ -1816,7 +1754,7 @@ export class OnDeckVocabService {
 
       // HARD everywhere except the two cases lending itself can't run — must mirror
       // `mayLend` exactly (declared again, unchanged, at tier 5 below) so the two can
-      // never drift apart: a collection-restricted round, and a partial refill that
+      // never drift apart: a focus-scoped round, and a partial refill that
       // isn't a rolling-supply surface, both have no fallback to grow into if the
       // near-miss guard shortens the board, so those two admit a same-meaning-group
       // card rather than come back short. Exact-dd collisions (`takenDds` above) stay
@@ -1912,10 +1850,10 @@ export class OnDeckVocabService {
       //     cards. Ahead of the cooling tier on purpose: a focus card takes the game's
       //     marks, and a mark on a cooling outside card would be dropped.
       if (focusBreak && cards.length < target) drain(seedMarkable, target - cards.length);
-      // 2b. Still short → the UNMARKABLE seeds (cooling, or flp-only at pbh ≥ 6). Every
-      //     fresh card has been tried, so nothing markable is being displaced; and a
-      //     card the learner just studied is a better fill than a random cooling one.
-      //     Not bucket-restricted: the seed is the caller's own set, not a band request.
+      // 2b. FOCUSED BREAK ONLY (empty otherwise — `partitionBreakSeeds`): the remaining
+      //     focus cards that cannot take the game's marks. Every fresh card has been
+      //     tried, so nothing markable is being displaced. Not bucket-restricted: the
+      //     seed is the caller's own set, not a band request.
       if (cards.length < target) drain(seedFallback, target - cards.length);
       // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
       //    just-played library still assembles a full board.
@@ -1967,16 +1905,17 @@ export class OnDeckVocabService {
       //    Hydra now pulls cooling cards before it lends, like everything else.
       //
       //    Two sessions never reach it at all:
-      //      * a COLLECTION-restricted pool (a deck / builtin) — a deck round made of
-      //        non-deck words is not that deck (same rule as canLendProvisional);
+      //      * a FOCUS-scoped pool (docs/FOCUS_MODE.md § 4) — a focused round padded
+      //        with words outside the day's set is not that set (same rule as
+      //        canLendProvisional);
       //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
       //        with a board in hand, and lending there would grow the player's deck on
       //        every tap. EXCEPT for a rolling-supply surface (`opts.lendOnRefill`),
       //        whose every spawn is a refill and which would otherwise never lend at
       //        all. See ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
       //
-      //    The collection exemption has NO opt-out: a restricted round plays the set
-      //    the learner chose, rolling supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+      //    The focus exemption has NO opt-out: a scoped round plays its set, rolling
+      //    supply or not (docs/HYDRA_BUBBLES.md § 6.3).
       //    (`mayLend` declared once, above — see the near-miss guard comment there.)
       if (cards.length < target && !opts.collection && mayLend) {
         const lent = await this.lendGameCandidates(
@@ -2062,7 +2001,7 @@ export class OnDeckVocabService {
     language: string,
     distribution: Record<string, number>,
     gameMarkType: MarkType,
-    // `collection` (docs/DECKS_FEATURE.md) restricts the grid's words to one collection.
+    // `collection` is the server-resolved focus scope (docs/FOCUS_MODE.md § 4 / § 4a).
     // The de-dup / replacement loop below is unaffected: it only ever draws from
     // the candidate queues this filter has already narrowed.
     collection?: CollectionFilter | null,
@@ -2144,8 +2083,8 @@ export class OnDeckVocabService {
     const client = await db.getClient();
     try {
       const now = Date.now();
-      // SEED (docs/FLP_GAME_BREAKS.md § 4), split on the test the candidate query uses,
-      // as in `getGameVocabPool`. A focused break swaps the seed for the day's remaining
+      // SEED (docs/FLP_GAME_BREAKS.md § 4), split by `partitionBreakSeeds` as in
+      // `getGameVocabPool`. A focused break swaps the seed for the day's remaining
       // cards, dealt after the outside cards (docs/FOCUS_MODE.md § 4a). Words over 4
       // characters are dropped: the grid cannot place them.
       const focusBreak = collection?.kind === 'outside-focus' ? collection : null;
@@ -2153,11 +2092,8 @@ export class OnDeckVocabService {
       const seedRows = await this.fetchRowsByIds(
         client, userId, language, seedPool, gameMarkType, now, 4, true
       );
-      const seedMarkable: VocabEntry[] = [];
-      const seedFallback: VocabEntry[] = [];
-      for (const row of seedRows) {
-        (this.isCardGameEligible(row, gameMarkType, now) ? seedMarkable : seedFallback).push(row);
-      }
+      const { markable: seedMarkable, fallback: seedFallback } =
+        this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
 
       // Per-category candidates split fresh (mode's mark type off cooldown) vs
       // cooled, capped to short (<= 4 char) words the grid can place. We pop from
@@ -2185,7 +2121,7 @@ export class OnDeckVocabService {
 
       // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6), mirroring
       // `getGameVocabPool`'s `takenGroups`/`glossKeyToGroup`. Word Search has no
-      // `need`/`lendOnRefill` split — a collection-restricted grid is the only round
+      // `need`/`lendOnRefill` split — a focus-scoped grid is the only round
       // that never lends — so the guard is hard unless `collection` is set. Unlike
       // `takenDds`, `glossKeyToGroup` grows over the method's lifetime: challenge
       // filler and lent rows are fetched AFTER this initial batch (below), so
@@ -2228,7 +2164,8 @@ export class OnDeckVocabService {
 
       // Pull ONE replacement for a dropped word, in the order the board itself fills:
       // markable seeds (a focused break holds them until the fresh cards are spent),
-      // FRESH cards (preferred category → fallback order), unmarkable seeds, then
+      // FRESH cards (preferred category → fallback order), a focused break's unmarkable
+      // seeds (none on an unfocused break — `partitionBreakSeeds`), then
       // COOLED cards (same order) only if nothing else is left. Returns the added
       // card, or null if the whole library is exhausted.
       const pullReplacement = (preferredCategory: string): VocabEntry | null => {
@@ -2302,8 +2239,8 @@ export class OnDeckVocabService {
         if (selected.length >= total) break;
         drain(eligible[category] ?? [], total - selected.length);
       }
-      // Seed tiers 2a + 2b of `getGameVocabPool`: a focused break's remaining set, then
-      // the unmarkable seeds, ahead of any cooling card.
+      // Seed tiers 2a + 2b of `getGameVocabPool` — both focused-break only: the remaining
+      // set, then its unmarkable cards, ahead of any cooling card.
       if (focusBreak && selected.length < total) drain(seedMarkable, total - selected.length);
       if (selected.length < total) drain(seedFallback, total - selected.length);
       for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
@@ -2319,7 +2256,7 @@ export class OnDeckVocabService {
       // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
       // straight into `selected`, so the substring-dedup replacement loop below can
       // draw on them too — otherwise a lent word dropped as a substring could not be
-      // replaced by another lent word. A collection-restricted grid never lends.
+      // replaced by another lent word. A focus-scoped grid never lends.
       //
       // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
       // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop

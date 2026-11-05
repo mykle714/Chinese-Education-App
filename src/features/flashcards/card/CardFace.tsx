@@ -15,6 +15,7 @@ import CardIconLayer from "../../../cardIcons/CardIconLayer";
 import { defaultLayoutForIcon } from "../../../cardIcons/cardIconLayout";
 import { resolveTextLayout, textBlockMaxWidth, textItemTransform, defaultEnglishTopAnchorTransform } from "../../../cardIcons/cardTextLayout";
 import ForeignText from "../../../components/ForeignText";
+import GlossText from "../../../components/GlossText";
 import SensePicker from "./SensePicker";
 import { useShrinkWrapWrappedText } from "./useShrinkWrapWrappedText";
 import { useSenseChipPlacement } from "./useSenseChipPlacement";
@@ -97,6 +98,9 @@ export const ChineseBlock: React.FC<{
             showPinyin={showPinyin}
             useToneColor={showPinyinColor}
             characterColor={characterColor}
+            // Pinyin in the card's face (975 Maru SC), matching the characters and the
+            // dd below — not the UI sans every other cpcd uses.
+            latinFontFamily={FC_FONT_CJK}
         />
     );
     return (
@@ -250,7 +254,8 @@ export const EnglishBlock: React.FC<{
                     textAlign: 'center',
                     overflowWrap: 'break-word',
                 }}>
-                    {text}
+                    {/* Italic "classifier for" on a classifier sense (text-only test; see GlossText). */}
+                    <GlossText text={text} />
                 </Typography>
                 {/* Out of flow in both placements: it must never move or narrow the gloss.
                     The `sortedClusters` gate stops an empty box being measured; SensePicker
@@ -386,29 +391,24 @@ export const CardFaceSide: React.FC<{
     // The flip's duration (ms) the away-face hide is timed against — the Deck Tower's
     // slower flip passes TOWER_CARD_FLIP_MS.
     flipMs?: number;
-    // The Deck Tower's CARD STOCK (the tower-hosted flp, FlashCard `towerStock`): the face is
-    // the tower's IsoCard — a cream rim (`COLORS.cardFace`) around a beige printed panel
-    // (`COLORS.cardBeige`), no hairline. A custom `cardColor` fills the PANEL (the rim stays
-    // cream), and everything printed on the face is clipped to the panel (`--card-panel-clip`,
-    // read by the inner clip box and the fie canvas's icon layer) and wraps at its width
-    // (`--card-panel-width`, read by `textBlockMaxWidth`). The rim's width and the panel's corner come from the card frame's
-    // `--card-stock-inset` / `--card-panel-radius` (FlashCardSection `TOWER_STOCK_VARS`).
-    // Fixed tokens, not the theme's `flashCard`: the tower is one lit scene in every theme,
-    // and its time-of-day wash is applied over the study layer by the page.
-    // See docs/TOWER_STYLE_SHIFT.md § "Card stock".
-    towerStock?: boolean;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill, flipMs = CARD_FLIP_MS, towerStock = false }) => {
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill, flipMs = CARD_FLIP_MS }) => {
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
     // its custom color exactly when this face is rendering that advanced layout
     // (`isUsingAdvancedLayout`, decided per face by the caller). A basic card, and any face the
-    // caller has gated off (the flp Chinese front), ignores cardColor and follows the theme.
+    // caller has gated off (the flp Chinese front), ignores cardColor and keeps the beige panel.
     // Resolve to a concrete hex, or undefined to keep the theme default.
     const customBg = isUsingAdvancedLayout ? resolveCardColor(cardColor) : undefined;
-    // Tower stock: the face itself is the cream rim and the colour (custom or beige) moves
-    // onto the inset panel. Otherwise the whole face takes it.
-    const faceBg = towerStock ? COLORS.cardFace : customBg ?? fc.flashCard;
+    // The Deck Tower's CARD STOCK (docs/TOWER_STYLE_SHIFT.md § "Card stock"): the face is
+    // the tower's IsoCard — a cream rim (`COLORS.cardFace`) around a beige printed panel
+    // (`COLORS.cardBeige`), no hairline. A custom `cardColor` fills the PANEL (the rim
+    // stays cream), and everything printed on the face is clipped to the panel
+    // (`--card-panel-clip`, read by the inner clip box and the fie canvas's icon layer) and
+    // wraps at its width (`--card-panel-width`, read by `textBlockMaxWidth`). The rim's
+    // width and the panel's corner come from the card frame's `--card-stock-inset` /
+    // `--card-panel-radius` (card/cardStock.ts → `cardStockVars`, set by FlashCardSection
+    // and the cdp's hero card). Fixed tokens, not the theme's `flashCard`: the tower is
+    // one lit scene in every theme. Every face is on this stock since 2026-11-04.
+    const faceBg = COLORS.cardFace;
     const panelBg = customBg ?? COLORS.cardBeige;
     const hasCustom = showIcon && !!iconLayout && iconLayout.length > 0;
     const editing = !!editCanvas;
@@ -432,24 +432,17 @@ export const CardFaceSide: React.FC<{
             WebkitBackfaceVisibility: "hidden",
             ...(rotated && { transform: "rotateY(180deg)" }),
             backgroundColor: faceBg,
-            // The card's EDGE. Border + radius come from `CARD_SURFACE` (theme/surfaces.ts)
-            // so a flashcard face, the cdp hero card and the Decks page's Mastery Center
-            // tiles are one object family; the elevation half of that recipe is NOT taken
-            // here, because the face is inset inside a wrapper that already casts the
-            // shadow (FlashCardSection's Card, the cdp's `*__hero-card` box) — applying it
-            // on both would double it. `border-box` so the hairline eats into the face
-            // rather than pushing it past the wrapper's 100% width.
-            // Tower stock has no hairline: the tower's own cards are unoutlined, and this
-            // face lies exactly over one (a documented exception to the outline rule —
-            // docs/TOWER_STYLE_SHIFT.md).
-            border: towerStock ? "none" : CARD_SURFACE.border,
+            // The card's EDGE: the radius comes from `CARD_SURFACE` (theme/surfaces.ts, which
+            // reads the frame's `--card-radius`); any elevation is the wrapper's, not the
+            // face's (the cdp's `*__hero-card` box) — applying it on both would double it.
+            // No hairline: the tower's own cards are unoutlined, and this face is one (a
+            // documented exception to the outline rule — docs/TOWER_STYLE_SHIFT.md).
+            border: "none",
             borderRadius: CARD_SURFACE.borderRadius,
             boxSizing: "border-box",
-            // On tower stock the card's content stops at the panel's edge, not the card's.
-            ...(towerStock && {
-                "--card-panel-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))",
-                "--card-panel-width": "calc(100% - 2 * var(--card-stock-inset))",
-            }),
+            // The card's content stops at the panel's edge, not the card's.
+            "--card-panel-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))",
+            "--card-panel-width": "calc(100% - 2 * var(--card-stock-inset))",
             // NOT clipped here — see the inner clip box. The edit canvas (a child of this
             // outer box) needs overflow:visible so its selection indicators can poke past
             // the card edge into the surrounding padding.
@@ -470,22 +463,20 @@ export const CardFaceSide: React.FC<{
             // The tower stock's panel is SURFACE, not content, so it stays.
             ...(contentHidden && { "& > *:not(.card-face__stock-panel)": { visibility: "hidden" } }),
         }}>
-            {/* Tower stock's printed panel — FIRST, so the edit canvas, icons and text all
+            {/* The stock's printed panel — FIRST, so the edit canvas, icons and text all
                 paint over it. Decorative: the face's content keeps the full-card layout. */}
-            {towerStock && (
-                <Box
-                    className="card-face__stock-panel"
-                    sx={{
-                        position: "absolute",
-                        inset: "var(--card-stock-inset)",
-                        borderRadius: "var(--card-panel-radius)",
-                        backgroundColor: panelBg,
-                        pointerEvents: "none",
-                    }}
-                />
-            )}
-            {/* The area content may occupy, as a measurable box: the printed panel on tower
-                stock, the whole face elsewhere. Read by useSenseChipPlacement, because
+            <Box
+                className="card-face__stock-panel"
+                sx={{
+                    position: "absolute",
+                    inset: "var(--card-stock-inset)",
+                    borderRadius: "var(--card-panel-radius)",
+                    backgroundColor: panelBg,
+                    pointerEvents: "none",
+                }}
+            />
+            {/* The area content may occupy, as a measurable box: the printed panel. Read by
+                useSenseChipPlacement, because
                 `--card-stock-inset` is a container-unit calc() script can't read as a number. */}
             <Box
                 aria-hidden

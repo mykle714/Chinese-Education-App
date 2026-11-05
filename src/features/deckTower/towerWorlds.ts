@@ -2,7 +2,6 @@ import { COLORS } from "../../theme/colors";
 import { ISO, platformTone, spaceOver, type IsoSurface, type PlatformTone } from "./iso";
 import { FLOOR_Z, GROUND_Z } from "./towerPlatforms";
 import type { MasteryWorldId } from "../../../server/contracts/wire";
-import type { DayPhase, SkyRecipe } from "./timeOfDay";
 
 /**
  * towerWorlds.ts — the Deck Tower's worlds: one per mastery BAR, each the same platform
@@ -16,11 +15,10 @@ import type { DayPhase, SkyRecipe } from "./timeOfDay";
  * The main (core) world is always there; reading / writing only while the account has
  * that goal on (`users.readingGoal` / `writingGoal`).
  *
- * Colours (the DAY look — timeOfDay.ts turns each sky and lights the rest for dawn, sunset
- * and night, docs/DECK_TOWER.md § "Time of day"): main is a blue sky (bluMk) on a gold platform, reading a green sky (grnSky) on
- * a pink platform (pnk), writing a powder-pink sky (pnkSky) on a blue platform (bluMk). Each platform sits clear of its
- * sky and of the yellow LEARNING plate (yelM); writing's blue platform is the same hue as
- * the MASTERED plate (bluM, every world) but a tier deeper, so the plate still reads on it.
+ * Colours (the DAY look — timeOfDay.ts turns each sky and lights the rest for night, docs/DECK_TOWER.md § "Time of day"): main is the ramp's blue mark (bluMk, its clear-weather sky; weatherSky.ts turns it by the weather) on a gold platform, reading a green sky (grnSky) on
+ * a pink platform (pnk), writing a cherry-blossom pink sky (pnkSky) on a cornflower platform (bluCorn). Each platform sits clear of its
+ * sky and of the yellow LEARNING plate (yelM); writing's cornflower platform is well darker
+ * than the MASTERED plate (bluM, every world: 82% vs 88% L), so the plate still reads on it.
  * (Writing's sky is no longer its bar's purple — a world's colours are its own, not
  * MASTERY_BAR_HUES.)
  *
@@ -38,17 +36,11 @@ export interface TowerWorld {
     /** The page title while this world is on screen (the deck shown is on the plate and top card). */
     title: string;
     /**
-     * The sky the platform floats in — its DAY sky. Dawn, sunset and night are derived from
-     * it (timeOfDay.ts `phaseSky`); the page draws `litWorld(world, light)`, whose `sky`,
+     * The sky the platform floats in — its DAY sky. Night's is derived from it
+     * (timeOfDay.ts `phaseSky`); the page draws `litWorld(world, light)`, whose `sky`,
      * `ground`, `platform`, `floor` and `leverKnob` are the world at the current hour.
      */
     sky: string;
-    /**
-     * Per-phase overrides of timeOfDay.ts `PHASE_SKY`, for a world whose sky would
-     * otherwise land too close to another world's (or wrong for its own). Reading's sunset
-     * is a deeper vermilion, so it doesn't match writing's orange; writing's dawn is lilac; main's dawn is a lighter pink.
-     */
-    skyRecipes?: Partial<Record<Exclude<DayPhase, "day">, SkyRecipe>>;
     /** The night the sky darkens into on a tall tower (SpaceBackdrop) — one for every world (`SPACE`). */
     space: string;
     platform: PlatformTone;
@@ -61,8 +53,9 @@ export interface TowerWorld {
 }
 
 /**
- * Space is the same night above every world: main's blue sky taken down to night. Each
- * world's own sky fades into it, so a tall tower ends in one shared starfield.
+ * Space is the same night above every world: the ramp's blue mark (bluMk, main's sky
+ * until 2026-11-04) taken down to night. Each world's own sky fades into it, so a tall
+ * tower ends in one shared starfield.
  */
 const SPACE = spaceOver(COLORS.bluMk);
 
@@ -89,27 +82,10 @@ function world(
 }
 
 export const TOWER_WORLDS: Record<TowerWorldId, TowerWorld> = {
-    core: {
-        ...world("core", "Main", "Flashcards", COLORS.bluMk, COLORS.gld),
-        // Dawn: a light pink — the shared recipe's hue (20, 80%) at writing's dawn lightness
-        // and a little more chroma → #FFB9D7 (hue ≈ 352, C 0.09, L 0.86), lighter than the
-        // shared soft rose (#F99DC6). At the same lightness as writing's dawn it stays apart
-        // on hue: warm pink here, cool lilac there (#EAC2EA: hue 326, C 0.07).
-        skyRecipes: { dawn: { hue: 20, hueBy: 0.8, L: 0.86, C: 0.09 } },
-    },
-    reading: {
-        ...world("reading", "Reading", "Reading Flashcards", COLORS.grnSky, COLORS.pnk),
-        // Sunset: hue 35 at 95% and a little darker → vermilion #EC6D3B (shared recipe: #EC8900, ≈ writing's #F5802A).
-        skyRecipes: { sunset: { hue: 35, hueBy: 0.95, L: 0.68, C: 0.17 } },
-    },
-    writing: {
-        ...world("writing", "Writing", "Writing Flashcards", COLORS.pnkSky, COLORS.bluMk),
-        // Dawn: the shared recipe turns powder pink DARKER and hotter (#FF9DA2) than its own
-        // day sky; instead it turns cool toward lilac at about day's lightness → #EAC2EA,
-        // clear of main's pink dawn and reading's peach. Sunset (#F67F2F) and night
-        // (#4F274A, plum) keep the shared recipe.
-        skyRecipes: { dawn: { hue: 300, hueBy: 0.6, L: 0.86, C: 0.07 } },
-    },
+    core: world("core", "Main", "Flashcards", COLORS.bluMk, COLORS.gld),
+    reading: world("reading", "Reading", "Reading Flashcards", COLORS.grnSky, COLORS.pnk),
+    // Night (#4A2851, plum) comes from the shared night recipe, like every world's.
+    writing: world("writing", "Writing", "Writing Flashcards", COLORS.pnkSky, COLORS.bluCorn),
 };
 
 /** Left to right. A swipe LEFT moves the camera right (core → writing); a swipe RIGHT, left. */

@@ -2,8 +2,7 @@
  * The first ancestor of `el` that actually scrolls vertically, or null when the page
  * itself does.
  *
- * Used by: useWindowedRows (rows windowed against their scroller), usePinScrollBottom
- * (a returning Reading Center pinned to its foot).
+ * Used by: useWindowedRows (rows windowed against their scroller).
  */
 export const scrollParentOf = (el: HTMLElement | null): HTMLElement | null => {
     let node = el?.parentElement ?? null;

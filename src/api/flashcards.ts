@@ -43,9 +43,11 @@ export type MarkSurface =
     | "speed-reading"
     | "word-search"
     | "practice-writing"
-    // The Reading Center's word swipe grid (docs/READING_WRITING_CENTERS.md).
+    // The Reading Center's word swipe grid — deleted 2026-11-04 with the Centers; no
+    // client sends it now, but rows already logged under it keep the value meaningful.
     | "reading-center"
-    // The Writing Center's Writing Grid game (docs/WRITING_PRACTICE_REWORK.md § 2).
+    // The Writing Grid game, now played only as an flp game break
+    // (docs/WRITING_PRACTICE_REWORK.md § 2).
     | "writing-grid"
     // Bucket Drop (docs/BUCKET_DROP_GAME.md).
     | "bucket-drop"
@@ -64,25 +66,11 @@ export interface MarkFlashcardRequest {
      */
     excludeIds?: number[];
     /**
-     * flp working-loop only: caps the replacement card to the mode's allowed
-     * categories, and yields `newCard: null` when the mode is exhausted.
-     */
-    mode?: string;
-    /**
      * flp working-loop only: the session's flp bar (server/contracts/studyMode.ts). A
      * reading session sends `reading` so its replacement card is chosen by the reading
      * bar, the bar its queue is built on. Omitted = core.
      */
     world?: FlpWorld;
-    /**
-     * flp working-loop only, and only for a session launched from a collection
-     * (docs/DECKS_FEATURE.md): keeps the REPLACEMENT card inside that collection.
-     * Exactly one of these is ever set — `deckId` for a user-authored deck,
-     * `collection: 'mastered'` for the Mastered set. Learning sets neither,
-     * because it is the default pool.
-     */
-    deckId?: number;
-    collection?: string;
     /**
      * Which surface produced this mark.
      *
@@ -93,7 +81,7 @@ export interface MarkFlashcardRequest {
      * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) uses it to tell apart the
      * reasons a mark gets dropped: a card served by fill tier 4 (cooled cards on an
      * ordinary run — the collision we do NOT want and are measuring), versus a
-     * deck/collection round that deliberately ignores cooldown (§ 6.3 — intended).
+     * round that deliberately ignores cooldown (§ 6.3 — intended).
      * Without it the log is one undifferentiated count and answers nothing.
      *
      * A UNION, not a free string: a typo in a
@@ -157,10 +145,7 @@ export async function markFlashcard(
         isCorrect: request.isCorrect,
         type: request.type,
         excludeIds: request.excludeIds ?? [],
-        mode: request.mode,
         world: request.world,
-        deckId: request.deckId,
-        collection: request.collection,
         surface: request.surface,
         writing: request.writing,
     });

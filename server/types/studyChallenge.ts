@@ -47,7 +47,12 @@ export interface StudyChallengeRow {
   words: Record<string, ChallengeWord[]>;
   /** userId → roundIndex ("1".."3") → the submitted round. */
   rounds: Record<string, Record<string, ChallengeRound>>;
-  /** userId → the generated deck created for them on accept. */
+  /**
+   * userId → the generated study deck created for them on accept. LEGACY: accepting
+   * stopped creating decks on 2026-11-04 (Decks feature removed), so this is `{}` on
+   * every challenge accepted since; older rows are emptied by the hourly job
+   * (database/cron/expire-study-challenges.sql passes 3/4). Read by nothing in the app.
+   */
   presetDeckIds: Record<string, number>;
   /**
    * userId → the one taunt that player sent, or absent (migration 156).
@@ -132,8 +137,6 @@ export interface ChallengeSummary {
    * that, since there is nothing here worth protecting.
    */
   taunts: Record<string, ChallengeTaunt>;
-  /** This player's generated study deck, or null once it has been dropped. */
-  presetDeckId: number | null;
   /** See the warning above: absent until this player's window opens. */
   gameSequence?: ChallengeGameRef[];
   /** How many rounds this challenge is — may be fewer than 3 (§ 5.1, § 8.3). */

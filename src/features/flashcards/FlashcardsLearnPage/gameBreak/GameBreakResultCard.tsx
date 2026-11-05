@@ -4,6 +4,7 @@ import PersonalBestLine from "../../../../games/shared/PersonalBestLine";
 import type { FlpBreakPersonalBest, FlpBreakResults } from "../../../../games/flpBreak";
 import { COLORS } from "../../../../theme/colors";
 import { LEADING, SIZE, WEIGHT } from "../../../../theme/scale";
+import SidewaysCardFace from "./SidewaysCardFace";
 
 /** Clear space between the panel's edge and the card's content (`GameBreakCard`'s). */
 const PANEL_PAD = "calc(var(--card-stock-inset, 0px) + 16px)";
@@ -15,8 +16,12 @@ const PANEL_PAD = "calc(var(--card-stock-inset, 0px) + 16px)";
  *
  * Layer: feature component (features/flashcards). Rendered through `BreakCardLayer`; reads
  * display strings only, so it needs no change when another game gets an adapter.
+ *
+ * `sideways` (a landscape game's adapter, `FlpBreakGame.sideways`) turns the face 90° the
+ * game's way, as the title card did: the learner is still holding the phone sideways when
+ * the game closes onto this card.
  */
-const GameBreakResultCard: React.FC<{ results: FlpBreakResults }> = ({ results }) => {
+const GameBreakResultCard: React.FC<{ results: FlpBreakResults; sideways?: boolean }> = ({ results, sideways = false }) => {
     const [personalBest, setPersonalBest] = useState<FlpBreakPersonalBest | null>(null);
     useEffect(() => {
         let live = true;
@@ -27,6 +32,7 @@ const GameBreakResultCard: React.FC<{ results: FlpBreakResults }> = ({ results }
     }, [results]);
 
     return (
+        <SidewaysCardFace sideways={sideways}>
         <Box
             className="game-break-result-card"
             sx={{ width: "100%", height: "100%", boxSizing: "border-box", padding: PANEL_PAD, display: "flex", flexDirection: "column", textAlign: "center" }}
@@ -59,6 +65,7 @@ const GameBreakResultCard: React.FC<{ results: FlpBreakResults }> = ({ results }
                 Tap or swipe to continue
             </Typography>
         </Box>
+        </SidewaysCardFace>
     );
 };
 

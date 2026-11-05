@@ -92,7 +92,7 @@ const LEVEL_NAME_ROW = LEVEL_NAME_OFFSET + LEVEL_NAME_BAND;
  * find hardest gets the most help. Reserved in the cell-size fit, so on a narrow phone the
  * cells shrink to make room rather than the labels overlapping them.
  *
- * The frame runs to the screen edge (WritingGridPage gives the board area no side
+ * The frame runs to the screen edge (WritingGridStage gives the board area no side
  * padding), so this also covers the page's usual 16px edge padding: 58px of label
  * room + 16px. A label then centres between the screen edge and the grid.
  */

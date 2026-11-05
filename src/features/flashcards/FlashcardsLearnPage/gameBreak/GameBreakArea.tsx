@@ -6,7 +6,7 @@ import DelayedCircularProgress from "../../../../components/DelayedCircularProgr
 import { useBlockEdgeSwipe } from "../../../../hooks/useBlockEdgeSwipe";
 import { useScreenOverlayHost } from "../../../../hooks/useScreenOverlayHost";
 import { flpBreakGameFor } from "../../../../games/flpBreak";
-import { BREAK_AREA_MOTION } from "../../flpLaunch";
+import { BREAK_AREA_MOTION } from "./breakMotion";
 import { COLORS } from "../../../../theme/colors";
 import { gameBreakFrameFor } from "./GameBreakFrame";
 import type { UseGameBreakReturn } from "./useGameBreak";
@@ -48,8 +48,11 @@ function sizeCircleToCover(circle: HTMLElement, area: HTMLElement): void {
  */
 const GameBreakArea: React.FC<{
     gameBreak: UseGameBreakReturn;
-    /** A tower session's report of a card the game took off the tower. */
-    onCardCleared?: () => void;
+    /**
+     * A card the game cleared (FlpBreakStageProps.onCardCleared): the page takes it off
+     * the tower and out of the working loop (docs/FLP_GAME_BREAKS.md § 4a).
+     */
+    onCardCleared?: (cardId: number) => void;
 }> = ({ gameBreak, onCardCleared }) => {
     const { anchorRef, host } = useScreenOverlayHost();
     const areaRef = useRef<HTMLDivElement | null>(null);

@@ -1,4 +1,4 @@
-// Thin client for the Sort Cards / Quick Mark / Skipped Cards endpoints
+// Thin client for the Add New Cards / Quick Mark / Skipped Cards endpoints
 // (docs/SORT_CARDS_REQUIREMENTS.md). All are auth-gated.
 //
 // Why this module exists: the three discover pages each hand-rolled the same
@@ -20,7 +20,7 @@ import type {
     Language,
 } from "../../types";
 
-/** A Sort Cards drop bucket. Both persist as `starterPackBucket = 'library'` server-side. */
+/** A Add New Cards drop bucket. Both persist as `starterPackBucket = 'library'` server-side. */
 export type SortBucket = "library" | "already-learned";
 
 /** Keyset cursor for Quick Mark paging — the last fetched card's frequency score + id. */
@@ -32,7 +32,7 @@ export interface QuickMarkCursorParams {
 }
 
 /**
- * Initial pack-queue fill for Sort Cards. `level` is the requested difficulty (the
+ * Initial pack-queue fill for Add New Cards. `level` is the requested difficulty (the
  * client-tracked auto target, or the user's pin); `manual` marks the level as pinned
  * rather than adaptive. Omitting `level` asks the server for a cold-start seed.
  */
@@ -108,7 +108,7 @@ export function recycleSkips(language: Language): Promise<unknown> {
     return apiPost<unknown>(`/api/starterPacks/${language}/recycleSkips`);
 }
 
-/** Return ONE skipped card to the sort supply (scp's hold-to-recycle). */
+/** Return ONE skipped card to the sort supply (ancp's hold-to-recycle). */
 export function recycleSkip(language: Language, cardId: number): Promise<unknown> {
     return apiPost<unknown>(`/api/starterPacks/${language}/recycleSkip`, { cardId });
 }

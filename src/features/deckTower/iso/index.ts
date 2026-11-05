@@ -3,7 +3,7 @@
  * (docs/ISO_ART_FRAMEWORK.md). Import from here, not from the individual files.
  *
  * Lives under features/deckTower/ because the Deck Tower was its only user. Since
- * 2026-10-29 scp's bins (features/discover/SortBins.tsx) import it too, so per
+ * 2026-10-29 ancp's bins (features/discover/SortBins.tsx) import it too, so per
  * docs/FRONTEND_LAYERING.md § 1 it is due to move to src/components/iso/
  * (docs/DEFERRED_WORK.md #28).
  */
@@ -21,6 +21,11 @@ export { default as IsoCarpet } from "./IsoCarpet";
 export { default as IsoCard } from "./IsoCard";
 export { default as IsoCardStack } from "./IsoCardStack";
 export { default as IsoCardImprint } from "./IsoCardImprint";
+export { default as IsoFloorPrint } from "./IsoFloorPrint";
+export { default as IsoPaperStack } from "./IsoPaperStack";
+export { default as IsoSortPlatform } from "./IsoSortPlatform";
+export { sortPlatformTopZ, SORT_PLATFORM_JUMP } from "./sortPlatformMetrics";
+export { PAPER_SHEET_THICKNESS, paperStackHeight } from "./paperStackMetrics";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
 export { default as IsoHatch } from "./IsoHatch";
@@ -47,6 +52,14 @@ export {
     type PawnEntranceFrame,
 } from "./pawnEntrances";
 export { default as IsoCloud } from "./IsoCloud";
+export { default as IsoCloudShadow } from "./IsoCloudShadow";
+export { default as IsoFog, type IsoFogPiercer } from "./IsoFog";
+export { planFogClouds, FOG_LEVELS, type FogCloud, type FogCover } from "./fogClouds";
+export { default as IsoRain, type IsoRainFall, type IsoRainSolid } from "./IsoRain";
+export { openFloorSpot, hiddenBehind, type FloorSolid, type OpenFloorSpot } from "./openFloor";
+export { default as IsoBurnMark, BURN_MARK_RADIUS } from "./IsoBurnMark";
+export { default as IsoLightningBolt } from "./IsoLightningBolt";
+export { seededRandom } from "./seededRandom";
 export { useCloudDrifts, sortCloudsBackToFront, type CloudDrift, type CloudPuff, type CloudSky } from "./useCloudDrifts";
 export { default as IsoWind } from "./IsoWind";
 export { useWindGusts, type WindGust, type WindStrand, type WindPt, type WindSky } from "./useWindGusts";
@@ -55,8 +68,8 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 // Rules + math
 export * from "./geometry";
 export { dimetricView, makeCameraProjector, type CameraView } from "./camera";
-export { bandMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
-export { shadowFootprint, shadowTone, type IsoSurface } from "./light";
+export { bandMaterial, deckUnderLayerMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
+export { shadowFootprint, shadowSpread, shadowTone, type IsoSurface } from "./light";
 export {
     blendWash,
     hexToOklch,

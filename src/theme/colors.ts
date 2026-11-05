@@ -98,34 +98,43 @@ export const COLORS = {
     yelMk: "#E8C800",    // oklch(83%   0.24   102) clipped — darkened 5% L, 2026-09-28
     yelTint: "#F9F7EA",  // oklch(97.5% 0.018  102)
 
-    // ── `--{hue}Bg`, the PAGE GROUND tier ─────────────────────────
+    // ── `--{hue}Bg`, the PAGE GROUND tier — none carried today ─────
     // A muted ground a page sits on when the page itself is "in" a hue (≈ −3.5 L from the
-    // surface, chroma matched perceptually to the design's `--bluBg` #C6D9EE). Surface
-    // fills (cards, the white word-of-the-day card) stand off it. Only the two hues a
-    // page uses today are carried — the Reading Center (grn) and the Writing Center (pur),
-    // docs/READING_WRITING_CENTERS.md. The design also defines red/org/yel/blu grounds;
-    // add them here from `shelf-system-v2.css` when a page needs one. Both are in gamut.
-    grnBg: "#C4E7CA",    // oklch(89.5% 0.055  150)
-    purBg: "#DED2F7",    // oklch(88.5% 0.052  300)
+    // surface, chroma matched perceptually to the design's `--bluBg` #C6D9EE). `grnBg`
+    // (#C4E7CA) and `purBg` (#DED2F7) served the Reading / Writing Centers until they were
+    // deleted 2026-11-04. Add a ground from `shelf-system-v2.css` when a page needs one.
 
-    // ── Sky green and pinks: single-tier colours outside the design's ramp ─────────────
+    // ── Sky green, pinks and cornflower: single-tier colours outside the design's ramp ─
     // For the Deck Tower's reading world (green sky, pink platform) and writing world
-    // (powder-pink sky) — src/features/deckTower/towerWorlds.ts, docs/DECK_TOWER.md § Worlds. Not in RAMP:
+    // (cherry-blossom sky, cornflower platform). Main's sky is the ramp's bluMk, turned by
+    // the weather (deckTower/weatherSky.ts) — src/features/deckTower/towerWorlds.ts,
+    // docs/DECK_TOWER.md § Worlds. Not in RAMP:
     // they have no other tiers. Add the rest from the same recipe before using them
     // elsewhere.
     //  - grnSky (2026-10-24) replaced the lime sky `limMk` (#BEF200, oklch 89% 0.24 123),
     //    which read as neon yellow-green. It is the grn hue nudged to 150, between a
-    //    surface and a mark: 83% L is about as deep as the main world's bluMk sky (77%),
+    //    surface and a mark: 83% L is lighter than the main world's clear sky (bluMk, 77%),
     //    and 0.15 chroma is softer than grnMk (0.21), so it reads as a fresh spring green
     //    rather than a highlighter.
     //  - pnk (2026-10-19, asked for as #FFCFFF) is a SURFACE (pur's own 92% / 0.085), on
     //    hue 326 between pur and red.
-    //  - pnkSky (2026-10-24, asked for as "powder pink") replaced the writing world's red
-    //    sky (redMk). A warm, dusty pink on hue 5 — warmer and greyer than pnk (326), so
-    //    the two pinks never read as one colour — at 87% L, about as light as grnSky.
+    //  - pnkSky (2026-11-04, "cherry blossom") is the writing world's sky. It replaced
+    //    the 2026-10-24 "powder pink" (#F7C6D0, oklch 87% 0.057 5), which replaced the
+    //    red sky (redMk) and read as dingy: a dusty, greyish pink at a middling lightness.
+    //    This one is lighter and cooler at about the same chroma, so it reads soft rather
+    //    than dusty. Hue 349 still sits 23° clear of pnk (326), so the two pinks stay
+    //    apart; don't turn it further toward pnk. ⚠️ At 92% L, the white page title is
+    //    faint on it (1.29:1, down from 1.51:1).
+    //  - bluCorn (2026-11-04) is the writing world's platform, replacing bluMk there: a
+    //    pale cornflower — CSS's named `cornflowerblue` (#6495ED, 67% 0.141 261, tried
+    //    first), then #7AA7F6 (73% 0.125), then #91B8FB (78% 0.105), lifted again to
+    //    82% L on the same hue with chroma eased to 0.085. A violet-leaning blue still
+    //    6 points below the MASTERED plate (bluM, measured 88% once clipped), so the
+    //    plate still reads on it — ⚠️ don't lift it much further, or the plate blurs into it.
+    bluCorn: "#A5C5FC",  // oklch(82%   0.085  261) — a very pale CSS cornflowerblue
     grnSky: "#78E292",   // oklch(83%   0.15   150)
     pnk: "#FFD1FF",      // oklch(92%   0.085  326) clipped
-    pnkSky: "#F7C6D0",   // oklch(87%   0.057    5)
+    pnkSky: "#FFD8EA",   // oklch(92%   0.049  349) clipped
 
     // ── `--gld`, the action metal ─────────────────────────────────
     // A saturated gold, the one ramp member that is NOT a pale ground. The arena flow

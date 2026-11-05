@@ -1,15 +1,6 @@
 /**
- * collections.ts — the client's typed read of a BUILT-IN collection's cards.
- *
- * A deck's cards come from `src/api/decks.ts` (`fetchDeckCards`); the built-in
- * collections (all / learn-now / mastered-*) come from the OnDeck route below.
- * Both return the SAME enriched `VocabEntry[]`, which is what lets one
- * CollectionViewPage — and now the /decks sheet's inline Cards section — render
- * either without caring which kind it holds (docs/DECKS_FEATURE.md).
- *
- * It lives in its own module rather than in decks.ts because the endpoint is
- * `/api/onDeck/*`, not `/api/decks/*`, and decks.ts is documented as the calls
- * against the latter.
+ * collections.ts — the client's typed read of a BUILT-IN collection's cards
+ * (all / learn-now / mastered-*), as the shared enriched `VocabEntry[]`.
  *
  * Per docs/FRONTEND_LAYERING.md §3.2 it does NOT take a `token`: it goes through
  * src/api/http.ts, which resolves the Authorization header at call time — so a
@@ -18,9 +9,8 @@
  *
  * Server counterpart: `OnDeckVocabController.getCollectionCards`.
  *
- * Called by:
- *   src/features/flashcards/CollectionViewPage.tsx
- *   src/features/flashcards/FlashcardsDecksPage.tsx  (the sheet's Cards section)
+ * Called by: src/features/flashcards/cardLibrary.ts (`loadCardLibrary`, the `all`
+ * collection — the learner's whole card library).
  */
 import { apiGet, withFallback } from './http';
 import type { VocabEntry } from '../types';

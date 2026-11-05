@@ -6,7 +6,7 @@ import type { FlpBreakContext, FlpBreakGame } from "./types";
 
 /** A break's deal: the same seed and focus rule as Writing Grid's (`writingGridBreakRequest`). */
 export function superpositionBreakRequest(context: FlpBreakContext): WritingGridDealRequest {
-    return { seedIds: context.seedIds, flpBreak: context.collection === null };
+    return { seedIds: context.seedIds, flpBreak: true };
 }
 
 /**

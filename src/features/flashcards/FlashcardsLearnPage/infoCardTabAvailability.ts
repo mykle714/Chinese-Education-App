@@ -7,8 +7,9 @@ import type { LongDefinitionPart } from "../../../types";
  * Per-tab emptiness for the eip, derived from the current entry.
  *
  * Its own module (rather than living next to the component that renders the tabs)
- * because BOTH the tab strip — which greys out an empty tab's label — and the tab
- * bodies need the same answers, and deriving them twice is how the two drift apart.
+ * because BOTH the tab strip (its tab-2 "used in" label) and the tab bodies (their
+ * empty states) need the same answers, and deriving them twice is how the two drift
+ * apart. The strip does not dim an empty tab (2026-11-03).
  * Kept out of InfoCardTabContent.tsx so that file exports only a component
  * (react-refresh/only-export-components).
  *

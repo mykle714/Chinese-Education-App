@@ -48,6 +48,20 @@ export function bandMaterial(band: string): Material {
 }
 
 /**
+ * A card UNDER the top one in a short coloured deck: the card colour stepped down,
+ * alternating by layer index `k` so the seams between layers read. Shared by ancp's bins
+ * (SortBins.tsx → `SortBin`) and the Deck Tower's mini sort platform (IsoSortPlatform).
+ * Docs: docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform", docs/SORT_CARDS_REQUIREMENTS.md § 5.3.
+ */
+export function deckUnderLayerMaterial(color: string, k: number): Material {
+    return {
+        top: shadeHex(color, 0.2),
+        left: shadeHex(color, k % 2 ? 0.1 : 0.15),
+        right: shadeHex(color, k % 2 ? 0.18 : 0.23),
+    };
+}
+
+/**
  * The material of the body under a floor — what a hole in it is lined with (IsoHatch
  * `inside`). A scene passes the slab's own material (the Deck Tower: its
  * world's `platform.material`), so the inside of a hole is the platform's own wall tones.
@@ -103,7 +117,7 @@ export function spaceOver(sky: string): string {
 const GOLD_PLATFORM = platformTone(COLORS.gld);
 
 export const ISO = {
-    /** The sky the platform floats in. Good Job's own background cerulean ≈ `bluMk`. */
+    /** The sky the platform floats in — the main world's day sky (towerWorlds.ts uses each world's own). */
     sky: COLORS.bluMk,
     /**
      * Outer space, above the sky — the sky's own blue taken down to a deep navy (same
@@ -126,6 +140,17 @@ export const ISO = {
     card: { top: COLORS.cardFace, left: COLORS.cardBeige, right: COLORS.cardWall } as Material,
     /** The seams between stacked cards on a stack's walls. */
     cardSeam: shadeHex(COLORS.cardBeige, 0.16),
+    /**
+     * Notebook paper (IsoPaperStack — the Writing Notebook's stack on the writing world's
+     * platform): white sheets, walls shaded off white like the clouds' (the same flagged
+     * `shadeHex` divergence — the framework has no darker-white tier), a seam a step
+     * darker, sky-blue rules (`bluMk`, the blue ramp's mark) and a red margin line (`redMk`,
+     * the red ramp's mark — the focus lever's knob red).
+     */
+    paper: material(COLORS.white, 0.06, 0.14),
+    paperSeam: shadeHex(COLORS.white, 0.2),
+    paperRule: COLORS.bluMk,
+    paperMargin: COLORS.redMk,
     /** The light wireframe a ghosted card leaves where it stood (IsoCardRuns), softened by its own opacity. */
     ghostWire: COLORS.white,
     /** The inset panel printed on a card's face. */
@@ -151,6 +176,17 @@ export const ISO = {
      * tone — a puff is gone in well under a second.
      */
     smoke: COLORS.white,
+
+    /**
+     * Weather (WeatherLayer.tsx, docs/DECK_TOWER.md § "Weather"): rain streaks, snowflakes,
+     * the fog sheets over the platform (IsoFog) and the lightning flash are all flat white, softened by the layer's own
+     * opacities (no gradients — the iso style has none). The sky's colour under weather is
+     * a separate design (docs/TOWER_WEATHER_SKY.md).
+     */
+    rain: COLORS.white,
+    snow: COLORS.white,
+    fog: COLORS.white,
+    lightning: COLORS.white,
 
     /**
      * The focus lever (IsoLever): a cream base like card stock, an ink stick like the

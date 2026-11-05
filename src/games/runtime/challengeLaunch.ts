@@ -9,8 +9,8 @@ import { GAME_REGISTRY } from "../registry";
  * infer:
  *
  *  1. **The nav `state` each game requires.** Bubble Match bounces to /games with
- *     no `state.level`, Word Search with no `state.mode`; Match Speed defaults to
- *     Study Mix. A challenge launch has no hub card behind it, so it must state
+ *     no `state.level`, Word Search with no `state.mode`; Match Speed needs none
+ *     (it has one difficulty). A challenge launch has no hub card behind it, so it must state
  *     them itself.
  *  2. **The round's identity**, as query params the page hands straight to its pool
  *     request (`?challengeId=&gameId=&mode=`). Query rather than `state` on purpose:
@@ -62,10 +62,9 @@ const LAUNCHES: Record<string, { route: string; title: string; state: Record<str
     "match-speed": {
         route: "/games/match-speed",
         title: "Match Speed",
-        // Study Mix, NOT Review or Challenge: those modes are hard bucket
-        // restrictions, and a challenge board is a fixed word set plus
-        // mastered-first filler — a restriction would throw half of it away.
-        state: { mode: "mixed" },
+        // No nav state: Match Speed has one difficulty (Study Mix) and reads no
+        // `state.mode` (its CHALLENGE_GAMES entry has `mode: null`, too).
+        state: {},
     },
     "word-search": {
         route: "/games/word-search",

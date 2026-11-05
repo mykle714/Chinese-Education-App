@@ -10,12 +10,12 @@ export type Phase =
     | "blocked"   // not signed in, too few cards, or nothing playable
     | "ready"     // options live
     | "feedback"  // answer revealed, options frozen
-    | "ended";    // clock expired
+    | "ended";    // 20th round answered, queue drained, or an flp break's Leave
 
 /**
  * How one side of the screen is currently painted. Lives here rather than on a
  * component because two of them read it: the tap zone (which paints the tint)
- * and the page (which derives it from the round).
+ * and the Stage (which derives it from the round).
  */
 export type OptionFeedback = "none" | "correct" | "wrong";
 

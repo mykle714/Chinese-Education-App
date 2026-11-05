@@ -31,8 +31,8 @@ import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import friendRoutes from './routes/friendRoutes.js';
 import arenaRoutes from './routes/arenaRoutes.js';
+import weatherRoutes from './routes/weatherRoutes.js';
 import studyChallengeRoutes from './routes/studyChallengeRoutes.js';
-import deckRoutes from './routes/deckRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
@@ -161,11 +161,13 @@ app.use(friendRoutes);
 // arenaRoutes.ts — so this single mount is the whole server gate. See the note in
 // featureFlags.ts about the one arena field that still rides GET /api/users/:id.
 if (isFeatureEnabled('arena')) app.use(arenaRoutes);
+// The Deck Tower's weather (docs/DECK_TOWER.md § "Weather"). Unflagged: it only READS the
+// geoCell the arena's location opt-in writes — see the note in weatherRoutes.ts.
+app.use(weatherRoutes);
 // Study Challenge is flagged (server/contracts/featureFlags.ts). As with community, the
 // router covers /api/studyChallenges/* only — the challenge BOARD is served by
 // ?challengeId= on /api/onDeck/*, gated inside OnDeckVocabController instead.
 if (isFeatureEnabled('studyChallenge')) app.use(studyChallengeRoutes);
-app.use(deckRoutes);
 app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);

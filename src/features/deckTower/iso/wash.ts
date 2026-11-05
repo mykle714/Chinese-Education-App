@@ -5,8 +5,8 @@ export { blendWash, hexToOklch, hueTurn, lightWash, NO_WASH, oklchToHex, type Is
 
 /**
  * wash.ts — the iso framework's AMBIENT WASH: one colour transform laid over every
- * colour a scene paints, so a whole scene can be lit for a time of day (dawn's pink,
- * sunset's orange, night's dim blue) without any object knowing about it
+ * colour a scene paints, so a whole scene can be lit for a time of day (night's dim
+ * blue) without any object knowing about it
  * (docs/ISO_ART_FRAMEWORK.md § "Ambient wash").
  *
  * The rule (one place it is applied, so nothing is washed twice):

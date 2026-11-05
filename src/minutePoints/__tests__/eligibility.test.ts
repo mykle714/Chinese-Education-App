@@ -11,7 +11,7 @@ import { isMinutePointsAutoActivePath, isMinutePointsEligiblePath } from '../eli
  */
 describe('isMinutePointsEligiblePath', () => {
   it('earns on the study surfaces', () => {
-    expect(isMinutePointsEligiblePath('/flashcards/learn')).toBe(true);
+    expect(isMinutePointsEligiblePath('/flashcards/card/7')).toBe(true);
     expect(isMinutePointsEligiblePath('/reader')).toBe(true);
     expect(isMinutePointsEligiblePath('/games/word-search')).toBe(true);
   });
@@ -19,7 +19,7 @@ describe('isMinutePointsEligiblePath', () => {
   it('does not earn on hubs and browse screens', () => {
     expect(isMinutePointsEligiblePath('/')).toBe(false);
     expect(isMinutePointsEligiblePath('/discover')).toBe(false);
-    expect(isMinutePointsEligiblePath('/flashcards/decks')).toBe(false);
+    expect(isMinutePointsEligiblePath('/menu')).toBe(false);
   });
 
   it('matches a prefix only on a segment boundary', () => {
@@ -60,6 +60,6 @@ describe('isMinutePointsAutoActivePath', () => {
     // A scene needs a real interaction before it earns, like every non-game surface: it is
     // read for a long time, and the composer makes the learner's involvement explicit.
     expect(isMinutePointsAutoActivePath('/immersive-world/abc')).toBe(false);
-    expect(isMinutePointsAutoActivePath('/flashcards/learn')).toBe(false);
+    expect(isMinutePointsAutoActivePath('/flashcards/card/7')).toBe(false);
   });
 });

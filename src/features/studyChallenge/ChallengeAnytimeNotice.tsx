@@ -12,7 +12,7 @@ import { CHALLENGE_WORD_COUNT } from "../../types";
  * ⚠️ THIS IS NOT A DISCLAIMER, IT IS THE FEATURE'S DOCUMENTATION AT THE POINT OF USE.
  * The hatch lifts a calendar, and every consequence below is something a tester will
  * otherwise meet as a bug report against themselves: a library that grew a
- * challenge's worth of cards they never sorted, a deck they did not make, a challenge dated three weeks out, a
+ * challenge's worth of cards they never sorted, a challenge dated three weeks out, a
  * friend who cannot accept, rounds that vanish when the switch goes off. All of them
  * are correct behaviour; none of them is guessable.
  *
@@ -26,11 +26,9 @@ import { CHALLENGE_WORD_COUNT } from "../../types";
 /** One caution. `detail` is the part a tester needs in order to act on it. */
 const CAUTIONS: { label: string; detail: string }[] = [
     {
-        label: "It writes real cards and a real deck",
+        label: "It writes real cards",
         detail:
-            `Accepting adds all ${CHALLENGE_WORD_COUNT} words to Learning on BOTH accounts and creates a `
-            + "\"vs <name>\" deck for each. The deck is dropped when that player finishes the test — "
-            + "abandon the challenge instead and it stays on /decks.",
+            `Accepting adds all ${CHALLENGE_WORD_COUNT} words to Learning on BOTH accounts.`,
     },
     {
         label: "Rounds are real play",

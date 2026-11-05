@@ -32,7 +32,7 @@ interface IsoSpacedTextProps extends Omit<React.SVGProps<SVGTextElement>, "child
 }
 
 /** Bumps whenever a web font finishes loading, so a measurement taken against a fallback face is retaken. */
-function useFontLoadEpoch(): number {
+export function useFontLoadEpoch(): number {
     const [epoch, setEpoch] = useState(0);
     useEffect(() => {
         const fonts = typeof document !== "undefined" ? document.fonts : undefined;

@@ -114,7 +114,7 @@ export default function IWSceneEditorPage() {
   const { user, isAuthenticated } = useAuth();
   const { confirm } = useConfirmation();
 
-  // Template-author-only surface. Once auth resolves, bounce non-authors to Home. The
+  // Template-author-only surface. Once auth resolves, bounce non-authors to `/`. The
   // backend enforces the same gate on every endpoint — this is UX, not the boundary.
   useEffect(() => {
     if (isAuthenticated && user && !user.isTemplateAuthor) navigate('/', { replace: true });

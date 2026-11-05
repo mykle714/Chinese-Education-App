@@ -147,11 +147,7 @@ A **"Practice Writing Me"** button appears on:
 
 Tapping it opens a modal **popup** scoped to that single target character/word.
 
-The **Writing Center** (`/flashcards/writing`) is a third entry point with no button:
-its 6×6 word grid opens the same popup on whichever word tile is tapped
-(`WritingPracticeGrid`, docs/READING_WRITING_CENTERS.md). Every tile is one of the
-learner's cards (1–4 characters, off the writing cooldown), so every Verify there writes a
-Writing mark on that card.
+
 
 Every host shares one hook, `usePracticeWriting` (`src/components/handwriting/`): the
 completed-level (star) fetch, its sync as levels clear, and the Writing mark on Verify.
@@ -202,7 +198,7 @@ Two distinct "reset" scopes — **soft** (tab switch) vs. **hard** (context chan
 |---|---|
 | **Switch level** (within the popup) | **Clears** the attempt — every character's canvas is emptied and results reset (multi collapses to the grid). Each level is a fresh attempt; only one level's ink exists at a time. |
 | **Close popup** (✕, or desktop backdrop tap) | **Preserves** every character's ink, the active level index, **and** the focused grid slot. Reopening returns the user to the same level and view (grid or the same enlarged slot) with their drawing intact. Rationale: a click-off may be accidental — let them resume. |
-| **Leave the flp** (`/flashcards/learn`) | **Hard clear** — discard preserved draft. |
+| **Leave the flp** (the Deck Tower study session) | **Hard clear** — discard preserved draft. |
 | **Mark a card** | **Hard clear** — discard preserved draft. |
 | **Leave the word details page (cdp)** | **Hard clear** — discard preserved draft. |
 

@@ -35,17 +35,9 @@ export interface QueuedPrompt {
     vocabEntryId: number;
 }
 
-/** The tallies the completion popup reports (§ 5). */
+/** Outcome counts — the break's results card reports this break's (MemoryMapStage `breakTally`). */
 export interface RunTally {
     green: number;
     orange: number;
     red: number;
-}
-
-/** Where the camera is looking, in world units + zoom. Saved so a resume is seamless. */
-export interface Camera {
-    /** World coordinate at the centre of the viewport. */
-    x: number;
-    y: number;
-    zoom: number;
 }

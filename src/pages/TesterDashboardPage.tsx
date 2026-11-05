@@ -3,6 +3,7 @@ import { Box, Container, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import Message from "../components/Message";
 import { useAuth } from "../AuthContext";
+import { useTestingFeatures } from "../hooks/useTestingFeatures";
 import LeafPage from "../components/LeafPage";
 import { useMinutePoints } from "../minutePoints/useMinutePoints";
 import TimeDisplay from "../components/TimeDisplay";
@@ -14,21 +15,22 @@ import UsageDashboardSection from "../features/usageDashboard/UsageDashboardSect
 
 // Tester Dashboard — the former landing page content (study time, streak, monthly
 // calendar, leaderboard) plus, for admins only, the User Usage section
-// (docs/USAGE_DASHBOARD.md). Reached from Menu (the tile is validator- or
-// admin-only, see HomePage.tsx); the back arrow returns there.
+// (docs/USAGE_DASHBOARD.md). Reached from Menu (the tile is feature-tester- or
+// admin-only, see MenuPage.tsx); the back arrow returns there.
 function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
     const navigate = useNavigate();
     const { user, isAuthenticated } = useAuth();
+    const testingFeatures = useTestingFeatures();
 
-    // Feature-tester- or admin-only surface (users.isFeatureTester, migration 178;
-    // users.isAdmin, migration 168). Once auth resolves, bounce everyone else to Home so a deep link /
+    // Feature-tester (with testing features on — useTestingFeatures) or admin-only surface (users.isFeatureTester, migration 178;
+    // users.isAdmin, migration 168). Once auth resolves, bounce everyone else to `/` so a deep link /
     // stale bookmark can't reach it. This is a UX gate, not a security boundary: the
     // personal widgets read user-scoped endpoints, and the cross-user usage endpoint is
     // gated on isAdmin by the server (UsageDashboardService).
     useEffect(() => {
-        if (isAuthenticated && user && !user.isFeatureTester && !user.isAdmin) navigate("/", { replace: true });
-    }, [isAuthenticated, user, navigate]);
+        if (isAuthenticated && user && !testingFeatures && !user.isAdmin) navigate("/", { replace: true });
+    }, [isAuthenticated, user, testingFeatures, navigate]);
 
     const {
         accumulativeMinutePoints, // NET balance → big converted-time number
@@ -38,7 +40,7 @@ function TesterDashboardPage() {
 
     return (
         // Tester Dashboard is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer,
-        // DOWN back arrow (→ Home), slides up on enter / down on exit.
+        // DOWN back arrow (→ /menu), slides up on enter / down on exit.
         <LeafPage title="Tester Dashboard" onBack={() => navigate("/menu")} className="tester-dashboard-page">
             <Box className="tester-dashboard-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
                 {/* Always rendered in the mobile single-column layout regardless

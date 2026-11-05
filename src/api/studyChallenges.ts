@@ -82,7 +82,6 @@ export interface ChallengeSummary {
   opponentRounds: Record<string, ChallengeRound>;
   /** Both players' taunts, keyed by SENDER's user id. Absent key = not sent (§ 6a). */
   taunts: Record<string, ChallengeTaunt>;
-  presetDeckId: number | null;
   /** Present only once the viewer's window is open. See the module warning. */
   gameSequence?: ChallengeGameRef[];
   /** How many rounds this test is — may be fewer than 3 for a cross-language pair. */

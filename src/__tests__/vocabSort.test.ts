@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { VocabEntry } from "../types";
-import { sortVocabEntries, sortBundles, sortLabel, defaultSortKey } from "../utils/vocabSort";
+import { sortVocabEntries, sortBundles, sortLabel, masteryLowestKey } from "../utils/vocabSort";
 import type { MasteryGoals } from "../utils/masteryCompute";
 
 /**
@@ -47,16 +47,14 @@ describe("sortVocabEntries — dates", () => {
 });
 
 describe("sortVocabEntries — missing timestamps", () => {
-  // The "date mastered" orderings were removed with the dimension itself (no bar's
-  // masteredAt was backfillable, so the key was missing for most of the library). The
-  // dateless-sink rule they exercised still applies to the two surviving DATE keys and
-  // is covered by the deckAddedAt case below.
+  // The dateless-sink rule: a card whose `createdAt` did not come back sinks to the
+  // bottom in BOTH directions of the "Date added" row.
 
-  it("sinks cards with no deckAddedAt to the bottom too", () => {
-    const inDeck = card({ id: 1, deckAddedAt: "2026-04-01T00:00:00.000Z" });
-    const noMembership = card({ id: 2 });
-    expect(ids(sortVocabEntries([noMembership, inDeck], "deckAdded"))).toEqual([1, 2]);
-    expect(ids(sortVocabEntries([noMembership, inDeck], "deckAddedOldest"))).toEqual([1, 2]);
+  it("sinks cards with no createdAt to the bottom in both directions", () => {
+    const dated = card({ id: 1, createdAt: "2026-04-01T00:00:00.000Z" });
+    const undated = card({ id: 2, createdAt: "" });
+    expect(ids(sortVocabEntries([undated, dated], "recent"))).toEqual([1, 2]);
+    expect(ids(sortVocabEntries([undated, dated], "oldest"))).toEqual([1, 2]);
   });
 });
 
@@ -223,13 +221,6 @@ describe("sort menu", () => {
     }
   });
 
-  it("marks the deck-membership row deck-only", () => {
-    const deckAdded = sortBundles("zh", GOALS).find((b) => b.id === "deckAdded");
-    expect(deckAdded?.deckOnly).toBe(true);
-    // ...and every other row is available everywhere.
-    expect(sortBundles("zh", GOALS).filter((b) => b.deckOnly)).toHaveLength(1);
-  });
-
   it("offers a mastery row per ACTIVE bar only", () => {
     const noGoals = keysOf(GOALS);
     expect(noGoals).toContain("masteryDesc");
@@ -270,8 +261,8 @@ describe("sort menu", () => {
 
   it("offers a Cooldown row PER BAR, each tagged to its bar", () => {
     // Cooldown used to be one bar-less row spanning all four mark types. It is per-bar
-    // since the Mastery Centers shipped: a Center must be able to ask "what reading have
-    // I been neglecting" without a long-rested recognition track answering for it.
+    // so a skill lens (td's reading or writing world) can ask "what reading have I been
+    // neglecting" without a long-rested recognition track answering for it.
     const cooldown = sortBundles("zh", GOALS).find((b) => b.id === "cooldown:core");
     expect(cooldown?.world).toBe("core");
     expect(cooldown?.directions.map((d) => d.key)).toEqual(["cooldownReady", "cooldownLongest"]);
@@ -292,9 +283,10 @@ describe("sort menu", () => {
   });
 
   it("shows ONE bar's rows under a skill lens, whatever the goals say", () => {
-    // A Mastery Center is already about one skill, so its menu drops the other bars —
-    // including core. The goals argument is inert under a lens: the page is reached only
-    // with that goal set, and the bar is computed for every account regardless.
+    // A skill lens (td's reading or writing world) is already about one skill, so its
+    // menu drops the other bars — including core. The goals argument is inert under a
+    // lens: the world exists only with that goal set, and the bar is computed for every
+    // account regardless.
     const bundles = sortBundles("zh", GOALS, "reading");
     const worlds = bundles.filter((b) => b.world).map((b) => b.world);
     expect(new Set(worlds)).toEqual(new Set(["reading"]));
@@ -303,13 +295,10 @@ describe("sort menu", () => {
     expect(bundles.map((b) => b.label)).not.toContain("Mastery (Read)");
   });
 
-  it("opens a Center on that bar's mastery, lowest first", () => {
-    // The core lens keeps its old defaults; a skill lens overrides even the deck rule,
-    // because a deck inside the Reading Center is being read through the same question.
-    expect(defaultSortKey(false)).toBe("recent");
-    expect(defaultSortKey(true)).toBe("deckAdded");
-    expect(defaultSortKey(false, "reading")).toBe("masteryReadingAsc");
-    expect(defaultSortKey(true, "writing")).toBe("masteryWritingAsc");
+  it("opens every world's cards page on that bar's mastery, lowest first", () => {
+    expect(masteryLowestKey("core")).toBe("masteryAsc");
+    expect(masteryLowestKey("reading")).toBe("masteryReadingAsc");
+    expect(masteryLowestKey("writing")).toBe("masteryWritingAsc");
   });
 
   it("captions the toolbar button as dimension + direction", () => {
@@ -317,10 +306,5 @@ describe("sort menu", () => {
     expect(sortLabel("alphaDefinitionDesc", "zh", GOALS)).toBe("Definition · Z–A");
     // A key the current goals do not offer loses its caption rather than lying.
     expect(sortLabel("masteryWritingAsc", "zh", GOALS)).toBe("Sort");
-  });
-
-  it("opens a deck on deck-membership order and a built-in collection on card age", () => {
-    expect(defaultSortKey(true)).toBe("deckAdded");
-    expect(defaultSortKey(false)).toBe("recent");
   });
 });

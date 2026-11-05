@@ -1,4 +1,4 @@
-import { GAME_REGISTRY } from "../games/registry";
+import { ROUTED_GAMES } from "../games/registry";
 
 /**
  * originLabelFor — a human label for the page a flow was entered from.
@@ -7,22 +7,21 @@ import { GAME_REGISTRY } from "../games/registry";
  * records WHERE it was accepted from (`?from=<pathname>`), and the completion popup uses
  * that to name its "back" button ("Back to Bubble Match") instead of the vague "Go back".
  *
- * Game titles are read from `GAME_REGISTRY` rather than restated, so a renamed game
+ * Game titles are read from `ROUTED_GAMES` rather than restated, so a renamed game
  * renames the button too. Non-game origins are the handful of pages that can open the
  * flow; anything unrecognised returns null and the caller falls back to a generic label.
  *
- * Referenced by: src/features/discover/SortCardsPage.tsx.
+ * Referenced by: src/features/discover/AddNewCardsPage.tsx.
  */
 const PAGE_LABELS: Record<string, string> = {
-    "/flashcards/learn": "Learning",
-    // The fdp is the Home tab at "/" (2026-10-10); its old path only redirects.
-    "/": "Home",
+    // The Deck Tower (`/`) — its in-place flp session is where a study-time offer opens.
+    "/": "Deck Tower",
     "/games": "Games",
 };
 
 export function originLabelFor(pathname: string | null | undefined): string | null {
     if (!pathname) return null;
-    const game = GAME_REGISTRY.find((entry) => entry.route === pathname);
+    const game = ROUTED_GAMES.find((entry) => entry.route === pathname);
     if (game) return game.title;
     return PAGE_LABELS[pathname] ?? null;
 }

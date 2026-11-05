@@ -4,27 +4,26 @@ import { phaseWash } from "../../timeOfDay/wash";
 import type { TowerWorld } from "./towerWorlds";
 
 /**
- * timeOfDay.ts — the Deck Tower's time of day: dawn, day, sunset and night, blended
- * gradually and anchored to the learner's real sunrise and sunset
+ * timeOfDay.ts — the Deck Tower's time of day: day and night, blended gradually across
+ * twilights anchored to the learner's real sunrise and sunset
  * (docs/DECK_TOWER.md § "Time of day").
  *
  * Layer: page logic (feature module `src/features/deckTower`). Pure — `useTimeOfDay.ts`
  * samples it on a clock; DeckTowerPage paints with the result.
  *
  * WHEN each phase holds — the keyframes around the learner's real sunrise and sunset and
- * the 30-minute twilight blends — is the shared clock in src/timeOfDay/dayPhase.ts
+ * the hour-long day ↔ night twilight blends — is the shared clock in src/timeOfDay/dayPhase.ts
  * (`timeOfDayAt`); this file says only what a phase LOOKS like over the tower.
  *
  * ── What a phase changes ───────────────────────────────────────────────────────
- *   - SKY: each world's own day sky (TowerWorld.sky, a COLORS token) turned toward the
- *     phase's light in OKLCH (`PHASE_SKY`): its hue rotated part-way toward the phase's
- *     hue along the shortest arc, its lightness and chroma set to the phase's. So every
- *     world keeps a tint of its own hue at every hour. ⚠️ Derived colours, outside the
- *     colour framework (the same divergence as `spaceOver`): the framework has no dawn,
- *     sunset or night tiers.
+ *   - SKY: each world's own day sky (TowerWorld.sky, a COLORS token) by day; at night that
+ *     sky turned in OKLCH (`NIGHT_SKY`): its hue rotated part-way toward night's hue along
+ *     the shortest arc, its lightness and chroma set to night's. So every world keeps a
+ *     tint of its own hue at night. ⚠️ Derived colours, outside the colour framework (the
+ *     same divergence as `spaceOver`): the framework has no night tier.
  *   - WASH (night only; `phaseWash`, src/timeOfDay/wash.ts): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
  *     plates, the page's white text and arrows) is lit by night's light (the iso
- *     framework's ambient wash); dawn, day and sunset leave it as drawn. The sky itself is
+ *     framework's ambient wash); day leaves it as drawn. The sky itself is
  *     never washed — it IS the light. HTML over the tower (the flp session, the slab
  *     footer) is NOT washed: its SVG-filter wash was cut 2026-10-30 (CPU-rasterised, laggy).
  *   - STARS: night shows the star field faintly from the ground (`PHASE_STARS`); space
@@ -40,44 +39,34 @@ import type { TowerWorld } from "./towerWorlds";
 export { timeOfDayAt, type DayPhase, type TimeOfDay } from "../../timeOfDay/dayPhase";
 
 /**
- * A phase's sky, as a turn of the world's day sky (OKLCH): `hueBy` of the shortest turn
- * toward `hue`, at lightness `L` and chroma `C`.
- *   - Dawn and sunset turn MOST of the way (80–90%). A weak turn only looks natural when
- *     the world's hue is already near the target: at 30%, a green sky (opposite pink)
- *     stopped on the yellow side of the wheel, an olive dawn. Strong turns leave each
- *     world a trace of its hue: dawn is rose over blue, peach over green, coral-pink over
- *     red; sunset coral orange over blue, orange over red.
- *   - Dawn aims at peach (hue 20), sunset at orange (55), so the two don't read alike.
- *   - Night is dark and cool but keeps more of its own hue, and is lighter than SPACE
- *     (L ≈ 0.25), so a climb at night still deepens.
- * A world can override a phase's recipe (`TowerWorld.skyRecipes`).
+ * Night's sky, as a turn of the world's day sky (OKLCH): `hueBy` of the shortest turn
+ * toward `hue`, at lightness `L` and chroma `C`. Night is dark and cool but keeps most of
+ * the world's own hue (a 35% turn toward 270°), and is lighter than SPACE (L ≈ 0.25), so a
+ * climb at night still deepens. (Dawn and sunset had their own, much stronger turns until
+ * they were cut 2026-11-04 — docs/TOWER_WEATHER_SKY.md § 1 — along with the per-world
+ * `skyRecipes` overrides, which only ever overrode those two.)
  */
-export interface SkyRecipe {
+interface SkyRecipe {
     hue: number;
     hueBy: number;
     L: number;
     C: number;
 }
 
-const PHASE_SKY: Record<Exclude<DayPhase, "day">, SkyRecipe> = {
-    dawn: { hue: 20, hueBy: 0.8, L: 0.8, C: 0.12 },
-    sunset: { hue: 55, hueBy: 0.9, L: 0.72, C: 0.17 },
-    night: { hue: 270, hueBy: 0.35, L: 0.34, C: 0.08 },
-};
+const NIGHT_SKY: SkyRecipe = { hue: 270, hueBy: 0.35, L: 0.34, C: 0.08 };
 
 /** The star field's opacity from the ground, per phase (SpaceBackdrop `groundStars`). */
-const PHASE_STARS: Record<DayPhase, number> = { dawn: 0.08, day: 0, sunset: 0, night: 0.55 };
+const PHASE_STARS: Record<DayPhase, number> = { day: 0, night: 0.55 };
 
-/** The sky-bearing part of a world: its day sky and any per-phase recipe overrides. */
-export type SkyWorld = Pick<TowerWorld, "sky" | "skyRecipes">;
+/** The sky-bearing part of a world: its day sky. */
+export type SkyWorld = Pick<TowerWorld, "sky">;
 
-/** A world's day sky turned to `phase` (see `PHASE_SKY`; the world's own recipe wins). */
+/** A world's day sky at `phase`: as it is by day, turned by `NIGHT_SKY` at night. */
 export function phaseSky(world: SkyWorld, phase: DayPhase): string {
     const daySky = world.sky;
     if (phase === "day") return daySky;
-    const r = world.skyRecipes?.[phase] ?? PHASE_SKY[phase];
     const [, , h] = hexToOklch(daySky);
-    return oklchToHex(r.L, r.C, (h + hueTurn(h, r.hue) * r.hueBy + 360) % 360);
+    return oklchToHex(NIGHT_SKY.L, NIGHT_SKY.C, (h + hueTurn(h, NIGHT_SKY.hue) * NIGHT_SKY.hueBy + 360) % 360);
 }
 
 /** Everything the page paints with for one time of day. */
@@ -87,7 +76,7 @@ export interface TowerLight {
     wash: IsoWash;
     /** The star field's opacity from the ground. */
     groundStars: number;
-    /** Whether meteors fly (ShootingStars): true while night outweighs the other phase of the blend. */
+    /** Whether meteors fly (ShootingStars): true while night outweighs day in the blend. */
     shootingStars: boolean;
     /** A world's sky at this time (unwashed: the sky is the light). Pass the TOWER_WORLDS entry. */
     skyOf: (world: SkyWorld) => string;

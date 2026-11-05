@@ -1,5 +1,5 @@
 import { lazy } from "react";
-import type { GameDef } from "./types";
+import type { GameDef, RoutedGameDef } from "./types";
 // Each game's own mark-type constant, re-stated here as `GameDef.markType` — the
 // mastery track it feeds, which challenge eligibility is derived from
 // (src/games/__tests__/challengePool.test.ts). Importing the games' `constants`
@@ -101,18 +101,20 @@ const ALL_GAMES: GameDef[] = [
         Component: lazy(() => import("./match-speed/MatchSpeedPage")),
         hue: MATCH_SPEED_HUE,
         markType: MATCH_SPEED_MARK_TYPE,
+        // Pinyin hidden ⇒ READING — but ONLY as an flp break (the reading flp hides pinyin,
+        // docs/FLP_GAME_BREAKS.md § 3). The standalone page's pinyin chip is display-only
+        // and always marks recognition; nothing launches the route with
+        // `state.showPinyin: false`, so FocusGameGuard never reads this for Match Speed.
+        noPinyinMarkType: "reading",
         challengeScoring: challengeScoringFor("match-speed"),
     },
     {
         gameId: "speed-reading",
         glyph: "bolt",
         title: "Speed Reading",
-        route: "/games/speed-reading",
-        Component: lazy(() => import("./speed-reading/SpeedReadingPage")),
+        // BREAK-ONLY (no route): a reading drill played as an flp game break.
         hue: SPEED_READING_HUE,
         markType: SPEED_READING_MARK_TYPE,
-        // A reading drill: launched only from the Reading Center's games carousel.
-        hiddenFromHub: true,
         // zh-only: a round is built by substituting ONE character of the
         // headword, which presupposes a character-based script. See
         // GameDef.languages.
@@ -140,38 +142,25 @@ const ALL_GAMES: GameDef[] = [
         gameId: "memory-map",
         glyph: "map",
         title: "Memory Map",
-        route: "/games/memory-map",
-        Component: lazy(() => import("./memory-map/MemoryMapPage")),
+        // BREAK-ONLY (no route): played as an flp game break.
         hue: MEMORY_MAP_HUE,
         markType: MEMORY_MAP_MARK_TYPE,
-        // No `languages` gate: the map renders through ForeignText, so Spanish works
-        // unchanged. No `challengeScoring` either — a challenge round is recognition
+        // Chinese only (owner, 2026-11-04): hidden from other learners on every launch
+        // surface (`isGameAvailable`) and never offered as their flp break
+        // (`flpBreakCandidates`). No `challengeScoring` — a challenge round is recognition
         // or production only, and this game marks READING (docs/STUDY_CHALLENGE.md
         // § 5.4). No `unlock`: it declares no card baseline at all, and a learner with
         // no cards gets an empty-state pointing at Discover rather than a locked row
         // (docs/MEMORY_MAP_GAME.md § 10).
-        //
-        // NOT VISIBLE UNDER A COLLECTION FILTER: GamesPage hides this row whenever the
-        // selected collection is anything but All Cards. The map IS your library and
-        // cannot be scoped to a deck, and a visible row that ignored the selector would
-        // read as a bug (Q21).
-        //
-        // HUB-HIDDEN (2026-10-06): launched only from the Reading Center's games
-        // carousel, like Speed Reading. The collection gate above stays as a guard in
-        // case it ever returns to the hub.
-        hiddenFromHub: true,
+        languages: ["zh"],
     },
     {
         gameId: WRITING_GRID_GAME_ID,
         glyph: "draw",
         title: "Writing Grid",
-        route: "/games/writing-grid",
-        Component: lazy(() => import("./writing-grid/WritingGridPage")),
+        // BREAK-ONLY (no route): a writing drill played as an flp game break.
         hue: WRITING_GRID_HUE,
         markType: "writing",
-        // A writing drill: launched only from the Writing Center
-        // (docs/WRITING_PRACTICE_REWORK.md § 2), like Speed Reading from the Reading Center.
-        hiddenFromHub: true,
         // zh-only: the recognizer is zh_CN and the board is hanzi.
         languages: ["zh"],
     },
@@ -183,23 +172,20 @@ const ALL_GAMES: GameDef[] = [
         Component: lazy(() => import("./bucket-drop/BucketDropPage")),
         hue: BUCKET_DROP_HUE,
         // MODED, like Word Search: the hub tile launches Pinyin (production — the
-        // challenge-eligible mode, `challengeScoringFor("bucket-drop", "pinyin")`), the
-        // Reading Center carousel launches No Pinyin (reading). So no `markType` and no
-        // `challengeScoring` on the game itself (docs/BUCKET_DROP_GAME.md § 1).
+        // challenge-eligible mode, `challengeScoringFor("bucket-drop", "pinyin")`). No
+        // Pinyin (reading) has a break adapter (`BUCKET_DROP_BREAK`) but is NOT in the
+        // flp break rotation (`FLP_BREAK_GAMES`), so it is currently unreachable. So no
+        // `markType` and no `challengeScoring` on the game itself (docs/BUCKET_DROP_GAME.md § 1).
         modes: BUCKET_DROP_MODES.map(({ mode, markType }) => ({ mode, markType })),
-        // No `languages` gate: es plays the hub's Pinyin mode as plain words. The
-        // Reading Center card is zh-only on its own (ReadingGamesCarousel).
+        // No `languages` gate: es plays the hub's Pinyin mode as plain words.
     },
     {
         gameId: SUPERPOSITION_GAME_ID,
         glyph: "layers",
         title: "Superposition",
-        route: "/games/superposition",
-        Component: lazy(() => import("./superposition/SuperpositionPage")),
+        // BREAK-ONLY (no route): an flp break in the writing world (docs/SUPERPOSITION_GAME.md).
         hue: SUPERPOSITION_HUE,
         markType: "writing",
-        // An flp break only, in the writing world (docs/SUPERPOSITION_GAME.md).
-        hiddenFromHub: true,
         // zh-only: the tiles are cut from the hanzi stroke corpus.
         languages: ["zh"],
     },
@@ -225,8 +211,20 @@ const ALL_GAMES: GameDef[] = [
  */
 export const GAME_REGISTRY: GameDef[] = ALL_GAMES.filter((g) => isGameEnabled(g.gameId));
 
-/** Routes for every registered game; consumed by `MOBILE_DEMO_PATHS`. */
-export const GAME_ROUTES: string[] = GAME_REGISTRY.map((g) => g.route);
+/** True for a ROUTED game (a hub tile with a standalone page); false for a break-only one. */
+export function isRoutedGame(game: GameDef): game is RoutedGameDef {
+    return game.route !== undefined && game.Component !== undefined;
+}
+
+/**
+ * The enabled games that have their own route — the Games hub's tiles, and what the
+ * route table (`GAME_ROUTE_META`, `GAME_COMPONENTS`) mounts. Break-only games are
+ * absent: they have no page to mount.
+ */
+export const ROUTED_GAMES: RoutedGameDef[] = GAME_REGISTRY.filter(isRoutedGame);
+
+/** Routes for every routed game; consumed by `MOBILE_DEMO_PATHS`. */
+export const GAME_ROUTES: string[] = ROUTED_GAMES.map((g) => g.route);
 
 /** The slice of the signed-in user `isGameAvailable` reads. */
 interface GameViewer {
@@ -236,12 +234,12 @@ interface GameViewer {
 
 /**
  * Whether `game` may be shown to this viewer at all — the gating EVERY launch surface
- * applies (the Games hub's `visibleGames`, the Reading Center carousel's `gameById`):
+ * applies (the Games hub's `visibleGames`, the flp break picker's `flpBreakCandidates`):
  *   - `requiresAuth` hides a game from signed-out and public/demo accounts;
  *   - `languages` HIDES a game from learners of any other language, rather than
  *     showing it and blocking on entry (a visible row that dead-ends reads as a bug).
- * Surface-specific gates (the hub's `hiddenFromHub`, Memory Map's collection gate)
- * are layered on top by the surface, not here.
+ * Surface-specific gates (the hub shows ROUTED games only) are layered on top by the
+ * surface, not here.
  *
  * Docs: docs/GAMES_FEATURE.md § "Games hub".
  */

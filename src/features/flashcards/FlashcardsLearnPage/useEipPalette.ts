@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo } from "react";
-import { useAuth } from "../../../AuthContext";
+import { useTestingFeatures } from "../../../hooks/useTestingFeatures";
 import { useDayClock } from "../../../timeOfDay/useDayClock";
 import { EIP_DAY_PALETTE, eipPaletteAt, type EipPalette } from "./eipPalette";
 
@@ -27,7 +27,7 @@ export const useEipColors = (): EipPalette => useContext(EipPaletteCtx);
 
 /** The eip palette for the learner's time of day right now. */
 export function useEipPalette(): EipPalette {
-    const { user } = useAuth();
-    const { time } = useDayClock(user?.isFeatureTester === true);
+    // Tester time-of-day pin only while testing features are on (useTestingFeatures).
+    const { time } = useDayClock(useTestingFeatures());
     return useMemo(() => eipPaletteAt(time), [time]);
 }

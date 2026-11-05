@@ -30,7 +30,7 @@ taps and a board that refills until the run's 30 pairs have all been dealt.
 - [Board model](#board-model)
 - [The 3-second refill tick](#the-3-second-refill-tick)
 - [Board cleared celebration](#board-cleared-celebration)
-- [Difficulty modes (Study Mix / Review / Challenge)](#difficulty-modes-study-mix--review--challenge)
+- [One difficulty (Study Mix)](#one-difficulty-study-mix)
 - [Card selection: distribution + buffer](#card-selection-distribution--buffer)
 - [Backend change: per-card `gameCategory`](#backend-change-per-card-gamecategory)
 - [Study Challenge rounds: the alternation rule](#study-challenge-rounds-the-alternation-rule)
@@ -376,7 +376,7 @@ being fed would hang forever. Three rules in `topUpBuffer` and `refill` close th
 | Case | Behavior |
 |---|---|
 | Buffer dry, or a top-up failed | `refill` fires `onRefilled` on every tick that found a hole, even if it placed nothing, so the top-up retries every 3 seconds. |
-| The mode's own buckets are spent (Review or Challenge in an flp break) | The run turns **relaxed** mid-run and takes whatever the server sent, through `widenedMode`. A relaxed run sets no personal best. |
+
 | The server has nothing, the buffer is empty and the board has drained | The run ends where it stands, on the "Run ended" card. |
 
 ### Fill algorithm (one tick)
@@ -446,94 +446,23 @@ It also fires in the **cleanup phase** of a run that was cut short.
 
 ---
 
-## Difficulty modes (Study Mix / Review / Challenge)
+## One difficulty (Study Mix)
 
-> ⚠️ **DEPRECATED (2026-10-31).** Review and Challenge are being removed; Study Mix stays
-> ([DEFERRED_WORK.md](./DEFERRED_WORK.md) § 31).
+Match Speed has a single difficulty: every run draws from all four buckets against the
+one weight table (`CATEGORY_WEIGHTS`, 12 / 60 / 20 / 8), with one fallback order
+(`CATEGORY_FALLBACK_ORDER`) and one buffer depth (`BUFFER_DEPTH`). Nothing in
+`cardBuffer.ts` takes a mode. Wins log under `WIN_LEVEL` (1) and personal bests under
+`PERSONAL_BEST_MODE` (`"mixed"` — the Study Mix slug every existing best was recorded
+under). The hub has one tile, there is no in-game picker, and a launch's `state.mode` is
+ignored (Study Challenge still sends `"mixed"`, `src/games/runtime/challengeLaunch.ts`).
 
-> ⚠️ **No mode is reachable from the UI today.** The Games hub briefly carried a
-> `HubMenuArrayItem` strip with one sub-card per mode; it was removed and Match
-> Speed is a **single `HubMenuRow`** again, so every launch arrives with no
-> `state.mode` and plays **Study Mix**. Everything below still describes live code —
-> the mode machinery is intact and still honours a `state.mode` passed by any
-> caller — but Review and Challenge are currently unreachable. Re-adding the strip
-> (or any other picker) is all that's needed to bring them back.
+The Review (Comfortable + Mastered) and Challenge (Unfamiliar + Target) modes were removed
+with the flp's study modes on 2026-11-04 ([DEFERRED_WORK.md](./DEFERRED_WORK.md) § 31);
+migration 182 (`database/migrations/182-delete-review-challenge-mode-history.sql`) deleted
+their `wins` levels 2 / 3 and their `game_personal_bests` rows.
 
-The game defines **three independently-playable modes**, selected via nav
-`state.mode` (there is no in-game picker). Modes do **not** chain and nothing is
-unlocked by clearing one.
-
-A mode changes **only which mastery buckets the pool may draw from**. The 30-pair
-target, the 5×2 board, the 3-second refill tick and the medal thresholds are
-identical across all three — difficulty comes purely from which cards you are
-asked to recognize, which is exactly what Review/Challenge mean on `/decks`.
-
-| Mode | `wins` level | Buckets | Per-draw weights | Buffer depth / bucket |
-|---|---|---|---|---|
-| **Study Mix** (default) | 1 | all four | 12 / 60 / 20 / 8 | 6 |
-| **Review** | 2 | Comfortable + Mastered | 70 / 30 | 12 |
-| **Challenge** | 3 | Unfamiliar + Target | 20 / 80 | 12 |
-
-- **The bucket split is the `/decks` rule verbatim** — Review draws
-  Comfortable+Mastered, Challenge draws Unfamiliar+Target
-  (`src/features/flashcards/FlashcardsDecksPage.tsx`). Same rule, same
-  card colors on the hub (see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
-- **Within a restricted mode the two buckets keep roughly their Study Mix ratio**
-  (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target and Review still
-  leans on Comfortable rather than flattening to 50/50.
-- **Study Mix keeps `wins` level 1**, the key the game used when it had a single
-  difficulty, so pre-existing win history stays attached to the default mode
-  instead of being orphaned.
-- **Buffer depth is derived, not per-mode-hardcoded**:
-  `ceil(BUFFER_TOTAL_TARGET / categories.length)`, so every mode buffers ~24
-  pairs no matter how many buckets it spans and the board draws at the same rate.
-  `BUFFER_TOTAL_TARGET` is **24** so that even Study Mix's thinnest bucket (24 / 4 = 6)
-  can fill a whole board (`ROWS` = 5) by itself — a per-bucket depth below the
-  board size would fire the fallback walk on an ordinary tick and quietly pull the
-  run off its weight table.
-
-### A mode is a hard restriction, in three places
-
-The server tops a short bucket up **from its own fallback order**, so a Review
-request can legitimately come back holding an `Unfamiliar` card. The mode is
-therefore enforced client-side at every point where a category is chosen:
-
-1. `rollCategory` rolls **only** over `mode.categories`, against `mode.weights`.
-2. The empty-bucket fallback walk uses `mode.fallbackOrder` — which contains only
-   in-mode buckets, so a bare Review buffer draws **nothing** rather than reaching
-   for Target.
-3. `fillBuffer` **drops** an off-mode card on arrival. Shelving a card no draw can
-   ever reach would only bloat the `exclude` list. Reachable means
-   `mode.fallbackOrder`, so a relaxed run (`widenedMode`) shelves every bucket. (An *unstamped* card is still
-   filed — under `mode.fallbackOrder[0]` — for the reason given below.)
-
-Nothing below `MatchSpeedStage` branches on the mode *name*: every function in
-`cardBuffer.ts` takes the run's `ModeConfig` as a trailing optional argument
-defaulting to Mix, which is exactly the game's pre-modes behavior.
-
-### Implementation
-
-- `ModeConfig` / `MatchSpeedMode` — `src/games/match-speed/types.ts`
-- `MODE_CONFIGS` (hub order), `defineMode`, `modeConfigFor`, `DEFAULT_MODE_CONFIG`
-  — `src/games/match-speed/constants.ts`
-- Mode-aware `rollCategory` / `takePair` / `takePairs` / `fillBuffer` /
-  `topUpRequest` — `src/games/match-speed/cardBuffer.ts`
-- `modeConfigFor(location.state.mode)` — `src/games/match-speed/MatchSpeedPage.tsx`;
-  the pool/gate/`recordWin` wiring — `src/games/match-speed/MatchSpeedStage.tsx`
-  (an flp game break passes `modeConfigFor(studyMode)` instead —
-  `src/games/flpBreak/MatchSpeedBreakStage.tsx`)
-- Hub entry — `src/games/GamesPage.tsx` (a plain single `HubMenuRow`; the mode
-  strip and its `MATCH_SPEED_MODE_COLORS` palette were removed)
-- Coverage — `src/__tests__/matchSpeedCardBuffer.test.ts` (roll bands per mode,
-  no off-mode fallback, off-mode drop, in-mode-only top-up)
-
-A visit with no/invalid `state.mode` **falls back to Mix** rather than bouncing to
-the hub the way Bubble Match does — this route shipped before the modes existed and
-must stay playable on its own. That fallback is now the ONLY path in the app, since
-the hub passes no state. The page's load effect is still keyed on
-`modeConfig.mode` as well as `user?.id`: if a picker returns, switching modes lands
-on the same route with only `state.mode` changed, and without that key a
-remount-less switch would keep playing the previous mode's buffer.
+Code: `src/games/match-speed/constants.ts` → `CATEGORY_WEIGHTS`, `CATEGORY_FALLBACK_ORDER`,
+`BUFFER_DEPTH`, `POOL_DISTRIBUTION`, `WIN_LEVEL`, `PERSONAL_BEST_MODE`; `MatchSpeedPage.tsx`.
 
 ---
 
@@ -541,9 +470,8 @@ remount-less switch would keep playing the previous mode's buffer.
 
 ### Probability distribution
 
-Each pair drawn for the board rolls a category **independently**, weighted (this
-is the **Study Mix** table; Review and Challenge roll over their own buckets — see
-[§ Difficulty modes](#difficulty-modes-study-mix--review--challenge)):
+Each pair drawn for the board rolls a category **independently**, weighted
+(`CATEGORY_WEIGHTS`):
 
 | Category | Weight |
 |---|---|
@@ -558,7 +486,7 @@ a fixed 2/10/6/2 mix for a whole run. A Match Speed board can legitimately come
 up 5 Target cards.
 
 ⚠️ These categories are the **per-mark-type** categories (recognition, the track
-this game emits), not the whole-card **core** mastery bar the decks page
+this game emits), not the whole-card **core** mastery bar the Deck Tower
 shows. The `game-pool` endpoint already buckets this way — see
 [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md).
 
@@ -587,8 +515,7 @@ no-op, since the opening fetch already lent up to the baseline, but it is one ex
 query per tick and it can lend mid-run if the learner's sorted count drops below the
 baseline during a run. Every other game's refill sends `need`. Not yet decided whether this
 is intentional.
-If the rolled category's buffer is still empty, walk the
-mode's fallback order — in Study Mix, the existing bubble-match one —
+If the rolled category's buffer is still empty, walk `CATEGORY_FALLBACK_ORDER` —
 **Target → Comfortable → Unfamiliar → Mastered**
 (`OnDeckVocabService.GAME_FALLBACK_ORDER`, `server/services/OnDeckVocabService.ts`)
 — and take from the first non-empty one. The weights are **not** re-normalized;
@@ -599,8 +526,10 @@ purely a "that shelf was bare" recovery.
 
 API latency is far too high to fetch a card at the moment a slot empties, so the
 page keeps a **client-side buffer of pairs, keyed by category, target depth 6
-each in Study Mix** (24 cards buffered, `BUFFER_TOTAL_TARGET`; a restricted mode buffers
-12 in each of its two buckets for the same 24 total). The buffer is filled once before the run starts
+each** (`BUFFER_DEPTH`; 24 cards buffered, `BUFFER_TOTAL_TARGET`). Six is sized so one
+bucket can fill a whole board (`ROWS` = 5) by itself — a per-bucket depth below the board
+size would fire the fallback walk on an ordinary tick and quietly pull the run off its
+weight table. The buffer is filled once before the run starts
 and topped up continuously during it.
 
 ```
@@ -614,7 +543,7 @@ buffer = {
 
 **Top-up trigger: after every refill tick.** Once the tick has placed its cards,
 fire a single `game-pool` request for exactly what was consumed, restoring each
-**in-mode** bucket toward the mode's depth (off-mode buckets are never requested). Small steady requests; the buffer rarely dips. The request is
+bucket toward `BUFFER_DEPTH`. Small steady requests; the buffer rarely dips. The request is
 fire-and-forget with a `.catch()` — a failed top-up degrades to a thinner buffer
 and more fallbacks, never to a broken run.
 
@@ -671,8 +600,7 @@ next `topUpRequest` asks to refill.
 ### Entry gate — REMOVED
 
 Match Speed has **no card-count gate**. It previously required 20 Learning cards
-overall, plus (for Review/Challenge) at least one card inside the mode's own buckets. Both
-blocks are gone — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
+overall. That block is gone — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 
 What happens instead:
 
@@ -681,18 +609,6 @@ What happens instead:
    (`CARD_BASELINES['match-speed']`) before building the pool. `sufficient === false` is
    no longer a block; it only means the dictionary itself ran dry, and a shorter buffer
    still deals a playable run.
-
-2. **Nothing inside the mode's buckets** → the run switches to **relaxed mode**
-   (`relaxed` in `MatchSpeedStage.tsx`, `widenedMode` in `constants.ts`): its
-   `fallbackOrder` widens to all four buckets for that run only, so the server's cross-bucket top-up actually reaches the board.
-   The mode's WEIGHTS are untouched, so once the player has real on-mode cards the
-   widened fallback stops being reached and the mode plays exactly as designed.
-
-   This matters for **Review**, not Challenge. The split is Review = Comfortable + Mastered,
-   Challenge = Unfamiliar + Target (§ MODE_CONFIGS). A lent card starts with an empty mark
-   history and is therefore **Unfamiliar**, so provisioning fills Challenge's buckets for
-   free — but Comfortable and Mastered are earned, not granted, so Review stays empty for
-   a learner with no real progress until the widened fallback kicks in.
 
 Match Speed's notice is the **generic** (non-itemized) form — it deals from a rolling
 buffer, so the played set isn't known when the run starts. The end-of-run "keep these
@@ -717,10 +633,7 @@ belonging together and let the player match by badge rather than by reading, whi
 same leak the fixed card size prevents (§ Rendering a card). The notice teaches the mark
 via its `badgedInRound` prop, which only Match Speed passes.
 
-Both checks read `available`, which `getGameVocabPool` reports for **all four**
-buckets regardless of which ones the mode requested
-(`server/services/OnDeckVocabService.ts`), so the mode never narrows the counts
-the gate sees.
+
 
 ---
 
@@ -746,7 +659,7 @@ rule about the DEAL:
 | The opening fetch | carries `?challengeId=` and comes back as one SHUFFLED set of contested + filler. `beginRun` splits it against the challenge's own word list — contested into the deal state's queue, the rest into the ordinary `CardBuffer` via `fillBuffer` |
 | `drawPairs` | in a challenge round, delegates to `dealChallengePairs` (`challengeDeal.ts`, pure + tested) with the buffered draw as its filler source; otherwise unchanged |
 | Buffer top-ups | send `&contested=exclude`, so a refill is pure filler. The nine are dealt ONCE and never recycled — a re-served contested word would be a second bite at a word the round has already scored |
-| Mode | a challenge round always launches as **Study Mix**. Review and Challenge are hard bucket restrictions, and `fillBuffer` drops off-mode cards — under either of them half a challenge board would be thrown away on arrival |
+
 
 **Parity is counted over the RUN, not per call.** The board refills a few holes at a
 time; an alternation that reset per call would put a contested pair in every refill's
@@ -796,7 +709,7 @@ Properties:
   from, so the client's buffer never silently mislabels a card.
 - **Distinct from `category`.** Both fields ride on the entry and mean different
   things. `gameCategory` is per-mark-type and game-scoped; `category` is the
-  blended one the decks page uses. The name should stay explicit for exactly this
+  blended core one the Deck Tower uses. The name should stay explicit for exactly this
   reason.
 
 ### Why not the alternative
@@ -814,6 +727,16 @@ exists to control.
 Match Speed is a **recognition** drill (foreign → meaning), same track as Bubble
 Match. Marks go to `POST /api/flashcards/mark` with
 `{ cardId, isCorrect, type: "recognition", excludeIds: [] }`.
+
+**Exception — the reading flp's game break** marks **`reading`** instead: the board
+hides pinyin there, so the player reaches the meaning from the characters alone. The
+break's candidate carries the track (`GameDef.noPinyinMarkType: "reading"` in
+`src/games/registry.ts`, resolved by `flpBreakCandidates`), and it is threaded into BOTH
+the pool request (`matchSpeedPoolRequest`'s `markType`, so the board draws reading-band
+cards) and the marks (`MatchSpeedStage`'s `markType` prop, default `MARK_TYPE`). The
+standalone page never passes it: its pinyin chip is display-only and the run stays on
+`recognition` whatever the chip says. See
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 3.
 
 | Event | Mark |
 |---|---|
@@ -862,33 +785,25 @@ information only. It does not gate a medal.
 
 ### Win badge
 
-`recordWin(modeConfig.winLevel)` fires **only on a gold-medal run** (`useGameWins`,
-`src/hooks/useGameWins.ts`, `GAME_KEY = "matchSpeed"`). The level key is the
-**mode's** (Study Mix 1, Review 2, Challenge 3 — see
-[§ Difficulty modes](#difficulty-modes-study-mix--review--challenge)); Study Mix keeps
-key `1`, the game's original single-difficulty key, and is the only key reachable
-now that the hub launches Study Mix only. The hub tile shows the **game-wide win count**
+`recordWin(WIN_LEVEL)` fires **only on a gold-medal run** (`useGameWins`,
+`src/hooks/useGameWins.ts`, `GAME_KEY = "matchSpeed"`, `WIN_LEVEL` 1 — the game's one
+difficulty, § One difficulty). The hub tile shows the **game-wide win count**
 as its corner badge — the shared trophy `WinCountPill` (`src/games/shared/GameCard.tsx`),
-passed as a `pinBare` BentoTile pin in the tile's top-left (`pinSide="left"`) so it matches the Reading Center's cards (there is no per-mode ⭐ left — that lived on the removed mode
-sub-cards). Gold-only keeps the badge an achievement rather than a play counter.
+passed as a `pinBare` BentoTile pin in the tile's top-left (`pinSide="left"`). Gold-only keeps the badge an achievement rather than a play counter.
 
-Medal thresholds are deliberately **not** re-tuned per mode: a gold on
-Challenge is a real achievement and on Review it is an easier one, which is the point of
-having modes at all.
+
 
 ### Personal best
 
-The fastest finish (ms, lower wins) is kept **per difficulty mode**, under the game key
+The fastest finish (ms, lower wins) is kept under the game key
 `match-speed-30`. That key is new on purpose: `match-speed` rows hold pair counts from
 the old game, and a stored 9 read as milliseconds could never be beaten. Those rows
-remain in `game_personal_bests`, unread. The mode — the mode key is the slug `mixed` / `review` / `challenge`
-(`baseModeConfig.mode` in `MatchSpeedStage`, i.e. the mode the hub launched — or, in an flp game break, the session's study mode). The
+remain in `game_personal_bests`, unread. The mode key is always `PERSONAL_BEST_MODE`
+(`"mixed"`) — route and flp break alike. The
 `phase === "ended"` effect in `MatchSpeedStage` calls `recordPersonalBest(finishMs)` for a finished run;
 `playAgain` calls `resetPersonalBest`. The line renders in `MatchSpeedEndPopup` (in a break, on the results card) under the
 accuracy row. **Not recorded:** a challenge round (dealt from the round's set, ends on
-the scoreboard) and a `relaxed` run — a Review/Challenge run that widened to every bucket
-for lack of in-mode cards was an easier board than its mode's, so it must not set that
-mode's best.
+the scoreboard).
 
 The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
 
@@ -971,17 +886,16 @@ plus a clock consumed roughly half the bar:
 ### The HUD strip and the hint line
 
 Inside the play panel, at its top (shelf redesign entry 14). An flp game break
-(`host="flpBreak"`, `MatchSpeedStage` → `isBreak`) has no strip and no hint line: the session already chose the mode and deck. A blank
+(`host="flpBreak"`, `MatchSpeedStage` → `isBreak`) has no strip and no hint line. A blank
 `match-speed__exit-clearance` row (`GAME_FRAME_EXIT_CLEARANCE_PX`) takes the strip's place,
 so Leave's back arrow at the top-left clears the board.
 
 | Element | Content | Notes |
 |---|---|---|
-| `GameHud` | `Study Mix · All cards` — `9/30 matched` | Both facts are otherwise invisible once a run starts: the mode is chosen on the Games hub, the collection on `/decks`. Without the strip, a player who launched the wrong mode only found out from the cards. |
+| `GameHud` | `9/30 matched`, pinned right (`match-speed__hud-score`) | The run's progress. The game has one mode and no launch collection, so there is nothing to name on the left. |
 | `GameHint` | "tap a word, then its meaning" | Mono/uppercase/faint at the foot of the panel. |
 
-The collection name comes from `collectionTitle` (`src/features/flashcards/collectionRef.ts`),
-falling back to "All cards" for a launch with no collection.
+
 
 ### No settings sheet
 
@@ -1019,6 +933,12 @@ Rendered through **`ForeignText`** — never `CPCDRow` / `CPCDBlock` directly
 (project rule: `ForeignText` is the public container, the cpcd components are its
 private Chinese-script implementation). Pass the language and let it choose
 between cpcd and plain text.
+
+The card flex-centers the word, so it passes `centerGlyphWhenPinyinHidden`: with pinyin
+off, CPCDRow paints the glyph half a pinyin band lower so it sits at the card's center
+rather than above it (the band is still reserved). Same mechanism as Word Search's No
+Pinyin tiles — [CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md) § "Centering the glyph
+when pinyin is hidden". Code: `src/games/match-speed/MatchSpeedCard.tsx`.
 
 ### English card (right column)
 
@@ -1137,7 +1057,7 @@ derived avoids a state pair that can disagree.
 
 ```
 src/games/match-speed/
-  MatchSpeedPage.tsx       the ROUTE host: LeafPage frame, edge-swipe block, hub mode,
+    MatchSpeedPage.tsx       the ROUTE host: LeafPage frame, edge-swipe block,
                            pinyin chip, "Back to Games" (docs/FLP_GAME_BREAKS.md § 6)
   MatchSpeedStage.tsx      the run: phase machine + pool/buffer + marks + results;
                            hosted by the page OR an flp game break (`host`, `Frame`)
@@ -1148,9 +1068,10 @@ src/games/match-speed/
   MatchSpeedHeader.tsx     right-slot controls: pinyin chip + audio chip (fire badge is PageHeader's)
   MatchSpeedEndPopup.tsx   GameEndPopup wrapper pinning classPrefix
   cardBuffer.ts            weighted category roll + per-category buffer + fallback
-                           (every function is mode-aware, defaulting to Mix)
-  constants.ts             tunables, medal table, GAME_KEY, MODE_CONFIGS
-  types.ts                 BoardCard, Slot, Phase, Medal, MatchSpeedMode, ModeConfig
+                                                      (one weight table; nothing takes a mode)
+  constants.ts             tunables, weight table, medal table, GAME_KEY, WIN_LEVEL,
+                           PERSONAL_BEST_MODE, POOL_DISTRIBUTION
+  types.ts                 BoardCard, Slot, Phase, Medal, GameCategory, CardPair
 ```
 
 `cardBuffer.ts` is **pure and injectable-rng**, the way
@@ -1235,9 +1156,9 @@ it reads from.
 | Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedStage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedStage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool`, `fetchGameCandidates`, `GAME_FALLBACK_ORDER` |
-| Dealing stops at 30 pairs, a run must finish | `src/games/match-speed/MatchSpeedStage.tsx` (`dealtPairsRef`, `drawPairs`, `topUpBuffer`, `handleMatch`); `MatchSpeedBoard.tsx` (`refill`); `constants.ts` (`TARGET_PAIRS`, `widenedMode`) |
+| Dealing stops at 30 pairs, a run must finish | `src/games/match-speed/MatchSpeedStage.tsx` (`dealtPairsRef`, `drawPairs`, `topUpBuffer`, `handleMatch`); `MatchSpeedBoard.tsx` (`refill`); `constants.ts` (`TARGET_PAIRS`) |
 | Personal best | `src/games/match-speed/MatchSpeedStage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
-| Difficulty modes | `src/games/match-speed/constants.ts` (`MODE_CONFIGS`, `defineMode`, `modeConfigFor`), `types.ts` (`ModeConfig`), `cardBuffer.ts` (all functions), `MatchSpeedPage.tsx` (reads the hub's `state.mode`), `MatchSpeedStage.tsx`, `src/games/GamesPage.tsx`; bucket rule mirrored from `src/features/flashcards/FlashcardsDecksPage.tsx` |
+| One difficulty | `src/games/match-speed/constants.ts` (`CATEGORY_WEIGHTS`, `CATEGORY_FALLBACK_ORDER`, `BUFFER_DEPTH`, `POOL_DISTRIBUTION`, `WIN_LEVEL`, `PERSONAL_BEST_MODE`), `cardBuffer.ts`, `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; `database/migrations/182-delete-review-challenge-mode-history.sql` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |

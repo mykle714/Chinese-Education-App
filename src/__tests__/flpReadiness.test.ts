@@ -4,13 +4,12 @@ import {
   flpCooldownRemainingMs,
   flpReadyCountsByBand,
   isFlpReady,
-  nextFlpReadyMs,
 } from "../utils/flpReadiness";
 import { COOLDOWN_MS_BY_CATEGORY } from "../utils/masteryCompute";
 
 /**
- * Tests for the fdp study hand's ready counts (src/utils/flpReadiness.ts,
- * docs/DECKS_FEATURE.md § "The card hand").
+ * Tests for the flp's ready counts (src/utils/flpReadiness.ts) — the figures the Deck
+ * Tower's Learning deck is built from (docs/DECK_TOWER.md).
  *
  * What is pinned here is what a future edit could plausibly get wrong: the ONE know
  * clock shared by recognition and production (docs/MASTERY_REWORK.md § 6), its CORE
@@ -43,8 +42,8 @@ const card = (
 const positives = (n: number, at: number) => Array.from({ length: n }, () => mark(true, at));
 
 const ALL_BANDS = ["Unfamiliar", "Target", "Comfortable", "Mastered"] as const;
-const CHALLENGE_BANDS = ["Unfamiliar", "Target"] as const;
-const REVIEW_BANDS = ["Comfortable", "Mastered"] as const;
+const LOWER_BANDS = ["Unfamiliar", "Target"] as const;
+const UPPER_BANDS = ["Comfortable", "Mastered"] as const;
 
 const sum = (counts: Record<string, number>, bands: readonly string[]) =>
   bands.reduce((total, band) => total + (counts[band] || 0), 0);
@@ -101,7 +100,7 @@ describe("flpReadyCountsByBand", () => {
     expect(sum(counts, ALL_BANDS)).toBe(2);
   });
 
-  it("PARTITIONS: Challenge + Review always equals Study Mix", () => {
+  it("PARTITIONS: the lower and upper bands always sum to every ready card", () => {
     const LONG_AGO = NOW - 400 * 24 * 60 * 60 * 1000;
     // A spread across every band and both rest states.
     const entries = [
@@ -113,37 +112,9 @@ describe("flpReadyCountsByBand", () => {
       card(6, positives(6, LONG_AGO), positives(2, LONG_AGO)),
     ];
     const counts = flpReadyCountsByBand(entries, NOW);
-    expect(sum(counts, CHALLENGE_BANDS) + sum(counts, REVIEW_BANDS)).toBe(sum(counts, ALL_BANDS));
+    expect(sum(counts, LOWER_BANDS) + sum(counts, UPPER_BANDS)).toBe(sum(counts, ALL_BANDS));
     // And the identity is not vacuous — both halves carry cards.
-    expect(sum(counts, CHALLENGE_BANDS)).toBeGreaterThan(0);
-    expect(sum(counts, REVIEW_BANDS)).toBeGreaterThan(0);
-  });
-});
-
-describe("nextFlpReadyMs", () => {
-  it("is null when the learner owns nothing in those bands", () => {
-    expect(nextFlpReadyMs([], REVIEW_BANDS, NOW)).toBeNull();
-  });
-
-  it("is null when a card in those bands is already ready (nothing to count down to)", () => {
-    const LONG_AGO = NOW - 400 * 24 * 60 * 60 * 1000;
-    const rested = card(1, positives(8, LONG_AGO), positives(8, LONG_AGO));
-    expect(nextFlpReadyMs([rested], REVIEW_BANDS, NOW)).toBeNull();
-  });
-
-  it("returns the SOONEST remaining time among resting cards in those bands", () => {
-    const day = 24 * 60 * 60 * 1000;
-    // Both Mastered (180-day window); one marked 179 days ago, one marked 10 days ago.
-    const nearlyReady = card(1, positives(8, NOW - 179 * day), positives(8, NOW - 179 * day));
-    const deepResting = card(2, positives(8, NOW - 10 * day), positives(8, NOW - 10 * day));
-    const next = nextFlpReadyMs([deepResting, nearlyReady], REVIEW_BANDS, NOW);
-    expect(next).not.toBeNull();
-    expect(next!).toBeCloseTo(day, -4);
-  });
-
-  it("ignores cards outside the requested bands", () => {
-    // An Unfamiliar card resting 5 minutes must not shorten the REVIEW countdown.
-    const unfamiliarResting = card(1, positives(1, NOW - 1000), positives(1, NOW - 1000));
-    expect(nextFlpReadyMs([unfamiliarResting], REVIEW_BANDS, NOW)).toBeNull();
+    expect(sum(counts, LOWER_BANDS)).toBeGreaterThan(0);
+    expect(sum(counts, UPPER_BANDS)).toBeGreaterThan(0);
   });
 });

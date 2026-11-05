@@ -3,9 +3,9 @@
  * request goes through (src/api/gamePool.ts).
  *
  * Pinned because it replaced six hand-built querystrings, and the wire contract is read by
- * the server param by param (OnDeckVocabController.getGamePool): a dropped `collection`
- * silently widens a deck run to the whole library, a dropped `anytime` 400s a tester's
- * challenge board, and a stray `contested=exclude` outside a challenge means nothing.
+ * the server param by param (OnDeckVocabController.getGamePool): a dropped `seedIds`
+ * loses an flp break's working loop, a dropped `anytime` 400s a tester's challenge board,
+ * and a stray `contested=exclude` outside a challenge means nothing.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -52,19 +52,12 @@ describe('gamePoolParams', () => {
     expect(params.lendLevelOffset).toBe(0);
   });
 
-  it('carries a deck collection', () => {
-    expect(gamePoolParams({
-      markType: 'recognition',
-      collection: { kind: 'deck', deckId: 7 } as never,
-    }).deck).toBe('7');
-  });
-
   it('passes the challenge suffix through verbatim, including the anytime hatch', () => {
     const params = gamePoolParams({
       markType: 'recognition',
-      challengeParams: '&challengeId=abc&gameId=match-speed&mode=review&anytime=1',
+      challengeParams: '&challengeId=abc&gameId=match-speed&mode=mixed&anytime=1',
     });
-    expect(params).toMatchObject({ challengeId: 'abc', gameId: 'match-speed', mode: 'review', anytime: '1' });
+    expect(params).toMatchObject({ challengeId: 'abc', gameId: 'match-speed', mode: 'mixed', anytime: '1' });
   });
 
   it('sends contested=exclude only inside a challenge round', () => {

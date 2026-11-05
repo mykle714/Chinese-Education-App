@@ -553,7 +553,7 @@ Those stay.)
 ### The split is not principled
 
 `flashcards`, `reader`, and `nightmarket` are under `features/`. But
-`SortCardsPage` (1,254 lines), `DictionaryPage`, `QuickMarkPage`,
+`AddNewCardsPage` (1,254 lines), `DictionaryPage`, `QuickMarkPage`,
 `TesterDashboardPage`, and `CommunityPage/` (already a directory) are equally
 feature-shaped and sit under `pages/`.
 
@@ -610,7 +610,7 @@ its tabs inline; it should be one file per tab.
 
 > **Resolved.** API paths are **camelCase** (`/api/starterPacks/...`,
 > `/api/nightMarketTemplates/...`, `/api/users/displaySettings`); user-facing SPA URLs stay
-> kebab-case (`/deck-tower`, `/tester-dashboard`) and are unrelated. Route files are one
+> kebab-case (`/tester-dashboard`, `/discover/sort/:language`) and are unrelated. Route files are one
 > namespace each, mounted in `server/server.ts`, and every route is wired through
 > `handle()` from `server/routes/asyncHandler.ts` — necessary because **Express 4 does not
 > catch rejected promises**, so an async handler that threw would hang the request silently.

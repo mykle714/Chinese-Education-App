@@ -1,9 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 /**
- * The shared Anthropic client for the server's ENRICHMENT-style AI helpers — the
- * dictionary long definition (DictionaryService) and the Word of the Day card body
- * (WordOfTheDayService). Keyed on ANTHROPIC_API_KEY.
+ * The shared Anthropic client for the server's ENRICHMENT-style AI helpers — today
+ * only the dictionary long definition (DictionaryService); the Word of the Day card
+ * body (WordOfTheDayService) was its other caller until that feature was removed
+ * 2026-11-04. Keyed on ANTHROPIC_API_KEY.
  *
  * Constructed lazily so a missing key only disables the AI paths (every caller
  * null-checks the return) instead of throwing at import time.

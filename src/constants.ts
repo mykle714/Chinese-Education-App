@@ -10,8 +10,8 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // Pages that accrue minute points, matched as PATH PREFIXES (the page itself and
 // everything under it). Only STUDY surfaces belong here — a screen where the learner
 // is working through cards, text or a game board. Browsing and menu screens
-// deliberately do not accrue: the hubs (Home, Menu, Games, Decks & Cards),
-// deck/collection lists and the mastery centers. They still show the header flame, in
+// deliberately do not accrue: the hubs (Menu, Games), the Deck Tower's own browsing
+// screens and the card lists. They still show the header flame, in
 // its grey idle state, which is the honest answer to "am I earning right now?" — see
 // MinutePointsFireBadge / PageHeader.
 //
@@ -31,20 +31,24 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // This is also what makes the COMPARE sheet earn. Compare has no route of its own
 // (docs/WORD_COMPARE_FEATURE.md — it is a panel raised over the page you are on), so it
 // cannot be listed here; it earns because every surface that can open it now accrues —
-// the flp, the scp, and both cdps. Anything that later hosts the compare sheet from a
+// the flp, the ancp, and both cdps. Anything that later hosts the compare sheet from a
 // non-earning page would break that, so keep the two lists in step.
 //
 // Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a cdp or a
 // search page is easy to leave open, so neither is in MINUTE_POINTS_AUTO_ACTIVE_PAGES.
 //
-// ⚠️ NOT '/flashcards' — that prefix would re-admit every browsing screen under it
-// (/flashcards/decks, /flashcards/deck/:id, /flashcards/collection/*,
-// /flashcards/reading|writing). `/flashcards/card` is now listed on its own, which is
-// the point of naming the study surfaces one at a time rather than the parent. The legacy desktop
+// ⚠️ NOT '/flashcards' — the study surfaces are named one at a time rather than by a
+// parent prefix, so a future browse screen under it does not silently start earning.
+// `/flashcards/card` is listed on its own.
+//
+// The flp is not on this list: it runs only inside the Deck Tower at `/` (a menu, which
+// must not earn), and earns through a study-surface CLAIM while a session is up
+// (src/minutePoints/studySurface.ts). The four break-only games (Speed Reading, Memory
+// Map, Writing Grid, Superposition) have no route of their own any more; they earn as
+// part of that same flp session. The legacy desktop
 // flashcards page at exactly '/flashcards' IS a study surface and is listed in
 // MINUTE_POINTS_ELIGIBLE_EXACT_PAGES below instead.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
-  '/flashcards/learn',
   '/flashcards/card',
   '/dictionary',
   '/reader',
@@ -52,8 +56,6 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/bubble-match',
   '/games/word-search',
   '/games/match-speed',
-  '/games/speed-reading',
-  '/games/memory-map',
   '/games/hydra-bubbles',
   '/games/bucket-drop',
   // The Writing Notebook (docs/WRITING_NOTEBOOK.md) — handwriting practice, not a game.

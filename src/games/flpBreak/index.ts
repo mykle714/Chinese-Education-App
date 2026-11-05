@@ -6,6 +6,8 @@ import { MATCH_SPEED_BREAK } from "./matchSpeedBreak";
 import { WORD_SEARCH_BREAK } from "./wordSearchBreak";
 import { WRITING_GRID_BREAK } from "./writingGridBreak";
 import { SUPERPOSITION_BREAK } from "./superpositionBreak";
+import { SPEED_READING_BREAK } from "./speedReadingBreak";
+import { MEMORY_MAP_BREAK } from "./memoryMapBreak";
 import type { FlpBreakCandidate, FlpBreakGame } from "./types";
 
 export { pickBreakCandidate, breakShowsPinyin } from "./candidates";
@@ -15,9 +17,8 @@ export type { FlpBreakCandidate, FlpBreakContext, FlpBreakGame, FlpBreakPersonal
  * Every game that can run as an flp break, by gameId (docs/FLP_GAME_BREAKS.md § 6).
  * A game joins the rotation by getting an entry here — once its Stage is extracted.
  * Extraction order: Match Speed ✓, Word Search ✓, Writing Grid ✓, Superposition ✓ (built as a
- * Stage), Bucket Drop (adapter
- * built, deliberately left out of this map), Bubble Match, Speed Reading, Hydra Bubbles,
- * Memory Map.
+ * Stage), Speed Reading ✓, Memory Map ✓, Bucket Drop (adapter built, deliberately left out
+ * of this map), Bubble Match, Hydra Bubbles.
  */
 // `any`: the map holds each game's own prefetch payload type; the host only threads
 // an adapter's `prefetch` result back into that SAME adapter's Stage.
@@ -27,6 +28,8 @@ const FLP_BREAK_GAMES: Record<string, FlpBreakGame<any>> = {
     [WORD_SEARCH_BREAK.gameId]: WORD_SEARCH_BREAK,
     [WRITING_GRID_BREAK.gameId]: WRITING_GRID_BREAK,
     [SUPERPOSITION_BREAK.gameId]: SUPERPOSITION_BREAK,
+    [SPEED_READING_BREAK.gameId]: SPEED_READING_BREAK,
+    [MEMORY_MAP_BREAK.gameId]: MEMORY_MAP_BREAK,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

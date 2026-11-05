@@ -12,10 +12,11 @@
  * account's saved board, showing target words that have nothing to do with
  * the current user's library cards.
  *
- * There is ONE saved slot per (user, mode). Each mode has exactly one launch
- * surface — "pinyin" is the Games hub's (WordSearchHubItem), "no-pinyin" the
- * Reading Center carousel's (ReadingGamesCarousel) — so a slot per mode is a slot
- * per surface: neither can resume, or clobber, the other's parked board. See
+ * There is ONE saved slot per (user, mode), so neither mode can resume, or clobber,
+ * the other's parked board. In practice only "pinyin" is ever written: the Games hub
+ * (WordSearchHubItem) and Study Challenge launch Pinyin, and "no-pinyin" — whose route
+ * launcher, the Reading Center carousel, was deleted 2026-11-04 — is played only as an
+ * flp break, which never saves (WordSearchStage `persistSnapshot`). See
  * docs/WORD_SEARCH_GAME.md §3 / §5b.
  *
  * Until 2026-10-03 both modes shared ONE mode-agnostic slot (`wordSearch.savedGame.

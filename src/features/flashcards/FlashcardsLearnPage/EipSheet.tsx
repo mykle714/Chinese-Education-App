@@ -18,11 +18,11 @@ import type { Language, VocabEntry } from "../../../types";
  * sheet's open animation replays on every reopen (the flp's rule). SheetPanel portals its
  * own scrim and sheet to the frame, so no positioning host is needed.
  *
- * Closing keeps the tab trail (the scp rule): reopening on the same root word resumes the
+ * Closing keeps the tab trail (the ancp rule): reopening on the same root word resumes the
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
- * Hosts: scp (`SortCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold),
- * the Reading Center's word grid (`centers/ReadingSwipeGrid`) and the Dictionary page
+ * Hosts: ancp (`AddNewCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold)
+ * and the Dictionary page
  * (`features/dictionary/DictionaryPage`, the only host that turns on
  * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
  * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
@@ -51,7 +51,7 @@ interface EipSheetProps {
     // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page only. A
     // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
-    // Stack depth handed to SheetPanel (0 = root). scp passes 1 while its hidden
+    // Stack depth handed to SheetPanel (0 = root). ancp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
     // Open height (and the stop a downward drag/fling clips back to) as a fraction of the

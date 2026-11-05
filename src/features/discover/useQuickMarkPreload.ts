@@ -4,7 +4,7 @@ import { fetchQuickMarkPage, type QuickMarkCursorParams } from "./starterPacksAp
 import type { Language, DiscoverCard } from "../../types";
 
 // QUICK MARK PRELOAD (docs/SORT_CARDS_REQUIREMENTS.md § 4.8 "Preload", docs/QUICK_MARK.md)
-// — Sort Cards keeps the expanded panel's FIRST supply page fetched in the background, so
+// — Add New Cards keeps the expanded panel's FIRST supply page fetched in the background, so
 // the grid opens already full: its cards pop in WITH the panel's expand morph instead of
 // a beat after it, when a fetch made at open time would land.
 //
@@ -20,7 +20,7 @@ import type { Language, DiscoverCard } from "../../types";
 // loads at open exactly as it would without a preload.
 //
 // LAYER: feature hook (owns one background API call via starterPacksApi). Consumed only
-// by SortCardsPage; the seed it returns is handed to QuickMarkPanel → useQuickMarkGrid.
+// by AddNewCardsPage; the seed it returns is handed to QuickMarkPanel → useQuickMarkGrid.
 //
 // Referenced by docs/SORT_CARDS_REQUIREMENTS.md § 4.8 and docs/QUICK_MARK.md.
 

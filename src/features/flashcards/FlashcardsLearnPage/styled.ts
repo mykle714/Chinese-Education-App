@@ -206,37 +206,34 @@ export const ContentArea = styled(Box)(() => ({
     },
 }));
 
-// Centered pill button at the bottom of ContentArea that opens the EIC sheet.
-// Ghosted (opacity 0.32) before the card is flipped; full opacity after.
-// `hintActive` drives a gentle bounce animation to signal discoverability after the first flip.
-// While the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`). It stays
-// VISIBLE in advanced mode too: the card no longer travels down over it (the slot reserves the
-// toolbar's band at its TOP instead — see DraggableCardContainer's toolbarInset).
+// Centered pill button at the bottom of ContentArea that opens the EIC sheet, drawn as the
+// Deck Tower's floor-plate push button (`plate`, towerPlate.ts — it supplies the fill,
+// outline, print and shadow, and presses along with the pill's own `translateX(-50%)`
+// centring). Ghosted (opacity 0.32) before the card is flipped; full opacity after. While
+// the icon editor is open the pill stays DRAWN but greyed + inert (`isDisabled`). It stays
+// VISIBLE in advanced mode too: the card no longer travels down over it (the slot reserves
+// the toolbar's band at its TOP instead — see DraggableCardContainer's toolbarInset).
+//
+// No "tap me" bob: a bobbing plate reads as a glitch rather than a hint. (The routed flp's
+// white pill bobbed; it was deleted with that route on 2026-11-04.)
 //
 // The 24px offset is measured from the TOP of the home-indicator strip (SAFE_BOTTOM), not
 // the screen edge: flp is footerless and the frame paints edge to edge, so a bare `bottom: 24`
 // sat inside the 34pt home-indicator band on Face ID iPhones. The card moves up with it for
 // free — useCardSlotPadding reserves the band from the pill's live `offsetTop` down.
-//
-// `plate` (Deck Tower sessions only): drawn as the tower's floor-plate push button instead
-// of the white pill — towerPlate.ts. It overrides the fill, outline, print and shadow, and
-// presses along with the pill's own `translateX(-50%)` centring.
 export const MoreInfoPill = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "hintActive" && prop !== "isDisabled" && prop !== "plate",
-})<{ isFlipped: boolean; hintActive?: boolean; isDisabled?: boolean; plate?: PlateTones }>(({ isFlipped, hintActive, isDisabled, plate, theme }) => ({
+    shouldForwardProp: (prop) => prop !== "isFlipped" && prop !== "isDisabled" && prop !== "plate",
+})<{ isFlipped: boolean; isDisabled?: boolean; plate: PlateTones }>(({ isFlipped, isDisabled, plate }) => ({
     position: "absolute",
     bottom: `calc(24px + ${SAFE_BOTTOM})`,
+    // Centred; the plate's own transform (towerPlateSx) carries the `translateX(-50%)`.
     left: "50%",
-    transform: "translateX(-50%)",
     display: "flex",
     alignItems: "center",
     gap: 8,
-    background: theme.palette.flashcard.moreInfoPill,
-    border: `1px solid ${theme.palette.flashcard.border}`,
     borderRadius: 999,
     padding: "7px 16px 7px 14px",
     cursor: isDisabled ? "default" : "pointer",
-    fontFamily: FC_FONT,
     zIndex: 2,
     // Greyed & inert while editing; otherwise faded until the card is flipped (extra info
     // only applies to the flipped/answer side).
@@ -245,16 +242,8 @@ export const MoreInfoPill = styled(Box, {
     // that is what raises the "flip the card first" tooltip (handleMoreInfoClick); making
     // the ghosted pill inert would leave it silent exactly when it needs to explain itself.
     pointerEvents: isDisabled ? "none" : "auto",
-    transition: "opacity 0.35s ease",
     whiteSpace: "nowrap",
-    // The "tap me" bob. Not in Deck Tower sessions (`plate`): there the pill is a solid
-    // floor-plate button, and a bobbing plate reads as a glitch rather than a hint.
-    animation: hintActive && !isDisabled && !plate ? "moreInfoPulse 1.6s ease-in-out infinite" : "none",
-    "@keyframes moreInfoPulse": {
-        "0%, 100%": { transform: "translateX(-50%) translateY(0)", opacity: 0.7 },
-        "50%": { transform: "translateX(-50%) translateY(-4px)", opacity: 1 },
-    },
-    ...(plate ? towerPlateSx(plate, "translateX(-50%)") : {}),
+    ...towerPlateSx(plate, "translateX(-50%)"),
 }));
 
 // ── Card-slot vertical padding ────────────────────────────────────────────────

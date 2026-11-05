@@ -32,7 +32,8 @@ const SAMPLE_MS = 60_000;
 /** `auto` follows the clock; a phase pins that look. */
 export type TimeOfDayOverride = "auto" | DayPhase;
 
-// The storage key keeps its tower-era name so testers' pinned phases survive the move.
+// The storage key keeps its tower-era name so testers' pinned phases survive the move. A
+// stored "dawn" / "sunset" (phases cut 2026-11-04) fails the DAY_PHASES check and reads as auto.
 const OVERRIDE_KEY = "deckTower.timeOfDayOverride";
 
 function readOverride(): TimeOfDayOverride {
@@ -67,7 +68,7 @@ function writeOverride(v: TimeOfDayOverride): void {
     listeners.forEach((listener) => listener());
 }
 
-/** Two samples this close in blend are the same look (1/200 of a 30-minute twilight ≈ 9 s). */
+/** Two samples this close in blend are the same look (1/200 of the hour-long twilight ≈ 18 s). */
 const sameTime = (a: TimeOfDay, b: TimeOfDay) => a.from === b.from && a.to === b.to && Math.abs(a.t - b.t) < 0.005;
 
 export function useDayClock(allowOverride: boolean): {

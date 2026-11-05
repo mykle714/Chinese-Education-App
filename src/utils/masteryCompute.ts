@@ -121,12 +121,11 @@ export function masteryWindowCells(bar: MasteryBar): MasteryWindowCell[] {
  * #FF8E47) were outside the palette; they are now the MARK tier of the skill's hue, so a
  * skill dot and a mastery cell are drawn from one register.
  *
- * 2026-10-02 (docs/READING_WRITING_CENTERS.md): only the two PUBLIC skills own a hue —
- * reading GREEN, writing PURPLE, the Reading / Writing Centers' own colours (they were
- * red / orange). Recognition and production are no longer learner-facing concepts (they
- * are the two halves of the "know" bar), so they deliberately own NO hue: they take the
- * neutral mid grey. Anything still naming them to the learner is a leftover — see the
- * open flags in that doc.
+ * 2026-10-02: only the two PUBLIC skills own a hue — reading GREEN, writing PURPLE
+ * (chosen with the since-deleted Reading / Writing Centers; they were red / orange).
+ * Recognition and production are no longer learner-facing concepts (they are the two
+ * halves of the "know" bar), so they deliberately own NO hue: they take the neutral mid
+ * grey. Anything still naming them to the learner is a leftover.
  */
 export const MARK_TYPE_COLORS: Record<MarkType, string> = {
   recognition: COLORS.greyA,
@@ -167,5 +166,5 @@ export const WORLD_LABELS: Record<MasteryWorldId, string> = {
 // cells' LENGTHS still come from the per-mark-type segments. See docs/MASTERY_REWORK.md
 // § "Mini cards — the eight-mark window".
 //
-// The fdp's Mastered TILES need one colour per bar; that lives in MASTERY_BAR_COLORS
+// A Mastered COLLECTION needs one colour per bar; that lives in MASTERY_BAR_COLORS
 // (src/utils/categoryColors.ts) beside the other tile palettes.

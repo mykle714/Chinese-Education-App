@@ -29,7 +29,7 @@ interface QuickMarkCardProps {
     // Optional staggered pop-in on mount — the grid passes index * step for the first
     // CASCADE_LIMIT cards, undefined thereafter.
     animationDelayMs?: number;
-    // Held invisible (still laid out, so its cell can be measured) while the scp panel's
+    // Held invisible (still laid out, so its cell can be measured) while the ancp panel's
     // morph ghost flies to or from this cell (QuickMarkPanel → MorphGhost).
     hidden?: boolean;
 }

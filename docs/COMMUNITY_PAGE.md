@@ -109,7 +109,7 @@ the whole page.
 ## Interactions
 
 - **Thumbnail** (`CommunityDesignCard.tsx`) — the preview is the **same `MiniVocabCard`** the
-  /decks page renders (identical color + information layout), fed a `VocabEntry` adapted from the
+  Deck Tower's cards page renders (identical color + information layout), fed a `VocabEntry` adapted from the
   design. Below it: the owner's name and the inline vote toggle.
 - **Zoom** (`CommunityDesignZoom.tsx`) — tapping a thumbnail opens a floating enlarged card over
   a dark backdrop scrim (transparent MUI `Dialog`, mirroring the writing-practice popup chrome),

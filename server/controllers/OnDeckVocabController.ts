@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { OnDeckVocabService, parseStudyMode, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import { OnDeckVocabService, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { MAX_SEED_IDS, parseIdCsv, requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
@@ -12,7 +12,6 @@ import {
   parseMasteryWorld,
 } from '../contracts/wire.js';
 import { parseBuiltinCollectionId } from '../dal/shared/vetTable.js';
-import { DeckService } from '../services/DeckService.js';
 import type { StudyChallengeService } from '../services/StudyChallengeService.js';
 import type { ChallengeRoundContext } from '../types/studyChallenge.js';
 import { isFeatureEnabled } from '../contracts/featureFlags.js';
@@ -31,9 +30,6 @@ export class OnDeckVocabController {
     // Tops the user up to the surface's baseline before any set is assembled, so no
     // endpoint here can ever answer "not enough cards" (docs/PROVISIONAL_CARDS.md).
     private provisionalCardService: ProvisionalCardService,
-    // Resolves + authorizes the optional `deck` query param that restricts a
-    // game/flp round to one user-authored deck (docs/DECKS_FEATURE.md).
-    private deckService: DeckService,
     /**
      * Resolves + authorizes the optional `challengeId` query param
      * (docs/STUDY_CHALLENGE.md § 5.2). A challenge board is still a GAME POOL, so it
@@ -50,27 +46,28 @@ export class OnDeckVocabController {
   ) {}
 
   /**
-   * FOCUS MODE (docs/FOCUS_MODE.md § 4). Given the collection a round was launched with
-   * and the world its marks land in, return what the round should actually draw from:
+   * FOCUS MODE (docs/FOCUS_MODE.md § 4). Given the world a round's marks land in,
+   * return the scope the round should draw from:
    *
-   *   - a deck / built-in collection → unchanged. A hand-picked set ignores focus.
-   *   - unrestricted, world focused  → `{ kind: 'focus', ids }`, today's remaining set.
+   *   - world focused  → `{ kind: 'focus', ids }`, today's remaining set.
    *     The caller must then SKIP its baseline top-up: a focused round never lends.
-   *   - unrestricted, not focused    → null (an ordinary round). If resolving is what
-   *     just switched focus off, FOCUS_ENDED_HEADER tells the client to show the popup.
+   *   - not focused    → null (an ordinary round). If resolving is what just switched
+   *     focus off, FOCUS_ENDED_HEADER tells the client to show the popup.
    *
-   * `flpBreak` turns the second case inside out (§ 4a): `{ kind: 'outside-focus', … }`,
+   * `flpBreak` turns the first case inside out (§ 4a): `{ kind: 'outside-focus', … }`,
    * every card but today's set, with the remaining set as the fallback.
+   *
+   * Until 2026-11-04 a round could also be launched from a deck (`?deck=`) or a
+   * built-in collection (`?collection=`), which took precedence over focus; both launch
+   * params were removed with the Decks feature and are now ignored if sent.
    */
   private async applyFocus(
     res: Response,
     userId: string,
     language: string,
     world: MasteryWorldId,
-    collection: CollectionFilter | null,
     flpBreak = false
   ): Promise<CollectionFilter | null> {
-    if (collection) return collection;
     const focus = await this.focusModeService.resolveWorld(userId, language, world);
     if (focus.active) {
       return flpBreak
@@ -124,38 +121,6 @@ export class OnDeckVocabController {
   }
 
   /**
-   * Resolve the optional collection-launch query params (docs/DECKS_FEATURE.md).
-   *
-   *   ?deck=<id>                    → that user-authored deck
-   *   ?collection=<built-in id>     → that built-in collection (all / learn-now /
-   *                                   the three mastered bars)
-   *   (none)                        → null, the ordinary whole-library launch
-   *
-   * THROWS NotFoundError when a deck id is not one this caller owns — so a stale
-   * link to a deleted deck fails loudly instead of quietly playing the user's whole
-   * library under a deck's name.
-   *
-   * The deck ownership check is not a security boundary: every downstream query is
-   * already filtered by `ve."userId"`, so another user's deck id would simply select
-   * nothing. It is a CORRECTNESS check — "selects nothing" then triggers the
-   * provisional top-up, and the learner would be handed a round made entirely of
-   * lent cards with no explanation.
-   */
-  private async resolveCollection(req: Request, userId: string): Promise<CollectionFilter | null> {
-    const rawDeck = req.query.deck;
-    if (rawDeck != null && String(rawDeck).trim() !== '') {
-      // getDeck validates the id shape and throws NotFoundError when it isn't the
-      // caller's; handleControllerError maps that to a 404.
-      const deck = await this.deckService.getDeck(userId, rawDeck);
-      return { kind: 'deck', deckId: deck.id };
-    }
-    // Anything other than a recognized value means an unrestricted launch — an
-    // unknown collection name must never silently narrow the round.
-    const builtin = parseBuiltinCollectionId(String(req.query.collection ?? ''));
-    return builtin ? { kind: 'builtin', id: builtin } : null;
-  }
-
-  /**
    * Parse the `surface` query param naming which baseline applies to this request.
    *
    * Every game/flp caller sends it. An unrecognized or missing value means an older
@@ -186,7 +151,9 @@ export class OnDeckVocabController {
   };
 
   /**
-   * The contents of ONE built-in collection — every non-deck collection page.
+   * The contents of ONE built-in collection — the Deck Tower's card library calls it
+   * with `collection=all` (the collection pages that used the other ids were deleted
+   * 2026-11-04; the ids still parse).
    * GET /api/onDeck/collectionCards?collection=all|learn-now
    *                                            |mastered|mastered-reading|mastered-writing
    *
@@ -213,27 +180,23 @@ export class OnDeckVocabController {
   };
 
   /**
-   * Get distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target by default).
-   * GET /api/onDeck/distributedWorkingLoop?category=<optional>&mode=<review|challenge|optional>&deck=<optional>
-   * The optional `mode` swaps in a difficulty-targeted distribution (see MODE_CONFIGS).
-   * The optional `deck` / `collection` params restrict the loop to one collection
-   * (docs/DECKS_FEATURE.md); the client must send the same restriction to the mark
-   * endpoint, which refills the loop.
+   * Get the Study Mix working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
+   * GET /api/onDeck/distributedWorkingLoop?world=<core|reading|writing>
+   *
+   * A focused world (docs/FOCUS_MODE.md § 4) narrows the loop to today's set; the mark
+   * endpoint re-resolves the same scope for its refills. The `mode` (Review/Challenge),
+   * `deck`, `collection` and single-band `category` params were removed 2026-11-04 and
+   * are ignored if sent.
    */
   getDistributedWorkingLoop = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const categoryFilter = req.query.category as string | undefined;
-      const rawMode = req.query.mode as string | undefined;
-      const mode = parseStudyMode(rawMode);
-      // Which track the session exercises — `reading` for the Reading Center's hand.
+      // Which track the session exercises (core / reading / writing).
       const world = parseFlpWorld(req.query.world);
       const language = await getUserLanguage(userId);
-      const collection = await this.applyFocus(
-        res, userId, language, world, await this.resolveCollection(req, userId)
-      );
+      const collection = await this.applyFocus(res, userId, language, world);
 
       // flp never blocks on deck size any more: top the user up to the flp baseline
       // first, so a learner with an empty deck still gets a full working loop. The
@@ -249,10 +212,50 @@ export class OnDeckVocabController {
         ? { lentIds: [] as number[] }
         : await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, categoryFilter, mode, collection, lentIds, world);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, collection, lentIds, world);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
+    }
+  };
+
+  /**
+   * Replacements for the working-loop cards an flp game break cleared
+   * (docs/FLP_GAME_BREAKS.md § 4a).
+   * GET /api/onDeck/loopRefill?replace=<ids>&exclude=<ids>[&world=]
+   *
+   * `replace` = the cleared cards (capped at MAX_SEED_IDS — a break's seed is the loop,
+   * so it can clear no more than that); `exclude` = the loop's ids. The session params
+   * are the loop's own (`workingLoopParams`), resolved exactly as the loop fetch
+   * resolves them — the world, then focus — so a refill can never widen the session.
+   * No baseline top-up: the loop already holds the baseline, and the picker lends on
+   * its own when the pool is spent (getNextLibraryCardWithFallback tier 4).
+   */
+  getLoopRefill = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const replacedIds = parseIdCsv(req.query.replace).slice(0, MAX_SEED_IDS);
+      const excludeIds = parseIdCsv(req.query.exclude).slice(0, MAX_SEED_IDS);
+      const world = parseFlpWorld(req.query.world);
+      const language = await getUserLanguage(userId);
+      const collection = await this.applyFocus(res, userId, language, world);
+
+      const cards = await this.onDeckVocabService.refillWorkingLoop(
+        userId, language, replacedIds, excludeIds, collection, world
+      );
+      // Same graceful degrade as the swipe refill: a cold TTS cache costs latency only.
+      // The pre-warm stamps `hasAudio`, so its result is what goes out.
+      let warmed = cards;
+      try {
+        warmed = await this.onDeckVocabService.prewarmAudio(cards);
+      } catch (prewarmError) {
+        console.error('TTS pre-warm failed for loop refill:', prewarmError);
+      }
+      res.json(warmed);
+    } catch (error: any) {
+      handleControllerError(error, res, 'OnDeckVocabController.getLoopRefill');
     }
   };
 
@@ -288,7 +291,7 @@ export class OnDeckVocabController {
    *
    * Separate from categoryCounts rather than folded into it: that map is keyed by
    * BAND for one bar, this one is keyed by BAR for one band, and merging the two
-   * shapes would give the fdp a response it has to disambiguate by key spelling.
+   * shapes would give the client a response it has to disambiguate by key spelling.
    */
   getMasteredCounts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -304,11 +307,13 @@ export class OnDeckVocabController {
   };
 
   /**
-   * The three StudyHand figures (Challenge/Review/Mix): cooldown-aware ready counts per
-   * utcm band of the session bar (core on the fdp; `?world=reading` on the Reading Center),
-   * plus how long until the soonest Review-band card wakes.
-   * GET /api/onDeck/flpReadyCounts[?world=reading]
-   * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, reviewNextReadyMs: number|null }
+   * Cooldown-aware ready counts per utcm band of the session bar — the Deck Tower's
+   * Learning-deck figures (docs/DECK_TOWER.md), one call per bar.
+   * GET /api/onDeck/flpReadyCounts[?world=core|reading|writing]
+   * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, focusOn: boolean }
+   *
+   * `reviewNextReadyMs` (the Review study mode's countdown) was dropped from the
+   * response 2026-11-04 with that mode (docs/DEFERRED_WORK.md § 31).
    *
    * Deliberately narrow: unlike `getCollectionCards`, this never joins the dictionary
    * or runs the enrichment pipeline, since every figure here is computed from
@@ -320,11 +325,10 @@ export class OnDeckVocabController {
       if (!userId) return;
 
       const language = await getUserLanguage(userId);
-      // `?world=reading` — the Reading Center's hand asks for reading-bar figures.
       const world = parseFlpWorld(req.query.world);
-      // A focused world counts only today's remaining set — the Deck Tower's tower and
-      // the study hand both read this, so neither promises a card focus will not serve.
-      const focus = await this.applyFocus(res, userId, language, world, null);
+      // A focused world counts only today's remaining set — the Deck Tower reads this,
+      // so it never promises a card focus will not serve.
+      const focus = await this.applyFocus(res, userId, language, world);
       const result = await this.onDeckVocabService.getFlpReadyCounts(
         userId, language, world, focus?.kind === 'focus' ? focus.ids : undefined
       );
@@ -441,12 +445,10 @@ export class OnDeckVocabController {
         return;
       }
 
-      // Optional collection restriction. Resolved BEFORE the top-up so a bad deck
-      // id 404s without first lending the user cards for a round that won't happen.
-      // A focused world narrows an unrestricted pool to today's set (the game's world is
-      // the one its marks land in); an flp break (`?flpBreak=1`) draws from outside it.
+      // A focused world narrows the pool to today's set (the game's world is the one
+      // its marks land in); an flp break (`?flpBreak=1`) draws from outside it.
       const collection = await this.applyFocus(
-        res, userId, language, worldForMarkType(markType), await this.resolveCollection(req, userId),
+        res, userId, language, worldForMarkType(markType),
         String(req.query.flpBreak ?? '') === '1'
       );
 
@@ -586,7 +588,7 @@ export class OnDeckVocabController {
       }
 
       const collection = await this.applyFocus(
-        res, userId, language, worldForMarkType(gameMarkType), await this.resolveCollection(req, userId),
+        res, userId, language, worldForMarkType(gameMarkType),
         String(req.query.flpBreak ?? '') === '1'
       );
       const seedIds = parseIdCsv(req.query.seedIds).slice(0, MAX_SEED_IDS);

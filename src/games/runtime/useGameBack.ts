@@ -2,15 +2,14 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useConfirmation } from "../../contexts/ConfirmationContext";
 import type { ChallengeRoundState } from "./useChallengeRound";
-import { useGameExit } from "./gameExit";
+import { GAMES_HUB_EXIT } from "./gameExit";
 
 /**
  * The Back control of a game page: where it goes, and the one thing that may stop it.
  *
  * ── WHERE IT GOES ─────────────────────────────────────────────────────────────
  * Back lands where the player came FROM — the challenge they are mid-test in, or
- * the launch's exit destination for an ordinary run (`useGameExit`: the Games hub,
- * or the Reading Center when its carousel launched the game). All four challenge-eligible games had this
+ * the Games hub for an ordinary run (`GAMES_HUB_EXIT`). All four challenge-eligible games had this
  * same three-line ternary inlined in their `onBack`; it lives here now so the two
  * destinations are stated once.
  *
@@ -36,17 +35,16 @@ export function useGameBack(challengeRound: ChallengeRoundState): () => void {
     const navigate = useNavigate();
     const { confirm } = useConfirmation();
     const { challengeId, armed } = challengeRound;
-    const exit = useGameExit();
 
     return useCallback(() => {
         const leave = () => challengeId
             ? navigate(`/friends/challenges/${challengeId}`)
-            : navigate(exit.path, { state: exit.state });
+            : navigate(GAMES_HUB_EXIT.path);
         // Not in a challenge, or nothing marked yet: Back is just Back.
         if (!armed) { leave(); return; }
         void confirm(
             "You've already answered in this round, so leaving now ends it and banks the score you have. Rounds are one attempt each — you can't replay it.",
             { title: "Leave this round?", confirmText: "End round", cancelText: "Keep playing" }
         ).then((ok) => { if (ok) leave(); });
-    }, [navigate, confirm, challengeId, armed, exit.path, exit.state]);
+    }, [navigate, confirm, challengeId, armed]);
 }

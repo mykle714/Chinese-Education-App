@@ -6,12 +6,12 @@ import { useBankingAnchors, useBankingFrame } from "./DailyBankingContext";
 
 /**
  * BankingEmbers — the small flames that fly from the header flame into the profile
- * picture during the hp daily banking run (docs/DAILY_MINUTE_BANKING.md § 3 phase 2).
+ * picture during the td daily banking run (docs/DAILY_MINUTE_BANKING.md § 3 phase 2).
  *
  * A `position: fixed` layer PORTALED to <body>: the header row clips, and the path
- * crosses the Settings gear, so the embers cannot live inside either control. Both ends
- * are re-read from the anchors' live rects on every frame, so a scroll (the hp header
- * scrolls away) or the flame's own swell never leaves the stream aimed at a stale point.
+ * runs between two controls, so the embers cannot live inside either one. Both ends
+ * are re-read from the anchors' live rects on every frame, so any movement of the header
+ * or the flame's own swell never leaves the stream aimed at a stale point.
  *
  * Draws nothing between runs. Pointer-transparent throughout.
  *

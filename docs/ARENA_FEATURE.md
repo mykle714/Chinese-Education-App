@@ -21,7 +21,7 @@ SHELF_REDESIGN.md § A1.
 Everything below is live and unchanged; the flag exists so the feature *can* be switched
 off. If set to `false`: `app.use(arenaRoutes)` is skipped (all six `/api/arena*` endpoints
 404 — arena has **no** endpoint outside that router), `/arena` is filtered out of the route
-table, and the Menu hub's Arena tile is dropped. Three things would deliberately stay:
+table, and the footer's Arena tab is not drawn (`MobileFooter.tsx` → `ARENA_TAB_ON`). Three things would deliberately stay:
 the hourly `cow-arena` timer (so an in-flight week still resolves), the optional
 `arenaService` injection into `UserMinutePointsService`, and `users."arenaMessage"` in
 `UserDAL.findById`'s column list — a column rather than a route, which no client reads off
@@ -80,8 +80,8 @@ Relationship to the two boards that already exist:
 
 ## 2. Surfaces
 
-One new hub row and one new page, both following the existing Node drill-in archetype
-([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md), [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)).
+One page, a **footer tab** ([NAVIGATION.md](./NAVIGATION.md)): `MobileTabScreen`, no back
+arrow, no slide.
 
 **The page's design is `Arena Flow - Shelf System.html`** in the user's Claude Design
 project — 15 artboards plus a state map, covering every state rather than the single
@@ -91,17 +91,16 @@ rationales it overrode. Read that entry before "fixing" anything on this page th
 inconsistent with the rest of the app — several things are, on purpose.
 
 ⚠️ **The header lives INSIDE the division banner.** `ArenaPage` passes `wrapHeader` to
-`NodePage`, so the back arrow, title and actions are drawn on the full-bleed plate rather
+`MobileTabScreen`, so the title and actions are drawn on the full-bleed plate rather
 than above it. The banner is the page's masthead, not a card on it.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "node"`, `footerTab: "menu"`, back-arrow → `/menu` |
+| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "tab"`, `footerTab: "arena"` |
 
-The Menu hub (`/menu`, `src/pages/MenuPage.tsx`; the `/` Home hub before 2026-10-10) has an **Arena** tile beside **Friends**, with its own
-persistent pastel colour and a `MilitaryTechIcon`/`EmojiEventsIcon`. It sits directly
-under Friends because the two are the same kind of thing — a ranking of people — and
-Arena is the one that changes weekly, so it earns the higher slot of the pair.
+The footer's **Arena** tab (`src/components/MobileFooter.tsx` → `TABS`, icon
+`emoji_events` on the slab, third of Deck · Menu · Arena · Dictionary) is the only entry;
+there is no Menu tile.
 
 ### 2.1 The board is the shared `Board` primitive
 
@@ -337,7 +336,7 @@ the two questions a newcomer actually has (how big is the field, what happens at
 using the board's own zone colours, so promotion-green and demotion-red are already
 familiar when the live board arrives on Tuesday.
 
-**Every state scrolls.** `/arena` passes no `scrollable` prop, so it takes `NodePage`'s
+**Every state scrolls.** `/arena` passes no `scrollable` prop, so it takes `MobileTabScreen`'s
 default. The docked Waiting/Out layout is produced by flex growth (the content column, the
 page column and the seat field are all `flex: 1 0 auto` — grow, never shrink — so the
 seat field fills the gap and the action sits against the footer), *not* by `overflow: hidden`.
@@ -640,10 +639,13 @@ swapped-with member is a sort neighbour by construction.
 
 ### 5.2 Location
 
-**No location column exists on `users` today.** This feature needs one:
+`users."geoCell" varchar(5) NULL` (migration 146) — a **geohash truncated to 5 characters**
+(a cell roughly 5 km × 5 km), nullable, defaulting to NULL (= not shared).
 
-> **Proposed:** `users."geoCell" varchar(5) NULL` — a **geohash truncated to 5 characters**
-> (a cell roughly 5 km × 5 km), nullable, defaulting to NULL (= not shared).
+> **Second reader:** the Deck Tower's weather (docs/DECK_TOWER.md § "Weather") reads the
+> same cell through `ArenaDAL.getGeoCell`, and its Settings switch can WRITE it through
+> `shareArenaLocation` / `POST /api/arena/location` when no cell is stored yet. One stored
+> location serves both; the weather switch never clears it.
 
 Why a geohash cell rather than a country code or a coordinate pair:
 
@@ -1378,7 +1380,7 @@ No change to `userminutepoints` or any vet table.
 | Client (shared) | `src/components/SteppedHelpPopup.tsx` + `steppedHelp.ts` | the stepped explainer, shared with Study Challenge (§ 2.4) |
 | Client (shared) | `src/components/NodePage.tsx` / `MobileTabScreen.tsx` | `wrapHeader`, which exists for this page's banner |
 | Client (shared) | `src/components/leaderboard/Board.tsx` | `Board` / `BoardRow` / `BoardZone` — the ranked-table primitive. **Not** the friends person row; see § 2.1 for why that plan was dropped |
-| Client | `src/pages/MenuPage.tsx`, `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the hub row and the route |
+| Client | `src/components/MobileFooter.tsx` (`ARENA_TAB_ON`), `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the footer tab and the route |
 
 ### Endpoints
 
@@ -1570,13 +1572,13 @@ This document describes (all of the following now exist except where marked):
 `src/components/SteppedHelpPopup.tsx` + `src/components/steppedHelp.ts` (the shared
 explainer, § 2.4 — also used by Study Challenge),
 `src/assets/arenaHelp/` (its screenshots),
-`src/components/NodePage.tsx` + `src/components/MobileTabScreen.tsx` (`wrapHeader`, which
-exists for this page's banner — § 2),
+`src/components/MobileTabScreen.tsx` (`wrapHeader`, which exists for this page's banner — § 2;
+`NodePage` forwards it too),
 `src/theme/colors.ts` (`RAMP.gld` + `COLORS.gldFrame`, minted for this page's join button
 and locked board),
 `src/components/leaderboard/Board.tsx` (`Board` / `BoardRow` / `BoardZone` — shipped
 2026-08-21; `ArenaEntryRow` is a thin binding of it, see § 2.1),
-`src/pages/MenuPage.tsx` (the Arena hub tile),
+`src/components/MobileFooter.tsx` (`ARENA_TAB_ON`, the Arena tab),
 `src/routes/routeMeta.ts` + `src/routes/registry.ts`.
 
 Tests: `server/__tests__/arenaWeek.test.ts` (boundary maths incl. DST, and
@@ -1595,7 +1597,8 @@ rule),
   `division` and `"arenaOptInWeek"`; that doc's column table is the canonical one (§ 7.1).
 * [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — a second PPE-only cron now
   shares the host; its idempotency pattern is the model for arena formation (§ 10).
-* [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) — the Menu hub tile.
+>>>
+
 
 Related docs:
 [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) (the board this one looks like),

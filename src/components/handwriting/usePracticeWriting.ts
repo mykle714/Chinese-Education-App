@@ -8,15 +8,14 @@ import { WRITING_MAX_CHARS } from "../../../server/contracts/writingLevels";
 /**
  * usePracticeWriting — the state `PracticeWritingPopup` needs around it, for one target.
  *
- * Every host of the popup does the same three things: fetch the target's completed
- * assistance levels (the stars), keep them in sync as the popup clears new ones, and
- * write a Writing mastery mark on each Verify when there is a vet card to mark. They
- * used to live inside `PracticeWritingButton`; the Writing Center's character grid
- * (docs/READING_WRITING_CENTERS.md) opens the same popup from a tile, so the behaviour
- * moved here and both hosts read it.
+ * It does three things around the popup: fetch the target's completed assistance levels
+ * (the stars), keep them in sync as the popup clears new ones, and write a Writing
+ * mastery mark on each Verify when there is a vet card to mark. Its one host is
+ * `PracticeWritingButton`. It was split out of that button for a second host, the
+ * Writing Center's character grid, which was deleted 2026-11-04; folding it back into
+ * the button is now an option.
  *
- * `target` may be null (nothing selected — the grid between taps), which disables the
- * fetch and resets the stars.
+ * `target` may be null (nothing to write), which disables the fetch and resets the stars.
  *
  * Docs: docs/HANDWRITING_RECOGNITION.md ("Entry points"), docs/MASTERY_REWORK.md.
  */

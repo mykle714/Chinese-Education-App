@@ -17,6 +17,21 @@ cards (§ 2.1) and made graduation refill the same slot (§ 3.6). Deploy:
 32 design questions are in § 12 (several since overruled, marked there); what the first
 build changed is § 14.
 
+**FIXED CAMERA + WORD FINDER (2026-11-04, migration 181 — not yet on PPE).** The map no
+longer pans or zooms: the whole map is fitted to the game viewport (§ 6), and the server
+packs it toward that viewport's shape — the **frame**, stored per learner (§ 2.4b). Pre-frame maps are
+wiped on the first framed load (§ 8.1). The prompt row gained a handwriting-only **word
+finder** that dims every map word not containing what the learner wrote (§ 3.7). The
+island compass, the pan limit and the saved camera are gone. Migration 181 is
+expand-only, so a standard `/deploy` ships it.
+
+**BREAK-ONLY (2026-11-04).** The game has no route, no hub tile and no page: its registry
+entry carries no `route` / `Component` (`src/games/registry.ts`), and its one host is the
+reading flp's game break inside the Deck Tower's study session (§ 4a,
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 4b). Everything that only the route had — the
+leaf page and its header (audio chip, Restart), the completion popup, the frame-mismatch
+dialog and the empty state's Sort CTA — is gone with it.
+
 It differs from the other four games in three ways, and those three differences are
 where all the design cost sits:
 
@@ -37,8 +52,8 @@ Memory Map is two systems that meet only at "which words are on the map".
   moved or deleted, only gain new occupants. This is the thing the learner grows
   attached to.
 * **The run (ephemeral-ish).** Which words have been answered, what colour each took,
-  the prompt queue, the camera. Lives in `localStorage`, is restored on re-entry, and
-  is cleared only by **Restart**.
+  the prompt queue. Lives in `localStorage`, is restored on re-entry, and is
+  reshuffled only when a break opens on a complete run (§ 4a).
 
 Nothing about a run reaches the server except the reading marks it emits; nothing about
 the map is changed by a run except a graduate's slot changing occupant.
@@ -146,13 +161,14 @@ viewport culling.
 `shapeFromMeasure`, `mapFontFamily`; `src/games/memory-map/MemoryMapWord.tsx`;
 `server/services/memoryMapLayout.ts` → `estimatedShape`, `ShapePart`;
 `server/services/memoryMapSpawn.ts` → `drawScale`, `drawTilt`; constants `OUTLINE_PX`,
-`OUTLINE_SELECTED`, `OUTCOME_OUTLINE` in
-`src/games/memory-map/constants.ts`; `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE`,
+`HIGHLIGHT_PX`, `OUTLINE_SELECTED`, `OUTCOME_OUTLINE` in
+`src/games/memory-map/constants.ts`; `src/games/memory-map/MemoryMapWorld.tsx` →
+`WORD_LAYERS`; `src/games/memory-map/highlightMask.ts` → `highlightMaskFor`, `enclosedWater`; `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE`,
 `MEMORY_MAP_TILT_SIGMA` in `server/contracts/wire.ts`.
-Tests: `src/__tests__/memoryMapGlyphShapes.test.ts`.*
+Tests: `src/__tests__/memoryMapGlyphShapes.test.ts`, `src/__tests__/memoryMapHighlightMask.test.ts`.*
 
 **No containers (2026-10-06).** A word is just its characters — ink fill, bold, each with
-a coloured **1px outline** (`OUTLINE_PX`) once it is armed or marked — sitting directly on
+a coloured **8px highlight ring** (`HIGHLIGHT_PX`, 1px until 2026-11-04) once it is armed or marked — sitting directly on
 the blue water. There is no tile, fill or border behind it. The outline is the word's
 state, and an unanswered word has none (owner, 2026-10-06):
 
@@ -168,9 +184,11 @@ wore the game's orange outline from the first 2026-10-06 pass until later that d
 made them indistinguishable from an orange outcome; dropping it removed that ambiguity.)
 
 **Words touch character to character.** The collision shape of a word is one rectangle
-per character — that character's **ink** box, grown by the outline on every side — not a
-box around the word. Two words come to rest where their nearest characters' outlines
-meet. Characters with no ink (a space) have no box.
+per character — that character's **ink** box, grown by the 1px collision margin
+(`OUTLINE_PX`) on every side — not a box around the word. Two words come to rest where
+their nearest characters' margins meet. The drawn ring (`HIGHLIGHT_PX`) is deliberately
+wider than that margin, so a highlighted word's ring overlaps the water and its neighbours'
+edges. That is the owner's choice (2026-11-04) over spacing the whole map out. Characters with no ink (a space) have no box.
 
 **Ink is per typeface, so it is measured on load, in the browser.** `useGlyphShapes`
 waits for `document.fonts.load` of exactly the characters on the map (the faces are
@@ -192,17 +210,47 @@ characters out on its own column widths, not the font's advances, and the ink wo
 land where it was measured. This is a deliberate, flagged exception to the ForeignText
 container rule. (Pinyin was never shown on the map, so nothing is lost.)
 
-The outline is `-webkit-text-stroke` at twice `OUTLINE_PX` with `paint-order: stroke
-fill`: the fill covers the inner half, leaving exactly `OUTLINE_PX` outside the glyph —
-the amount the collision boxes were grown by. It is in world-layer px, so it scales with
-the camera zoom but not with the word's own scale.
+**Two render passes: every ring, then every ink.** `MemoryMapWorld` renders each word
+twice (`WORD_LAYERS`): a `"ring"` copy (the highlight mask below, in the outline colour,
+`pointer-events: none`) and an `"ink"` copy (fill only, and
+the tap target and red pulse). Each pass is its own stacking context, with all ink above
+all rings. The ink copy covers the ring stroke's inner half, leaving `HIGHLIGHT_PX` outside the
+glyph. Because the ring overlaps its neighbours, a single pass would let it paint over the
+next word's characters, and over the previous character of its own word. With two passes
+a ring can only cover water and other rings. Among rings, the armed word's ring is lifted
+(`zIndex: 2`). The ring is in world-layer px, so it scales with the camera zoom but not
+with the word's own scale.
+
+**The highlight is one canvas mask, pockets included (owner, 2026-11-04).** Water that a
+highlighted word's ring fully closes off, inside a glyph (the counter of a large 口 / 日 /
+回) or between characters whose rings meet, is filled with the ring colour, so the word
+reads as one solid shape behind its ink. An opening of about 2px or less (`CLOSE_GAP_PX`)
+counts as closed. `highlightMaskFor` draws the word's characters on an offscreen canvas in
+the word node's local frame (the same advance `x`, baseline and bow transform as the ink
+spans), each stroked at twice `HIGHLIGHT_PX` with ROUND joins and caps and filled. It then
+seals hairline openings with a morphological closing (`enclosedWater`: dilate, then erode
+back, so a pocket narrower than the tolerance is sealed rather than swallowed), floods
+the water in from the canvas border, and treats every unpainted pixel the flood did not
+reach as pocket. The mask's alpha is the stroke's own anti-aliased alpha, solid over the
+pockets and 1 canvas px around them, at 3 canvas px per world-layer px (`MAX_ZOOM`). The
+ring copy draws it as a `mask-image` over a block in the outline colour
+(`.memory-map-word__ring-mask`), fading in on mount and recolouring with the state.
+
+The ring is deliberately not `-webkit-text-stroke`. Chromium strokes HTML text with mitre
+joins and ignores `stroke-linejoin`, so an 8px CSS ring shot spikes out of every sharp
+corner, and a CSS ring that differed from the canvas one left unfilled specks wherever the
+two disagreed about a pocket being closed. With one bitmap, what is checked is exactly
+what is shown. The CSS stroke survives only as the fallback when the canvas fails, so a
+word's state is never lost. The mask depends on the shape, not the state: it is computed
+the first time a word is highlighted, cached per (measurement, size, bow, face), and only
+recoloured after that.
 
 **Size, tilt and bow** are drawn once per slot and frozen, and belong to the slot (a
 refill inherits them, § 3.6):
 
 | | Range | Meaning |
 |---|---|---|
-| `scale` | 0.95×–1.8× | the word's font size in world units (1 world unit = 40px at zoom 1). Only the max/min RATIO matters on screen, because the camera re-fits the map |
+| `scale` | 0.95×–1.8× | the word's font size in world units (1 world unit = 40px at zoom 1). Only the max/min RATIO matters on screen, because the fixed camera fits the whole map (§ 6) |
 | `tilt` | −30°…+30°, **normal around 0°** (σ `MEMORY_MAP_TILT_SIGMA` = 6°: ~95% of words within ±12°; out-of-range draws redrawn) | none — organic texture. Positive = clockwise on screen (same sense as CSS `rotate()`; world y grows downward) |
 | `bow` | −15°…+15°, **normal around 0°** (σ `MEMORY_MAP_BOW_SIGMA` = 5°; out-of-range draws redrawn) | none — organic texture. The lean of the outer characters of a multi-character word; + = smile. See § 2.3a |
 
@@ -295,8 +343,9 @@ randomized trees, including that case.
 
 **Islands are the tree's structure.** An island is a root (the first root or an
 `island`-linked slot) plus every slot `grow`n from it — `islandsOf` reads it straight off
-the tree. No `islandId` is stored because the tree already is one. The off-screen compass
-(§ 6) keys its markers on the island root's `slotId`, which never changes.
+the tree. No `islandId` is stored because the tree already is one. (The off-screen island
+compass that keyed its markers on the island root's `slotId` went with the pannable camera,
+2026-11-04.)
 
 **Defensive degradation.** A slot whose parent is missing (the parent FK refuses to delete
 a slot with children, so this "cannot happen") or a second parentless slot is laid as an
@@ -325,17 +374,21 @@ For each new word, in priority order: draw its scale, tilt and bow, then
 Candidates are tried with `laySlot`, the very step `layoutMap` repeats, so the spot that
 is scored is exactly the spot the client will draw.
 
-**Compactness (`frameCost`)** is the height of the smallest phone-shaped
-(`VIEWPORT_ASPECT` 2 : 1, portrait) frame that would contain the map with the candidate
-added (its character boxes' rotated bounding rect), plus a tiny area tie-breaker. A candidate that fills
-slack beside a column costs nothing, so the map fills coves before it pushes its
-coastline out. Raw area was tried before the rework and rejected: it rewards a thin map
-that then fits the phone at a tiny zoom.
+**Compactness (`frameCost`)** is the height of the smallest **frame-shaped** rectangle
+(the learner's stored frame, § 2.4b — width ÷ height of their game viewport) that would
+contain the map with the candidate added (its character boxes' rotated bounding rect), plus
+a tiny area tie-breaker. A candidate that fills slack beside a column costs nothing, so the
+map fills coves before it pushes its coastline out. Raw area was tried before the rework and
+rejected: it rewards a thin map that then fits the phone at a tiny zoom. Since the camera
+became fixed this score IS the font size: the smaller the frame, the larger the fit draws
+every word.
 
-**Portrait bias.** Bearings are drawn squashed toward vertical — the x-component of a
-uniform direction is scaled by `GROW_BEARING_ASPECT` (0.6) / `ISLAND_BEARING_ASPECT` (0.3)
-before the angle is taken back out. A bias, not a constraint: every bearing stays
-reachable.
+**Frame bias.** Bearings are drawn squashed toward the frame's long axis — the
+x-component of a uniform direction is scaled by `bias ^ log2(height ÷ width)`
+(`bearingXScale`; `GROW_BEARING_BIAS` 0.6, `ISLAND_BEARING_BIAS` 0.3) before the angle is
+taken back out. On the old fixed 2 : 1 portrait frame that is exactly 0.6 / 0.3; on a
+square frame it is isotropic; on a landscape frame bearings lean horizontal. A bias, not a
+constraint: every bearing stays reachable.
 
 **Temp ids.** `planSlots` returns `PlannedSlot`s whose `tempId`s sit above every
 existing id, in plan order; a planned slot may hang off an earlier planned one.
@@ -350,6 +403,47 @@ with whole-word tiles before the switch to per-character shapes, **0
 overlaps**, ~13 ms to plan a full map. On dev, the first loads for two test accounts
 came out with 4 and 6 islands.
 
+### 2.4b The frame — the map is packed for one screen shape
+
+*Code: `server/services/memoryMapSpawn.ts` → `planSlots` (`frameAspect`), `frameCost`,
+`bearingXScale`; `server/services/MemoryMapService.ts` → `loadMap`, `fill`;
+`server/dal/implementations/MemoryMapDAL.ts` → `getFrameAspect`, `resetMap`;
+`users."memoryMapFrameAspect"` (migration 181). Tests:
+`server/__tests__/memoryMapSpawn.test.ts` ("packs toward a … frame"),
+`server/__tests__/memoryMapService.test.ts` ("MemoryMapService frame").*
+
+The camera is fixed (§ 6), so the map must suit the screen it is shown on. A spawn packs
+toward the **frame**: width ÷ height of the game viewport (the `.memory-map-world` water
+panel, below the prompt bar) the map was generated on.
+
+* **Stored once, per learner.** The client sends its measured viewport aspect with every
+  load (`GET /api/memoryMap?frameAspect=…`). The server stores it on
+  `users."memoryMapFrameAspect"` only when that column is NULL — the learner's first framed
+  load. After that the stored frame governs every spawn and refill; a load's aspect is
+  ignored, and a different screen is simply fitted (§ 6a), never a silent
+  re-frame. One value per user, shared by both language maps (owner, 2026-11-04; the game is
+  zh-only).
+* **The first framed load wipes a pre-frame map.** A NULL frame with slots means the map
+  was packed for the old pannable world and is larger than a screen. `resetMap` (frame set
+  conditionally on still being NULL, then one `DELETE` of the whole tree, under `writeSpawn`'s
+  advisory lock) clears it, and the same load spawns a fresh one. The wipe is not announced
+  as growth (`newlyPlaced` is empty). § 8.1.
+* **No aspect, no frame.** A load that sends no (or an out-of-range) aspect spawns toward
+  the stored frame or, failing that, `MEMORY_MAP_DEFAULT_FRAME_ASPECT` (0.5 — the old
+  portrait shape), and stores nothing. Valid aspects: `MEMORY_MAP_FRAME_ASPECT_RANGE`
+  (0.2–5); anything outside is a measurement fault and is dropped by the controller.
+* **The client waits to measure.** `MemoryMapStage` mounts the frame, an empty prompt bar
+  and an EMPTY world during loading, so `MemoryMapWorld` can report the real panel size
+  (`onViewportChange`); `useMemoryMapRun` holds the fetch until `viewportAspect` exists.
+  An flp break prefetches before any of that is mounted, so its adapter sends an estimate
+  instead (`frameCheck.ts` → `estimateBreakViewportAspect`: the app shell minus the exit row
+  and prompt bar).
+
+Measured (20 simulated 50-word maps per frame): the map's bounding width ÷ height comes out
+≈ 0.60 for a 0.55 frame, ≈ 0.99 for 1.0, ≈ 1.63 for 1.8. On a 360px-wide phone panel the
+fit lands near **19 px per world unit**, i.e. characters ≈ 18–34 px across the 0.95–1.8
+scale range.
+
 ### 2.5 Growth is announced
 
 New words placed at load are reported as a brief toast — *"3 new words joined your
@@ -362,12 +456,13 @@ emotional point of the feature.
 
 ### 3.1 The prompt
 
-A compact bar shows the target's **English gloss and its pronunciation**, in tone
-colours, a speaker button that replays the word (§ 3.1a) and a worded **Skip** button
-(§ 3.2a). No try count (the pips were removed 2026-10-06), no part of
-speech. The target's pronunciation is also **spoken** as each prompt appears (§ 3.1a). The gloss is `SIZE.bodyLg`
-(16px); the pinyin is `SIZE.body` (14px — raised from `caption` on 2026-10-06 so it reads
-at a glance), in `MemoryMapPrompt`.
+A compact controls row shows the target's **pronunciation** in tone colours, a speaker
+button that replays the word (§ 3.1a), the word finder (§ 3.7) and a worded **Skip** button
+(§ 3.2a); the **English gloss** sits centered in its own block below it (see the end of
+this section). No try count (the pips were removed 2026-10-06). The target's pronunciation
+is also **spoken** as each prompt appears (§ 3.1a). The gloss is bold 16px (`SIZE.bodyLg`);
+the pinyin is `SIZE.body` (14px — raised from `caption` on 2026-10-06 so it reads at a
+glance), in `MemoryMapPrompt`.
 
 The player's job is to find the word on the map that carries that meaning and that sound
 — a **character-recognition** task. It is worth being precise that this is no longer
@@ -382,28 +477,43 @@ reading track, and that is intended.
 > was a deliberate softening by the owner. If a stricter variant is ever wanted, it
 > belongs as a **mode**, not as a reversal of this — the current shape is the settled one.
 
-The gloss is the **dd**, resolved through `resolveDisplayDefinition` so it honours the
-learner's `vet.selectedSense` — the games-wide sense-correctness rule
+The gloss is the **dd, shown the way the eip header shows it** (owner, 2026-11-04, "dd in
+eip logic"). A word with a real choice of sense (≥ 2 displayable clusters,
+`sortedSenseClusters`) lists **every sense's dd**, `·`-separated in picker order, with the
+learner's chosen sense (`vet.selectedSense` → `resolveSelectedSenseIndex`) underlined and
+the default starred — the segments come from `buildSenseSegments`
+(`src/components/senseListSegments.tsx`), shared with `EipEntryHeader` so the two cannot
+drift. A single-sense or unclustered word shows its plain dd (`MemoryMapWord.definition`,
+resolved server-side through `resolveDisplayDefinition`). Either way it honours the
+learner's sense — the games-wide sense-correctness rule
 ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Sense correctness",
-[DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)). Showing a different gloss than the
-learner's own flashcard reads as the game not knowing their word.
+[DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)). To make this possible
+`MemoryMapWord` carries `definitionClusters` and `selectedSense` (2026-11-04).
+
+**Where it sits.** Its own block, below the controls row, **centered**, on the map's water
+(`COLORS.blueAccent`) with **no line** between it and the map, so it reads as the top of the
+map panel. At most two lines; when two are not enough it swipes sideways
+(`SwipeableTwoLineText`, the eip header's component). The block is a **fixed** two lines
+high (`GLOSS_BLOCK_PX`) whatever the prompt — it costs the map those two lines always, but
+the map's viewport (and so every word's fitted size, and the frame, § 2.4b) stays the same
+from prompt to prompt.
 
 ### 3.1a Each new prompt speaks its word
 
-*Code: `src/games/memory-map/MemoryMapPage.tsx` → the prompt-autoplay effect (keyed on
+*Code: `src/games/memory-map/MemoryMapStage.tsx` → the prompt-autoplay effect (keyed on
 `targetId`), `speakWord`, `answerAudioRef`; `PROMPT_AUDIO_GAP_MS` in
-`src/games/memory-map/constants.ts`; `src/components/AudioModeChip.tsx` in the header.*
+`src/games/memory-map/constants.ts`.*
 
 Added 2026-10-06. Whenever a new target appears — the first prompt when the map loads or
 a saved run resumes, and every prompt after an answer, a skip or a restart — the page
 autoplays the target's pronunciation (`useTTS.autoSpeakSentence(entryKey,
 pronunciation)`, the sense-resolved reading on screen).
 
-* **Muted by the header's `AudioModeChip`** — the same app-wide narration chip every other
-  game header carries (docs/AUDIO_PLAYBACK.md § 1). It is automatic narration, so `mute`
+* **Muted by the app-wide narration autoplay setting** (docs/AUDIO_PLAYBACK.md § 1) — the
+  game has no header chip of its own inside a break. It is automatic narration, so `mute`
   silences it, and so does the answer narration (§ 3.3b).
 * **The speaker button beside the pinyin replays it on demand** (`SpeakerButton` in
-  `MemoryMapPrompt`, `MemoryMapPage` → `replayTarget`). That is MANUAL narration
+  `MemoryMapPrompt`, `MemoryMapStage` → `replayTarget`). That is MANUAL narration
   (`speakSentence`), so it speaks even when the chip says mute — the learner's one way to
   hear the word when autoplay is off (AUDIO_PLAYBACK.md § 4). Its spinner reads
   `speakingKey`, so it also turns while the autoplay is sounding the same word.
@@ -459,7 +569,7 @@ prompt would appear frozen with no explanation.
 
 Three tries. Tapping **another uncoloured word** flashes it red and burns a try — but
 only once that tap has been *confirmed*; see § 3.3a. Tapping empty space never answers
-(it is the pan gesture, and it also clears a selection).
+(it clears a selection).
 
 | Outcome | Colour | Meaning |
 |---|---|---|
@@ -473,8 +583,7 @@ no fail condition, so a misread colour costs the player nothing real.
 **Since 2026-10-06 the hue is the glyphs' OUTLINE** — the mark tier of each (`COLORS.grnMk`
 / `orgMk` / `redMk`, `OUTCOME_OUTLINE` in `src/games/memory-map/constants.ts`) around ink
 glyphs (§ 2.3); the wrong-tap flash and the pulse glow are `redMk` (`MemoryMapWord.tsx`).
-It was the parcel's fill (mid tier, `OUTCOME_FILL`) while words sat on tiles. The end
-popup's tally counts still sit on the mid-tier fills (`OUTCOME_FILL`, `MemoryMapPage.tsx`).
+It was the parcel's fill (mid tier, `OUTCOME_FILL`) while words sat on tiles.
 Unanswered words have no outline, so any outline on the map means the word is armed or
 answered.
 
@@ -507,17 +616,19 @@ Two taps stay **single**, both because there is nothing to take back:
 | Coloured word (§ 3.4) | 1 | Opens a definition; burns nothing |
 | Failed prompt's pulsing target | 1 | The red is already decided; confirming is ceremony |
 
-Selection is **page state, not run state** (`MemoryMapPage`, `selectedId`) — nothing
+Selection is **Stage state, not run state** (`MemoryMapStage`, `selectedId`) — nothing
 about it is saved, marked or scored, and `useMemoryMapRun.tapWord` is unchanged: it
 still means "this tap is an answer", the page just decides which tap gets to say it. A
 selection belongs to one prompt and is cleared whenever the target changes.
 
-The tap-vs-pan test itself (`TAP_SLOP_PX`, § 14.6) is shared by the words and the water
-via `useTapGesture` — one rule, one file, so the two ends cannot drift apart.
+The tap-vs-slide test itself (`TAP_SLOP_PX`, § 14.6) is shared by the words and the water
+via `useTapGesture` — one rule, one file, so the two ends cannot drift apart. It was a
+tap-vs-PAN test until the camera became fixed (2026-11-04); a finger that slides off a word
+still is not a deliberate tap on it.
 
 ### 3.3b The confirming tap speaks the word
 
-**The tap that commits an answer narrates the word it committed to** (`MemoryMapPage`
+**The tap that commits an answer narrates the word it committed to** (`MemoryMapStage`
 → `speakWord`, `useTTS.autoSpeakSentence` — automatic, so the header chip mutes it).
 Alongside the prompt autoplay and the prompt bar's speaker (§ 3.1a) it is the only
 narration on the page, and the arming tap is silent — sound is the reward for deciding, not for
@@ -589,92 +700,110 @@ prompted while still invisible.
 > proves annoying in play, the fix is § 12 Q32's third option: refill the slot but
 > don't enqueue the newcomer.
 
+### 3.7 The word finder — find a word by writing it
+
+*Code: `src/games/memory-map/MemoryMapPrompt.tsx` (the field), `MemoryMapStage.tsx`
+(`finderQuery`, cleared per prompt), `MemoryMapWorld.tsx` (the match), `MemoryMapWord.tsx`
+(`dimmed`), `constants.ts` → `FINDER_DIMMED_OPACITY`; the keyboard lock is
+`src/features/beginnerKeyboard/eligibility.ts` → `LOCKED_SOURCE_ATTRIBUTE` /
+`lockedSourceOf` ([BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 6z-3b).*
+
+A compact search field in the prompt row, between the speaker and Skip (owner,
+2026-11-04: in the row, not a row of its own — the map is fitted to the screen, so every
+row of chrome shrinks every word; the price is that a long gloss ellipsizes sooner).
+
+* **Handwriting only.** Focusing it raises the beginner keyboard and nothing else: the field
+  carries `data-beginner-keyboard-lock="ours"`, so the switch bar drops its 写 · ā · ABC
+  toggle, and `inputMode="none"` stops the OS keyboard flashing up first. This is what makes
+  the finder fair in a reading game (owner: *"if the user can find it with the bk, then they
+  can read it"*) — building a character from its components proves the learner recognises
+  it; typed pinyin would turn the finder into a lookup that answers the prompt.
+  ⚠️ The lock covers the on-screen keyboard only: a desktop learner with a physical
+  keyboard and an OS pinyin IME can still type into the field.
+* **What lights up: whole words, substring** (owner, 2026-11-04). Every map word whose
+  `entryKey` contains the trimmed query stays at full ink; **every other word is dimmed** to
+  `FINDER_DIMMED_OPACITY` (0.3). Dimming the rest, rather than painting the matches, never
+  collides with the armed / outcome rings. A query that matches nothing dims the whole map —
+  the answer to "is it on my map?". The armed word is never dimmed.
+* **It changes nothing about the rules.** Dimmed words stay tappable; an answer still takes
+  the two taps of § 3.3a; the finder emits no mark and burns no try.
+* **Cleared on every new prompt** (answer, skip, give-up, restart) — the same beat that drops
+  an armed selection — so a search written for one prompt never lights words for the next.
+* **The keyboard and the map.** The finder is a `keep` region, so its clear button does not
+  dismiss the keyboard. Tapping the map does dismiss it (the bk's ordinary outside-tap rule);
+  the query stays, so the matches stay lit. While the keyboard is up it covers the lower part
+  of the fitted map.
+* zh only, like the game.
+
 ---
 
-## 4. Save, resume, restart
+## 4. Save and resume
 
 Word Search's model (`src/games/word-search/gameStateStorage.ts`), extended to hold
 colours, keyed **per `(userId, language)`**:
 
-* The save holds the **prompt queue and position, every answered word's colour, the
-  per-outcome tallies, and the camera**.
-* Leaving the game and returning **resumes exactly where you were**, colours intact.
-  This is what makes a 100-word map playable at all. (This reverses the original
+* The save holds the **prompt queue and position and every answered word's colour**. (It
+  held the camera too until the camera became fixed, 2026-11-04; an old save's `camera`
+  field is ignored.)
+* Each break **resumes exactly where the last one left off**, colours intact. This is
+  what makes a 50-word map playable five words at a time. (This reverses the original
   "colours are lost on exit" — see Q10.)
-* **Restart** clears the colours and reshuffles, behind a confirm. The map itself is
-  untouched: placements are server-side and no client action can move a word.
+* There is no Restart control: a break that opens on a complete run reshuffles it
+  (`restartIfComplete`, § 4a). The map itself is never moved by a run; placements are
+  server-side and the save is keyed by card, not by slot.
 * Switching language loads the **other map and its own independent save**; switching
   back resumes the first exactly as left.
 
 ---
 
+### 4a. As an flp game break
+
+The reading flp's game break (docs/FLP_GAME_BREAKS.md § 4b) runs the same Stage on the same
+saved run. It asks for `BREAK_PROMPTS` (5) words, counted as prompts resolved this break
+(any colour; skips don't count), then closes onto the break's results card after a
+`BREAK_END_HOLD_MS` beat. With fewer than five uncoloured it asks what is left, completing
+the map; a break that then opens on a complete run reshuffles it (`restartIfComplete`).
+Played: two-tap answers, narration, the inspect popup, the growth toast, the word
+finder. There is no header of the game's own (no audio chip, no Restart), no completion
+popup, and the empty state is a defensive fallback with no CTA (the adapter's
+`isPlayable` declines an empty map). **Never on a focused break** (owner, 2026-11-04): the
+adapter's `focusMinimum` is unreachable, because the map cannot keep to cards outside
+today's set (FLP_GAME_BREAKS.md § 4b).
+
+The run's save is written on unmount as well as on its debounce, so the break's last answer
+is not lost when the game closes inside those 400 ms (`useMemoryMapRun` → `pendingSaveRef`).
+
+*Code: `src/games/memory-map/MemoryMapStage.tsx`, `useMemoryMapRun.ts` →
+`MemoryMapRunOptions`; `src/games/flpBreak/memoryMapBreak.ts`.*
+
 ## 5. Completion
 
-When every word on the map has a colour, a modal `GameEndPopup`
-(`src/games/runtime/GameEndPopup.tsx`) reports:
-
-* **Accuracy** = greens ÷ total answered
-* The green / orange / red tally
-* **Play Again** (reshuffles, clears colours; placements untouched) and **Exit**
-
-Not minimizable — there is no post-run cleanup mode to uncover, the rule `GameEndPopup`
-already encodes (Speed Reading is the precedent).
-
-There is **no winning and no losing**: no medals, no `POST /api/users/me/wins`, no hub
-stat badge.
+There is **no winning and no losing**: no medals, no `POST /api/users/me/wins`, no
+personal best. A break that completes the map (fewer than five words were left) ends onto
+the break's results card like any other; the next break reshuffles (§ 4a).
 
 ---
 
 ## 6. Chrome, camera, gestures
 
-**Leaf page** — down arrow → `/games`, no footer, slides up on enter.
+The Stage renders inside the break's `GameFrame` (Leave + title, no header of its own;
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6). Minute points are earned through the
+hosting Deck Tower study session.
 
-Header: back arrow · **audio chip** (`AudioModeChip`, § 3.1a) · a **Restart button**
-(`restart_alt`, the house restart icon — Bubble Match's header uses the same one)
-opening a confirm · **minute-credit badge, rightmost**.
+**There is no progress count** (owner, 2026-11-04). It was a `GameHudLabel` (`23/50`)
+floating over the map's top-left corner through `MemoryMapWorld`'s `overlay` slot, which
+went with it.
 
-**The progress count (`23/50`) is not in the header.** Since 2026-10-06 it floats over
-the TOP-LEFT corner of the map with no container — `GameHudLabel` (the house in-play fact
-style: full ink, mono) passed into `MemoryMapWorld`'s `overlay` slot, viewport-fixed and
-`pointerEvents: none` so a drag starting on it still pans. It sits beside what it counts,
-and full ink stays legible on the water where the header's faint meta grey would not.
-It can overlap an island compass marker riding that same corner; the marker draws
-beneath it.
-
-The header's controls are SHARED header primitives — `HeaderIconButton`
-(`src/components/PageHeader.tsx`), and `HeaderMetaLabel` for the count until it moved —
-as of 2026-08-23. This header was
-the last one in the app still styling its own text (a raw `Typography`) and drawing its own
-icon (a `@mui/icons-material` `IconButton`), both predating
-[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A2b/D3. Being the shared components is also the
-only reason the game's accent ground (§ A6b) can repaint them white; a hand-rolled
-`Typography` is invisible to that rule and shipped dark ink on the saturated orange ground the game wore before it turned blue
-(2026-10-06, `GAME_HUE` in `src/games/memory-map/constants.ts`).
-
-Restart used to sit behind a settings **gear**, but Restart was the gear's only item and
-a cog that opens a one-row sheet is a drawer hiding a single tool. The **confirm** is
-what was actually doing the work and it stays: a run can be dozens of prompts long, so
-destroying it takes a deliberate second tap (Word Search's confirm-before-clobber).
-
-**The flame is always the rightmost item, and this page no longer renders it.** Since
-2026-08-24 `PageHeader` appends `MinutePointsFireBadge` to every header itself, after the
-page's own `rightContent` — so it holds the same corner on every surface in the app and
-game-specific controls queue up to its left. It is therefore present in every phase,
-including the empty and error states, which is what this route wants: it is in
-`MINUTE_POINTS_ELIGIBLE_PAGES` and in the `/games` **start-on-entry** subset, so time is
-credited from the moment the page mounts whether or not a run is under way.
-
-The badge calls `useMinutePoints()` **internally** rather than taking it as a prop, so
-its per-second tick re-renders the badge alone. That matters more on this page than
-anywhere else: a page-level re-render every second would interrupt an in-progress pan.
-
-**The prompt bar is ONE COMPACT ROW**, sitting below LeafPage's ordinary header:
+**The prompt is a compact controls row plus a gloss block** (§ 3.1), below the frame's
+Leave row:
 
 ```
-[↓]  Memory Map                                  🔊default  ⟳  🔥
+[←]  Memory Map
      ────────────────────────────────────────────────────────
-     goodbye  zàijiàn 🔊                                ( Skip )
-     23/50
+     zàijiàn 🔊                        ( 🔍 学生  ✕ )   ( Skip )
+     ──────────────────────────────────────────────────────── (row hairline)
+              ★mouth  ·  classifier for mouths and people       ← on the water,
+                    ·  classifier for mouthfuls                    no line below
        (map …)
 ```
 
@@ -683,72 +812,59 @@ pips — which cost close to a fifth of a phone screen before the map got any. T
 line (*"Find this word on your map"*) is gone entirely, and a long gloss now ellipsizes
 rather than wrapping the bar to a second line. The try pips and the failed-state red
 fill went later (2026-10-06, § 3.3), and the speaker arrived the same day, leaving
-gloss · pinyin · speaker · Skip.
+gloss · pinyin · speaker · Skip. On 2026-11-04 the finder joined the row and the gloss
+moved out of it into its own centered two-line block on the water (§ 3.1) — no longer
+ellipsized.
 
-**Its colour is the in-game strip's house treatment**, the same as every game's `GameHud`
+**The controls row's colour is the in-game strip's house treatment** (the gloss block
+below it is the map's water instead, § 3.1), the same as every game's `GameHud`
 (`src/games/shared/GameFrame.tsx`): the game hue's near-white tint (`RAMP[hue].tint`, read
 from `useGameSurfaceHue`, so blue now) with a full-ink hairline under it. It was the
 neutral `COLORS.header` grey with a `rowBorder` line until 2026-10-06; that remains the
 fallback off a game surface.
 
-> An earlier revision went further and hid LeafPage's header entirely, folding the
-> prompt in beside the controls. That bought a little more space at the cost of the page
-> title and of putting the question in amongst the chrome. **The question deserves its
-> own line, it just does not deserve four.** The wasted space was always in the prompt
-> block, not in having two bars.
+> **The question deserves its own line, it just does not deserve four.** The wasted space
+> was always in the prompt block, not in having two bars.
 
-Camera: pan + pinch-zoom over a world layer. Restore the saved camera when resuming;
-on a fresh run, fit the whole map (`MemoryMapWorld` → `fitToMap`) and then push in by
-`FIT_ZOOM_BOOST` (1.4, `src/games/memory-map/constants.ts`; was 1.15 until 2026-10-06), so
-the opening frame starts noticeably closer than an exact fit — the outermost words sit
-past the edge, reachable by a pan and pointed at by the island compass. Zoom clamped so text stays legible at minimum zoom.
+**The camera is fixed** (owner, 2026-11-04). No pan, no pinch, no wheel: the whole map is
+always on screen, fitted by its **limiting dimension** — centred, and scaled until its width
+or height (whichever runs out first) meets the game viewport, with `FIT_PADDING` (2 world
+units) of water around it (`MemoryMapWorld` → `fitCamera`). The camera is derived, never
+stored, and recomputed whenever the map or the viewport changes (a graduate's longer
+replacement, a rotation). The zoom is capped at `MAX_ZOOM` (3) so a map of a handful of words
+is not blown up to three giant characters; there is no floor — the frame (§ 2.4b) is what
+keeps the fit large. The game viewport is the `.memory-map-world` water panel — inside the
+GameFrame, below the prompt bar — measured by `MemoryMapWorld`'s `viewportRef`; never the
+window.
 
-**Panning stops at the coast.** The water beyond the map is sized to the view, not fixed:
-at the furthest pan in any direction the map's outermost edge sits on the
-`PAN_EDGE_FRACTION` line of the **game viewport** (0.25, `src/games/memory-map/constants.ts`), so
-at most three quarters of it is ever open water. The game viewport is the
-`.memory-map-world` water panel — inside the GameFrame, below the prompt bar — measured
-by `MemoryMapWorld`'s `viewportRef`; it is never the window, so the header, prompt and
-frame inset do not count toward the 25%. Because the limit is
-`fraction × viewport ÷ (zoom × PIXELS_PER_WORLD_UNIT)` world units past the bounds, it
-tightens as the player zooms in and loosens as they zoom out, and a 5-word map and a
-50-word map stop the same distance from their coast in the viewport. The bounds are the map's
-bounding **rect**, so a diagonal pan can frame an empty rect corner; along either axis
-alone the edge is always a word.
+Removed with the gestures: the pan limit (`cameraBounds.ts` → `clampCameraToMap`,
+`PAN_EDGE_FRACTION`), the opening zoom boost (`FIT_ZOOM_BOOST`), the legibility floor
+(`MIN_ZOOM`), the saved camera (§ 4) and the **off-screen island compass**
+(`MemoryMapIslandCompass`) — with the whole map on screen there is no off-screen island to
+point at.
 
-Every camera write — drag, pinch, wheel — goes through `MemoryMapWorld`'s `commit`, which
-applies the pure `clampCameraToMap` (`src/games/memory-map/cameraBounds.ts`). A second
-effect re-clamps when the *limit* moves instead of the camera (a graduation shrinks the
-map, the screen rotates, a resumed run restores a camera saved on a different screen), so
-no run starts stranded in open water.
+*Code: `src/games/memory-map/MemoryMapWorld.tsx` → `fitCamera`; `constants.ts` →
+`MAX_ZOOM`, `FIT_PADDING`.*
 
-*Code: `src/games/memory-map/cameraBounds.ts` → `clampCameraToMap`;
-`src/games/memory-map/MemoryMapWorld.tsx` → `commit`; `src/games/memory-map/constants.ts`
-→ `PAN_EDGE_FRACTION`. Tests: `src/__tests__/memoryMapCameraBounds.test.ts`.*
+The surface is `touchAction: "none"` — nothing on it scrolls, and every touch on the map is
+a tap.
 
-**Off-screen islands get an edge marker.** The archipelago is larger than a phone
-screen, so a learner panned into a corner can face open water with no evidence the rest
-of the map exists. `MemoryMapIslandCompass` pins one chevron to the viewport edge per
-island that has **no word on screen** (tested against each word's character boxes),
-rotated toward it and labelled with its word count. The marker is a fully opaque
-`COLORS.card` pill with the app's standard 1px `COLORS.border` outline (both 2026-10-06;
-it was an unoutlined pill at 85% opacity, which let words and water show through it).
+### 6a. A screen far from the frame
 
-It is **navigation, not a hint**: every off-screen island is marked identically whether
-or not the target is on one, so it never narrows the search — the player could learn the
-same thing by pinching out. Q17's rule (no directional aid toward the *target*) stands.
-The markers are `pointerEvents: none`, because the whole viewport is the pan surface and
-a marker that swallowed touches would create dead zones exactly at the edges, where
-dragging is most needed.
+*Code: `src/games/memory-map/frameCheck.ts` → `estimateBreakViewportAspect`.*
 
-`useBlockEdgeSwipe(true)` is mandatory, and the page is `touchAction: "none"` — the map
-owns its gestures.
+The map was packed for its stored frame (§ 2.4b); this screen may be a different shape.
+The camera simply fits the map by its limiting dimension, so a modest difference costs a
+little size. Nothing is asked: a five-word break is the wrong moment for a layout
+decision. (The deleted standalone route used to offer a regenerate past a mismatch ratio;
+the dialog, its `isFrameMismatch` check and the `POST /api/memoryMap/regenerate` endpoint
+were removed with it, 2026-11-04.) The one path that re-frames a map is the first framed
+load of a pre-frame map (§ 8.1).
 
-**Empty map:** since the map lends to stay full (§ 2.1), the empty state —
-*"Your map is empty — sort some cards and they'll appear here"*, with a "Find words" button that
-goes straight to Sort Cards (`useDiscoverNavigation` → `goToSort`, in
-`src/games/memory-map/MemoryMapPage.tsx`; it pointed at the `/discover` hub until that
-hub was deleted 2026-10-17) — is now reachable only when the dictionary has nothing left to lend.
+**Empty map:** since the map lends to stay full (§ 2.1), the empty state (*"Your map is
+empty"*, `MemoryMapStage`) is reachable only when the dictionary has nothing left to lend —
+and the break adapter's `isPlayable` declines an empty map first, so it is a defensive
+fallback.
 
 ---
 
@@ -756,8 +872,7 @@ hub was deleted 2026-10-17) — is now reachable only when the dictionary has no
 
 **The ground is water.** The world layer sits on `COLORS.blueAccent`; clusters of
 touching words read as islands and the gaps between them as sea — which is what makes the
-archipelago legible at a glance rather than looking like words scattered on a page. It
-also gives the off-screen compass chips (§ 6) something to sit against. The token is
+archipelago legible at a glance rather than looking like words scattered on a page. The token is
 light enough that ink glyphs and all four outline hues (blue, green, orange, red) stay
 readable on it; no new colour was introduced.
 
@@ -768,7 +883,7 @@ outline is the strong tier of the same family, which stays distinct from the wat
 still none of the outcome hues.
 
 **DOM + CSS `transform` on a world layer. No `requestAnimationFrame` loop, no Pixi.**
-Same class as Match Speed: pan/zoom is a transform, colours are CSS transitions, the
+Same class as Match Speed: the fitted camera is a transform, colours are CSS transitions, the
 pulse is a keyframe animation. The 50-slot cap is what makes this safe — no viewport
 culling needed. A game that genuinely needed a scene graph should borrow the night
 market's Pixi host (`src/features/nightmarket/pixiRuntime.ts`), not invent one.
@@ -821,33 +936,47 @@ Design notes:
 * **Concurrent loads.** `MemoryMapDAL.writeSpawn` runs in a transaction under a per-(table,
   user) advisory lock and writes nothing if the slot count no longer matches the count
   the plan was computed against; the loser re-reads and serves the winner's map.
+* **The frame is a `users` column** — `"memoryMapFrameAspect" REAL NULL` (migration 181),
+  width ÷ height of the game viewport the map was packed for, NULL = never framed (§ 2.4b).
+  On `users` rather than the slot tables because it is one value per learner shared by
+  both maps (owner, 2026-11-04). Read and written by `MemoryMapDAL` (`getFrameAspect`,
+  `resetMap`), not `UserDAL`: nothing else reads it, and the reset changes it together with
+  the slot tree under one lock.
 * **Not `gameprogress`, not a vet column.** A JSONB blob would rewrite the whole map on
   every spawn; a jsonb on the vet tables would put a one-game concern in a core table,
   twice.
 
 ### 8.1 Map wipes
 
-Twice now the map's geometry changed in a way existing rows could not follow, and both
-times every map was **wiped and regenerated** rather than converted: the 8px grid
-(a manual `DELETE`, no migration) and the slot tree (migration 173's `TRUNCATE` — an
-absolute `(x, y)` cannot become a `(parent, bearing)` without inventing a tree). The
+Three times now the map's geometry changed in a way existing rows could not follow, and
+each time every map was **wiped and regenerated** rather than converted: the 8px grid
+(a manual `DELETE`, no migration), the slot tree (migration 173's `TRUNCATE` — an
+absolute `(x, y)` cannot become a `(parent, bearing)` without inventing a tree), and the
+fixed camera (2026-11-04 — a map packed for a pannable world is larger than a screen). The
 learner loses only the *arrangement*, which is cosmetic; membership comes from the
 reading track and marks live on the vet, so every map re-spawns on the next load.
+
+The third wipe is **code-driven, not a migration**: a learner whose
+`users."memoryMapFrameAspect"` is NULL has a pre-frame map, and their first framed load
+deletes it (`MemoryMapService.loadMap` → `MemoryMapDAL.resetMap`, § 2.4b). That kept
+migration 181 expand-only — a `TRUNCATE` there would have let the old containers respawn
+pannable maps in the gap before the rebuild. Each map is wiped lazily, the first time its
+learner opens the game on the new code.
 
 ## 9. Layering
 
 | Layer | Files |
 |---|---|
-| **DAL** | `server/dal/implementations/MemoryMapDAL.ts` — slot reads/writes (`getSlots`, `writeSpawn`, `replaceOccupant`), plus the eligible-card query. No geometry, no policy. |
+| **DAL** | `server/dal/implementations/MemoryMapDAL.ts` — slot reads/writes (`getSlots`, `writeSpawn`, `replaceOccupant`), the frame (`getFrameAspect`, `resetMap`), plus the eligible-card query. No geometry, no policy. |
 | **Geometry (pure, shared with the client)** | `server/services/memoryMapLayout.ts` — the slot tree → positions (`layoutMap`, given a `shapeOf`), the font-free shape estimate, oriented-box collision, islands, bounds (§ 2.3–§ 2.4). No DB, no I/O, no randomness, no DOM. |
 | **Glyph measurement (client only)** | `src/games/memory-map/glyphShapes.ts` — waits for the learner's face, measures each word's per-character ink with canvas, and turns it into the layout's collision shape and the renderer's character positions (§ 2.3). |
-| **Spawn (pure)** | `server/services/memoryMapSpawn.ts` — chooses a new slot's parent, link, bearing, tilt, bow and scale (`planSlots`, § 2.4a). Randomness injected. Kept out of both the DAL (game rules in SQL) and the service (which stays orchestration). |
-| **Service** | `server/services/MemoryMapService.ts` — orchestrates a load: read the slots, pick occupants down the rested → cooling → lent ladder, fill empty slots, plan new ones, persist, return the map. Also the graduation refill. Lends through `ProvisionalCardService` (narrowed to `MemoryMapLender`). |
+| **Spawn (pure)** | `server/services/memoryMapSpawn.ts` — chooses a new slot's parent, link, bearing, tilt, bow and scale (`planSlots`, § 2.4a), packed toward the learner's frame (§ 2.4b). Randomness injected. Kept out of both the DAL (game rules in SQL) and the service (which stays orchestration). |
+| **Service** | `server/services/MemoryMapService.ts` — orchestrates a load: frame an unframed learner (wiping a pre-frame map), read the slots, pick occupants down the rested → cooling → lent ladder, fill empty slots, plan new ones, persist, return the map. Also the graduation refill. Lends through `ProvisionalCardService` (narrowed to `MemoryMapLender`). |
 | **Controller** | `server/controllers/MemoryMapController.ts` |
-| **Routes** | `server/routes/memoryMapRoutes.ts` — `GET /api/memoryMap` (load + fill), `POST /api/memoryMap/graduate` (slot refill, returning the replacement). camelCase paths per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md). |
-| **Contract** | `server/contracts/wire.ts` — `MemoryMapSlot`, `MemoryMapWord`, `MemoryMapResponse`, `MemoryMapGraduateResponse`, `MemoryMapLink`, `MEMORY_MAP_CAPACITY`, `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE` |
+| **Routes** | `server/routes/memoryMapRoutes.ts` — `GET /api/memoryMap?frameAspect=` (load + fill), `POST /api/memoryMap/graduate` (slot refill, returning the replacement). camelCase paths per [BACKEND_LAYERING.md](./BACKEND_LAYERING.md). |
+| **Contract** | `server/contracts/wire.ts` — `MemoryMapSlot`, `MemoryMapWord`, `MemoryMapResponse` (incl. `frameAspect`), `MemoryMapGraduateResponse`, `MemoryMapLink`, `MEMORY_MAP_CAPACITY`, `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE`, `MEMORY_MAP_FRAME_ASPECT_RANGE`, `MEMORY_MAP_DEFAULT_FRAME_ASPECT` |
 | **Client API** | `src/api/memoryMap.ts` via `apiGet`/`apiPost` (`src/api/http.ts`) — **no function takes a token** ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md)) |
-| **Game** | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx` (pan/zoom layer), `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx`, `MemoryMapRestartDialog.tsx`, `constants.ts` (`MARK_TYPE = 'reading'`), `types.ts`, `runStorage.ts`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts` |
+| **Game** | `src/games/memory-map/` — `MemoryMapStage.tsx` (the run's screen; break host only), `MemoryMapWorld.tsx` (fixed-camera world layer), `MemoryMapWord.tsx`, `MemoryMapPrompt.tsx` (incl. the word finder), `frameCheck.ts`, `constants.ts` (`MARK_TYPE = 'reading'`), `types.ts`, `runStorage.ts`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts` |
 
 The load effect must key on `user?.id` / `isAuthenticated`, **never on `token`** — the
 map plus an in-progress run is exactly the state a silent-refresh reload would destroy
@@ -859,12 +988,12 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 
 | Hook | Memory Map |
 |---|---|
-| Registry | one `GameDef` in `src/games/registry.ts`, `gameId: "memory-map"`, `markType` from its `constants.ts`. **No `languages` gate** (all languages), **no `challengeScoring`**, **no `unlock`**. Route, leaf chrome (`GAME_ROUTE_META`) and the mobile-demo allowlist all derive from that entry |
-| Collection selector | **Not supported.** The map *is* your library and cannot be a deck. *(Since 2026-10-06 the game is off the hub entirely — `hiddenFromHub`, launched only from the Reading Center carousel; the gate below is now a dormant guard.)* The hub **hides the Memory Map row entirely whenever the selected collection is anything other than All Cards** — a visible row that ignores the selector reads as a bug, and the existing precedent is hiding rather than showing-and-blocking |
+| Registry | one `GameDef` in `src/games/registry.ts`, `gameId: "memory-map"`, `markType` from its `constants.ts`. **`languages: ["zh"]`** (Chinese only since 2026-11-04 — hidden from other learners on every launch surface, and never their flp break), **no `challengeScoring`**, **no `unlock`**, and **no `route` / `Component`** — break-only, so it has no hub tile and no route row |
 | Card baseline / provisional | **Lends to stay full at 50** (§ 2.1, since 2026-10-06), without a `CARD_BASELINES` entry — the map's deficit is "eligible and not already on the map", not the sorted count a baseline compares against |
-| Minute points | route in `MINUTE_POINTS_ELIGIBLE_PAGES`, in the **start-on-entry** subset — the player reads the map before their first tap |
+| Minute points | earned by the hosting Deck Tower study session; the game has no route of its own |
 | Wins | **none** |
 | Study Challenge | **not eligible** — it marks `reading`, and the challenge pool is recognition/production only ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.4) |
+| flp game break | **on the reading flp** — the learner's own map and saved run, 5 words per break (§ 4a, FLP_GAME_BREAKS.md § 4b) |
 | Pause on background | **deliberately skipped.** The rule exists to stop a *clock* draining while the app is backgrounded. Memory Map has no clock and no timed state, so `useBackgroundPause` would protect nothing. Documented here so its absence is not later "fixed" |
 
 ---
@@ -879,7 +1008,7 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 * [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
   — a new reading-mark emitter
 * [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) — a second pan/zoom surface after the
-  night market
+  night market *(moot since 2026-11-04: the map no longer pans or zooms)*
 * CLAUDE.md — a feature link, **after asking**
 
 ---
@@ -891,13 +1020,13 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Q1 | Where placements live | **New tables**, not `gameprogress`, not a vet column (§ 8) |
 | Q2 | Map geometry | **Free-form coordinates + bounding boxes**, not a tile grid (§ 2.3). Coordinates were continuous at build time and were quantized to an **8px lattice** afterwards (§ 14.5b) — a grid the geometry lands on, still not a grid it is placed by: a word goes wherever it fits, and only then rounds to the nearest lattice line. |
 | Q3 | Mark policy | **One reading mark per word per run, by outcome**: green +, orange −, red − (§ 3.5) |
-| Q4 | Run length | **The whole map**, made playable by a save; Restart is the escape hatch (§ 4) |
+| Q4 | Run length | **The whole map**, made playable by a save; five words per break (§ 4a) |
 | Q5 | Size driver | **Random, frozen at spawn** — not length, not mastery (§ 2.3) |
 | Q6 | Already-mastered words holding a placement | **Prompted like any other word**, then faded off when answered (§ 3.6) |
 | Q7 | Languages | **All.** One map per (user, language); render via `ForeignText` |
-| Q8 | What burns a try | **Only a CONFIRMED tap on another UNCOLOURED word** (§ 3.3a — the first tap only selects). Empty space is the pan gesture *and* the deselect; coloured words are free (§ 3.3–3.4) |
+| Q8 | What burns a try | **Only a CONFIRMED tap on another UNCOLOURED word** (§ 3.3a — the first tap only selects). Empty space is the deselect (and was the pan gesture until 2026-11-04); coloured words are free (§ 3.3–3.4) |
 | Q9 | Fade-off storage | **Delete the row.** The space is freed; a regressed word respawns somewhere new (§ 3.6) — *superseded 2026-10-06: the SLOT stays and a new word moves into it.* |
-| Q10 | Colours across exits | **Backtracked from "lost on exit" — the save keeps them.** Restart clears (§ 4) |
+| Q10 | Colours across exits | **Backtracked from "lost on exit" — the save keeps them.** A break opening on a complete run reshuffles (§ 4) |
 | Q11 | Help finding the target | **None** during the three tries (§ 3.3) — *superseded 2026-08-18: the prompt now shows the target's PINYIN outright (§ 3.1), free of any scoring penalty. It helps you READ the word, not LOCATE it, so Q17's "no locating aid" still stands.* |
 | Q12 | Card baseline | **None.** Lent words must not homestead a permanent map (§ 10) — *overruled 2026-10-06: the map lends to stay full at 50 (§ 2.1).* |
 | Q13 | Island formation | **10%** of spawns start a new island; 90% must touch (§ 2.4a) |
@@ -908,11 +1037,11 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Q18 | Store `language` on the row | **Yes** — immutable, and keeps both tables' reads identical (§ 8) |
 | Q19 | The vet FK problem | **Split per language**, `_zh` / `_es`, which buys a real FK (§ 8) |
 | Q20 | `islandId` | **Not stored** — geometry is the truth (§ 2.4). *Since 2026-10-06 the tree is: an island is a root plus everything grown from it.* |
-| Q21 | Hub collection selector | **Ignored, and the game is hidden from the hub** unless All Cards is selected (§ 10) |
+| Q21 | Hub collection selector | **Moot** — the selector was deleted, and the game has no hub tile (break-only) |
 | Q22 | Pause on background | **Skipped**, with the reason documented (§ 10) |
 | Q23 | Colour-blind redundancy | **None** — hue only, accepted knowingly (§ 3.3) |
-| Q24 | Empty map | **Empty state pointing at `/discover`** (§ 6) — now reachable only when nothing can be lent. *(The CTA now goes straight to Sort Cards via `goToSort`; the `/discover` hub was deleted 2026-10-17.)* |
-| Q25 | Header during a run | **Progress count + gear → Restart**, behind a confirm (§ 6) |
+| Q24 | Empty map | **Empty state** (§ 6) — reachable only when nothing can be lent; no CTA since the game became break-only |
+| Q25 | Header during a run | Was progress count + gear → Restart. **Moot**: break-only, no header and no Restart (§ 6) |
 | Q26 | Tapping a finished word | **Opens a definition popup, any time, free** (§ 3.4) |
 | Q27 | Performance ceiling | **Cap the map at 100 words** (lowered to 70, then 49, then 50, all on 2026-10-06) — which removes the need for culling (§ 2.2, § 7) |
 | Q28 | Language switch mid-run | **Separate map AND separate save per language** (§ 4) |
@@ -1008,6 +1137,9 @@ float away from its island wherever the real font metrics disagreed with the est
 
 ### 14.5 The camera gesture must bind to the NODE, not to React props
 
+> **Historical (2026-11-04):** the map no longer has camera gestures (§ 6). § 14.5 and
+> § 14.5a are kept for the lessons, which apply to any future @use-gesture surface.
+
 Two separate mistakes, both of which present as "panning is broken on mobile", and both
 worth knowing before touching `MemoryMapWorld`.
 
@@ -1015,7 +1147,7 @@ worth knowing before touching `MemoryMapWorld`.
 Without it the pointer-event stream is cancelled on touch devices as soon as the browser
 starts arbitrating between the two gestures, and the symptom is precise: panning works
 with a mouse and does nothing at all on a phone. `useDrag` used alone does not need this
-— `SortCardsPage` binds a plain `useDrag` and pans fine — so the working precedent in
+— `AddNewCardsPage` binds a plain `useDrag` and pans fine — so the working precedent in
 the repo does not warn about it. **It is the combination that breaks.**
 
 **`target: viewportRef` is required because `eventOptions.passive: false` is.** Pinch and
@@ -1070,7 +1202,7 @@ geometry.
 
 | Layer | What is on the grid | Enforced by |
 |---|---|---|
-| **Chrome** | every padding, gap, inset and control dimension in the prompt bar, the compass markers and the page furniture | plain `8`-multiple pixel literals |
+| **Chrome** | every padding, gap, inset and control dimension in the prompt bar (incl. the word finder) and the page furniture (the compass markers too, until they were removed 2026-11-04) | plain `8`-multiple pixel literals |
 | **World** | every word-box **edge**, on both axes | `WORLD_GRID` = 0.2 world units × `PIXELS_PER_WORLD_UNIT` 40 = 8px |
 
 **There is no `grid(n)` helper, and that is deliberate.** An earlier pass put the chrome
@@ -1262,9 +1394,15 @@ started showing it outright.
 Migration **151** (the original two tables) is on PPE.
 
 Migration **173** (the slot tree) is a **contract** migration — it renames both tables
-and drops `x`/`y`, which the old code reads by name — so it is not a plain `/deploy`.
-Follow [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md)
-(TEMPORARY; not yet deployed).
+and drops `x`/`y`, which the old code reads by name — so it was not a plain `/deploy`.
+It went out with [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md)
+and is on PPE (deployed 2026-10-06).
+
+Migration **181** (`users."memoryMapFrameAspect"`, the frame, § 2.4b) is **expand-only**
+and ships with a standard `/deploy`; it must apply before the rebuild like every
+expand migration, because the new `MemoryMapDAL.getFrameAspect` selects the column by
+name. **Not yet on PPE.** User-visible on deploy: each learner's map is wiped and
+regenerated the first time they open Memory Map on the new code (§ 8.1).
 
 ---
 
@@ -1272,16 +1410,16 @@ Follow [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md
 
 | Layer | File |
 |---|---|
-| Migrations | `database/migrations/151-create-memory-map-placements.sql`, `database/migrations/173-memory-map-slots.sql` |
-| Contract | `server/contracts/wire.ts` — `MEMORY_MAP_CAPACITY`, `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE`, `MEMORY_MAP_TILT_SIGMA`, `MemoryMapLink`, `MemoryMapSlot`, `MemoryMapWord`, `MemoryMapResponse`, `MemoryMapGraduateResponse` |
+| Migrations | `database/migrations/151-create-memory-map-placements.sql`, `database/migrations/173-memory-map-slots.sql`, `database/migrations/181-add-users-memory-map-frame-aspect.sql` |
+| Contract | `server/contracts/wire.ts` — `MEMORY_MAP_CAPACITY`, `MEMORY_MAP_SCALE_RANGE`, `MEMORY_MAP_TILT_RANGE`, `MEMORY_MAP_TILT_SIGMA`, `MEMORY_MAP_FRAME_ASPECT_RANGE`, `MEMORY_MAP_DEFAULT_FRAME_ASPECT`, `MemoryMapLink`, `MemoryMapSlot`, `MemoryMapWord`, `MemoryMapResponse`, `MemoryMapGraduateResponse` |
 | Layout (pure, shared with the client) | `server/services/memoryMapLayout.ts` — `layoutMap`, `laySlot`, `slideOut`, `placeShape`, `bowOffsets`, `bowShape`, `estimatedShape`, `estimatedShapeOf`, `tilesOverlap`, `partsOverlap`, `allParts`, `tileAabbHalf`, `mapBounds`, `islandsOf`, `bearingVector`, `ISLAND_GAP`; types `ShapePart`, `ShapeOf`, `LaidSlot` |
-| Spawn (pure) | `server/services/memoryMapSpawn.ts` — `planSlots`, `drawScale`, `drawTilt`, `NEW_ISLAND_CHANCE` |
+| Spawn (pure) | `server/services/memoryMapSpawn.ts` — `planSlots`, `frameCost`, `bearingXScale`, `drawScale`, `drawTilt`, `NEW_ISLAND_CHANCE` |
 | Ranking (pure, shared) | `server/services/cardQueueRanking.ts` — `rankCardQueue`, `rankCardQueueCooled` (called with `{ bar: 'reading' }`) |
-| DAL | `server/dal/interfaces/IMemoryMapDAL.ts`, `server/dal/implementations/MemoryMapDAL.ts` — `getSlots`, `getUnplacedCandidates`, `writeSpawn`, `replaceOccupant`, `isReadingMastered` |
-| Service | `server/services/MemoryMapService.ts` — `loadMap`, `graduate`, `selectOccupants`, `prioritize` |
+| DAL | `server/dal/interfaces/IMemoryMapDAL.ts`, `server/dal/implementations/MemoryMapDAL.ts` — `getSlots`, `getUnplacedCandidates`, `writeSpawn`, `replaceOccupant`, `isReadingMastered`, `getFrameAspect`, `resetMap` |
+| Service | `server/services/MemoryMapService.ts` — `loadMap`, `fill`, `graduate`, `selectOccupants`, `prioritize` |
 | Controller | `server/controllers/MemoryMapController.ts` |
 | Routes | `server/routes/memoryMapRoutes.ts` — `GET /api/memoryMap`, `POST /api/memoryMap/graduate` |
 | Client API | `src/api/memoryMap.ts` — `fetchMemoryMap`, `graduateMemoryMapWord` |
-| Game | `src/games/memory-map/` — `MemoryMapPage.tsx`, `MemoryMapWorld.tsx`, `MemoryMapWord.tsx`, `glyphShapes.ts` (per-font glyph measurement), `MemoryMapPrompt.tsx`, `MemoryMapIslandCompass.tsx`, `MemoryMapRestartDialog.tsx`, `cameraBounds.ts`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts`, `runStorage.ts`, `constants.ts`, `types.ts` |
-| Registry | `src/games/registry.ts` (the `memory-map` entry), `src/games/GamesPage.tsx` (the All-Cards-only gate), `src/constants.ts` (`MINUTE_POINTS_ELIGIBLE_PAGES`) |
-| Tests | `server/__tests__/memoryMapLayout.test.ts`, `server/__tests__/memoryMapSpawn.test.ts`, `server/__tests__/memoryMapService.test.ts`, `server/__tests__/cardQueueRanking.test.ts` (shared with the flp), `src/__tests__/memoryMapPromptQueue.test.ts`, `src/__tests__/memoryMapCameraBounds.test.ts`, `src/__tests__/memoryMapGlyphShapes.test.ts` |
+| Game | `src/games/memory-map/` — `MemoryMapStage.tsx`, `MemoryMapWorld.tsx`, `MemoryMapWord.tsx`, `glyphShapes.ts` (per-font glyph measurement), `MemoryMapPrompt.tsx` (incl. the word finder), `highlightMask.ts`, `frameCheck.ts`, `useMemoryMapRun.ts`, `useTapGesture.ts`, `promptQueue.ts`, `runStorage.ts`, `constants.ts`, `types.ts` |
+| Registry | `src/games/registry.ts` (the `memory-map` entry, break-only); `src/games/flpBreak/memoryMapBreak.ts` (its one host) |
+| Tests | `server/__tests__/memoryMapLayout.test.ts`, `server/__tests__/memoryMapSpawn.test.ts`, `server/__tests__/memoryMapService.test.ts`, `server/__tests__/cardQueueRanking.test.ts` (shared with the flp), `src/__tests__/memoryMapPromptQueue.test.ts`, `src/__tests__/memoryMapGlyphShapes.test.ts` |

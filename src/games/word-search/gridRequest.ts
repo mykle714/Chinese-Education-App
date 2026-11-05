@@ -1,5 +1,4 @@
 import type { WordSearchGridRequest } from "../../api/wordSearchGrid";
-import type { CollectionRef } from "../../features/flashcards/collectionRef";
 import { WORD_SEARCH_BOARDS, type WordSearchBoardId } from "../../../server/contracts/wire";
 
 /**
@@ -12,7 +11,6 @@ import { WORD_SEARCH_BOARDS, type WordSearchBoardId } from "../../../server/cont
  */
 export function wordSearchGridRequest(args: {
     mode: string;
-    collection: CollectionRef | null;
     challengeParams?: string;
     /** An flp game break's working loop. */
     seedIds?: number[];
@@ -26,7 +24,6 @@ export function wordSearchGridRequest(args: {
         mode: args.mode,
         board,
         distribution: WORD_SEARCH_BOARDS[board].distribution,
-        collection: args.collection,
         challengeParams: args.challengeParams,
         seedIds: args.seedIds,
         flpBreak: args.flpBreak,

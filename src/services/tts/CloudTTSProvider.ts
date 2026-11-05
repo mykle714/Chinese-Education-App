@@ -482,7 +482,7 @@ export class CloudTTSProvider implements TTSProvider {
             // audible playback can start much later (the output device waking up,
             // iOS activating its audio session on the first word of a run). Timing
             // from metadata let the watchdog resolve while the word was still
-            // playing, so a sequenced caller (the scp pack autoplay's gap) started
+            // playing, so a sequenced caller (the ancp pack autoplay's gap) started
             // the next word early and cut this one off.
             el.onloadedmetadata = null;
             el.onplaying = () => {

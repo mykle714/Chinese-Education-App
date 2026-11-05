@@ -31,7 +31,7 @@ Reuses Bubble Match's pool machinery so the two games feel like siblings.
   loop can draw on them too), and only then borrow from the fallback buckets in
   priority order (Target → Comfortable → Unfamiliar → Mastered), matching
   `OnDeckVocabService.getGameVocabPool` / `OnDeckVocabService.GAME_FALLBACK_ORDER`.
-  A collection-restricted grid never lends. See docs/PROVISIONAL_CARDS.md § 4b.
+  A focus-scoped grid never lends. See docs/PROVISIONAL_CARDS.md § 4b.
   Caveat: lending is not length-aware, so a lend for this game can return words
   longer than the 4-character grid cap and yield nothing usable — the same
   over-lend the `PROVISION_RETRY_FACTOR` loop already accepts.
@@ -352,30 +352,27 @@ against it (§4), so an untraceable entry is simply never matched, not a bug.
 
 ### Hub card (Pinyin mode), no in-game toggle
 
-Word Search's Games-hub entry is **the same card the Reading Center's games carousel
-shows**: the shared `GameCard` (`src/games/shared/GameCard.tsx`) fed by
+Word Search's Games-hub entry is the shared `GameCard` (`src/games/shared/GameCard.tsx`) fed by
 `buildWordSearchCard` (`src/games/word-search/wordSearchCard.tsx`) — an all-pur card
 with the title + lifetime win pill on top, the compact resume tile (one Bubble Match
 level slot wide) at the bottom-left when a board is parked, and the round ink play
 button at the bottom-right. On the hub it spans the grid's full row
-(`gridColumn: "1 / -1"`), exactly like Bubble Match's card above it; in the carousel
-it is a fixed 300px snap card. The two surfaces differ only in save slot and launch
-state. Both get the card — and the save-slot read, resume, erase and confirm dialog —
-from ONE hook, `useWordSearchLauncher` (`src/games/word-search/useWordSearchLauncher.tsx`),
-parameterised by `mode`, `classPrefix`, `newGamePath` and `launchState`. On the hub it is
-rendered by `src/games/word-search/WordSearchHubItem.tsx` (Pinyin slot + the selected
-collection's params), in `GamesPage.tsx`'s `game.gameId === "word-search"` branch.
+(`gridColumn: "1 / -1"`), exactly like Bubble Match's card above it. The card — and the
+save-slot read, resume, erase and confirm dialog — come from ONE hook,
+`useWordSearchLauncher` (`src/games/word-search/useWordSearchLauncher.tsx`), parameterised
+by `mode` and `classPrefix`. It is rendered by `src/games/word-search/WordSearchHubItem.tsx`
+(Pinyin slot), in `GamesPage.tsx`'s `game.gameId === "word-search"` branch.
 
 | Mode | `mode` | Pinyin | Mark type | Launched from |
 |---|---|---|---|---|
 | **Pinyin** | `"pinyin"` | grid pinyin on, **always tone-colored**, rendered at **big-pinyin** scale (see "Cell size") | PRODUCTION | Games hub card |
-| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING **+ PRODUCTION** | Reading Center carousel |
+| **No Pinyin** | `"no-pinyin"` | grid pinyin off | READING **+ PRODUCTION** | flp break on the reading world only (§ 5c) |
 
 - The card shows **only the game's name** — no subtitle, like every Games hub tile
   since 2026-10-03 (it used to read *Pinyin · Production*; see
   [MASTERY_REWORK.md § "The hub no longer names the track"](./MASTERY_REWORK.md)). The
-  resume card carries no track or mode label either — the mode is implied by which
-  surface the card sits on (each surface owns exactly one save slot).
+  resume card carries no track or mode label either — the hub only ever parks a Pinyin
+  board.
 
 ### What a find marks
 
@@ -403,23 +400,18 @@ Three consequences worth knowing:
 
 A hinted word marks **nothing at all**, on either track (§ hints).
 
-- **Each mode has ONE launch surface (since 2026-10-03).** The Games hub offers
-  only **Pinyin** (`WordSearchHubItem` → `HUB_MODE`); **No Pinyin** is a reading
-  drill and is launched only from the Reading Center's games carousel
-  (`ReadingGamesCarousel`, [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)).
+- **Each mode has ONE launch surface.** The Games hub offers only **Pinyin**
+  (`WordSearchHubItem` → `HUB_MODE`); **No Pinyin** is a reading drill played only as an
+  flp game break on the reading world (§ 5c), which never saves a board.
 - **The hub card's play button ALWAYS starts a fresh game** — and so does a tap
   anywhere else on the card outside the resume tile (`GameCard`: a card with a play
-  button is tappable as a whole, see
-  [READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md)). It navigates with nav
+  button is tappable as a whole, see [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Design
+  decisions"). It navigates with nav
   `state = { mode: "pinyin", resume: false }`. That would clobber the parked Pinyin
   board (§5b), so if one exists the button first opens a **confirm dialog** ("Starting a
   new game will erase your saved Word Search game …"); only on confirm is the save
-  cleared and the new game started. The Reading Center carousel's play button follows
-  the same rule for the No Pinyin slot — always a fresh game, behind the same confirm
-  (`NewGameConfirmDialog`, shared by both surfaces) when a board is parked; only its
-  Resume box resumes.
-- The chosen mode is passed via React-Router nav `state.mode` (both launch surfaces
-  share the single `/games/word-search` route) and is **fixed for the whole
+  cleared and the new game started (`NewGameConfirmDialog`).
+- The chosen mode is passed via React-Router nav `state.mode` and is **fixed for the whole
   run** — there is no in-game pinyin toggle. `WordSearchPage` reads it once on
   mount (`modeConfigFor`, `MODE_CONFIGS` in `constants.ts`).
 - A direct/stray visit with **no valid mode** (manual URL) **redirects to
@@ -435,8 +427,7 @@ A hinted word marks **nothing at all**, on either track (§ hints).
 #### Win count
 
 The card header's **win pill** (`GameCard`'s `WinCountPill`) is a trophy glyph + the
-**aggregate lifetime win count** — `totalWins` from `useGameWins(GAME_KEY)`, on both
-surfaces.
+**aggregate lifetime win count** — `totalWins` from `useGameWins(GAME_KEY)`.
 
 Win logging goes through the same hook. `WordSearchStage` calls
 `recordWin(WIN_LEVEL)` on completion (it previously hand-rolled its own
@@ -448,17 +439,16 @@ so its hub count is inherently whole-game.
 #### Resume card
 
 One component, **`WordSearchResumeTile`** (`src/games/word-search/WordSearchResumeTile.tsx`),
-renders the resume card on BOTH launch surfaces — the Games hub (`WordSearchHubItem`,
-Pinyin slot) and the Reading Center games carousel (`ReadingGamesCarousel`, No Pinyin
-slot) — and both place it identically, through `buildWordSearchCard` → a
+renders the resume card on the Games hub (`WordSearchHubItem`, Pinyin slot), through
+`buildWordSearchCard` → a
 `kind: "resume"` `GameCardOption`. It is drawn on `GameOptionTile`
 (`src/games/shared/GameCard.tsx`), the SAME shell as a Bubble Match level tile, so its
 radius, padding, 62px floor, outline and title type (`OPTION_TITLE_SX`) are shared rather
 than copied. The tile owns its two faces and the `confirmingErase` state;
 `useWordSearchLauncher` owns the save slot (`onResume`, `onErase` → `clearGameState`), and
-`GameCard`'s option slot owns its footprint. On both surfaces it spans **two** Bubble Match
+`GameCard`'s option slot owns its footprint. It spans **two** Bubble Match
 level slots (`slots: 2` on the option → `slotFlex(2)`: two level widths plus the gap between
-them, ~180px in the carousel's 300px card, ~207px on the hub's full-row card) and is 62px
+them, ~207px on the hub's full-row card) and is 62px
 tall; the delete face reads **"Delete?"** with Cancel / Delete **stacked** and a 6px inset.
 
 **Colour + ghost** (since 2026-10-06): the ground is the card hue's tint tier,
@@ -475,9 +465,8 @@ face**: just a **"Resume"** title (`OPTION_TITLE_SX` — 12.5 / 600 / onSurface,
 level tile) and an **✕** inset in the top-right corner. It shows **no parked time and no
 found count** (both removed 2026-10-06) — the tile is a plain way back in, not a progress
 readout, so it takes no `saved` prop at all. (The parked board's X/N found still appears in
-`NewGameConfirmDialog`'s "your saved game will be lost" copy, via `savedWordCount`.) **No mode label**
-(removed 2026-10-03): the hub only ever parks a Pinyin board and the Reading Center
-only a No Pinyin one, so the launching surface already says which board it is.
+`NewGameConfirmDialog`'s "your saved game will be lost" copy, via `savedWordCount`.) **No mode label**:
+the hub only ever parks a Pinyin board.
 
 **Outlines:** the resume tile wears the app's button outline (`1px solid COLORS.border`,
 CLAUDE.md § "Buttons & cards"); the Word Search card *around* it deliberately does not —
@@ -494,7 +483,7 @@ CLAUDE.md § "Buttons & cards"); the Word Search card *around* it deliberately d
   (no exit animation — the card's `minHeight: 62` options row keeps the card's height
   steady). While the confirm face is showing, a tap on the tile body does not resume.
 - **The delete face is absolutely inset (6px) and must stay that way**,
-  and so must its one-line copy. In the carousel's flex row, anything that face
+  and so must its one-line copy. In the card's flex row, anything that face
   measures becomes the height of the tiles beside it (historically, "Delete saved
   game?" wrapped to two lines and arming the ✕ grew the whole hub strip). Out of flow
   the face contributes nothing, so arming the ✕ never resizes its host. The normal resume face may stay in
@@ -671,12 +660,12 @@ taller with `bigPinyin` on. On the standard board **Pinyin** tiles are 57px and 
 
 **No Pinyin glyph centering.** The tile flex-centers the whole glyph+band stack, so
 with the band empty the character would ride half a band above the tile's center.
-`WordSearchGrid.tsx` → `hiddenPinyinGlyphOffset` (half the band, computed as the
-difference of two `cpcdNaturalSize` heights, with and without `reservePinyin`, less the
-size's `GLYPH_DROP_PX`, which `smd` paints with pinyin hidden too)
-drops it back to center via a `translateY` on the `word-search__cell-glyph`
-wrapper. It is a transform rather than padding so the square track and
-`useFitScale`'s measured box are unchanged; it is 0 on the Pinyin board.
+The tile's `ForeignText` passes `centerGlyphWhenPinyinHidden`, and CPCDRow itself
+paints the glyph half a band lower whenever every syllable in the row is hidden
+(`src/components/CPCDRow.tsx` → `centerHiddenPinyinGlyph`; see
+[CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md) § "Centering the glyph when pinyin is
+hidden"). It is a paint offset rather than padding, so the square track and
+`useFitScale`'s measured box are unchanged; it does nothing on the Pinyin board.
 
 More pinyin overflows its 32px column at this scale, so expect more
 shifting/separator apostrophes — see
@@ -1264,10 +1253,9 @@ localStorage blob per mode (`gameStateStorage.ts`, key
 `wordSearch.savedGame.<mode>.<userId>`) is enough to survive an exit or the app
 being backgrounded.
 
-**One slot per mode = one slot per launch surface** (since 2026-10-03). Each mode
-has exactly one launcher (§3) — Pinyin the Games hub, No Pinyin the Reading
-Center carousel — so keying by mode keeps the two surfaces' boards apart: neither
-can resume or clobber the other's. `loadGameState` / `clearGameState` take
+**One slot per mode.** Neither mode can resume or clobber the other's board. In
+practice only `pinyin` is ever written: the Games hub and Study Challenge launch Pinyin,
+and No Pinyin is played only as an flp break, which never saves (§ 5c). `loadGameState` / `clearGameState` take
 `(userId, mode)`; `saveGameState` reads the mode from the payload
 (`SavedWordSearchState.mode`, still stored — it routes legacy saves and guards a
 wrong-mode restore). A fresh launch never silently resumes; only the surface's
@@ -1342,10 +1330,10 @@ reading flp, through the adapter `src/games/flpBreak/wordSearchBreak.ts`. What c
 - **The lent-card offer** names only the lent words the player found, and holds the end of
   the run until it is answered.
 
-- **A Deck Tower session plays the compact board** (below). A break on the routed flp keeps
-  the standard one.
+- **Every break plays the compact board** (below): the flp runs only inside the Deck
+  Tower, whose card-sized break layer fits five columns.
 
-#### The compact board (Deck Tower breaks, built 2026-11-01)
+#### The compact board (every flp break, built 2026-11-01)
 
 | | Standard | Compact |
 |---|---|---|
@@ -1353,13 +1341,13 @@ reading flp, through the adapter `src/games/flpBreak/wordSearchBreak.ts`. What c
 | Tile | `sm`: 57px with pinyin, 53px without | `smd`: 70px with pinyin, 66px without |
 | Words | 9 (1 / 5 / 2 / 1) | 7 (1 / 4 / 1 / 1) |
 | Full-length occupancy | 36 cells, 86% | 28 cells, 93% |
-| Played by | hub, Reading Center, challenge, routed flp break | a break in a Deck Tower session, core or reading |
+| Played by | hub, challenge | every flp break (core or reading world) |
 | Gold medal | ≤ 60s | ≤ 46s (same pace per word) |
 | Personal best key | `pinyin` / `no-pinyin` | `pinyin-compact` / `no-pinyin-compact` |
 
 `WORD_SEARCH_BOARDS` (`server/contracts/wire.ts`) declares both, distribution included, and
-is read by both halves. The break adapter picks the board from `FlpBreakContext.towerSession`
-(`wordSearchBreakBoard`), sends `?board=compact`, and passes the board to the Stage so its own
+is read by both halves. The break adapter always deals `WORD_SEARCH_BREAK_BOARD`
+(`"compact"`), sends `?board=compact`, and passes the board to the Stage so its own
 refetch deals the same one. The server sizes the grid from it and rejects a distribution
 larger than the board (400), since placement could not be promised a fit.
 
@@ -1381,7 +1369,7 @@ Stage passes it as `cellSize`. Five 70px tiles span about 378px, which fits a 40
 screen, and a narrower phone scales them down as usual.
 
 Code: `WordSearchStage.tsx` → `board` prop; `src/games/flpBreak/wordSearchBreak.ts` →
-`WORD_SEARCH_BREAK`, `wordSearchBreakBoard`; `WordSearchBreakStage.tsx`;
+`WORD_SEARCH_BREAK`, `WORD_SEARCH_BREAK_BOARD`; `WordSearchBreakStage.tsx`;
 `src/games/word-search/gridRequest.ts` → `wordSearchGridRequest`;
 `src/api/wordSearchGrid.ts` → `wordSearchGridParams`;
 `server/services/OnDeckVocabService.ts` → `getWordSearchGrid` (`seedIds`, `board`);
@@ -1391,8 +1379,8 @@ Code: `WordSearchStage.tsx` → `board` prop; `src/games/flpBreak/wordSearchBrea
 
 Frontend (`src/games/word-search/`):
 
-- `WordSearchPage.tsx` — the route: title, edge-swipe block, the launch's mode,
-  collection and resume intent, and where "Back to …" goes. Everything else is the Stage.
+- `WordSearchPage.tsx` — the route: title, edge-swipe block, the launch's mode and
+  resume intent, and where "Back to …" goes. Everything else is the Stage.
 - `WordSearchStage.tsx` — the run, hosted by the page or by an flp break (§5c): flow
   (loading → blocked | playing → won | left), the out-of-sight clock (pause/resume — see
   §5b), found-set + win detection, medal, and on-find audio wiring.
@@ -1443,8 +1431,8 @@ Frontend (`src/games/word-search/`):
 - `wordSearchCard.tsx` — `buildWordSearchCard`: the ONE definition of Word Search's
   `GameCard` data (pur ground, `outlined: false`, the resume tile as a `kind: "resume"`
   option, play button).
-- `WordSearchResumeTile.tsx` — the resume card shared by the hub and the Reading
-  Center carousel ("Resume" + ✕ → in-place delete confirm), drawn on
+- `WordSearchResumeTile.tsx` — the hub card's resume tile ("Resume" + ✕ → in-place
+  delete confirm), drawn on
   `GameOptionTile`. See § "Resume card".
 - `NewGameConfirmDialog.tsx` — the "Start a new game?" clobber confirm, rendered by
   `useWordSearchLauncher`.

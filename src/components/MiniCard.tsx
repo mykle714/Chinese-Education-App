@@ -1,6 +1,7 @@
 import { forwardRef, type ReactNode } from "react";
 import { Box, Typography, useTheme, type BoxProps } from "@mui/material";
 import ForeignText from "./ForeignText";
+import GlossText from "./GlossText";
 import { iconImageUrl } from "../cardIcons/cardIconLayout";
 import { masteryWindowCells, PBH_FULL, WORLD_LABELS, MARK_TYPE_LABELS, type MasteryBar } from "../utils/masteryCompute";
 import { getBandMark } from "../utils/categoryColors";
@@ -8,23 +9,24 @@ import type { Language } from "../types";
 import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
+import { FONTS } from "../theme/fonts";
 import { miniCardFaceSx, type MiniCardSize } from "./miniCardFace";
 
 /**
  * THE mini preview card — the one 92×132 "here is a word" tile every surface draws
- * (plus a 78×112 `compact` face the scp dock alone falls back to — see `size`).
+ * (plus a 78×112 `compact` face the ancp dock alone falls back to — see `size`).
  *
- * Rendered by `MiniVocabCard` (fdp panel, collections, search — driven by a saved
+ * Rendered by `MiniVocabCard` (td's cards page, provisional-card previews — driven by a saved
  * `VocabEntry`), `QuickMarkCard` (Quick Mark triage — a `DiscoverCard`),
- * `ChallengeWordCard` (the challenge word set — a `ChallengeReviewWord`) and the scp's
- * `DraggableCard` (`SortCardsPage.tsx` — a `DiscoverCard`). Those wrappers differ only
+ * `ChallengeWordCard` (the challenge word set — a `ChallengeReviewWord`) and the ancp's
+ * `DraggableCard` (`AddNewCardsPage.tsx` — a `DiscoverCard`). Those wrappers differ only
  * in their data source, the overlays they add (`children`), and what a tap or drag does.
  * The tile AND its contents — icon slot, word, definition, mastery strip — live here, so
  * a change reaches all four at once.
  *
  * History: the face was first written three times and drifted (only one copy kept the
  * hairline ring); `miniCardFace.ts` then unified the TILE, but each card still
- * re-declared its contents, and the scp card had never adopted either — it was a 102×150
+ * re-declared its contents, and the ancp card had never adopted either — it was a 102×150
  * flex-column card with a 44px icon. This component is the second half of that fix.
  *
  * Layering: presentation only (src/components). It takes plain display values, never a
@@ -67,7 +69,7 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
     masteryBar?: MasteryBar | null;
     /**
      * The face's footprint — `regular` (92×132, every surface) or `compact` (78×112,
-     * only the scp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
+     * only the ancp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
      * in miniCardFace.ts; the contents re-lay per size via CONTENT_LAYOUT below.
      */
     size?: MiniCardSize;
@@ -206,7 +208,7 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
 };
 
 /**
- * forwardRef so the scp can wrap it in react-spring's `animated()` (which drives the
+ * forwardRef so the ancp can wrap it in react-spring's `animated()` (which drives the
  * drag transform through a ref to the DOM node) and so drag handlers / ButtonBase props
  * spread through `...rest` onto the root.
  */
@@ -248,6 +250,11 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
             sx={[
                 // Tile: size, radius, hairline ring, elevation, containment, pop-in.
                 miniCardFaceSx({ background: background ?? fc.flashCard, hoverLift, animationDelayMs, size }),
+                // The whole card is set in the app's Chinese face (975 Maru SC via
+                // FONTS.cjk) — word, pinyin, dd and any overlay text a wrapper adds —
+                // so every preview card reads like the flp card face. Inherited by
+                // `children`; the parts that pin their own family are set explicitly below.
+                { fontFamily: FONTS.cjk },
                 ...(Array.isArray(sx) ? sx : [sx]),
             ]}
         >
@@ -297,6 +304,7 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                     // body. zh ignores this. (Only MiniVocabCard used to pass it, so Quick
                     // Mark / challenge / sort cards overran on long es words.)
                     plainFontSize={layout.plainFontSize}
+                    latinFontFamily={FONTS.cjk}
                 />
             </Box>
 
@@ -311,6 +319,8 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                     left: layout.sideInset,
                     right: layout.sideInset,
                     fontSize: layout.definitionFontSize,
+                    // Typography pins the theme's sans; restate the card's face.
+                    fontFamily: FONTS.cjk,
                     color: definitionColor ?? COLORS.textSecondary,
                     textAlign: "center",
                     // Tighter than the 1.2 it used to be: at 14px the two-line clamp
@@ -325,7 +335,7 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                     zIndex: 1,
                 }}
             >
-                {definition}
+                <GlossText text={definition} />
             </Typography>
 
             {masteryBar && <MasteryStrip bar={masteryBar} />}
@@ -360,6 +370,7 @@ export const MiniCardFrequencyBadge: React.FC<{ score: number | null | undefined
                 backgroundColor: COLORS.onSurface,
                 color: COLORS.white,
                 fontSize: SIZE.micro,
+                fontFamily: FONTS.cjk,
                 fontWeight: WEIGHT.bold,
                 display: "flex",
                 alignItems: "center",

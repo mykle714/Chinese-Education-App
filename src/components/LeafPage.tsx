@@ -1,3 +1,4 @@
+import type { ScreenPoint } from "../utils/pageTransition";
 import { type ReactNode } from "react";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
@@ -57,6 +58,13 @@ export interface LeafPageProps {
     // Where the back arrow goes. Invoked IMMEDIATELY (the destination mounts beneath)
     // while a clone of this page slides down on top — see usePageSlide's `exit`.
     onBack: () => void;
+    /**
+     * Leave with the CIRCLE transition instead of the slide-down: the page shrinks into a
+     * circle closing onto this viewport point (src/utils/pageTransition.ts →
+     * CIRCLE_MOTION). For a page that was opened with a circle from that point
+     * (useSlideNavigate `circleFrom`). Undefined: the slide-down.
+     */
+    exitCircleTo?: ScreenPoint;
     // Header right slot (e.g. a badge / toggle).
     rightContent?: ReactNode;
     surfaceColor?: string;
@@ -96,6 +104,7 @@ export interface LeafPageProps {
 const LeafPage = ({
     title,
     onBack,
+    exitCircleTo,
     rightContent,
     surfaceColor,
     surfaceSx,
@@ -109,7 +118,7 @@ const LeafPage = ({
 
     // Back arrow is the only exit: navigate (destination mounts beneath) while a
     // clone of this page slides down away on top.
-    const handleBack = () => exit(onBack);
+    const handleBack = () => exit(onBack, exitCircleTo);
 
     return (
         <Surface

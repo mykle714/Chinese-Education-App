@@ -5,7 +5,7 @@ import type { MasteryWorldId } from "../utils/masteryCompute";
 
 /**
  * How many cards the learner has mastered in EACH mastery bar (core / reading /
- * writing) — the figures on the fdp's up-to-three Mastered collection rows.
+ * writing) — the Deck Tower's Mastered deck heights and its cards page's Mastered key.
  * See docs/MASTERY_REWORK.md § "Three bars".
  *
  * Kept apart from `useCategoryCounts`, which answers a different question: that hook

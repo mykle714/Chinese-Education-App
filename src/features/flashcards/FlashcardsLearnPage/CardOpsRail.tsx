@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { Box } from "@mui/material";
 import Icon from "../../../components/Icon";
-import AddToDeckMenu from "../AddToDeckMenu";
 import { CARD_OPS_CELL_SX, CARD_OPS_CELL_LABEL_SX } from "../cardOpsCell";
 import { COLORS } from "../../../theme/colors";
-import type { VocabEntry } from "../types";
 import { SHADOW } from "../../../theme/shadows";
 import { cardChromeInsetCss } from "../constants";
+import { TOWER_STUDY_FONT } from "../../../theme/towerPlate";
 
 /** The rail's top/right inset: below the flp card's top band (`cardChromeInsetCss`), 11px elsewhere. */
 const CARD_OPS_INSET_CSS = cardChromeInsetCss(11);
@@ -16,8 +15,8 @@ const CARD_OPS_INSET_CSS = cardChromeInsetCss(11);
  * operates on THIS CARD, behind a single `•••` on the card's own top edge.
  *
  * ── The rule this rail encodes ────────────────────────────────────────────────
- * Only true CARD operations live here — customize its icon arrangement, file it into a
- * deck, write a note on it. Things you do with the WORD (practise writing it, load it into
+ * Only true CARD operations live here — customize its icon arrangement, write a note on
+ * it. Things you do with the WORD (practise writing it, load it into
  * Compare) are on `WordToolsRail`, above the card and outside its boundary. The split
  * is not cosmetic: a word tool would still make sense if this card did not exist, and a
  * card operation would not.
@@ -33,7 +32,7 @@ const CARD_OPS_INSET_CSS = cardChromeInsetCss(11);
  *
  *   • the card stays fully readable underneath, so the learner can still see which
  *     card they are about to act on;
- *   • every option is labelled, so `note` beside `add to deck` is never a guess at
+ *   • every option is labelled, so `note` beside `customize` is never a guess at
  *     an unlabelled glyph;
  *   • it opens and closes in place, inside the card's own bounds, so it cannot be
  *     mistaken for page chrome the way a portaled MUI `Menu` is.
@@ -51,16 +50,15 @@ const CARD_OPS_INSET_CSS = cardChromeInsetCss(11);
  *
  * The cdp mounts it too, on its hero card (`VocabCardDetailPage`), because the rail's
  * `note` cell is the ONLY affordance that opens the note editor — read-mode notes are
- * inert by design — so the note cannot exist on a surface without the rail. Its
- * `customize` and `add to deck` cells therefore duplicate two of that page's header
- * actions; the header keeps `delete`, which is deliberately not on the rail.
+ * inert by design — so the note cannot exist on a surface without the rail. The header
+ * keeps `delete`, which is deliberately not on the rail.
  *
  * Referenced by docs/SHELF_REDESIGN.md (artboard 21), docs/CARD_ICON_LAYOUT.md
- * (customize), docs/DECKS_FEATURE.md (add to deck) and docs/CARD_NOTES.md (note).
+ * (customize) and docs/CARD_NOTES.md (note). The `add to deck` cell left with the Decks
+ * feature (deleted 2026-11-04).
  */
 
 export interface CardOpsRailProps {
-    entry: VocabEntry;
     /** Open the flashcard icon editor (fie) on this card. */
     onCustomize: () => void;
     /**
@@ -75,21 +73,13 @@ export interface CardOpsRailProps {
      */
     disabled?: boolean;
     className?: string;
-    /**
-     * The cells' label face, over CARD_OPS_CELL_LABEL_SX's. Set on the rail rather than
-     * per cell so it reaches the `add to deck` cell, which AddToDeckMenu renders.
-     * Only the Deck Tower session passes it (`TOWER_STUDY_FONT`).
-     */
-    labelFontFamily?: string;
 }
 
 export const CardOpsRail: React.FC<CardOpsRailProps> = ({
-    entry,
     onCustomize,
     onEditNote,
     disabled = false,
     className,
-    labelFontFamily,
 }) => {
     const [open, setOpen] = useState(false);
 
@@ -155,8 +145,10 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
                 borderRadius: "999px",
                 boxShadow: SHADOW.float,
                 padding: "5px",
-                // `em` is every cell's label; root class + element outranks the label's sx.
-                ...(labelFontFamily ? { "& em": { fontFamily: labelFontFamily } } : {}),
+                // `em` is every cell's label, lettered in the tower's study face on both
+                // hosts (the tower's flp and the cdp); root class + element outranks the
+                // label's sx.
+                "& em": { fontFamily: TOWER_STUDY_FONT },
             }}
         >
             <Box
@@ -169,14 +161,6 @@ export const CardOpsRail: React.FC<CardOpsRailProps> = ({
                 <Icon name="brush" size={18} color={COLORS.onSurface} />
                 <Box component="em" sx={CARD_OPS_CELL_LABEL_SX}>customize</Box>
             </Box>
-
-            {/* Owns the deck fetch, the tick state and the save-on-close; the rail only
-                supplies its shape. Self-hides on a card with no vet row. */}
-            <AddToDeckMenu
-                vocabEntryId={entry.id}
-                className="card-ops-rail__add-to-deck"
-                appearance="rail"
-            />
 
             <Box
                 component="button"

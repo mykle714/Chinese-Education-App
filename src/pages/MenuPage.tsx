@@ -1,6 +1,7 @@
 import { Box } from "@mui/material";
 import MobileTabScreen from "../components/MobileTabScreen";
 import { useAuth } from "../AuthContext";
+import { useTestingFeatures } from "../hooks/useTestingFeatures";
 import { Bento, BentoTile, type BentoTileProps } from "../components/bento";
 import { FooterSpacer, ScrollPastSpacer } from "../components/MobileFooter";
 import TipBox from "../components/TipBox";
@@ -12,10 +13,9 @@ import { COLORS } from "../theme/colors";
 // (docs/SHELF_REDESIGN.md § A4 and entry 1), replacing the vertical HubMenu of
 // equal-weight rows this page used to be.
 //
-// This page WAS Home (`/`) until 2026-10-10, when Home and Menu swapped contents: Home
-// is now the decks page (the fdp), and this bento moved here. The account header —
-// Settings gear, profile picture, daily banking run — stayed with the Home tab and
-// lives in src/pages/HomePage.tsx, so this header is just the title and the flame.
+// This page WAS Home (`/`) until 2026-10-10, when Home and Menu swapped contents and
+// this bento moved here. `/` is now the Deck Tower (since 2026-11-04), which carries the
+// account avatar, so this header is just the title and the flame.
 //
 // WHY A MOSAIC AND NOT A LIST: every row of the old menu was the same size, so the
 // page said all eight destinations mattered equally — which is false. Night Market is
@@ -36,17 +36,13 @@ interface MenuTile extends Pick<BentoTileProps, "hue" | "icon" | "variant" | "pi
 function MenuPage() {
     usePageTitle("Menu");
     const { user } = useAuth();
+    const testingFeatures = useTestingFeatures();
 
-    // HUES: one tile per ramp hue — the six non-hero main tiles (Games, Arena, Immersive
-    // World, Reader, Friends, Community) wear the six tile hues (blu, yel, red, pur, grn,
-    // org) exactly once, so no two destinations read as the same feature. The warm hues
-    // (yel / red / org) are CHECKERBOARDED on the 2-column grid so no two share an edge
-    // (shown with every flag on; Immersive World and Community are currently flagged off,
-    // leaving Games | Arena over Reader | Friends):
-    //     Games  blu | Arena   yel
-    //     IW     red | Reader  pur
-    //     Friends grn| Comm.   org
-    // Reordering tiles or flipping a flag (Arena, Immersive World) shifts the grid and
+    // HUES: one tile per ramp hue — the non-hero main tiles (Games, Immersive World,
+    // Reader, Friends, Community) wear distinct tile hues (blu, red, pur, grn, org), so no
+    // two destinations read as the same feature; `yel` is free since Arena moved to the
+    // footer (2026-11-04). The warm hues (red / org) should not share an edge on the
+    // 2-column grid. Reordering tiles or flipping a flag (Immersive World) shifts the grid and
     // can put two warm tiles side by side — re-check the pattern. Night Market
     // (flagged off) keeps `pur` and would share it with Reader if re-enabled — there
     // are only six tile hues (grey is the neutral, gld the action colour).
@@ -62,12 +58,7 @@ function MenuPage() {
             ? [{ key: "night-market", to: "/night-market", title: "Night Market", subtitle: "Explore the vocabulary night market", hue: "pur", icon: "nights_stay", variant: "hero" } as MenuTile]
             : []),
         { key: "games", to: "/games", title: "Games", subtitle: "Play vocabulary mini-games", hue: "blu", icon: "sports_esports" },
-        // Arena is flagged (server/contracts/featureFlags.ts). This tile is its ONLY
-        // navigational entry — nothing in the footer, no row on /friends — so dropping
-        // it is the whole client-side entry gate; the route goes in routeMeta.ts.
-        ...(isFeatureEnabled("arena")
-            ? [{ key: "arena", to: "/arena", title: "Arena", subtitle: "Race 24 other learners", hue: "yel", icon: "emoji_events" } as MenuTile]
-            : []),
+        // (Arena moved out of this bento into its own footer tab on 2026-11-04.)
         // Its own destination rather than a Games tile (docs/IMMERSIVE_WORLD.md § 14 Q9): iw
         // is once per day, earns no marks and is capped by design, so it behaves unlike
         // everything on the Games shelf, where a tile is an activity you can do as much as
@@ -106,10 +97,10 @@ function MenuPage() {
     // tile no longer leaves the last artboard row half empty), and a tool that can
     // rewrite authored content reads as a tool rather than as another destination.
     const gatedTiles: MenuTile[] = [
-        // Feature testers (users.isFeatureTester, migration 178) AND admins
+        // Feature testers with testing features on (useTestingFeatures) AND admins
         // (users.isAdmin, migration 168 — the tdp's User Usage
         // section) reach the tester dashboard; the page applies the same pair.
-        ...(user?.isFeatureTester || user?.isAdmin
+        ...(testingFeatures || user?.isAdmin
             ? [{ key: "tester-dashboard", to: "/tester-dashboard", title: "Tester Dashboard", hue: "blu", icon: "dashboard", variant: "low" } as MenuTile]
             : []),
         // All three ride the SAME grant (users.isTemplateAuthor, migration 115) — the two

@@ -212,6 +212,14 @@ export interface IArenaDAL {
   setGeoCell(userId: string, geoCell: string | null, client?: PoolClient): Promise<void>;
 
   /**
+   * Read a user's coarse location cell, or null when they never shared one (or
+   * cleared it). Read by WeatherService for the Deck Tower's weather
+   * (docs/DECK_TOWER.md § "Weather") as well as by arena clustering's own join —
+   * the cell belongs to the person, so one stored value serves both.
+   */
+  getGeoCell(userId: string): Promise<string | null>;
+
+  /**
    * Store (or clear) a user's arena message (migration 152).
    *
    * On `users` for the same reason `geoCell` is: it belongs to the person, not to

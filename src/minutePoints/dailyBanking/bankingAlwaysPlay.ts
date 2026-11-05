@@ -1,6 +1,6 @@
 /**
- * bankingAlwaysPlay — the feature-tester "always play" switch for the hp daily banking run
- * (docs/DAILY_MINUTE_BANKING.md § 8). While on, every landing on Home plays the run,
+ * bankingAlwaysPlay — the feature-tester "always play" switch for the td daily banking run
+ * (docs/DAILY_MINUTE_BANKING.md § 8). While on, every landing on the Deck Tower plays the run,
  * ignoring the server's once-per-day `bankingPending`.
  *
  * Stored in localStorage, not on the server: it is a per-device test convenience, and

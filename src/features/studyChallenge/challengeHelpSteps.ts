@@ -37,41 +37,6 @@ const SHOTS = import.meta.glob<{ default: string }>(
 export const resolveChallengeShot = makeShotResolver(SHOTS);
 
 /**
- * "How to study this deck" (F20).
- *
- * ⚠️ IT TEACHES A FILTER, NOT A FEATURE. The button that opens this does NOT launch
- * play — every surface named here already exists and the learner has used them; what
- * they do not know is how to point one at exactly these nine cards. That is why it is
- * a dismissable overlay rather than its own page, and why each step is a scoping
- * instruction rather than a description of the surface.
- *
- * `{deck}` is substituted with the generated deck's name ("vs Mei Lin").
- */
-export const HOW_TO_STUDY_STEPS: readonly ChallengeHelpStep[] = [
-    {
-        heading: "Study on the shelf",
-        shot: "study-shelf.png",
-        shotDescription: "flashcards shelf, the challenge deck highlighted in the Challenges row",
-        title: "Open the “{deck}” deck",
-        body: "Accepting created a deck holding exactly these nine cards. Tap it, then “Study these cards” — the queue is only the nine, and nothing else can leak in.",
-    },
-    {
-        heading: "Drill the whole set",
-        shot: "study-learn.png",
-        shotDescription: "the flashcards learn page mid-session, with the deck named in the header",
-        title: "The session runs the nine in order",
-        body: "Every mark you make counts normally — minute points, streak and your own mastery all move. Studying the set is ordinary study; it is only the words that were chosen for you.",
-    },
-    {
-        heading: "Play against them early",
-        shot: "study-games.png",
-        shotDescription: "a game's collection selector with the challenge deck picked as the source",
-        title: "Point a game at the deck",
-        body: "Any game that takes a collection will take this one. That is practice, not the test — the test's rounds are drawn on Friday and are the only ones that score.",
-    },
-];
-
-/**
  * "How the test works" (F21) — three rules, one per step.
  *
  * These used to sit as fine print under the round list. They moved behind the card's

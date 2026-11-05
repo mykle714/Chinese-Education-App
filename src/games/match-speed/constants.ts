@@ -1,6 +1,6 @@
 import { COLORS, type RampHue } from "../../theme/colors";
 import type { MarkType } from "../../types";
-import type { GameCategory, MatchSpeedMode, Medal, ModeConfig } from "./types";
+import type { GameCategory, Medal } from "./types";
 import { formatTimeMs } from "../../utils/timeUtils";
 
 /**
@@ -17,9 +17,8 @@ export const GAME_KEY = "matchSpeed";
 
 /**
  * The mastery track this game feeds (docs/MASTERY_REWORK.md). Matching a foreign
- * word to its meaning is recognition, so every mode writes RECOGNITION marks and
- * pools on that track — the mode only changes WHICH cards are dealt, never the
- * mark type, so this is a whole-game constant rather than a per-ModeConfig field.
+ * word to its meaning is recognition, so every run writes RECOGNITION marks and
+ * pools on that track (an flp break on the reading flp overrides it with `reading`).
  *
  * Single source of truth for the `?markType=` pool query and the
  * /api/flashcards/mark call (MatchSpeedPage) plus the Games hub's mark-type chip
@@ -27,9 +26,13 @@ export const GAME_KEY = "matchSpeed";
  */
 export const MARK_TYPE: MarkType = "recognition";
 
-// The `wins` level key per difficulty mode lives on each MODE_CONFIGS entry
-// (`winLevel`) — Study Mix keeps 1, the key the game used back when it had a single
-// difficulty, so pre-existing win history stays attached to the default mode.
+/** Level key a gold run is logged under in the shared `wins` table. 1 is the key the
+ *  game has always used for its one difficulty (the deleted Review/Challenge modes
+ *  logged 2 and 3 — docs/DEFERRED_WORK.md § 31), so the win history stays attached. */
+export const WIN_LEVEL = 1;
+/** The personal-best `mode` key (`usePersonalBest("match-speed-30", …)`). "mixed" is the
+ *  Study Mix slug every existing best was recorded under; it stays so they still count. */
+export const PERSONAL_BEST_MODE = "mixed";
 
 // ---- Board ----------------------------------------------------------------
 /** Rows per column. The board is ROWS × 2 slots — ROWS foreign, ROWS english. */
@@ -118,13 +121,11 @@ export const COUNTDOWN_STEPS = ["3", "2", "1", "Go!"];
 
 // ---- Card selection -------------------------------------------------------
 /**
- * Per-draw category weights for the STUDY MIX mode (the game's original, unrestricted
- * table). Each pair drawn for the board rolls INDEPENDENTLY against it — unlike
- * Bubble Match's GAME_DISTRIBUTION, which requests a fixed mix for a whole run.
- * A Match Speed board can legitimately come up 5 Target cards.
- *
- * Review and Challenge have their own tables on MODE_CONFIGS below; this one is also
- * the shape every mode's `weights` follows (an off-mode bucket weighs 0).
+ * Per-draw category weights (the "Study Mix" table — the game's only one since the
+ * Review/Challenge modes were removed, docs/DEFERRED_WORK.md § 31). Each pair drawn for
+ * the board rolls INDEPENDENTLY against it — unlike Bubble Match's GAME_DISTRIBUTION,
+ * which requests a fixed mix for a whole run. A Match Speed board can legitimately come
+ * up 5 Target cards. The key order is the roll's walk order (`rollCategory`).
  *
  * These are the per-mark-type (recognition) categories, not the goal-blended
  * overall utcm category — see docs/MASTERY_REWORK.md.
@@ -137,10 +138,8 @@ export const CATEGORY_WEIGHTS: Record<GameCategory, number> = {
 };
 
 /**
- * Order to walk when the rolled category's buffer is empty in STUDY MIX mode; the
- * first non-empty one supplies the pair. Restricted modes carry their own,
- * shorter order on MODE_CONFIGS (an off-mode bucket is never a fallback — that
- * is the whole point of the restriction). Mirrors the server's own
+ * Order to walk when the rolled category's buffer is empty; the first non-empty one
+ * supplies the pair. Mirrors the server's own
  * `OnDeckVocabService.GAME_FALLBACK_ORDER` so client and server degrade the same
  * way. The weights above are NOT re-normalized — every roll happens against the
  * full table and this is purely a "that shelf was bare" recovery.
@@ -152,120 +151,33 @@ export const CATEGORY_FALLBACK_ORDER: GameCategory[] = [
     "Mastered",
 ];
 
-/** Total pairs the buffer aims to hold across all of a mode's buckets. Split
- *  evenly over however many buckets the mode uses, so Review/Challenge (2 buckets)
- *  buffer 12 each where Study Mix (4 buckets) buffers 6 each — the board draws the
- *  same number of pairs per tick either way.
- *
- *  Sized so that even Study Mix's per-bucket depth (6) covers a FULL board (ROWS = 5)
- *  on its own: a bucket that can't fill the board by itself makes the fallback
- *  walk fire on an ordinary tick, quietly pulling the run off its weight table. */
+/** Total pairs the buffer aims to hold across all four buckets, split evenly into
+ *  BUFFER_DEPTH per bucket. */
 export const BUFFER_TOTAL_TARGET = 24;
 
-/** Target depth of each per-category buffer in STUDY MIX mode (4 × 6 = 24 pairs
- *  buffered). API latency is far too high to fetch a card at the moment a slot
- *  empties, so the page keeps this stocked and tops it up after every tick.
- *  Restricted modes derive their own depth — read `ModeConfig.bufferDepth`
- *  rather than this constant in mode-aware code. */
+/** Target depth of each per-category buffer (4 × 6 = 24 pairs buffered). API latency
+ *  is far too high to fetch a card at the moment a slot empties, so the stage keeps
+ *  this stocked and tops it up after every tick.
+ *
+ *  Sized so one bucket (6) covers a FULL board (ROWS = 5) on its own: a bucket that
+ *  can't fill the board by itself makes the fallback walk fire on an ordinary tick,
+ *  quietly pulling the run off its weight table. */
 export const BUFFER_DEPTH = BUFFER_TOTAL_TARGET / 4;
+
+/** The opening pool request's band quotas — BUFFER_DEPTH of each bucket (sent by
+ *  `fetchGamePool`, src/api/gamePool.ts). Also an flp break's prefetch
+ *  (src/games/flpBreak/matchSpeedBreak.ts). */
+export const POOL_DISTRIBUTION: Readonly<Record<GameCategory, number>> = {
+    Unfamiliar: BUFFER_DEPTH,
+    Target: BUFFER_DEPTH,
+    Comfortable: BUFFER_DEPTH,
+    Mastered: BUFFER_DEPTH,
+};
 
 // ENTRY_GATE_CARDS was removed: nothing blocks on card count any more. The number
 // of cards this game WANTS is now a baseline the server tops the player up to with
 // temporary cards — CARD_BASELINES['match-speed'] in server/contracts/wire.ts.
 // See docs/PROVISIONAL_CARDS.md.
-
-// ---- Difficulty modes -----------------------------------------------------
-/**
- * Build one mode's config from its bucket restriction. `weights` is stated over
- * the mode's OWN buckets and padded with zeros for the rest, so every config
- * carries the full four-key shape and `rollCategory` never indexes undefined.
- *
- * `categories` is stated in the canonical CATEGORY_WEIGHTS key order; the roll
- * walks it in that order, so the order is part of the (tested) contract.
- */
-function defineMode(
-    mode: MatchSpeedMode,
-    label: string,
-    winLevel: number,
-    categoryLabel: string,
-    weights: Partial<Record<GameCategory, number>>,
-    fallbackOrder: GameCategory[]
-): ModeConfig {
-    const categories = (Object.keys(CATEGORY_WEIGHTS) as GameCategory[]).filter(
-        (cat) => (weights[cat] ?? 0) > 0
-    );
-    const bufferDepth = Math.ceil(BUFFER_TOTAL_TARGET / categories.length);
-    return {
-        mode,
-        label,
-        winLevel,
-        categoryLabel,
-        categories,
-        weights: {
-            Unfamiliar: weights.Unfamiliar ?? 0,
-            Target: weights.Target ?? 0,
-            Comfortable: weights.Comfortable ?? 0,
-            Mastered: weights.Mastered ?? 0,
-        },
-        fallbackOrder,
-        bufferDepth,
-        poolDistribution: Object.fromEntries(categories.map((cat) => [cat, bufferDepth])),
-    };
-}
-
-/**
- * The three independently-playable difficulty modes, in HUB ORDER (Study Mix
- * first, then Review, then Challenge — the hub is the only place to pick one;
- * there is no in-game picker). Modes do NOT chain and nothing is unlocked by
- * clearing one.
- *
- * The bucket split is the /decks rule verbatim (FlashcardsDecksPage.tsx):
- * Review = Comfortable + Mastered, Challenge = Unfamiliar + Target. Within a
- * restricted mode the two buckets keep roughly the ratio they have in the Study
- * Mix table (20:8 → 70:30, 12:60 → 20:80), so Challenge still leans on Target
- * and Review still leans on Comfortable rather than flattening to 50/50.
- *
- * Everything else about a run — the 30-pair target (TARGET_PAIRS), the 5×2 board, the 3s refill
- * tick, the medal thresholds — is identical across modes. Difficulty comes only
- * from which cards you are asked to recognize, which is exactly what "Review"
- * and "Challenge" mean on /decks.
- *
- * @deprecated The `review` and `challenge` entries are being removed; `mixed` stays
- * (docs/DEFERRED_WORK.md § 31).
- */
-export const MODE_CONFIGS: ModeConfig[] = [
-    defineMode("mixed", "Study Mix", 1, "Learning", CATEGORY_WEIGHTS, CATEGORY_FALLBACK_ORDER),
-    defineMode("review", "Review", 2, "Comfortable or Mastered", { Comfortable: 70, Mastered: 30 }, [
-        "Comfortable",
-        "Mastered",
-    ]),
-    defineMode("challenge", "Challenge", 3, "Unfamiliar or Target", { Unfamiliar: 20, Target: 80 }, [
-        "Target",
-        "Unfamiliar",
-    ]),
-];
-
-/** Mode used when the page is opened without a valid `state.mode` (a direct URL
- *  or a stale link). Unlike Bubble Match — which bounces to the hub when no
- *  level was passed — Match Speed has always been reachable as a plain route, so
- *  it falls back to Study Mix rather than dead-ending. */
-export const DEFAULT_MODE_CONFIG: ModeConfig = MODE_CONFIGS[0];
-
-/** Resolve an untrusted nav-state value to a mode config, defaulting to Study Mix.
- *  A stale link carrying the old "easy"/"hard" values resolves to Study Mix. */
-export function modeConfigFor(raw: unknown): ModeConfig {
-    return MODE_CONFIGS.find((cfg) => cfg.mode === raw) ?? DEFAULT_MODE_CONFIG;
-}
-
-/**
- * The same mode with its bucket restriction lifted to every bucket's fallback. The WEIGHTS
- * stay, so a card from the mode's own buckets is still preferred whenever one exists.
- * A run with no clock can only finish if the board keeps being fed, so this is what a
- * run falls back to when its own buckets are bare (`relaxed` in MatchSpeedStage).
- */
-export function widenedMode(mode: ModeConfig): ModeConfig {
-    return { ...mode, fallbackOrder: CATEGORY_FALLBACK_ORDER };
-}
 
 // ---- Scoring --------------------------------------------------------------
 /**

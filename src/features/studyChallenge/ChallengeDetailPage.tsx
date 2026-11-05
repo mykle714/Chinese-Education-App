@@ -4,13 +4,12 @@ import { Box, ButtonBase, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
-import Icon from "../../components/Icon";
 import ChallengeWordCard from "./ChallengeWordCard";
 import ChallengeTestCard from "./ChallengeTestCard";
 import ChallengeResults from "./ChallengeResults";
 import ChallengeDetailHeader from "./ChallengeDetailHeader";
 import SteppedHelpPopup from "../../components/SteppedHelpPopup";
-import { HOW_THE_TEST_WORKS_STEPS, HOW_TO_STUDY_STEPS, resolveChallengeShot } from "./challengeHelpSteps";
+import { HOW_THE_TEST_WORKS_STEPS, resolveChallengeShot } from "./challengeHelpSteps";
 import { storedWordToReviewWord } from "./reviewWord";
 import { fetchChallenge } from "../../api/studyChallenges";
 import type { ChallengeSummary } from "../../api/studyChallenges";
@@ -21,13 +20,13 @@ import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { useDragScroll } from "../../hooks/useDragScroll";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { SIZE } from "../../theme/scale";
 import { challengeErrorMessage } from "./challengeLabels";
 import { useChallengeAnytime } from "./challengeAnytime";
 import { challengeMessageSx, challengeMutedSx, challengeWordCardHeight } from "./challengeStyles";
 
 /** Which of the two explainers is open, if any. */
-type OpenHelp = "study" | "test" | null;
+type OpenHelp = "test" | null;
 
 /**
  * View Challenge — one challenge in every state after it is accepted
@@ -38,8 +37,7 @@ type OpenHelp = "study" | "test" | null;
  * swipeable pages, yours in blue and theirs in red, with dots under them saying which
  * you are on. The masthead ABOVE the pager does not travel with them and does not
  * change: "vs <name>" is the same sentence on both sides. The blocks that are the
- * same for both players (the "How to study this
- * deck" button and the nine word cards) sit BELOW the dots and do not move: the
+ * same for both players (the nine word cards) sit BELOW the dots and do not move: the
  * masthead and the dot row are the lines where the swipe's reach begins and ends. During the STUDY
  * days there is nothing on their side at all (neither player has a sequence, let
  * alone a round), so the pager and its dots are not rendered and the screen is a
@@ -290,41 +288,14 @@ function ChallengeDetailPage() {
     ) : null;
 
     /**
-     * The deck explainer + the word set — the blocks that are common to both sides and
-     * therefore live BELOW the dots, outside the pager.
-     *
-     * The study button is the loudest thing on the page during the study days, because
-     * the deck is that stretch's ONE job. It disappears once the deck is dropped —
-     * which happens the moment this player finishes their test.
+     * The word set — the block common to both sides, which therefore lives BELOW the
+     * dots, outside the pager. (Until 2026-11-04 a "How to study this deck" button sat
+     * above it; the generated "vs <name>" study deck went with the Decks feature. The
+     * nine words are still added to both players' Learning cards on accept, so they are
+     * studied on the Deck Tower like any other card.)
      */
     const sharedFooter = challenge ? (
         <>
-            {challenge.presetDeckId && (
-                <ButtonBase
-                    className="challenge-detail-page__study"
-                    onClick={() => setHelp("study")}
-                    sx={{
-                        ml: 2.25,
-                        mt: 1.75,
-                        px: 1.9,
-                        py: 1.4,
-                        borderRadius: "13px",
-                        // The `study` pill's hue at its MID tier (v2), as on the row.
-                        backgroundColor: COLORS.orgM,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 1,
-                        fontFamily: FONTS.sans,
-                        fontSize: SIZE.body,
-                        fontWeight: WEIGHT.semibold,
-                        color: COLORS.onSurface,
-                    }}
-                >
-                    <Icon name="help" size={17} color={COLORS.onSurface} />
-                    How to study this deck
-                </ButtonBase>
-            )}
-
             {wordSet}
             <FooterSpacer />
         </>
@@ -490,11 +461,8 @@ function ChallengeDetailPage() {
 
             <SteppedHelpPopup
                 open={help !== null}
-                steps={help === "study" ? HOW_TO_STUDY_STEPS : HOW_THE_TEST_WORKS_STEPS}
+                steps={HOW_THE_TEST_WORKS_STEPS}
                 resolveShot={resolveChallengeShot}
-                // `{deck}` in a step title. Falls back to the generic word rather than
-                // leaving the placeholder visible while the challenge is still loading.
-                tokens={{ deck: challenge ? `vs ${opponentName}` : "challenge" }}
                 onClose={() => setHelp(null)}
             />
         </NodePage>

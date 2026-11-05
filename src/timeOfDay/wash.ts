@@ -16,7 +16,8 @@ import type { DayPhase, TimeOfDay } from "./dayPhase";
  *
  * Layer: shared, pure (`src/timeOfDay/`). Depends on: theme/shadeHex.ts, dayPhase.ts.
  * Depended on by: features/deckTower/iso/wash.ts, features/deckTower/timeOfDay.ts,
- * useDayWash.ts, theme/towerSlab.ts.
+ * theme/towerSlab.ts. (useDayWash.ts — the DOM games' wash provider — was deleted
+ * 2026-11-04 with GameFrame's tower tone, its last user.)
  */
 
 /** A colour transform laid over a scene. The identity (`NO_WASH`) leaves it as drawn. */
@@ -112,7 +113,7 @@ export function lightWash(light: WashLight): IsoWash {
  * jumps. Results are memoised (a scene asks for the same few dozen colours every frame).
  */
 export function blendWash(a: IsoWash, b: IsoWash, t: number): IsoWash {
-    // Two unlit phases blend to the identity at every t (e.g. dawn → day), so keep NO_WASH's
+    // Two unlit lights blend to the identity at every t (e.g. day held), so keep NO_WASH's
     // identity: DOM layers then take no filter at all, and the scene's palette isn't re-washed.
     if (a === NO_WASH && b === NO_WASH) return NO_WASH;
     if (t <= 0 && a === NO_WASH) return NO_WASH;
@@ -133,8 +134,8 @@ export function blendWash(a: IsoWash, b: IsoWash, t: number): IsoWash {
 /**
  * Each phase's light over the scene (`WashLight`: a cast toward `toward`, then a dim).
  * Only NIGHT washes: a cool blue cast (7% toward `bluMk`) dimmed 4%, so cream card stock reads cool
- * at night, and the clouds with it. Dawn and sunset carry their colour in the SKY alone and
- * draw the scene as day does (their pink / orange washes were removed 2026-10-28). The
+ * at night, and the clouds with it. Day draws the scene as it is. (Dawn's pink and sunset's
+ * orange washes were removed 2026-10-28; the phases themselves were cut 2026-11-04.) The
  * `toward` colour is a COLORS token; the dimmed result is derived.
  */
 const UNLIT: WashLight = { toward: "#FFFFFF", amount: 0, dim: 0 };
@@ -146,9 +147,7 @@ const UNLIT: WashLight = { toward: "#FFFFFF", amount: 0, dim: 0 };
 const NIGHT_WASH_ENABLED = true;
 const NIGHT_LIGHT: WashLight = { toward: "#59BFFF", amount: 0.07, dim: 0.04 }; // COLORS.bluMk
 const PHASE_LIGHT: Record<DayPhase, WashLight> = {
-    dawn: UNLIT,
     day: UNLIT,
-    sunset: UNLIT,
     night: NIGHT_WASH_ENABLED ? NIGHT_LIGHT : UNLIT,
 };
 

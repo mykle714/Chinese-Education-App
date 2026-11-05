@@ -15,29 +15,26 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * SearchField's `endAction` slot — the filter belongs on the search row, not on a row
  * of its own beneath it. The active ordering is deliberately NOT shown on the trigger:
  * the menu is the place that answers "which sort is on", and a permanent label cost a
- * full row on the two most card-dense screens in the app. It survives in the trigger's
+ * full row on a card-dense screen. It survives in the trigger's
  * `aria-label`, so a screen reader still announces it.
  *
- * ── Why it is a component ─────────────────────────────────────────────────────
- * Two surfaces order the same `VocabEntry[]` with the same keys: the collection page
- * (CollectionViewPage) and the decks panel's inline Cards section (DecksPanelBody,
- * rendered by the fdp and both Mastery Centers).
+ * ── Why it is its own component ───────────────────────────────────────────────
  * The menu is ~100 lines of non-obvious markup — rows that are deliberately NOT
  * MenuItems, a toggle group whose value is nulled unless the applied key belongs to
- * that row — and a second copy would have drifted the first time a mastery bar or a
- * language was added. `vocabSort.ts` already owns WHICH orderings exist; this owns
+ * that row. It had several hosts until the old Home page and the Mastery Centers were
+ * deleted (2026-11-04); it stays separate so TowerCardsPage does not absorb it. `vocabSort.ts` already owns WHICH orderings exist; this owns
  * how they are picked.
  *
  * ── What it does NOT own ──────────────────────────────────────────────────────
  * The sort key itself. The caller holds it in state and applies it with
  * `sortVocabEntries`, because the caller is also the one holding the entries — and
- * the surfaces default to different keys (a deck opens on `deckAdded`, everything else
- * on `recent`, and anything under a skill lens on that bar's mastery) and keep it for
- * different lifetimes.
+ * the host decides its default (useCardLibrary opens on the lens bar's mastery, lowest
+ * first) and its lifetime.
  *
  * Layer: feature component (src/features/flashcards). Presentation only.
  *
- * Docs: docs/DECKS_FEATURE.md § "Sort by (every collection)".
+ * Host: the Deck Tower's cards page (TowerCardsPage). Docs: docs/DECK_TOWER.md
+ * § "The cards page".
  */
 export interface CollectionSortControlProps {
     sortKey: VocabSortKey;
@@ -47,30 +44,23 @@ export interface CollectionSortControlProps {
     /** Decides which mastery rows exist — the same gate as the bars themselves. */
     goals: MasteryGoals;
     /**
-     * The host surface's mastery LENS (docs/DECKS_FEATURE.md § "Mastery Centers").
-     * `core` (default) offers one row set per active bar; a skill lens offers that
-     * ONE bar's rows and drops the others, because a Mastery Center is already about
-     * that skill. Under a skill lens `allowPerSkillBars` is moot — the lens bar is
+     * The host surface's mastery LENS (the Deck Tower world). `core` (default) offers
+     * one row set per active bar; a skill lens offers that ONE bar's rows and drops the
+     * others, because a skill world's cards page is already about that skill. Under a skill lens `allowPerSkillBars` is moot — the lens bar is
      * never filtered out by it.
      */
     lens?: MasteryWorldId;
     /**
-     * Show the deck-only rows (currently "Date added", which reads `deckAddedAt` —
-     * a field only the deck read selects). False on any collection where that field
-     * does not exist, or the row would sort by nothing.
-     */
-    allowDeckOnly?: boolean;
-    /**
      * Offer the PER-SKILL rows (the Mastery and Cooldown rows for the reading and
      * writing bars). False keeps the menu to the orderings that apply to every card —
-     * what the /decks sheet's whole-library Cards section wants, where a per-skill
+     * what the main world's whole-library cards page wants, where a per-skill
      * ordering is a niche view of a list the learner opened to find one word in.
      * The CORE bar's rows are always offered.
      */
     allowPerSkillBars?: boolean;
     /**
      * Class-name prefix so each host keeps distinct hooks
-     * (e.g. "collection-view" → `collection-view__sort-button`).
+     * (e.g. "tower-cards-page__cards" → `tower-cards-page__cards__sort-button`).
      */
     classPrefix: string;
 }
@@ -81,27 +71,23 @@ const CollectionSortControl: React.FC<CollectionSortControlProps> = ({
     language,
     goals,
     lens = "core",
-    allowDeckOnly = false,
     allowPerSkillBars = true,
     classPrefix,
 }) => {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
-    // Two visibility gates, both filtering the shared list rather than forking it:
-    //   • deck-only rows are hidden where the field they read does not exist —
-    //     `deckAddedAt` is selected only by the deck read (OnDeckVocabService.getDeckCards);
-    //   • per-skill rows are hidden where the host asked for the common orderings only.
+    // One visibility gate, filtering the shared list rather than forking it: per-skill
+    // rows are hidden where the host asked for the common orderings only.
     // `bundle.bar` is the tag rather than an `id` match, so adding a bar cannot
     // silently slip a row past this filter.
     const bundles = useMemo(
         () => sortBundles(language, goals, lens).filter((bundle) => {
-            if (bundle.deckOnly && !allowDeckOnly) return false;
             // Only meaningful under the CORE lens: a skill lens already offers exactly
-            // one bar, and hiding it would leave the Center with no mastery row at all.
+            // one bar, and hiding it would leave that world with no mastery row at all.
             if (lens === "core" && bundle.world && bundle.world !== "core" && !allowPerSkillBars) return false;
             return true;
         }),
-        [language, goals, lens, allowDeckOnly, allowPerSkillBars]
+        [language, goals, lens, allowPerSkillBars]
     );
 
     return (

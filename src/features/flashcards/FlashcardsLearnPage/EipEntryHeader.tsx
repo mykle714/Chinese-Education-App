@@ -1,9 +1,10 @@
 import React, { useMemo } from "react";
 import { Box, ButtonBase, Typography, useTheme, type BoxProps } from "@mui/material";
-import { DEFINITION_LIST_SEPARATOR, ddt, resolveDisplayDefinition, resolveDisplayPronunciation, resolveSelectedSenseIndex, sortedSenseClusters } from "../../../utils/definitionUtils";
+import { DEFINITION_LIST_SEPARATOR, resolveDisplayDefinition, resolveDisplayPronunciation, resolveSelectedSenseIndex, sortedSenseClusters } from "../../../utils/definitionUtils";
 import SwipeableTwoLineText, { type TwoLineSegment } from "../../../components/SwipeableTwoLineText";
+import { buildSenseSegments } from "../../../components/senseListSegments";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
-import Icon from "../../../components/Icon";
+import GlossText from "../../../components/GlossText";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import { EIP_PANEL_GUTTER, InfoSheetEntryHeader } from "./styled";
 import { FC_FONT_CJK } from "../constants";
@@ -21,7 +22,7 @@ import { useEipColors } from "./useEipPalette";
 // dd in one dot-separated list (the chosen sense underlined, the default starred).
 //
 // Mounted on every eip host: by InfoCardSection in the eip SHEET's upper panel
-// (EipUpperPanel — flp/scp/saved-card cdp/Dictionary), and by InfoCardPanelBody in the
+// (EipUpperPanel — flp/ancp/saved-card cdp/Dictionary), and by InfoCardPanelBody in the
 // cdps' inline panels.
 //
 // Tower Tier 2 styling (2026-10-29), layout unchanged: the headword sits in a RAISED TILE
@@ -83,10 +84,6 @@ const HEADWORD_CPCD_TOP_TRIM = 3;
 // rest (`glossToScreenEdge`). It scrolls away with the text, which then clips at the keycap.
 const GLOSS_KEYCAP_CLEARANCE = 10;
 
-// The starred default's icon (the SensePicker's star, same size) and the gap after it —
-// the star LEADS the gloss here (owner's call 2026-10-30). Their sum is the `leadingWidth` SwipeableTwoLineText adds when it measures a line.
-const SENSE_STAR_SIZE = 13;
-const SENSE_STAR_GAP = 3;
 
 // Space between the headword cpcd and the speaker / Learning stack. Near zero on
 // purpose: the stack should hug the headword so the dd gets the width (see the
@@ -119,23 +116,11 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     const senseClusters = useMemo(() => (entry ? sortedSenseClusters(entry) : null), [entry]);
     // No override → the persisted pick, exactly as the dd/pinyin resolvers fall back.
     const underlinedSenseIndex = selectedSenseIndex ?? (entry ? resolveSelectedSenseIndex(entry) : 0);
-    const senseSegments = useMemo<TwoLineSegment[] | null>(() => senseClusters?.map((cluster, index) => ({
-        text: ddt(cluster),
-        className: index === underlinedSenseIndex ? "mobile-demo-eic-sense mobile-demo-eic-sense--selected" : "mobile-demo-eic-sense",
-        ...(index === 0 && {
-            leading: (
-                <Icon
-                    name="star"
-                    size={SENSE_STAR_SIZE}
-                    fill={1}
-                    color="inherit"
-                    className="mobile-demo-eic-sense-star"
-                    sx={{ marginRight: `${SENSE_STAR_GAP}px`, verticalAlign: "-1px" }}
-                />
-            ),
-            leadingWidth: SENSE_STAR_SIZE + SENSE_STAR_GAP,
-        }),
-    })) ?? null, [senseClusters, underlinedSenseIndex]);
+    // Shared with Memory Map's prompt (src/components/senseListSegments.tsx).
+    const senseSegments = useMemo<TwoLineSegment[] | null>(
+        () => (senseClusters ? buildSenseSegments(senseClusters, underlinedSenseIndex, "mobile-demo-eic-sense") : null),
+        [senseClusters, underlinedSenseIndex]
+    );
     // The keycap's 1px outline: the app's border token by day, a faint white ring at night.
     const tileRing = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     // A tap on the keycap's PADDING (outside the cpcd row) still copies: forward it as a
@@ -343,7 +328,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                     {/* The eip header gloss is a dd: it must agree with the flashcard face,
                         so it resolves through the shared resolver (chosen sense →
                         definitions[0] fallback) instead of reading definitions[0] directly. */}
-                    {resolveDisplayDefinition(entry, selectedSenseIndex)}
+                    <GlossText text={resolveDisplayDefinition(entry, selectedSenseIndex)} />
                 </Typography>
                 )}
                 </Box>

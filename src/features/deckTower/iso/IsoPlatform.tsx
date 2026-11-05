@@ -13,6 +13,8 @@ import { IsoDeckHingeContext, useIsoPalette, useIsoProjector } from "./sceneCont
  *
  * Its top surface — the FLOOR — is at z = 0 and it extends DOWN to −thickness. Drawn back
  * to front:
+ *   0. `groundDecals` — passing shade on the ground (drifting cloud shadows), under
+ *      everything else, so the slab's own shadow and the slab cover the part beneath them;
  *   1. its shadow on the `ground` (IsoShadow — the slab's footprint cast from its
  *      underside);
  *   2. the slab (IsoSolid), its top painted in the lighter RIM tone;
@@ -54,6 +56,11 @@ interface IsoPlatformProps {
     hingeAngle?: number;
     /** Flat things printed on the floor. They swing with the slab when it opens. */
     decals?: React.ReactNode;
+    /**
+     * Flat things on the GROUND, drawn first of all (step 0). They do not bob with a
+     * `floating` slab — the ground stays put — but they do take `fadeStyle`.
+     */
+    groundDecals?: React.ReactNode;
     /** Things standing on the floor; they ride along when it floats. */
     children?: React.ReactNode;
     /** Extra class / style on the group holding the slab and everything on it (e.g. a landing sink). */
@@ -75,7 +82,7 @@ export const RIM_WIDTH = 0.16;
 /** How far the swung top's veil goes toward the right-wall tone, at π/2 (see the veil below). */
 const SWING_SHADE_MAX = 0.7;
 
-const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, children, tone, bodyClassName, bodyStyle, bobPaused = false, fadeStyle, fadeChildren = true }) => {
+const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floating = false, hingeAngle = 0, decals, groundDecals, children, tone, bodyClassName, bodyStyle, bobPaused = false, fadeStyle, fadeChildren = true }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     const slabTone = tone ?? { material: palette.platform, rim: palette.platformRim };
@@ -143,12 +150,22 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
         </g>
     );
 
+    // Outside IsoLevitate: its `shadow` slot breathes with the bob, and ground decals must not.
+    const groundLayer = groundDecals ? (
+        <g className="iso-platform__ground-decals" style={fadeStyle}>
+            {groundDecals}
+        </g>
+    ) : null;
     return floating ? (
-        <IsoLevitate shadow={shadow} paused={bobPaused}>
-            {body}
-        </IsoLevitate>
+        <>
+            {groundLayer}
+            <IsoLevitate shadow={shadow} paused={bobPaused}>
+                {body}
+            </IsoLevitate>
+        </>
     ) : (
         <>
+            {groundLayer}
             {shadow}
             {body}
         </>

@@ -2,7 +2,7 @@ import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import { COLORS, type RampHue } from "../../theme/colors";
 
-/** `wins` table key, shared with the Games hub's badge. */
+/** `wins` table key. */
 export const GAME_KEY = "speedReading";
 
 /**
@@ -12,8 +12,8 @@ export const GAME_KEY = "speedReading";
  * that track.
  *
  * Single source of truth for the `?markType=` pool query (useSpeedReadingQueue),
- * the /api/flashcards/mark call (SpeedReadingPage), and the Games hub's mark-type
- * chip (via GAME_REGISTRY's `markType`).
+ * the /api/flashcards/mark call (SpeedReadingStage), and GAME_REGISTRY's `markType`
+ * (which the flp break picker reads).
  */
 export const MARK_TYPE: MarkType = "reading";
 
@@ -34,25 +34,25 @@ export const WIN_LEVEL = 1;
  * (see WRONG_PENALTY_MS) rather than by making the run longer.
  *
  * There is no Skip: every round must be answered, so every round counts. See the
- * SpeedReadingPage doc-comment for why the button was removed rather than priced.
+ * SpeedReadingStage doc-comment for why the button was removed rather than priced.
  */
 export const TARGET_ROUNDS = 20;
 
 /**
- * How many of those rounds are SENTENCE rounds, taken from the END of the run
- * (rounds 19 and 20 of 20).
+ * How many of those rounds are SENTENCE rounds, taken from the END of the run:
+ * just the last one, round 20 of 20 (it was the last two until 2026-11-04).
  *
  * The finale escalates from "read this word" to "read this word in context":
  * both options are the same example sentence, differing at one character inside
  * the target word, and the prompt shows the sentence's translation, its pinyin,
  * and narrates the sentence rather than the bare word.
  *
- * Their cards are RESERVED AT LOAD from the initial pool — the only cards
+ * The card is RESERVED AT LOAD from the initial pool — the only cards
  * eligible are ones whose det row already carries an example sentence containing
  * the headword — so the finale is decided before the run starts and never
  * depends on what a mid-run top-up returns. See useSpeedReadingQueue.
  */
-export const SENTENCE_ROUNDS = 2;
+export const SENTENCE_ROUNDS = 1;
 
 /**
  * Seconds added to the final time for each wrong answer, in ms.
@@ -80,7 +80,7 @@ export const WRONG_PENALTY_MS = 3_000;
  *
  * ⚠️ This constant is also NOT the whole gap the player feels. Two other sources
  * used to dominate it, both now fixed: the next round's glyphs loading on mount
- * (SpeedReadingPage prebuilds and prefetches one round ahead) and the option
+ * (SpeedReadingStage prebuilds and prefetches one round ahead) and the option
  * colour's 140ms fade back to neutral (SpeedReadingTapZone transitions into
  * feedback only). Re-check those before shortening this further.
  */
@@ -90,8 +90,9 @@ export const FEEDBACK_MS = 180;
 // carried on a wrong answer — was REMOVED, along with FLOAT_INDICATOR_MS,
 // PENALTY_INDICATOR_MS and indicatorLifetime(). The tapped half's green/red tint
 // is now the only visual answer cue. ⚠️ Nothing shows the WRONG_PENALTY_MS
-// charge at the moment it is incurred; it is visible only as the clock being
-// larger than the elapsed time. See docs/SPEED_READING_GAME.md.
+// charge at the moment it is incurred, and the live clock is no longer drawn
+// (SpeedReadingStage): the seconds appear only on the results' accuracy line.
+// See docs/SPEED_READING_GAME.md.
 
 /** Cards fetched on game load. */
 export const INITIAL_BATCH = 20;
@@ -112,7 +113,7 @@ export const TOPUP_BATCH = 5;
 /**
  * Fill of the TAPPED half while it is showing answer feedback — green if the
  * pick was right, red if it was wrong — for the FEEDBACK_MS window. The other
- * half is never tinted (see SpeedReadingPage.feedbackFor).
+ * half is never tinted (see SpeedReadingStage.feedbackFor).
  *
  * Held at the old option cards' 0.14 even though the tinted area is now half the
  * screen: with the float indicator gone this tint is the ONLY visual answer cue,
@@ -121,21 +122,14 @@ export const TOPUP_BATCH = 5;
  */
 /*
  * v2: the MID tier of green / red (artboard 15 caption "Mid: picked word" — the tapped
- * half IS this app's picked word, since the option cards were removed). The same two
- * tokens fill the HUD's round ticks (SpeedReadingRoundTicks), so the flash and the tick
- * that lands a beat later are literally one colour. They were off-palette 14% washes of
- * the old tone-2 green / tone-1 red.
+ * half IS this app's picked word, since the option cards were removed). They were
+ * off-palette 14% washes of the old tone-2 green / tone-1 red. (They also filled the HUD's
+ * round ticks until the HUD was removed, 2026-11-04.)
  */
 export const ZONE_TINT_CORRECT = COLORS.grnM;
 export const ZONE_TINT_WRONG = COLORS.redM;
-/**
- * Hairline down the middle, so the two halves read as two targets before the
- * player has tapped either. Deliberately fainter than `COLORS.border` — it is a
- * seam, not a frame.
- */
-// `--line` (ink 0.10). It was a white 8% alpha, which on v2's white play panel drew
-// nothing at all.
-export const ZONE_DIVIDER = COLORS.rowBorder;
+// ZONE_DIVIDER (the hairline down the middle of the board) was REMOVED 2026-11-04 by
+// request: the two words, centred on their halves, already say where each target is.
 /** Horizontal breathing room around one option word, px, per side. */
 export const OPTION_WORD_PADDING_X_PX = 12;
 /**
@@ -192,7 +186,7 @@ export type Medal = "gold" | "silver" | "bronze" | null;
  *
  * Only call this for a run that actually completed all TARGET_ROUNDS — a run cut
  * short by a drained queue has a small elapsed time that would otherwise buy a
- * gold. The page guards that; this function deliberately does not take the round
+ * gold. The Stage guards that; this function deliberately does not take the round
  * count so it stays a pure time→medal mapping.
  */
 export function medalFor(totalMs: number): Medal {
@@ -203,7 +197,7 @@ export function medalFor(totalMs: number): Medal {
 }
 
 /**
- * `M:SS` for the clock and the end popup. No hour handling: there is no time cap,
+ * `M:SS` for the break's results card. No hour handling: there is no time cap,
  * but a run past 59:59 is a walked-away tab, not a score worth formatting.
  */
 export function formatClock(ms: number): string {
@@ -220,12 +214,12 @@ export const MEDAL_LABEL: Record<Exclude<Medal, null>, string> = {
 };
 
 /**
- * THE GAME'S HUE — its hub row's colour AND the accent ground its own screen is
- * flooded with (docs/SHELF_REDESIGN.md § A6b).
+ * THE GAME'S HUE — the accent ground its break screen is flooded with
+ * (docs/SHELF_REDESIGN.md § A6b).
  *
  * It lives here rather than as a literal in `GAME_REGISTRY` so the two cannot drift:
- * the registry reads this, and the page passes it to `gameSurfaceSx` /
- * `GameSurfaceProvider`. Tapping a yellow row must open a yellow screen.
+ * the registry reads this, and the flp break frame (`gameBreakFrameFor`,
+ * GameBreakFrame.tsx) floods its screen with it.
  *
  * Yellow since v2 (artboard 15, `#spr` on `--yelK`); it was blue until the hub hues
  * were brought in line with the artboards.

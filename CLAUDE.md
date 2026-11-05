@@ -14,11 +14,10 @@ bt = breakdown tab (in the extra info card)
 est = example sentence tab (in the extra info card)
 et = expansion tab (in the extra info card)
 mdp = mobile demo page
-flp = /flashcards/learn page
-fdp = /flashcards/decks page
+flp = the flashcard study session (`FlashcardsLearnPage`), run in place inside the Deck Tower — no route of its own since 2026-11-04
 gsa = greedy segmentation algorithm
-scp = sort cards page — the drag-to-sort page at `/discover/sort/:language` (reached from Home's decks rail; back returns Home — the `/discover` hub was deleted 2026-10-17)
-hp = hub menu page — the Menu bento at `/menu` (`src/pages/MenuPage.tsx`; Games, Reader, Arena, Friends, Night Market, Tester Dashboard, …); footer Menu tab. It moved off `/` in the 2026-10-10 Home↔Menu swap — `/` (footer Home tab) is now the fdp
+ancp = add new cards page (formerly scp, renamed 2026-11-04) — the drag-to-sort page at `/discover/sort/:language` (reached from the Deck Tower's sort platform; Back returns to `/`, main world — the `/discover` hub was deleted 2026-10-17)
+hp = hub menu page — the Menu bento at `/menu` (`src/pages/MenuPage.tsx`; Games, Reader, Friends, Night Market, Tester Dashboard, …); footer Menu tab. `/` (footer Deck tab) is the Deck Tower (td)
 tdp = tester dashboard page — `/tester-dashboard` (former landing content: study time, streak, calendar, leaderboard)
 cdp = card detail page
 pct = particles and classifiers table
@@ -39,12 +38,8 @@ nme = night market editor
 nms = night market sandbox
 bk = beginner keyboard
 shp = SteppedHelpPopup
-rc = reading center
-wc = writing center
-rflp = reading flp
-wflp = writing flp
-rg = reading games
-wg = writing games
+rflp = reading flp (the td reading world's study session)
+wflp = writing flp (the td writing world's study session)
 coaw = classification of all words
 deip = dictionary eip
 si = soft introduction
@@ -61,7 +56,7 @@ the name; say which one when it matters:
 
 | Where | What it counts | Read by |
 |---|---|---|
-| fdp Learning tile, the `learn-now` built-in collection, the `'library'` starter-pack bucket | every non-mastered card (U+T+C), cooling or not | `builtinCollectionCount({ kind: "learn-now" })` |
+| td cards page's Learning filter key, the `learn-now` built-in collection, the `'library'` starter-pack bucket | every non-mastered card (U+T+C), cooling or not | `builtinCollectionCount({ kind: "learn-now" })` |
 | The Deck Tower's Learning deck (tower deck) | OFF-COOLDOWN cards in all four utcm bands (Mastered included) | `useFlpReadyCounts` + `bandTotal(…, TOWER_MODES.mix.bands)` — [docs/DECK_TOWER.md](./docs/DECK_TOWER.md) |
 
 **Backend contracts keep the old ids** and must not be renamed: the `'learn-now'` /
@@ -99,6 +94,13 @@ Do not write content descibing what you just completed; you should write the sta
 ## 💾 Database Tasks
 
 > ⚠️ **Before doing any database work**, read [machineEnvironment.md](./machineEnvironment.md) to determine which machine you are on. If it says **PPE**, be especially careful about writes, migrations, and destructive operations — confirm with the user before proceeding. If it says **DEV**, normal local development is safe.
+
+### "Update this entry" means PPE
+When the user asks you to update a database entry (a det row, a sort pack, any data
+record), make the change on **PPE** (via `/ssh-ppe`), not on the dev box. PPE's database
+is the source of truth: a dev-only edit is silently overwritten by the next
+`/data-ppe-to-dev` pull. Optionally mirror the same change on dev afterwards so the two
+agree until the next pull.
 
 ### PostgreSQL Queries
 When querying or working with the PostgreSQL database:
@@ -141,6 +143,18 @@ Those languages are **not user-selectable** for now; build the per-language
 tables before re-enabling them. Relevant migrations: 55 (gender), 57 (rename →
 `dictionaryentries_zh`), 58 (create `dictionaryentries_es`), 59 (es etymology), 60 (affixes), 61 (affix gender/number + interfix/infix), 103 (drop vestigial `gender` from `dictionaryentries_zh`), 123 (es converges on the zh clustered-sense model: `word1` unique, per-(pos,gender) rows merged into `definitionClusters`).
 
+### Goal: every det entry becomes discoverable
+The end state is for **every** `dictionaryentries_zh` / `dictionaryentries_es` row to be
+discoverable. An hourly backfill cron on PPE (the `/oracle-backfill` pipeline) is slowly
+enriching det entries and marking them discoverable, a process expected to take the next
+couple of months (as of 2026-11-03). So a non-discoverable word is **not yet processed**,
+not excluded. That changes two things:
+- A data-quality fix must go into the **pipeline step itself** (the backfill that the
+  cron runs), not only into a one-off repair of today's discoverable rows. Otherwise
+  every word promoted later arrives with the old defect.
+- Corpus-wide counts taken over `discoverable = TRUE` describe a moving subset. Say so
+  when reporting them.
+
 ### Marking Words Discoverable
 
 It is **illegal** to set `discoverable = TRUE` on any `dictionaryentries_zh` or
@@ -153,6 +167,12 @@ word ships to learners incompletely enriched. Always go through
 `/mark-discoverable` end to end, including its verification step.
 
 ## 🗣️ Multi-Language Support
+
+> ⛔ **Spanish is paused until further notice (2026-11-03).** Do not work on Spanish:
+> no es backfills, es data repairs, es-only fixes or es feature work. When a shared
+> change touches both languages, implement and verify the Chinese side only and leave
+> the Spanish side as it is. Note any Spanish gap you find in
+> [docs/DEFERRED_WORK.md](./docs/DEFERRED_WORK.md) rather than fixing it.
 
 For adding or modifying language support:
 → See [docs/MULTI_LANGUAGE_IMPLEMENTATION.md](./docs/MULTI_LANGUAGE_IMPLEMENTATION.md)
@@ -204,10 +224,10 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 → Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
 
 ### UX & Navigation
-→ See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs + `/` Home menu + back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, the Discover two-level surface, and the global touch/scroll/selection rules.
+→ See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs Deck · Menu · Arena · Dictionary; `/` = the Deck Tower; back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, and the global touch/scroll/selection rules.
 
 ### Bento System
-→ See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Home/Discover/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
+→ See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Menu/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
 ### Feature Flags
 → See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge, Community, Night Market and Immersive World are currently the only flags switched OFF.**
@@ -262,10 +282,10 @@ so the progress survives.
 → See [docs/FRIENDS_FEATURE.md](./docs/FRIENDS_FEATURE.md) — the friend graph (`friendships`, migration 138): the hp Friends row and its three NodePages (`/friends`, `/friends/sent`, `/friends/requests`), adding a friend by pasted user ID, the one-row-per-pair model (a friendship IS an accepted request; declining deletes the row), and the crossing-request auto-accept rule.
 
 ### Arena (weekly global division leaderboard)
-→ See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **DEPLOYED to PPE**: the hp Arena row and `/arena`, a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages`, clustering as a **sort-and-chunk over a geohash cell** (a space-filling curve, so the stored location format *is* the sort key) inside a hard (timezone, division) partition, synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in location flow for `users."geoCell"` (a ~5 km cell truncated **on the device**; coordinates never reach the server).
+→ See [docs/ARENA_FEATURE.md](./docs/ARENA_FEATURE.md) — **DEPLOYED to PPE**: the footer Arena tab (`/arena`), a weekly cluster of 25 players ranked by minutes earned while the arena is live. Covers the Tue 04:00 → **Sun 16:00** cycle and its 36-hour break/opt-in period (the app's only non-04:00 boundary, and why), 12 divisions held **per (user, language)** on `user_languages`, clustering as a **sort-and-chunk over a geohash cell** (a space-filling curve, so the stored location format *is* the sort key) inside a hard (timezone, division) partition, synthetic padding that lives in `arena_members` rather than `users`, ±5 promotion/relegation, and the opt-in location flow for `users."geoCell"` (a ~5 km cell truncated **on the device**; coordinates never reach the server).
 
 ### Study Challenge (weekly head-to-head between friends)
-→ See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, generated (non-editable) challenge decks that don't count against the 100-deck cap, the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
+→ See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, the nine words join both players' cards on accept (no study deck since 2026-11-04), the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
 
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.
@@ -282,7 +302,7 @@ so the progress survives.
 → See [docs/CPCD_PINYIN_SHIFT.md](./docs/CPCD_PINYIN_SHIFT.md) — how `CPCDRow` spaces out long pinyin (rendered wider than its column): a long syllable stays centered over its char and pushes its immediate neighbors outward; opposing pushes cancel.
 
 ### Client Performance Diagnostics
-→ See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the PPE-only footer/decks lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
+→ See [docs/CLIENT_PERF_DIAGNOSTICS.md](./docs/CLIENT_PERF_DIAGNOSTICS.md) — real-user tap-latency telemetry (Event Timing / long tasks) for the PPE-only footer lag; sink at `POST /api/diagnostics/perf`, analyze with `server/scripts/analyze-client-perf.ts`
 
 ## 🔧 Troubleshooting
 

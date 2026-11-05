@@ -243,9 +243,9 @@ const CooldownTimer: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number 
 export interface MasteryWindowProps {
     entry: VocabEntry;
     /**
-     * The surface's mastery lens — which track the window opens on. `core` on the
-     * fdp/deck/search path, `reading`/`writing` for a card opened from that Mastery
-     * Center (docs/DECKS_FEATURE.md § "Mastery Centers").
+     * The surface's mastery lens — which track the window opens on. `core` by
+     * default, `reading`/`writing` for a card opened from td's reading/writing cards
+     * page (the cdp's `?world=` lens, collectionRef → `lensFromSearch`).
      */
     lens?: MasteryWorldId;
     /**

@@ -88,7 +88,7 @@ function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
     };
     const unused = {} as never;
     const service = new StudyChallengeService(
-        challengeDAL, unused, userDAL as never, unused, unused, starterPacks as never, txRunner as never
+        challengeDAL, unused, userDAL as never, starterPacks as never, txRunner as never
     );
     return { service, ensured };
 }
@@ -273,7 +273,7 @@ describe('StudyChallengeService — claimed (in-progress) rounds', () => {
         };
         const unused = {} as never;
         const service = new StudyChallengeService(
-            challengeDAL, unused, userDAL as never, unused, unused, unused, unused
+            challengeDAL, unused, userDAL as never, unused, unused
         );
         return { service, written };
     }

@@ -1,6 +1,5 @@
 import React from "react";
 import type { GamePoolResponse } from "../../api/gamePool";
-import { modeConfigFor } from "../match-speed/constants";
 import MatchSpeedStage from "../match-speed/MatchSpeedStage";
 import type { FlpBreakStageProps } from "./types";
 
@@ -21,9 +20,8 @@ const MatchSpeedBreakStage: React.FC<FlpBreakStageProps<GamePoolResponse>> = ({
     <MatchSpeedStage
         host="flpBreak"
         Frame={Frame}
-        baseModeConfig={modeConfigFor(context.studyMode)}
         showPinyin={candidate.showPinyin}
-        collection={context.collection}
+        markType={candidate.markType}
         seedIds={context.seedIds}
         prefetchedPool={prefetched}
         onDone={onDone}

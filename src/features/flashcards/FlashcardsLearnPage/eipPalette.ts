@@ -3,7 +3,8 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "../../../timeOfDay/da
 
 /**
  * eipPalette.ts — the eip's colours for the learner's time of day (the Tower Tier 2
- * design, "Tower Tier 2 - Time of Day": artboards Dawn / Day / Sunset / Night–inverted).
+ * design, "Tower Tier 2 - Time of Day": artboards Day / Night–inverted; its Dawn and Sunset
+ * artboards were cut 2026-11-04 with those phases, docs/TOWER_WEATHER_SKY.md § 1).
  *
  * Layer: feature logic (src/features/flashcards). Pure — `useEipPalette` samples the shared
  * clock (src/timeOfDay/useDayClock) and hands the result to `EipPaletteProvider`.
@@ -17,16 +18,16 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "../../../timeOfDay/da
  *           tab body, whose example / breakdown cards are `card`.
  *
  * ── What a phase changes ──────────────────────────────────────────────────────
- *   DAWN / DAY / SUNSET change only the UPPER panel's ground and wells — a pale
- *   tint of the tower's sky at that hour. Keys, the shelf and the ink stay as by day.
+ *   DAY tints only the UPPER panel's ground and wells — a pale tint of the tower's sky.
+ *   Keys, the shelf and the ink are the app's day colours.
  *   NIGHT inverts the whole panel (the design's "Night–inverted", chosen 2026-10-29):
  *   slate panels, light ink, inner cards a lifted slate.
- * Phases BLEND across the tower's 30-minute twilights (`eipPaletteAt`), so the eip and the
+ * Phases BLEND across the tower's hour-long twilights (`eipPaletteAt`), so the eip and the
  * tower always agree on the hour. The INK cannot blend — a half-way grey on a half-way
  * slate is unreadable — so it flips to night's light ink once night is the larger share.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (the same divergence as the tower's
- * `PHASE_SKY`): the framework has no dawn, sunset or night tiers, so the phase grounds are
+ * `NIGHT_SKY`): the framework has no night tier (nor a pale-sky ground), so the phase grounds are
  * the design's own values. Day-time keys, ink and lines DO come from COLORS; each
  * substitution of a design value by its nearest token is noted beside it.
  *
@@ -66,7 +67,7 @@ export interface EipPalette {
     dark: boolean;
 }
 
-// ── Day-time keys, shelf and ink: shared by dawn, day and sunset ─────────────────
+// ── Day-time keys, shelf and ink ──────────────────────────────────────────────────
 const LIGHT_BASE = {
     face: COLORS.white,
     // Design `--edge` #E2E2E6 → COLORS.grey #E7E7EA (nearest token; 2% lighter).
@@ -92,14 +93,6 @@ const tabTrack = (well: string, wellShadow: string) => ({
 });
 
 const PHASE_PALETTE: Record<DayPhase, EipPalette> = {
-    // `.t2d` — rose, the tower's dawn sky (hue 351) at a faint tint.
-    dawn: {
-        ...LIGHT_BASE,
-        ground: "#FBEEF1",
-        well: "#F4DFE5",
-        wellShadow: "#EAD0D8",
-        ...tabTrack("#F4DFE5", "#EAD0D8"),
-    },
     // `.t2a` — pale sky. Authored oklch, shipped as the clamped hex (colors.ts rule).
     day: {
         ...LIGHT_BASE,
@@ -107,14 +100,6 @@ const PHASE_PALETTE: Record<DayPhase, EipPalette> = {
         well: "#D1EAFC", // oklch(92.5% 0.036 238)
         wellShadow: "#BDDDF2", // oklch(88% 0.045 238)
         ...tabTrack("#D1EAFC", "#BDDDF2"),
-    },
-    // `.t2s` — peach, the sunset sky (hue 37) at a faint tint.
-    sunset: {
-        ...LIGHT_BASE,
-        ground: "#FCF0E6",
-        well: "#F6E1CF",
-        wellShadow: "#EDD1BA",
-        ...tabTrack("#F6E1CF", "#EDD1BA"),
     },
     // `.t2n.t2ni` — Night–inverted: everything slate, light ink.
     night: {
@@ -153,7 +138,7 @@ export function eipPaletteAt(time: TimeOfDay): EipPalette {
     if (time.from === time.to || time.t <= 0) return a;
     const out = {} as Record<keyof EipPalette, string | boolean>;
     for (const k of COLOR_KEYS) out[k] = mixHex(a[k], b[k], time.t);
-    const inkFrom = phaseShare(time, "night") >= 0.5 ? PHASE_PALETTE.night : (time.from === "night" ? b : a);
+    const inkFrom = phaseShare(time, "night") >= 0.5 ? PHASE_PALETTE.night : PHASE_PALETTE.day;
     for (const k of INK_KEYS) out[k] = inkFrom[k];
     return out as unknown as EipPalette;
 }

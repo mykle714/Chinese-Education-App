@@ -779,7 +779,7 @@ because a level-1 learner has nothing below them to draw an easier word from.
 
 Levels are 1..6 for every language (`StarterPacksService`, `de."difficulty" BETWEEN 1
 AND 6`); the zh-facing label is "HSK n" and other languages read "Level n"
-(`src/features/discover/SortCardsPage.tsx`).
+(`src/features/discover/AddNewCardsPage.tsx`).
 
 Two app-wide rules this leans on, both written up in docs/PROVISIONAL_CARDS.md:
 
@@ -919,12 +919,7 @@ So a strict-bucket request **collapses the fill order to the requested buckets a
 > cards instead of borrowing (GAMES_FEATURE.md, the strict-bucket note). Hydra is
 > unaffected: it always sends the flag.
 >
-> **Note for anyone auditing other games:** Match Speed's Review and Challenge modes
-> also request a two-band subset (`Comfortable`+`Mastered`, `Unfamiliar`+`Target`) and
-> do **not** set the flag, so a "Review" board can legitimately be topped up with
-> Unfamiliar cards. That is pre-existing behavior and was left alone — but it is the
-> same question, and if those mode names are meant as promises the flag is how to keep
-> them.
+
 
 Tier 4 is the one that matters here, and it **deliberately breaks the per-type
 cooldown**: a genuinely Mastered card that is merely resting is a *truthful* bloom
@@ -937,11 +932,15 @@ should earn nothing. Bloom is play, not progress.
 A strict-bucket request would rather come back **short** — the client waits (§ 6.2b)
 or skips the slot — than come back **wrong**.
 
-### 6.3 Collection- and deck-restricted runs
+### 6.3 Focus-scoped runs
 
-When the run is restricted (`?deck=` / `?collection=`), **do not lend** and **do not
-honor cooldown**. The set the learner chose is the set they play. Marks earned on
-those cooled cards do not count — see § 8.
+The only restricted run left is a **focused world's** (FOCUS_MODE.md § 4): the server
+substitutes today's remaining focus set for the unrestricted pool
+(`OnDeckVocabController`, the `{ kind: 'focus' }` `CollectionFilter`), and **does not
+lend** — not even on a rolling-supply refill (`!opts.collection` gate in
+`OnDeckVocabService.getGameVocabPool`). The set is the set they play; a cooling card in it
+can still be dealt, and its mark is dropped (§ 8). (Deck- and collection-restricted runs,
+`?deck=` / `?collection=`, were removed with Decks on 2026-11-04.)
 
 ### 6.4 What the learner sees
 
@@ -1318,7 +1317,7 @@ is the point.
 > * **§ 8.1 needs to know WHICH surface served the card**, and only the client knows
 >   that. The request gained an optional `surface` string, sent by every call site.
 >   Nothing branches on it — it exists purely so the suppressed-mark log can tell
->   fill-tier-4 suppression (the collision we are measuring) apart from deck/collection
+>   fill-tier-4 suppression (the collision we are measuring) apart from restricted-run
 >   suppression (§ 6.3, intended). Without it the log is one undifferentiated count
 >   and answers nothing, which would have defeated the whole reason for shipping the
 >   guard instrumented.
@@ -1341,7 +1340,7 @@ The cooldown stops being an advisory scheduling hint and becomes a hard
 `getGameVocabPool` (`server/services/OnDeckVocabService.ts`) fills a game board in
 five tiers: (1) fresh cards from the requested buckets, (2) fresh cards from the
 fallback buckets, (3) **cooled cards**, (4) avoided cards, (5) **lend**. The cooled tier
-fires on *ordinary* runs — no deck, no collection — whenever the fresh tiers cannot fill
+fires on *ordinary* (unrestricted) runs whenever the fresh tiers cannot fill
 the board, which is any learner playing two rounds back to back. Those marks were
 recorded before the guard; under it they silently stop being recorded.
 
@@ -1355,11 +1354,11 @@ alternative the log was collected to evaluate — delete the cooled tier and len
 — is now explicitly rejected.
 
 The log keeps its other job: telling ordinary cooled-tier suppression apart from the
-deck/collection suppression that is intended (§ 6.3).
+restricted-run suppression that is intended (§ 6.3).
 
 What the log carries: user (truncated), card id, language, mark type, the cooldown
 window that was in force, the serving surface, and whether the mark was positive — so
-a follow-up can tell tier-4 suppression apart from deck/collection suppression
+a follow-up can tell tier-4 suppression apart from restricted-run suppression
 (§ 6.3), which is intended. Tracked in docs/DEFERRED_WORK.md.
 
 ⚠️ Until that follow-up happens, a small-library learner can play a full round and see
@@ -1375,7 +1374,7 @@ no movement in their history, with no error and nothing visibly different in the
 | Registry | one `GameDef` in `src/games/registry.ts` — `gameId: "hydra-bubbles"`, `title: "Hydra Bubbles"`, `markType: "recognition"` |
 | Levels | **none** — single mode, one hub row. Board size is the difficulty curve. |
 | Minute points | eligible; `/games/hydra-bubbles` joins `MINUTE_POINTS_ELIGIBLE_PAGES` and the start-on-entry subset (`src/constants.ts`); fire badge in the header |
-| Collection selector | honored (`?deck=` / `?collection=`) on **every** pool fetch including mid-run top-ups |
+| Collection selector | **none** (deleted with Decks, 2026-11-04); a focused world narrows every pool fetch server-side (§ 6.3) |
 | Study Challenge | **in the pool** as a recognition game, scored on time-to-clear the challenge words (§ 7.5); needs a `ChallengeScoringSpec` in `CHALLENGE_GAMES` (`server/contracts/wire.ts`) |
 | Languages | **no `languages` gate** — offered for Spanish as for Chinese, matching Bubble Match. Levels 1..6 exist for every language and nothing in the payout or spawn logic is zh-specific |
 | Header controls | pinyin show/hide toggle + TTS autoplay on pickup / drop-onto a Chinese bubble, as Bubble Match |

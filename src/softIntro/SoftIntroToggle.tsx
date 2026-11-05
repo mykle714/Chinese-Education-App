@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { useAuth } from "../AuthContext";
+import { useTestingFeatures } from "../hooks/useTestingFeatures";
 import { HeaderIconButton } from "../components/PageHeader";
 import {
     readSoftIntroOverride,
@@ -25,19 +25,20 @@ const LABEL: Record<SoftIntroOverride, string> = {
  * Renders nothing for non-testers.
  *
  * The override is app-wide, so the toggle belongs in the header of any page that hosts
- * an si. Today that is the hp (the fdp hand's card count).
+ * an si: ancp (the difficulty caption) and td (the corner fixtures' floor prints).
  */
-function SoftIntroToggle({ className }: { className?: string }) {
-    const { user } = useAuth();
+function SoftIntroToggle({ className, color }: { className?: string; /** Icon colour — e.g. td's sky ink over its sky; defaults to HeaderIconButton's. */ color?: string }) {
+    const testingFeatures = useTestingFeatures();
     const override = useSyncExternalStore(subscribeSoftIntroOverride, readSoftIntroOverride);
 
-    if (!user?.isFeatureTester) return null;
+    if (!testingFeatures) return null;
 
     return (
         <HeaderIconButton
             className={`soft-intro-toggle soft-intro-toggle--${override}${className ? ` ${className}` : ""}`}
             icon={ICON[override]}
             label={LABEL[override]}
+            color={color}
             onClick={() => writeSoftIntroOverride(NEXT[override])}
         />
     );

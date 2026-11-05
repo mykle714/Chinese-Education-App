@@ -1,7 +1,7 @@
 # Client Performance Diagnostics
 
 Real-user interaction-latency telemetry, built to diagnose the **PPE-only**
-"buttons take 1–2s before working" lag on the mobile-demo footer and the decks page (fdp — `/flashcards/decks` then, the Home tab `/` since 2026-10-10) (the lag does not reproduce locally, so synthetic profiling is not enough).
+"buttons take 1–2s before working" lag on the mobile-demo footer and the old decks page (the fdp, since deleted; `/` is now the Deck Tower) (the lag does not reproduce locally, so synthetic profiling is not enough).
 
 ## Layers / components
 
@@ -121,7 +121,7 @@ pedestrian-load button in the debug column, and read the result with the same
 
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.
-`div.mobile-footer-item[Home]`), so a log line maps back to a component.
+`div.mobile-footer-item[Deck]`), so a log line maps back to a component.
 
 Each **batch** additionally carries `userAgent`, `deviceMemory`,
 `hardwareConcurrency`, and `connection.effectiveType` to correlate lag with weak
@@ -151,7 +151,7 @@ From `server/`:
 
 ```bash
 npx tsx scripts/analyze-client-perf.ts                  # all data
-npx tsx scripts/analyze-client-perf.ts --path /     # the fdp (Home tab since 2026-10-10; older rows recorded it as /flashcards/decks)
+npx tsx scripts/analyze-client-perf.ts --path /         # the landing tab: the Deck Tower since 2026-11-04 (the fdp 2026-10-10 → 11-04; older rows say /flashcards/decks)
 npx tsx scripts/analyze-client-perf.ts --since 2026-06-13
 npx tsx scripts/analyze-client-perf.ts --min 500        # only taps ≥500ms
 ```
@@ -169,12 +169,12 @@ Output groups by `(kind, route)`, sorted by p95 duration, and prints a
 "dominant cost" line per interaction route. **Interpretation:**
 
 - `inputDelay` dominates → main thread blocked before the handler: iOS click
-  delay and/or a render stall (e.g. the `/decks` cpcd-card render burst). Fixes:
+  delay and/or a render stall (e.g. a card-grid render burst). Fixes:
   `touch-action: manipulation`, lighten/defer the destination-page mount.
 - `presentation` dominates → the paint after navigation is the cost: virtualize
   / stagger the heavy render.
 - `processing` dominates → the click handler itself is slow (not expected here,
-  since the footer/decks handlers only call `navigate()`).
+  since the footer handlers only call `navigate()`).
 
 The report ends with a **"Game tap outcomes"** table, grouped by `(route,
 outcome)`, for `kind: "tap"` records. This one **is** a census, so its `%`

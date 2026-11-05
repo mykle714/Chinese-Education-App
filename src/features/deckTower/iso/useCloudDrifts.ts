@@ -13,13 +13,14 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * in the sky together sit at close heights rather than at very different ones that
  * perspective then stacks into the same patch of screen.
  *
- * Each slot's FIRST cloud starts partway across (`startT`) and fades in, so when the
- * clouds switch on the band already has sky in it, rather than staying empty for the
- * half-minute a cloud takes to drift in from the edge. Later clouds enter from off screen.
+ * Every cloud ENTERS from off screen — none appears mid-sky when the clouds switch on.
+ * Clouds are cloudy weather (towerWeather.ts → `weatherCloudCount`), the commonest kind, so
+ * they arrive quietly: the slots' first drifts are staggered like any later one
+ * (`firstWaitMs`), and the band fills over a minute or so rather than all at once.
  *
  * Under prefers-reduced-motion the clouds still show — a still cloud reads as a cloud —
- * but nothing is scheduled: one cloud per slot, parked where its
- * opening drift would have started, never moving.
+ * but nothing is scheduled: one cloud per slot, parked partway across (`PARKED_AT`),
+ * never moving.
  *
  * Referenced by: docs/ISO_ART_FRAMEWORK.md § "IsoCloud", docs/DECK_TOWER.md § "The scene".
  */
@@ -42,7 +43,7 @@ export interface CloudDrift {
     /** World x/y of the cloud's ORIGIN at the start and end of the WHOLE crossing. */
     from: Pt2;
     to: Pt2;
-    /** Where along from→to (0–1) this drift begins: 0 off screen, more for a slot's opener. */
+    /** Where along from→to (0–1) this drift begins: 0 off screen; more only for a reduced-motion parked cloud. */
     startT: number;
     /** World height of the cloud's base. */
     z: number;
@@ -86,10 +87,13 @@ const SPEED_MIN = 0.4;
 const SPEED_MAX = 0.8;
 /** Extra world units past each screen edge, beyond the cloud's own extent. */
 const OFFSCREEN_MARGIN = 0.5;
-/** A slot's opening drift starts this far across (0–1), so the band is never empty at first. */
-const OPENER_START = { min: 0.15, max: 0.75 };
-/** Openers come up nearly together (they fade in); later clouds wait a few seconds. */
-const FIRST_WAIT_MS = { max: 400, perSlot: 250 };
+/** Reduced motion only: how far across (0–1) a parked cloud sits, so it is on screen. */
+const PARKED_AT = { min: 0.15, max: 0.75 };
+/**
+ * Gaps between a slot's drifts. The FIRST drift of slot n waits n of these gaps (plus a
+ * short lead-in), so the slots' clouds come in one after another rather than together.
+ */
+const FIRST_LEAD_IN_MS = 1500;
 const WAIT_MIN_MS = 4000;
 const WAIT_MAX_MS = 14000;
 
@@ -99,8 +103,8 @@ const WAIT_MAX_MS = 14000;
  */
 const ALTITUDE_WANDER: AltitudeWanderConfig = { knotMs: 20000, maxStep: 0.12 };
 
-const firstWaitMs = (slot: number) => rand(0, FIRST_WAIT_MS.max) + slot * FIRST_WAIT_MS.perSlot;
 const waitMs = () => rand(WAIT_MIN_MS, WAIT_MAX_MS);
+const firstWaitMs = (slot: number) => rand(0, FIRST_LEAD_IN_MS) + slot * waitMs();
 
 /**
  * A shape scaled and turned to its path (along y swaps x ↔ y), sorted BACK-TO-FRONT by
@@ -125,7 +129,7 @@ function shapeExtent(shape: CloudPuff[], scale: number) {
     };
 }
 
-function planDrift(id: number, opener: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander): CloudDrift {
+function planDrift(id: number, parked: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander): CloudDrift {
     const shape = CLOUD_SHAPES[Math.floor(Math.random() * CLOUD_SHAPES.length)];
     const scale = rand(SCALE_MIN, SCALE_MAX);
     const { along, across } = shapeExtent(shape, scale);
@@ -133,7 +137,7 @@ function planDrift(id: number, opener: boolean, proj: Projector, sky: CloudSky, 
     // path's axis, so `along + across` past each edge keeps the whole of it off screen.
     const path = planSidePath(proj, sky, rand(GAP_MIN, GAP_MAX), along + across + OFFSCREEN_MARGIN, across);
     const length = Math.hypot(path.to.x - path.from.x, path.to.y - path.from.y);
-    const startT = opener ? rand(OPENER_START.min, OPENER_START.max) : 0;
+    const startT = parked ? rand(PARKED_AT.min, PARKED_AT.max) : 0;
     return {
         id,
         from: path.from,
@@ -168,12 +172,13 @@ export function useCloudDrifts(opts: {
     const { proj, active, sky, maxInSky = 3 } = opts;
     const reduced = prefersReducedMotion();
     const altitude = useAltitudeWander(ALTITUDE_WANDER);
-    const plan = useCallback((id: number, first: boolean) => planDrift(id, first, proj, sky, altitude), [proj, sky, altitude]);
+    // Moving clouds always start off screen (`parked` false), whatever useSkyTraffic's `first` says.
+    const plan = useCallback((id: number) => planDrift(id, false, proj, sky, altitude), [proj, sky, altitude]);
     const drifting = useSkyTraffic({ active: active && !reduced, slots: maxInSky, plan, firstWaitMs, waitMs });
-    // Reduced motion: one parked opener per slot, planned once per activation.
+    // Reduced motion: one parked cloud per slot, planned once per activation.
     const parked = useMemo(
-        () => (active && reduced ? Array.from({ length: maxInSky }, (_, i) => plan(i + 1, true)) : []),
-        [active, reduced, maxInSky, plan]
+        () => (active && reduced ? Array.from({ length: maxInSky }, (_, i) => planDrift(i + 1, true, proj, sky, altitude)) : []),
+        [active, reduced, maxInSky, proj, sky, altitude]
     );
     return reduced ? parked : drifting;
 }

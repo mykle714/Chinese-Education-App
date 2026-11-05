@@ -42,8 +42,8 @@ export const SHADOW = {
     raised: `0 3px 10px ${INK(0.1)}`,
 
     /**
-     * A full-size CARD LYING ON THE PAGE at rest — the flp/cdp card face, the Decks
-     * page's hand cards behind the front one, and the Mastery Center tiles beside them.
+     * A full-size CARD LYING ON THE PAGE at rest (via `CARD_SURFACE`) — e.g. the cdp's hero
+     * card. (The flp's cards in the Deck Tower override it with none: they lie flush on the deck.)
      * Sits between `raised` and `float`: higher than a thumbnail, lower than a control
      * that floats over content. Always paired with the `COLORS.border` hairline — see
      * `CARD_SURFACE` in theme/surfaces.ts, which is how call sites should consume it.
@@ -104,12 +104,12 @@ export const SHADOW = {
      * falls inside the TOP edge. No artboard equivalent (the designs never draw a
      * pressed-in shape); this is the sort page's old "already sorted" card shadow,
      * re-inked, now used for the card crater a dragged/sorted card leaves behind
-     * (SortCardsPage → CardCrater, docs/SORT_CARDS_REQUIREMENTS.md §4.5).
+     * (AddNewCardsPage → CardCrater, docs/SORT_CARDS_REQUIREMENTS.md §4.5).
      */
     recessed: `inset 0 2px 5px ${INK(0.22)}`,
     /**
      * The same recess scaled ~2× for a well roughly twice a MiniCard's size (the sort
-     * page's drop buckets, up to 190px wide — SortCardsPage → Bucket). Offset and blur
+     * page's drop buckets, up to 190px wide — AddNewCardsPage → Bucket). Offset and blur
      * double with the box; alpha stays put so it reads as the same material as the
      * card crater, just a bigger hole.
      */

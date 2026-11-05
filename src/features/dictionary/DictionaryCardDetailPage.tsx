@@ -22,8 +22,8 @@ import { useTier2Look } from "../../timeOfDay/useTier2Look";
 
 // READ-ONLY dictionary card detail (cdp) — the page a dictionary result opens into
 // (instead of the eip popup). It's a NODE page (keeps the footer; see
-// docs/LEAF_NODE_PAGES.md) reached from the Dictionary node, so the Home tab stays
-// active. Keyed by :word (not a vet id) because a searched word usually isn't one
+// docs/LEAF_NODE_PAGES.md) reached from the Dictionary tab, so the Dictionary tab
+// stays active. Keyed by :word (not a vet id) because a searched word usually isn't one
 // of the user's saved cards — it fetches the det row via /api/dictionary/lookup and
 // adapts it to the VocabEntry shape the eip panel consumes.
 //
@@ -181,7 +181,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             </Box>
                         )}
 
-                        {/* THE EIP, INLINE — the same InfoCardPanelBody the flp/scp/saved-card
+                        {/* THE EIP, INLINE — the same InfoCardPanelBody the flp/ancp/saved-card
                             sheet raises (entry header → definition/examples/breakdown tabs →
                             swipeable per-tab scrolling panes), mounted straight on the page
                             instead of in a SheetPanel. Synonyms + Related Words ride at the

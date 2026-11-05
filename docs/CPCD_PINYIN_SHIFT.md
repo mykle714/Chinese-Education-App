@@ -184,7 +184,29 @@ use the low-level `items` API, which `ForeignText` passes through untouched.
 | `OVERLAP_BY_SIZE` | Negative inter-cell margin (visual density of the glyphs). |
 | `BIG_PINYIN_SCALE` | Multiplier applied to the pinyin font **and** the reserved pinyin band when the `bigPinyin` prop is on (1.2 → ~15.6px at `sm`). |
 | `CHAR_LINE_HEIGHT` | Line-height of both the glyph and the pinyin text (1.21). Shared by the render and by `cpcdNaturalSize`, so a measured cell and a rendered one cannot disagree. |
-| `GLYPH_DROP_PX` | Per-size paint offset of the glyph below its line box (`smd` and `md`: 3px, the rest 0). A `position: relative` offset rather than padding, because the pinyin's y is derived from the cell's height: padding would move the pinyin with the glyph. Cell size and `cpcdNaturalSize` are unaffected. |
+| `GLYPH_DROP_PX` | Per-size paint offset of the glyph below its line box (`smd` and `md`: 3px, the rest 0). A `position: relative` offset rather than padding, because the pinyin's y is derived from the cell's height: padding would move the pinyin with the glyph. Cell size and `cpcdNaturalSize` are unaffected. Replaced by half the pinyin band when `centerGlyphWhenPinyinHidden` is engaged (below). |
+
+### Centering the glyph when pinyin is hidden (`centerGlyphWhenPinyinHidden`)
+
+A cell keeps its pinyin band (as `padding-bottom`) even when the syllable is hidden, so
+toggling pinyin never resizes the row. A host that flex-centers the cell in a fixed box
+(a board tile, a game card) therefore centers glyph+**empty** band, and the character
+rides half a band above center. The opt-in `centerGlyphWhenPinyinHidden` prop (passed
+through by `ForeignText`, row layout only) fixes this inside CPCDRow: when **every**
+item's syllable is hidden, each cell that reserves a band paints its glyph
+`pinyinReservedHeight / 2` low, in place of `GLYPH_DROP_PX`.
+
+- **Row-level, never per item**: a row mixing shown and hidden syllables is left alone,
+  so a sentence can never end up with glyphs at different heights. Cells with no
+  syllable at all reserve no band and are not moved.
+- **Paint offset only** (`position: relative; top`), like `GLYPH_DROP_PX`: the cell
+  box, `cpcdNaturalSize` and any fit-scaler's measurement are unchanged.
+- **Opt-in**: prose and flashcard surfaces keep the glyph still when pinyin toggles.
+
+Code: `src/components/CPCDRow.tsx` → `centerGlyphWhenPinyinHidden`,
+`centerHiddenPinyinGlyph`, `centeredGlyphDropPx`; `src/components/ForeignText.tsx`.
+Used by: `src/games/word-search/WordSearchGrid.tsx` (board tiles),
+`src/games/match-speed/MatchSpeedCard.tsx` (foreign cards).
 
 ### `cpcdNaturalSize(size, opts)` — the cell's box, without measuring the DOM
 

@@ -309,10 +309,10 @@ sends). Use it in fetch callbacks that drive load effects so they don't need
 Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
 `WordSearchStage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
 `useWorkingLoop.ts` (distributed-loop fetch), `ReaderPage.tsx`,
-`FlashcardsPage.tsx` (×2), `FlashcardsDecksPage.tsx`, `CollectionViewPage.tsx`
-(the page that replaced `MasteredCardsPage.tsx`),
+`FlashcardsPage.tsx` (×2), `useCardLibrary.ts` (the card-library load; its former
+hosts `FlashcardsDecksPage.tsx` and `CollectionViewPage.tsx` are deleted),
 `VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
-`EntryDetailPage.tsx`, `EditEntryPage.tsx`, `SortCardsPage.tsx`,
+`EntryDetailPage.tsx`, `EditEntryPage.tsx`, `AddNewCardsPage.tsx`,
 `DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
 `authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`

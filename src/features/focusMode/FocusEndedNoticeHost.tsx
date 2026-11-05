@@ -11,7 +11,7 @@ import FocusDialog from "./FocusDialog";
  *
  * Mounted once, app-wide (src/App.tsx). It checks `GET /api/focus` for owed notices:
  *   - once when the learner is signed in (a notice owed from a request no page was
- *     watching — Home's background flp preload — or from a closed session);
+ *     watching, or from a closed session);
  *   - whenever src/api/http.ts raises FOCUS_ENDED_EVENT, i.e. a response just carried
  *     the X-Focus-Ended header.
  * Dismissing the popup acknowledges the notices, so each shows once.

@@ -9,13 +9,13 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the four footer tabs — **Home** (`/`, the fdp + account header), **Menu** (`/menu`, the hub bento), **Deck** (`/deck-tower`, took Discover's slot 2026-10-17; the Discover hub was deleted the same day and Sort Cards is a Home drill-in), **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Home and Menu swapped contents 2026-10-10; `/flashcards/decks` now redirects to `/`. Account is a sheet raised from the Home header avatar (Logout lives in it); Settings is the gear beside that avatar. |
-| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every scrollable footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area; bottom nav is a flat full-width bar). Home (the fdp), Menu, Dictionary, Games hub use it. |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Deck** (`/`, the Deck Tower), **Menu** (`/menu`, the hub bento), **Arena** (`/arena`, only while the `arena` flag is on), **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Add New Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
+| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Menu, Arena, Dictionary, Games hub use it scrolling; td (`/`) mounts it with `scrollable={false}`. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
-| **Sort Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (scp), a Home drill-in: node page (back arrow → `/`, keeps the footer with Home lit), hosting the Quick Mark panel and skipped-cards sheet. The `/discover` hub was deleted 2026-10-17. |
-| **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; validators cycle Auto → Intro → Graduated from a header toggle. First si: the fdp hand's "cards" label → hairline. |
-| **Deck Tower (experimental)** | [DECK_TOWER.md](./DECK_TOWER.md) | `/deck-tower`, the footer's Deck tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
+| **Add New Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (ancp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
+| **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers cycle Auto → Intro → Graduated from a header toggle. |
+| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Deck tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
 | **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, carpet, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
@@ -92,7 +92,7 @@ should not grow a *second* Pixi host if it needs one; borrow the night market's
 > 1. Binding `drag` and `pinch` together requires `drag: { pointer: { touch: true } }`.
 >    Otherwise the pointer-event stream is cancelled on touch devices once the browser
 >    arbitrates between the two gestures, and the pan **works with a mouse and does
->    nothing on a phone**. A plain `useDrag` with nothing competing (SortCardsPage) does
+>    nothing on a phone**. A plain `useDrag` with nothing competing (AddNewCardsPage) does
 >    not need it — it is the combination that breaks.
 > 2. If you need `eventOptions: { passive: false }` (to preventDefault the browser's own
 >    pinch-zoom), you **must** bind with the `target` option and must **not** spread
@@ -131,9 +131,7 @@ over it:
 **A taller bottom band per page.** `MobileTabScreen` / `NodePage` take `bottomFadeBand`
 (px, default 34). A page with furniture floating just above the bar raises it so the
 content scrolling behind that furniture is already dissolved rather than busy under a
-button: the Reading/Writing Centers (`MasteryCenterPage` → `CENTER_BOTTOM_FADE_BAND`,
-110px) run it from the bar's top edge to ~60px above their Cards/Decks pills, so the
-linear ramp is still mostly transparent where it passes behind them. A band must stay
+button. No page passes it today. A band must stay
 ≤ `EDGE_FADE_VAR_CAP` (128px, `scrollEdgeFade.ts`) or the tracked var caps it short.
 
 **The bands are scroll-aware: a fade only appears where content is actually cut off.**
@@ -153,9 +151,8 @@ scroll. It writes straight to the element style in a rAF, with no React state. T
 read them through `edgeFadeAboveBand(band)` / `edgeFadeBelowBand(band)`, i.e.
 `min(var(--edge-fade-…, band), band)`. **Every scroller that wears one of these masks
 must be tracked.** An untracked one falls back to the full, always-on bands, which is the
-old behaviour. Tracked today: `MobileTabScreen` → `ScrollArea` (ref callback), `SheetBody` and
-`DecksPanelBody` (`useScrollEdgeFade`), `InfoCardPanelBody`'s panes, and
-`ChallengeSheet`'s scroller.
+old behaviour. Tracked today: `MobileTabScreen` → `ScrollArea` (ref callback), `SheetBody`
+(`useScrollEdgeFade`), `InfoCardPanelBody`'s panes, and `ChallengeSheet`'s scroller.
 
 **The scrollbar is drawn over the fade, not inside it.** A mask on a scroller also clips
 that scroller's own scrollbar, so a classic desktop scrollbar used to dissolve at both
@@ -169,15 +166,14 @@ Doing that brings back the faded scrollbar.
 
 Only the **bottom** differs in kind. A page reserving the footer's height makes sense; a
 *panel* doing it spends ~164px of the surface on emptiness, which is why the two families
-exist (see docs/DECKS_FEATURE.md for the case that forced the split). The panel's bands are
+exist. The panel's bands are
 the page's 28/34 scaled down, keeping the same top-is-slightly-shorter proportion.
 
 A surface may drop its top band deliberately — `MobileTabScreen`'s `topFade={false}` /
 `EDGE_FADE_MASK_NO_TOP`, and the panel-side `SHEET_EDGE_FADE_MASK_NO_TOP` — when its first
 row must stay solid. No panel does today.
 
-Panels wearing the sheet band: `DecksPanelBody` (its `"sheet"` variant — the `"page"`
-variant is a page and takes the page band), `SheetBody` (so any future `SheetPanel` body
+Panels wearing the sheet band: `SheetBody` (so any future `SheetPanel` body
 gets it for free), `InfoCardPanelBody` (per tab pane — each eip pane is its own scroller,
 so each fades independently), and `ChallengeSheet`'s scroller (its words dissolve into
 the pinned action bar below rather than stopping dead against it).
@@ -259,9 +255,9 @@ useScrollStretch(rowRef,  { axis: "x", enabled }); // horizontal strip
 
 | Surface | Component | Axis |
 |---|---|---|
-| Card preview grids (decks Learning, collection view, mastered, skipped, Quick Mark, challenge review) | `MiniVocabCardGrid` | y |
+| Card preview grids (td's cards page, skipped, Quick Mark, challenge review) | `MiniVocabCardGrid` | y |
 | Lent-card previews (pre-round notice, end-of-round sort offer) | `ProvisionalCardGrid` | y |
-| Scrollable shelf rows (Decks, Reader, Card Detail) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
+| Scrollable shelf rows (no caller passes `scrollable` today) | `shelf/Shelf.tsx` → `ShelfRow scrollable` | x |
 | Community design strip | `community/CommunityFeedRow` | x |
 
 A **non**-scrollable `ShelfRow` opts out (`enabled: scrollable`) — a wrapping row never
@@ -343,8 +339,7 @@ eviction/settle — a bounded handful of layers rather than one per card.
 
 `findScroller` is the one expensive call (a `getComputedStyle` walk). It runs at mount, on
 a window `resize`, and once **after** the spring settles — which is also where a list that
-was re-parented between scrollers (the decks body renders as both a page and a sheet)
-picks up its new one.
+was re-parented between scrollers picks up its new one.
 
 ---
 
@@ -463,8 +458,8 @@ So on mobile (below MUI's `md`) `body` takes the claimed ground from `--surface-
 which matches the tint to the ground and hides the fade over flat colour only. Before any
 claim, it is paper. On desktop `body` is the backdrop around the phone card, so it stays
 the palette's default and never follows a claim. **Any surface that paints its own ground to the top of
-the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `SortCardsPage`,
-`useTier2Look`, `MasteryCenterPage`, `DivisionBanner`, and `SheetPanel` while fully merged
+the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `AddNewCardsPage`,
+`useTier2Look`, `DivisionBanner`, and `SheetPanel` while fully merged
 (`writeMergeChrome` → `claimThemeColor`).
 Other projects report the overlay on `black-translucent` home-screen apps since iOS 26.1,
 with removing the tag as the only known way to lose it. Details:
@@ -484,7 +479,7 @@ compute exactly the design's original geometry.
 | Footer bar | Grows by `SAFE_BOTTOM` and pads its labels off the home indicator | `MobileFooter` → `FOOTER_TOTAL_HEIGHT` |
 | Footer hide travel | Translates by the bar's **total** height, or the inset's worth of bar peeks back | `FooterPresenter` |
 | Scroll clearance + bottom edge-fade | Reserve and fade against the bar's total height | `MobileTabScreen`, `FOOTER_TOTAL_CLEARANCE` |
-| Sheet pills, the scp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `FlashcardsDecksPage`, `VocabCardDetailPage`, `SortCardsPage`, `DecksPanelBody`, `SheetBody` |
+| Sheet pills, the ancp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddNewCardsPage` |
 | flp merge sheet | Its own top padding ramps to `SAFE_TOP` as the sheet merges into a full-screen page, so its header passes `safeAreaTop={false}` and does not add the inset twice | `SheetPanel` → `writeMergeChrome` |
 
 **The header, not the frame, carries the top inset.** Padding the frame would stop the
@@ -505,7 +500,7 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Popup family | Behaviour while a keyboard is up | Where |
 |---|---|---|
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
-| Every `SheetPanel` (eip, decks sheet, compare sheet, scp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
+| Every `SheetPanel` (eip, compare sheet, ancp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
 **Sheets with a dictionary search maximize on focus.** Focusing a field inside an element
 marked `data-sheet-maximize-on-focus` animates its `SheetPanel` to full height (the same
@@ -513,8 +508,7 @@ snap as a drag to the top), on the tap itself — so the sheet grows as the keyb
 rather than leaving a part-height sheet showing only the field. The marker sits on
 `DictionaryWordSearch`'s field, so every paneled dictionary gets it: CompareSheet, the
 eip's Compare tab (`CompareWorkspace`) and the Writing Notebook's word picker
-(`NotebookWordPickerSheet`). Other sheet inputs — the decks sheet's "Search your cards" —
-are deliberately not marked. Code: `src/components/sheet/SheetPanel.tsx` → the "Maximize
+(`NotebookWordPickerSheet`). Other sheet inputs are deliberately not marked. Code: `src/components/sheet/SheetPanel.tsx` → the "Maximize
 when a dictionary search takes focus" effect; `src/components/DictionaryWordSearch.tsx`.
 
 The number behind both is `useKeyboardInset()` — the `Math.max` of our keyboard's
@@ -558,7 +552,7 @@ hold.
 | Dim | Host / z-index | Where |
 |---|---|---|
 | Every MUI `Dialog` | mounted in the frame by `MuiDialog.defaultProps.container` (`dialogContainer`); root re-pinned `absolute` inside the frame; backdrop `absolute`, `COLORS.modalScrim`; z 1300 | `src/contexts/ThemeContext.tsx` → `MuiDialog` |
-| `SheetPanel` (modal: eip, decks sheets, scp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
+| `SheetPanel` (modal: eip, ancp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
 | `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
 | Immersive World intro card + interaction popup | frame; 200 | `src/features/immersiveworld/play/IWSceneIntroCard.tsx`, `IWPlayPage.tsx` |
@@ -572,7 +566,7 @@ hold.
 - **Countdown veils** (Match Speed, Writing Grid — the 3·2·1 over the board) dim only the
   game panel (`GameFrame`, `position: relative`). They are pointer-transparent and the
   header's back arrow stays usable during the count (decided 2026-10-06).
-- Tile-level washes (a drop bucket's hover, a bubble's dim, scp's held-card-over-target
+- Tile-level washes (a drop bucket's hover, a bubble's dim, ancp's held-card-over-target
   cue) are not background dims.
 
 **Cost:** a frame-hosted overlay is outside the page surface, so the page-slide exit
@@ -582,7 +576,7 @@ sliding it off with the page.
 **History:** until 2026-10-06 overlays hosted at `nearestOverlayHost` (inside a
 transformed page Surface) and slid the footer away with `useHideFooter`. That left the
 leaf header lit above five games' end popups (their scrim was pinned to a `relative`
-content box below the header), the footer lit — and tappable — above scp's set-complete
+content box below the header), the footer lit — and tappable — above ancp's set-complete
 popup, and MUI dialogs dimming the whole desktop browser window in MUI's own black.
 
 ---
@@ -599,35 +593,3 @@ popup, and MUI dialogs dimming the whole desktop browser window in MUI's own bla
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above
-
-### Collection pages (Home tab drill-ins)
-
-Several **node** routes share one component, `CollectionViewPage`
-([DECKS_FEATURE.md](./DECKS_FEATURE.md)):
-
-| Path | Shows |
-| --- | --- |
-| `/flashcards/collection/learn-now` | The sorted Learning cards (moved off the fdp) — `-reading` / `-writing` variants show the same idea for those bars |
-| `/flashcards/collection/mastered` | The Mastered cards (replaces the old `/flashcards/mastered` page) — likewise `-reading` / `-writing` |
-| `/flashcards/collection/all` | Every sorted card |
-| `/flashcards/deck/:id` | One user-authored deck |
-
-`/flashcards/mastered` still exists as a **redirect** to the second of these, so
-older links keep working.
-
-Two more Home-tab node pages sit beside them — the **Mastery Centers**,
-`/flashcards/reading` and `/flashcards/writing` (`MasteryCenterPage`). Each is a skill
-study page on its skill's ground colour, with the fdp panel behind the same two
-pill-raised sheets (read through that one skill bar); they are reached from the Centers
-rail above the fdp's card hand, present only when that account goal is set. See
-[READING_WRITING_CENTERS.md](./READING_WRITING_CENTERS.md) and
-[DECKS_FEATURE.md § Mastery Centers](./DECKS_FEATURE.md).
-
-Two route shapes rather than one `:collectionId` on purpose: a deck is addressed by
-its numeric id under its own segment, so a deck a user names "mastered" can never
-shadow the built-in route.
-
-All of them keep the Home footer tab lit (`footerTab: "home"`) and are reached from
-the fdp at `/` (the Home tab since 2026-10-10; `/flashcards/decks` only redirects there),
-which is a **deck list** (two built-in collection rows + the user's decks) rather than an
-inline card grid.

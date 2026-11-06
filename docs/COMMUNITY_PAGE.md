@@ -2,14 +2,14 @@
 
 > Status: **implemented but switched OFF** (2026-10-30), behind a feature flag (2026-09-19). Backed by
 > migration 86 (`community_layout_votes`), the `/api/community/*` endpoints, and the
-> `src/features/community/` UI. Reached from the Menu hub (`/menu` → `/community`).
+> `src/features/community/` UI. Reached from the **Community** row of the footer's Menu popover (`src/components/menuPopover/MenuPopover.tsx`) → `/community`.
 
 🚩 **The flag is `FEATURE_FLAGS.community` in `server/contracts/featureFlags.ts`, currently
 `false`** — everything below describes the feature as it behaves when the flag is on; none of
 it is reachable while the flag is off. See
 [FEATURE_FLAGS.md](./FEATURE_FLAGS.md). It gates **sharing**, not **authoring**: the
 `/api/community/*` endpoints (both feeds, the search bar's per-entry feed, vote/unvote and
-`applyDesign`), the `/community` route and its Menu tile, the tip in `src/data/tips.ts`, and
+`applyDesign`), the `/community` route and its Menu popover row, the tip in `src/data/tips.ts`, and
 the fourth surface described below — the profile design grid, together with the endpoint that
 feeds it (`GET /api/users/:userId/designs`, which lives in `userRoutes.ts`, **not** in
 `communityRoutes.ts`, and so needs its own guard). Everything in
@@ -21,7 +21,7 @@ and no vote or design row is modified. Only the sharing of those designs goes aw
 
 A discovery surface where learners browse, upvote, and copy **advanced card-icon layouts**
 (the per-word icon arrangements from [CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md)) that *other*
-users have saved. The page (`CommunityPage.tsx`, a Menu-hub `NodePage`; back arrow → `/menu`) has a search bar
+users have saved. The page (`CommunityPage.tsx`, a Menu-reached `NodePage`; back arrow → `navigateBackOr(navigate, "/")` from `src/utils/navigateBack.ts`, i.e. one history entry back, or `/` when it is the first entry) has a search bar
 (`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds:
 
 A **fourth surface** renders the same tiles outside this page: the user profile's card-design
@@ -192,7 +192,7 @@ Indexed per table (`idx_vocabentries_{zh,es}_author`) for the feed dedupe groupi
 | Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
 | Types | `server/types/community.ts`, client `src/types.ts` (`CommunityDesign`, `VotedDesignKey`, `VoteResult`, `ApplyDesignResult`, `designKey`) | |
 | Client | `src/features/community/` — `CommunityPage`, `CommunitySearchBar`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
-| Menu/route | `src/pages/MenuPage.tsx` (`community` Bento tile), `src/routes/registry.ts` + `src/routes/routeMeta.ts` (`/community`, `footerTab: "menu"`) | |
+| Menu/route | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (the `community` row), `src/routes/registry.ts` + `src/routes/routeMeta.ts` (`/community`, `footerTab: "menu"`) | |
 
 The read-only design render (`CommunityCardView.tsx`) reuses the same `CardIconLayer` + cpcd
 (`ForeignText`) plumbing as `MiniVocabCard`, sized small for the thumbnail and large for the zoom.

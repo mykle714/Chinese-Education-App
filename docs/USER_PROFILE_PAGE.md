@@ -11,7 +11,7 @@ screens.
 ⚠️ **NOT from the challenges page** (changed 2026-08-17). That page binds the same tap
 target to the challenge action instead — issue or accept — because the whole page is
 one action per friend and a large tap area that navigated elsewhere was a trap. The
-per-pair challenge block still lives here; reach it via `/friends`. The row prop is
+per-pair challenge block still lives here; reach it via the friends list (the AccountSheet's Friends tab). The row prop is
 therefore `onPersonPress`, not `onOpenProfile`: the row does not assume the tap means
 "profile" any more — and the challenges page uses `onRowPress` instead, which makes the
 whole row one button for the challenge action (docs/FRIENDS_FEATURE.md).

@@ -38,6 +38,7 @@ import {
 } from './templateSandboxApi';
 // Toolbar chrome shared with the Template Editor so both authoring tools look/feel identical.
 import { PaletteButton, toolGroupSx, headerActionsSx, headerBtnSx } from './editorButtonStyles';
+import { navigateBackOr } from '../../utils/navigateBack';
 
 /**
  * TemplateSandboxPage — desktop-only Template Sandbox tool
@@ -505,7 +506,7 @@ function TemplateSandboxPage() {
   }, [pickerOpen, pending, openPicker, handleIterate, handleDelete, handleToggleLock, handleCycleHouseMode, handleCycleVersion]);
 
   return (
-    <LeafPage title="Template Sandbox" onBack={() => navigate('/menu')} className="template-sandbox-root">
+    <LeafPage title="Template Sandbox" onBack={() => navigateBackOr(navigate, '/')} className="template-sandbox-root">
       <Box
         className="template-sandbox-page"
         sx={{ display: 'flex', flexDirection: 'column', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}

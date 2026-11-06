@@ -16,7 +16,6 @@ import { ROUTED_GAMES } from "../games/registry";
 const PAGE_LABELS: Record<string, string> = {
     // The Deck Tower (`/`) — its in-place flp session is where a study-time offer opens.
     "/": "Deck Tower",
-    "/games": "Games",
 };
 
 export function originLabelFor(pathname: string | null | undefined): string | null {

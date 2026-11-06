@@ -87,6 +87,12 @@ describe("findRoute", () => {
     expect(findRoute("/no/such/page")).toBeUndefined();
     // The Discover hub was deleted 2026-10-17; only its /discover/sort drill-in remains.
     expect(findRoute("/discover")).toBeUndefined();
+    // The Menu bento page was deleted 2026-11-06; the Menu tab raises a popover instead.
+    expect(findRoute("/menu")).toBeUndefined();
+    // The Games hub and the /friends page were deleted 2026-11-06 (Friends lives in the
+    // AccountSheet; games are flp breaks, their own pages off behind `standaloneGames`).
+    expect(findRoute("/games")).toBeUndefined();
+    expect(findRoute("/friends")).toBeUndefined();
     // Deleted 2026-11-04 with the old Home page: its legacy paths, the Centers, the
     // collection/deck pages, the standalone flp, and the tower's old address.
     for (const gone of [
@@ -101,8 +107,8 @@ describe("findRoute", () => {
 
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
-    "/", "/menu",
-    "/games", "/reader", "/dictionary",
+    "/",
+    "/reader", "/dictionary",
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
     ...(isFeatureEnabled("community") ? ["/community"] : []),
@@ -135,15 +141,14 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
 
 describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
   const EXPECTED: Array<[string, string | undefined]> = [
-    // "/" is the Deck Tower (2026-11-04), the first tab; "/menu" the hub.
+    // "/" is the Deck Tower (2026-11-04), the first tab. There is no "/menu" route: the
+    // Menu tab raises a popover (2026-11-06), and only its destinations light "menu".
     ["/", "deck"],
-    ["/menu", "menu"],
     ...(isFeatureEnabled("arena")
       ? ([["/arena", "arena"]] as Array<[string, string | undefined]>)
       : []),
     // Dictionary took Account's footer slot (2026-10-09); /account is no longer a route.
     ["/dictionary", "dictionary"],
-    ["/games", "menu"],
     ...(isFeatureEnabled("community")
       ? ([["/community", "menu"]] as Array<[string, string | undefined]>)
       : []),
@@ -170,7 +175,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
-    "/games", "/reader",
+    "/reader",
     "/discover/sort/zh",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
   ];
@@ -179,7 +184,7 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/settings",
     ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
   ];
-  const NO_SLIDE = ["/", "/menu", "/dictionary", "/login", ...(isFeatureEnabled("arena") ? ["/arena"] : [])];
+  const NO_SLIDE = ["/", "/dictionary", "/login", ...(isFeatureEnabled("arena") ? ["/arena"] : [])];
 
   it.each(NODE)("%s slides in from the right", (path) => {
     expect(routeSlideDir(path)).toBe("right");
@@ -213,7 +218,8 @@ describe("FIXED: every game page slides up", () => {
     expect(routeChrome(route)).toBe("leaf");
   });
 
-  it("covers word-search specifically — this was the regression", () => {
+  // Game pages are mounted only while the `standaloneGames` flag is on (ROUTED_GAMES).
+  it.runIf(isFeatureEnabled("standaloneGames"))("covers word-search specifically — this was the regression", () => {
     expect(routeSlideDir("/games/word-search")).toBe("up");
   });
 });

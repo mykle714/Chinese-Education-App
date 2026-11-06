@@ -1,5 +1,13 @@
 # Match Speed (`/games/match-speed`)
 
+> **How it is reached (2026-11-06): as an flp break only.** The Games hub
+> (`src/games/GamesPage.tsx`) was deleted and the standalone `/games/match-speed` page is not
+> mounted while the `standaloneGames` feature flag is off (`server/contracts/featureFlags.ts`;
+> `src/games/registry.ts` → `ROUTED_GAMES` is empty). Match Speed is played as a break inside
+> the Deck Tower study session (`src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`,
+> `MATCH_SPEED_BREAK`). The page host described below (`MatchSpeedPage`, its end popup's
+> "Back to Games", the hub tile) is kept but dormant.
+
 > **STATUS: SHIPPED.** Every file under [Files](#files) exists,
 > the game is registered in `src/games/registry.ts`, and the per-card
 > `gameCategory` backend change is live
@@ -787,8 +795,8 @@ information only. It does not gate a medal.
 
 `recordWin(WIN_LEVEL)` fires **only on a gold-medal run** (`useGameWins`,
 `src/hooks/useGameWins.ts`, `GAME_KEY = "matchSpeed"`, `WIN_LEVEL` 1 — the game's one
-difficulty, § One difficulty). The hub tile shows the **game-wide win count**
-as its corner badge — the shared trophy `WinCountPill` (`src/games/shared/GameCard.tsx`),
+difficulty, § One difficulty). The hub tile showed the **game-wide win count**
+as its corner badge (no live surface since the Games hub was deleted 2026-11-06; wins are still recorded) — the shared trophy `WinCountPill` (`src/games/shared/GameCard.tsx`),
 passed as a `pinBare` BentoTile pin in the tile's top-left (`pinSide="left"`). Gold-only keeps the badge an achievement rather than a play counter.
 
 
@@ -825,7 +833,7 @@ Card content: score, medal, accuracy, and two actions —
 - **Play Again** (primary) — new run, fresh board. Unlike Bubble Match there is no
   partial-refresh logic to carry over: Match Speed's board is fully transient, so
   a replay simply re-primes the buffer and starts a new run.
-- **Back to Games** (secondary) → `/games`.
+- **Back to Games** (secondary) → `GAMES_HUB_EXIT` (`src/games/runtime/gameExit.ts`), which is `/` (Deck Tower) since the hub was deleted. Page host only (dormant); a break shows "Back to cards".
 
 ### Cleanup phase
 
@@ -856,7 +864,7 @@ expanding the puck brings the score card back.
 
 ## Page shell, header, and chrome
 
-**Leaf page.** `LeafPage` wrapper — down-arrow back to `/games`, **no footer**,
+**Leaf page** (page host, dormant). `LeafPage` wrapper — down-arrow back to `GAMES_HUB_EXIT` (`/`), **no footer**,
 slides up on enter. Same as both shipped games. Do **not** add a per-page
 `IPhoneFrame`; the frame comes from `MobileDemoFrame` via `Layout.tsx`.
 
@@ -1094,8 +1102,8 @@ Edits outside that folder:
 
 | File | Edit |
 |---|---|
-| `src/games/registry.ts` | one `GameDef` (title, subtitle, `bgColor`, lazy `Component`) — this alone wires the hub, router, and phone frame |
-| `src/games/GamesPage.tsx` | the hub entry: a plain single `BentoTile` (registry-driven), special-cased only to hang the game-wide win count (`WinCountPill`, `pinBare`) on its `pin`. The former difficulty-mode strip and its `MATCH_SPEED_MODE_COLORS` palette are gone. |
+| `src/games/registry.ts` | one `GameDef` (title, subtitle, `bgColor`, lazy `Component`) — this alone wires the router and phone frame (route mounted only while `standaloneGames` is on) |
+| ~~`src/games/GamesPage.tsx`~~ (deleted 2026-11-06) | was the hub entry: a plain single `BentoTile` (registry-driven), special-cased only to hang the game-wide win count (`WinCountPill`, `pinBare`) on its `pin`. The former difficulty-mode strip and its `MATCH_SPEED_MODE_COLORS` palette are gone. |
 | `src/constants.ts` | add `/games/match-speed` to `MINUTE_POINTS_ELIGIBLE_PAGES` |
 | `server/services/OnDeckVocabService.ts` | stamp `gameCategory` on pool cards |
 | `server/contracts/wire.ts` | `gameCategory?: FlashcardCategory` on `VocabEntryBase` — one declaration serves both sides |
@@ -1158,7 +1166,7 @@ it reads from.
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool`, `fetchGameCandidates`, `GAME_FALLBACK_ORDER` |
 | Dealing stops at 30 pairs, a run must finish | `src/games/match-speed/MatchSpeedStage.tsx` (`dealtPairsRef`, `drawPairs`, `topUpBuffer`, `handleMatch`); `MatchSpeedBoard.tsx` (`refill`); `constants.ts` (`TARGET_PAIRS`) |
 | Personal best | `src/games/match-speed/MatchSpeedStage.tsx` (the `phase === "ended"` effect, `playAgain`); `src/games/shared/usePersonalBest.ts` → `usePersonalBest`; `src/games/shared/PersonalBestLine.tsx`; `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES` |
-| One difficulty | `src/games/match-speed/constants.ts` (`CATEGORY_WEIGHTS`, `CATEGORY_FALLBACK_ORDER`, `BUFFER_DEPTH`, `POOL_DISTRIBUTION`, `WIN_LEVEL`, `PERSONAL_BEST_MODE`), `cardBuffer.ts`, `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx`; `database/migrations/182-delete-review-challenge-mode-history.sql` |
+| One difficulty | `src/games/match-speed/constants.ts` (`CATEGORY_WEIGHTS`, `CATEGORY_FALLBACK_ORDER`, `BUFFER_DEPTH`, `POOL_DISTRIBUTION`, `WIN_LEVEL`, `PERSONAL_BEST_MODE`), `cardBuffer.ts`, `MatchSpeedPage.tsx`, `src/games/GamesPage.tsx` (deleted 2026-11-06); `database/migrations/182-delete-review-challenge-mode-history.sql` |
 | Backend change | same, plus `server/routes/onDeckRoutes.ts`, `server/dal/shared/dictJoin.ts` (`DICT_COLS`) |
 | Marks | `POST /api/flashcards/mark`; per-type categories → [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Rendering a card | `src/components/ForeignText.tsx`; `src/utils/definitionUtils.ts` (`resolveDisplayDefinition`) |

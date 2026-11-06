@@ -35,8 +35,8 @@ is a **real security boundary** (every figure is about other accounts):
   so the role is read from the row, never from `req.user`.
 - **Client (UX):** `src/pages/TesterDashboardPage.tsx` renders `UsageDashboardSection`
   only when `user.isAdmin`, and `useUsageDashboard` never fires the request for a
-  non-admin. An admin who is not a feature tester can still reach the page (the Menu tile
-  and the page's bounce both accept `isFeatureTester || isAdmin`).
+  non-admin. An admin who is not a feature tester can still reach the page (the Menu popover row,
+  `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`, and the page's bounce both accept `isFeatureTester || isAdmin`).
 
 Code: `database/migrations/168-add-users-is-admin.sql`,
 `server/dal/implementations/UserDAL.ts` → `findById` (selects `"isAdmin"`),

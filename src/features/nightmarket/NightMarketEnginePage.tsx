@@ -24,6 +24,7 @@ import { adjustAuthorMinutes } from './nightMarketLayoutApi';
 // with the friends leaderboard (src/utils/formatDuration.ts). This page keeps the
 // day/hour/minute output it has always had — weeks are opt-in and it does not opt in.
 import { MINUTES_PER_HOUR, formatMinutesAsDuration } from '../../utils/formatDuration';
+import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Night Market Engine Page
@@ -149,11 +150,11 @@ function NightMarketEnginePage() {
   const [showGrid, setShowGrid] = useState(false);
 
   // Night Market is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer, DOWN back
-  // arrow (→ /menu), slides up on enter / down on exit. All three states render
+  // arrow (→ the previous page, else `/` — navigateBackOr), slides up on enter / down on exit. All three states render
   // through one LeafPage so it stays a single instance and the enter slide plays once.
   if (isLoading) {
     return (
-      <LeafPage title="Night Market" onBack={() => navigate("/menu")}>
+      <LeafPage title="Night Market" onBack={() => navigateBackOr(navigate, "/")}>
         <Box
           className="night-market-engine-loading"
           sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 0 }}
@@ -166,7 +167,7 @@ function NightMarketEnginePage() {
 
   if (error) {
     return (
-      <LeafPage title="Night Market" onBack={() => navigate("/menu")}>
+      <LeafPage title="Night Market" onBack={() => navigateBackOr(navigate, "/")}>
         <Box className="night-market-engine-error" sx={{ p: 3 }}>
           <Alert className="night-market-engine-error-alert" severity="error">{error}</Alert>
         </Box>
@@ -175,7 +176,7 @@ function NightMarketEnginePage() {
   }
 
   return (
-    <LeafPage title="Night Market" onBack={() => navigate("/menu")} className="night-market-engine-root">
+    <LeafPage title="Night Market" onBack={() => navigateBackOr(navigate, "/")} className="night-market-engine-root">
     <Box
       className="night-market-engine-page"
       sx={{

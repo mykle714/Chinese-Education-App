@@ -41,27 +41,6 @@ export type CollectionRef =
 /** A built-in collection's wire id (`all`, `learn-now-reading`, `mastered`, …). */
 export type BuiltinCollection = BuiltinCollectionId;
 
-/**
- * Human-readable name for each bar's Mastered collection.
- *
- * All three lead with the word "Mastered" and end with what was mastered. The
- * reading/writing names used to read the other way round ("Reading Mastered"),
- * which sorted badly next to the core name and put the qualifier first. One word
- * order for all three, so every Mastered tile wraps to the same shape: "MASTERED"
- * then what was mastered.
- *
- * CORE names the skill-less set, so it has nothing to append: it is plain
- * **"Mastered"**, not "Mastered Cards". The old suffix said only that a card is a
- * card — every collection here is cards — and it made the shortest of the three
- * names the longest one on the tile, which is exactly backwards for the set that
- * needs no qualifier.
- */
-const MASTERED_TITLES: Record<MasteryWorldId, string> = {
-    core: 'Mastered',
-    reading: 'Mastered Reading',
-    writing: 'Mastered Writing',
-};
-
 /** Human-readable title for a collection — the cards page's filter key label and title. */
 export function collectionTitle(ref: CollectionRef): string {
     switch (ref.kind) {
@@ -77,7 +56,11 @@ export function collectionTitle(ref: CollectionRef): string {
             // cards page), so the world supplies the qualifier.
             return 'Learning';
         case 'mastered':
-            return MASTERED_TITLES[ref.world];
+            // Same rule as Learning: one title for all three bars. A Mastered set is
+            // only shown on a Deck Tower world's cards page, whose world already says
+            // which skill was mastered, so "Mastered Reading" / "Mastered Writing"
+            // repeated it. (Core was already plain "Mastered", not "Mastered Cards".)
+            return 'Mastered';
     }
 }
 

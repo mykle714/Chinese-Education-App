@@ -503,7 +503,11 @@ the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
 raised-key press, `src/theme/keycapPress.ts` → `keycapPressSx`: they SNAP down onto the lip
 and back up with no transition. Since 2026-10-29 (by request) that is EVERY raised keycap in
 the app — the tower plates (`towerPlate.ts` → `towerPlatePressSx`), the acp toolbar, the
-Dictionary page's keycaps and the beginner keyboard all spread the same helper. It used to
+Dictionary page's keycaps, the beginner keyboard and td's cards-page mini cards
+(`sortCardStock.ts` → `cardStockPressSx`) all spread the same helper. Two options cover the
+mini cards: `pressedX` pushes a key back diagonally, and `viaTranslate` moves it through
+the CSS `translate` property for an element that `useScrollStretch` writes an inline
+`transform` on. It used to
 animate (the scene plate's 80 ms ease-out sink and 220 ms overshoot pop).
 
 **`:active` does not work in the upper panel.** Both keys sit inside its drag handle, and

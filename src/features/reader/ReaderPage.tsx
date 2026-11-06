@@ -12,11 +12,12 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { apiDelete, apiGet } from "../../api/http";
 import { NEW_DOCUMENT_PATH } from "./readerPaths";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
 // keeps the footer (Menu tab stays active, same as Games), LEFT back
-// arrow → /menu, slides in from the right. Fixed non-scrolling shell
-// (scrollable={false}) — TextSidebar owns its own internal scroll region for the
+// arrow → the previous page (else `/`, navigateBackOr), slides in from the right.
+// Fixed non-scrolling shell (scrollable={false}) — TextSidebar owns its own internal scroll region for the
 // document list, same shape as before under LeafPage. Opening a document is a
 // real navigation to `/reader/:id` (ReaderDocumentPage.tsx), a footerless
 // NODE-style drill-in reached via `useSlideNavigate` — a routed cdp-style pair,
@@ -100,7 +101,7 @@ function ReaderPage() {
     return (
         <NodePage
             title="Reader"
-            onBack={() => navigate("/menu")}
+            onBack={() => navigateBackOr(navigate, "/")}
             scrollable={false}
             contentClassName="reader-page-root"
         >

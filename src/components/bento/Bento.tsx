@@ -46,7 +46,7 @@ import { FONTS } from "../../theme/fonts";
  * It is also the one exception to the app-wide button/card outline rule
  * (CLAUDE.md § "Buttons & cards").
  *
- * Used by: MenuPage (the hp), GamesPage, FriendsBody.
+ * Used by: GamesPage, FriendsBody. (MenuPage, the hp, was deleted 2026-11-06.)
  */
 
 /**

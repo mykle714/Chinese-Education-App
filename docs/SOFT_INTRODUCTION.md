@@ -46,8 +46,8 @@ folder: any feature may consume it.
 | Id | Where | Intro | Graduated | Thresholds |
 |---|---|---|---|---|
 | `sortDifficultyCaption` | acp toolbar level pill — `AddCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
-| `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD / NEW / CARDS" printed in white on the floor in front of it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
-| `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" printed into the floor in front of it | the stack alone | 70 visits + 14 days |
+| `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD MORE / CARDS →" printed in white on the floor in front of it, reading toward it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
+| `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" + a hung "→" printed into the floor in front of it, reading toward it | the stack alone | 70 visits + 14 days |
 
 ## 3. Storage
 

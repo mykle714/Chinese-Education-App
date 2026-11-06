@@ -5,6 +5,7 @@ import LeafPage from '../../../components/LeafPage';
 import { usePageTitle } from '../../../hooks/usePageTitle';
 import { listPlayableScenes } from './iwPlayApi';
 import type { IWSceneSummary } from '../../../../server/contracts/iw';
+import { navigateBackOr } from '../../../utils/navigateBack';
 
 /**
  * IWWorldPage — `/immersive-world`, the list of places you can walk into (§ 14 Q9).
@@ -38,7 +39,7 @@ export default function IWWorldPage() {
   }, []);
 
   return (
-    <LeafPage title="Immersive World" onBack={() => navigate('/menu')} className="iw-world-page">
+    <LeafPage title="Immersive World" onBack={() => navigateBackOr(navigate, '/')} className="iw-world-page">
       <Box className="iw-world-page__body" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         {scenes === null && !error && (
           <Box sx={{ display: 'flex', justifyContent: 'center', pt: 4 }}><CircularProgress size={20} /></Box>

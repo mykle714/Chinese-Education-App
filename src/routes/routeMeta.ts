@@ -122,7 +122,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     footerStyle: "slab",
     note: "The Deck Tower (docs/DECK_TOWER.md) — the app's landing page and first footer tab. It took `/` on 2026-11-04, when the old Home (the fdp), the Reading/Writing Centers, Decks and the collection pages were deleted; `/deck-tower`, its address until then, is gone.",
   },
-  { path: "/menu", access: "any", shell: "frame", chrome: "tab", footerTab: "menu" },
   {
     path: "/arena",
     access: "any",
@@ -144,7 +143,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   // ── Node pages (slide from the right) ──
   // Reader, Games, Friends and Community are reached from Menu, so they keep
   // the Menu tab lit.
-  { path: "/games", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Was `chrome: "tab"`, which contradicted both this comment block and the page:
   // CommunityPage renders <NodePage>, so it drew a back arrow and slid OUT to the
   // right on back, but got no slide on the way IN (routeSlideDir returns null for
@@ -154,7 +152,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   // four keep the Menu tab lit — they are reached from Menu, and the three
   // action pages drill in one level further (their back arrows return to /friends,
   // not to Menu). /friends itself is read-only; every mutation lives on a screen.
-  { path: "/friends", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },

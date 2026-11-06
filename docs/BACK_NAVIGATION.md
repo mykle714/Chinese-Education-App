@@ -98,8 +98,7 @@ The arrow should land exactly where browser Back (B/C/D) would land. That keeps 
   - that parent is a tab root or hub where a duplicate history entry is harmless.
 - **Never** `slideNavigate(...)` from a back handler. It is a forward navigation with forward motion (§ 1.4).
 
-> **Recommended helper — not built yet.** Today the idx-guarded pattern exists once, inline, in `AddCardsPage` → `exitToOrigin`. A shared hook would make it the one-line default:
-> `useBack(fallbackPath)` → `() => (history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate(fallbackPath, { replace: true })`.
+> **The helper:** `src/utils/navigateBack.ts` → `navigateBackOr(navigate, fallbackPath)`: `navigate(-1)` when `history.state.idx` is absent or > 0, else `navigate(fallbackPath, { replace: true })`. Callers: every Menu-popover destination's arrow (Games, Friends, Community, Reader, Night Market, Tester Dashboard, Immersive World, the Scene / Template editors and the Template Sandbox, fallback `/`), `VocabCardDetailPage` → `handleDelete` and `AddCardsPage` → `exitToOrigin`. It is a plain function, not a hook, so it can be called from inside callbacks that already hold `navigate`.
 
 ### 2.2 Rule 2: A consumed entry is replaced, not left behind
 
@@ -187,37 +186,36 @@ This is also the fallback source for Rule 1's first-entry case.
 | Night Market visit | `NightMarketVisitPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, circle back onto the sort platform), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | flp (inside td, no route) | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` → `tower.onExit` (the camera climbs back out) | — | — | provisional sort offer (arrow-only) ✅ |
-| Friends hub | `FriendsPage.tsx` | `navigate("/menu")` | ✅ hub | — | — |
-| Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `slideNavigate("/friends")` | ⚠️ forward slide on Back | — | — |
+| Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `navigateBackOr(navigate, "/")` (opened from the AccountSheet's Friends tab; `/friends` deleted 2026-11-06) | ✅ idx-guarded | ⚠️ the sheet is not reopened | — |
 | Challenge history | `ChallengeHistoryPage.tsx` | `slideNavigate("/friends/challenges")` | ⚠️ forward slide on Back | — | — |
 | Challenge detail | `ChallengeDetailPage.tsx` | `slideNavigate(state.from ?? "/friends/challenges")` | ⚠️ forward slide on Back; ✅ Rule 6 origin | — | — |
 | Account security | `AccountSecurityPage.tsx` | `slideNavigate("/settings")` | ⚠️ forward slide on Back | — | — |
 | Settings | `SettingsPage.tsx` | `navigate("/")` | ✅ (normally read as AccountSheet's tab; this route is `/settings/account`'s parent) | — | — |
-| Games / Community / Reader / Night Market / Tester Dashboard | hub pages | `navigate("/menu")` | ✅ hub (Menu) | — | — |
+| Community / Reader / Night Market / Tester Dashboard | Menu-popover destinations | `navigateBackOr(navigate, "/")` | ✅ idx-guarded | — | — |
 | Reader document | `ReaderDocumentPage.tsx` | `navigate("/reader")` | ✅ single parent | — | ⚠️ no guard for an unsaved inline edit |
-| IW world / play | `IWWorldPage.tsx`, `IWPlayPage.tsx` | `"/"` / `"/immersive-world"` | ✅ | — | play blocks swipe ✅ |
-| IW scene editor | `IWSceneEditorPage.tsx` | confirm if dirty → `navigate("/menu")` | ✅ | — | ✅ Rule 4 (arrow only; no unmount save) |
-| Template editor / sandbox | `TemplateEditorPage.tsx`, `TemplateSandboxPage.tsx` | `navigate("/menu")` | ✅ | — | — |
-| Bubble Match, Hydra Bubbles, Match Speed, Word Search | game pages | `useGameBack` → challenge or `/games` | ✅ | Word Search: saved game | ✅ confirm + swipe blocked + unmount finalise |
+| IW world / play | `IWWorldPage.tsx`, `IWPlayPage.tsx` | `navigateBackOr(navigate, "/")` / `"/immersive-world"` | ✅ | — | play blocks swipe ✅ |
+| IW scene editor | `IWSceneEditorPage.tsx` | confirm if dirty → `navigateBackOr(navigate, "/")` | ✅ | — | ✅ Rule 4 (arrow only; no unmount save) |
+| Template editor / sandbox | `TemplateEditorPage.tsx`, `TemplateSandboxPage.tsx` | `navigateBackOr(navigate, "/")` | ✅ | — | — |
+| Bubble Match, Hydra Bubbles, Match Speed, Word Search | game pages | `useGameBack` → challenge or `GAMES_HUB_EXIT` (`/`; pages off behind `standaloneGames`) | ✅ | Word Search: saved game | ✅ confirm + swipe blocked + unmount finalise |
 >>>
 
 
 ### 3.2 Findings
 
-1. **Seven pages call `slideNavigate` from their back arrow.** These are the three Friends sub-pages, `ChallengesPage`, `ChallengeHistoryPage`, `ChallengeDetailPage` and `AccountSecurityPage`. Each one:
+1. **Three pages call `slideNavigate` from their back arrow:** `ChallengeHistoryPage`, `ChallengeDetailPage` and `AccountSecurityPage`. (The three Friends sub-pages and `ChallengesPage` moved to Rule 1 on 2026-11-06, when `/friends` was deleted.) Each one:
    - pushes a new entry, so history grows on every "back";
    - starts a *forward* View Transition while `NodePage`'s exit clone slides right, which is probably a doubled animation (verify on a device);
    - lets a following browser Back return to the page just left.
 
    *Guess at intent:* the parent should be "held beneath" like a forward drill-in. *Proposed:* switch to Rule 1 (`navigate(-1)` with fallback), keeping `ChallengeDetailPage`'s `state.from` as its fallback.
-2. **Four `navigate(-1)` arrows have no first-entry guard:** both cdps, `UserProfilePage` and `NightMarketVisitPage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the `useBack(fallback)` helper from Rule 1 (the saved cdp's `handleDelete` already inlines it).
+2. **Four `navigate(-1)` arrows have no first-entry guard:** both cdps, `UserProfilePage` and `NightMarketVisitPage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
 3. **td's cards page is not restored on Back.** Returning from a cdp remounts td on the platform line with the search, sort and filter reset. On iOS this is also the § 1.6 snapshot mismatch. *Proposed:* a per-entry snapshot (Rule 3) of the cards page's climb, search, sort and filter.
 4. **The Reader document has no guard for an inline edit.** `ReaderDocumentPage` → `handleBack` leaves mid-edit with nothing said. Compare `IWSceneEditorPage`. Add a Rule 4 confirm if an unsaved edit is worth protecting.
 
 ### 3.3 Open questions
 
 - **Re-tapping the active footer tab.** Does it push a duplicate entry (`MobileFooter` → `TABS` calls a plain `navigate`)? Unverified. If it does, repeated taps pad the stack that browser Back walks through.
-- **Hub parents.** Should "hub" pages (Games, Community) return with `navigate(-1)` too? They are reachable from the Menu hub (`/menu`) only today, which meets the Rule 1 exception. Revisit if a second entry point appears.
+- ~~**Hub parents.**~~ Resolved 2026-11-06: with `/menu` deleted, the Menu destinations are opened from a popover over ANY page, so they have no single parent and use Rule 1 (`navigateBackOr`).
 
 ### 3.4 Dictionary browse state
 

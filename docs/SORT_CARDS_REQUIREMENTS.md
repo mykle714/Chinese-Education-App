@@ -223,10 +223,9 @@ A **sort pack** is a small group of vocabulary cards shown together:
       thick panel** (user request 2026-11-05 — the same stock as td's cards page): a
       solid **wall** in `COLORS.cardWall` showing **below and to the right** of the face,
       4px deep (`PANEL_WALL_PX`, one stepped box-shadow per px along the (1, 1) vector);
-      **one outline** around the whole extruded silhouette in `PANEL_OUTLINE`
-      (`COLORS.textFaint` — ⚠️ a text grey, since the line tokens stop at `border`), with
-      **no line on the face's own edge**, so face and wall read as one object (CLAUDE.md
-      "Buttons & cards" is met by the panel's outline); and a near-solid **cast shadow**
+      **no outline** — the wall and shadow are the card's edge, the tower style's rule
+      (removed 2026-11-06; it was a 1px `textFaint` line round face + wall, so the stock is
+      an exception to CLAUDE.md "Buttons & cards"); and a near-solid **cast shadow**
       down-right on the ground past the wall, in the look's `groundShadow` (the iso shadow
       rule's tone, only 10% darker than the ground — a wide blur made it vanish, so it
       keeps a 2px edge blur), whose reach and blur grow `HELD_SHADOW_GROWTH`× at full drag lift. It replaced a
@@ -234,7 +233,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       shadow) that read as a stack of cards. A sorted (locked) card wears the same panel
       in greys (`SORTED_STOCK`, § 4.5 "Already-sorted cards are locked"), with no shadow.
       *Code:* `src/features/discover/sortCardStock.ts` → `sortCardStockSx`,
-      `cardStockShadow`, `PANEL_OUTLINE` (shared with the skipped-cards sheet, §5.1a,
+      `cardStockShadow` (shared with the skipped-cards sheet, §5.1a,
       and td's cards page).
     - **Levitation.** Resting cards rise and fall 3px over 4.2s (`sortCardStock.ts` →
       `cardLevitateKeyframes`),

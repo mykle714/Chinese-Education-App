@@ -370,7 +370,7 @@ Not read from the learner's standalone settings:
 
 A break-capable game is split into:
 
-- **its page** (the route, routed games only) — `GameLeafPage` (header, accent ground,
+- **its page** (the route, routed games only; not mounted while the `standaloneGames` flag is off, which since 2026-11-06 makes the break the only live host) — `GameLeafPage` (header, accent ground,
   `useThemeColor`), `usePageTitle`, `useBlockEdgeSwipe(true)`, the hub's launch `state`,
   header controls, and where "Back to Games" goes.
 - **its Stage** — the run: phase machine, card supply (it keeps its own fetching and

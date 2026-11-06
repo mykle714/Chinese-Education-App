@@ -36,8 +36,8 @@ systems in [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md) will consume
 
 ## What it does
 
-- A **template author** opens **Menu → Template Editor** (the `/menu` hub tile is shown only
-  when `user.isTemplateAuthor` — migration 115, a flag SEPARATE from `isValidator`
+- A **template author** opens **Menu → Template Editor** (a row of the footer's Menu popover, shown below the hairline only
+  when `user.isTemplateAuthor` and the `nightMarket` flag is on — migration 115, a flag SEPARATE from `isValidator`
   which now gates only dictionary data-approval) → `/night-market/template-editor`.
 - The board is a **rectangular `W×H` dirt plateau** (free-farm tileset). The
   author paints **mask layers** + decor and Saves under a name.
@@ -601,7 +601,7 @@ promote-to-code step) is a downstream decision.
   `PaletteButton`, `HotkeyBadge`, `paletteBtnSx`, `toolGroupSx`, `headerBtnSx`,
   `headerBtnDangerSx`, `headerBtnPrimarySx`, `headerActionsSx`).
 - Routing/nav: `src/routes/routeMeta.ts` + `src/routes/registry.ts` (`/night-market/template-editor`),
-  `src/pages/MenuPage.tsx` (`isTemplateAuthor`-gated hub tile; the page's back arrow returns to `/menu`).
+  `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (`isTemplateAuthor`-gated popover row); the page's back arrow calls `navigateBackOr(navigate, "/")` (`src/utils/navigateBack.ts`).
 - Backend: `server/services/NightMarketTemplateService.ts`,
   `server/controllers/NightMarketTemplateController.ts`,
   `server/routes/nightMarketTemplateRoutes.ts`, `server/dal/setup.ts`,

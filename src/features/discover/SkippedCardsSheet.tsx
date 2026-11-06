@@ -53,7 +53,7 @@ const MINI_CARD_RADIUS_PX = parseFloat(MINI_CARD_RADIUS);
 const cardExit = keyframes({ to: { opacity: 0, transform: "scale(0.85)" } });
 
 // The cards wear acp's on-deck stock (sortCardStock): cream rim + beige panel, one
-// thick panel (outlined 4px wall, cast shadow). The sheet is white, so the shadow is the iso shadow rule's tone
+// thick panel (4px wall, cast shadow). The sheet is white, so the shadow is the iso shadow rule's tone
 // for a white ground (shadowTone) rather than acp's time-of-day `look.groundShadow`.
 const SHEET_GROUND_SHADOW = shadowTone(COLORS.white);
 const SKIPPED_CARD_STOCK_SX = sortCardStockSx("regular", false, SHEET_GROUND_SHADOW);

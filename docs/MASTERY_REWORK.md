@@ -169,9 +169,10 @@ see
   Play-Again refills), because a game's whole pool is bucketed and cooled up front;
 * so the toggle moved OUT of the game and onto the **Games hub**
   (`BubbleMatchTrackToggle`). Since 2026-10-03 there is no toggle at all: each
-  launcher **pins** the track (`state.showPinyin`). The Games hub — now Bubble Match's
-  only launcher (it has no flp-break adapter) — pins Recognition, so no live surface
-  launches a Reading run
+  launcher **pins** the track (`state.showPinyin`). The Games hub was Bubble Match's
+  only launcher (it has no flp-break adapter) and pinned Recognition; since the hub was
+  deleted (2026-11-06, `standaloneGames` flag off) no live surface launches Bubble Match at
+  all, so no Reading run is launched either
   ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Bubble Match: pinyin picks the track").
   A reading run is silent — no autoplay, no narration — since hearing
   the word would supply the reading being tested.
@@ -987,8 +988,8 @@ hub label. Three rules follow:
 in its own `constants.ts` (`MARK_TYPE` in `src/games/bubble-match/constants.ts`,
 `src/games/match-speed/constants.ts`, `src/games/speed-reading/constants.ts`) and
 read from there by all three places that need it: the `?markType=` pool query, the
-`markFlashcard({ type })` call, and the Games hub's label (via `GameDef.markType` in
-`src/games/registry.ts`). Two exceptions, both because one constant cannot answer for
+`markFlashcard({ type })` call, and the registry (`GameDef.markType` in
+`src/games/registry.ts`; the Games hub that once labelled tiles from it was deleted 2026-11-06). Two exceptions, both because one constant cannot answer for
 them: **Word Search**'s type is per MODE, so it lives on
 `WordSearchModeConfig.markType` (`src/games/word-search/constants.ts`), read by
 `WordSearchStage`'s mark call; and
@@ -998,7 +999,7 @@ is dealt and read from there by its pool query and its mark call alike, while it
 Nothing repeats the string literal, so the label a player sees cannot drift from the
 mark that is actually written.
 
-**The hub no longer names the track (2026-10-03).** Games hub tiles are name-only —
+**The hub no longer names the track (2026-10-03; the hub itself was deleted 2026-11-06).** Games hub tiles were name-only —
 `GameDef.subtitle` and `tileSubtitle()` were deleted, so no tile or sub-tile carries a
 subtitle. History: the track was first a `MarkTypeChip variant="edge"` on the hub card
 (deleted 2026-08-22, when the bento tile left no edge slot), then rode the tile
@@ -1489,7 +1490,7 @@ Settled since:
   `MASTERED_COLLECTION_IDS`, `parseMasteryWorld`, `MasteredAtByBar`, the pinyin-off
   track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
   `FLP_MARK_SURFACE` (§ 6).
-- `src/games/GamesPage.tsx` (the launcher that pins the track), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
+- `src/games/GamesPage.tsx` (the launcher that pinned the track; deleted 2026-11-06), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
   `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
   now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
 - `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`) and

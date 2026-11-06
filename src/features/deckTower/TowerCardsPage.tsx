@@ -2,7 +2,7 @@ import { forwardRef, memo, useCallback, useRef, type CSSProperties } from "react
 import { Box, Typography } from "@mui/material";
 import CollectionSortControl from "../flashcards/CollectionSortControl";
 import { useCardLibrary } from "../flashcards/useCardLibrary";
-import { cardStockShadow, sortCardStockSx } from "../discover/sortCardStock";
+import { cardStockPressSx, cardStockShadow, sortCardStockSx } from "../discover/sortCardStock";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
 import { MINI_CARD_DIMENSIONS } from "../../components/miniCardFace";
 import { FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
@@ -43,7 +43,7 @@ import type { VocabEntry } from "../../types";
  *     next world's page (search and filter are per visit, not carried across).
  *   • THE CARDS are acp's mini cards: MiniCard printed on the Deck Tower's card stock
  *     drawn as a THICK PANEL (`sortCardStock` → `sortCardStockSx` — cream rim, beige
- *     panel, an outlined 4px wall, a cast shadow on the ground) WITH the mastery strip, and WITHOUT acp's levitation bob (hundreds of
+ *     panel, a 4px wall, a cast shadow on the ground, no outline) WITH the mastery strip, and WITHOUT acp's levitation bob (hundreds of
  *     bobbing cards is motion for its own sake, and a cost per card). The ground is the
  *     world's sky, so the shadow is the iso shadow rule's tone for that sky
  *     (`shadowTone`), passed down as the `--tower-cards-ground-shadow` CSS variable so a
@@ -83,7 +83,8 @@ const STRIP_SIDE_INSET_PX = Math.round(MINI_CARD_DIMENSIONS.regular.width * FLP_
 
 /**
  * The stock every card is printed on — acp's thick panel (sortCardStock
- * `sortCardStockSx`: outlined 4px wall + cast shadow). Module-level so its identity never changes — every memoized card receives
+ * `sortCardStockSx`: 4px wall + cast shadow; `cardStockPressSx`: pushed back on
+ * press). Module-level so its identity never changes — every memoized card receives
  * it. Its `&:hover` keeps the panel's shadow: the flat face's hover elevation would
  * replace the wall and shadow on a desktop hover.
  */
@@ -92,6 +93,9 @@ const TOWER_CARD_STOCK = {
     sx: {
         ...sortCardStockSx("regular", false, GROUND_SHADOW_VAR),
         "&:hover": { boxShadow: cardStockShadow(false, GROUND_SHADOW_VAR) },
+        // Pressed, the card is pushed back flush with the sky (no wall, no shadow); the cdp
+        // opens on release. After `&:hover`, so a sticky touch hover cannot mask the press.
+        ...cardStockPressSx(GROUND_SHADOW_VAR),
         // The mastery strip squeezed in off the cream rim: MiniCard spans it 8px in from
         // the card's sides, which on this stock is only ~1.5px inside the beige panel
         // (inset `width × FLP_CARD_STOCK_INSET_RATIO`, ≈6.5px), so its ends touched the rim.
@@ -107,7 +111,7 @@ const TITLE_ROW_GAP_PX = 14;
  * line the old one stood on.
  */
 const TITLE_ROW_CONTENT_PX = 40;
-/** The search field's width — the card grid's (3 × 92 + 2 × 16 + 2 × 28). */
+/** The filter keys' and search field's column width — the card grid's (3 × 92 + 2 × 16 + 2 × 28). */
 const GRID_WIDTH_PX = 364;
 
 interface TowerCardsPageProps {
@@ -206,8 +210,11 @@ const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function 
             </Box>
 
             {/* ── Learning / Mastered — the lens's two constants, as FILTERS on the grid
-                below: two-state keycaps that stay down while filtering (TowerFilterKeys). ── */}
-            <Box className="tower-cards-page__filters" sx={{ alignSelf: "stretch", px: "22px", pt: "12px" }}>
+                below: two-state keycaps that stay down while filtering (TowerFilterKeys).
+                Same column as the search row and the grid (GRID_WIDTH_PX, 28px sides), so the
+                keys' outer edges line up with the search field's and the cards'. The keys'
+                diagonal wall + cast shadow overhang the right edge by 9px, into that padding. ── */}
+            <Box className="tower-cards-page__filters" sx={{ width: GRID_WIDTH_PX, maxWidth: "100%", px: 3.5, pt: "12px" }}>
                 <TowerFilterKeys
                     entries={collections}
                     count={tileCount}

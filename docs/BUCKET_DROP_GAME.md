@@ -1,4 +1,10 @@
-# Bucket Drop (`/games/bucket-drop`)
+# Bucket Drop (`/games/bucket-drop`, switched off)
+
+> **DORMANT (2026-11-06): currently unreachable.** The Games hub (`src/games/GamesPage.tsx`) was
+> deleted and the `/games/bucket-drop` route is not mounted while the `standaloneGames` feature
+> flag is off (`server/contracts/featureFlags.ts`; `src/games/registry.ts` → `ROUTED_GAMES` is
+> empty). Its flp break adapter exists but is not in the rotation
+> (`src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`). The page code below is kept as is.
 
 A drag-and-drop **stopwatch** production/reading drill. The play panel's perimeter is
 lined with grey square keycap-shaped **holes** (buckets) — one row along the top edge —, each holding one English dd. All
@@ -20,7 +26,7 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). flp break: [FLP_GAME_BREAKS.md](
 | Contract | `server/constants.ts` → `KNOWN_GAME_IDS`; `server/contracts/featureFlags.ts` → `GAME_FLAGS['bucket-drop']` | id + on/off switch |
 | Contract | `server/contracts/wire.ts` → `CARD_BASELINES`, `CARD_BASELINE_ITEMIZED`, `CHALLENGE_GAMES` (`bucket-drop` / `pinyin`) | provisioning baseline (20), itemized notice, challenge spec |
 | Contract | `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES['bucket-drop']` | lower-is-better ms, per mode |
-| Registry | `src/games/registry.ts` (entry + `modes`), `src/games/runtime/challengeLaunch.ts` → `LAUNCHES['bucket-drop']` | hub tile, router, challenge launch |
+| Registry | `src/games/registry.ts` (entry + `modes`), `src/games/runtime/challengeLaunch.ts` → `LAUNCHES['bucket-drop']` | router (while `standaloneGames` is on), challenge launch |
 | Page | `src/games/bucket-drop/BucketDropPage.tsx` | the route: title, edge-swipe block, launch mode, exit |
 | Stage | `src/games/bucket-drop/BucketDropStage.tsx` | the run, on either host: pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups, break results |
 | Stage | `src/games/bucket-drop/BucketDropEndPopup.tsx` | end card (modal, not minimizable); route only |
@@ -30,7 +36,7 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). flp break: [FLP_GAME_BREAKS.md](
 | Pure | `src/games/bucket-drop/bucketQueue.ts` → `dealQueue`, `resolveDrop`, `resizeQueue` | run model: remaining words + which bucket is in each slot |
 | Pure | `src/games/bucket-drop/poolRequest.ts` → `bucketDropPoolRequest` | the pool request, for the Stage and the break's prefetch |
 | Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, medals, result lines (`runResultTitle`, `runResultDetail`), geometry, timing |
-| Launch | `src/games/GamesPage.tsx` (plain tile → Pinyin) | the route's one entry point; No Pinyin has no launcher (§ 1) |
+| Launch | none today: the Games hub tile (plain link → Pinyin) was the route's one entry point and was deleted with `GamesPage.tsx` (2026-11-06); No Pinyin has no launcher (§ 1) |
 | Break | `src/games/flpBreak/bucketDropBreak.ts` → `BUCKET_DROP_BREAK`, `BucketDropBreakStage.tsx` | the flp game break adapter (§ 8) |
 | Tests | `src/__tests__/bucketDropPerimeter.test.ts`, `src/__tests__/bucketDropQueue.test.ts`, `src/games/__tests__/challengePool.test.ts`, `src/games/flpBreak/__tests__/bucketDropBreak.test.ts` | geometry (squares, no overlap), the queue over full runs, eligibility |
 
@@ -47,7 +53,7 @@ Chosen by the host, never in-game — the Word Search pattern.
 
 | Mode | Launched from | Track (zh) | Challenge |
 |---|---|---|---|
-| `pinyin` | Games hub tile (a plain router link; no `state.mode` ⇒ Pinyin) | production | eligible |
+| `pinyin` | **nothing today** — was the Games hub tile (a plain router link; no `state.mode` ⇒ Pinyin), deleted 2026-11-06 | production | eligible |
 | `no-pinyin` | **nothing today** — would be the reading flp's break (§ 8, switched off), **zh only** | reading | not eligible |
 
 Pinyin mode is **production**, not the recognition Bubble Match's pinyin rule would give: the

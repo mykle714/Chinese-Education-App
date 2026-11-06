@@ -26,6 +26,7 @@ import {
     insetRect,
     leverFootprint,
     IsoShadow,
+    shadowTone,
     paperStackHeight,
     prism,
     shadowLandTiming,
@@ -126,17 +127,23 @@ const STARTLE_AT_CARDS = 50;
 
 /**
  * The corner fixtures' soft-introduction floor prints (IsoFloorPrint; docs/DECK_TOWER.md
- * § "Corner fixture labels", docs/SOFT_INTRODUCTION.md § 2): what each print says, its
- * type size and line alignment. White (washed for the time of day). The sort bin's print
- * is three lines at 0.6 units, set flush right; the notebook's two lines at 0.4, centred —
- * towerPlatforms.ts → `labelUnder` places each block from its line count and size
- * (`SORT_BIN_LABEL_LINES`/`SORT_BIN_PRINT_FONT_SIZE`, `NOTEBOOK_LABEL_LINES`/
- * `NOTEBOOK_PRINT_FONT_SIZE`); keep them in step. At these sizes a line is wider than the
- * fixture's half-width to the rim, so the print is clamped inside it (`maxX`).
+ * § "Corner fixture labels", docs/SOFT_INTRODUCTION.md § 2): what each print says, and the
+ * type both share. White (washed for the time of day). Two lines at 0.7 units, turned to
+ * read along world −y (`run="-y"` — up-right on screen, toward the fixture) and set flush
+ * to their end, which is anchored a gap off the fixture's front-left face (`anchor="end"`).
+ * Row 2 ends with an arrow that, reading in the run's direction, points straight at the
+ * fixture. The two prints set it differently: the sort print's arrow is part of row 2
+ * ("CARDS →" ends flush with "ADD MORE"); the notebook's hangs past row 2's end, outside
+ * the edge (IsoFloorPrint `tail`), so its last letters line up (WRITING's G, NOTEBOOK's K). towerPlatforms.ts → `labelUnder` places the
+ * block from the same line count, size and pitch (`FIXTURE_LABEL_LINES`,
+ * `FIXTURE_PRINT_FONT_SIZE`); keep them in step.
  */
 const FIXTURE_PRINT = {
-    sortBin: { lines: ["ADD", "NEW", "CARDS"], fontSize: 0.6, align: "right" },
-    notebook: { lines: ["WRITING", "NOTEBOOK"], fontSize: 0.4, align: "center" },
+    // The arrow is part of row 2 here, so "CARDS →" ends flush with "ADD MORE".
+    sortBin: { lines: ["ADD MORE", "CARDS →"], tail: undefined },
+    // Hung past row 2 (IsoFloorPrint `tail`), so NOTEBOOK's K lines up with WRITING's G.
+    notebook: { lines: ["WRITING", "NOTEBOOK"], tail: "→" },
+    fontSize: 0.7,
     letterSpacing: 0.04,
 } as const;
 
@@ -371,6 +378,26 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             : notebook && notebookIntro === "intro"
               ? { at: layout.notebookLabelAt, ...FIXTURE_PRINT.notebook, progress: notebook.progress }
               : null;
+    // The print, lit or SHADED. A pawn's shadow is an opaque floor-tone patch, so like the
+    // plate (`floorDecalsShaded`) the print is drawn again in its shaded tone inside the shadow
+    // (IsoPawn `decals`) — otherwise the shadow paints over the letters it crosses.
+    const fixturePrintInk = wash(COLORS.white);
+    const renderFixturePrint = (shaded: boolean) =>
+        fixturePrint && (
+            <IsoFloorPrint
+                at={fixturePrint.at}
+                lines={fixturePrint.lines}
+                surface={floor}
+                fontSize={FIXTURE_PRINT.fontSize}
+                run="-y"
+                anchor="end"
+                align="right"
+                tail={fixturePrint.tail}
+                letterSpacing={FIXTURE_PRINT.letterSpacing}
+                color={shaded ? shadowTone(fixturePrintInk) : fixturePrintInk}
+                opacity={Math.min(1, Math.max(0, fixturePrint.progress))}
+            />
+        );
     const pawnKey = (p: SwapPawn) => String(p.key);
 
     // Each pawn's depth slot among the obstacles, by pawn key (mid-swap there are two).
@@ -420,18 +447,22 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             />
         </g>
     );
-    // The same plate as a pawn's shadow darkens it — at the same height, so the shaded
-    // copy lines up with the slab it covers.
-    const plateShade = (
-        <IsoFloorLabel
-            rect={layout.labelPlate}
-            surface={floor}
-            text={plate.face.text}
-            bandColor={plateBand}
-            wallSteps={plate.face.wallSteps}
-            shaded
-            raised={platePress.raised}
-        />
+    // The floor decals as a pawn's shadow darkens them: the corner fixture's si print, then
+    // the plate at the same height, so the shaded copy lines up with the slab it covers.
+    // Same paint order as the lit decals (print under plate).
+    const floorDecalsShaded = (
+        <>
+            {renderFixturePrint(true)}
+            <IsoFloorLabel
+                rect={layout.labelPlate}
+                surface={floor}
+                text={plate.face.text}
+                bandColor={plateBand}
+                wallSteps={plate.face.wallSteps}
+                shaded
+                raised={platePress.raised}
+            />
+        </>
     );
 
     // The plate as a step the pawns walk up onto, at its live height (sinking when pressed,
@@ -463,7 +494,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 // one is still on screen (it is in the air then anyway). Unknown (null) while
                 // the count loads, so loading in past the threshold is a baseline, not a grow.
                 startled={towerCountKnown ? (p.outgoing || !swapOutgoing) && cardsOnTower >= STARTLE_AT_CARDS : null}
-                decals={plateShade}
+                decals={floorDecalsShaded}
                 steps={pawnSteps}
                 entrance={p.entrance}
                 tappable={!p.outgoing}
@@ -810,19 +841,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                         {showImprint && <IsoCardImprint rect={layout.card} surface={floor} />}
                         {/* Lightning's scorches: floor decals, under everything standing on it. */}
                         {lightning?.burns.map((b) => <IsoBurnMark key={`burn-${b.id}`} at={b.at} z={floor.z} seed={b.id} />)}
-                        {fixturePrint && (
-                            <IsoFloorPrint
-                                at={fixturePrint.at}
-                                lines={fixturePrint.lines}
-                                surface={floor}
-                                fontSize={fixturePrint.fontSize}
-                                align={fixturePrint.align}
-                                letterSpacing={FIXTURE_PRINT.letterSpacing}
-                                color={wash(COLORS.white)}
-                                maxX={layout.fixtureLabelMaxX}
-                                opacity={Math.min(1, Math.max(0, fixturePrint.progress))}
-                            />
-                        )}
+                        {renderFixturePrint(false)}
                         {plateButton}
                         {/* Passing cloud shade, over the print and the plate (a glaze, so both
                             still read) and under everything standing on the floor. */}

@@ -20,7 +20,11 @@ tile + badge and the profile block toggle are hidden.
 `database/cron/expire-study-challenges.sql` pass keeps running so challenges that were
 already live still resolve rather than hanging mid-week, and no `study_challenges` row is
 touched. Turning the flag back on restores the feature as it
-stood.
+stood — **except the rounds**: every round launches a standalone game route
+(`src/games/runtime/challengeLaunch.ts` → `LAUNCHES`, `/games/<game>`), and since 2026-11-06
+those routes are not mounted while the `standaloneGames` flag is off
+(`src/games/registry.ts` → `ROUTED_GAMES`). Re-enabling Study Challenge needs
+`standaloneGames` on too, or a non-route round host.
 
 ⚠️ **The 2026-09-01 redesign changed behaviour, not only appearance.** Four things a
 reader of an older revision of this doc will find contradicted:
@@ -154,12 +158,12 @@ Consequences the design must carry:
 
 ### Where it lives in the app
 
-A new **Challenges page reached from the Friends page** — a NodePage under the friends
+A new **Challenges page reached from the friends list** (`FriendsBody`, the AccountSheet's Friends tab since the `/friends` page was deleted 2026-11-06) — a NodePage under the friends
 drill-in ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)), sibling to `/friends/sent`
 and `/friends/requests`, e.g. `/friends/challenges`. It is the single surface for the
 whole lifecycle: invitations to answer, accepted challenges awaiting Friday, the test
 entry point, and finished results. No new home-hub row and no push infrastructure — the
-badge count rides along with the friends payload the Menu hub's (`/menu`) Friends tile already fetches,
+badge count rides along with the friends payload (design intent: a dot on the Friends entry point, which is now the AccountSheet's Friends tab — not built, see below),
 which is what makes "you have a challenge" discoverable at all given there are no
 notifications ([FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md)).
 
@@ -277,8 +281,9 @@ opens the sheet that holds both, next to the words they are about.
     that quietly goes somewhere else is not.
   * **The row is keyboard-operable** — `role="button"`, `tabIndex={0}`, Enter/Space —
     because it replaced a real `<button>` and must not lose what that gave for free.
-  * Profiles stay reachable from `/friends`, which is also where the per-pair challenge
-    block lives.
+  * Profiles stay reachable from the friends list (`FriendsBody`, the AccountSheet's
+    Friends tab since the `/friends` page was deleted 2026-11-06); the per-pair challenge
+    block lives on the profile.
 
   The shared row therefore takes `onRowPress` (whole row, presentational actions) or
   `onPersonPress` (person half only, real action buttons) — one or the other, never
@@ -296,8 +301,8 @@ the Chinese challenges page. See Q39.
 ### How a challenge is announced: in-app badges only (Q48)
 
 There is **no notification of any kind** — no push, no email, no native badge. A pending
-challenge is announced by a **badge chain the user has to walk into**: a dot on the Menu hub's
-**Friends** tile → a dot on the **Challenges** row inside the friends drill-in → the
+challenge is announced by a **badge chain the user has to walk into**: a dot on the Menu's
+**Friends** entry (⚠️ not drawn: the deleted `/menu` bento never carried one, and Friends no longer has a Menu entry at all — it is reached from td's avatar → AccountSheet) → a dot on the **Challenges** row inside the friends drill-in → the
 friend's row itself showing *Incoming Challenge*. Every one of those counts rides the payload
 the surface already fetches; no new endpoint and no delivery infrastructure.
 
@@ -2322,7 +2327,9 @@ depends on none of the gates. See `IStudyChallengeDAL.lockUsersForChallenge` and
 **The review screen is single-use, and history says so.** Send / Accept / Decline all
 leave the screen with `slideNavigate("/friends/challenges", { replace: true })`, so the
 review page's history entry is *replaced* by the friend list rather than pushed over.
-Back from the friend list therefore goes out to `/friends`, and there is no way to
+Back from the friend list therefore goes one history entry further out
+(`navigateBackOr(navigate, "/")`, `src/utils/navigateBack.ts`; it went to `/friends` until that
+page was deleted 2026-11-06), and there is no way to
 return to a confirmed word set and tap its Send button against a challenge that already
 exists. (`replace` is an option on `useSlideNavigate`,
 `src/hooks/useSlideNavigate.ts`; the calls are `handleConfirm` / `handleDecline` in
@@ -2708,10 +2715,11 @@ client-side requirement is that challenge-eligible game pages can emit an idle s
 | Client | `src/games/types.ts`, `src/games/registry.ts` | `challengeScoring` on `GameDef` |
 | Client | each game page | emit scoring events; honour challenge mode |
 
-Entry point: a **Study Challenge** row on the hp, beside Friends
+Entry point (as designed): a **Study Challenge** row on the hp, beside Friends
 ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md)), with a badge for "awaiting your
-response" and "your test is open" — the same badge pattern `/friends` uses for
-incoming requests.
+response" and "your test is open" — the same badge pattern the friends list uses for
+incoming requests. (Today the hp is the footer Menu popover, and the challenges page is the
+`/friends/challenges` drill-in.)
 
 ---
 
@@ -2838,7 +2846,7 @@ This document describes (phase 1 is fully built — see the status table at the 
   `ChallengeResults.tsx` (results and taunts — § 6/§ 6a),
   `ChallengeHistoryPage.tsx` (the tinted log — § 1),
 `src/games/types.ts` + `src/games/registry.ts` (`challengeScoring`, and `glyph`, which
-`challengeLaunch.ts` reads so the round row shows the same mark the Games hub does),
+`challengeLaunch.ts` reads so the round row shows the game's registry mark, the one the deleted Games hub tile showed),
 `src/theme/colors.ts` → `hlRed`/`hlYellow`/`hlGreen`/`hlBlue` (the dark-ground
 highlights, used ONLY by the round scoreboard),
 `src/games/runtime/{challengeScoring,useChallengeRound,challengeLaunch}.ts` +

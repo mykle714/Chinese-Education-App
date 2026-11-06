@@ -213,6 +213,11 @@ Accrual is decided by path, not by what a page does:
 | `MINUTE_POINTS_EXCLUDED_EXACT_PAGES` | exact path only; **wins over both lists above** | `/immersive-world`, `/immersive-world/scene-editor` |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
+The `/games/*` entries (and the `/games` auto-active prefix) currently match nothing: the
+Games hub was deleted 2026-11-06 and the routed games' pages are not mounted while the
+`standaloneGames` feature flag is off (`src/games/registry.ts` → `ROUTED_GAMES`). They stay
+listed so turning the flag back on needs no edit here.
+
 The rule over those four lists is `isMinutePointsEligiblePath` / `isMinutePointsAutoActivePath`
 (`src/minutePoints/eligibility.ts`), pulled out of `useMinutePoints` on 2026-09-07 when the
 third list arrived. Both failure directions are **silent** — a study page that earns nothing
@@ -227,8 +232,8 @@ read by `useMinutePoints` (`isEligiblePage` = the path rule **or** a claimed sur
 The Deck Tower studies a tower IN PLACE: its flp session is laid over the tower scene on
 `/`, with no route change ([DECK_TOWER.md](./DECK_TOWER.md) § "Studying the
 tower"). This is the **only** way the flp is played (there is no flp route), and the
-break-only games (Speed Reading, Memory Map, Writing Grid, Superposition) are played only
-as breaks inside that session. `/` itself is a menu and must not earn, so the page CLAIMS the study
+games are played only as breaks inside that session (`src/games/flpBreak/index.ts` →
+`FLP_BREAK_GAMES`; the routed games' own pages are off behind `standaloneGames` since 2026-11-06). `/` itself is a menu and must not earn, so the page CLAIMS the study
 surface while a session has its camera down, and a claimed surface counts exactly like an
 eligible path: the first interaction starts the clock, the idle timeout stops it, and
 releasing the claim saves and deactivates as leaving a study route does. A counter, so two

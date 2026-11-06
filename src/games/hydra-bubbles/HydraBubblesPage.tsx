@@ -31,6 +31,7 @@ import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
+import { GAMES_HUB_EXIT } from "../runtime/gameExit";
 
 /**
  * Hydra Bubbles — page shell + run state machine (docs/HYDRA_BUBBLES.md).
@@ -391,8 +392,8 @@ const HydraBubblesPage: React.FC = () => {
                 >
                     {blockMessage}
                 </Typography>
-                <Button className="hydra__block-back" variant="contained" onClick={() => navigate("/games")}>
-                    Back to Games
+                <Button className="hydra__block-back" variant="contained" onClick={() => navigate(GAMES_HUB_EXIT.path)}>
+                    Back to {GAMES_HUB_EXIT.label}
                 </Button>
             </>
         );
@@ -451,10 +452,10 @@ const HydraBubblesPage: React.FC = () => {
                     <Button
                         className="hydra__replay-btn hydra__replay-btn--back"
                         variant="outlined"
-                        onClick={() => navigate("/games")}
+                        onClick={() => navigate(GAMES_HUB_EXIT.path)}
                         sx={{ py: 1, borderRadius: "14px", textTransform: "none", fontWeight: WEIGHT.medium }}
                     >
-                        Back to Games
+                        Back to {GAMES_HUB_EXIT.label}
                     </Button>
                 </Box>
             </BubbleMatchEndPopup>

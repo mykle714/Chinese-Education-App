@@ -59,13 +59,11 @@ type RouteComponent = LazyExoticComponent<ComponentType>;
  * the arrow functions — the page itself is fetched when its route first matches.
  */
 const PAGE_COMPONENTS: Record<string, RouteComponent> = {
-  // The Deck Tower is the landing page and first tab (2026-11-04); Menu is the hub bento.
+  // The Deck Tower is the landing page and first tab (2026-11-04). There is no `/menu`:
+  // the Menu tab raises a popover (src/components/menuPopover/MenuPopover.tsx, 2026-11-06).
   "/": lazy(() => import("../features/deckTower/DeckTowerPage")),
-  "/menu": lazy(() => import("../pages/MenuPage")),
-  "/games": lazy(() => import("../games/GamesPage")),
   "/community": lazy(() => import("../features/community/CommunityPage")),
   "/arena": lazy(() => import("../features/arena/ArenaPage")),
-  "/friends": lazy(() => import("../features/friends/FriendsPage")),
   "/friends/requests": lazy(() => import("../features/friends/IncomingRequestsPage")),
   "/friends/sent": lazy(() => import("../features/friends/SentRequestsPage")),
   "/friends/remove": lazy(() => import("../features/friends/RemoveFriendsPage")),

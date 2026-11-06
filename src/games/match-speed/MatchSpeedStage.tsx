@@ -59,6 +59,7 @@ import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
+import { GAMES_HUB_EXIT } from "../runtime/gameExit";
 
 export interface MatchSpeedStageProps {
     /** Who is hosting this run (docs/FLP_GAME_BREAKS.md § 6). */
@@ -80,7 +81,7 @@ export interface MatchSpeedStageProps {
         so Play has no spinner. Consumed by the first run only; Play Again (page host)
         always fetches fresh. */
     prefetchedPool?: GamePoolResponse | null;
-    /** Close with no results to show: "Back to Games" (page), or a break that never dealt. */
+    /** Close with no results to show: "Back to <GAMES_HUB_EXIT.label>" (page), or a break that never dealt. */
     onDone: () => void;
     /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
     onRunEnded?: (results: FlpBreakResults) => void;
@@ -730,7 +731,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                                 variant="contained"
                                 onClick={onDone}
                             >
-                                {isBreak ? "Back to cards" : "Back to Games"}
+                                {isBreak ? "Back to cards" : `Back to ${GAMES_HUB_EXIT.label}`}
                             </Button>
                         </>
                     )}
@@ -886,7 +887,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                                     fontWeight: WEIGHT.medium,
                                 }}
                             >
-                                Back to Games
+                                Back to {GAMES_HUB_EXIT.label}
                             </Button>
                         </Box>
                     </MatchSpeedEndPopup>

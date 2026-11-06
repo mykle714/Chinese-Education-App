@@ -1,4 +1,6 @@
+import { useCallback, useState } from "react";
 import { runFooterTabOverride } from "./footerTabOverride";
+import MenuPopover from "./menuPopover/MenuPopover";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
@@ -230,12 +232,16 @@ const SlabFooterItem = styled(Box, {
 // destination either: it is a maximizable sheet (AccountSheet, with Settings as one of
 // its tabs) raised from the Deck Tower header's avatar.
 //
-// The four tabs, left to right: Deck · Menu · Arena · Dictionary (2026-11-04). Deck is
-// the Deck Tower, which renders at `/` — the old Home tab (the fdp) was deleted that day
-// and the tower took its place as the app's landing page and first tab. Arena moved out
-// of Menu's bento into its own tab at the same time; it is drawn only while the `arena`
-// feature flag is on (server/contracts/featureFlags.ts), like every other entry point
-// to a flagged feature.
+// The four tabs, left to right: Deck · Arena · Dictionary · Menu (2026-11-06). Deck is
+// the Deck Tower, which renders at `/` (it replaced the old Home tab, the fdp, on
+// 2026-11-04). Arena is drawn only while the `arena` feature flag is on
+// (server/contracts/featureFlags.ts), like every other entry point to a flagged feature.
+//
+// Menu is the one tab that is NOT a destination: it does not navigate. A tap raises
+// MenuPopover, a list of rows (Reader, Tester Dashboard, …) over whatever page is on screen.
+// It sits last so the popover can anchor bottom-right, right above it. The `/menu` bento
+// page it used to open was deleted 2026-11-06. `menu` remains a FooterTab because the
+// Menu-reached pages (Reader, the `/friends/*` drill-ins, …) still light it (routeMeta `footerTab`).
 export type FooterTab = "deck" | "menu" | "arena" | "dictionary";
 
 // Which footer is drawn: the app-wide flat `bar`, or the floating `slab` a route opts
@@ -265,6 +271,18 @@ interface MobileFooterProps {
 
 const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", variant = "bar", style }) => {
     const navigate = useNavigate();
+    // Whether the Menu tab's popover is up (MenuPopover). Local state: the footer is
+    // rendered once at frame level, so this survives navigation between footer routes.
+    const [menuOpen, setMenuOpen] = useState(false);
+    const closeMenu = useCallback(() => setMenuOpen(false), []);
+    // Rendered next to either footer style; anchored above whichever one is drawn.
+    const menuPopover = (
+        <MenuPopover
+            open={menuOpen}
+            onClose={closeMenu}
+            footerClearance={variant === "slab" ? SLAB_FOOTER_TOTAL_HEIGHT : FOOTER_TOTAL_HEIGHT}
+        />
+    );
 
     // One row per tab, in the design's left-to-right order. This used to be four
     // copy-pasted JSX blocks differing only in label, icon and handler; with the icons
@@ -272,7 +290,6 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
     // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
     const baseTabs: FooterTabRow[] = [
         { tab: "deck", label: "Deck", icon: "stacks", onClick: () => navigate("/") },
-        { tab: "menu", label: "Menu", icon: "apps", onClick: () => navigate("/menu") },
         ...(ARENA_TAB_ON
             ? [{ tab: "arena", label: "Arena", icon: "emoji_events", onClick: () => navigate("/arena") } satisfies FooterTabRow]
             : []),
@@ -285,6 +302,9 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
                 if (registerDictionaryTabTap()) requestDictionarySearchFocus();
             },
         },
+        // Opens the popover instead of navigating. Closing is the popover's job: while
+        // open its scrim covers this tab, so a second tap lands on the scrim.
+        { tab: "menu", label: "Menu", icon: "apps", onClick: () => setMenuOpen(true) },
     ];
     const TABS: FooterTabRow[] = baseTabs.map((t) => ({
         ...t,
@@ -297,73 +317,79 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
 
     if (variant === "slab") {
         return (
-            <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
-                <SlabFooterFace className="mobile-footer__slab-face">
-                    {TABS.map(({ tab, label, icon, onClick }) => {
-                        const active = activePage === tab;
-                        const tone = active
-                            ? tier2Var("footerInkActive", COLORS.onSurface)
-                            : tier2Var("footerInk", COLORS.textSecondary);
-                        return (
-                            <SlabFooterItem
-                                key={tab}
-                                className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
-                                active={active}
-                                onClick={onClick}
-                            >
-                                {/* Filled, weight 500 — the design's icon-font axes for this bar. */}
-                                <Icon className={`mobile-footer__${tab}-icon`} name={icon} size={22} weight={500} fill={1} color={tone} />
-                                <Typography
-                                    className={`mobile-footer__${tab}-label`}
-                                    sx={{
-                                        // 11px/600 flat, the design's `.ft div` — like the bar's
-                                        // 12px, pinned independently of the body ramp.
-                                        fontSize: 11,
-                                        fontWeight: 600,
-                                        lineHeight: LEADING.tight,
-                                        color: tone,
-                                        fontFamily: FONTS.sans,
-                                    }}
+            <>
+                <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
+                    <SlabFooterFace className="mobile-footer__slab-face">
+                        {TABS.map(({ tab, label, icon, onClick }) => {
+                            const active = activePage === tab;
+                            const tone = active
+                                ? tier2Var("footerInkActive", COLORS.onSurface)
+                                : tier2Var("footerInk", COLORS.textSecondary);
+                            return (
+                                <SlabFooterItem
+                                    key={tab}
+                                    className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
+                                    active={active}
+                                    onClick={onClick}
                                 >
-                                    {label}
-                                </Typography>
-                            </SlabFooterItem>
-                        );
-                    })}
-                </SlabFooterFace>
-            </SlabFooter>
+                                    {/* Filled, weight 500 — the design's icon-font axes for this bar. */}
+                                    <Icon className={`mobile-footer__${tab}-icon`} name={icon} size={22} weight={500} fill={1} color={tone} />
+                                    <Typography
+                                        className={`mobile-footer__${tab}-label`}
+                                        sx={{
+                                            // 11px/600 flat, the design's `.ft div` — like the bar's
+                                            // 12px, pinned independently of the body ramp.
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            lineHeight: LEADING.tight,
+                                            color: tone,
+                                            fontFamily: FONTS.sans,
+                                        }}
+                                    >
+                                        {label}
+                                    </Typography>
+                                </SlabFooterItem>
+                            );
+                        })}
+                    </SlabFooterFace>
+                </SlabFooter>
+                {menuPopover}
+            </>
         );
     }
 
     return (
-        <Footer className="mobile-footer" style={style}>
-            {TABS.map(({ tab, label, onClick }) => {
-                const active = activePage === tab;
-                return (
-                    <FooterItem
-                        key={tab}
-                        className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
-                        active={active}
-                        onClick={onClick}
-                    >
-                        <Typography
-                            className={`mobile-footer__${tab}-label`}
-                            sx={{
-                                // 12px flat, not a scale token: the design pins `.fbar`
-                                // labels at this size independently of the body ramp.
-                                fontSize: 12,
-                                fontWeight: active ? 600 : 400,
-                                lineHeight: LEADING.tight,
-                                color: active ? COLORS.onSurface : COLORS.textFaint,
-                                fontFamily: FONTS.sans,
-                            }}
+        <>
+            <Footer className="mobile-footer" style={style}>
+                {TABS.map(({ tab, label, onClick }) => {
+                    const active = activePage === tab;
+                    return (
+                        <FooterItem
+                            key={tab}
+                            className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
+                            active={active}
+                            onClick={onClick}
                         >
-                            {label}
-                        </Typography>
-                    </FooterItem>
-                );
-            })}
-        </Footer>
+                            <Typography
+                                className={`mobile-footer__${tab}-label`}
+                                sx={{
+                                    // 12px flat, not a scale token: the design pins `.fbar`
+                                    // labels at this size independently of the body ramp.
+                                    fontSize: 12,
+                                    fontWeight: active ? 600 : 400,
+                                    lineHeight: LEADING.tight,
+                                    color: active ? COLORS.onSurface : COLORS.textFaint,
+                                    fontFamily: FONTS.sans,
+                                }}
+                            >
+                                {label}
+                            </Typography>
+                        </FooterItem>
+                    );
+                })}
+            </Footer>
+            {menuPopover}
+        </>
     );
 };
 

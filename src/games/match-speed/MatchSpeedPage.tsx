@@ -11,6 +11,7 @@ import type { Language } from "../../types";
 import { GAME_HUE } from "./constants";
 import MatchSpeedHeaderControls from "./MatchSpeedHeader";
 import MatchSpeedStage from "./MatchSpeedStage";
+import { GAMES_HUB_EXIT } from "../runtime/gameExit";
 
 /**
  * The page host's chrome for the Stage: Match Speed is a LEAF PAGE
@@ -28,7 +29,7 @@ const MatchSpeedPageFrame: React.FC<GameStageFrameProps> = ({ title, onExitReque
 /**
  * Match Speed — the game's own ROUTE (`/games/match-speed`). A thin host around
  * `MatchSpeedStage`, which owns the run; this file owns only what belongs to being a
- * page: the title, the edge-swipe block, the pinyin chip, and where "Back to Games" goes.
+ * page: the title, the edge-swipe block, the pinyin chip, and where "Back to …" (`GAMES_HUB_EXIT`) goes.
  *
  * One difficulty (Study Mix): a launch's `state.mode` — Study Challenge still sends
  * `"mixed"` (runtime/challengeLaunch.ts) — is ignored.
@@ -47,7 +48,7 @@ const MatchSpeedPage: React.FC = () => {
     const { settings, update } = useFlashcardLearnSettings();
     const { showPinyin } = settings;
 
-    const backToGames = useCallback(() => navigate("/games"), [navigate]);
+    const backToGames = useCallback(() => navigate(GAMES_HUB_EXIT.path), [navigate]);
 
     return (
         <MatchSpeedStage

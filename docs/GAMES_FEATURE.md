@@ -1,8 +1,21 @@
 # Games Feature
 
-A top-level section of the mobile demo where users access mini-games that
-reinforce vocabulary and character learning. The hub page lists all registered
-games; each game lives as its own page linked from the hub.
+Mini-games that reinforce vocabulary and character learning.
+
+> **Where games are played (since 2026-11-06): only as flp game breaks** inside the Deck
+> Tower's study session ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md); rotation =
+> `src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`: Match Speed, Word Search, Writing Grid,
+> Superposition, Speed Reading, Memory Map). The Games hub (`/games`, `GamesPage`) and its
+> Menu row were **deleted**, and the five ROUTED games' own pages are switched **off** by
+> the `standaloneGames` feature flag (`server/contracts/featureFlags.ts`): while it is off
+> `src/games/registry.ts` → `ROUTED_GAMES` is empty, so no `/games/*` route is mounted. The
+> page code is kept, dormant. **Bubble Match, Hydra Bubbles and Bucket Drop are therefore
+> unreachable**: the first two have no break adapter, and Bucket Drop's
+> (`BUCKET_DROP_BREAK`) is left out of the rotation. The hub's launcher components
+> (`src/games/shared/GameCard.tsx`, `gameCards.ts`, `bubble-match/bubbleMatchCard.ts`,
+> `word-search/WordSearchHubItem.tsx`, `WordSearchResumeTile.tsx`,
+> `useWordSearchLauncher.tsx`) have no live caller. Sections below that describe the hub
+> describe deleted or dormant code, and say so.
 
 > **Second host:** games embedded mid-session in the flp as "game breaks" — **phase 1
 > built (Match Speed and Word Search)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
@@ -27,10 +40,7 @@ games; each game lives as its own page linked from the hub.
   drawn as a scored round of a weekly head-to-head. The contract they must honour is
   [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract);
   the feature is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md).
-- Hub page (`/games`) — shipped. Renders `GAME_REGISTRY` through the shared
-  `Bento`/`BentoTile` primitive ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md); `HubMenu` was
-  deleted 2026-08-21); the empty state is now only a fallback for when every game is gated
-  out (public/demo accounts, a language gate, or every `GAME_FLAGS` entry off).
+- Hub page (`/games`) — **deleted 2026-11-06** (see the banner above).
 - Games — **nine shipped**, all registered in `src/games/registry.ts`. Two kinds
   (`GameDef`, `src/games/types.ts`; `isRoutedGame`, `ROUTED_GAMES` in the registry):
   **routed** games have a `route` + `Component` and a hub tile (Bubble Match, Word Search,
@@ -158,9 +168,10 @@ mark.
 
 | Path     | Component   | Footer tab | Notes                          |
 | -------- | ----------- | ---------- | ------------------------------ |
-| `/games` | `GamesPage` | Menu       | Hub / menu; **node page** (left arrow → `/menu`, keeps footer, slides in-from-right). The tab is resolved from the route by `FooterPresenter`; pages no longer declare it. |
+| ~~`/games`~~ | ~~`GamesPage`~~ | — | Deleted 2026-11-06. |
 
-Each individual game gets its own route under `/games/<slug>`.
+Each ROUTED game has its own route under `/games/<slug>`, mounted only while the
+`standaloneGames` flag is on (`ROUTED_GAMES`). It is off, so today none is mounted.
 
 The slug is also a **server-side whitelist**: `KNOWN_GAME_IDS` (`server/constants.ts`)
 mirrors the client `GAME_REGISTRY`, and `/api/games/:gameId/progress` 404s on anything
@@ -215,14 +226,12 @@ track/band parameters is a Study Challenge's word set (`?challengeId=`,
 
 ## Navigation entry point
 
-Games is **not** a footer tab. It is a tile on the **Menu** hub (`/menu`,
-`src/pages/MenuPage.tsx`; see [NAVIGATION.md](./NAVIGATION.md)). The footer tabs are
-Deck / Menu / Arena / Dictionary (Arena only while its flag is on); the Games hub is reached by tapping **Games** on the
-Menu, and `/games` lights the Menu tab (`footerTab: "menu"`).
-The hub is a **node page** (`NodePage`, see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)):
-its header shows a **left** back arrow returning to `/menu`, it keeps the floating
-footer, and it slides in from the right (out to the right only when the arrow is
-tapped — footer-tab nav does not animate).
+There is **none**: no footer tab, no Menu popover row, no hub (all removed 2026-11-06).
+A game is reached only by the Deck Tower's study session dealing it as a break
+([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), or by a tester forcing one
+(`src/features/deckTower/ForcedBreakPicker.tsx`). If `standaloneGames` is switched back on,
+the five routed pages come back at their URLs, still with no launcher: one would have to be
+rebuilt (the dormant `GameCard` family is the starting point).
 
 ### Break-only games, and the exit destination
 
@@ -230,11 +239,11 @@ tapped — footer-tab nav does not animate).
 > `isRoutedGame`, `ROUTED_GAMES`; `src/games/runtime/gameExit.ts` → `GAMES_HUB_EXIT`,
 > `readExit`; `src/games/runtime/useGameBack.ts` → `useGameBack`.
 
-The hub lists **routed** games only (`ROUTED_GAMES`). Speed Reading, Memory Map, Writing
+The deleted hub listed **routed** games only (`ROUTED_GAMES`). Speed Reading, Memory Map, Writing
 Grid and Superposition have no route and no page: they are played only as flp game breaks
 inside the Deck Tower's study session ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), which
 also runs the reading-track variants of two routed games (Match Speed with pinyin hidden,
-Word Search **No Pinyin**). The hub offers Word Search's Pinyin mode only and pins Bubble
+Word Search **No Pinyin**). The hub offered Word Search's Pinyin mode only and pinned Bubble
 Match to Recognition (`state.showPinyin: true`).
 
 ⚠️ **Two reading variants have no host at all.** Bubble Match with pinyin hidden and Bucket
@@ -245,14 +254,19 @@ unreachable, until one of those adapters is switched on.
 Every game but Bubble Match and Memory Map keeps a per-mode **personal best**
 ([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2a).
 
-**Exits.** A routed game's Back (`useGameBack`) and its "Back to …" buttons lead to the
-Games hub (`GAMES_HUB_EXIT`), or, for a challenge round, back to the challenge. No game
+**Exits** (dormant while `standaloneGames` is off). A routed game's Back (`useGameBack`)
+and its "Back to …" buttons lead to `GAMES_HUB_EXIT`, which now points at the Deck Tower
+(`/`, label "Deck Tower") since the hub is gone, or, for a challenge round, back to the
+challenge. No game
 launch carries `state.exitTo` any more; `readExit` is still read by the Writing Notebook
 and acp, whose launches from the Deck Tower carry one
 ([DECK_TOWER.md](./DECK_TOWER.md)). The "no level / no mode" bounces (a stray URL) go to
-`/games`, because only the hub can pick a level or mode.
+`GAMES_HUB_EXIT.path` (`/`); the hub that picked a level or mode no longer exists.
 
 ## Design decisions
+
+> **Historical (§ 1–4):** these describe the Games hub, deleted 2026-11-06. § 1's
+> `GameCard` code still exists, dormant.
 
 ### 1. Hub is a vertical, width-spanning menu
 Every game is ONE entity, **`GameCard`** (`src/games/shared/GameCard.tsx`), in the shared
@@ -308,7 +322,7 @@ placeholder rows tend to get shipped by accident.
 
 ### 3. Left back arrow on the hub (node page)
 The hub is a **node page** (`NodePage`), so it shows a **left** back arrow
-returning to `/menu` — Games is a drill-in from the Menu hub, not a footer tab.
+that goes back one history entry (`navigateBackOr`, else `/`) — Games is opened from the Menu popover, not a footer tab.
 It keeps the floating footer (lateral nav stays available) and only slides out
 to the right when the arrow is tapped. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
@@ -345,13 +359,13 @@ content directly — header + content area + `MobileFooter`. The frame is
 applied for you.
 
 The frame routes are every `routeMeta` row with `shell: "frame"` — the four footer tabs
-(`/` (td), `/menu`, `/arena`, `/dictionary`), their drill-ins, the routed game routes
+(`/` (td), `/arena`, `/dictionary`; Menu has no route), their drill-ins, the routed game routes
 (generated from `ROUTED_GAMES`), and `/settings`. `src/routes/routeMeta.ts` is the list.
 
 ## Mobile demo header (shared header hierarchy)
 
 Two-layer header model (there is **no** hamburger / nav drawer — global nav is
-the footer tabs + the Menu hub):
+the footer tabs + the Menu popover):
 
 - **`PageHeader`** (`src/components/PageHeader.tsx`) — base layout primitive.
   Defines the row: optional back chevron grouped with the title (`arrowDirection`

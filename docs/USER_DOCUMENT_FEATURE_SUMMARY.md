@@ -1,6 +1,6 @@
 # Reader Documents (user documents)
 
-The Reader (`/reader`, reached from the hp Menu) is a list of the learner's own
+The Reader (`/reader`, reached from the footer's Menu popover) is a list of the learner's own
 documents; opening one (`/reader/:id`) shows it as a tappable reading surface with
 an inline content editor. This doc covers the document model, the CRUD API, and the
 create/edit/delete flows.

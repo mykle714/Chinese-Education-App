@@ -1,9 +1,18 @@
 # Bento System
 
-Shared menu primitive (`src/components/bento/`) behind the app's hubs: the footer-tab
-hub `src/pages/MenuPage.tsx` (`/menu`, the Menu tab), plus the drill-in hubs
-`src/games/GamesPage.tsx` (`/games`) and `src/features/friends/FriendsPage.tsx`
-(`/friends`). `/` is the Deck Tower, not a hub (see [NAVIGATION.md](./NAVIGATION.md)).
+Shared menu primitive (`src/components/bento/`). Its one live caller is
+`src/features/friends/FriendsBody.tsx` (the AccountSheet's Friends tab). `/` is the Deck
+Tower, not a hub (see [NAVIGATION.md](./NAVIGATION.md)).
+
+All three hub pages that used to be built on it were deleted on 2026-11-06: the Menu
+bento (`MenuPage`, `/menu`; the Menu tab now raises a popover of ROWS,
+`src/components/menuPopover/MenuPopover.tsx`), the Games hub (`GamesPage`, `/games`;
+games are flp breaks now, their pages off behind the `standaloneGames` flag) and the
+`/friends` page (`FriendsPage`; `FriendsBody` lives on in the AccountSheet). The Games
+hub's `GameCard` family (`src/games/shared/GameCard.tsx`, `gameCards.ts`,
+`bubble-match/bubbleMatchCard.ts`, `word-search/WordSearchHubItem.tsx` and friends) is
+still in the tree with **no live caller**; the sections below that describe it describe
+dormant code.
 
 Introduced by the shelf redesign (see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A4
 and entries 1/3/4). It **replaced `HubMenu`**, a 439-line vertical list of
@@ -171,11 +180,11 @@ control" meaning the strip header had.)*
 
 | Page | Shape |
 |---|---|
-| **Menu** (`src/pages/MenuPage.tsx` → `MenuPage`, tiles typed `MenuTile`) | Night Market `hero` (`pur`, flagged off); Games (`blu`) / **Immersive World** (`red`, flagged off) / Reader (`pur`) `base`; Friends (`grn`) / Community (`org`, flagged off) `low`, in that order. **Live today: Games over Reader | Friends.** **One hue per main tile:** the non-hero tiles each get a different tile hue (`yel` is free since Arena became a footer tab). **No two warm hues (`red`/`org`) share an edge:** with every flag on, Immersive World and Community sit apart on the 2-column grid. Turning off a flagged tile moves every tile after it, so check the pattern again when a flag changes. Night Market would share `pur` with Reader if it were turned back on. There is no Dictionary or Arena tile, because both are footer tabs. Role-gated tiles do **not** append to the mosaic: they render in a **second `Bento` below a hairline** (`.menu-page__gated-divider`, `COLORS.rowBorder`), so the main grid keeps the artboard's shape for every account. `isFeatureTester || isAdmin` adds Tester Dashboard; `isTemplateAuthor` adds Template Editor, Template Sandbox (`pur`) and **Scene Editor** (`red`, Immersive World's hue, `/immersive-world/scene-editor`), one grant covering all three, the odd hue marking the one that authors a different feature. All are `low`. The divider and the second grid are rendered together or not at all — an account with no grants never sees a rule with nothing under it. An odd count in the gated grid leaves its last row half-empty on purpose; stretching the orphan would give a dev tool Night Market's weight. |
-| **Games** (`src/games/GamesPage.tsx`) | One tile per ROUTED game (`ROUTED_GAMES`); EVERY one is a `GameCard` (`src/games/shared/GameCard.tsx`): Bubble Match and Word Search as full-row `variant="card"` (drawn on `CardShell`), the rest (Match Speed, Hydra Bubbles, Bucket Drop) as half-width `variant="tile"` (a `BentoTile`). The break-only games (Speed Reading, Memory Map, Writing Grid, Superposition) have no route and no tile. |
-| **Friends** (`src/features/friends/FriendsPage.tsx`) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
+| ~~**Menu**~~ | Deleted 2026-11-06 with `/menu`. Its destinations (and their hues) moved to `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`, drawn as popover rows (docs/NAVIGATION.md § 3). |
+| ~~**Games**~~ | Deleted 2026-11-06 with `/games`. Its `GameCard` tiles (Bubble Match / Word Search full-row cards, the rest half-width tiles) remain as dormant code. |
+| **Friends** (`src/features/friends/FriendsBody.tsx`, shown in the AccountSheet's Friends tab) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 
-Bubble Match's and Word Search's cards are **special-cased in the page**, not
+*(Dormant since the hub's deletion:)* Bubble Match's and Word Search's cards were **special-cased in the page**, not
 driven by generic `GameDef` fields. Word Search's card is owned by
 `src/games/word-search/WordSearchHubItem.tsx` rather than the page, because it holds
 word-search-specific state (the saved board, the confirm dialog).

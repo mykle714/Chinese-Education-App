@@ -706,8 +706,9 @@ same callback backs the NodePage back arrow in this state, so there is one exit 
 
 **Naming the origin.** `ProvisionalSortOffer` appends `&from=<pathname>` when it opens the
 flow, and `originLabelFor` (`src/utils/originLabel.ts`) turns that into a label — game
-titles read out of `GAME_REGISTRY` (so a renamed game renames the button), plus a small map
-for the non-game origins (`/`, labelled "Deck Tower" — the td-hosted flp; games hub). An unrecognised or missing
+titles read out of `ROUTED_GAMES` (so a renamed game renames the button; empty while the
+`standaloneGames` flag is off, so no game origin matches today), plus a small map for the
+non-game origins (`PAGE_LABELS`: only `/`, labelled "Deck Tower" — the td-hosted flp). An unrecognised or missing
 origin degrades to a plain **Go back**.
 
 `words` narrows the set to one round's cards; omitting it offers every outstanding
@@ -816,7 +817,7 @@ others, admits lent rows by id when it has to borrow.
 
 ## 9. Related docs
 
-* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the games hub and per-game docs
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the game framework and per-game docs
 * [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — the sort flow this hands off to
 * [MASTERY_REWORK.md](./MASTERY_REWORK.md) — typed marks, the per-bar (know) cooldown, utcm banding
 * [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — `frequencyScore`, the commonality ordering key

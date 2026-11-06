@@ -172,6 +172,28 @@ export const FEATURE_FLAGS = {
    * Off sends no stored groups at all: every character is computed on the device.
    */
   superpositionStoredGroups: true,
+
+  /**
+   * Standalone game pages: the ROUTED games' own pages (`/games/bubble-match`,
+   * `/games/word-search`, `/games/match-speed`, `/games/hydra-bubbles`,
+   * `/games/bucket-drop`). A CLIENT-ONLY route gate. Off, `ROUTED_GAMES`
+   * (src/games/registry.ts) is empty, so no game route is mounted and nothing in the
+   * route table, `originLabelFor` or the route tests enumerates one. The Games hub that
+   * launched them (`/games`, GamesPage) was deleted 2026-11-06 along with its Menu row,
+   * so with this flag on the pages would be reachable only by typed URL (and by Study
+   * Challenge's `challengeLaunch`, itself flagged off).
+   *
+   * NOT gated: the games themselves as flp BREAKS (src/games/flpBreak, played inside the
+   * Deck Tower's study session). Match Speed and Word Search stay playable there. Bubble
+   * Match and Hydra Bubbles have no break adapter, and Bucket Drop's adapter is not in
+   * the rotation, so with this off those three are dormant (code kept, not reachable).
+   * Also not gated: the server's `/api/games/*` endpoints, which the breaks still use.
+   * This is why it is a feature flag and not five `GAME_FLAGS` entries: a game flag
+   * would also remove the game's break.
+   *
+   * ⚠️ CURRENTLY OFF.
+   */
+  standaloneGames: false,
 } as const;
 
 /** The name of any feature flag above. */

@@ -15,9 +15,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | Tab        | `FooterTab`   | Route         | Page                                                         |
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
    | Deck       | `deck`        | `/`           | the Deck Tower (`DeckTowerPage` — [DECK_TOWER.md](./DECK_TOWER.md)), the app's landing page |
-   | Menu       | `menu`        | `/menu`       | the hub bento (`MenuPage`)                                   |
    | Arena      | `arena`       | `/arena`      | the weekly arena (`ArenaPage` — [ARENA_FEATURE.md](./ARENA_FEATURE.md)); drawn only while the `arena` flag is on (`MobileFooter.tsx` → `ARENA_TAB_ON`) |
    | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
+   | Menu       | `menu`        | *(none)*      | **not a page**: raises the Menu popover (`MenuPopover`, see 3 below) |
 
    Add Cards (acp, `/discover/sort/:language` — the `/discover/` prefix is kept so
    existing links work) is a **Deck drill-in**: reached from the main world's sort
@@ -50,7 +50,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | Lights | Routes |
    | --- | --- |
    | `deck` | `/`, `/flashcards/card/:id`, `/discover/sort/:language` |
-   | `menu` | `/menu`, `/games`, `/community`, `/friends`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
+   | `menu` | `/community`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
    | `arena` | `/arena` |
    | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
 
@@ -65,23 +65,54 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      (`src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar`, over
      `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
      (`src/pages/AccountSheet.tsx`), a maximizable `SheetPanel` with three tabs: Account,
-     Friends and Settings (the last two are the `/friends` and `/settings` bodies; their
+     Friends and Settings (Friends is `FriendsBody`, which has no page of its own since
+     `/friends` was deleted 2026-11-06; Settings is the `/settings` body; their
      drill-ins leave the sheet and return to those routes). It shows the icons8
      `avatarIconId`, falling back to the name's initial on `COLORS.bluM`. Settings is
      the sheet's Settings tab (there is no header gear).
 
-3. **Menu** (`/menu`, `src/pages/MenuPage.tsx` → `MenuPage`) — a `Bento` mosaic (the
-   shared tile primitive, also used by the Games hub; `HubMenu` was deleted
-   2026-08-21 — see [BENTO_SYSTEM.md](./BENTO_SYSTEM.md)) of secondary destinations:
-   **Night Market**, **Games**, **Immersive World**, **Reader**,
-   **Community**, **Friends** (plus a feature-tester- or admin-only **Tester Dashboard** tile
-   and template-author-only tiles), each flag-gated tile only while its flag is on. There
-   is **no Dictionary or Arena tile** — both are footer tabs, and a tile would be a second
-   door to the same room. Its header is just the title "Menu" and the normal minute-points
-   flame — no avatar, no banking run (both live on the Deck Tower). Classes are `menu-page__*`.
-   There is deliberately **no Compare Words row**: Compare is a sheet raised over the
-   word you are already looking at, not a destination — see
-   [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
+3. **Menu** — the footer's LAST tab, and the only one that is **not a destination**.
+   There is no `/menu` route (the bento page that used to live there, `MenuPage`, was
+   deleted 2026-11-06). A tap raises the **Menu popover** over whatever page is on screen:
+   a list of rows, one per secondary destination; tapping a row goes to that page.
+
+   - **Rows** (`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`,
+     returning `{ main, gated }`): **Night Market**, **Immersive World**, **Reader**,
+     **Community**, each flag-gated row only while its flag is on. Every row navigates to
+     its `route`. There is **no Friends row**: the `/friends` page was deleted 2026-11-06,
+     and Friends lives only in the AccountSheet's Friends tab (td's header avatar). There is
+     **no Games row**: the Games hub (`/games`) was deleted 2026-11-06 and the routed games'
+     pages are off behind the `standaloneGames` flag; games are played only as flp breaks
+     inside the Deck Tower ([GAMES_FEATURE.md](./GAMES_FEATURE.md)).
+     Below a hairline, only for accounts holding the grant: **Tester Dashboard** (feature
+     tester with testing features on, or admin), **Template Editor** / **Template Sandbox**
+     (`isTemplateAuthor` + `nightMarket` flag) and **Scene Editor** (`isTemplateAuthor` +
+     `immersiveWorld` flag). The hairline and the gated group appear together or not at all.
+     There is **no Dictionary or Arena row**: both are footer tabs, and a row would be a
+     second door to the same room. There is deliberately **no Compare Words row**: Compare
+     is a sheet raised over the word you are already looking at
+     ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)).
+   - **Look** (`src/components/menuPopover/MenuPopover.tsx` → `MenuPopover`): the Deck
+     Tower's card-stock style, matching the slab footer ([DECK_TOWER.md](./DECK_TOWER.md)
+     § Footer). A `cardFace` card on a 6px `cardWall` lip with a down-right `10px 16px`
+     cast shadow, radius 22. Rows are 52px keycaps: the row for the page on screen (the
+     most specific match, so `/friends/sent` lights Friends) and any pressed row wear the
+     slab's active-tab keycap (`cardBeige` + 3px inset `cardWall` lip). Each row leads with
+     a 34px chip in the destination's ramp hue (`mid` face, `mark` lip, filled ink icon).
+     Card colours read `tier2Var(...)` like the slab, so on a Tier 2 page they turn slate
+     at night together. No `COLORS.border` outline, which departs from CLAUDE.md § Buttons &
+     cards on purpose, as the slab does.
+   - **Placement**: anchored bottom-right, 16px from the right edge, 12px above the footer
+     (`MobileFooter` passes `footerClearance`: `FOOTER_TOTAL_HEIGHT` for the bar,
+     `SLAB_FOOTER_TOTAL_HEIGHT` for the slab). It grows from its bottom-right corner
+     (220 ms enter, 140 ms exit).
+   - **Dim**: a frame-hosted `COLORS.scrim` (`useScreenOverlayHost`, z-index 200) over the
+     whole screen, footer included (overlayHost.ts § "THE RULE FOR A DIM").
+   - **Closes on** a scrim tap (which includes a second tap on the Menu tab, now under the
+     scrim), Escape, a row tap, or any other route change. Tapping the row for the exact
+     page on screen only closes the popover.
+   - **State** lives in `MobileFooter` (`menuOpen`); the footer is rendered once at frame
+     level by `FooterPresenter`.
 
 4. **Back-arrow drill-ins** — how Back behaves (arrow vs. browser back vs. edge swipe,
    restoring state, guards) is specified in [BACK_NAVIGATION.md](./BACK_NAVIGATION.md).
@@ -90,9 +121,14 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): **leaf pages** (down arrow, no
    footer, back-arrow-only exit, slide up/down) and **node pages** (left arrow,
    keep the footer, slide in-from-right / out-to-right via the arrow).
-   - Menu destinations → back to `/menu`: `/games`, `/friends`, `/community`,
-     `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the
-     Template Editor / Sandbox and leaving the Scene Editor (leaf).
+   - Menu destinations → **back one history entry**, i.e. to the page the Menu popover
+     was opened over, or `/` on a cold deep link (`src/utils/navigateBack.ts` →
+     `navigateBackOr(navigate, "/")`): `/community`, `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the Template
+     Editor / Sandbox and leaving the Scene Editor (leaf).
+   - Friends drill-ins (`/friends/requests`, `/friends/sent`, `/friends/remove`,
+     `/friends/challenges`), opened from the AccountSheet's Friends tab → back one history
+     entry (`navigateBackOr(navigate, "/")`), landing on the page the sheet was over with
+     the sheet closed. (They used to `slideNavigate("/friends")`.)
    - Deck (td) drill-ins → back to `/`: Card Detail (`/flashcards/card/:id`, the
      saved-card cdp, opened from td's cards page), Add Cards
      (`/discover/sort/:language`, node; set mode exits to its origin instead —
@@ -124,7 +160,7 @@ became a sheet (2026-10-09) they are:
 
 `Layout.tsx` has two modes:
 - Frame routes (`shell: "frame"` in `src/routes/routeMeta.ts`, which replaced the old
-  `MOBILE_DEMO_PATHS` array; includes `/` and `/menu`) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
+  `MOBILE_DEMO_PATHS` array; includes `/`) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
 - Everything else (auth pages, etc.) → full-height, no chrome; each owns its
   `PageHeader`. (Reader / Night Market / Settings / Tester Dashboard render inside
   the frame as leaf pages; both card-detail cdps render inside the frame as node pages;
@@ -134,7 +170,7 @@ became a sheet (2026-10-09) they are:
 
 `/tester-dashboard` (`TesterDashboardPage`) holds the **former landing-page**
 content (study time, streak, monthly calendar, leaderboard). The old `/` landing
-became the hub menu, which now lives at `/menu`; `/` is the Deck Tower (see 1 above).
+became the hub menu (later `/menu`, now the Menu popover); `/` is the Deck Tower (see 1 above).
 
 **Feature-tester- or admin-gated.** The surface is for testers, not ordinary
 learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
@@ -143,13 +179,13 @@ learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
 (migration 168) in two places, mirroring the `isTemplateAuthor` gate on the Night
 Market template editor:
 
-- `src/pages/MenuPage.tsx` → `gatedTiles` — the `tester-dashboard` Bento tile is
-  spread in only when `useTestingFeatures() || user?.isAdmin` (the tester half also needs
+- `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (`gated`) —
+  the `tester-dashboard` row is spread in only when `useTestingFeatures() || user?.isAdmin` (the tester half also needs
   the device's "Enable testing features" switch — [FEATURE_TESTING.md](./FEATURE_TESTING.md)), so nobody else sees the
   entry point.
 - `src/pages/TesterDashboardPage.tsx` — a `useEffect` bounces a resolved user who is
   neither to `/` (`replace: true`), covering deep links and bookmarks. Its back arrow
-  returns to `/menu`.
+  goes back one history entry (`navigateBackOr`, else `/`).
 
 The route (`src/routes/routeMeta.ts`, `/tester-dashboard`) is `access: "any"` on
 purpose: a feature tester may be a public account, and the generic `isPublic` redirect
@@ -166,4 +202,4 @@ OTHER accounts' data, so it has a real server-side gate as well — see
 
 - [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) — hub layout shell
 - [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Add Cards (acp), a Deck drill-in
-- [GAMES_FEATURE.md](./GAMES_FEATURE.md) — Games hub + registry
+- [GAMES_FEATURE.md](./GAMES_FEATURE.md) — games registry (no hub since 2026-11-06)

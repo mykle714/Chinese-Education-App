@@ -25,6 +25,7 @@ import {
   deleteScene, errorMessage, listNpcs, listScenes, loadScene, problemsFromError, saveScene,
   type IWNpcOption, type IWSceneProblem, type IWSceneSummary,
 } from './immersiveWorldSceneApi';
+import { navigateBackOr } from '../../utils/navigateBack';
 
 /**
  * IWSceneEditorPage — the Immersive World scene authoring surface
@@ -300,7 +301,7 @@ export default function IWSceneEditorPage() {
       );
       if (!ok) return;
     }
-    navigate('/menu');
+    navigateBackOr(navigate, '/');
   }, [confirm, dirty, navigate]);
 
   return (

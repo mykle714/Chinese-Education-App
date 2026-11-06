@@ -28,7 +28,7 @@ import { CHALLENGE_GAMES } from "../types";
 import type { ChallengeScoringSpec, Language } from "../types";
 import { GAME_ID as WRITING_GRID_GAME_ID, GAME_HUE as WRITING_GRID_HUE } from "./writing-grid/constants";
 import { GAME_ID as SUPERPOSITION_GAME_ID, GAME_HUE as SUPERPOSITION_HUE } from "./superposition/constants";
-import { isGameEnabled } from "../../server/contracts/featureFlags";
+import { isFeatureEnabled, isGameEnabled } from "../../server/contracts/featureFlags";
 
 /**
  * The scoring spec for a game (or a game MODE), or undefined when it is not
@@ -51,7 +51,7 @@ export function challengeScoringFor(gameId: string, mode: string | null = null):
  *   1. Create the page component under `src/games/<gameId>/<GameId>Page.tsx`.
  *   2. Add one `GameDef` entry here with a `React.lazy(...)` import.
  *
- * The hub (`src/games/GamesPage.tsx`), the route registry + metadata
+ * The route registry + metadata
  * (`src/routes/registry.ts`, `src/routes/routeMeta.ts` — where `GAME_ROUTE_META`
  * derives one `chrome: "leaf"` row per entry), and the mobile-demo frame
  * allowlist (`src/components/Layout.tsx`) all derive from this array — adding a
@@ -195,7 +195,7 @@ const ALL_GAMES: GameDef[] = [
  * Every game that is switched ON (`GAME_FLAGS`, server/contracts/featureFlags.ts).
  *
  * Filtering HERE is the single client-side chokepoint for a per-game flag, and it is
- * what the block comment above promises: the hub (`GamesPage`), the route metadata
+ * what the block comment above promises: the route metadata
  * (`GAME_ROUTE_META` in routes/routeMeta.ts), the component bindings
  * (`GAME_COMPONENTS` in routes/registry.ts), `GAME_ROUTES`, `originLabelFor` and the
  * route tests ALL derive from this array, so one filter removes a game from the hub,
@@ -217,11 +217,19 @@ export function isRoutedGame(game: GameDef): game is RoutedGameDef {
 }
 
 /**
- * The enabled games that have their own route — the Games hub's tiles, and what the
- * route table (`GAME_ROUTE_META`, `GAME_COMPONENTS`) mounts. Break-only games are
- * absent: they have no page to mount.
+ * The enabled games whose own route is MOUNTED — what the route table
+ * (`GAME_ROUTE_META`, `GAME_COMPONENTS`), `originLabelFor` and the route tests read.
+ * Break-only games are absent: they have no page to mount.
+ *
+ * EMPTY while the `standaloneGames` feature flag is off (server/contracts/featureFlags.ts):
+ * the Games hub was deleted 2026-11-06, and the routed games' pages are switched off
+ * with it. Their `route` + `Component` stay on the registry rows (`isRoutedGame` still
+ * tells them apart), so turning the flag back on restores every route with no other edit.
+ * Their flp breaks (src/games/flpBreak) are unaffected.
  */
-export const ROUTED_GAMES: RoutedGameDef[] = GAME_REGISTRY.filter(isRoutedGame);
+export const ROUTED_GAMES: RoutedGameDef[] = isFeatureEnabled("standaloneGames")
+    ? GAME_REGISTRY.filter(isRoutedGame)
+    : [];
 
 /** Routes for every routed game; consumed by `MOBILE_DEMO_PATHS`. */
 export const GAME_ROUTES: string[] = ROUTED_GAMES.map((g) => g.route);

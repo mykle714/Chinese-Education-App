@@ -284,7 +284,7 @@ const BubbleMatchPage: React.FC = () => {
     // No level chosen (direct URL / stray nav) — bounce back to the Games hub,
     // where the player picks a difficulty. Runs before any pool loads.
     useEffect(() => {
-        if (!chosenLevel) navigate("/games", { replace: true });
+        if (!chosenLevel) navigate(GAMES_HUB_EXIT.path, { replace: true });
     }, [chosenLevel, navigate]);
 
     useEffect(() => {

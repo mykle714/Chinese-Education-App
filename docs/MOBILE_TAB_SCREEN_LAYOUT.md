@@ -18,10 +18,11 @@ pages don't re-implement (or drift from) them.
      `rightContent` primitives are documented in
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header component hierarchy.
    - **Every scrollable content page must use `MobileTabScreen`** so this stays
-     consistent. Today that is `/menu` (Menu hub), `/arena` (Arena),
-     `/dictionary` (Dictionary), and `/games` (Games hub); `/` (Deck — the Deck
+     consistent. Today that is `/arena` (Arena),
+     and `/dictionary` (Dictionary); `/` (Deck — the Deck
      Tower) also mounts it, with `scrollable={false}`. The footer tabs are
-     Deck / Menu / Arena (flag-gated) / Dictionary (Account is not a page — it is
+     Deck / Arena (flag-gated) / Dictionary / Menu — Menu is not a page either: it raises
+     `MenuPopover` (`src/components/menuPopover/MenuPopover.tsx`) over the current page (Account is not a page — it is
      `AccountSheet`, raised from td's header avatar); Games is a drill-in from the
      Menu. Games is a **node page** —
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +

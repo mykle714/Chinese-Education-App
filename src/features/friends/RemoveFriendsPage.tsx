@@ -12,6 +12,8 @@ import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
+import { useNavigate } from "react-router-dom";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Unfriend screen (docs/FRIENDS_FEATURE.md) — the plain friend list, each row with
@@ -29,6 +31,9 @@ import { COLORS } from "../../theme/colors";
 function RemoveFriendsPage() {
     usePageTitle("Remove Friends");
     const slideNavigate = useSlideNavigate();
+    // Back goes one history entry (to the page the AccountSheet's Friends tab was over),
+    // since the `/friends` page was deleted 2026-11-06 (docs/FRIENDS_FEATURE.md).
+    const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
 
     const [friends, setFriends] = useState<FriendSummary[]>([]);
@@ -70,7 +75,7 @@ function RemoveFriendsPage() {
     return (
         <NodePage
             title="Remove Friends"
-            onBack={() => slideNavigate("/friends")}
+            onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="remove-friends-page__content"
         >
             <Box className="remove-friends-page" sx={{ display: "flex", flexDirection: "column", gap: 1, px: 2, pt: 1 }}>

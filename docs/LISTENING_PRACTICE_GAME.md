@@ -2,6 +2,11 @@
 
 > **STATUS: DESIGN / DRAFT (2026-10-12). Nothing is built.** No route, no registry entry,
 > no endpoint, no migration (none is planned). Every "proposed" file below is a proposal.
+>
+> ⚠️ **The Games hub this design launches from was deleted (2026-11-06).** `src/games/GamesPage.tsx`
+> and `/games` are gone, and standalone game routes are switched off by the `standaloneGames`
+> flag (`server/contracts/featureFlags.ts`); games are played only as flp breaks
+> (`src/games/flpBreak`). The "moded hub tile" entry point below needs a new home before building.
 > Scope widened from tones to general listening practice on 2026-10-12; see the
 > [§ 12 Question log](#12-question-log) for what is decided and what is still open.
 
@@ -393,10 +398,9 @@ Being **moded** makes this harder. `GameDef.modes` is typed `{ mode, markType }[
 for the challenge-pool test, so a mark-free moded game cannot fill it. Proposal: keep the
 Listening Practice modes in the game's own `MODE_CONFIGS` (`src/games/listening-practice/constants.ts`,
 the Word Search / Bucket Drop pattern) and leave `GameDef.modes` unset. With `emitsMarks:
-false`, the invariant still holds, and the hub fans the tile out from `MODE_CONFIGS`. No
-hub tile fans out into modes today (Match Speed's difficulty modes were removed
-2026-11-04; Bubble Match's levels and Word Search's resume tile are special-cased in
-`GamesPage`), so this needs a `GamesPage` branch before building.
+false`, the invariant still holds, and the hub fans the tile out from `MODE_CONFIGS`. The
+Games hub (`GamesPage`) that would have fanned the tile out was deleted 2026-11-06, so this
+entry point needs redesigning before building.
 
 There is no hub collection selector (deleted 2026-11-04): the library-first half of the
 target pool ([Q4](#q4-whose-words-are-the-targets)) is the whole library.

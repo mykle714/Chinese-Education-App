@@ -12,16 +12,19 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
 
 /**
  * The Account panel — a MAXIMIZABLE BOTTOM SHEET raised from the Deck Tower header's
- * avatar (src/features/deckTower/DeckTowerAvatar.tsx). It used to be the `/account`
+ * avatar (src/features/deckTower/DeckTowerAvatar.tsx). It is the only way into Friends
+ * (the `/friends` page was deleted 2026-11-06). It used to be the `/account`
  * footer tab; Dictionary took that slot on 2026-10-09 and the route was deleted. Its
  * Settings tab is the app's only way into Settings (the old Home header's gear went
  * with that page on 2026-11-04).
  *
  * THREE TABS on the eip's selector (SheetSegmentedTabs): Account · Friends · Settings. The
- * header title follows the tab, so a maximized panel reads as that page. Friends and
- * Settings are the same bodies their routes show; tapping a drill-in inside one (Send,
- * Account & security) leaves the Deck Tower, which unmounts this sheet, and that page's back arrow
- * returns to `/friends` or `/settings` rather than here.
+ * header title follows the tab, so a maximized panel reads as that page. Friends is the
+ * ONLY home of FriendsBody since the `/friends` page was deleted (2026-11-06); Settings is
+ * the same body `/settings` shows. Tapping a drill-in inside one (Send, Account &
+ * security) navigates away, which unmounts this sheet. A Friends drill-in's back arrow
+ * goes back one history entry (to the page under the sheet, sheet closed); Settings'
+ * returns to `/settings`.
  *
  * Maximized, it is indistinguishable from a page: the header is a leaf PageHeader with a
  * down caret (SheetPageHeader, the eip's close control — no ✕, no grabber) and the sheet

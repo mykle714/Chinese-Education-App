@@ -436,15 +436,20 @@ used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`).
 
 ### IsoFloorPrint
 
-`{ at, lines, surface, fontSize?, lineHeight?, letterSpacing?, opacity?, color?, maxX?, align? }`.
+`{ at, lines, surface, fontSize?, lineHeight?, letterSpacing?, opacity?, color?, maxX?, align?, run?, anchor?, tail? }`.
 A few short lines of text printed flat into a floor, with no plate: in `color` (the
 caller washes it) or by default the floor's tone two shadow steps down (`shadowTone` twice
 — `IsoCardImprint`'s print ink), bold, letter-spaced via `IsoSpacedText`. Lines read along
-world x and stack along +y, the block centred on `at`. `maxX` slides the block left so its
+`run`: world x (default, stacking along +y) or world −y (`"-y"`, a quarter-turn on the floor
+— up-right on screen, stacking along +x, a glyph's "up" toward −x). `anchor` says what `at`
+marks along the run: the block's centre (default) or its end (`"end"`); across the run the
+block is always centred on `at`. `tail` (flush-right only) hangs a mark — e.g. an arrow — a
+word-space past the last line's end, outside the alignment, so the lines' own last letters
+set the edge; with `anchor="end"`, `at` marks the tail's tip (measured after layout). `maxX` (`run="x"` only) slides the block left so its
 widest line (measured with `getBBox` after layout, once per text/size and per web-font
 load — `useFontLoadEpoch`, shared with IsoSpacedText) ends there. `align` sets each line
 within the block: `"center"` (default) or `"right"` (`textAnchor="end"` on the block's
-right edge, so shorter lines end flush with the widest).
+end, so shorter lines end flush with the widest).
 Not raised, not a shadow, `aria-hidden` and `pointer-events: none` (it labels something;
 it is not the button). No wrapping: the caller keeps lines short. Code: `IsoFloorPrint.tsx`
 → `IsoFloorPrint`; used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`, the
@@ -662,7 +667,10 @@ worker: a pill body and a ball head — a 3D capsule and sphere projected throug
 camera (§ "View") — standing at a world point. Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
 **Shadow on decals.** `decals` are flat things on its floor that its shadow can cross, passed
-already in their shaded tones (e.g. `<IsoFloorLabel shaded … />`). The pawn draws them over its
+already in their shaded tones (e.g. `<IsoFloorLabel shaded … />`, or an `IsoFloorPrint` with
+`color={shadowTone(ink)}`). Every decal a shadow can cross must be passed, or the opaque
+shadow paints over it (DeckTowerPlatform → `floorDecalsShaded`: the si fixture print + the
+deck plate). The pawn draws them over its
 shadow, clipped to the shadow's outline, inside `travel` (so the clip moves with the shadow) under a
 `decal-anchor` group that `usePawnMotion` counter-translates (so the decals stay put). The clip
 outline shrinks and the copy fades in step with `shadow-hop`.

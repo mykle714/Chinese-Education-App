@@ -12,11 +12,13 @@ import MonthlyCalendar from "../components/MonthlyCalendar";
 import LeaderboardPlaceholder from "../components/LeaderboardPlaceholder";
 import { usePageTitle } from "../hooks/usePageTitle";
 import UsageDashboardSection from "../features/usageDashboard/UsageDashboardSection";
+import { navigateBackOr } from "../utils/navigateBack";
 
 // Tester Dashboard — the former landing page content (study time, streak, monthly
 // calendar, leaderboard) plus, for admins only, the User Usage section
-// (docs/USAGE_DASHBOARD.md). Reached from Menu (the tile is feature-tester- or
-// admin-only, see MenuPage.tsx); the back arrow returns there.
+// (docs/USAGE_DASHBOARD.md). Reached from the Menu popover (the row is feature-tester- or
+// admin-only, see src/components/menuPopover/menuDestinations.ts); the back arrow returns
+// to the page the popover was opened over.
 function TesterDashboardPage() {
     usePageTitle("Tester Dashboard");
     const navigate = useNavigate();
@@ -40,8 +42,8 @@ function TesterDashboardPage() {
 
     return (
         // Tester Dashboard is a LEAF PAGE (see docs/LEAF_NODE_PAGES.md): no footer,
-        // DOWN back arrow (→ /menu), slides up on enter / down on exit.
-        <LeafPage title="Tester Dashboard" onBack={() => navigate("/menu")} className="tester-dashboard-page">
+        // DOWN back arrow (→ the previous page, else `/` — navigateBackOr), slides up on enter / down on exit.
+        <LeafPage title="Tester Dashboard" onBack={() => navigateBackOr(navigate, "/")} className="tester-dashboard-page">
             <Box className="tester-dashboard-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
                 {/* Always rendered in the mobile single-column layout regardless
                     of viewport width — the desktop two-column layout is retired. */}

@@ -1,19 +1,20 @@
 import { keyframes } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
+import { keycapPressSx } from "../../theme/keycapPress";
 import { shadeHex } from "../deckTower/iso";
 import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
 
 /**
  * sortCardStock — the look of every card-stock mini card: the Deck Tower's card stock
- * (cream rim + inset beige panel) drawn as one thick panel (outlined 4px wall, cast
- * shadow on the ground), the grey "already sorted" variant, and the resting levitation bob.
+ * (cream rim + inset beige panel) drawn as one thick panel (4px wall, cast shadow on the
+ * ground; no outline), the grey "already sorted" variant, and the resting levitation bob.
  *
  * Shared by the places a sort card's stock is drawn:
  *   - AddCardsPage → DraggableCard (the on-deck pack; adds drag lift + hover raise)
  *   - SkippedCardsSheet → RecyclableSkippedCard (the hidden skipped-cards grid)
  *   - deckTower/TowerCardsPage → the cards page under td's platform (through
- *     MiniVocabCard `stock`; no levitation)
+ *     MiniVocabCard `stock`; no levitation; pushed back on press — `cardStockPressSx`)
  *
  * Layer: feature styling helper (src/features/discover) — pure values, no React.
  * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 4.5 (card stock), § 5.1a (skipped sheet);
@@ -22,7 +23,7 @@ import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCa
 
 /**
  * The card stock is drawn as ONE THICK PANEL (user request 2026-11-05) — a cream face
- * standing on a solid wall, the whole silhouette outlined once, a cast shadow beneath.
+ * standing on a solid wall, a cast shadow beneath.
  * It replaced a thin stock (unoutlined 2px wall, inset ring on the face only, a flat
  * hard-edged cast shadow) that read as a STACK of cards: the ring stopped at the face,
  * splitting face from wall, and the flat shadow was the card's rounded outline again a
@@ -32,12 +33,7 @@ import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCa
  *      the bins' iso cards show their front and right walls. box-shadow cannot slant,
  *      so it is the face's outline stepped 1px at a time along the (1, 1) extrusion
  *      vector, PANEL_WALL_PX copies, so it stays continuous;
- *   2. the OUTLINE — a 1px-spread copy in PANEL_OUTLINE under the face (k = 0, which
- *      lines its top and left edges) and under every wall step. There is no ring on the
- *      face itself: a line between face and wall split the panel back into layers. The
- *      card still carries its outline (CLAUDE.md "Buttons & cards"), around the whole
- *      panel;
- *   3. a CAST SHADOW on the ground in the caller's `groundShadow` (the iso shadow
+ *   2. a CAST SHADOW on the ground in the caller's `groundShadow` (the iso shadow
  *      rule's tone for that ground), falling down-right past the wall like the tower's
  *      own shadows. Kept near-solid — a 2px blur only softens its edge so it does not
  *      read as another card. A wide soft blur was tried 2026-11-05 and vanished: the
@@ -46,12 +42,14 @@ import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCa
  *      card has none — see SORTED_STOCK.
  */
 const PANEL_WALL_PX = 4;
-/**
- * The panel's outline, on every surface it is drawn on (user decision 2026-11-05).
- * ⚠️ Framework divergence: the line tokens stop at `border` (16% ink), which all but
- * vanished on the cream rim against td's sky, so this borrows the faint TEXT grey.
+/*
+ * NO OUTLINE (user call 2026-11-06). The stock used to carry a 1px `textFaint` line round
+ * the whole silhouette (face + wall); it was tried across td's iso scene and filter keys,
+ * disliked, and removed everywhere. The panel's edge is its wall and cast shadow, the
+ * tower style's rule (docs/TOWER_STYLE_SHIFT.md: "Edge — drawn by the object's own wall,
+ * rim or shadow"). It is an exception to CLAUDE.md "Buttons & cards", like the rest of the
+ * tower world.
  */
-export const PANEL_OUTLINE = COLORS.textFaint;
 /** How far the cast shadow reaches past the wall, right and down, and its blur, px (at rest). */
 const PANEL_SHADOW_REACH_PX = 4;
 const PANEL_SHADOW_BLUR_PX = 2;
@@ -80,7 +78,6 @@ export const SORTED_PRINT_OPACITY = 0.4;
 
 const WALL_STEPS = Array.from({ length: PANEL_WALL_PX }, (_, i) => i + 1);
 const panelWall = (color: string) => WALL_STEPS.map((k) => `${k}px ${k}px 0 ${color}`);
-const PANEL_SILHOUETTE = [0, ...WALL_STEPS].map((k) => `${k}px ${k}px 0 1px ${PANEL_OUTLINE}`);
 const panelCastShadow = (groundShadow: string, lift: number) => {
     const growth = 1 + (HELD_SHADOW_GROWTH - 1) * lift;
     const offset = (PANEL_WALL_PX + PANEL_SHADOW_REACH_PX * growth).toFixed(2);
@@ -89,15 +86,51 @@ const panelCastShadow = (groundShadow: string, lift: number) => {
 };
 
 /**
- * The stock's whole box-shadow: wall, outline, cast shadow (at `lift`). A sorted card is
+ * The stock's whole box-shadow: wall and cast shadow (at `lift`). A sorted card is
  * GROUNDED — it stands on the ground rather than floating over it, so it casts no shadow
  * and never lifts; its wall is in SORTED_STOCK's grey.
  */
 export const cardStockShadow = (sorted: boolean, groundShadow: string, lift = 0) =>
     (sorted
-        ? [...panelWall(SORTED_STOCK.wall), ...PANEL_SILHOUETTE]
-        : [...panelWall(COLORS.cardWall), ...PANEL_SILHOUETTE, panelCastShadow(groundShadow, lift)]
+        ? panelWall(SORTED_STOCK.wall)
+        : [...panelWall(COLORS.cardWall), panelCastShadow(groundShadow, lift)]
     ).join(", ");
+
+/**
+ * A card-stock card PUSHED BACK — held under the finger, it stops FLOATING but is not
+ * flattened: the panel keeps its whole 4px wall (it is still a thick card), and
+ * only the cast shadow — the gap between the card and the ground, the thing that reads as
+ * levitation — is gone. The face moves PRESS_SINK_PX down-right, toward where its shadow
+ * fell, so the card reads as pushed back onto the ground rather than merely un-shadowed.
+ * (A first version sank the face the full wall depth onto a bare outline; flush was too far
+ * — user call 2026-11-06.) This is the `sorted` silhouette in the live wall colour.
+ */
+const PRESS_SINK_PX = 2;
+const PRESSED_STOCK_SHADOW = panelWall(COLORS.cardWall).join(", ");
+
+/**
+ * The press of a card-stock card whose tap OPENS something (td's cards page → the cdp,
+ * through MiniVocabCard `stock`): the app's raised-key press (theme/keycapPress.ts —
+ * snaps, min held time from the app-wide delegate), pushed back diagonally (the light's
+ * (1, 1) direction, the way the wall and shadow fall) rather than straight down. The tap's action fires on release (`click`), so the card
+ * is down while held and the page changes as the finger lifts.
+ *
+ * Moves through the CSS `translate` property, not `transform`: these cards are
+ * useScrollStretch track elements (MiniVocabCardGrid), which write an inline `transform`
+ * on them mid-scroll. A press that moves past the delegate's drag slop (a scroll) lets the
+ * card up at once, so the two never fight.
+ *
+ * Spread AFTER any `&:hover` shadow: on touch, `:hover` sticks after a tap, and the
+ * pressed selectors share its specificity, so the later one wins.
+ */
+export const cardStockPressSx = (groundShadow: string) =>
+    keycapPressSx({
+        restShadow: cardStockShadow(false, groundShadow, 0),
+        pressedShadow: PRESSED_STOCK_SHADOW,
+        pressedX: PRESS_SINK_PX,
+        pressedY: PRESS_SINK_PX,
+        viaTranslate: true,
+    });
 
 /**
  * The Deck Tower's CARD STOCK on a mini card (docs/TOWER_STYLE_SHIFT.md § "Card stock"):

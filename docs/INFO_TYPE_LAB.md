@@ -138,7 +138,7 @@ saying*, or a *figure the user reads off*? Words are info type; figures are data
 uppercase serial number (data). Scores, ranks, timestamps, `·` separators, tabular
 figures and **user ids** stay on `FONTS.mono`.
 
-> **Why user ids specifically stay mono.** `FriendsPage` renders the account id for
+> **Why user ids specifically stay mono.** `FriendsBody` (the AccountSheet's Friends tab) renders the account id for
 > someone to read out or transcribe by hand, and `SentRequestsPage`'s input takes it back.
 > That is the one place in the app where glyph DISAMBIGUATION is load-bearing — `0`/`O`,
 > `1`/`l`/`I` — and a fixed advance lets the eye track position in a long string. A

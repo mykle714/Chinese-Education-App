@@ -3,8 +3,8 @@
 > **Status: IMPLEMENTED (first slice).** A template-author-only, **desktop-only** scratch
 > surface for tiling catalog templates together freely, to preview how they compose. Sibling
 > to the [Template Editor](./NIGHT_MARKET_TEMPLATE_EDITOR.md) (which *authors* templates); the
-> sandbox only *arranges existing* ones. Reached from **Menu → Template Sandbox** (the `/menu` hub tile
-> is shown only when `user.isTemplateAuthor` — migration 115) → `/night-market/template-sandbox`.
+> sandbox only *arranges existing* ones. Reached from **Menu → Template Sandbox** (a row of the footer's Menu popover,
+> shown below the hairline only when `user.isTemplateAuthor` — migration 115 — and the `nightMarket` flag is on) → `/night-market/template-sandbox`.
 
 This is a **freeform** authoring aid: overlaps are allowed, there is **no** placement legality
 (edge-signature matching / no-overlap) and **no** unlock economy — it is hand-edited scratch
@@ -373,7 +373,7 @@ orders the sprites **within** the ghost correctly.
 
 ### Page — `src/features/nightmarket/TemplateSandboxPage.tsx`
 
-A `LeafPage` (title "Template Sandbox", back → `/menu`). Owns the placement list, the selection, and
+A `LeafPage` (title "Template Sandbox", back → `navigateBackOr(navigate, "/")`, `src/utils/navigateBack.ts`). Owns the placement list, the selection, and
 a **def cache** — the loaded `{width,height,masks,availableVersions}` for each
 `(templateName, version)` pair actually in use, keyed `name@version`, fetched on demand via
 `loadTemplate` so **any** version of **any** template can render. Bounces signed-in non-authors
@@ -404,7 +404,7 @@ camelCase and must stay in step with `server/routes/nightMarketSandboxRoutes.ts`
 
 - `src/App.tsx` — `/night-market/template-sandbox` (`ProtectedRoute allowPublic`, same rationale
   as the editor route: a template author may be a public account).
-- `src/pages/MenuPage.tsx` — the `isTemplateAuthor`-gated "Template Sandbox" hub tile.
+- `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the `isTemplateAuthor`-gated "Template Sandbox" Menu popover row.
 
 ---
 
@@ -431,7 +431,7 @@ camelCase and must stay in step with `server/routes/nightMarketSandboxRoutes.ts`
   `TemplateEditorViewer.tsx` (`OverlayDepthMode`, `cellTintZ`, `MaskTintOverlay`/`MaskTintCell`,
   `PlaceholderAreaOverlay`/`PlaceholderAreaTint`, `PlaceholderOccupantHouses`),
   `TemplateSandboxViewer.tsx` (`PlacedTemplate`, the `sortableChildren` camera container).
-- Routing/nav: `src/routes/routeMeta.ts`, `src/routes/registry.ts`, `src/pages/MenuPage.tsx`.
+- Routing/nav: `src/routes/routeMeta.ts`, `src/routes/registry.ts`, `src/components/menuPopover/menuDestinations.ts`.
 - Backend: `server/services/NightMarketSandboxService.ts`,
   `server/controllers/NightMarketSandboxController.ts`,
   `server/routes/nightMarketSandboxRoutes.ts`,

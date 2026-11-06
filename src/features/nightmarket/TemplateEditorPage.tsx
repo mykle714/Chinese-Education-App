@@ -65,6 +65,7 @@ import {
   PaletteButton, toolGroupSx, headerActionsSx,
   headerBtnSx, headerBtnDangerSx, headerBtnPrimarySx,
 } from './editorButtonStyles';
+import { navigateBackOr } from '../../utils/navigateBack';
 
 /**
  * TemplateEditorPage — validator-only Night Market template authoring surface
@@ -1331,7 +1332,7 @@ function TemplateEditorPage() {
   );
 
   return (
-    <LeafPage title="Template Editor" onBack={() => navigate('/menu')} className="template-editor-root">
+    <LeafPage title="Template Editor" onBack={() => navigateBackOr(navigate, '/')} className="template-editor-root">
       <Box
         className="template-editor-page"
         sx={{ display: 'flex', flexDirection: 'column', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}

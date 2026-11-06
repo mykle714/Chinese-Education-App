@@ -308,8 +308,8 @@ slides away. Parameterized node routes (`/flashcards/card/:id`,
 `matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
 `FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
 route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `deck` for `/`
-(td) and its drill-ins (the saved-card cdp, Add Cards), `menu` for `/menu` and the
-hub's drill-ins, `arena` and `dictionary` for their own spaces.
+(td) and its drill-ins (the saved-card cdp, Add Cards), `menu` for the pages the
+Menu popover opens (there is no `/menu` route since 2026-11-06), `arena` and `dictionary` for their own spaces.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
@@ -354,15 +354,13 @@ own-animation pages) are neither archetype.
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Deck tab lit) |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | Leaf (from td's writing-world paper stack, circle transition) |
-| `/friends` | `FriendsPage` | Node (Menu tab stays lit) |
 | `/friends/requests` | `IncomingRequestsPage` | Node |
 | `/friends/sent` | `SentRequestsPage` | Node |
 | `/friends/remove` | `RemoveFriendsPage` | Node |
-| `/games` | `GamesPage` | Node |
-| `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer) |
+| `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer). The five `/games/*` rows are mounted only while the `standaloneGames` flag is on (off since 2026-11-06) |
 | `/games/word-search` | `WordSearchPage` | Leaf |
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |
-| `/community` | `CommunityPage` | Node (reached from the Menu hub; Menu tab stays lit) |
+| `/community` | `CommunityPage` | Node (reached from the Menu popover; Menu tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
 | `/night-market` | `NightMarketEnginePage` | Leaf |
 | `/settings` | `SettingsPage` | Leaf (normally read as AccountSheet's Settings tab; `/settings/account`'s Back lands here) |
@@ -524,8 +522,8 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
 `VocabCardDetailPage` (`/flashcards/card/:id`):
 
 - **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
-  Menu hub (`NodePage`, LEFT arrow → `/menu`, footer kept, Menu tab lit —
-  same shape as `GamesPage`). Registered by its `src/routes/routeMeta.ts` row
+  Menu popover (`NodePage`, LEFT arrow → `navigateBackOr(navigate, "/")`, footer kept, Menu tab lit —
+  same shape as `CommunityPage`). Registered by its `src/routes/routeMeta.ts` row
   (`chrome: "node"`, `footerTab: "menu"`).
   Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
   internal scroll region for the document list, matching the fixed-layout

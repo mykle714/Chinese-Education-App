@@ -215,8 +215,9 @@ The page wears the **slab** footer, the floating nav bar from the Tower Style de
 Dictionary tab wears it too (`/dictionary`, `/dictionary/card/:word` — Tier-2 design,
 docs/SHELF_REDESIGN.md § 7b), without a cast shadow or wash, and so do the vet cdp
 (`/flashcards/card/:id`, also on the Tier 2 ground) and acp. Every Menu-reached page
-(`/menu`, `/games`, `/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
-the bar. Every slab colour is written `tier2Var(<key>, <card colour>)`
+(`/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
+the bar. The Menu tab's popover (`src/components/menuPopover/MenuPopover.tsx`, docs/NAVIGATION.md
+§ 3) is cut from the same card stock as the slab, on both footer styles. Every slab colour is written `tier2Var(<key>, <card colour>)`
 (`src/timeOfDay/tier2Chrome.ts`): unset on the tower, so the slab is the card stock below;
 a Tier 2 page sets them (slate at night).
 
@@ -229,16 +230,17 @@ a Tier 2 page sets them (slate at night).
   `SLAB_FOOTER_HIDDEN_OFFSET` — its footprint plus its cast shadow.
 - **Shape** (`SlabFooter` in `src/components/MobileFooter.tsx`). A slab 64px tall, 16px in
   from each side and `SLAB_FOOTER_BOTTOM` (`max(26px, safe-area inset)`) off the bottom,
-  radius 22, a 4-column grid with 6px padding (`SlabFooterFace` → `repeat(4, 1fr)`, fixed even
-when the `arena` flag hides the Arena tab). It does not bob (the design's `lev`
+  radius 22, one equal column per tab with 6px padding (`SlabFooterFace` →
+  `grid-auto-flow: column` + `grid-auto-columns: 1fr`, so three columns when the `arena`
+  flag hides the Arena tab). It does not bob (the design's `lev`
   float was left out on purpose).
 - **Flashcard colours.** It is cut from the same stock as the tower's cards (`ISO.card`):
   `COLORS.cardFace` top, standing on a 6px lip in `COLORS.cardWall` (the card's shaded
   right wall — the token was added for this and `ISO.card.right` / `ISO.leverBase.right`
   now read it). The active tab is a keycap set into it (`SlabFooterItem`):
   `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 3px inset
-  `cardWall` lip. Tabs are a filled Material Symbol (`stacks` Deck, `apps` Menu,
-  `emoji_events` Arena, `translate` Dictionary; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
+  `cardWall` lip. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
+  `emoji_events` Arena, `translate` Dictionary, `apps` Menu; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
   `onSurface` active. The bar stays text-only.
 - **Not lit by the wash** (since 2026-10-30). From 2026-10-25 the slab's face was drawn
   through the study layer's SVG `feColorMatrix` wash filter (`--footer-slab-filter`); that
@@ -504,24 +506,32 @@ the Add Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)
 
 ## Corner fixture labels
 
-`DeckTowerPlatform.tsx` (`FIXTURE_PRINT`, `fixturePrint`, `decals`), `towerPlatforms.ts`
+`DeckTowerPlatform.tsx` (`FIXTURE_PRINT`, `fixturePrint`, `renderFixturePrint`, `floorDecalsShaded`, `decals`), `towerPlatforms.ts`
 (`sortBinLabelAt`, `notebookLabelAt`, `labelUnder`), `iso/IsoFloorPrint.tsx`,
 `src/softIntro/softIntroRegistry.ts` (`towerSortLabel`, `towerNotebookLabel`).
 
-Each corner fixture is named on the floor in front of it — "ADD / NEW / CARDS" under the sort
-platform, "WRITING / NOTEBOOK" under the notebook stack — as a soft introduction
+Each corner fixture is named on the floor in front of it — "ADD MORE / CARDS →" under the sort
+platform, "WRITING / NOTEBOOK" with a "→" hung after row 2 under the notebook stack — as a soft introduction
 ([SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md)): the print shows until that fixture's si
 graduates (70 visits and 14 days on this device), then the fixture stands alone.
 
-- **Look.** Lines printed flat into the floor (`IsoFloorPrint`, bold, letter-spaced) —
-  the sort platform's three at 0.6 units, set flush right (`align="right"`); the
-  notebook's two at 0.4 units, centred — in white (`COLORS.white`, washed for the time of day — the sort slab's
-  white). No plate, not raised: the pawn walks over it, and the pawn's shadow covers it
-  like any floor.
-- **Where.** Just in front of the fixture's front-left face (+y), centred on its x — the
-  way the deck plate sits in front of the tower. The +x side is the rim; at these sizes the
-  wider lines would cross it, so the print is measured and slid left just enough to end
-  inside it (`IsoFloorPrint` `maxX` = `fixtureLabelMaxX`).
+- **Look.** Two lines printed flat into the floor (`IsoFloorPrint`, bold, letter-spaced, 0.7
+  units for both prints), turned a quarter-turn so they read along world −y (`run="-y"` —
+  up-right on screen, toward the fixture) and set flush to their end (`align="right"`). Row 2
+  ends with a "→" that, reading in the run's direction, points straight at the fixture. On
+  the sort print it is part of the line ("CARDS →" ends flush with "ADD MORE"); on the
+  notebook's it hangs past row 2's end, outside the edge (`IsoFloorPrint` `tail`), so the
+  last letters line up (WRITING's G with NOTEBOOK's K).
+  In white (`COLORS.white`, washed for the time of day — the sort slab's
+  white). No plate, not raised: the pawn walks over it. The pawn's shadow DARKENS it
+  rather than covering it: the print is passed again in its shaded ink (`shadowTone` of the
+  washed white) in the pawn's `decals`, alongside the shaded plate (`DeckTowerPlatform` →
+  `renderFixturePrint`, `floorDecalsShaded`; ISO_ART_FRAMEWORK.md § IsoPawn "Shadow on decals").
+- **Where.** On the floor in front of the fixture's front-left face (+y) — the way the deck
+  plate sits in front of the tower — with the arrow's tip anchored `FIXTURE_LABEL_GAP` off
+  that face (`anchor="end"`, `labelUnder`), so the print runs out toward the viewer from there.
+  Across the run the block is centred on the fixture's x, capped so its second line stays
+  inside the rim (`FIXTURE_LABEL_MAX_X`).
 - **Shown when.** Exactly when its fixture is drawn (§ The notebook stack / § The sort
   platform rules), and only in the intro state. It fades in on the fixture's build-up
   (`progress`), swings away with the floor on the trap door, and fades with the platform
@@ -1254,34 +1264,39 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   swipe's `paint` moves it with the svg), and a world swipe works from inside it too.
 - **The filter keys.** Learning and Mastered are TWO-STATE KEYCAPS
   (`src/features/deckTower/TowerFilterKeys.tsx` → `TowerFilterKeys`): rounded tiles
-  (radius, hairline, padding, glyph-over-label-and-figure layout), painted like the floor plate of the same deck: face `TOWER_DECKS[deck].band` (`yelM`
+  (radius, padding, glyph-over-label-and-figure layout; no outline since 2026-11-06), painted like the floor plate of the same deck: face `TOWER_DECKS[deck].band` (`yelM`
   Learning, `bluM` Mastered — blue in every world, like the plate), on that plate's front
   wall (`plateWallSteps.right`, else `bandMaterial`'s), not washed for the time of day. A key
   pressed down STAYS down while it filters the grid; pressing it again lifts it. Same
   toggle-group contract (`useCardLibrary` → `toggleCardsFilter`: at most one key down;
-  pressing the other moves the latch across). Up: a 5px wall and the sky's cast shadow
-  (`--tower-cards-ground-shadow`) in place of the tile's card elevation. Latched: sat 3px
-  lower on a 2px wall, glyph at full ink. Colour never changes with state — no mute of the
-  other key — so the latch's height alone says which is down (the eip Add key's "stayed down" idiom, `EipAddKey`). Held: flush, the app's snapping press (`keycapPressSx`). Each key keeps its figure,
+  pressing the other moves the latch across). The wall is DIAGONAL — it shows below and to
+  the right of the face, stepped 1px along (1, 1) like the mini cards' card stock
+  (`sortCardStock` → `panelWall`), and the latch and the press move the face along that same
+  diagonal. Up: a 5px wall and the sky's cast shadow (`--tower-cards-ground-shadow`, 9px
+  right and down). Latched: sat 3px down-right on a 2px wall, glyph at full ink. Colour never changes with state — no mute of the
+  other key — so the latch's height alone says which is down (the eip Add key's "stayed down" idiom, `EipAddKey`). Held: flush, the app's snapping press (`keycapPressSx`, with `restX`/`pressedX` for the diagonal). The pair sits in the same 364px column as the search row and the grid (`TowerCardsPage` → `GRID_WIDTH_PX`, 28px sides), so its edges line up with theirs. Each key keeps its figure,
   right-adjusted. The search field carries the sort menu (`CollectionSortControl`,
   common orderings only). The title names the set on screen ("Cards", or the latched key's
   label), with no count — the filter keys carry the figures.
 - **The cards** are acp's mini cards: `MiniCard` on the Deck Tower's card stock (cream rim,
-  beige panel), drawn as a **thick panel** — a 4px wall, ONE outline around the whole extruded
-  silhouette (no line on the face's own edge, which split the panel into layers) and a
-  near-solid cast shadow down-right (`src/features/discover/sortCardStock.ts` → `sortCardStockSx`,
+  beige panel), drawn as a **thick panel** — a 4px wall and a near-solid cast shadow
+  down-right, with no outline (removed 2026-11-06) (`src/features/discover/sortCardStock.ts` → `sortCardStockSx`,
   `cardStockShadow`, through `MiniVocabCard` `stock`) — the same stock as acp's cards
   (2026-11-05). With the mastery strip and without acp's levitation. The strip is pulled in
   off the cream rim onto the panel (`TowerCardsPage.tsx` → `STRIP_SIDE_INSET_PX`, the
-  panel's inset + 5px, overriding MiniCard's 8px through `.mini-card__mastery-window`). Its
-  1px outline is `COLORS.textFaint` (`sortCardStock.ts` → `PANEL_OUTLINE`, every stock card's
-  outline, drawn around face and wall together) — a text grey, since the framework's line tokens stop at `border`. A card with its own
+  panel's inset + 5px, overriding MiniCard's 8px through `.mini-card__mastery-window`). A card with its own
   colour (an advanced layout's `cardColor`) fills the panel and keeps the cream rim
   (`--mini-card-panel`), the rule the tower-hosted flp's faces follow. The ground is the
   world's sky, so the shadow is that sky's iso shadow tone (`shadowTone`), set as the
   `--tower-cards-ground-shadow` variable on the page root so a sky that changes every pan
-  frame never re-renders a card. A tap opens the cdp through the world's lens
-  (`withLens`); the click that ends a desktop swipe drag is ignored.
+  frame never re-renders a card. **Pressed, a card is pushed back** (`sortCardStock.ts` →
+  `cardStockPressSx`, the app's raised-key press from `theme/keycapPress.ts`): it stops
+  floating without going flush. The cast shadow vanishes and the face moves 2px down-right
+  (`PRESS_SINK_PX`), while the outlined 4px wall stays, so it is still a thick card. It snaps and is held at least `KEYCAP_MIN_HELD_MS`. The press moves through
+  the CSS `translate` property because `useScrollStretch` writes an inline `transform` on
+  these cards; a press that travels into a scroll lets the card up. The cdp opens on
+  release (`click`), through the world's lens (`withLens`); the click that ends a desktop
+  swipe drag is ignored.
 - **The platform stop.** Momentum always stops at the platform line, from above or below
   (`useTowerCardsScroll`): a scroll event that CROSSES the line while no finger is down
   (touch momentum, wheel, trackpad) is pinned to it, and the scroller's overflow goes

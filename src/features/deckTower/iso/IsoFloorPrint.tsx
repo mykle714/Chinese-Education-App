@@ -16,13 +16,27 @@ import { WEIGHT } from "../../../theme/scale";
  * IsoFloorLabel's plate), so pawns walk over it without stepping, and it is not a shadow
  * (no light offset).
  *
- * Lines read along world x (the floor plate's direction) and stack along world +y, centred
- * as a block on `at`. Within the block each line is centred (`align="center"`, default) or
- * set flush to the block's right edge (`align="right"` — `textAnchor="end"`, so a short
- * line like "ADD" ends where the widest one does). Letter-spaced through IsoSpacedText, so the block sits on the same
- * centre in WebKit and Chrome.
+ * Lines read along a floor axis (`run`) and stack across it. `run="x"` (default): they read
+ * along world x (the floor plate's direction) and stack along world +y. `run="-y"`: the
+ * block is turned a quarter-turn on the floor, so the lines read along world −y (up-right
+ * on screen, still left-to-right) and stack along world +x — a glyph's "up" then points to
+ * world −x. Within the block each line is centred (`align="center"`, default) or set flush
+ * to the block's end (`align="right"` — `textAnchor="end"`, so a short line ends where the
+ * widest one does). `anchor` says what `at` marks along the run: the block's centre
+ * (`"center"`, default) or its end (`"end"` — where flush-right lines stop; with `run="-y"`
+ * that is the block's far, −y edge, so a print can end a fixed gap off the thing it names).
+ * Across the run the block is always centred on `at`.
  *
- * `maxX` keeps the block off something on its right (the platform's rim): the lines are
+ * `tail` hangs a mark (e.g. an arrow) past the end of the LAST line, outside the alignment:
+ * the lines' own letters set the block's edge and the tail sticks out beyond it, one
+ * word-space on. Drawn only with `align="right"` (a centred block has no shared edge to
+ * hang it from) and never measured into the block's width. With `anchor="end"`, `at` marks
+ * the tail's TIP (the tail is measured after layout), so the letters' edge sits a gap plus
+ * the tail's width behind it. Letter-spaced through IsoSpacedText,
+ * so the block sits on the same centre in WebKit and Chrome.
+ *
+ * `maxX` (`run="x"` only — ignored for `"-y"`, where the caller places the block across x
+ * itself) keeps the block off something on its right (the platform's rim): the lines are
  * measured after layout (`getBBox`, in world units — the text is drawn in world coordinates
  * under the face transform) and the block slides left just enough that its widest line
  * ends at `maxX`. Measured once per text/size and again when a web font loads, never per
@@ -30,7 +44,7 @@ import { WEIGHT } from "../../../theme/scale";
  * centred on `at`.
  *
  * Used by: DeckTowerPlatform (`decals`) — the soft-introduction labels under the corner
- * fixtures (docs/DECK_TOWER.md § "Corner fixture labels").
+ * fixtures (docs/DECK_TOWER.md § "Corner fixture labels"), `run="-y"`, `anchor="end"`.
  */
 interface IsoFloorPrintProps {
     /** The block's centre on the floor (world units). */
@@ -51,9 +65,18 @@ interface IsoFloorPrintProps {
     color?: string;
     /** The rightmost world x the block may reach; it slides left to stay inside. Default: none. */
     maxX?: number;
-    /** How each line sits within the block: centred (default) or flush right. */
+    /** How each line sits within the block: centred (default) or flush to its end. */
     align?: "center" | "right";
+    /** The floor axis the lines read along: world x (default) or world −y (a quarter-turn). */
+    run?: "x" | "-y";
+    /** What `at` marks along the run: the block's centre (default) or its end. */
+    anchor?: "center" | "end";
+    /** A mark hung past the last line's end, outside the alignment (`align="right"` only). */
+    tail?: string;
 }
+
+/** The gap between the last line and its `tail`, in em (about a word-space in Noto Sans SC bold). */
+const TAIL_GAP_EM = 0.3;
 
 const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
     at,
@@ -66,6 +89,9 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
     color,
     maxX,
     align = "center",
+    run = "x",
+    anchor = "center",
+    tail,
 }) => {
     const proj = useIsoProjector();
     // Default: two steps down from the floor, like IsoCardImprint's print (imprint tone → print tone).
@@ -75,14 +101,27 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
     // The widest line's width in world units, measured after layout (see the header note).
     const ref = useRef<SVGGElement>(null);
     const fontEpoch = useFontLoadEpoch();
-    const measureKey = `${lines.join("|")}|${fontSize}|${letterSpacing}|${fontEpoch}`;
-    const [measured, setMeasured] = useState<{ key: string; width: number } | null>(null);
+    // The tail is drawn (and measured) only on a flush-right block.
+    const drawTail = tail !== undefined && tail !== "" && align === "right" && lines.length > 0;
+    const measureKey = `${lines.join("|")}|${drawTail ? tail : ""}|${fontSize}|${letterSpacing}|${fontEpoch}`;
+    // `width`: the widest line. `tailWidth`: the tail glyph(s) alone (0 without one).
+    const [measured, setMeasured] = useState<{ key: string; width: number; tailWidth: number } | null>(null);
+    // `maxX` is honoured only along x (see the header note).
+    const clampX = run === "x" ? maxX : undefined;
+    // The widest line is needed to clamp, or whenever the lines' anchor point is not where
+    // `at` puts the block's reference: flush-right lines on a centred block, or centred
+    // lines on an end-anchored one. (Flush-right on an end anchor needs no measurement —
+    // unless it has a tail, whose tip is then the end `at` marks.)
+    const needsWidth =
+        clampX !== undefined || (align === "right") !== (anchor === "end") || (drawTail && anchor === "end");
     useLayoutEffect(() => {
-        // Measured when clamping (`maxX`) or right-aligning — both need the widest line.
-        if ((maxX === undefined && align !== "right") || measured?.key === measureKey || !ref.current) return;
+        if (!needsWidth || measured?.key === measureKey || !ref.current) return;
         let width = 0;
+        let tailWidth = 0;
         try {
-            for (const t of Array.from(ref.current.querySelectorAll("text"))) {
+            const tailEl = ref.current.querySelector(".iso-floor-print__tail") as SVGTextElement | null;
+            if (tailEl) tailWidth = tailEl.getBBox().width;
+            for (const t of Array.from(ref.current.querySelectorAll<SVGTextElement>(".iso-floor-print__line"))) {
                 // IsoSpacedText may not have applied its spacing yet (its own layout effect
                 // re-renders it with `textLength` after this commit): add the spacing here.
                 const gaps = Math.max(0, Array.from(t.textContent ?? "").length - 1);
@@ -92,18 +131,28 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
         } catch {
             // Not laid out (detached / no layout engine): stay centred.
         }
-        setMeasured({ key: measureKey, width });
-    }, [maxX, align, measured, measureKey, letterSpacing]);
-    // How far left the block slides so its widest line ends at `maxX` (0 when it fits).
+        setMeasured({ key: measureKey, width, tailWidth });
+    }, [needsWidth, measured, measureKey, letterSpacing]);
+    // The lines are laid out in a LOCAL frame: origin on `at`, local x along the run, local
+    // y across it (the next line). `run="-y"` turns that frame −90° on the floor, so local
+    // x → world −y and local y → world +x.
     const width = measured?.key === measureKey ? measured.width : 0;
-    const shiftX = maxX === undefined ? 0 : Math.min(0, maxX - (at.x + width / 2));
-    const blockCentreX = at.x + shiftX;
-    // Right-aligned lines all end on the block's right edge (half the widest line right of
-    // its centre). Before the first measurement `width` is 0, so they end on the centre
-    // for that one frame — layout effects run before paint, so it is not seen.
-    const lineX = align === "right" ? blockCentreX + width / 2 : blockCentreX;
-    // The first line's centre, so the whole block is centred on `at` (in y).
-    const firstY = at.y - ((lines.length - 1) * pitch) / 2;
+    const tailWidth = measured?.key === measureKey ? measured.tailWidth : 0;
+    // The gap between the last line's end and its tail.
+    const tailGap = fontSize * TAIL_GAP_EM + letterSpacing;
+    // How far left the block slides so its widest line ends at `maxX` (0 when it fits).
+    const shiftX = clampX === undefined ? 0 : Math.min(0, clampX - (at.x + width / 2));
+    // The block's end (local x) and from it each line's anchor x. Before the first
+    // measurement `width` is 0 for that one frame — layout effects run before paint, so it
+    // is not seen.
+    // With a tail on an end anchor, `at` marks the tail's tip, so the lines' shared edge
+    // sits one gap + tail behind it.
+    const blockEndX = anchor === "end" ? (drawTail ? -(tailGap + tailWidth) : 0) : shiftX + width / 2;
+    const lineX = align === "right" ? blockEndX : blockEndX - width / 2;
+    // The first line's centre, so the block is centred on `at` across the run.
+    const firstY = -((lines.length - 1) * pitch) / 2;
+    // The tail starts one word-space past the last line's end (`align="right"` only).
+    const tailX = lineX + tailGap;
     return (
         <g
             ref={ref}
@@ -115,21 +164,39 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
             aria-hidden
             pointerEvents="none"
         >
-            {lines.map((line, i) => (
-                <IsoSpacedText
-                    key={`${i}-${line}`}
-                    className="iso-floor-print__line"
-                    x={lineX}
-                    y={firstY + i * pitch}
-                    fontSize={fontSize}
-                    fontWeight={WEIGHT.bold}
-                    letterSpacing={letterSpacing}
-                    textAnchor={align === "right" ? "end" : "middle"}
-                    // No dominantBaseline: IsoSpacedText centres the caps on `y` itself.
-                >
-                    {line}
-                </IsoSpacedText>
-            ))}
+            <g
+                className="iso-floor-print__frame"
+                transform={`translate(${at.x} ${at.y})${run === "-y" ? " rotate(-90)" : ""}`}
+            >
+                {lines.map((line, i) => (
+                    <IsoSpacedText
+                        key={`${i}-${line}`}
+                        className="iso-floor-print__line"
+                        x={lineX}
+                        y={firstY + i * pitch}
+                        fontSize={fontSize}
+                        fontWeight={WEIGHT.bold}
+                        letterSpacing={letterSpacing}
+                        textAnchor={align === "right" ? "end" : "middle"}
+                        // No dominantBaseline: IsoSpacedText centres the caps on `y` itself.
+                    >
+                        {line}
+                    </IsoSpacedText>
+                ))}
+                {drawTail && (
+                    <IsoSpacedText
+                        className="iso-floor-print__tail"
+                        x={tailX}
+                        y={firstY + (lines.length - 1) * pitch}
+                        fontSize={fontSize}
+                        fontWeight={WEIGHT.bold}
+                        letterSpacing={letterSpacing}
+                        textAnchor="start"
+                    >
+                        {tail}
+                    </IsoSpacedText>
+                )}
+            </g>
         </g>
     );
 };

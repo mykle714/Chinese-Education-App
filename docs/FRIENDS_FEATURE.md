@@ -1,7 +1,7 @@
 # Friends Feature
 
 The friend graph: sending, answering and revoking friend requests, and the list of
-accepted friends. Reached from the **Friends** tile on the Menu hub (`/menu`; it was the `/` Home hub until Home and Menu swapped contents on 2026-10-10).
+accepted friends. Its home is the **AccountSheet's Friends tab** (`src/pages/AccountSheet.tsx`), raised from the Deck Tower header's avatar (`src/features/deckTower/DeckTowerAvatar.tsx`). That is the **only** entry: there is no Menu popover row for Friends, and no `/friends` page: it was deleted 2026-11-06 (it showed the same `FriendsBody`).
 
 Status: **implemented** and on PPE. Migration **138** is applied (see
 [§ Deploying](#deploying)).
@@ -10,18 +10,23 @@ Status: **implemented** and on PPE. Migration **138** is applied (see
 
 ## 1. Surfaces
 
-Four pages today (a **fifth is planned** — § 1b), all `chrome: "node"` with
-`footerTab: "menu"`, so the footer stays visible and the Menu tab stays lit; `/friends`' back arrow returns to `/menu`. `/friends` is **read-only**; each of the three
-mutations (send, answer, unfriend) has its own screen behind a top-row button.
+One sheet tab plus three action pages (and the Challenges page, § 1b). The pages are
+`chrome: "node"` with `footerTab: "menu"`, so the footer stays visible and the Menu tab
+stays lit. The tab (`FriendsBody`) is **read-only**; each of the three mutations (send,
+answer, unfriend) has its own page behind a top-row button. Opening one is a real
+navigation, which unmounts the sheet.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/friends` | `src/features/friends/FriendsPage.tsx` (shell) + `FriendsBody.tsx` (content, also the AccountSheet's Friends tab) | The friends **leaderboard** (§ 1a), read-only. Three buttons across the top — **Send** / **Accept** / **Remove** → the three action screens. Shows the viewer's own friend ID with a Copy button. |
+| *(AccountSheet → Friends tab)* | `src/features/friends/FriendsBody.tsx` | The friends **leaderboard** (§ 1a), read-only. Three buttons across the top — **Send** / **Accept** / **Remove** → the three action screens. Shows the viewer's own friend ID with a Copy button. |
 | `/friends/sent` | `src/features/friends/SentRequestsPage.tsx` | Reached by **Send**. Pending **outgoing** requests, each with **Revoke**. Also holds the compose field — the only place a friendship is created. |
 | `/friends/requests` | `src/features/friends/IncomingRequestsPage.tsx` | Reached by **Accept**. Pending **incoming** requests, each with **Accept** / **Decline**. |
 | `/friends/remove` | `src/features/friends/RemoveFriendsPage.tsx` | Reached by **Remove**. The plain friend list ("Friends since …"), each row with **Remove** (unfriend). The board deliberately has no per-row Remove: a destructive control on a ranking row invites a mis-tap while reading scores. |
 
-Back-arrow targets: `/friends` → `/menu` (Menu); all three action pages → `/friends`.
+Back-arrow targets: all three action pages (and `/friends/challenges`) call
+`navigateBackOr(navigate, "/")` (`src/utils/navigateBack.ts`): one history entry back, to
+the page the sheet was over, or `/` when the page is the first entry. The sheet is **not**
+reopened on return.
 Every action page navigates via `useSlideNavigate` so the drill-in animates.
 
 **Every person row on all four screens opens that person's profile** — tapping the
@@ -60,7 +65,7 @@ Shared pieces:
   `velocityUnitLabel`, and `friendErrorMessage`.
 
 **Adding a friend is BY USER ID.** `users` has no username column, so the handle is
-the account's UUID: `/friends` renders yours with a Copy button (and `userSelect:
+the account's UUID: the Friends tab renders yours with a Copy button (and `userSelect:
 "text"`, an explicit exception to the app-wide `user-select: none`), and the other
 person pastes it into `/friends/sent`. If a username is ever added, that field
 becomes the lookup and this section is what changes.
@@ -75,7 +80,7 @@ Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 1, and shipped with t
 feature. (This section said "not built" until 2026-08-22; the page had in fact been
 live since 2026-08-17 and only the scored rounds were missing.)
 
-A fifth NodePage, reached by a fourth top-row button on `/friends`, listing the viewer's
+A NodePage, reached by a fourth top-row button on the Friends tab, listing the viewer's
 Study Challenges: awaiting your response, accepted and waiting for Friday, open now, and
 recently finished.
 
@@ -85,7 +90,7 @@ for testing ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 2a). It is rendered h
 because this is where the weekly rules are felt, but it is gated on `users.isFeatureTester`
 (migration 178) and is invisible to everybody else.
 
-**Why it hangs off `/friends` rather than sitting on the Menu hub:** a challenge is a
+**Why it hangs off the Friends tab rather than sitting in the Menu:** a challenge is a
 thing you have *with a person*. Every entry point to it is a friend, unfriending ends it,
 and the per-pair block that suppresses it lives on `friendships`. Menu is a menu of
 places; this is a property of a relationship.
@@ -113,9 +118,9 @@ expired — and a badge that hid it would be hiding the only thread back to it. 
 friends payload must carry the count **even when the user's active language is not the
 challenge's**. Anyone "fixing" this inconsistency later re-breaks the case it exists for.
 
-### 1a. The leaderboard (`/friends`)
+### 1a. The leaderboard (AccountSheet → Friends tab)
 
-`/friends` is a **leaderboard ranked by velocity** — utcm band-steps climbed in the
+The Friends tab is a **leaderboard ranked by velocity** — utcm band-steps climbed in the
 last 7 days ([VELOCITY.md](./VELOCITY.md)) — not a plain list. The board has no section
 heading: it starts directly under the friend ID card (`src/features/friends/FriendsBody.tsx`
 → `FriendsBody`). One row per person:
@@ -355,7 +360,7 @@ This document describes:
 `src/utils/formatDuration.ts` (shared with the Night Market badge),
 `src/routes/routeMeta.ts` (the four friends entries),
 `src/routes/registry.ts` (four `PAGE_COMPONENTS` entries),
-`src/pages/MenuPage.tsx` (the `friends` Bento tile).
+`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (the `friends` row).
 
 Planned additions (with Study Challenge): a fifth `src/features/friends/*` page and its
 `routeMeta`/`registry` entries (§ 1b), the two `friendships` block columns (§ 2), and a
@@ -374,7 +379,7 @@ and the block columns — all planned),
 
 Deliberately out of scope for this pass — no friend-only content
 beyond the leaderboard's two numbers (no friend's decks, night market or streak), no notification when
-a request arrives (the badge on `/friends` is the only signal), and no
+a request arrives (the badge on the Friends tab is the only signal), and no
 friend-count limit.
 
 **Blocking is arriving in a narrow form**, with Study Challenge: two booleans on

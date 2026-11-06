@@ -39,6 +39,7 @@ import { HeaderIconButton } from "../../components/PageHeader";
 import SheetPill from "../../components/SheetPill";
 import InfoCardSection from "./FlashcardsLearnPage/InfoCardSection";
 import { apiGet } from '../../api/http';
+import { navigateBackOr } from '../../utils/navigateBack';
 
 // Padded content column. The outer NodePage/MobileTabScreen scroll area owns the
 // scroll + floating-footer clearance, so this box does NOT scroll itself — it just
@@ -324,9 +325,7 @@ const VocabCardDetailPage: React.FC = () => {
             // Back to wherever the card was opened from (the Deck Tower's cards page, which
             // refreshes its library on return). A deep-linked page has no history entry to
             // go back to (`idx === 0`), so it lands on the tower instead of leaving the app.
-            const idx = (window.history.state as { idx?: number } | null)?.idx;
-            if (idx == null || idx > 0) navigate(-1);
-            else navigate('/');
+            navigateBackOr(navigate, '/');
         } catch (err) {
             console.error('Error deleting card:', err);
             setActionLoading(false);

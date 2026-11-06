@@ -61,7 +61,7 @@ const WordSearchPage: React.FC = () => {
     // No mode chosen (direct URL / stray nav) — bounce back to the Games hub, whose
     // Word Search card launches Pinyin.
     useEffect(() => {
-        if (!modeConfig) navigate("/games", { replace: true });
+        if (!modeConfig) navigate(GAMES_HUB_EXIT.path, { replace: true });
     }, [modeConfig, navigate]);
 
     const exit = useCallback(

@@ -58,7 +58,7 @@ Relationship to the two boards that already exist:
 | Board | Scope | Ranked by | Where |
 |---|---|---|---|
 | Global leaderboard | every user | yesterday's minutes | tdp (`/tester-dashboard`) |
-| Friends leaderboard | you + your friends | velocity (band-steps / 7 days) | `/friends` |
+| Friends leaderboard | you + your friends | velocity (band-steps / 7 days) | AccountSheet Friends tab (`FriendsBody`; the `/friends` page was deleted 2026-11-06) |
 | **Arena** (this doc) | you + 24 others in your division | **minutes earned since the arena formed** | `/arena` |
 
 ---
@@ -99,8 +99,8 @@ than above it. The banner is the page's masthead, not a card on it.
 | `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "tab"`, `footerTab: "arena"` |
 
 The footer's **Arena** tab (`src/components/MobileFooter.tsx` → `TABS`, icon
-`emoji_events` on the slab, third of Deck · Menu · Arena · Dictionary) is the only entry;
-there is no Menu tile.
+`emoji_events` on the slab, second of Deck · Arena · Dictionary · Menu) is the only entry;
+there is no Menu popover row.
 
 ### 2.1 The board is the shared `Board` primitive
 
@@ -197,7 +197,7 @@ the 11.5px mono figure. It is not decoration and not a sixth slot: it names
 the UNIT, so the column reads as "the points I watch tick up while I study" with no
 caption and no legend. `BoardRow.scoreIcon` / `scoreIconColor` carry it.
 
-Differences from `/friends`, all of them additive:
+Differences from the friends board (`FriendsBody`), all of them additive:
 
 * **The ranked number is a duration, not a count.** Arena score is minutes of study, so
   it renders through the shared `src/utils/formatDuration.ts` (`weeks: false` — an arena
@@ -216,10 +216,10 @@ Differences from `/friends`, all of them additive:
   full-bleed banner the page header sits inside; the countdown is a left-aligned 52px mono
   block below it (left-aligned so a changing digit count only moves its tail), counting to Sunday 16:00 while live and to Tuesday 04:00 otherwise
   (§ 2.3). It ticks **seconds** — a deliberate reversal, see SHELF_REDESIGN entry 9a.
-* **Ranking is the server's.** The client never re-sorts. Same rule as `/friends`.
+* **Ranking is the server's.** The client never re-sorts. Same rule as the friends board.
 * **A row shows name, language flag, message and score — and nothing else.** (It showed
   name, avatar, a flag+region-code badge and score until 2026-08-21; the avatar is gone,
-  the badge became a flag on the name line, and the authored message is in — see § 2.1a.) Settled as **Q20**, and it is a privacy rule rather than a layout preference: `/friends` can show a
+  the badge became a flag on the name line, and the authored message is in — see § 2.1a.) Settled as **Q20**, and it is a privacy rule rather than a layout preference: the friends board can show a
   streak because both parties opted into seeing each other, whereas an arena puts you in
   front of 24 strangers you did not choose and cannot leave. A streak in particular would
   expose each player's daily routine — including the day they broke it — to people with no
@@ -565,7 +565,7 @@ language-scoped (§ 4). Two reasons this is the right call and not merely the ch
 
 The visible consequence is the badge on every row (§ 2.1): you can see that the person
 beating you is doing it in a different language. That reads as variety, not as unfairness,
-and it is the same thing `/friends` already shows.
+and it is the same thing the friends board already shows.
 
 One thing this makes possible and which is **not** allowed: the same human appearing twice
 on one board, once as their Chinese self and once as their Spanish self. **Settled as Q18 —
@@ -1534,7 +1534,7 @@ notice.
 | **Q22** | Timezone: hard partition or optimised across | **Hard requirement** — every member of an arena shares a timezone at formation. Geography is optimised only *within* a bucket. A post-formation timezone change is the user's to account for, but the app labels the countdown with the arena's timezone whenever it differs from theirs (§ 3, § 5) |
 | **Q23** | When does clustering run, and who is a straggler | **Before the boundary** — arenas must exist at 04:00 because that is when minutes start counting. Snapshot ~1 h early; anyone opting in during that hour still gets a live arena, placed **naively** (fill the partial arena first, then chunk the rest), never a re-run of the algorithm (§ 5.3) |
 | **Q17** | A combined "all my arenas" view for multi-language learners | **No** — `/arena` follows the selected language, like decks, minute points, night markets and the whole vet layer. Switching language switches the board. The header leads with the language so a Spanish division is never misread as a Chinese one (§ 2.2) |
-| **Q20** | Does the board show anything about the other 24 beyond name/avatar/language/score | **No — and the row has since gone NARROWER, not wider** (§ 2.1): the avatar and language badge are gone, and the one addition is the competitor's own authored message (§ 2.1a), which discloses nothing they did not type. Every extra field is a disclosure to 24 strangers who never consented to each other, unlike `/friends` where both parties opted in. A streak in particular exposes a daily routine to people who cannot be unfriended. The board is a race, not a profile directory (§ 2.1) |
+| **Q20** | Does the board show anything about the other 24 beyond name/avatar/language/score | **No — and the row has since gone NARROWER, not wider** (§ 2.1): the avatar and language badge are gone, and the one addition is the competitor's own authored message (§ 2.1a), which discloses nothing they did not type. Every extra field is a disclosure to 24 strangers who never consented to each other, unlike the friends board where both parties opted in. A streak in particular exposes a daily routine to people who cannot be unfriended. The board is a race, not a profile directory (§ 2.1) |
 | **Q24** | Are stable week-to-week arenas wanted, or should the sort be salted | **Stable — rivalry is the point.** A recurring cast is what turns a leaderboard into a rivalry, and the geohash sort yields it for free. Chunk boundaries still move as the opt-in set changes, so the cast rotates at the edges rather than freezing (§ 5.1) |
 
 ### Open

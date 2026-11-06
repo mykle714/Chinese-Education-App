@@ -18,12 +18,19 @@ import type { BuiltinCollectionEntry } from "../flashcards/builtinCollections";
  *
  *   up             the tile on a 5px wall, its cast shadow down-right on the sky
  *   up, held       sunk flush, no wall — the key bottoms out
- *   down (latched) sat 3px lower on a 2px wall — it filters the grid
+ *   down (latched) sat 3px down-right on a 2px wall — it filters the grid
  *   down, held     sunk flush
  *
+ * ── The wall is DIAGONAL, like the mini cards' card stock (2026-11-06) ──
+ * The wall shows below AND to the right of the face — the key's thickness seen from the
+ * tower's (1, 1) light, the same extrusion as `sortCardStock` → `panelWall` on the cards
+ * grid right under these keys. box-shadow cannot slant, so it is the face's outline stepped
+ * 1px at a time along (1, 1), one copy per px of wall, so it stays continuous. Every move
+ * (latch, press) runs along that same diagonal, so the face always sinks along its wall.
+ *
  * ── The tile (the old Home page's library tiles' shape, retained 2026-11-04) ──
- * 15px radius, `13px 13px 14px` padding, the 1px `COLORS.border`
- * hairline, the 19px glyph on its own line at 0.72, the bold label with the figure
+ * 15px radius, `14px 14px 15px` padding, NO outline (dropped 2026-11-06 with the card
+ * stock's — the key's edge is its wall and cast shadow, the tower style's rule), the 19px glyph on its own line at 0.72, the bold label with the figure
  * right-adjusted on its baseline, 9px between the pair.
  *
  * ── The COLOUR is the tower's floor plates' ──
@@ -56,22 +63,29 @@ import type { BuiltinCollectionEntry } from "../flashcards/builtinCollections";
 const WALL_UP_PX = 5;
 /** The wall under a LATCHED key, px — it rests `WALL_UP_PX - WALL_DOWN_PX` lower. */
 const WALL_DOWN_PX = 2;
-/** The cast shadow's offset from the key's face at rest: right, and down past the wall. */
-const CAST_X_PX = 4;
-const CAST_Y_PX = 9;
+/** How far the cast shadow reaches past an UP key's wall, right and down, px. */
+const CAST_REACH_PX = 4;
+/** The cast shadow's offset from an UP key's face, on both axes (wall + reach). */
+const CAST_PX = WALL_UP_PX + CAST_REACH_PX;
 /** The page's ground-shadow var (TowerCardsPage sets it from the sky). */
 const GROUND_SHADOW = "var(--tower-cards-ground-shadow)";
-/** The key's front wall: a face shaded like its plate's right wall (`IsoFloorLabel` `wallSteps`). */
+/** The key's wall: a face shaded like its plate's right wall (`IsoFloorLabel` `wallSteps`). */
 const plateWall = (deck: TowerDeck, face: string) =>
     deck.plateWallSteps ? shadeHex(face, deck.plateWallSteps.right) : bandMaterial(face).right;
 
 /**
- * The key's wall and cast shadow, with the face `sunk` px below its UP position. The
- * shadow lies on the ground, so it stays put while the face drops: its offset from the
- * face shrinks by `sunk`.
+ * The key's diagonal wall and cast shadow, with the face `sunk` px down-right of its UP
+ * position. The wall is the face's outline stepped 1px along (1, 1), `WALL_UP_PX - sunk`
+ * copies (the card stock's `panelWall` technique, sortCardStock.ts). The shadow lies on the
+ * ground, so it stays put while the face drops: its offset from the face shrinks by `sunk`
+ * on both axes. Flush (`sunk` = WALL_UP_PX) leaves no wall, only the shadow under the face.
  */
-const keyShadow = (wall: string, sunk: number) =>
-    `0 ${WALL_UP_PX - sunk}px 0 ${wall}, ${CAST_X_PX}px ${CAST_Y_PX - sunk}px 0 ${GROUND_SHADOW}`;
+const keyShadow = (wall: string, sunk: number) => {
+    const wallPx = WALL_UP_PX - sunk;
+    const steps = Array.from({ length: wallPx }, (_, i) => `${i + 1}px ${i + 1}px 0 ${wall}`);
+    const cast = CAST_PX - sunk;
+    return [...steps, `${cast}px ${cast}px 0 ${GROUND_SHADOW}`].join(", ");
+};
 
 interface TowerFilterKeysProps {
     /** The lens's two built-in collections, in display order (`useCardLibrary` → `collections`). */
@@ -90,8 +104,10 @@ const TowerFilterKeys = memo(function TowerFilterKeys({ entries, count, activeKe
             className="tower-filter-keys"
             role="group"
             aria-label="Filter cards"
-            // The bottom padding is the keys' wall + cast shadow, which paint outside the box.
-            sx={{ display: "flex", gap: "9px", pb: `${CAST_Y_PX}px` }}
+            // The bottom padding is the keys' wall + cast shadow, which paint outside the box
+            // (they reach CAST_PX right as well; the page's 22px side padding holds that). The
+            // gap leaves 3px of sky between the left key's cast shadow and the right key.
+            sx={{ display: "flex", gap: `${CAST_PX + 3}px`, pb: `${CAST_PX}px` }}
         >
             {entries.map((entry) => {
                 const latched = activeKey === entry.key;
@@ -119,10 +135,11 @@ const TowerFilterKeys = memo(function TowerFilterKeys({ entries, count, activeKe
                             alignItems: "stretch",
                             textAlign: "left",
                             cursor: "pointer",
-                            // The tile: radius, hairline, padding, fill (see the header).
+                            // The tile: radius, padding, fill (see the header). No outline; the
+                            // padding carries the old 1px hairline so the content stays put.
                             borderRadius: "15px",
-                            border: `1px solid ${COLORS.border}`,
-                            padding: "13px 13px 14px",
+                            border: "none",
+                            padding: "14px 14px 15px",
                             backgroundColor: face,
                             color: COLORS.onSurface,
                             fontFamily: FONTS.sans,
@@ -130,7 +147,10 @@ const TowerFilterKeys = memo(function TowerFilterKeys({ entries, count, activeKe
                             ...keycapPressSx({
                                 restShadow: keyShadow(wall, restSunk),
                                 pressedShadow: keyShadow(wall, WALL_UP_PX),
+                                // Latch and press both move along the wall's (1, 1) diagonal.
+                                restX: restSunk,
                                 restY: restSunk,
+                                pressedX: WALL_UP_PX,
                                 pressedY: WALL_UP_PX,
                             }),
                             // Only the fill eases (the mute); the press itself snaps.

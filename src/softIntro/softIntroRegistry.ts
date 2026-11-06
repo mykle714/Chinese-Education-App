@@ -37,18 +37,18 @@ export const SOFT_INTROS = {
         description: 'acp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
     },
     /**
-     * td main world's mini sort platform (DeckTowerPlatform `sortBin`). Intro: "SORT /
-     * CARDS" printed into the floor under it, so the learner learns the white slab is the
+     * td main world's mini sort platform (DeckTowerPlatform `sortBin`). Intro: "ADD MORE /
+     * CARDS →" printed into the floor under it, so the learner learns the white slab is the
      * Add Cards button. Graduated: the slab alone.
      */
     towerSortLabel: {
         minVisits: 70,
         minDays: 14,
-        description: 'td sort platform: "Add cards" floor print under it (intro) → slab alone (graduated)',
+        description: 'td sort platform: "Add more cards" floor print under it (intro) → slab alone (graduated)',
     },
     /**
      * td writing world's notebook paper stack (DeckTowerPlatform `notebook`). Intro:
-     * "WRITING / NOTEBOOK" printed into the floor under it. Graduated: the stack alone.
+     * "WRITING / NOTEBOOK →" printed into the floor under it. Graduated: the stack alone.
      */
     towerNotebookLabel: {
         minVisits: 70,

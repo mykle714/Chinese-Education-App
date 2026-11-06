@@ -1,5 +1,12 @@
 # Hydra Bubbles — endless recognition drill
 
+> **DORMANT (2026-11-06): currently unreachable.** The Games hub (`src/games/GamesPage.tsx`)
+> was deleted and the `/games/hydra-bubbles` route is not mounted while the `standaloneGames`
+> feature flag is off (`server/contracts/featureFlags.ts`; `src/games/registry.ts` →
+> `ROUTED_GAMES` is empty). Hydra has no flp break adapter (`src/games/flpBreak/index.ts` →
+> `FLP_BREAK_GAMES`), so no surface launches it. The code below is kept as is; "route" and
+> "hub row" below describe it with the flag on.
+
 **Status: BUILT (2026-08-18), UNPLAYED. Reworked to TWO colors 2026-08-21; the tier
 palette is now YELLOW / BLUE (2026-08-24), on the Shelf System v2 MID tier with ink rings
 (2026-09-23, § 2.2); the game's hue is GREEN (was teal; 2026-09-24).** (§ 2 —
@@ -1370,7 +1377,7 @@ no movement in their history, with no error and nothing visibly different in the
 
 | Concern | Decision |
 |---|---|
-| Route | `/games/hydra-bubbles`, leaf page (derived automatically by `GAME_ROUTE_META`, `src/routes/routeMeta.ts`) |
+| Route | `/games/hydra-bubbles` (mounted only while `standaloneGames` is on), leaf page (derived automatically by `GAME_ROUTE_META`, `src/routes/routeMeta.ts`) |
 | Registry | one `GameDef` in `src/games/registry.ts` — `gameId: "hydra-bubbles"`, `title: "Hydra Bubbles"`, `markType: "recognition"` |
 | Levels | **none** — single mode, one hub row. Board size is the difficulty curve. |
 | Minute points | eligible; `/games/hydra-bubbles` joins `MINUTE_POINTS_ELIGIBLE_PAGES` and the start-on-entry subset (`src/constants.ts`); fire badge in the header |

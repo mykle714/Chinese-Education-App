@@ -32,6 +32,8 @@ import {
     challengeMutedSx,
     crownSx,
 } from "./challengeStyles";
+import { useNavigate } from "react-router-dom";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a NodePage under the Friends
@@ -68,6 +70,9 @@ import {
 function ChallengesPage() {
     usePageTitle("Challenges");
     const slideNavigate = useSlideNavigate();
+    // Back goes one history entry (to the page the AccountSheet's Friends tab was over),
+    // since the `/friends` page was deleted 2026-11-06 (docs/FRIENDS_FEATURE.md).
+    const navigate = useNavigate();
     const { user, isAuthenticated } = useAuth();
     // The anytime row + notice show only while testing features are on (useTestingFeatures).
     const testingFeatures = useTestingFeatures();
@@ -151,7 +156,7 @@ function ChallengesPage() {
     return (
         <NodePage
             title="Challenges"
-            onBack={() => slideNavigate("/friends")}
+            onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="challenges-page__content"
         >
             <Box className="challenges-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>

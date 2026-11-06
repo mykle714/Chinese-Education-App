@@ -8,6 +8,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useAuth } from "../../AuthContext";
 import { designKey } from "../../types";
 import type { CommunityDesign, Language } from "../../types";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Community page (docs/COMMUNITY_PAGE.md) — a Menu drill-in (NodePage) with a dictionary
@@ -72,7 +73,7 @@ function CommunityPage() {
   }, []);
 
   return (
-    <NodePage title="Community" onBack={() => navigate("/menu")} contentClassName="community-page__content">
+    <NodePage title="Community" onBack={() => navigateBackOr(navigate, "/")} contentClassName="community-page__content">
       <CommunitySearchBar
         language={language}
         votedKeys={votedKeys}

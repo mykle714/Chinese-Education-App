@@ -16,6 +16,8 @@ import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
+import { useNavigate } from "react-router-dom";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Sent friend requests (docs/FRIENDS_FEATURE.md) — the viewer's own pending
@@ -33,6 +35,9 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 function SentRequestsPage() {
     usePageTitle("Sent Requests");
     const slideNavigate = useSlideNavigate();
+    // Back goes one history entry (to the page the AccountSheet's Friends tab was over),
+    // since the `/friends` page was deleted 2026-11-06 (docs/FRIENDS_FEATURE.md).
+    const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
 
     const [requests, setRequests] = useState<FriendRequestSummary[]>([]);
@@ -97,7 +102,7 @@ function SentRequestsPage() {
     return (
         <NodePage
             title="Sent Requests"
-            onBack={() => slideNavigate("/friends")}
+            onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="sent-requests-page__content"
         >
             <Box className="sent-requests-page" sx={{ display: "flex", flexDirection: "column", gap: 2, px: 2, pt: 1 }}>

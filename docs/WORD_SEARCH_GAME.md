@@ -3,12 +3,22 @@
 > Status: **built (v1).** All design questions below are resolved. This doc
 > describes the shipped structure for future agents.
 
-The second game in the Games hub (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)).
+> **How it is reached (2026-11-06): as an flp break only.** The Games hub
+> (`src/games/GamesPage.tsx`) was deleted and the standalone `/games/word-search` page is
+> not mounted while the `standaloneGames` feature flag is off
+> (`server/contracts/featureFlags.ts`; `src/games/registry.ts` → `ROUTED_GAMES` is empty).
+> Word Search is played as a break inside the Deck Tower study session
+> (`src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`, `WORD_SEARCH_BREAK`). The page, the hub
+> entry (`WordSearchHubItem`, `WordSearchResumeTile`, `useWordSearchLauncher`) and the resume
+> flow described below are kept but dormant: they have no live caller. Sections that talk about
+> the Games hub and `/games` describe that dormant route.
+
+Originally the second game in the Games hub (see [GAMES_FEATURE.md](./GAMES_FEATURE.md)).
 The player is given 9 of their own vocabulary words and hunts for each one
 inside a grid of Chinese characters. Words are hidden as **snaking paths**
 (orthogonally-connected runs of cells), padded out with filler characters.
 
-Like Bubble Match it is a **leaf page** (down-arrow back → `/games`, no footer)
+As a route (dormant) it is a **leaf page** (down-arrow back → `GAMES_HUB_EXIT`, now `/` "Deck Tower", no footer)
 and reuses the same colored-pinyin cell primitive (`CPCDRow` / cpcd).
 
 ---

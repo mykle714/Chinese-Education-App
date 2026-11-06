@@ -51,6 +51,7 @@ import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import MiniCard from "../../components/MiniCard";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
 import { SORTED_STOCK, SORTED_PRINT_OPACITY, cardStockShadow, sortCardStockSx, CARD_LEVITATE_MS, cardLevitateKeyframes, LEVITATE_PHASES_MS } from "./sortCardStock";
+import { navigateBackOr } from "../../utils/navigateBack";
 
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 4
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
@@ -1438,9 +1439,7 @@ const AddCardsPage: React.FC = () => {
     // IS the first entry — deep-linked or reloaded — where navigate(-1) would leave the
     // app entirely, so fall back to the recorded origin, then to the Deck Tower (`/`).
     const exitToOrigin = useCallback(() => {
-        const idx = (window.history.state as { idx?: number } | null)?.idx;
-        if (idx == null || idx > 0) navigate(-1);
-        else navigate(originPath ?? "/");
+        navigateBackOr(navigate, originPath ?? "/");
     }, [navigate, originPath]);
     // Back from the ordinary (non-set) page. A launch carrying `state.exitTo` names its own
     // return point — the Deck Tower's mini sort platform (DeckTowerPage → `SORT_EXIT`), which

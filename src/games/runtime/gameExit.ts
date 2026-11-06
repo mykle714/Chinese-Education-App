@@ -28,8 +28,13 @@ export interface GameExit {
     state?: unknown;
 }
 
-/** The routed games' exit destination: the Games hub. */
-export const GAMES_HUB_EXIT: GameExit = { path: "/games", label: "Games" };
+/**
+ * The routed games' default exit destination. It was the Games hub (`/games`) until the
+ * hub was deleted on 2026-11-06; it is now the Deck Tower. (The routed pages themselves
+ * are off behind the `standaloneGames` feature flag — src/games/registry.ts → `ROUTED_GAMES`.)
+ * The name is kept so the five game pages read unchanged.
+ */
+export const GAMES_HUB_EXIT: GameExit = { path: "/", label: "Deck Tower" };
 
 /**
  * Read `state.exitTo` off a launch, validating its shape (nav state is untyped). Null

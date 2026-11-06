@@ -9,8 +9,11 @@
 > says whether the feature exists at all. `useTTS`'s iw-only `voice` argument is not gated;
 > it is an ordinary optional parameter with no caller once the routes are gone.
 
-> **"hp" in this doc = the hub Bento**, which has been the **Menu** tab (`/menu`,
-> `src/pages/MenuPage.tsx`) since 2026-10-10, when it moved off `/` (`/` is now the Deck Tower). The iw tiles live there; iw's back arrows return to `/menu`.
+> **"hp" in this doc = the Menu.** It was a hub Bento (`/`, then `/menu` from 2026-10-10);
+> since 2026-11-06 it is the footer Menu tab's popover of rows
+> (`src/components/menuPopover/menuDestinations.ts`). The iw entries live there as rows
+> (a "tile" below means that row); iw's back arrows go back one history entry
+> (`navigateBackOr`, else `/`).
 
 > STATUS: **PHASE 1 COMPLETE AND ITS KILL CONDITION SURVIVED — 1a–1e are built, and an
 > author has assembled a whole scene in the tool with no engineering help (§ 12 phase 1).
@@ -3610,7 +3613,7 @@ layer.
 **The chrome is the APP's; only the palette is the night market's.** Those are two separate
 decisions and the split is deliberate:
 
-- The **page** is a `LeafPage` like every other drill-in — back arrow out to `/menu` (warning
+- The **page** is a `LeafPage` like every other drill-in — back arrow out to the previous page (`navigateBackOr`, else `/`; warning
   first if the draft is dirty), a light toolbar whose four scene actions (Load · New ·
   Delete · Save) sit together in the top-right corner, and plain theme-skinned MUI fields
   in both side panels. The editor briefly shipped as a fixed dark `#101418` shell borrowing
@@ -3973,7 +3976,7 @@ name still refuses too, but from the service rather than the validator.
 
 **How an author reaches it:** a `low` **Scene Editor** tile on the hp Bento, appended
 beside Template Editor and Template Sandbox and shown on the same `user.isTemplateAuthor`
-condition — one grant, three tools (`src/pages/MenuPage.tsx`). It wears the `red` ramp hue (teal until 2026-09-24, when it left the palette; `blu` until 2026-10-10, when the hp moved to one hue per tile)
+condition — one grant, three tools (`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`, `gated`). It wears the `red` ramp hue (teal until 2026-09-24, when it left the palette; `blu` until 2026-10-10, when the hp moved to one hue per tile)
 rather than the night market's `pur`: it borrows that editor's map, but it does not edit
 night-market templates, and a shared hue would say it did. ⚠️ Not to be confused with the
 **learner-facing** hp row of § 14 Q9, which is phase 2 and ungated.
@@ -4146,7 +4149,7 @@ is the opposite of the test.
 - **The input:** ✅ BUILT — the throwaway writing assistant (Q4b), entirely under `features/iw`,
   header-commented as destined for replacement by BACKLOG item 1. ⚠️ It must answer *"I don't
   know where to begin"* — it is the learner's only safety net (Q24, Q29).
-- The hp row (Q9) and the route. ✅ BUILT — a `red` bento tile on the Menu hub (`/menu`; it was `/` until 2026-10-10), plus
+- The hp row (Q9) and the route. ✅ BUILT — a `red` row in the Menu popover (a bento tile on `/menu` until 2026-11-06), plus
   `/immersive-world` (the scene list) and `/immersive-world/:sceneId` (one scene, running).
   Both rows sit BELOW the exact `/immersive-world/scene-editor` row in `routeMeta.ts`, because
   `findRoute` takes the first match and `:sceneId` would otherwise swallow the editor.
@@ -4447,7 +4450,7 @@ to be watched for deliberately.
   structural handful that still 400s
 - `server/services/iw/validateStoredNpcIds.ts` → `validateStoredNpcIds` — the § 12 phase 1a
   boot-time sweep over every stored npc id
-- `src/pages/MenuPage.tsx` → the `isTemplateAuthor`-gated **Scene Editor** tile, the only
+- `src/components/menuPopover/menuDestinations.ts` → the `isTemplateAuthor`-gated **Scene Editor** row, the only
   way into the editor (§ 12 phase 1e). One grant, three tools.
 - `src/features/immersiveworld/IWScenePlacesPanel.tsx` → named places and the INTERACTION
   hanging off each (§ 5.4a, Q43); `src/features/immersiveworld/iwPopupArt.ts` → the

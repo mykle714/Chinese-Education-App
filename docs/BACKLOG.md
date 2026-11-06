@@ -201,9 +201,9 @@ called **"Know"** (`WORLD_LABELS.core`, `src/utils/masteryCompute.ts`) and blend
 two; the split leaks out around it in: `MARK_TYPE_LABELS` / `MARK_TYPE_COLORS` (the
 cdp `.msb` window paints recognition blue and production green, `MasteryWindow.tsx`
 — note its per-track **cooldown rows** are the same leak), the mini-card two-mark strip
-(`MiniVocabCard.tsx`), the Games hub tile subtitles ("Recognition · 30-second clock",
-`src/games/GamesPage.tsx`), the Word Search hub sub-tile chip ("Reading & Production",
-`WordSearchHubItem.tsx`), and the Account page Goals copy (`src/pages/AccountSheet.tsx`,
+(`MiniVocabCard.tsx`), the Word Search hub sub-tile chip ("Reading & Production",
+`WordSearchHubItem.tsx` — dormant since the Games hub, `src/games/GamesPage.tsx`, and its
+tile subtitles were deleted 2026-11-06), and the Account page Goals copy (`src/pages/AccountSheet.tsx`,
 "Recognition + Production are always pursued"). Reading and Writing keep their names —
 they are real goals a learner opts into; only the core pair collapses.
 

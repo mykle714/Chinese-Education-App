@@ -58,7 +58,7 @@ Every surface below reads `useTestingFeatures()`:
 | Banking "always play" honoured | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `useDailyBankingRun` |
 | Settings → "Soft introductions" override (shown only while the switch is on) | `src/pages/settings/SettingsBody.tsx` → `SOFT_INTRO_OVERRIDE_OPTIONS`, `src/softIntro/useSoftIntro.ts` → `useSoftIntro`, `useSoftIntroOverride` |
 | Study Challenge "Allow anytime" row, notice and request latch | `src/features/studyChallenge/ChallengesPage.tsx`, `src/features/studyChallenge/challengeAnytime.ts` → `useChallengeAnytime` |
-| Tester Dashboard Menu tile + route bounce (or `isAdmin`) | `src/pages/MenuPage.tsx` → `gatedTiles`, `src/pages/TesterDashboardPage.tsx` |
+| Tester Dashboard Menu popover row + route bounce (or `isAdmin`) | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (`gated`), `src/pages/TesterDashboardPage.tsx` |
 
 Each surface's own stored overrides (e.g. `deckTower.timeOfDayOverride`,
 `dailyBanking.alwaysPlay`, `cow.challengeAnytime`) are kept while testing is off and take

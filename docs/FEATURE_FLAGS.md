@@ -15,9 +15,10 @@ One registry file switches whole features, and individual games, on and off:
 | `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | **OFF** (since 2026-10-30) |
 | `writingNotebook` | The Writing Notebook page and its entry, the paper stack on the Deck Tower's writing world ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
+| `standaloneGames` | The five routed games' own pages (`/games/bubble-match`, `/word-search`, `/match-speed`, `/hydra-bubbles`, `/bucket-drop`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
-**`studyChallenge`, `community`, `nightMarket` and `immersiveWorld` are the only things currently switched off.** Every other
+**`studyChallenge`, `community`, `nightMarket`, `immersiveWorld` and `standaloneGames` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.
 
 Before this, the app had no flag mechanism at all — CLAUDE.md records the previous house
@@ -80,7 +81,7 @@ Gates **sharing**, not **authoring**.
 | Server mount | `server/server.ts` → `app.use(communityRoutes)` — the 7 `/api/community/*` endpoints (feeds, vote, unvote, `applyDesign`) |
 | **Leak** | `server/routes/userRoutes.ts` → `GET /api/users/:userId/designs` is registered inside an `isFeatureEnabled('community')` block. It serves the same designs from **outside** `communityRoutes.ts`, so not mounting that router would otherwise leave it live |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/community` |
-| Entry points | `src/pages/MenuPage.tsx` — the Community tile, the **only** navigational entry |
+| Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Community row of the footer's Menu popover, the **only** navigational entry |
 | | `src/features/profile/UserProfilePage.tsx` → `ProfileDesignGrid` (another account's designs, with its own vote flow) |
 | | `src/data/tips.ts` — the Community tip (`feature: "community"`), which would otherwise point at a 404 |
 
@@ -94,7 +95,7 @@ Gates **sharing**, not **authoring**.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(arenaRoutes)`. **Arena has no leaked endpoint** — all six `/api/arena*` paths live in `arenaRoutes.ts`, so this single mount is the whole server gate |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/arena` |
-| Entry point | `src/components/MobileFooter.tsx` → `ARENA_TAB_ON` — the footer's Arena tab, the only navigational entry (no Menu tile, no row on `/friends`) |
+| Entry point | `src/components/MobileFooter.tsx` → `ARENA_TAB_ON` — the footer's Arena tab, the only navigational entry (no Menu popover row, no row on `/friends`) |
 
 **NOT gated, and worth knowing:**
 
@@ -122,7 +123,7 @@ The widest flag: the feature owns **three** server namespaces and **four** route
 | Server mounts | `server/server.ts` — **three** of them: `nightMarketRoutes` (`/api/nightMarket/*`), `nightMarketTemplateRoutes` (`/api/nightMarketTemplates/*`) and `nightMarketSandboxRoutes` (`/api/nightMarketSandbox/*`). The two authoring namespaces exist only to produce content for the market, so they are one flag, not three |
 | **No leak** | Every night-market endpoint lives in those three files. In particular the read-only visit to another user's market is `GET /api/nightMarket/layout?userId=`, *not* a `/api/users/:userId/...` path — so unlike community it needs nothing in `userRoutes.ts` |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/night-market`, `/night-market/user/:userId`, `/night-market/template-editor`, `/night-market/template-sandbox` |
-| Entry points | `src/pages/MenuPage.tsx` — the hero tile, **and** the two `isTemplateAuthor` tiles below the hairline |
+| Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Night Market row, **and** the two `isTemplateAuthor` rows (Template Editor, Template Sandbox) below the hairline |
 | | `src/features/profile/UserProfilePage.tsx` — the "Visit their night market" button, the only way to reach `/night-market/user/:userId` |
 | | `src/data/tips.ts` — the Night Market tip (`feature: "nightMarket"`) |
 
@@ -151,7 +152,7 @@ for what is meant to be a temporary state.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(immersiveWorldRoutes)`. **One mount covers both halves** — the phase-1 authoring endpoints and the phase-2 learner runtime share the router (they share a URL prefix but not a service). No endpoint lives outside it |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/immersive-world`, `/immersive-world/:sceneId`, `/immersive-world/scene-editor` |
-| Entry points | `src/pages/MenuPage.tsx` — the Immersive World tile, and the `isTemplateAuthor` Scene Editor tile |
+| Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Immersive World row, and the `isTemplateAuthor` Scene Editor row below the hairline |
 
 **NOT gated:** the TTS voice plumbing. `useTTS`'s per-call `voice` argument exists for iw
 alone (§ 6.4a of [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) but is an ordinary optional
@@ -186,6 +187,24 @@ computes them.
 The writer is not gated. It is an ordinary pipeline step, and with the flag off its output is
 simply unread.
 
+### 2h. `standaloneGames` — OFF
+
+A client-only route gate over the ROUTED games' pages. It exists because the Games hub that
+launched them was deleted (2026-11-06): games are now played only as flp breaks inside the
+Deck Tower, and their standalone pages would otherwise sit at reachable URLs with no way in.
+
+| Layer | Site |
+|---|---|
+| Client | `src/games/registry.ts` → `ROUTED_GAMES` is `[]` while off. Through it: `GAME_ROUTE_META` (`routeMeta.ts`), `GAME_COMPONENTS` (`routes/registry.ts`), `GAME_ROUTES`, `originLabelFor`, and the route tests. The registry rows keep their `route` + `Component`, so `isRoutedGame` still tells routed from break-only |
+| Server | **Not gated.** `/api/games/*` and the pool endpoints are shared with the flp breaks |
+| Entry points | None to hide: the hub and its Menu row are deleted. Study Challenge's `src/games/runtime/challengeLaunch.ts` still names the five routes; it is reachable only while `studyChallenge` is on, so turning that on needs this on too |
+
+**Why not five `GAME_FLAGS` entries:** a game flag filters `GAME_REGISTRY`, which also feeds
+the flp break candidates, so it would remove Match Speed's and Word Search's breaks too.
+**Side effect while off:** Bubble Match, Hydra Bubbles and Bucket Drop have no break in the
+rotation, so they are unreachable (code kept). Switching it on needs no edit beyond the
+boolean, but the pages come back with no launcher.
+
 ---
 
 ## 3. Per-game flags
@@ -201,7 +220,7 @@ inherit a default and vanish from the hub.
 
 | Layer | Site |
 |---|---|
-| Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** `ROUTED_GAMES` (the games with a `route`), and through it the hub (`GamesPage`), `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests, all derive from this array; so do the flp game-break candidates, which is the ONLY surface a break-only game (Speed Reading, Memory Map, Writing Grid, Superposition) has |
+| Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** `ROUTED_GAMES` (the games with a `route`, further gated by `standaloneGames` — § 2h), and through it `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests, all derive from this array; so do the flp game-break candidates, which is the ONLY surface a break-only game (Speed Reading, Memory Map, Writing Grid, Superposition) has |
 | Server | `server/controllers/GamesController.ts` → `isGameEnabled` on all three handlers (`getAssets`, `getProgress`, `saveProgress`) |
 | Tips | `src/data/tips.ts` — a tip naming a game carries `game: "<slug>"` (Bubble Match, Word Search) and is filtered by `isGameEnabled`. Not derived from `GAME_REGISTRY`, so it is a second client site to remember |
 

@@ -13,10 +13,12 @@
 // Consumers: towerPlate.ts → `towerPlatePressSx` (the flp's tower plates), the eip's
 // keycaps — EipEntryHeader (the headword tile) and EipAddKey — acp's toolbar keycaps
 // (features/discover/AddCardsPage.tsx → `keycapSx`), td's cards-page filter keys
-// (features/deckTower/TowerFilterKeys.tsx), the Dictionary page's keycaps
+// (features/deckTower/TowerFilterKeys.tsx — diagonal, `restX`/`pressedX`), the Dictionary page's keycaps
 // (features/dictionary/DictionaryPageParts.tsx → `Keycap`), the beginner keyboard's
 // keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`) and Match Speed's
-// cards (games/match-speed/MatchSpeedCard.tsx → `cardKeySx`). A new raised key
+// cards (games/match-speed/MatchSpeedCard.tsx → `cardKeySx`), and td's cards-page mini
+// cards (features/discover/sortCardStock.ts → `cardStockPressSx`, diagonal and
+// `translate`-driven). A new raised key
 // should spread `keycapPressSx`, not re-type the press.
 //
 // NOT covered: the Deck Tower's in-scene plates (usePlatePress, rAF-animated iso art, not
@@ -62,8 +64,26 @@ export interface KeycapPressOptions {
     pressedY: number;
     /** Resting offset, px (default 0). EipAddKey's "Added!" rests 2px low, as if half-pressed. */
     restY?: number;
+    /**
+     * Resting RIGHTWARD offset, px (default 0) — the x twin of `restY`, for a diagonal-wall
+     * key that rests part-way down its wall (td's latched filter keys, TowerFilterKeys.tsx).
+     */
+    restX?: number;
     /** A transform the control already positions itself with; the press composes after it. */
     baseTransform?: string;
+    /**
+     * How far the key slides RIGHT when held, px (default 0). For a key whose wall is
+     * extruded diagonally rather than straight down — the card stock's (1, 1) wall
+     * (sortCardStock.ts) — so the face sinks along its own wall onto the ground.
+     */
+    pressedX?: number;
+    /**
+     * Drive the press through the CSS `translate` property instead of `transform`. For a
+     * key that something else writes an INLINE `transform` on — useScrollStretch's track
+     * elements (MiniVocabCardGrid's cards) — where an inline transform would override the
+     * press, while `translate` composes with it. `baseTransform` is ignored in this mode.
+     */
+    viaTranslate?: boolean;
 }
 
 /**
@@ -72,16 +92,29 @@ export interface KeycapPressOptions {
  * own `sx`. Transform and shadow carry no transition — a caller that animates something
  * else (opacity, colour) should list only that property in its own `transition`.
  */
-export function keycapPressSx({ restShadow, pressedShadow, pressedY, restY = 0, baseTransform = "" }: KeycapPressOptions) {
-    const at = (y: number) => `${baseTransform} translateY(${y}px)`.trim();
+export function keycapPressSx({
+    restShadow,
+    pressedShadow,
+    pressedY,
+    restY = 0,
+    restX = 0,
+    baseTransform = "",
+    pressedX = 0,
+    viaTranslate = false,
+}: KeycapPressOptions) {
+    // The key's offset at rest or held, on whichever channel the key moves through.
+    const at = (x: number, y: number) =>
+        viaTranslate
+            ? { translate: `${x}px ${y}px` }
+            : { transform: `${baseTransform} ${x ? `translate(${x}px, ${y}px)` : `translateY(${y}px)`}`.trim() };
     const pressed = {
-        transform: at(pressedY),
+        ...at(pressedX, pressedY),
         boxShadow: pressedShadow,
     };
     // Two keys rather than one combined selector: callers (AddCardsPage) read the
     // `"&:active"` entry by name to reuse the pressed look under their own class.
     return {
-        transform: at(restY),
+        ...at(restX, restY),
         boxShadow: restShadow,
         // Explicitly none, so no inherited / component-default transition eases the press.
         transition: "none",

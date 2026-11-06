@@ -779,7 +779,7 @@ because a level-1 learner has nothing below them to draw an easier word from.
 
 Levels are 1..6 for every language (`StarterPacksService`, `de."difficulty" BETWEEN 1
 AND 6`); the zh-facing label is "HSK n" and other languages read "Level n"
-(`src/features/discover/AddNewCardsPage.tsx`).
+(`src/features/discover/AddCardsPage.tsx`).
 
 Two app-wide rules this leans on, both written up in docs/PROVISIONAL_CARDS.md:
 

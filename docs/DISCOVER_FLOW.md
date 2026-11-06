@@ -4,14 +4,14 @@
 > → Card supply / lazy enrichment: [DISCOVER_LAZY_ENRICHMENT.md](./DISCOVER_LAZY_ENRICHMENT.md)
 > (which det entries appear, and on-first-sort enrichment).
 
-"Discover" is the card-intake flow: **Add New Cards** (ancp) — the drag-to-sort page — plus
+"Discover" is the card-intake flow: **Add Cards** (acp) — the drag-to-sort page — plus
 the skipped-cards sheet that lives inside it. It is a single **drill-in from the Deck
 Tower** (`/`), not a hub.
 
 The Discover hub page (`/discover`, `DiscoverPage`) was **deleted 2026-10-17**.
 `/discover` is no longer a route (`findRoute("/discover")` is undefined) and `"discover"`
 is not a `FooterTab` key (`src/components/MobileFooter.tsx` → `FooterTab`). Only the
-`/discover/` **URL prefix** survives, as ancp's path, so existing links (e.g.
+`/discover/` **URL prefix** survives, as acp's path, so existing links (e.g.
 `?set=provisional` sort offers) keep working.
 
 ```
@@ -20,7 +20,7 @@ Deck Tower (/) — main world's mini sort platform
                                │
                                ▼
 /discover/sort/:language
-  ← Add New Cards (AddNewCardsPage): drag-to-sort.
+  ← Add Cards (AddCardsPage): drag-to-sort.
     Node page (keeps footer, Deck tab lit). Back → / (main world).
     Hold Skip 2 s → skipped-cards sheet (hidden).
 ```
@@ -29,21 +29,21 @@ Deck Tower (/) — main world's mini sort platform
 
 | Route                          | Component          | Header                                  | Footer        |
 | ------------------------------ | ------------------ | --------------------------------------- | ------------- |
-| `/discover/sort/:language`      | `AddNewCardsPage`    | `NodePage` (← back arrow) → `/`          | Slab, **Deck** tab lit |
+| `/discover/sort/:language`      | `AddCardsPage`    | `NodePage` (← back arrow) → `/`          | Slab, **Deck** tab lit |
 
 - **`/discover/sort/:language` (sort):** a **node page** (see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
   the footer** (lateral nav stays available while sorting), owns the ← back arrow and
   the horizontal slide. Its `ROUTE_META` row (`src/routes/routeMeta.ts`) sets
-  `footerTab: "deck"` and `footerStyle: "slab"` — ancp is a Deck Tower drill-in.
-  - **Back arrow:** in normal mode `onBack` (`AddNewCardsPage` → `leave`) follows the
-    launch's `state.exitTo`: the Deck Tower's mini sort platform opens ancp with the
+  `footerTab: "deck"` and `footerStyle: "slab"` — acp is a Deck Tower drill-in.
+  - **Back arrow:** in normal mode `onBack` (`AddCardsPage` → `leave`) follows the
+    launch's `state.exitTo`: the Deck Tower's mini sort platform opens acp with the
     circle transition and `exitTo` = the tower's main world (`SORT_EXIT`), and Back closes
     the circle onto that platform and returns there ([DECK_TOWER.md](./DECK_TOWER.md)
     § The sort platform). Without `exitTo` (a deep link) Back goes to `/` with
     `state.towerWorld: "core"`. With `exitTo`, the footer's Deck tab plays Back too
     (`backOnFooterTab = "deck"`). In **set mode** (`?set=provisional`, a sort offer) it
-    calls `exitToOrigin` instead (`src/features/discover/AddNewCardsPage.tsx` →
+    calls `exitToOrigin` instead (`src/features/discover/AddCardsPage.tsx` →
     `exitToOrigin`): `navigate(-1)` when there is history, else the recorded `?from=`
     origin, else `/`.
   - The **Skip** button sits on the on-deck platform's top-right (`OnDeckToolbar`), not
@@ -54,7 +54,7 @@ Deck Tower (/) — main world's mini sort platform
     (`SkippedCardsPage`) and its hub tile were removed 2026-10-12. See
     [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §5.1a and §7.
   - **Quick Mark is not mounted.** `src/features/discover/QuickMarkPanel.tsx` (with
-    `useQuickMarkGrid`) is still in the tree but nothing renders it — ancp has no ⊞
+    `useQuickMarkGrid`) is still in the tree but nothing renders it — acp has no ⊞
     button. See [QUICK_MARK.md](./QUICK_MARK.md).
 
 ## Card supply gate

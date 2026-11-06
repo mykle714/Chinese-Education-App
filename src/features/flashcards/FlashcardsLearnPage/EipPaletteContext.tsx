@@ -5,7 +5,7 @@ import type { EipPalette } from "./eipPalette";
 import { EipPaletteCtx } from "./useEipPalette";
 
 /**
- * EipPaletteProvider — hands the eip's time-of-day palette (eipPalette.ts) to every part of
+ * EipPaletteProvider — hands the eip's theme palette (eipPalette.ts) to every part of
  * the panel: SheetPanel's ground, the upper panel's keys and wells, the tab shelf, the
  * cards in the tab body.
  *
@@ -14,19 +14,20 @@ import { EipPaletteCtx } from "./useEipPalette";
  * The palette itself comes from `useEipPalette()` (useEipPalette.ts); read it below the
  * provider with `useEipColors()`.
  *
- *   - `EipPaletteProvider` — publishes a palette AND, when its ink is light (night),
+ *   - `EipPaletteProvider` — publishes a palette AND, when it is the dark palette,
  *     re-themes the subtree: the flashcard palette's text/border tokens are swapped for
  *     the palette's, so every component inside that already reads
  *     `theme.palette.flashcard.*` (cpcd rows, the dd, synonyms, compare…) turns light-on-
- *     dark without knowing about the time of day. Components that read `COLORS.*`
- *     directly do NOT follow — see docs/EIP_SHEET_GESTURES.md § Time of day for the list.
+ *     dark without knowing about the theme. Components that read `COLORS.*`
+ *     directly do NOT follow — see docs/EIP_SHEET_GESTURES.md § "Light / dark theme" for the list.
  *
- * Depends on: useEipPalette.ts. Depended on by: InfoCardSection.tsx. Docs: docs/EIP_SHEET_GESTURES.md § Time of day.
+ * Depends on: useEipPalette.ts. Depended on by: InfoCardSection.tsx, DictionaryCardDetailPage.tsx.
+ * Docs: docs/EIP_SHEET_GESTURES.md § "Light / dark theme".
  */
 
 export const EipPaletteProvider: React.FC<{ palette: EipPalette; children: React.ReactNode }> = ({ palette, children }) => {
     const outer = useTheme();
-    // Only a DARK palette re-themes: by day the app's own flashcard tokens are already
+    // Only the DARK palette re-themes: on the light palette the app's own flashcard tokens are already
     // right, and an identical nested theme would just cost a context re-render.
     const theme = useMemo(() => {
         if (!palette.dark) return null;

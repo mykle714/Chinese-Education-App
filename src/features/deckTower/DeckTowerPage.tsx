@@ -7,7 +7,6 @@ import {
     CARD_THICKNESS,
     ISO,
     IsoScene,
-    prefersReducedMotion,
     boundsOf,
     cardStackMetrics,
     makeCameraProjector,
@@ -22,6 +21,8 @@ import {
     type CloudSky,
     type IsoRainFall,
     type WindSky,
+    blendWash,
+    NO_WASH,
 } from "./iso";
 import { useAuth } from "../../AuthContext";
 import { useTestingFeatures } from "../../hooks/useTestingFeatures";
@@ -73,7 +74,6 @@ import {
 import { weatherDaySky, worldsUnderWeather } from "./weatherSky";
 import { TOWER_TYPE_SX } from "./towerType";
 import TimeOfDayToggle from "./TimeOfDayToggle";
-import SoftIntroToggle from "../../softIntro/SoftIntroToggle";
 import ForcedBreakPicker from "./ForcedBreakPicker";
 import type { Language } from "../../types";
 import TowerCoverCard from "./TowerCoverCard";
@@ -209,8 +209,6 @@ const DROP_MIN_LIFT = 8;
  * under its arrow; a taller one stands in front of it and covers it.
  */
 const TAP_HINT_FIT_CARDS = 40;
-/** The cards cue's glide down to the cards page (CardsCue → `toCards`), ms. */
-const TO_CARDS_MS = 650;
 
 /** The study header's title: the deck, named with its world off the main one. */
 const studyTitleFor = (world: TowerWorldId) =>
@@ -226,6 +224,12 @@ const TOWER_UI_GONE_AT = 0.4;
 const SESSION_FADE_FROM = 0.6;
 /** Clouds and wind are gone this far into the dive: their drifts are planned in the fixed view. */
 const SKY_TRAFFIC_GONE_AT = 0.3;
+/**
+ * The night wash's fade over the dive (and back over the climb) is drawn in this many steps
+ * of `e`: each step is a new wash, which re-washes the scene's palette. 24 steps of a 7% cast
+ * is far below a visible jump.
+ */
+const WASH_FADE_STEPS = 24;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /**
@@ -419,9 +423,9 @@ function readTowerWorldState(state: unknown): TowerWorldId | undefined {
 const NOTEBOOK_EXIT: GameExit = { path: "/", label: "Deck Tower", state: { towerWorld: "writing" } };
 
 /**
- * Where Add New Cards' Back leads when it was opened from the main world's mini sort platform
- * (docs/DECK_TOWER.md § "The sort platform"): back here, on main. ancp reads it as
- * `state.exitTo` (AddNewCardsPage → `leave`).
+ * Where Add Cards' Back leads when it was opened from the main world's mini sort platform
+ * (docs/DECK_TOWER.md § "The sort platform"): back here, on main. acp reads it as
+ * `state.exitTo` (AddCardsPage → `leave`).
  */
 const SORT_EXIT: GameExit = { path: "/", label: "Deck Tower", state: { towerWorld: "core" } };
 
@@ -444,11 +448,11 @@ const DeckTowerPage: React.FC = () => {
     // sheets. Undefined while loading, on failure, with the `writingNotebook` flag off or
     // for a non-Chinese account — no stack is drawn then.
     const notebookTotal = useNotebookTotal();
-    // Add New Cards (ancp) for the account's language — the main world's mini sort platform opens it.
+    // Add Cards (acp) for the account's language — the main world's mini sort platform opens it.
     const { sortPath } = useDiscoverNavigation();
     // "Cards low": the core Learning count (U+T+C, cooling or not — NOT the tower's own
     // off-cooldown figure) under LEARN_NOW_LOW_THRESHOLD. It makes the main world's mini
-    // sort platform hop (`hopping` below), nudging the learner toward Add New Cards.
+    // sort platform hop (`hopping` below), nudging the learner toward Add Cards.
     // Keyed on `ok`, not `loaded`: a failed fetch reads as 0 and must not make it jump.
     // (`learningLow` itself is derived below, once `mastered` is in scope.)
     const coreCategoryCounts = useCategoryCounts("core");
@@ -783,11 +787,18 @@ const DeckTowerPage: React.FC = () => {
         headerLayerRef,
         cardsPageRef,
         isPlaced: (top) => placedScrollTop.current !== null && Math.abs(top - placedScrollTop.current) < 1,
+        // The platform stop and every glide frame (the cue, the up arrow, the snap zone).
+        // The altitude to keep is wherever it put the view: 0 on the platform, negative in
+        // the cards page.
         onPlaced: (top) => {
             placedScrollTop.current = top;
-            climb.current = 0;
+            const el = scrollerRef.current;
+            climb.current = el ? heightAbovePlatform(el) : 0;
         },
         enabled: !study.active,
+        // The snap stays out of the way of the page's own camera moves (the same set that
+        // blocks a pan — `panBlocked` below, which is declared after this hook).
+        snapEnabled: !(pan.busy || swap.busy || resize.busy || study.active),
     });
     // The header layer remounts when a session's camera comes back up: re-apply the push.
     useLayoutEffect(() => {
@@ -821,6 +832,8 @@ const DeckTowerPage: React.FC = () => {
         if (!el) return;
         const keepClimb = keepClimbFor.current === scene.viewBox;
         keepClimbFor.current = null;
+        // A refit places the scroller itself: a glide still running would drag it off.
+        cardsScroll.cancelGlide();
         const line = platformScrollTop(el);
         if (scrolledWorld.current !== worldId || keepClimb || climb.current < 0) {
             scrolledWorld.current = worldId;
@@ -982,6 +995,7 @@ const DeckTowerPage: React.FC = () => {
     useEffect(() => {
         const el = scrollerRef.current;
         if (cameraKey === undefined || !el) return;
+        cardsScroll.cancelGlide(); // the camera owns the scroller for its move
         const from = el.scrollTop;
         const to = cameraTarget.current;
         const settle = () => {
@@ -1005,43 +1019,8 @@ const DeckTowerPage: React.FC = () => {
         };
         raf = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(raf);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- cardsScroll's methods read refs
     }, [cameraKey, cameraMs]);
-
-    // ── The cards cue's glide (CardsCue) ──────────────────────────────────────────
-    // Down to the cards page, its title row at the screen's top. A tween rather than
-    // `scrollTo({ behavior: "smooth" })`: a smooth scroll crosses the platform line with no
-    // finger down, which the platform stop would catch. Each frame is marked as the page's
-    // own (`placedScrollTop`), the way the resize camera above marks its frames, so the stop
-    // lets it through.
-    const toCardsRaf = useRef(0);
-    useEffect(() => () => cancelAnimationFrame(toCardsRaf.current), []);
-    const toCards = useCallback(() => {
-        const el = scrollerRef.current;
-        const cards = cardsPageRef.current;
-        if (!el || !cards) return;
-        const from = el.scrollTop;
-        const to = Math.min(cards.offsetTop, el.scrollHeight - el.clientHeight);
-        const place = (top: number) => {
-            el.scrollTop = top;
-            placedScrollTop.current = el.scrollTop;
-        };
-        cancelAnimationFrame(toCardsRaf.current);
-        if (prefersReducedMotion() || Math.abs(to - from) < 1) {
-            place(to);
-            climb.current = heightAbovePlatform(el);
-            return;
-        }
-        const start = performance.now();
-        const tick = (now: number) => {
-            const u = Math.min(1, (now - start) / TO_CARDS_MS);
-            const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; // ease-in-out cubic
-            place(from + (to - from) * eased);
-            if (u < 1) toCardsRaf.current = requestAnimationFrame(tick);
-            else climb.current = heightAbovePlatform(el);
-        };
-        toCardsRaf.current = requestAnimationFrame(tick);
-        // Refs only.
-    }, []);
 
     // ── Moving between worlds ────────────────────────────────────────────────────
     // Not while this world's deck swap runs: its fall is measured for the scene on screen.
@@ -1121,6 +1100,17 @@ const DeckTowerPage: React.FC = () => {
     // the sky (and its stars) stays as it was for the whole session — it does not follow
     // the camera's dive or climb (docs/DECK_TOWER.md § "Studying the tower").
     const studyAltitudeY = study.active ? study.startMidY : null;
+    // The night wash fades out on the dive and back in on the climb, so the count card the
+    // camera lands on is already unwashed when the (never-washed) flp card takes its place —
+    // no blue seam at night (docs/DECK_TOWER.md § Time of day → "The wash"). Stepped to
+    // 1/WASH_FADE_STEPS of the dive, because a new wash identity re-washes IsoScene's whole
+    // palette; held at NO_WASH while the camera is down (e = 1). Day's NO_WASH passes through
+    // `blendWash` as the identity, so by day this costs nothing.
+    const washFadeStep = Math.round(clamp01(e) * WASH_FADE_STEPS);
+    const sceneWash = useMemo(
+        () => (washFadeStep === 0 ? light.wash : blendWash(light.wash, NO_WASH, washFadeStep / WASH_FADE_STEPS)),
+        [light.wash, washFadeStep]
+    );
 
     // ── Tap to Start (docs/DECK_TOWER.md § "Tap to Start") ───────────────────────
     // Only the Learning tower starts a session — the flp deals exactly that deck: this
@@ -1207,9 +1197,6 @@ const DeckTowerPage: React.FC = () => {
                 // top card. White, so it reads on the sky and on space.
                 title={world.title}
                 headerTitleColor={skyInk}
-                // The soft-introduction viewer (tester-only, renders nothing for learners) for the
-                // corner fixtures' floor prints (docs/SOFT_INTRODUCTION.md § 5).
-                headerExtraActions={<SoftIntroToggle color={skyInk} />}
                 headerTrailingActions={<DeckTowerAvatar />}
                 // Lift the header above the scroller (zIndex 1) so its flame and avatar are
                 // tappable — see the two-layer note below.
@@ -1344,11 +1331,15 @@ const DeckTowerPage: React.FC = () => {
                             (towerScroll). */}
                         <Box
                             className={TOWER_SECTION_CLASS}
-                            sx={{ minHeight: "100%", flexShrink: 0, display: "flex", flexDirection: "column" }}
+                            // `position: relative` anchors the bottom row of cues (WorldIndicator,
+                            // CardsCue), which live IN this section so they scroll with the
+                            // platform rather than staying fixed to the screen.
+                            sx={{ position: "relative", minHeight: "100%", flexShrink: 0, display: "flex", flexDirection: "column" }}
                         >
                         <IsoScene
                             proj={sceneProj}
-                            wash={light.wash}
+                            // Fades out with the dive (sceneWash above).
+                            wash={sceneWash}
                             viewBox={scene.viewBox}
                             className={TOWER_SCENE_CLASS}
                             // `transform` is the world pan's slide (stage widths); a held swipe's
@@ -1402,6 +1393,10 @@ const DeckTowerPage: React.FC = () => {
                                 dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
                                 pawns={swap.pawns}
                                 cardsOnTower={cardsOnTower}
+                                // Mid-swap the build-up is a real grow from 0; otherwise the
+                                // count is real once loaded and the snap to full height has
+                                // happened (progress leaves 0 the render after counts arrive).
+                                towerCountKnown={swap.busy || (mayGrow(worldId) && stackProgress > 0)}
                                 summitCards={resize.toCards !== null ? Math.min(cardsOnTower, resize.toCards) : cardsOnTower}
                                 summitHeld={study.active}
                                 summitSpot={summitSpot}
@@ -1437,8 +1432,8 @@ const DeckTowerPage: React.FC = () => {
                                         ? {
                                               progress: stackProgress,
                                               hopping: learningLow,
-                                              ariaLabel: "Add new cards",
-                                              // In with the circle from the platform; ancp's Back closes it onto
+                                              ariaLabel: "Add cards",
+                                              // In with the circle from the platform; acp's Back closes it onto
                                               // the same point and returns here (`SORT_EXIT`).
                                               onTap: (at) =>
                                                   slideNavigate(sortPath, { circleFrom: at, state: { exitTo: SORT_EXIT, circleFrom: at } }),
@@ -1480,6 +1475,21 @@ const DeckTowerPage: React.FC = () => {
                         </IsoScene>
                         {/* The band under the footer slab (see the scroller's note). */}
                         <Box ref={footerSpacerRef} className="deck-tower-page__footer-spacer" sx={{ height: SLAB_FOOTER_TOTAL_HEIGHT, flexShrink: 0 }} />
+                        {/* THE BOTTOM ROW OF CUES — part of the scrolling content, not fixed to the
+                            screen: positioned in this section (its bottom = the footer spacer's
+                            bottom), so at rest they sit just above the footer slab, and they move
+                            with the platform (up and away as the cards page rises, down out of
+                            view as a tall tower is climbed). Hidden while the camera dashes or a
+                            deck swap runs (neither swipe nor arrow works then). */}
+                        {leftWorld && (
+                            <WorldIndicator side="left" name={TOWER_WORLDS[leftWorld].name} onTap={() => goTo(leftWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
+                        )}
+                        {rightWorld && (
+                            <WorldIndicator side="right" name={TOWER_WORLDS[rightWorld].name} onTap={() => goTo(rightWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
+                        )}
+                        {/* The way down to the cards page, between the two world arrows; it also
+                            fades as the cards page rises. */}
+                        <CardsCue scrollerRef={scrollerRef} onTap={cardsScroll.toCards} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
                         </Box>
 
                         {/* THE CARDS PAGE — the world's card library under the platform
@@ -1540,7 +1550,8 @@ const DeckTowerPage: React.FC = () => {
                             // The studied tower's deck: its top card's head band rides along. Only
                             // Learning can be studied (onStackTap), so that is the fallback.
                             deck={TOWER_DECKS[study.world ? swaps[study.world].towerDeck : "learn-now"]}
-                            wash={light.wash}
+                            // The scene's own (dive-faded) wash: unwashed while down, like the flp card under it.
+                            wash={sceneWash}
                         />
                     )}
 
@@ -1549,17 +1560,6 @@ const DeckTowerPage: React.FC = () => {
                         <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
                     )}
 
-                    {/* The way to the neighbouring worlds. Hidden while the camera dashes or a
-                        deck swap runs (neither swipe nor arrow works then). */}
-                    {leftWorld && (
-                        <WorldIndicator side="left" name={TOWER_WORLDS[leftWorld].name} onTap={() => goTo(leftWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
-                    )}
-                    {rightWorld && (
-                        <WorldIndicator side="right" name={TOWER_WORLDS[rightWorld].name} onTap={() => goTo(rightWorld)} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
-                    )}
-                    {/* The way down to the cards page, between the two world arrows; it fades
-                        as the cards page rises. */}
-                    <CardsCue scrollerRef={scrollerRef} onTap={toCards} hidden={panBlocked} bottom={SLAB_FOOTER_TOTAL_HEIGHT} color={skyInk} />
                 </Box>
                 {focusLevers.core.dialog}
                 {focusLevers.reading.dialog}

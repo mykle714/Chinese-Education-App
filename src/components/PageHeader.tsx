@@ -38,11 +38,16 @@ import { SAFE_TOP } from "../theme/safeArea";
 // inline overrides, and those overrides are not noise: they track how much else is
 // on the header line.
 //
-//   24px  hub          nothing but a title
-//   21px  node         a back chevron shares the line  (Games, Reader, Arena, …)
-//   18px  dense        a back chevron AND a crowded right slot (Card Detail, Learn —
-//                      four actions each, where 21px starts colliding)
-//   17px  leaf         `.lhd`, the game/settings drill-in header
+//   28px  hub          nothing but a title
+//   24px  node         a back chevron shares the line  (Games, Reader, Arena, …)
+//   21px  dense        a back chevron AND a crowded right slot (Card Detail, Learn —
+//                      four actions each, where 24px starts colliding)
+//   20px  leaf         `.lhd`, the game/settings drill-in header
+//
+// SCALE (2026-11-05): every header size AND every right-slot primitive below (icons,
+// chips, meta label, avatar, flame) was scaled up ~15% together from the design's
+// 24/21/18/17 so the header reads larger without changing its hierarchy. Keep the
+// ratios when retuning — the title steps and the control sizes were moved as one.
 //
 // `dense` is the one that must be asked for. The other three fall out of props the
 // caller is already passing (see `resolvedSize`), because they follow from the
@@ -71,13 +76,26 @@ interface SizeSpec {
     rightGap: number;
 }
 
+// ── Right-slot control sizes (scaled with the titles, 2026-11-05) ──────────────
+/** A HeaderIconButton's glyph, px (19 before the scale-up). */
+const HEADER_ICON_PX = 22;
+/** The `outlined` HeaderIconButton's box, px (32 before). */
+const HEADER_OUTLINED_BTN_PX = 36;
+/** The leaf header's drill-in `keyboard_arrow_down` chevron, px (22 before). */
+const DOWN_CHEVRON_PX = 25;
+/** HeaderMetaLabel's mono caps, px (10.5 before). */
+const HEADER_META_FONT_PX = 12;
+/** The filled mono chips' (HeaderToggleChip, HeaderCycleChip) padding and corner ("6px 8px" / 7px before). */
+const HEADER_CHIP_PADDING = "7px 9px";
+const HEADER_CHIP_RADIUS = "8px";
+
 const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
     hub: { padTop: HUB_HEADER_PAD_TOP_PX, padBottom: 0, padX: HUB_HEADER_PAD_X_PX, titleSize: HUB_HEADER_TITLE_PX, titleTracking: HUB_HEADER_TITLE_TRACKING, rightGap: 11 },
-    node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 21, titleTracking: "-0.02em", rightGap: 11 },
+    node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
     dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: 10 },
     // ⚠️ The leaf band is DELIBERATELY deeper than the design's `21px 18px 0`
-    // (2026-09-05). At 17px the leaf title is the smallest in the app, so the same
+    // (2026-09-05). At 17px (now 20px) the leaf title is the smallest in the app, so the same
     // padding that reads as generous under a 24px hub title read as cramped here —
     // the header looked short. The extra 6px above and 8px below buy the small title
     // the same optical breathing room the large ones already had, WITHOUT growing the
@@ -85,7 +103,7 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
     // carry). The bottom padding matters most: it is additive to whatever top gutter
     // the body brings (Settings' first `.set` contributes only 14px), so before this
     // the title sat almost against the first card.
-    leaf: { padTop: 27, padBottom: 8, padX: 18, titleSize: 17, titleTracking: "-0.015em", rightGap: 9 },
+    leaf: { padTop: 27, padBottom: 8, padX: 18, titleSize: 20, titleTracking: "-0.015em", rightGap: 9 },
 };
 
 /**
@@ -236,7 +254,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                     <Icon
                         className="page-header__back-icon"
                         name={arrowDirection === "left" ? BACK_ARROW_ICON : "keyboard_arrow_down"}
-                        size={arrowDirection === "left" ? BACK_ARROW_PX : 22}
+                        size={arrowDirection === "left" ? BACK_ARROW_PX : DOWN_CHEVRON_PX}
                         color={titleColor}
                     />
                     {titleNode}
@@ -314,7 +332,7 @@ export const HeaderMetaLabel: React.FC<{ children: React.ReactNode; color?: stri
         className={className ? `page-header__meta ${className}` : "page-header__meta"}
         sx={{
             fontFamily: FONTS.label,
-            fontSize: 10.5,
+            fontSize: HEADER_META_FONT_PX,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
             color,
@@ -329,11 +347,11 @@ export const HeaderMetaLabel: React.FC<{ children: React.ReactNode; color?: stri
 /**
  * An icon action in the right slot, in the design's TWO skins:
  *
- *   - `"outlined"` (`.hd .btn`) — a 32×32 rounded-11 outlined box. Used on HUB
+ *   - `"outlined"` (`.hd .btn`) — a 36×36 rounded-12 outlined box (32×32 before the 2026-11-05 scale-up). Used on HUB
  *     headers (see the Account artboard). The outline is the point there: a hub
  *     header carries a single lone action on bare paper, and an unboxed glyph has
  *     nothing to separate it from the page.
- *   - `"bare"` (default) — the glyph alone at 19px. Used on leaf/game and drill-in
+ *   - `"bare"` (default) — the glyph alone at 22px (`HEADER_ICON_PX`). Used on leaf/game and drill-in
  *     headers, where 2–4 actions sit in a row and boxing each one would build the
  *     toolbar strip the redesign just removed.
  */
@@ -351,13 +369,21 @@ export const HeaderIconButton: React.FC<{
      */
     outlineColor?: string;
     className?: string;
-}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", outlineColor = COLORS.border, className }) => (
+    /** Hover tooltip (the native `title`), for an action whose label needs more words than `label` (UserProfilePage's challenge block). */
+    title?: string;
+    /** Set for a TOGGLE (UserProfilePage's challenge block): drives `aria-pressed`. Leave undefined for a plain action. */
+    pressed?: boolean;
+    /** Glyph fill: 0 = outlined (default), 1 = filled — e.g. a toggle's on state, so it does not rely on colour alone. */
+    fill?: 0 | 1;
+}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", outlineColor = COLORS.border, className, title, pressed, fill = 0 }) => (
     <Box
         className={className ? `page-header__btn ${className}` : "page-header__btn"}
         onClick={disabled ? undefined : onClick}
         role="button"
         aria-label={label}
         aria-disabled={disabled || undefined}
+        aria-pressed={pressed}
+        title={title}
         sx={{
             display: "flex",
             alignItems: "center",
@@ -366,11 +392,11 @@ export const HeaderIconButton: React.FC<{
             cursor: disabled ? "default" : "pointer",
             opacity: disabled ? 0.4 : 1,
             ...(variant === "outlined"
-                ? { width: 32, height: 32, borderRadius: "11px", border: `1px solid ${outlineColor}` }
+                ? { width: HEADER_OUTLINED_BTN_PX, height: HEADER_OUTLINED_BTN_PX, borderRadius: "12px", border: `1px solid ${outlineColor}` }
                 : {}),
         }}
     >
-        <Icon name={icon} size={19} color={color} />
+        <Icon name={icon} size={HEADER_ICON_PX} color={color} fill={fill} />
     </Box>
 );
 
@@ -410,10 +436,10 @@ export const HeaderToggleChip: React.FC<{
             alignItems: "center",
             gap: "5px",
             fontFamily: FONTS.mono,
-            fontSize: 10,
+            fontSize: CYCLE_CHIP_FONT_PX,
             lineHeight: LEADING.none,
-            padding: "6px 8px",
-            borderRadius: "7px",
+            padding: HEADER_CHIP_PADDING,
+            borderRadius: HEADER_CHIP_RADIUS,
             whiteSpace: "nowrap",
             backgroundColor: active ? COLORS.onSurface : COLORS.grey,
             color: active ? COLORS.white : COLORS.iconColor,
@@ -421,7 +447,7 @@ export const HeaderToggleChip: React.FC<{
             opacity: disabled ? 0.4 : 1,
         }}
     >
-        {startIcon && <Icon name={startIcon} size={13} color={active ? COLORS.white : COLORS.iconColor} />}
+        {startIcon && <Icon name={startIcon} size={CYCLE_CHIP_ICON_PX} color={active ? COLORS.white : COLORS.iconColor} />}
         {children}
     </Box>
 );
@@ -484,7 +510,7 @@ const CYCLE_CHIP_SLACK_CH = 4;
 const CYCLE_CHIP_ICON_GAP_PX = 5;
 
 /** The leading glyph's size, in px. Fixed: it is the chip's anchor, not part of the text. */
-const CYCLE_CHIP_ICON_PX = 13;
+const CYCLE_CHIP_ICON_PX = 15;
 
 /**
  * What a leading icon costs the chip's fixed width: the glyph plus the gap before
@@ -626,8 +652,8 @@ export const HeaderCycleChip: React.FC<{
             // font here would make the "fixed" width move with the label.
             fontSize: CYCLE_CHIP_FONT_PX,
             lineHeight: LEADING.none,
-            padding: isBare ? 0 : "6px 8px",
-            borderRadius: isBare ? 0 : "7px",
+            padding: isBare ? 0 : HEADER_CHIP_PADDING,
+            borderRadius: isBare ? 0 : HEADER_CHIP_RADIUS,
             whiteSpace: "nowrap",
             // `ch` against the mono face is one character advance, so `widthCh` chars
             // is EXACTLY the longest label with zero slack — enough for subpixel

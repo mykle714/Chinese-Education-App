@@ -254,7 +254,6 @@ const IsoModeSwitch: React.FC<IsoModeSwitchProps> = ({ at, surface, flip, labels
                                             fontWeight={WEIGHT.bold}
                                             letterSpacing={0.03}
                                             textAnchor="middle"
-                                            dominantBaseline="central"
                                             fill={palette.ink}
                                             opacity={inkOpacity}
                                         >

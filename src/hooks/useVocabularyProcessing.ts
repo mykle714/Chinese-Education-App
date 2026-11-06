@@ -2,18 +2,8 @@ import { useState, useCallback } from "react";
 import { useAuth } from "../AuthContext";
 import { processDocumentForTokens, estimateTokenCount } from "../utils/tokenUtils";
 import { fetchVocabEntriesByTokens } from "../utils/vocabApi";
-import type { VocabEntry, DictionaryEntry } from "../types";
+import type { VocabEntry, DictionaryEntry, Text } from "../types";
 import { vocabLog } from '../utils/vocabDebug';
-
-// Text interface for TypeScript
-interface Text {
-    id: string;
-    title: string;
-    description: string;
-    content: string;
-    createdAt: string;
-    characterCount: number;
-}
 
 interface UseVocabularyProcessingReturn {
     loadedPersonalCards: VocabEntry[];

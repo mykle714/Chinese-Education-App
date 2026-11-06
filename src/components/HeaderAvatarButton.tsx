@@ -17,7 +17,7 @@ import { SHADOW } from "../theme/shadows";
 // page was deleted on 2026-11-04, which is why this lives in src/components rather than
 // in the deckTower feature folder.
 //
-// Shape: a CIRCLE, 40px, resting on `SHADOW.float` so it reads against td's sky and
+// Shape: a CIRCLE, 46px (40px until the 2026-11-05 header scale-up), resting on `SHADOW.float` so it reads against td's sky and
 // space backdrops. This is a deliberate departure from the list avatar (FriendPersonRow,
 // AccountSheet), which is a rounded square: here it is a lone header control, not a
 // row's leading mark.
@@ -35,7 +35,7 @@ import { SHADOW } from "../theme/shadows";
 //
 // Docs: docs/DECK_TOWER.md (§ "Layers"), docs/DAILY_MINUTE_BANKING.md (glow),
 // docs/SHELF_REDESIGN.md (flame position).
-const AVATAR_SIZE_PX = 40;
+const AVATAR_SIZE_PX = 46;
 /** Resting shadow; the banking glow, when lit, is appended to it. */
 const REST_SHADOW = SHADOW.float;
 /** Initial's font size and the icon's inset, as shares of the circle (13px / 4px at 32px). */

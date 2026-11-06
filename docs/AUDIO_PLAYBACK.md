@@ -20,7 +20,7 @@ Two ways in, one setting:
 - **`/settings` → Narration** — three `OptionRow`s that EXPLAIN the states (their
   subtitles have room to say "pauses music" and "follows the silent switch").
 - **`AudioModeChip`** — one header chip that CHANGES them mid-study: each tap
-  advances off → passthrough → media → off. Rendered on the flp, ancp, Bubble Match,
+  advances off → passthrough → media → off. Rendered on the flp, acp, Bubble Match,
   Hydra Bubbles, Match Speed, Word Search, Bucket Drop and Memory Map headers.
 
 Both go through `useTTSSettings`, so they cannot disagree, and both take their order
@@ -82,15 +82,15 @@ and label in `ink`, bundled by a thin 1px pill outline in that same ink
 (`pageHeaderSizing.ts` → `outlinedChipSx`, also the skin of `PageHeader` → `HeaderActionChip`),
 12 px type / 15 px glyph (`OUTLINED_CHIP_TEXT_PX` / `OUTLINED_CHIP_ICON_PX`), the label in
 975 Maru SC (`FONTS.cjk`, the app's Chinese face, whose slices cover Latin) at regular 400 —
-the face's only cut, pinned so a bold ancestor (the ancp header layer) cannot make the browser
+the face's only cut, pinned so a bold ancestor (the acp header layer) cannot make the browser
 synthesise bold. With no fill to light
 up, the label alone carries the state. `ink` is the only per-surface choice: it defaults to
 `COLORS.iconColor` (--ink2, the header's icon ink) on paper; the Deck Tower study header passes
-white for the sky (docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the ancp
+white for the sky (docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the acp
 its ground look's `ink` (docs/SORT_CARDS_REQUIREMENTS.md). On a game's accent ground,
 `gameSurfaceSx` skips the bare chip in its filled-toggle rules (`:not(.page-header__toggle--bare)`)
 and re-inks its glyph, label and outline to full ink, like the header's other icons.
-History: until 2026-11-04 every surface but the tower and the ancp drew a filled chip in the
+History: until 2026-11-04 every surface but the tower and the acp drew a filled chip in the
 mono face — grey when muted, mid blue (`COLORS.bluM`, `tone="blu"`) when audible. Instrument
 Sans was tried for the label on 2026-11-04 and reverted to 975 Maru the same day.
 *Code:* `src/components/AudioModeChip.tsx` (`ink`, `sx`),
@@ -137,7 +137,7 @@ button is.
 Every automatic-narration effect is gated on `autoplay`, which made putting
 `tts.autoplay` in such an effect's **dep list** look harmless — but it re-runs the
 effect on the off → on edge, so switching to `default` (or `media`) narrated the card
-already on screen, and on the ancp replayed the entire on-deck pack. Both effects now
+already on screen, and on the acp replayed the entire on-deck pack. Both effects now
 key on **content identity only** (`currentEntry?.id`, `currentPack?.packKey`).
 
 The opposite direction still has to work — turning audio off must stop whatever is
@@ -154,7 +154,7 @@ doing its job.
 
 *Code:* `src/hooks/useTTS.ts` → the `wasAutoplayOnRef` effect;
 `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the
-`chineseVisible` narration effect; `src/features/discover/AddNewCardsPage.tsx` → the
+`chineseVisible` narration effect; `src/features/discover/AddCardsPage.tsx` → the
 pack autoplay effect.
 
 `HeaderCycleChip` (`src/components/PageHeader.tsx`) is its skin: the same `.lhd .tg`
@@ -320,7 +320,7 @@ whole contract:
 | `autoSpeak(entry)` / `autoSpeakSentence(text, pinyin)` | the app decided to speak | **yes** — no-op when autoplay is off |
 
 The gate lives inside the hook, so a call site never re-checks the setting.
-Automatic sites today: the flp card-flip narration, the ancp on-deck pack
+Automatic sites today: the flp card-flip narration, the acp on-deck pack
 sequence, Word Search's find/replay plays, Memory Map's answer feedback and per-prompt word
 (`MemoryMapStage` — the prompt waits for the answer narration to end rather than cancelling it), Speed
 Reading's per-round clue (`SpeedReadingStage` → `autoSpeak`, distinct from the
@@ -349,7 +349,7 @@ when **this** instance has an utterance in flight (`activeProviderRef` is set fo
 whole of `speakText` — fetch and playback — and cleared in its `finally`). A page that
 leaves mid-word still stops its own word; a component that never spoke stops nothing.
 
-It used to cancel unconditionally, and the ancp lost the **first word of its first
+It used to cancel unconditionally, and the acp lost the **first word of its first
 pack** in dev (2026-09-28): the header `AudioModeChip` mounts in the same commit the
 pack lands in, StrictMode's dev remount ran the chip's cleanup *after* the page's
 autoplay effect had started word one, and the cancel bumped the provider generation
@@ -361,10 +361,10 @@ entirely; the ownership check is what protects every other pairing.
 
 ### A manual press ends an autoplay sequence
 
-A multi-word autoplay run (the ancp pack) awaits each word in turn. A speaker press
+A multi-word autoplay run (the acp pack) awaits each word in turn. A speaker press
 mid-run cancels the current word, whose promise resolves — and the loop's *next*
 `autoSpeakSentence` would then cancel the word the learner asked for. So every manual
-narration on the ancp (card speaker buttons and the eip's) first ends the run; the
+narration on the acp (card speaker buttons and the eip's) first ends the run; the
 rest of the pack is not resumed afterwards.
 
 The run leaves a **600 ms gap** between words (`AUTOPLAY_GAP_MS`), so the pack is
@@ -373,7 +373,7 @@ so a press that lands during the silence still ends the run before the next word
 
 ### A word's promise settles when its sound ends, not on a wall-clock guess
 
-A sequenced caller (the ancp gap above) is only as good as `speak()`'s promise, and
+A sequenced caller (the acp gap above) is only as good as `speak()`'s promise, and
 `CloudTTSProvider` settles that promise with a **watchdog** as well as the
 end-of-clip event, because the end event is not guaranteed to fire (backgrounding, an
 interrupted context). The watchdog is timed from when **sound starts**, not from when
@@ -392,7 +392,7 @@ was the "second word plays too soon after a slow first word" bug.
 
 *Code:* `src/services/tts/CloudTTSProvider.ts` → `playViaElement`, `playViaWebAudio`.
 
-*Code:* `src/features/discover/AddNewCardsPage.tsx` → `packAutoplayRunRef`,
+*Code:* `src/features/discover/AddCardsPage.tsx` → `packAutoplayRunRef`,
 `AUTOPLAY_GAP_MS`, `stopPackAutoplay`, `handlePlayCardAudio`, `handleEipSpeak`, `handleEipSpeakSentence`,
 and the pack autoplay effect.
 
@@ -464,7 +464,7 @@ user tapped first, typically long before anything went wrong. After one
 interruption the context stayed suspended, every `speak()` returned silently from
 `playViaWebAudio`'s not-running guard, and **the only cure was reloading the app**.
 Game blips kept working throughout, which is the diagnostic signature. A
-redundant second latch (`audioUnlockedRef` in `AddNewCardsPage`) was removed in the
+redundant second latch (`audioUnlockedRef` in `AddCardsPage`) was removed in the
 same pass.
 
 Two supporting details:
@@ -672,7 +672,7 @@ Three separate flags collapsed into `autoplay`:
 |---|---|---|
 | `TTSSettings.enabled` (master mute) | `tts.settings` | deleted; `false` → `autoplay: false` |
 | `FlashcardLearnSettings.autoplayChinese` (flp + Bubble Match + Hydra + Match Speed) | `flashcard.learn-settings` | deleted; `false` → `autoplay: false` |
-| `DiscoverSettings.autoplay` (ancp) | `discover.settings` | hook **deleted** (it held nothing else); `false` → `autoplay: false` |
+| `DiscoverSettings.autoplay` (acp) | `discover.settings` | hook **deleted** (it held nothing else); `false` → `autoplay: false` |
 
 Any explicit `false` migrates to `autoplay: false` — the closest available
 meaning. Note it is not identical for the old master switch, whose `false` also
@@ -686,7 +686,7 @@ parsed object).
 **The quick toggles survived, became three-state, and consolidated into the header.** Every surface
 that offered an autoplay control still offers one, now reading and writing the
 unified flag — and all of them are in the **page header** as an `autoplay` chip:
-flp (`FlashcardsLearnHeader`), ancp (`AddNewCardsPage` header actions), Bubble Match
+flp (`FlashcardsLearnHeader`), acp (`AddCardsPage` header actions), Bubble Match
 and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
 Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
 blue matches and review rungs, so it needed a mid-play mute like the rest) and
@@ -738,7 +738,7 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
   `VOICE_SAMPLE` and the voice section (§ 6)
 - `server/services/OnDeckVocabService.ts` — `prewarmAudio`, default-voice only (§ 6)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
-- `src/features/discover/AddNewCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
+- `src/features/discover/AddCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
   `stopPackAutoplay` (§ 4)
 - `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites

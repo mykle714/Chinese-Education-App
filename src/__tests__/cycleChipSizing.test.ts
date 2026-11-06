@@ -28,10 +28,13 @@ describe('cycleChipFontPx', () => {
   it('never shrinks past the floor, however long the label', () => {
     // Past the floor the chip must widen instead — an unreadable label is not a saving.
     const tiny = cycleChipFontPx('extraordinarily');
-    expect(tiny).toBe(8);
+    expect(tiny).toBe(9); // CYCLE_CHIP_MIN_FONT_PX
     expect(cycleChipFontPx('x'.repeat(60))).toBe(tiny);
   });
 });
+
+// 'whisper' (7 chars) at the 9px floor, in ch of the full CYCLE_CHIP_FONT_PX (11.5px) face.
+const WHISPER_CH = (7 * 9) / CYCLE_CHIP_FONT_PX;
 
 describe('cycleChipWidthCh', () => {
   it('is the longest label when nothing shrank', () => {
@@ -39,8 +42,9 @@ describe('cycleChipWidthCh', () => {
   });
 
   it('charges a shrunken label only what it occupies', () => {
-    // 'whisper' is 7 characters but renders at 8/10 size, so it costs 5.6ch, not 7.
-    expect(cycleChipWidthCh(['whisper'])).toBeCloseTo(5.6, 5);
+    // 'whisper' is 7 characters but renders at the 9px floor of an 11.5px face, so it
+    // costs 7 × 9/11.5 ≈ 5.48ch, not 7.
+    expect(cycleChipWidthCh(['whisper'])).toBeCloseTo(WHISPER_CH, 5);
   });
 
   it('gives two label sets with the same longest length the same width', () => {
@@ -52,7 +56,7 @@ describe('cycleChipWidthCh', () => {
   it('is driven by the widest RENDERED label, not the longest string', () => {
     // 'shout' (5 chars, full size) is wider than a label long enough to hit the floor
     // would be short of... so the check that matters is that shrinking can reorder them.
-    expect(cycleChipWidthCh(['whisper', 'shout'])).toBeCloseTo(5.6, 5);
-    expect(cycleChipWidthCh(['whisper', 'shouting'])).toBeGreaterThan(5.6);
+    expect(cycleChipWidthCh(['whisper', 'shout'])).toBeCloseTo(WHISPER_CH, 5);
+    expect(cycleChipWidthCh(['whisper', 'shouting'])).toBeGreaterThan(WHISPER_CH);
   });
 });

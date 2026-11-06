@@ -64,10 +64,6 @@ router.patch('/api/vocabEntries/:id/iconLayout', authenticateToken, handle(vocab
 // body: { selectedSense: string | null }. See docs/DEFINITION_CLUSTERS.md.
 router.patch('/api/vocabEntries/:id/selectedSense', authenticateToken, handle(vocabEntryController.updateSelectedSense, vocabEntryController));
 
-// Persist (or clear) the learner's own note for one vet row.
-// body: { note: string | null }. See docs/CARD_NOTES.md.
-router.patch('/api/vocabEntries/:id/note', authenticateToken, handle(vocabEntryController.updateNote, vocabEntryController));
-
 // No DELETE route: a card is never hard-deleted. Removing one from Learning demotes it
 // to 'provisional' (POST /api/vocabEntries/removeFromLibrary) so its history survives.
 

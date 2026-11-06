@@ -481,7 +481,7 @@ The gloss is the **dd, shown the way the eip header shows it** (owner, 2026-11-0
 eip logic"). A word with a real choice of sense (≥ 2 displayable clusters,
 `sortedSenseClusters`) lists **every sense's dd**, `·`-separated in picker order, with the
 learner's chosen sense (`vet.selectedSense` → `resolveSelectedSenseIndex`) underlined and
-the default starred — the segments come from `buildSenseSegments`
+the default and every commonality-4–5 sense starred (`isStarredSense`) — the segments come from `buildSenseSegments`
 (`src/components/senseListSegments.tsx`), shared with `EipEntryHeader` so the two cannot
 drift. A single-sense or unclustered word shows its plain dd (`MemoryMapWord.definition`,
 resolved server-side through `resolveDisplayDefinition`). Either way it honours the
@@ -1147,7 +1147,7 @@ worth knowing before touching `MemoryMapWorld`.
 Without it the pointer-event stream is cancelled on touch devices as soon as the browser
 starts arbitrating between the two gestures, and the symptom is precise: panning works
 with a mouse and does nothing at all on a phone. `useDrag` used alone does not need this
-— `AddNewCardsPage` binds a plain `useDrag` and pans fine — so the working precedent in
+— `AddCardsPage` binds a plain `useDrag` and pans fine — so the working precedent in
 the repo does not warn about it. **It is the combination that breaks.**
 
 **`target: viewportRef` is required because `eventOptions.passive: false` is.** Pinch and

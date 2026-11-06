@@ -8,7 +8,6 @@ import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
 import { ContentArea, MoreInfoPill } from "./styled";
 import { afterNextPaint } from "../../../utils/afterNextPaint";
 import { useEventCallback } from "../../../hooks/useEventCallback";
-import CardOpsRail from "./CardOpsRail";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { FC_FONT, TOWER_CARD_FLIP_MS } from "../constants";
 import { playBreakAway, playBreakReturn, playBreakToolsReturn } from "./gameBreak/breakMotion";
@@ -270,7 +269,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         handleSaveLayout,
         handleResetConfirmed,
         persistSelectedSense,
-        persistNote,
         undoAdv,
         redoAdv,
         pushAdvHistory,
@@ -568,26 +566,28 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         openEicSheet();
     };
 
-    // ── Card operations, off the card's own `•••` rail (CardOpsRail, artboard 21) ──
-    //
-    // The card note (vet.note, migration 155) is edited IN PLACE at the bottom of the
-    // answer face, so the page owns only "is the editor open". It lives here rather than
-    // inside CardNote because the same flag has to detach the card's drag/flip handlers
-    // (FlashCardSection), which the note component cannot reach. Opening it is the job of
-    // the card rail's `note` cell — which took the slot `delete` used to hold; deleting a
-    // card now lives on the cdp header and the shelf's multi-select. See docs/CARD_NOTES.md.
-    const [noteEditing, setNoteEditing] = useState(false);
-    // Close any open editor when the card changes underneath it (a mark, an undo, a drop).
-    // Without this the next card is promoted with an editor already open, seeded from a
-    // note the learner never asked to edit.
-    useEffect(() => { setNoteEditing(false); }, [currentEntry?.id]);
-    const handleSaveNote = useCallback((note: string | null) => {
-        setNoteEditing(false);
-        if (!currentEntry) return;
-        // Optimistic + background PATCH, with a rollback + toast on failure — the same
-        // session-override machinery the sense pick uses (useCardIconEditor.persistNote).
-        persistNote(currentEntry, note);
-    }, [currentEntry, persistNote]);
+    // ── Word tools: flip to the answer first ─────────────────────────────────
+    // Every word-tools button (`Write it`, `Compare`, `Customize`) acts on the ANSWER: the
+    // writing popup and Compare both show the word in full, and the fie edits the answer
+    // face's design. So a press while the question face is up first flips the card, the
+    // same as tapping it would — the learner sees the answer they are about to act on
+    // rather than having it revealed sideways by a popup. Fired from the rail's CAPTURE
+    // phase (WordToolsRail `onToolPress`), so it runs before `Write it`'s own handler,
+    // which lives inside PracticeWritingButton and cannot be wrapped.
+    const revealAnswer = useEventCallback(() => {
+        if (!isFlipped && !isAnimating) setIsFlipped(true);
+    });
+
+    // A Customize pressed on the question face has to wait out that flip before opening the
+    // fie: `enterEdit` measures the answer face's text blocks (measureDefaultTextCenters),
+    // and mid-flip they are rotated edge-on, so the seed positions would come out wrong.
+    // Keyed by the entry it was pressed for, so a card that changes underneath the wait
+    // (an undo, a fly-out) does not get the editor.
+    const pendingCustomizeRef = useRef<number | null>(null);
+    // The live front card's id, read by that delayed open (its closure would be stale).
+    const currentEntryIdRef = useRef<number | undefined>(undefined);
+    currentEntryIdRef.current = currentEntry?.id;
+    useEffect(() => () => { if (pendingCustomizeRef.current !== null) window.clearTimeout(pendingCustomizeRef.current); }, []);
 
     // ── Stable props for the memoised FlashCardSection ───────────────────────
     // FlashCardSection is React.memo'd so that page state the card does not read (the eip
@@ -608,21 +608,20 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         [cardTouchStart, cardTouchEnd, cardMouseDown],
     );
     const handleWritingCardClick = useEventCallback(() => writing.handleCardClick());
-    const handleCancelNote = useCallback(() => setNoteEditing(false), []);
-    const handleCustomizeCard = useEventCallback(() =>
-        enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null));
-    const handleEditNote = useCallback(() => setNoteEditing(true), []);
-    // The card's `•••` operations rail, memoised so it is not a fresh element every render.
-    const cardTopRail = useMemo(
-        () => (displayCurrentEntry && !writingMode ? (
-            <CardOpsRail
-                onCustomize={handleCustomizeCard}
-                onEditNote={handleEditNote}
-                disabled={editMode || isAnimating}
-            />
-        ) : undefined),
-        [displayCurrentEntry, writingMode, editMode, isAnimating, handleCustomizeCard, handleEditNote],
-    );
+    // `Customize` on the word-tools rail — opens the fie on the front card. Ignored while the
+    // card is flying (nothing safe to edit). See revealAnswer above for the flip-first wait.
+    const handleCustomizeCard = useEventCallback(() => {
+        if (isAnimating || editMode || !currentEntry) return;
+        const open = () => enterEdit(() => cardRef.current ? measureDefaultTextCenters(cardRef.current) : null);
+        if (isFlipped) { open(); return; }
+        // revealAnswer (capture phase) has already started the flip; open once it lands.
+        if (pendingCustomizeRef.current !== null) window.clearTimeout(pendingCustomizeRef.current);
+        const entryId = currentEntry.id;
+        pendingCustomizeRef.current = window.setTimeout(() => {
+            pendingCustomizeRef.current = null;
+            if (currentEntryIdRef.current === entryId) open();
+        }, TOWER_CARD_FLIP_MS);
+    });
 
     // The word-tools pills wear the tower's plate skin, sized down for it
     // (TOWER_RAIL_PILL_SIZE_SX). Memoised on the host's tones so the rail's sx is stable.
@@ -880,26 +879,28 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         />
                     </Box>
                 </Slide>
-                {/* WORD TOOLS — `Write it` and `Compare`, on the PAGE above the card and
-                    outside its boundary (`.wtl.top`, artboards 19–25). They act on the
-                    word, so they are not on the card's own `•••` rail (which is card
-                    operations only), and they are not at the bottom of the screen, which
-                    belongs to the thumb: the card is swiped there and the info panel is
-                    raised from there.
+                {/* WORD TOOLS — `Write it`, `Compare` and `Customize`, on the PAGE above
+                    the card and outside its boundary (`.wtl.top`, artboards 19–25). Not at
+                    the bottom of the screen, which belongs to the thumb: the card is swiped
+                    there and the info panel is raised from there. Any of them pressed on
+                    the question face flips the card first (revealAnswer).
 
                     Hidden while the icon editor is open — the fie toolbar overlays exactly
                     this band, and the card is locked anyway.
 
                     Hidden on the writing flp too: `Write it` is what the card already is,
-                    and `Compare` would show the characters before they are written. */}
+                    `Compare` would show the characters before they are written, and the
+                    writing face is not the word layout `Customize` edits. */}
                 {displayCurrentEntry && !editMode && !writingMode && (
                     <WordToolsRail
                         className="mobile-demo-word-tools"
                         entry={displayCurrentEntry}
                         onCompare={handleCompare}
+                        onCustomize={handleCustomizeCard}
+                        onToolPress={revealAnswer}
                         sx={{
                             marginTop: "18px", paddingLeft: "18px", paddingRight: "18px",
-                            // The pills are a fixed-width centred pair (towerPlate.ts).
+                            // The pills are a fixed-width centred group, wider than the card (towerPlate.ts).
                             ...TOWER_RAIL_SX,
                         }}
                         // The pills are the tower's floor-plate push buttons (towerPlate.ts).
@@ -955,12 +956,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     speakingKey={tts.speakingKey}
                     // Persist the learner's definition-cluster sense pick per account (migration 99).
                     onPersistSense={persistSelectedSense}
-                    // The card note's in-place editor (migration 155). Only the OPEN/CLOSE
-                    // state is the page's — the draft text lives in CardNote, so a keystroke
-                    // doesn't re-render the card slot. See docs/CARD_NOTES.md.
-                    noteEditing={noteEditing}
-                    onSaveNote={handleSaveNote}
-                    onCancelNote={handleCancelNote}
                     // Gesture canvas only in advanced mode; basic mode renders the draft
                     // through the static icon layer (via editingCurrentEntry above).
                     editCanvas={editMode && advMode ? (
@@ -1012,14 +1007,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // Shrink the card slot from the top by however much the advanced toolbar
                     // intrudes (0 when it clears) — see useToolbarInset.
                     toolbarInset={toolbarInset}
-                    // CARD OPERATIONS — customize / note, behind the `•••` on the card's own
-                    // top edge (artboard 21). Mounted on the ACTIVE FRONT card's answer face
-                    // by FlashCardSection. Suppressed while the fie is open (its toolbar
-                    // already owns the card) and mid-animation (neither action is safe
-                    // against a card that is flying out).
-                    // Not on the writing card: its face is not the word layout the
-                    // customize / note operations edit.
-                    topRail={cardTopRail}
                 />
                 {writing.overlays}
                 {/* USED-IN HINT BUBBLES, part 2 — the overlay over ContentArea that floats

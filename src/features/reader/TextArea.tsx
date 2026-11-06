@@ -5,16 +5,8 @@ import ReaderTapOverlay from "./ReaderTapOverlay";
 import { FONTS } from "../../theme/fonts";
 import { SIZE } from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
+import type { Text } from "../../types";
 
-// Text interface for TypeScript
-interface Text {
-    id: string;
-    title: string;
-    description: string;
-    content: string;
-    createdAt: string;
-    characterCount: number;
-}
 
 interface TextAreaProps {
     selectedText: Text | null;
@@ -179,9 +171,20 @@ function TextArea({
                             fontSize: SIZE.subtitle,
                             fontFamily: FONTS.cjk,
                             letterSpacing: '0.02em',
-                            padding: 2,
+                            // No padding on the outlined root: padding here would sit
+                            // OUTSIDE the textarea's scroll surface, so scrolled text
+                            // was cut off 16px short of the box's border. The gutter
+                            // lives on the textarea itself instead (below), so text
+                            // scrolls through it and clips exactly at the border.
+                            padding: 0,
+                            overflow: 'hidden',
                             cursor: 'text',
                             '& .MuiInputBase-input': {
+                                padding: 2,
+                                // border-box so the padding stays inside the
+                                // `height: 100%` (MUI's input is content-box, which
+                                // would push the textarea past the box's bottom edge).
+                                boxSizing: 'border-box',
                                 lineHeight: 2,
                                 fontSize: SIZE.subtitle,
                                 fontFamily: FONTS.cjk,

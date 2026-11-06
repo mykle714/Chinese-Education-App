@@ -25,7 +25,7 @@ the plate button, the deck-transition registry (trap door) and the pawn-entrance
 Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each platform's
 left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
 `TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learning
-deck once the world holds 100 off-cooldown cards (or focus is on), and switches the world to a
+deck once the world holds 80 off-cooldown cards (or focus is on), and switches the world to a
 daily cap of 25 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learning tower —
 cover only today's remaining focus set.
 
@@ -36,7 +36,7 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 - The route row is in `src/routes/routeMeta.ts` (`/`: `access: "any"`,
   `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`, `footerStyle: "slab"`). The
   component is in `src/routes/registry.ts`. The tab is the `deck` row of `TABS` in
-  `src/components/MobileFooter.tsx`. The vet cdp (`/flashcards/card/:id`) and ancp
+  `src/components/MobileFooter.tsx`. The vet cdp (`/flashcards/card/:id`) and acp
   (`/discover/sort/:language`) also light the Deck tab.
 - There is no Settings gear on td: Settings is a tab of the `AccountSheet` the avatar
   raises (the `/settings` route remains).
@@ -64,15 +64,15 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 | Server | `server/routes/weatherRoutes.ts`, `server/controllers/WeatherController.ts` → `getWeather`, `server/services/WeatherService.ts` → `WeatherService`, `weatherFromWmoCode`; `server/utils/geohashCenter.ts` → `geohashCenter`; `ArenaDAL.getGeoCell`; contract `server/contracts/wire.ts` → `WeatherKind`, `WeatherNow`, `WeatherResponse` | `GET /api/weather`: the stored geoCell's current weather from Open-Meteo, cached per cell (§ Weather → "Server") |
 | Page | `src/features/deckTower/ForcedBreakPicker.tsx` → `ForcedBreakPicker` | The feature-tester chip row under the time-of-day row that pins a world's breaks to one game, opening the visit on one (§ Forced game breaks) |
 | Page | `src/features/deckTower/SpaceBackdrop.tsx` → `SpaceBackdrop`, `SpaceBand` | The screen-space sky behind the scene, in the world's colour, which darkens into starry space as a tall tower is climbed (§ Sky → space) |
-| Page | `src/features/deckTower/StarField.tsx` → `StarField`, `STAR_LAYERS`, `starLayerTransform` | The tiled star field, inside SpaceBackdrop; also ancp's night sky (docs/SORT_CARDS_REQUIREMENTS.md § 4.9) |
-| Page | `src/features/deckTower/ShootingStars.tsx` → `ShootingStars` | Night's occasional meteor bursts, inside SpaceBackdrop (§ Time of day → "Shooting stars"); also ancp's night sky |
+| Page | `src/features/deckTower/StarField.tsx` → `StarField`, `STAR_LAYERS`, `starLayerTransform` | The tiled star field, inside SpaceBackdrop; also acp's night sky (docs/SORT_CARDS_REQUIREMENTS.md § 4.9) |
+| Page | `src/features/deckTower/ShootingStars.tsx` → `ShootingStars` | Night's occasional meteor bursts, inside SpaceBackdrop (§ Time of day → "Shooting stars"); also acp's night sky |
 | Page | `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`; `DeckTowerPage` → `startable`, `onStackTap`, `hintFit`, `TAP_HINT_FIT_CARDS` | The white "Tap to Start" + arrow painted on the sky, and the Learning stack's tap, which starts a study (§ Tap to Start) |
 | Page logic | `src/features/deckTower/useTowerStudy.ts` → `useTowerStudy`, `slideCover`, `sessions` / `TowerStudySession` (the parked sessions), `PARKED_LOOP_FRESH_MS`; `towerCamera.ts` → `studyCameraView`, `easeDive`, `STUDY_CAMERA_HEIGHT`; `DeckTowerPage` → `onStackTap`, `climbedOut`, `sceneProj`, `StudySession` | Studying the tower in place: each visited world's flp session kept mounted (parked), the dive onto the top card, the count card sliding off and back on, the camera while studying, a spawn's sky drop, the climb back out and the reconcile (§ Studying the tower) |
 | Page view | `src/features/deckTower/TowerCoverCard.tsx` → `TowerCoverCard`, `TowerCover` | The count card as its own layer over the session while it slides off the deck and back on (§ Studying the tower → "The count card") |
 | Feature contract | `src/features/flashcards/FlashcardsLearnPage/flpTowerHost.ts` → `FlpTowerHost`; `FlashcardsLearnPage` `tower` prop; `TowerStudyHeader.tsx` | The flp running inside the tower page (§ Studying the tower → "The session") |
 | Page logic | `useTowerStudy` → `platformOpacity`; `DeckTowerPlatform` `fadeOpacity` / `keepDeck` (IsoPlatform `fadeStyle` / `fadeChildren`) | The platform fading away under the cards on every dive (§ Studying the tower → "The platform fades") |
 | Page view | `src/features/deckTower/TowerCardsPage.tsx` → `TowerCardsPage`, `TowerFilterKeys.tsx` → `TowerFilterKeys` (data: `src/features/flashcards/useCardLibrary.ts` → `useCardLibrary`, `toggleCardsFilter`, `activeCollection` — [CARD_LIBRARY.md](./CARD_LIBRARY.md); card: `src/components/MiniVocabCardGrid.tsx` `cardStock` → `MiniVocabCard` `stock`, the stock from `src/features/discover/sortCardStock.ts` → `sortCardStockSx`, `cardStockShadow`) | The cards page under the platform: the world's library with the Learning / Mastered filter keys, search + sort, and the sticky title row with the up arrow (§ The cards page) |
-| Page logic | `src/features/deckTower/towerScroll.ts` → `platformScrollTop`, `heightAbovePlatform`, `towerSceneOf`, `TOWER_SECTION_CLASS`, `TOWER_SCENE_CLASS`, `useTowerCardsScroll` | The platform LINE every scroll calculation is measured from, the momentum stop at it, and the header hand-off (§ The cards page) |
+| Page logic | `src/features/deckTower/towerScroll.ts` → `platformScrollTop`, `cardsTopScrollTop`, `heightAbovePlatform`, `towerSceneOf`, `TOWER_SECTION_CLASS`, `TOWER_SCENE_CLASS`, `useTowerCardsScroll` | The platform LINE every scroll calculation is measured from, the cards LINE under it, the momentum stop at the platform line, the snap zone between the two lines, the shared glide (cue / up arrow / snap), and the header hand-off (§ The cards page) |
 | Page logic | `src/features/deckTower/towerHeightStore.ts` → `readTowerHeight`, `writeTowerHeight`; `DeckTowerPage` → `openedAtHeightFor`, `coreSettledCount` | Main's Learning tower opening at the height it last stood at (§ Opening at the last height) |
 | Framework | `src/features/deckTower/iso/` | Every object, shadow and colour (see [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md)) |
 | Page logic | `src/features/deckTower/useDeckSwap.ts`, `deckTransitions.ts`, `towerDecks.ts` | The deck switch (see [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)) |
@@ -94,7 +94,7 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `FLOOR_Z` (`towerPlatforms.ts`), `TowerWorld.floor` | The platform's top (z = 0). The stack and the pawns stand on it (its colour is the world's platform top) |
 | `TowerPlatformLayout.card` | A portrait 4.8 × ~6.93 (`CARD_W` × `CARD_D`) footprint, centred on the platform. `CARD_D` is derived from the flp card's proportions (`FLP_CARD_ASPECT`, 295 : 426, `src/features/flashcards/constants.ts`) because the study camera lands the top card exactly on the flp card (§ Studying the tower); it was 6.6 until 2026-10-24. Its corner radius, `CARD_W × FLP_CARD_CORNER_RATIO` (= 0.45), is shared with the flp card the same way — the flp sets it as a width-proportional `--card-radius` (`FlashCardSection` → `flpCardRadiusCss`; docs/SHELF_REDESIGN.md D14) |
 | `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `pawnSteps`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it was past the lever, then at the back-right corner), so it walks behind the tower rather than over it. The order follows the camera (`backToFront`): on the study dive, once the camera is over a face of the tower, what stands past that face — the lever, a pawn — goes behind the tower, whose top now hides the floor round its foot (ISO_ART_FRAMEWORK.md § IsoPawn → "Depth sorting") |
-| `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does arriving in a world whose tower already stands at 50+ (the remounted pawn was not watching it grow) |
+| `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does a tower that is already at 50+ when the pawn first sees it: arriving in such a world (the remounted pawn was not watching it grow) or loading the page with one (the count reads 0 while it loads, so `DeckTowerPlatform`'s `towerCountKnown` holds `startled` at `null` until it lands, and `usePawnMotion` takes the first known value as a baseline, not a rise). Only a grow past 50 counts: a swap's build-up, or a resize's sky drop |
 | `IsoPawn` `tappable` (`DeckTowerPlatform` → `renderPawn`) | Tapping the pawn pops its `!` and makes it jump on the spot; it then stands until the bubble has gone. An outgoing pawn (mid-swap) takes no taps (ISO_ART_FRAMEWORK.md § IsoPawn → "Poke") |
 | `DeckTowerPlatform` → `pawnSteps`, `summitCards`, `summitHeld` | The tower's top is the pawn's **summit**: a tap while its feet are above the top throws it onto the deck, where it wanders (ISO_ART_FRAMEWORK.md § IsoPawn → "Summit"). When the height changes under it: **marks or a focus shrink** — it falls onto the new top, from the shrink's start (`summitCards`); **a sky drop** — it is thrown up as the drop lands; **a deck swap** — it falls with the tower, like any floor drop; **a study** — it stands still (`summitHeld`), stays out of the platform's fade, and rides the count card off and back on (`summitSpot`, `TowerCoverCard` `pawnAt`, § Studying the tower → "The count card"); **no cards left** — the top closes and it flies back to `pawnAt`, after any study. A world swipe remounts the pawn on the floor. Nothing else brings it down |
 | `CLOUD_BAND_CARDS` | Clouds (`IsoCloud`, `useCloudDrifts`) are **weather, not altitude**: they fly only under the `cloudy` weather kind (`towerWeather.ts` → `weatherCloudCount`; § Weather), in every world, whatever the card count. Rain, snow, storm and fog draw no clouds, by design. They drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 150–200 (card k's underside is (k − 1) · `CARD_THICKNESS` up). `weatherCloudCount` sets how many may be in the sky at once — 2–3 for partly cloudy, 4 for overcast — with 4–14 s gaps between drifts. Every cloud traverses in from off screen; none spawns mid-sky when cloudy weather starts, and the slots' first drifts are staggered by ordinary 4–14 s gaps, so the band fills one cloud at a time (cloudy is the commonest weather, so it stays unobtrusive). A deck that stops inside the band lowers its top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky; a deck under 150 keeps the whole band, above the framed scene and so out of sight. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still. Each cloud casts a glaze shadow on the floor and the ground just off the point below it (`IsoCloudShadow`, drawn by `SkyTraffic.tsx` → `SkyTrafficCloudShadows` through `DeckTowerPlatform`'s `cloudShadows` prop; ISO_ART_FRAMEWORK.md § IsoCloud → Shadow). Clouds and wind are scheduled and drawn by `SkyTraffic.tsx` (`SkyTrafficSource` runs both schedulers and publishes into a small store, `skyTrafficStore.ts`; the memoised `SkyTrafficLayer side="behind"|"front"` subscribes and draws one side), so a crossing starting or ending re-renders only those two layers, never the page |
@@ -187,7 +187,7 @@ far taller than the screen. The page never zooms out to fit it:
 - **Title.** The page header's own title is the world on screen's `TowerWorld.title`
   ("Flashcards", "Reading Flashcards" or "Writing Flashcards"; until 2026-10-19 it named
   the deck, and the count subtitle was removed 2026-10-17), at the standard hub size
-  (24px) in white (`ISO.white`, through `MobileTabScreen` `headerTitleColor` →
+  (28px since the 2026-11-05 header scale-up) in white (`ISO.white`, through `MobileTabScreen` `headerTitleColor` →
   `PageHeader` `titleColor`) so it reads on the sky and on space. Until 2026-10-24 it was
   a separate 40px title block under a dark "Deck" header. The header is lifted above the
   scroller (`wrapHeader`, `z-index: 2` over the scroller's 1), so the flame and the
@@ -214,13 +214,13 @@ The page wears the **slab** footer, the floating nav bar from the Tower Style de
 (`.sx-flp .ft`, frames T1–T4), instead of the app-wide flat bar. Since 2026-10-29 the
 Dictionary tab wears it too (`/dictionary`, `/dictionary/card/:word` — Tier-2 design,
 docs/SHELF_REDESIGN.md § 7b), without a cast shadow or wash, and so do the vet cdp
-(`/flashcards/card/:id`, also on the Tier 2 ground) and ancp. Every Menu-reached page
+(`/flashcards/card/:id`, also on the Tier 2 ground) and acp. Every Menu-reached page
 (`/menu`, `/games`, `/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
 the bar. Every slab colour is written `tier2Var(<key>, <card colour>)`
 (`src/timeOfDay/tier2Chrome.ts`): unset on the tower, so the slab is the card stock below;
 a Tier 2 page sets them (slate at night).
 
-- **Opt-in per route.** The `/` row (and the two Dictionary rows, the vet cdp's and ancp's) in `src/routes/routeMeta.ts` carries
+- **Opt-in per route.** The `/` row (and the two Dictionary rows, the vet cdp's and acp's) in `src/routes/routeMeta.ts` carries
   `footerStyle: "slab"`; `routeFooterStyle` defaults every other row to `"bar"`.
   `FooterPresenter` passes it to `MobileFooter` as `variant`. Between two footer routes
   of different styles the swap is **instant** (tabs have no page slide, so it lands with
@@ -286,7 +286,7 @@ A world whose goal is off is skipped, and if it goes off while it is on screen t
   framework — the DAY look; night derives from it, § Time of day); they are NOT the bars' `MASTERY_BAR_HUES` (writing's sky is cherry-blossom pink, not its
   bar's purple). Reading's `grnSky` and `pnk` and writing's `pnkSky` and `bluCorn` are single-tier tokens added for this page
   (`colors.ts` § "Sky green, pinks and cornflower"), outside the design's ramp. Main's sky is the ramp's `bluMk` (`#59BFFF`) in
-  clear weather; on the page and on ancp the weather turns it toward violet (`weatherSky.ts`, § Weather). (A softer `bluSky`,
+  clear weather; on the page and on acp the weather turns it toward violet (`weatherSky.ts`, § Weather). (A softer `bluSky`,
   `#83C7F0`, replaced it for part of 2026-11-04 and was deleted the same day.) Space is ONE night for every world (`SPACE` = `spaceOver(bluMk)`, the ramp's blue mark taken down to
   night): each sky fades into the same starfield. `platformTone` gives a platform the gold platform's shading. No platform is yellow (it
   would hide the `yelM` LEARNING plate). The decks' plates are the same in every world —
@@ -300,13 +300,18 @@ A world whose goal is off is skipped, and if it goes off while it is on screen t
   about 21% of the stage at the commit point; only `DRAG_FOLLOW_EDGE`, 0.12, toward an edge
   with no world) on the svg's CSS `translate`, separate from the pan's `transform`, and springs
   back if it does not commit. The edge indicators (`WorldIndicator`) name the
-  neighbours: a white arrow in the screen's bottom-left / bottom-right corner (just above
+  neighbours: a white arrow in the bottom-left / bottom-right corner (just above
   the slab footer's top, `SLAB_FOOTER_TOTAL_HEIGHT` + `FOOTER_GAP_PX`) with the world's name beside it on the inner side
   ("‹ Reading", "Writing ›"), arrow and name floating gently outward together (the
   float rides an inner wrapper, so the tap target stays put; the two indicators float in
   step on a shared clock, `floatPhaseDelay`), drawn straight on the sky
   with no box — an exception to the
-  app's outline rule for tappable things. A tap does the same as the swipe. Swipe and arrows are off (arrows hidden) while a pan or this world's deck
+  app's outline rule for tappable things. The indicators (and the cards cue on their line)
+  are part of the SCROLLING content, not fixed to the screen: they are rendered inside the
+  scroller's tower section (`TOWER_SECTION_CLASS`, `position: relative`), measured from its
+  bottom edge, so at the platform line they sit just above the footer slab and they move with
+  the platform — up and away as the cards page rises, down out of view as a tall tower is
+  climbed. A tap does the same as the swipe. Swipe and arrows are off (arrows hidden) while a pan or this world's deck
   swap runs.
 - **The pan** (`useWorldPan`, ~0.8 s; instant under reduced motion):
   1. `OUT_MS` (260): the scene whips off the far side (ease-in) as the speed lines gather.
@@ -457,14 +462,14 @@ floor's right corner. It is the Writing Notebook's only entry point
 `src/hooks/useDiscoverNavigation.ts` → `sortPath`, `src/hooks/useCategoryCounts.ts`,
 `server/contracts/wire.ts` → `LEARN_NOW_LOW_THRESHOLD`.
 
-The **main** world's platform has ancp's "To Learn" bin in miniature (`IsoSortPlatform`) in
+The **main** world's platform has acp's "To Learn" bin in miniature (`IsoSortPlatform`) in
 the floor's right corner — the corner the notebook stack takes on the writing world. It is
-the Add New Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)).
+the Add Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)).
 
-- **Look.** A thin white slab (`COLORS.white`, ancp's day platform) lying flat on the
-  floor, with ancp's empty-bin dashed footprint on it in the To Learn bin's collection colour
+- **Look.** A thin white slab (`COLORS.white`, acp's day platform) lying flat on the
+  floor, with acp's empty-bin dashed footprint on it in the To Learn bin's collection colour
   (`LEARNING_COLORS.main`), both washed for the time of day. One bin, no deck, no print: it
-  says "sort", not a count. Footprint 1.36 × 1.7 — ancp's bin slab's proportions
+  says "sort", not a count. Footprint 1.36 × 1.7 — acp's bin slab's proportions
   (`SortBins.tsx` → `PLATFORM`) — 1.4 units off the tower's right face so the pawn still
   passes between.
 - **Shown when.** Only on the main world, only while the **Learning** tower is drawn
@@ -482,11 +487,11 @@ the Add New Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS
   none under reduced motion. The count is fetched once per visit.
 - **Tap.** It opens `/discover/sort/:language` with the **circle transition** from the
   slab's centre (`.iso-sort-platform__body`). The launch carries `state.exitTo = SORT_EXIT`
-  (`/`, `towerWorld: "core"`) and `state.circleFrom`, so ancp's Back closes the
-  circle onto the platform and lands on main (`AddNewCardsPage` → `leave`, NodePage
+  (`/`, `towerWorld: "core"`) and `state.circleFrom`, so acp's Back closes the
+  circle onto the platform and lands on main (`AddCardsPage` → `leave`, NodePage
   `exitCircleTo`). The footer's **Deck tab** does the same on such a launch: it plays Back,
   circle included, instead of jumping (NodePage `backOnFooterTab="deck"`,
-  `components/footerTabOverride.ts`; LEAF_NODE_PAGES.md § Footer tab overrides). Without `exitTo`, ancp's Back falls back to
+  `components/footerTabOverride.ts`; LEAF_NODE_PAGES.md § Footer tab overrides). Without `exitTo`, acp's Back falls back to
   `/`'s main world.
   Taps are ignored while a swap, pan, resize or study is running (`busy`). The tap target
   is the platform's hull grown by 0.3 units, and up to the top of its jump while hopping.
@@ -508,12 +513,13 @@ platform, "WRITING / NOTEBOOK" under the notebook stack — as a soft introducti
 ([SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md)): the print shows until that fixture's si
 graduates (70 visits and 14 days on this device), then the fixture stands alone.
 
-- **Look.** Two lines printed flat into the floor (`IsoFloorPrint`, 0.4 units, bold,
-  letter-spaced), in white (`COLORS.white`, washed for the time of day — the sort slab's
+- **Look.** Lines printed flat into the floor (`IsoFloorPrint`, bold, letter-spaced) —
+  the sort platform's three at 0.6 units, set flush right (`align="right"`); the
+  notebook's two at 0.4 units, centred — in white (`COLORS.white`, washed for the time of day — the sort slab's
   white). No plate, not raised: the pawn walks over it, and the pawn's shadow covers it
   like any floor.
 - **Where.** Just in front of the fixture's front-left face (+y), centred on its x — the
-  way the deck plate sits in front of the tower. The +x side is the rim; at 0.4 units the
+  way the deck plate sits in front of the tower. The +x side is the rim; at these sizes the
   wider lines would cross it, so the print is measured and slid left just enough to end
   inside it (`IsoFloorPrint` `maxX` = `fixtureLabelMaxX`).
 - **Shown when.** Exactly when its fixture is drawn (§ The notebook stack / § The sort
@@ -523,7 +529,8 @@ graduates (70 visits and 14 days on this device), then the fixture stands alone.
 - **Visits.** One `useSoftIntro` per fixture in `DeckTowerPlatform`, each `enabled` only
   while its fixture is passed in, so neither world nor the Mastered deck graduates the other's
   print. The platform remounts per world, and the 30-minute dedupe keeps pans from counting
-  up. The tester header toggle (`SoftIntroToggle`, in the sky ink) forces either style.
+  up. Testers force either style from Settings → "Soft introductions"
+  ([SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) § 5).
 
 ## Tower resizes
 
@@ -621,10 +628,10 @@ itself is the iso framework's ([ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) §
 `tzCoordinates.ts` → `TZ_COORDINATES`; `useDayClock.ts` → `useDayClock`, `TimeOfDayOverride`
 (sampling + the feature-tester override, a module store so every reader sees a pin at
 once). The tower's `timeOfDay.ts` keeps only what a phase LOOKS like over the tower and
-re-exports the clock's types; `useTimeOfDay` wraps `useDayClock`. Other readers: the eip's
-tint ([EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § Time of day), the Dictionary
-page's tier-2 look (`src/timeOfDay/tier2Look.ts`) and the ancp
-(`features/discover/sortTimeOfDay.ts`).
+re-exports the clock's types; `useTimeOfDay` wraps `useDayClock`. Other readers: the Dictionary
+page's tier-2 look (`src/timeOfDay/tier2Look.ts`) and the acp
+(`features/discover/sortTimeOfDay.ts`). The eip was a reader until 2026-11-05; it now follows
+the Settings theme instead ([EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Light / dark theme").
 
 Every world follows the learner's clock through two phases, **day** and **night**
 (`DayPhase`). Day is each world's own sky token (the Worlds table); night is derived from
@@ -674,9 +681,14 @@ is now the only twilight.
   as an SVG `feColorMatrix` `url()` filter (`washColorMatrix`); it was cut because WebKit
   rasterises that filter on the CPU and re-ran it on every repaint inside the session,
   which made the flp's taps lag at night (§ Studying the tower → "Tap responsiveness").
-  ⚠️ Known seam: `TowerCoverCard` IS still washed (it is iso-coloured), so at night the
-  count card sliding off the deck is slightly dimmer/bluer than the unwashed flp card it
-  uncovers.
+  **The wash fades with the dive** (`DeckTowerPage` → `sceneWash`, `WASH_FADE_STEPS`): the
+  scene and `TowerCoverCard` take `blendWash(light.wash, NO_WASH, e)` on the dive's eased
+  position `e` (stepped to 1/24 of the dive, since each new wash re-washes `IsoScene`'s
+  palette), so the wash is gone by the time the camera lands on the count card, stays off
+  while the camera is down (the count card sliding off and back on is unwashed, matching the
+  flp card under it), and returns on the climb. By day `light.wash` is `NO_WASH` and this is
+  the identity. The page's sky ink (title, arrows, speed lines) keeps `light.wash` — it has
+  faded out by then anyway.
 - **Stars** (`PHASE_STARS` → `SpaceBackdrop` `groundStars`): 0.55 opacity from the ground at
   night, 0 by day (blended across each twilight); the climb's own fade-in wins wherever it is stronger.
 - **Shooting stars** (`towerLight` → `shootingStars` → `SpaceBackdrop` → `ShootingStars`).
@@ -704,7 +716,7 @@ is now the only twilight.
 
 The learner's **real local weather** over the sky — purely aesthetic (nothing else reads
 it). Shown **only on the Deck Tower** for now (owner's choice 2026-11-04: not on the tier-2
-pages, the ancp or the eip). Off by default; turned on per device in Settings → Display.
+pages, the acp or the eip). Off by default; turned on per device in Settings → Display.
 
 **Code:** `towerWeather.ts`, `useTowerWeather.ts`, `WeatherLayer.tsx`, `WeatherToggle.tsx`,
 `SpaceBackdrop.tsx` (`weather` prop, `WEATHER_FADE_TO`), `weatherSky.ts`, `DeckTowerPage.tsx` (`weatherFx`, `rainFall`, `RAIN_CEILING_CARD`, `skyWorlds`), `DeckTowerPlatform.tsx` (`fog`, `rain`, `rainCeilingY`), `iso/IsoFog.tsx`, `iso/IsoRain.tsx`; `src/hooks/useWeatherEffectsSetting.ts`;
@@ -1101,16 +1113,15 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   flies out. The sky is held at the tap's altitude for the whole session, so it stays put too.
 - **Hint labels in the card's corners** (`FlashCardSection.tsx` → `TOWER_TOP_BAND_VARS` /
   `PLAIN_TOP_BAND_VARS`; `FlashcardsLearnPage/styled.ts` → `SwipeHintLabel` /
-  `FlipHintLabel`; `src/features/flashcards/constants.ts` → `cardChromeInsetCss`). The flp's
+  `FlipHintLabel`). The flp's
   hint labels (← Incorrect / Correct →, Tap to flip) are children of the card FRAME, in the
   card's top-left / top-right corners (Tap to flip centred), vertically centred in the card's
   top band (`--card-hint-band`) and in from the side by the card's corner radius. On the
   tower the band is the stock's cream rim (`--card-stock-inset`); the plain flp has no rim, so
   it is a fixed 30px row. They used to sit above the card in the slot, where on the tower they
-  landed on the platform's floor and its light top-edge bevel with no contrast. The card's
-  own top chrome — CardOpsRail's `•••` and the CardNote strip — sits just below the band
-  (`--card-chrome-inset` = band + 6px), so the corners are the labels'; surfaces whose frame
-  sets neither (the cdp) keep the chrome's old 11 / 10 px.
+  landed on the platform's floor and its light top-edge bevel with no contrast. Nothing else
+  sits on the card's top edge (the `•••` card-options rail and the card-note strip were
+  deleted 2026-11-05), so the band is the labels' alone.
 - **The climb** (back arrow, a tap off the card, the sort offer's "Leave anyway", or a dry session). A tap off the card is Back: a press that starts and ends, without travelling, on the session's bare space round the card — `FlashcardsLearnPage` → `handleTowerOffCardTap`, matched against `TOWER_OFF_CARD_SELECTOR` (a whitelist of the content area's empty layout boxes, so the card and every control are excluded); off during an icon edit and once a game break leaves the stack (its card is a card, so a tap off that works the same; `stackIsCards`). Like the back arrow it goes through `handleBack`, so the sort offer still gets its turn. The dive
   in reverse (`CLIMB_MS` 480; a climb that cuts a dive short flies back from where it
   had got to), after the count card is back on (`covering`, above). The tower header
@@ -1148,8 +1159,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   panel (`--card-panel-clip`, CARD_ICON_LAYOUT.md § "Where the clip lives"). Fixed tokens,
   not the theme's `flashCard`. (Not washed at night — § Time of day → "The wash".)
   See TOWER_STYLE_SHIFT.md § "Card stock".
-- **The buttons.** The session's page buttons — the word-tools rail's `Write it` and
-  `Compare` and the `More Info` pill — are the tower's floor-plate push button redrawn in
+- **The buttons.** The session's page buttons — the word-tools rail's `Write it`,
+  `Compare` and `Customize` and the `More Info` pill — are the tower's floor-plate push button redrawn in
   HTML (`src/theme/towerPlate.ts` → `towerPlateSx`):
   a WHITE plate (`FlpTowerHost.plateTones` = `bandMaterial(COLORS.white)`,
   `useTowerStudy.ts` → `STUDY_PLATE_TONES`: white face, walls stepped down to light greys), seen from the
@@ -1160,17 +1171,20 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   2026-10-29). The in-scene plate (`usePlatePress`) still animates its 80 ms sink and 220 ms
   overshoot pop; the HTML copy deliberately does not, and skips its wait-to-bottom-out. No `COLORS.border` outline, like the scene's plate.
   Wired through `WordToolsRail` `pillSx` (→ `PracticeWritingButton` `railSx`) and
-  `MoreInfoPill` `plate` (`styled.ts`). The rail's two plates are also sized down from the
-  shared pill (`towerPlate.ts` → `TOWER_RAIL_PILL_SIZE_SX`: 7 px vertical padding, 11 px type,
-  15 px glyph) and narrowed to a fixed-width centred pair (`TOWER_RAIL_PILL_WIDTH` 104 px each,
-  with `TOWER_RAIL_SX` pinning `Write it`'s Badge root); `More Info` keeps its size.
-- **The lettering.** The session's button labels (`Write it`, `Compare`,
-  `More Info`, the card options rail) are set in 975 Maru SC
+  `MoreInfoPill` `plate` (`styled.ts`). The rail's plates (`Write it` · `Compare` · `Customize`)
+  are also sized down from the shared pill (`towerPlate.ts` → `TOWER_RAIL_PILL_SIZE_SX`: 7 px
+  vertical padding, 11 px type, 15 px glyph) and fixed at `TOWER_RAIL_PILL_WIDTH` (104 px) each
+  as a centred group; `TOWER_RAIL_SX` pins `Write it`'s Badge root and lifts the rail's
+  card-width cap, since three pills (326 px) are wider than the card. `More Info` keeps its size. Any rail plate pressed while the question
+  face is up flips the card first (`FlashcardsLearnPage` → `revealAnswer`, wired as
+  `WordToolsRail` `onToolPress`); `Customize` then waits for the flip to land before opening
+  the fie ([CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md) § "Entry point").
+- **The lettering.** The session's button labels (`Write it`, `Compare`, `Customize`,
+  `More Info`) are set in 975 Maru SC
   (`src/theme/towerPlate.ts` → `TOWER_STUDY_FONT`, which is `FONTS.cjk`), overriding only the
   family: size, weight, case and tracking stay as each control defines them. The face ships
-  one weight, so semibold and bold labels are browser-synthesised. `CardOpsRail` always
-  letters in `TOWER_STUDY_FONT` (on the flp and the vet cdp alike); the pills get it through
-  `FlashcardsLearnPage` → `towerPlatePillSx`. ancp and game plates keep their own faces. The header title stays in `FONTS.sans` and the
+  one weight, so semibold and bold labels are browser-synthesised. The pills get it through
+  `FlashcardsLearnPage` → `towerPlatePillSx`. acp and game plates keep their own faces. The header title stays in `FONTS.sans` and the
   minute-points count in `FONTS.mono`. The audio chip is 975 Maru too, but through the shared
   outlined skin (`outlinedChipSx`) rather than a tower-only override (below).
 - **The audio chip.** The study header's narration chip (`TowerStudyHeader` →
@@ -1246,17 +1260,19 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   right-adjusted. The search field carries the sort menu (`CollectionSortControl`,
   common orderings only). The title names the set on screen ("Cards", or the latched key's
   label), with no count — the filter keys carry the figures.
-- **The cards** are ancp's mini cards: `MiniCard` on the Deck Tower's card stock (cream rim,
-  beige panel, 2px wall, flat cast shadow — `sortCardStockSx`, through `MiniVocabCard`
-  `stock`), with the mastery strip and without ancp's levitation. The strip is pulled in
+- **The cards** are acp's mini cards: `MiniCard` on the Deck Tower's card stock (cream rim,
+  beige panel), drawn as a **thick panel** — a 4px wall, ONE outline around the whole extruded
+  silhouette (no line on the face's own edge, which split the panel into layers) and a
+  near-solid cast shadow down-right (`src/features/discover/sortCardStock.ts` → `sortCardStockSx`,
+  `cardStockShadow`, through `MiniVocabCard` `stock`) — the same stock as acp's cards
+  (2026-11-05). With the mastery strip and without acp's levitation. The strip is pulled in
   off the cream rim onto the panel (`TowerCardsPage.tsx` → `STRIP_SIDE_INSET_PX`, the
   panel's inset + 5px, overriding MiniCard's 8px through `.mini-card__mastery-window`). Its
-  1px outer outline is stronger than the stock's default hairline: `COLORS.textFaint`
-  (`TOWER_CARD_RING`, passed as `sortCardStockSx` / `cardStockShadow`'s `ring`) — a text
-  grey, since the framework's line tokens stop at `border`. A card with its own
+  1px outline is `COLORS.textFaint` (`sortCardStock.ts` → `PANEL_OUTLINE`, every stock card's
+  outline, drawn around face and wall together) — a text grey, since the framework's line tokens stop at `border`. A card with its own
   colour (an advanced layout's `cardColor`) fills the panel and keeps the cream rim
   (`--mini-card-panel`), the rule the tower-hosted flp's faces follow. The ground is the
-  world's sky, so the cast shadow is that sky's iso shadow tone (`shadowTone`), set as the
+  world's sky, so the shadow is that sky's iso shadow tone (`shadowTone`), set as the
   `--tower-cards-ground-shadow` variable on the page root so a sky that changes every pan
   frame never re-renders a card. A tap opens the cdp through the world's lens
   (`withLens`); the click that ends a desktop swipe drag is ignored.
@@ -1268,6 +1284,39 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   are never caught. Not CSS scroll-snap: the tower above and the grid below are both taller
   than the screen, and free scrolling inside an oversized snap area differs between iOS and
   Chrome.
+- **The snap zone.** The screen of scroll between the platform line and the cards line
+  (`towerScroll.ts` → `cardsTopScrollTop`: the cards page's top at the screen's top, its
+  title row standing in as the header) is never a resting place: a scroll that would stop
+  inside it glides to one of the two lines (`SNAP_MS`, ease-out so it carries on from the
+  scroll). **When it decides:** a touch released inside the zone decides the moment the
+  finger lifts (`useTowerCardsScroll` → `snapOnRelease`), on the position its momentum
+  would reach — release velocity (`releaseVelocityOf`, over the drag's last
+  `RELEASE_VELOCITY_WINDOW_MS`) × `MOMENTUM_PROJECTION_MS` — and glides there with the
+  momentum dropped (the scroller's overflow held `hidden` for the glide; a finger
+  touching down releases it). Waiting for an iOS fling to coast to a stop took most of a
+  second. A release whose momentum would carry it out of the zone is left to coast (into
+  the grid, or up to the platform stop). Everything else — wheel, trackpad, a fling
+  released outside the zone that coasts into it — waits for `SETTLE_MS` of quiet
+  (`snapIfInZone`; a timer, since older iOS Safari has no `scrollend`). The breakpoint depends on
+  the scroll's **last direction of movement** (`towerScroll.ts` → `snapTargetOf`):
+  heading down, it goes on to the cards once a quarter of the zone past the platform line;
+  heading up, it goes on to the platform once a quarter above the cards line
+  (`SNAP_COMMIT_SHARE`); short of that it springs back to the line it left. Finger drags
+  count, so a drag down that turns back up is heading up; steps under
+  `DIRECTION_MIN_STEP_PX` are ignored so a lifting finger's jitter cannot flip it. With
+  no direction known it falls back to the halfway point. Above the platform (the tower)
+  and below the cards line (the grid) scroll freely. It applies to wheel and trackpad
+  scrolling too: at a quarter-screen, one or two wheel notches commit. A finger or
+  a wheel cancels the glide; the page's own placements (refits, the resize camera —
+  `cancelGlide`) neither trigger it nor let one run on under them, and it is off while a
+  pan, deck swap, resize or study holds the scroller (`snapEnabled`).
+- **The glide.** The cue, the up arrow and the snap share one rAF tween
+  (`useTowerCardsScroll` → `glideTo`: `GLIDE_MS` ease-in-out for the cue and the arrow,
+  `SNAP_MS` ease-out for the snap). Every frame goes through `onPlaced`, which marks it as the
+  page's own (`placedScrollTop`) and records the altitude it reached as `climb`, so the
+  platform stop lets it through and a glide into the cards page leaves `climb` negative.
+  Not `scrollTo({ behavior: "smooth" })`: a smooth scroll crosses the platform line with
+  no finger down, which the platform stop would catch.
 - **The header hand-off.** The title row is `position: sticky` at the scroller's top, laid
   out as a hub page header (`pageHeaderSizing.ts` → `HUB_HEADER_*`, with the safe-area
   inset). As the cards page's top rises into the page header, it pushes the header layer
@@ -1278,16 +1327,15 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   the filter keys and the search bar scroll away with the cards.
 - **The up arrow** in the title row's right slot (`HeaderIconButton` `outlined`, ring and
   glyph in the sky's ink via `outlineColor` — the paper hairline goes muddy on a scene
-  ground) glides back to the platform line (`toPlatform`, a smooth scroll).
+  ground) glides back to the platform line (`useTowerCardsScroll` → `toPlatform`, the glide).
 - **The cards cue** (`CardsCue.tsx` → `CardsCue`). "Cards" over a down chevron at the
   bottom centre, in the WorldIndicators' box and ink (`skyInk`), so "Cards" stands on one
   line with "Reading" and "Writing". A squat chevron (16 × 7) hangs just under the word,
   and the two bob together, centred on that line, on their `FLOAT_MS` clock (`skyCueFloat.ts` → `floatPhaseDelay`) so
   all three cues move in step. A tap glides to the
-  cards page, its title row at the top (`DeckTowerPage` → `toCards`): a rAF tween whose
-  frames are marked as placed (`placedScrollTop`), since a smooth `scrollTo` would be caught
-  by the platform stop. It fades out over the first 48px below the platform line (its own
-  scroll listener writes `opacity`), and hides with the world arrows (`panBlocked`). It
+  cards page, its title row at the top (`useTowerCardsScroll` → `toCards`, the glide). It fades out over the first 48px below the platform line (its own
+  scroll listener writes `opacity`), and hides with the world arrows (`panBlocked`). Like
+  them it lives in the tower section and scrolls with the platform. It
   overlaps the platform's front corner.
 - **The footer.** The slab floats over the last rows the way it floats over the tower; the
   page pads its bottom by `SLAB_FOOTER_TOTAL_HEIGHT` and is at least a screen tall, so the
@@ -1299,7 +1347,8 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
 
 Code: `TowerCardsPage.tsx` → `TowerCardsPage`, `TOWER_CARD_STOCK`; `towerScroll.ts` →
 `useTowerCardsScroll`, `platformScrollTop`; `DeckTowerPage.tsx` → `cardsPageRef`,
-`headerLayerRef`, `onOpenTowerCard`, `cardsPageStyle`, `toCards`; `CardsCue.tsx` → `CardsCue`.
+`headerLayerRef`, `onOpenTowerCard`, `cardsPageStyle`; `useTowerCardsScroll` → `toCards`,
+`toPlatform`, `cancelGlide`; `towerScroll.ts` → `cardsTopScrollTop`, `snapTargetOf`, `releaseVelocityOf` (both tested in `__tests__/towerScroll.test.ts`); `CardsCue.tsx` → `CardsCue`.
 
 ## Opening at the last height
 

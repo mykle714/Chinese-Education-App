@@ -9,8 +9,11 @@ import {
     Alert
 } from '@mui/material';
 import type { Text } from '../../types';
-import { useAuth } from '../../AuthContext';
-import { API_BASE_URL } from '../../constants';
+import { apiDelete } from '../../api/http';
+
+// The open document's delete confirmation (ReaderDocumentPage header → trash icon).
+// The /reader list does NOT use it: list rows delete by swipe, with no confirmation
+// (SwipeToDeleteRow). Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Deleting a document.
 
 interface DeleteDocumentDialogProps {
     open: boolean;
@@ -20,7 +23,6 @@ interface DeleteDocumentDialogProps {
 }
 
 function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocumentDialogProps) {
-    const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -38,20 +40,8 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
         setError(null);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/texts/${text.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to delete document');
-            }
-
-            console.log('[DELETE-DIALOG] ✅ Document deleted successfully');
+            // Through api/http (bearer + refresh handled there) — docs/FRONTEND_LAYERING.md.
+            await apiDelete(`/api/texts/${text.id}`);
 
             // Notify parent and close
             onSuccess();

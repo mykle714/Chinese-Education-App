@@ -76,7 +76,7 @@ both on purpose (CLAUDE.md § Terminology).
 
 The 92×132 tile is the app's one mini preview card. `MiniVocabCard` (the library grid),
 `QuickMarkCard` (provisional sort offer), `ChallengeWordCard` (a challenge word set) and
-ancp's `DraggableCard` (`AddNewCardsPage.tsx`) all render it. `MiniCard` owns the tile
+acp's `DraggableCard` (`AddCardsPage.tsx`) all render it. `MiniCard` owns the tile
 (size, radius, fill, hairline inset ring, elevation, offscreen containment, staggered
 pop-in) and its contents: icon slot, word (`ForeignText`), 2-line definition and the
 optional mastery strip. Wrappers pass plain display values plus `children` overlays

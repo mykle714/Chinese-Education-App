@@ -64,7 +64,7 @@ interface InfoCardSectionProps {
     // has no trail, passes nothing and the ✕ just closes the panel. See SheetPanel.
     onCloseX?: () => boolean | void;
     // Draw the minute-points flame beside the ✕. True on every STUDY surface that mounts
-    // this panel (flp, ancp, cdp) — the panel covers the page header, flame included.
+    // this panel (flp, acp, cdp) — the panel covers the page header, flame included.
     showMinutePoints?: boolean;
     // Identity + strip position of the ACTIVE entry tab (useEipTabs: `activeTab.id` /
     // `activeIndex`). Only used to drive the pager slide below — a change of id means the
@@ -178,7 +178,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     const headerSlideRef = useRef<HTMLDivElement | null>(null);
     // SheetPanel drives the upper panel's height from the sheet's (the telescope).
     const telescopeRef = useRef<SheetTelescopeHandle | null>(null);
-    // The time-of-day palette (a pale sky tint by day, night inverts the panel).
+    // The theme palette (a pale-sky upper panel in light themes; Dark inverts the panel).
     const palette = useEipPalette();
     // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
     // from it, and writing it during the effect keeps the comparison to exactly one place.
@@ -261,6 +261,9 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             // No sheet padding above the upper panel or below the shelf: the ground would
             // show as a band at both edges, and the telescope measures from the very top.
             edgePadding={false}
+            // Pulling past max squeezes the upper (colored) panel and lets the white
+            // shelf ride up, rubber-banding back to max on release.
+            squeezeOnOverstretch
         >
             {({ bindHeaderDrag, dismiss }) => (
                 <>
@@ -287,10 +290,11 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                                 showPinyinColor={showPinyinColor}
                                 selectedSenseIndex={selectedSenseIndex}
                                 glossToScreenEdge
-                                // In the upper panel the band's own rhythm spaces it: no rule
-                                // under it (the shelf's edge is the divide), no side padding,
-                                // and no gap, so the gloss box starts at the keycap's edge.
-                                sx={{ padding: "0 0 17px", borderBottom: "none", gap: 0 }}
+                                // In the upper panel the band's own rhythm spaces it (EipUpperPanel
+                                // owns the gaps above and below it, HEADER_BOTTOM_PAD): no rule
+                                // under it (the shelf's edge is the divide), no padding, and no
+                                // gap, so the gloss box starts at the keycap's edge.
+                                sx={{ padding: 0, borderBottom: "none", gap: 0 }}
                             />
                         </Box>
                     ) : undefined}

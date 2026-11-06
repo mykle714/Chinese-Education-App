@@ -553,7 +553,7 @@ Those stay.)
 ### The split is not principled
 
 `flashcards`, `reader`, and `nightmarket` are under `features/`. But
-`AddNewCardsPage` (1,254 lines), `DictionaryPage`, `QuickMarkPage`,
+`AddCardsPage` (1,254 lines), `DictionaryPage`, `QuickMarkPage`,
 `TesterDashboardPage`, and `CommunityPage/` (already a directory) are equally
 feature-shaped and sit under `pages/`.
 

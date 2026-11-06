@@ -149,7 +149,7 @@ Converted: `pages/SettingsPage.tsx` · `components/PageHeader.tsx` · `component
 `components/leaderboard/Board.tsx` · `components/mastery/MasteryWindow.tsx` (2, one of
 them lowercase) ·
 `components/primitives/Segmented.tsx` · `features/arena/DivisionBanner.tsx` (2) ·
-`features/flashcards/cardOpsCell.ts` · `features/studyChallenge/ChallengeDetailPage.tsx` ·
+`features/flashcards/cardOpsCell.ts` (deleted 2026-11-05) · `features/studyChallenge/ChallengeDetailPage.tsx` ·
 `components/SteppedHelpPopup.tsx` · `features/studyChallenge/ChallengePanel.tsx` ·
 `features/studyChallenge/ChallengeSheet.tsx` · `features/studyChallenge/ChallengeTestCard.tsx` (2) ·
 `games/bubble-match/BubbleMatchTrackToggle.tsx` (deleted 2026-10-03) · `games/runtime/ChallengeRoundScoreboard.tsx`

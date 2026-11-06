@@ -59,7 +59,7 @@ export function supportsViewTransitions(): boolean {
 //          same clone the slide-down uses) shrinks into the circle over the destination.
 //
 // Used by: the Deck Tower's notebook paper stack ↔ the Writing Notebook
-// (docs/DECK_TOWER.md § "The notebook stack"), and its mini sort platform ↔ Add New Cards
+// (docs/DECK_TOWER.md § "The notebook stack"), and its mini sort platform ↔ Add Cards
 // (docs/DECK_TOWER.md § "The sort platform").
 
 /** A point on screen, in viewport px (a `getBoundingClientRect` centre). */
@@ -72,7 +72,7 @@ export interface ScreenPoint {
  * `state.circleFrom` off a circle launch, validated (nav state is untyped). The opened page
  * hands it back to its Back (LeafPage / NodePage `exitCircleTo`) so the circle closes onto
  * the point it grew from. Undefined after a reload or deep link — Back slides then.
- * Used by: WritingNotebookPage, AddNewCardsPage.
+ * Used by: WritingNotebookPage, AddCardsPage.
  */
 export function readCirclePoint(state: unknown): ScreenPoint | undefined {
     const p = (state as { circleFrom?: Partial<ScreenPoint> } | null)?.circleFrom;

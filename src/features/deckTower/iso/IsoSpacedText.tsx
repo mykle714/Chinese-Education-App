@@ -23,13 +23,29 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
  * and a `--cjk-font` override can load another face). Where measuring yields nothing (no
  * layout, e.g. jsdom) it falls back to plain `letterSpacing`.
  *
- * Users: IsoFloorLabel (the plate), IsoCard (the head-band label), IsoModeSwitch (the paddle label).
+ * Vertical centring: `y` is the line's visual centre, and the component sets it itself — callers
+ * pass NO `dominantBaseline`. `dominant-baseline="central"` centres the EM box, and WebKit derives
+ * that box from the font's ascent/descent, which in Noto Sans SC (a CJK face with a tall em box)
+ * lands Latin caps ~0.55 em below where Chrome draws them — on an iPhone the "LEARNING" band text
+ * sat visibly toward the band's front edge while Chrome centred it. Instead the text keeps the
+ * alphabetic baseline (identical in every engine) and drops by `CAP_CENTRE_DY`, half the cap
+ * height, so the capitals' ink centres on `y` everywhere.
+ *
+ * Users: IsoFloorLabel (the plate), IsoCard (the head-band label), IsoModeSwitch (the paddle label),
+ * IsoFloorPrint (the fixture floor prints).
  */
-interface IsoSpacedTextProps extends Omit<React.SVGProps<SVGTextElement>, "children" | "letterSpacing" | "textLength" | "lengthAdjust" | "ref"> {
+interface IsoSpacedTextProps extends Omit<React.SVGProps<SVGTextElement>, "children" | "letterSpacing" | "textLength" | "lengthAdjust" | "dominantBaseline" | "dy" | "ref"> {
     children: string;
     /** Extra space between glyphs, in the text's own user units (world units in the iso kit). */
     letterSpacing: number;
 }
+
+/**
+ * How far below `y` the alphabetic baseline sits so the CAPITALS' ink centres on `y`: about half
+ * the cap height. Tuned against Noto Sans SC bold in WebKit and Chromium (ink centre within
+ * 0.2 px of `y` at the plate's size); the iso labels are all caps, so x-height is not a concern.
+ */
+const CAP_CENTRE_DY = "0.38em";
 
 /** Bumps whenever a web font finishes loading, so a measurement taken against a fallback face is retaken. */
 export function useFontLoadEpoch(): number {
@@ -76,7 +92,7 @@ const IsoSpacedText: React.FC<IsoSpacedTextProps> = ({ children: text, letterSpa
     else if (current) spacing = { letterSpacing };
 
     return (
-        <text ref={ref} {...textProps} {...spacing}>
+        <text ref={ref} {...textProps} dy={CAP_CENTRE_DY} {...spacing}>
             {text}
         </text>
     );

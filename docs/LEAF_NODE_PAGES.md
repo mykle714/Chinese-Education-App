@@ -96,19 +96,29 @@ title now that there is no header bar holding them together.
 
 ### Header sizes
 
-`PageHeader` takes a `size` of `"hub" | "node" | "leaf"`, but **you almost never pass
+`PageHeader` takes a `size` of `"hub" | "node" | "dense" | "leaf"`, but **you almost never pass
 it**: it defaults from the props you are already passing.
+
+**Scaled up ~15% on 2026-11-05** from the design's 24/21/18/17: the titles AND every
+right-slot control (icon 19→22, outlined button 32→36, back arrow 21→24, down chevron
+22→25, mono chips 10→11.5px, meta label 10.5→12, outlined chip text 12→14 / glyph 15→17,
+header flame 22.5→26 with a 14→16px count (count later raised to 18px, `SIZE.subtitle`, the same day), td avatar 40→46) moved together so the
+hierarchy is unchanged. Source of truth: `src/components/PageHeader.tsx` → `SIZE_SPEC` and
+the `HEADER_*` constants, `src/components/pageHeaderSizing.ts`,
+`src/components/cycleChipSizing.ts` → `CYCLE_CHIP_FONT_PX`, `src/minutePoints/FireCount.tsx`
+→ `HEADER_FIRE_GLYPH_PX` / `HEADER_FIRE_COUNT_FONT_SIZE`,
+`src/components/HeaderAvatarButton.tsx` → `AVATAR_SIZE_PX`.
 
 | `size` | Title | Padding | Defaulted when | Design class |
 | --- | --- | --- | --- | --- |
-| `hub` | 24px / 600 / -0.025em | `23px 22px 0` | `showBack` is false | `.hd` |
-| `node` | 21px / 600 / -0.02em | `23px 22px 0` | `arrowDirection="left"` | `.hd` + back |
-| `dense` | 18px / 600 / -0.018em | `23px 22px 0` | **never — ask for it** | `.hd` (Card Detail, Learn) |
-| `leaf` | 17px / 600 / -0.015em | `27px 18px 8px` | `arrowDirection="down"` | `.lhd` |
+| `hub` | 28px / 600 / -0.025em | `23px 22px 0` | `showBack` is false | `.hd` |
+| `node` | 24px / 600 / -0.02em | `23px 22px 0` | `arrowDirection="left"` | `.hd` + back |
+| `dense` | 21px / 600 / -0.018em | `23px 22px 0` | **never — ask for it** | `.hd` (Card Detail, Learn) |
+| `leaf` | 20px / 600 / -0.015em | `27px 18px 8px` | `arrowDirection="down"` | `.lhd` |
 
 ⚠️ **`leaf` is the one size whose padding is not the design's.** The design writes
 `.lhd { padding: 21px 18px 0 }`; the app ships `27px 18px 8px` (2026-09-05). The leaf
-title is the app's smallest at 17px, so the design's padding — tuned under a 24px hub
+title is the app's smallest (17px then, 20px since the 2026-11-05 scale-up), so the design's padding — tuned under a 24px hub
 title — read as a cramped, short header, and the bottom padding is additive to whatever
 top gutter the body brings (on Settings the first `SettingsSection` contributes only
 14px). Deepening the band was preferred over enlarging the title, which would collide
@@ -135,7 +145,7 @@ styled MUI `Button`/`IconButton`. Three headers each carried a byte-identical
 | Export | Design class | Shape |
 | --- | --- | --- |
 | `HeaderMetaLabel` | `.hd .meta` | mono uppercase metadata (a count, a status word) |
-| `HeaderIconButton` | `.hd .btn` | an icon action. `variant="bare"` (default) for drill-in/game headers carrying 2–4 actions; `variant="outlined"` for a hub header's single lone action, which needs the 32×32 box to separate it from bare paper |
+| `HeaderIconButton` | `.hd .btn` | an icon action. `variant="bare"` (default) for drill-in/game headers carrying 2–4 actions; `variant="outlined"` for a hub header's single lone action, which needs the 36×36 box to separate it from bare paper. Optional `title` (tooltip), `pressed` (`aria-pressed`, for a toggle) and `fill` (filled glyph for a toggle's on state). **Every header icon action uses this** — no raw MUI `IconButton` in a header slot, or it misses header-wide size changes |
 | `HeaderToggleChip` | `.lhd .tg` | a mono toggle chip. On = solid ink ground + white text — an inversion, not a tint change |
 | `HeaderActionChip` | AudioModeChip's `outlined` skin (`outlinedChipSx`, pageHeaderSizing.ts) | a labelled action — glyph + words in `ink` (default ink2), no fill, a thin pill outline in that ink, the tower's study lettering (`TOWER_STUDY_FONT`), no on state. For an action a glyph alone doesn't explain (the Writing Notebook's "Change") |
 
@@ -208,7 +218,7 @@ one transition.
 - **Reduced motion, or no view transitions:** a plain navigation, with no circle.
 - **Node pages too.** `NodePage` takes the same `exitCircleTo`, so a node page opened with
   the circle closes the same way (its Back otherwise slides right).
-- **Used by:** the Deck Tower's mini sort platform ↔ Add New Cards (a node page;
+- **Used by:** the Deck Tower's mini sort platform ↔ Add Cards (a node page;
   DECK_TOWER.md § The sort platform), and the Deck Tower's notebook paper stack ↔ the Writing Notebook
   (DECK_TOWER.md § The notebook stack).
 
@@ -229,7 +239,13 @@ animate. Returns `{ surfaceRef, style, exit }`:
   rather than rendering after it leaves. The clone is appended to the phone frame
   (`.mobile-demo-frame`, which is `position: relative; overflow: hidden`) so it stays
   clipped to the card and paints above the new route (`src/hooks/usePageSlide.ts`).
-  (An inner `.mobile-demo-frame__viewport` box used to be the target; it was removed
+  **The clone is frozen** (`freezeClone`): `cloneNode` restarts every CSS
+  animation inside it from 0%, which replayed the leaving page's entrance (e.g. acp's
+  card dock stagger) during the exit. Each clone animation is jumped to its live
+  counterpart's `currentTime` (paired by tree position + `animationName`) and paused;
+  one with no live counterpart had already finished and is finished. Each live `<canvas>`
+  is also painted onto its copy, which `cloneNode` leaves blank (the Writing Notebook's
+  cell-editor ink, the writing-grid game). Only the exit's own slide / circle moves. (An inner `.mobile-demo-frame__viewport` box used to be the target; it was removed
   2026-09-13 and the frame itself became the positioned host — see
   `src/components/overlayHost.ts`.) Overlays that dim are hosted at the frame too, OUTSIDE
   the page surface, so the clone does not carry them: they vanish on navigation rather
@@ -268,7 +284,7 @@ runs the page's handler and the footer does not navigate. The claim is dropped o
 
 `NodePage` `backOnFooterTab` is the one packaged use: a tap on that tab plays the page's own
 Back (`exit(onBack, exitCircleTo)`), so a page whose Back leads where the tab does leaves the
-same way either way. Today only **ancp opened from the Deck Tower** sets it (`"deck"`), so
+same way either way. Today only **acp opened from the Deck Tower** sets it (`"deck"`), so
 the Deck tab closes the circle onto the tower's sort platform rather than jumping
 (DECK_TOWER.md § The sort platform). Every other tap, and every other page, navigates as
 before.
@@ -292,7 +308,7 @@ slides away. Parameterized node routes (`/flashcards/card/:id`,
 `matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
 `FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
 route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `deck` for `/`
-(td) and its drill-ins (the saved-card cdp, Add New Cards), `menu` for `/menu` and the
+(td) and its drill-ins (the saved-card cdp, Add Cards), `menu` for `/menu` and the
 hub's drill-ins, `arena` and `dictionary` for their own spaces.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
@@ -331,7 +347,7 @@ own-animation pages) are neither archetype.
 
 | Route | Page | Archetype |
 |---|---|---|
-| `/discover/sort/:language` | `AddNewCardsPage` | Node |
+| `/discover/sort/:language` | `AddCardsPage` | Node |
 | `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
@@ -382,7 +398,7 @@ the definition tab via `showSynonymsRelated`), but host it differently:
 
 | Surface | Layout | How the eip is hosted |
 |---|---|---|
-| Saved-card cdp (`VocabCardDetailPage`) | scrolling page: **hero flashcard** (editable icon layout) + mastery window | in a sheet — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and ancp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
+| Saved-card cdp (`VocabCardDetailPage`) | scrolling page: **hero flashcard** (editable icon layout) + mastery window | in a sheet — `InfoCardSection` (`SheetPanel` + `InfoCardPanelBody`), the exact component the flp and acp raise, opened from the shared `SheetPill` "More Info" capsule (`src/components/SheetPill.tsx`) |
 | Read-only dictionary cdp (`DictionaryCardDetailPage`) | **non-scrolling** page (`scrollable={false}`): category badge, then the panel filling the rest of the space above the footer; **no card** | **inline** — `InfoCardPanelBody` mounted straight on the page, no sheet; each tab pane scrolls on its own. The word-tools rail rides at the bottom of the definition tab (`definitionFooter`). (2026-10-10; replaced the hero card + stacked `VocabCardSections` boxes, which are deleted.) |
 
 So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
@@ -404,7 +420,7 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   page IS the eip panel, mounted inline (see the table above), so the det's icon is not
   shown here. Every tab follows `selectedSenseIndex` (page state, seeded from the requester's
   saved pick and reset on drill-in along with the tab); its speaker speaks that sense's
-  reading. With no card face and a display-only header sense list (2026-10-29), the sense
+  reading. With no card face and a display-only sense list (2026-10-29; in the Definition tab since 2026-11-05), the sense
   can no longer be changed here — this page is slated for deletion.
   The Learning toggle sits under the panel's speaker (`learning`, below). The word-tools rail (`Write it` · `Compare`, `WordToolsRail`) sits at
   the **bottom of the definition tab**, under Synonyms + Related, through the panel's
@@ -500,7 +516,7 @@ nothing else changed. `useTTS`'s manual `speak`/`prefetch` path is untouched, an
 `prefetch` still warms the audio so the first press of the speaker button is instant.
 
 Autoplay elsewhere is unaffected: the flp, Bubble Match, Hydra Bubbles, Match Speed
-and the ancp all narrate on their own gestures/toggles and keep doing so.
+and the acp all narrate on their own gestures/toggles and keep doing so.
 
 ## Reader: node list + node-style document page (cdp-style)
 
@@ -513,19 +529,21 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   (`chrome: "node"`, `footerTab: "menu"`).
   Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
   internal scroll region for the document list, matching the fixed-layout
-  `NodePage` pattern used by `AddNewCardsPage`; `MobileTabScreen`'s scroll area
+  `NodePage` pattern used by `AddCardsPage`; `MobileTabScreen`'s scroll area
   reserves `FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
   footer spacer is needed. `TextSidebar`'s `onTextSelect` calls
-  `useSlideNavigate()` to `/reader/${text.id}`.
+  `useSlideNavigate()` to `/reader/${text.id}`, and its New Document button
+  slides to `/reader/new` (`NEW_DOCUMENT_PATH`, `readerPaths.ts`), a blank draft
+  the document page opens in edit mode
+  ([USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § Creating a document).
 - **Open document** (`/reader/:id`, `ReaderDocumentPage.tsx`) — fetches its own
   `Text` by id (`GET /api/texts/:id`), so it is deep-linkable and survives a hard
   refresh, and supports the browser back button like every other routed page.
   Rendered inside `src/features/reader/ReaderDocumentSurface.tsx`, a **footerless
   node-style drill-in**: LEFT arrow, horizontal slide, but no footer. Its header
-  right slot (`docHeaderRightContent`) carries Edit/Delete icon buttons ahead of
-  the validator-download button + streak badge, so `TextHeader.tsx` itself only
-  renders title/description/meta + validation actions — no back/edit/delete
-  buttons of its own. `ReaderDocumentSurface` is deliberately NOT the shared
+  right slot (`docHeaderRightContent`) carries the Edit/Delete icon buttons, so
+  `TextHeader.tsx` itself only renders title/meta — no back/edit/delete buttons of
+  its own. `ReaderDocumentSurface` is deliberately NOT the shared
   `NodePage`: `MobileTabScreen` would reserve `FOOTER_CLEARANCE` for a
   footer bar `/reader/:id` never shows (it isn't in `FooterPresenter`'s route
   maps) and add a scroll-away header to a fixed layout. Instead it composes
@@ -542,9 +560,7 @@ document page uses node **motion and arrow** (lateral: you're moving within the
 Reader, not stacking a terminal sheet) while remaining footerless like its parent
 leaf.
 
-Shared logic between the two pages (list-refresh-after-CRUD via the dialogs, the
-validator-download call) is factored into `src/features/reader/validationApi.ts`
-(`downloadValidationDoc`) rather than duplicated. `src/hooks/useLockBodyScroll.ts`
+`src/hooks/useLockBodyScroll.ts`
 (the html/body scroll-lock effect) is used only by `ReaderDocumentPage` now — its
 fixed `ReaderDocumentSurface` layout sits outside the standard `NodePage`/
 `MobileTabScreen` shell, unlike the list page.

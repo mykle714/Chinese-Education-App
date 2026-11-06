@@ -105,7 +105,7 @@ function findPuckAnchor(scrim: HTMLElement, selector: string): HTMLElement | nul
  * bar along with the page. It used to take a `positioning` prop whose `absolute` default
  * dimmed only the nearest positioned ancestor — in five games that was the content box
  * under the header, which left the back arrow and title lit above the dim; `fixed` was
- * sealed inside the transformed page Surface, under the footer (ancp's done popup).
+ * sealed inside the transformed page Surface, under the footer (acp's done popup).
  * Rule: src/components/overlayHost.ts § "THE RULE FOR A DIM".
  *
  * Two of these can be on screen at once (a game's end popup in the top-right, the

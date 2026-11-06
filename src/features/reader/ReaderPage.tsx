@@ -1,21 +1,17 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box, IconButton, Snackbar, Alert } from "@mui/material";
-import { FactCheck as FactCheckIcon } from "@mui/icons-material";
+import { Box } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { useAuth } from "../../AuthContext";
 import type { Text } from "../../types";
 
 // Extracted components
 import TextSidebar from "./TextSidebar";
-import CreateDocumentDialog from "./CreateDocumentDialog";
-import EditDocumentDialog from "./EditDocumentDialog";
-import DeleteDocumentDialog from "./DeleteDocumentDialog";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
-import { downloadValidationDoc } from "./validationApi";
-import { apiGet } from "../../api/http";
+import { apiDelete, apiGet } from "../../api/http";
+import { NEW_DOCUMENT_PATH } from "./readerPaths";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
 // keeps the footer (Menu tab stays active, same as Games), LEFT back
@@ -24,7 +20,10 @@ import { apiGet } from "../../api/http";
 // document list, same shape as before under LeafPage. Opening a document is a
 // real navigation to `/reader/:id` (ReaderDocumentPage.tsx), a footerless
 // NODE-style drill-in reached via `useSlideNavigate` — a routed cdp-style pair,
-// not in-page state.
+// not in-page state. "New Document" is the same navigation to `/reader/new`, which
+// ReaderDocumentPage opens as a blank draft in edit mode (no create dialog).
+// Rows have no Edit/Delete buttons: swiping a row left uncovers Delete
+// (SwipeToDeleteRow), and editing happens inside the open document.
 function ReaderPage() {
     usePageTitle("Reader");
     const navigate = useNavigate();
@@ -35,14 +34,8 @@ function ReaderPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Dialog states — list-row Edit/Delete (the open-document page has its own).
-    const [createDialogOpen, setCreateDialogOpen] = useState(false);
-    const [editDialogOpen, setEditDialogOpen] = useState(false);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [textToEdit, setTextToEdit] = useState<Text | null>(null);
-    const [textToDelete, setTextToDelete] = useState<Text | null>(null);
-
-    const [validationMsg, setValidationMsg] = useState<string | null>(null);
+    // A failed swipe-delete; shown above the list without hiding it.
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     // Fetch texts from API.
     useEffect(() => {
@@ -75,73 +68,39 @@ function ReaderPage() {
         slideNavigate(`/reader/${text.id}`);
     }, [slideNavigate]);
 
-    const formatDate = useCallback((dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    }, []);
-
+    // A blank draft; nothing is created server-side until its first Save.
     const handleCreateNew = useCallback(() => {
-        setCreateDialogOpen(true);
-    }, []);
+        slideNavigate(NEW_DOCUMENT_PATH);
+    }, [slideNavigate]);
 
-    const handleEdit = useCallback((text: Text) => {
-        setTextToEdit(text);
-        setEditDialogOpen(true);
-    }, []);
-
-    const handleDelete = useCallback((text: Text) => {
-        setTextToDelete(text);
-        setDeleteDialogOpen(true);
-    }, []);
-
-    const handleDialogSuccess = useCallback(async () => {
+    // Swipe-left → Delete. iPhone style: no confirmation, and the row leaves the
+    // list at once (optimistic). On failure the document goes back where it was
+    // and an error shows above the list.
+    const handleDelete = useCallback(async (text: Text) => {
+        setDeleteError(null);
+        let removedIndex = -1;
+        setTexts(prev => {
+            removedIndex = prev.findIndex(t => t.id === text.id);
+            return prev.filter(t => t.id !== text.id);
+        });
         try {
-            setTexts(await apiGet<Text[]>('/api/texts'));
+            await apiDelete(`/api/texts/${text.id}`);
         } catch (err) {
-            console.error('Error reloading texts:', err);
+            console.error('Error deleting text:', err);
+            setTexts(prev => {
+                if (prev.some(t => t.id === text.id)) return prev;
+                const next = [...prev];
+                next.splice(removedIndex < 0 ? 0 : Math.min(removedIndex, next.length), 0, text);
+                return next;
+            });
+            setDeleteError(`Couldn't delete "${text.title}". Please try again.`);
         }
-        // No deps: apiGet reads the bearer token itself at call time, so this callback's
-        // identity is stable across silent token refreshes.
     }, []);
-
-    // Download a fresh entry+field to validate. It is added to the list but NOT
-    // auto-opened — the validator picks it from the list when ready
-    // (docs/DATA_VALIDATION_SYSTEM.md).
-    const handleDownloadValidation = useCallback(async () => {
-        try {
-            await downloadValidationDoc(user?.selectedLanguage || 'zh');
-            await handleDialogSuccess(); // refresh list so the new doc appears
-            setValidationMsg('Added a new entry to validate to your list');
-        } catch (err) {
-            console.error('Error downloading validation entry:', err);
-            setValidationMsg(err instanceof Error ? err.message : 'Failed to download an entry to validate');
-        }
-    }, [user?.selectedLanguage, handleDialogSuccess]);
-
-    const headerRightContent = isAuthenticated ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {user?.isValidator && (
-                <IconButton
-                    className="reader-page-validate-download-button"
-                    onClick={handleDownloadValidation}
-                    size="small"
-                    aria-label="Download an entry to validate"
-                    title="Download an entry to validate"
-                >
-                    <FactCheckIcon />
-                </IconButton>
-            )}
-        </Box>
-    ) : undefined;
 
     return (
         <NodePage
             title="Reader"
             onBack={() => navigate("/menu")}
-            headerExtraActions={headerRightContent}
             scrollable={false}
             contentClassName="reader-page-root"
         >
@@ -176,64 +135,19 @@ function ReaderPage() {
                     }}>
                         <TextSidebar
                             texts={texts}
-                            selectedText={null}
                             loading={loading}
                             error={error}
+                            actionError={deleteError}
+                            onDismissActionError={() => setDeleteError(null)}
                             onTextSelect={handleTextSelect}
                             onCreateNew={handleCreateNew}
-                            onEdit={handleEdit}
                             onDelete={handleDelete}
-                            formatDate={formatDate}
                             drawerWidth={500}
                         />
                     </Box>
                 </Box>
             </Box>
 
-            <CreateDocumentDialog
-                open={createDialogOpen}
-                onClose={() => setCreateDialogOpen(false)}
-                onSuccess={handleDialogSuccess}
-                language={user?.selectedLanguage || 'zh'}
-            />
-            <EditDocumentDialog
-                open={editDialogOpen}
-                text={textToEdit}
-                onClose={() => {
-                    setEditDialogOpen(false);
-                    setTextToEdit(null);
-                }}
-                onSuccess={handleDialogSuccess}
-            />
-            <DeleteDocumentDialog
-                open={deleteDialogOpen}
-                text={textToDelete}
-                onClose={() => {
-                    setDeleteDialogOpen(false);
-                    setTextToDelete(null);
-                }}
-                onSuccess={handleDialogSuccess}
-            />
-
-            <Snackbar
-                className="reader-page-validation-snackbar"
-                open={!!validationMsg}
-                autoHideDuration={4000}
-                onClose={() => setValidationMsg(null)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                // Clears the NodePage header (60px) instead of overlapping the back
-                // arrow / validator-download button.
-                sx={{ top: '68px !important' }}
-            >
-                <Alert
-                    className="reader-page-validation-alert"
-                    severity="error"
-                    variant="filled"
-                    onClose={() => setValidationMsg(null)}
-                >
-                    {validationMsg}
-                </Alert>
-            </Snackbar>
         </NodePage>
     );
 }

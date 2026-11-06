@@ -12,6 +12,8 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import { useTTS } from "../../hooks/useTTS";
 import InfoCardPanelBody from "../../features/flashcards/FlashcardsLearnPage/InfoCardPanelBody";
+import { EipPaletteProvider } from "../../features/flashcards/FlashcardsLearnPage/EipPaletteContext";
+import { useEipPalette } from "../../features/flashcards/FlashcardsLearnPage/useEipPalette";
 import { getBreakdownItems } from "../../utils/breakdownUtils";
 import { dictionaryEntryToVocabEntry } from "../../utils/dictEntryAdapter";
 import { resolveSelectedSenseIndex } from "../../utils/definitionUtils";
@@ -138,8 +140,11 @@ const DictionaryCardDetailPage: React.FC = () => {
     // Tier 2 time of day, like the Dictionary page it is drilled into from: the ground
     // tints with the hour (slate at night), and the slab footer + beginner keyboard follow
     // while this page is up (docs/SHELF_REDESIGN.md § 7b "Time of day"). The inline eip
-    // panel colours itself (the eip's own palette), not from this look.
+    // panel does NOT follow the clock: it takes the eip's THEME palette (light, or dark in
+    // the Dark theme), published below by EipPaletteProvider exactly as the sheet eip's
+    // InfoCardSection does, so the panel and its cpcd/dd ink re-theme together.
     const look = useTier2Look();
+    const eipPalette = useEipPalette();
 
     return (
         <NodePage
@@ -181,7 +186,7 @@ const DictionaryCardDetailPage: React.FC = () => {
                             </Box>
                         )}
 
-                        {/* THE EIP, INLINE — the same InfoCardPanelBody the flp/ancp/saved-card
+                        {/* THE EIP, INLINE — the same InfoCardPanelBody the flp/acp/saved-card
                             sheet raises (entry header → definition/examples/breakdown tabs →
                             swipeable per-tab scrolling panes), mounted straight on the page
                             instead of in a SheetPanel. Synonyms + Related Words ride at the
@@ -190,49 +195,52 @@ const DictionaryCardDetailPage: React.FC = () => {
                             example segment) navigates to that word's dictionary cdp rather
                             than opening a nested eip tab, so browsing stays read-only.
                             The Learning toggle rides under the header speaker (learning).
-                            No headerDragBind — there is no sheet to resize. */}
-                        <InfoCardPanelBody
-                            currentEntry={entry}
-                            selectedTab={selectedTab}
-                            onTabChange={setSelectedTab}
-                            breakdownItems={breakdownItems}
-                            showPinyinColor={showPinyinColor}
-                            isFlipped={false}
-                            onBreakdownItemClick={(item) => handleWordOpen(item.character)}
-                            onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
-                            onExampleSegmentClick={handleWordOpen}
-                            // Speak the reading of the sense the header is showing.
-                            onSpeak={(e) => tts.speak(e, selectedSenseIndex)}
-                            onSpeakSentence={tts.speakSentence}
-                            speakingKey={tts.speakingKey}
-                            learning={learning}
-                            selectedSenseIndex={selectedSenseIndex}
-                            showSynonymsRelated
-                            // pan-y: the panes scroll natively; horizontal stays free for
-                            // the panel's own tab-swipe listener to claim.
-                            scrollTouchAction="pan-y"
-                            // WORD TOOLS — `Write it` and `Compare` at the bottom of the
-                            // DEFINITION tab, under Synonyms + Related (2026-10-10). Other
-                            // surfaces put this rail above their card; this page has no card,
-                            // so the rail closes out the word's main reading instead. It is
-                            // the page's sole Practice Writing entry point
-                            // (docs/PRACTICE_WRITING.md). Both tools act on the WORD, so a
-                            // read-only page is no obstacle: Compare hands the word to the
-                            // compare sheet raised over this page. The rail hides itself when
-                            // neither tool can act (a non-zh / >4-character word has no
-                            // writing drill). The adapted det entry has no vet row, so the
-                            // drill records no writing mark.
-                            definitionFooter={
-                                <WordToolsRail
-                                    className="dictionary-card-detail__word-tools"
-                                    entry={entry}
-                                    onCompare={openCompare}
-                                    // Drop the rail's default above-the-card bottom margin;
-                                    // the tab's footer slot spaces it.
-                                    sx={{ margin: "0 auto" }}
-                                />
-                            }
-                        />
+                            No headerDragBind — there is no sheet to resize.
+                            Wrapped in EipPaletteProvider so it follows the theme like the sheet. */}
+                        <EipPaletteProvider palette={eipPalette}>
+                            <InfoCardPanelBody
+                                currentEntry={entry}
+                                selectedTab={selectedTab}
+                                onTabChange={setSelectedTab}
+                                breakdownItems={breakdownItems}
+                                showPinyinColor={showPinyinColor}
+                                isFlipped={false}
+                                onBreakdownItemClick={(item) => handleWordOpen(item.character)}
+                                onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
+                                onExampleSegmentClick={handleWordOpen}
+                                // Speak the reading of the sense the header is showing.
+                                onSpeak={(e) => tts.speak(e, selectedSenseIndex)}
+                                onSpeakSentence={tts.speakSentence}
+                                speakingKey={tts.speakingKey}
+                                learning={learning}
+                                selectedSenseIndex={selectedSenseIndex}
+                                showSynonymsRelated
+                                // pan-y: the panes scroll natively; horizontal stays free for
+                                // the panel's own tab-swipe listener to claim.
+                                scrollTouchAction="pan-y"
+                                // WORD TOOLS — `Write it` and `Compare` at the bottom of the
+                                // DEFINITION tab, under Synonyms + Related (2026-10-10). Other
+                                // surfaces put this rail above their card; this page has no card,
+                                // so the rail closes out the word's main reading instead. It is
+                                // the page's sole Practice Writing entry point
+                                // (docs/PRACTICE_WRITING.md). Both tools act on the WORD, so a
+                                // read-only page is no obstacle: Compare hands the word to the
+                                // compare sheet raised over this page. The rail hides itself when
+                                // neither tool can act (a non-zh / >4-character word has no
+                                // writing drill). The adapted det entry has no vet row, so the
+                                // drill records no writing mark.
+                                definitionFooter={
+                                    <WordToolsRail
+                                        className="dictionary-card-detail__word-tools"
+                                        entry={entry}
+                                        onCompare={openCompare}
+                                        // Drop the rail's default above-the-card bottom margin;
+                                        // the tab's footer slot spaces it.
+                                        sx={{ margin: "0 auto" }}
+                                    />
+                                }
+                            />
+                        </EipPaletteProvider>
                     </>
                 ) : null}
             </Box>

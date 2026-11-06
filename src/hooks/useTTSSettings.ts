@@ -71,7 +71,7 @@ export interface TTSSettings {
      * Whether narration fires on its own (card flips, game reveals, on-deck
      * packs). When false the app is silent until the user presses a speaker
      * button. This is the app's ONLY autoplay setting — the former per-surface
-     * toggles (flp/games `autoplayChinese`, ancp `discover.settings.autoplay`)
+     * toggles (flp/games `autoplayChinese`, acp `discover.settings.autoplay`)
      * were unified into it.
      */
     autoplay: boolean;
@@ -114,7 +114,7 @@ function readBlob(key: string): Record<string, unknown> | null {
  * Before: a master `tts.settings.enabled` switch (silenced EVERYTHING, speaker
  * buttons included) plus two independent autoplay flags — `autoplayChinese`
  * (flp + Bubble Match + Hydra + Match Speed) and `discover.settings.autoplay`
- * (ancp). All three collapse into `autoplay` here.
+ * (acp). All three collapse into `autoplay` here.
  *
  * A user who had turned ANY of them off wanted less automatic sound, so any
  * explicit `false` migrates to `autoplay: false`. That is the closest available

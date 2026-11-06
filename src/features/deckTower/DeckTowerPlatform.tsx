@@ -118,22 +118,25 @@ function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
  * The deck size, in cards ON the tower, at which a pawn is startled by how tall its
  * tower has grown: it leans back to look up, leaps away, a "!" pops over its head, it
  * stares for a few seconds and then goes back to wandering (IsoPawn `startled`).
- * Crossed during the build-up, so a bigger deck startles it partway up.
+ * Crossed during the build-up, so a bigger deck startles it partway up. Only a GROW
+ * past it counts (a swap's build-up, a resize's sky drop): a tower that loads in already
+ * past it is the pawn's baseline (`towerCountKnown`).
  */
 const STARTLE_AT_CARDS = 50;
 
 /**
  * The corner fixtures' soft-introduction floor prints (IsoFloorPrint; docs/DECK_TOWER.md
- * § "Corner fixture labels", docs/SOFT_INTRODUCTION.md § 2): what each print says, and its
- * type size. White (washed for the time of day). The sort bin's print is three lines, the
- * notebook's two — towerPlatforms.ts → `labelUnder` places each block from its line count
- * (`SORT_BIN_LABEL_LINES`, `NOTEBOOK_LABEL_LINES`) and this size; keep them in step. At this size a line is wider than the
+ * § "Corner fixture labels", docs/SOFT_INTRODUCTION.md § 2): what each print says, its
+ * type size and line alignment. White (washed for the time of day). The sort bin's print
+ * is three lines at 0.6 units, set flush right; the notebook's two lines at 0.4, centred —
+ * towerPlatforms.ts → `labelUnder` places each block from its line count and size
+ * (`SORT_BIN_LABEL_LINES`/`SORT_BIN_PRINT_FONT_SIZE`, `NOTEBOOK_LABEL_LINES`/
+ * `NOTEBOOK_PRINT_FONT_SIZE`); keep them in step. At these sizes a line is wider than the
  * fixture's half-width to the rim, so the print is clamped inside it (`maxX`).
  */
 const FIXTURE_PRINT = {
-    sortBin: ["ADD", "NEW", "CARDS"],
-    notebook: ["WRITING", "NOTEBOOK"],
-    fontSize: 0.4,
+    sortBin: { lines: ["ADD", "NEW", "CARDS"], fontSize: 0.6, align: "right" },
+    notebook: { lines: ["WRITING", "NOTEBOOK"], fontSize: 0.4, align: "center" },
     letterSpacing: 0.04,
 } as const;
 
@@ -203,6 +206,12 @@ interface DeckTowerPlatformProps {
     /** Cards standing on this tower right now: the startle threshold reads it. */
     cardsOnTower: number;
     /**
+     * `cardsOnTower` is a real figure, not the `0` it reads while the deck count loads. Until
+     * then the pawn's startle is held unknown (IsoPawn `startled={null}`), so a tower that
+     * loads in already past STARTLE_AT_CARDS does not count as having grown past it.
+     */
+    towerCountKnown: boolean;
+    /**
      * The cards a pawn up on the tower stands on: `cardsOnTower`, or a shrink's lower figure
      * from its start, so it falls through the cards leaving rather than hovering over them.
      */
@@ -257,7 +266,7 @@ interface DeckTowerPlatformProps {
     };
     /**
      * The mini sort platform in the floor's right corner (main world, while the Learning
-     * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — ancp's To Learn bin in
+     * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — acp's To Learn bin in
      * miniature (empty, lying flat on the floor), and its button. It moves with the tower like the notebook stack does.
      * `hopping`: it jumps every 2 s, the "cards low — go sort" call. Never passed together
      * with `notebook` (they take the same corner, on different worlds).
@@ -315,6 +324,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     dropPx,
     pawns,
     cardsOnTower,
+    towerCountKnown,
     summitCards,
     summitHeld,
     summitSpot,
@@ -357,9 +367,9 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // build-up (the fixture's `progress`). On the trap door it swings away with the floor.
     const fixturePrint =
         sortBin && sortIntro === "intro"
-            ? { at: layout.sortBinLabelAt, lines: FIXTURE_PRINT.sortBin, progress: sortBin.progress }
+            ? { at: layout.sortBinLabelAt, ...FIXTURE_PRINT.sortBin, progress: sortBin.progress }
             : notebook && notebookIntro === "intro"
-              ? { at: layout.notebookLabelAt, lines: FIXTURE_PRINT.notebook, progress: notebook.progress }
+              ? { at: layout.notebookLabelAt, ...FIXTURE_PRINT.notebook, progress: notebook.progress }
               : null;
     const pawnKey = (p: SwapPawn) => String(p.key);
 
@@ -450,8 +460,9 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 floorDrop={p.outgoing ? dropPx / proj.heightUnit : 0}
                 onDepthRankChange={reportRank(pawnKey(p))}
                 // The incoming pawn is only startled by the NEW tower: never while the old
-                // one is still on screen (it is in the air then anyway).
-                startled={(p.outgoing || !swapOutgoing) && cardsOnTower >= STARTLE_AT_CARDS}
+                // one is still on screen (it is in the air then anyway). Unknown (null) while
+                // the count loads, so loading in past the threshold is a baseline, not a grow.
+                startled={towerCountKnown ? (p.outgoing || !swapOutgoing) && cardsOnTower >= STARTLE_AT_CARDS : null}
                 decals={plateShade}
                 steps={pawnSteps}
                 entrance={p.entrance}
@@ -671,8 +682,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             }),
         );
     }
-    // The mini sort platform (main world, Learning only): ancp's empty To Learn bin in
-    // miniature, lying flat on the floor — a white slab (ancp's day platform) with a dashed
+    // The mini sort platform (main world, Learning only): acp's empty To Learn bin in
+    // miniature, lying flat on the floor — a white slab (acp's day platform) with a dashed
     // footprint in the bin's collection colour (LEARNING_COLORS.main, SortBins' "To Learn"),
     // both washed for the time of day. Its tap target
     // covers it from the floor to the top of its jump, so a hopping platform is still
@@ -804,7 +815,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                                 at={fixturePrint.at}
                                 lines={fixturePrint.lines}
                                 surface={floor}
-                                fontSize={FIXTURE_PRINT.fontSize}
+                                fontSize={fixturePrint.fontSize}
+                                align={fixturePrint.align}
                                 letterSpacing={FIXTURE_PRINT.letterSpacing}
                                 color={wash(COLORS.white)}
                                 maxX={layout.fixtureLabelMaxX}

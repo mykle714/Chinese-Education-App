@@ -52,11 +52,11 @@ Every surface below reads `useTestingFeatures()`:
 | Surface | Code |
 |---|---|
 | Deck Tower tester chip rows: time of day, weather, lightning, forced break, banking always-play | `src/features/deckTower/DeckTowerPage.tsx` → `testingFeatures` |
-| Time-of-day pin honoured app-wide | `src/timeOfDay/useTier2Look.ts`, `src/features/flashcards/FlashcardsLearnPage/useEipPalette.ts`, `src/features/discover/AddNewCardsPage.tsx` |
-| Weather override on scp | `src/features/discover/AddNewCardsPage.tsx` |
+| Time-of-day pin honoured app-wide | `src/timeOfDay/useTier2Look.ts`, `src/features/flashcards/FlashcardsLearnPage/useEipPalette.ts`, `src/features/discover/AddCardsPage.tsx` |
+| Weather override on scp | `src/features/discover/AddCardsPage.tsx` |
 | Forced game break in the flp | `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → `forcedBreakKey` |
 | Banking "always play" honoured | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `useDailyBankingRun` |
-| Soft-intro header toggle + its override | `src/softIntro/SoftIntroToggle.tsx`, `src/softIntro/useSoftIntro.ts` |
+| Settings → "Soft introductions" override (shown only while the switch is on) | `src/pages/settings/SettingsBody.tsx` → `SOFT_INTRO_OVERRIDE_OPTIONS`, `src/softIntro/useSoftIntro.ts` → `useSoftIntro`, `useSoftIntroOverride` |
 | Study Challenge "Allow anytime" row, notice and request latch | `src/features/studyChallenge/ChallengesPage.tsx`, `src/features/studyChallenge/challengeAnytime.ts` → `useChallengeAnytime` |
 | Tester Dashboard Menu tile + route bounce (or `isAdmin`) | `src/pages/MenuPage.tsx` → `gatedTiles`, `src/pages/TesterDashboardPage.tsx` |
 

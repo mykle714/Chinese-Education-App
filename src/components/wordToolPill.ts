@@ -4,8 +4,8 @@ import { COLORS } from "../theme/colors";
  * The shared look of one pill on the word-tools rail (`.wtl b` in `shelf-system.css`;
  * artboards 18–25).
  *
- * Its own module, and not a constant inside `WordToolsRail`, because the rail's two
- * pills are rendered by two different components: `Compare` is the rail's own markup
+ * Its own module, and not a constant inside `WordToolsRail`, because the rail's
+ * pills are rendered by two different components: `Compare` and `Customize` are the rail's own markup
  * while `Write it` is `PracticeWritingButton` in its `rail` appearance (that component
  * owns the star fetch, the popup and the Writing mark, so it cannot be inlined). With
  * the constant living in `WordToolsRail` the two files import each other in a cycle —

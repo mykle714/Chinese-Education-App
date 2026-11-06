@@ -6,6 +6,8 @@ import {
     recordSoftIntroVisit,
     resolveSoftIntroState,
     subscribeSoftIntroOverride,
+    writeSoftIntroOverride,
+    type SoftIntroOverride,
 } from "./softIntroStorage";
 
 /**
@@ -22,9 +24,10 @@ import {
  * shown (e.g. a compact variant without the element): no visit is recorded there, so it
  * cannot graduate the si for a surface the learner never actually saw.
  *
- * Feature-tester accounts (users.isFeatureTester, migration 178) can force every si on screen into one state from the header toggle
- * (`SoftIntroToggle`); that override is LIVE (re-renders immediately) because its whole
- * point is comparing the two styles side by side.
+ * Feature-tester accounts (users.isFeatureTester, migration 178) can force every si into
+ * one state from Settings → "Soft introductions" (shown under "Enable testing features",
+ * `useSoftIntroOverride`); that override is LIVE (re-renders immediately) because its
+ * whole point is comparing the two styles.
  */
 export function useSoftIntro(id: SoftIntroId, { enabled = true }: { enabled?: boolean } = {}): SoftIntroState {
     // The tester override applies only while testing features are on (useTestingFeatures).
@@ -37,4 +40,15 @@ export function useSoftIntro(id: SoftIntroId, { enabled = true }: { enabled?: bo
     }, [id, enabled]);
 
     return testingFeatures && override !== "auto" ? override : natural;
+}
+
+/**
+ * The feature-tester si override as React state: [value, setter]. Raw — it does NOT check
+ * `useTestingFeatures()`; `useSoftIntro` applies that gate, so a stored override is inert
+ * while testing features are off. docs/SOFT_INTRODUCTION.md § 5.
+ * Read by: SettingsBody (the "Soft introductions" section).
+ */
+export function useSoftIntroOverride(): [SoftIntroOverride, (value: SoftIntroOverride) => void] {
+    const override = useSyncExternalStore(subscribeSoftIntroOverride, readSoftIntroOverride, () => "auto" as const);
+    return [override, writeSoftIntroOverride];
 }

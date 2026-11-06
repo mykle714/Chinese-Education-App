@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DefinitionCluster } from '../types';
 import { joinDefinitionList, resolveSearchRowView, DEFINITION_LIST_SEPARATOR } from '../utils/definitionUtils';
 
-// The dictionary row's list must stay the eip header's list (EipEntryHeader → senseSegments).
+// The dictionary row's list must stay the eip's sense list (EipSenseList → buildSenseSegments).
 // Docs: docs/SHELF_REDESIGN.md § 7b.
 const cluster = (sense: string, frequencyScore: number, glosses: string[], reading: string | null = null) =>
   ({ sense, reading, pos: null, frequencyScore, glosses }) as DefinitionCluster;

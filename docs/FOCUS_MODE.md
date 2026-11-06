@@ -22,12 +22,12 @@ world's Deck Tower platform. Pulling it turns on **focus mode** for that world:
 
 | Rule | Value | Code |
 |---|---|---|
-| Lever appears | the world has **100** off-cooldown cards across **all four** utcm bands (U+T+C+M), or focus is already on | `FOCUS_LEVER_THRESHOLD`, `useFocusLever` |
+| Lever appears | the world has **80** off-cooldown cards across **all four** utcm bands (U+T+C+M), or focus is already on | `FOCUS_LEVER_THRESHOLD`, `useFocusLever` |
 | Daily cap | **25** | `FOCUS_DAILY_CARDS` |
 | Auto-off | the day's snapshot finds **fewer than 25** off-cooldown cards | `FocusModeService.resolveWorld` |
 | Scope | per **(user, language, world)** | `user_languages."focusWorlds"` |
 
-**Why 100 counts all four bands:** U+T+C+M is what the learner sees as assigned to them, the
+**Why 80 counts all four bands:** U+T+C+M is what the learner sees as assigned to them, the
 pile the feature exists to keep from overwhelming them.
 
 *Code: `server/contracts/focusMode.ts` (numbers + wire shapes).*
@@ -178,7 +178,7 @@ Search's raw fetch calls it itself).
 * **Tap while on** → "Turn off focus mode?". *Yes* → it springs back and, once the full counts
   are re-read, the tower **grows** back to the pile with a grow from the same library — today,
   the sky drop. If the full pile still
-  holds 100+ cards that is all — the lever stays. Only if it is under 100 does the lever then
+  holds 80+ cards that is all — the lever stays. Only if it is under 80 does the lever then
   recede into the platform and the flaps swing up to shut the hole. (While focus is on the
   counts are narrowed to today's set, so `useFocusLever` holds the lever up until the re-read
   full counts arrive, rather than sinking it on the stale narrowed figure.)

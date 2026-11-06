@@ -102,7 +102,7 @@ const FallingWord: React.FC<{ ghost: FallingGhost; showPinyin: boolean; showPiny
         if (!node) return;
         // Starts exactly where the held word was let go (its lift and fade included),
         // homes in on the bucket's centre and shrinks away, as if into the recess —
-        // the sort flow's drop "fall" (AddNewCardsPage → DROP_FALL_MS).
+        // the sort flow's drop "fall" (AddCardsPage → DROP_FALL_MS).
         const at = (x: number, y: number, scale: number) => `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale})`;
         const animation = node.animate(
             [

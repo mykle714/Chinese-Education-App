@@ -31,7 +31,7 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // This is also what makes the COMPARE sheet earn. Compare has no route of its own
 // (docs/WORD_COMPARE_FEATURE.md — it is a panel raised over the page you are on), so it
 // cannot be listed here; it earns because every surface that can open it now accrues —
-// the flp, the ancp, and both cdps. Anything that later hosts the compare sheet from a
+// the flp, the acp, and both cdps. Anything that later hosts the compare sheet from a
 // non-earning page would break that, so keep the two lists in step.
 //
 // Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a cdp or a

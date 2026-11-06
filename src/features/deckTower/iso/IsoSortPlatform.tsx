@@ -18,12 +18,12 @@ import {
 } from "./sortPlatformMetrics";
 
 /**
- * IsoSortPlatform — ancp's empty "To Learn" bin in miniature: a thin slab lying flat on a
+ * IsoSortPlatform — acp's empty "To Learn" bin in miniature: a thin slab lying flat on a
  * floor, with a dashed footprint in the bin's colour where its deck would stand
- * (docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform"; ancp's full-size bins are
+ * (docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform"; acp's full-size bins are
  * src/features/discover/SortBins.tsx, whose empty bin draws the same dashed footprint).
  *
- * The Deck Tower lays one on the main world's floor as the Add New Cards button
+ * The Deck Tower lays one on the main world's floor as the Add Cards button
  * (docs/DECK_TOWER.md § "The sort platform").
  *
  * Unlike IsoPlatform (whose top is pinned at z = 0 and which hangs DOWN from it) this slab
@@ -82,7 +82,7 @@ const HOP_CSS = `
 }
 `;
 interface IsoSortPlatformProps {
-    /** The slab's footprint (world units). Portrait, like ancp's bins. */
+    /** The slab's footprint (world units). Portrait, like acp's bins. */
     rect: WorldRect;
     /** The floor it floats over (and casts its shadow on). */
     surface: IsoSurface;
@@ -105,7 +105,7 @@ const IsoSortPlatform: React.FC<IsoSortPlatformProps> = ({ rect, surface, deckCo
 
     const slab = useMemo(() => prism(proj, rect, surface.z, topZ), [proj, rect, surface.z, topZ]);
     const floorPath = useMemo(() => flatPath(proj, insetRect(rect, MINI_RIM), topZ), [proj, rect, topZ]);
-    // ancp's empty-bin footprint, scaled down: the deck's outline, dashed, on the slab's top.
+    // acp's empty-bin footprint, scaled down: the deck's outline, dashed, on the slab's top.
     const footprintPath = useMemo(
         () => flatPath(proj, { ...insetRect(rect, FOOTPRINT_INSET), r: Math.min(rect.r, 0.12) }, topZ),
         [proj, rect, topZ],

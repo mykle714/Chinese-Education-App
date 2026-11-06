@@ -350,25 +350,6 @@ export const CardFaceSide: React.FC<{
     // the rotated-away face from hit-testing, so it would otherwise capture the
     // canvas's pointer events.
     inert?: boolean;
-    // A control anchored to the face's TOP EDGE, over everything else on it — the flp's
-    // card-operations rail (`CardOpsRail`, artboard 21).
-    //
-    // It is interactive, has to paint over the icon layer and the text blocks, and
-    // positions itself against the face's own edge — so it renders in the OUTER face
-    // box, after the content, at the top of the stacking order. Absent everywhere but
-    // the flp. (It used to be contrasted here with a passive `cornerBadge` slot, whose
-    // only user was the progress-category chip; both were removed on 2026-08-28 when
-    // the mastery category came off the card back.)
-    topRail?: React.ReactNode;
-    // A strip anchored to the face's TOP EDGE, left of the `•••` — the learner's own note
-    // on this card (`CardNote`, vet.note, migration 155). It shares the top edge with
-    // `topRail`'s dot rather than the bottom edge, because the face's own content grows
-    // downward (see CardNote). Like `topRail` it renders in the OUTER face
-    // box so it paints over the icon layer and the text blocks, and like `topRail` it is
-    // passed as a node so this shared face stays ignorant of what a note is (and of who is
-    // allowed to edit one). Answer face only — see CardNote's doc comment. Renders nothing
-    // when the card has no note and no edit is open. See docs/CARD_NOTES.md.
-    noteSlot?: React.ReactNode;
     // Per-card background fill (vet.cardColor, migration 94). Painted only when this face is
     // rendering the advanced layout (`isUsingAdvancedLayout`); otherwise the theme default is
     // used. When it applies it overrides the theme's default face color; null/undefined =
@@ -379,7 +360,7 @@ export const CardFaceSide: React.FC<{
     // Used by the flp's card stack: the 3D flip takes the front card edge-on at the halfway
     // point, and for those frames the peeking back card is fully exposed — so its content is
     // hidden for the duration of the flip while the card itself keeps holding the stack's
-    // shape. Applied to the face's direct children (icon layer, text, rail, note) rather than
+    // shape. Applied to the face's direct children (icon layer, text) rather than
     // to this box, so the fill survives.
     contentHidden?: boolean;
     // A FULL-CARD content layer (inset: 0, no padding) that replaces both `children` and
@@ -391,7 +372,7 @@ export const CardFaceSide: React.FC<{
     // The flip's duration (ms) the away-face hide is timed against — the Deck Tower's
     // slower flip passes TOWER_CARD_FLIP_MS.
     flipMs?: number;
-}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, topRail, noteSlot, cardColor, contentHidden, fill, flipMs = CARD_FLIP_MS }) => {
+}> = ({ rotated, isUsingAdvancedLayout, contentGap, contentClassName, children, iconId, showIcon, iconLayout, textLayout, textBlocks, editCanvas, inert, cardColor, contentHidden, fill, flipMs = CARD_FLIP_MS }) => {
     // Per-card background fill is a decoration that belongs to the ADVANCED layout: it paints
     // its custom color exactly when this face is rendering that advanced layout
     // (`isUsingAdvancedLayout`, decided per face by the caller). A basic card, and any face the
@@ -623,18 +604,6 @@ export const CardFaceSide: React.FC<{
                     </CardContent>
                 )}
             </Box>
-            {/* Top-edge control rail, LAST in the outer box so it paints over the inner
-                clip box (the icon layer + text) without needing a z-index war. It sits in
-                the OUTER box, not the inner one, so `overflow: visible` lets an open rail
-                extend to the card's own corner radius rather than being clipped by it. */}
-            {topRail}
-            {/* Top-edge note strip, sharing the edge with the rail's `•••` (it stops short
-                of it). In the OUTER box for the same reasons the rail is: it must paint over
-                the inner clip box (icon layer + text blocks), and while it is being edited its
-                own controls sit at the card's very edge. Rendered AFTER the rail so an open
-                note editor stacks above an open rail — which is also why the editor may run
-                under an EXPANDED rail's row: opening the note editor closes the rail. */}
-            {noteSlot}
         </Box>
     );
 };

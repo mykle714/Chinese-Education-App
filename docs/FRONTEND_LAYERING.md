@@ -89,7 +89,7 @@ into every user's main chunk; it now lives in
 > feature boundary.
 
 `src/pages/` is **not** "where pages live". A page belongs to its feature; the
-Add New Cards, Dictionary, Games and Community pages all sit in their feature folders. What
+Add Cards, Dictionary, Games and Community pages all sit in their feature folders. What
 survives in `src/pages/` is the handful of pages that belong to no feature.
 
 **Why this specific test, and not "pages here, parts there".** The old split was by
@@ -104,7 +104,7 @@ importers, and the correct home is determined.
 neither could change it safely. It now lives in `src/cardIcons/editor/`.
 
 **Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
-sat in the same folder while the old Home page's card sheets and the ancp already used it. That was still
+sat in the same folder while the old Home page's card sheets and the acp already used it. That was still
 *within* the flashcards feature, so it was legal; it stopped being legal the moment
 `src/components/CompareSheet.tsx` (mounted by the dictionary cdp) needed it. It moved to
 `src/components/sheet/`, taking the four styled surfaces it renders
@@ -202,7 +202,7 @@ returning parsed data. The page does not know the path, the method, or the paylo
 Existing feature-local modules: `features/community/communityApi.ts`,
 `features/discover/starterPacksApi.ts`, `features/nightmarket/nightMarketLayoutApi.ts`,
 `features/nightmarket/templateEditorApi.ts`,
-`features/nightmarket/templateSandboxApi.ts`, `features/reader/validationApi.ts`,
+`features/nightmarket/templateSandboxApi.ts`,
 `cardIcons/cardIconApi.ts`, `utils/vocabApi.ts`.
 
 Cross-feature endpoint groups instead live directly under `src/api/`:

@@ -1,8 +1,6 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { Box, ButtonBase, Typography, useTheme, type BoxProps } from "@mui/material";
-import { DEFINITION_LIST_SEPARATOR, resolveDisplayDefinition, resolveDisplayPronunciation, resolveSelectedSenseIndex, sortedSenseClusters } from "../../../utils/definitionUtils";
-import SwipeableTwoLineText, { type TwoLineSegment } from "../../../components/SwipeableTwoLineText";
-import { buildSenseSegments } from "../../../components/senseListSegments";
+import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
 import GlossText from "../../../components/GlossText";
 import { ddTextColor } from "../../../utils/cardTextColor";
@@ -18,11 +16,13 @@ import { keycapPressSx } from "../../../theme/keycapPress";
 import { useEipColors } from "./useEipPalette";
 
 // The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
-// dictionary eip's "+ to Learning") and the gloss — for a multi-sense word, EVERY sense's
-// dd in one dot-separated list (the chosen sense underlined, the default starred).
+// dictionary eip's "+ to Learning") and the gloss — ONE dd: the selected sense's, else the
+// default's. A multi-sense word's full sense list is NOT drawn here: it sits as a single-column
+// list at the top of the Definition tab (EipSenseList, owner's call 2026-11-05; it replaced the
+// header's swipeable dot-separated list, 2026-10-29 → 2026-11-05).
 //
 // Mounted on every eip host: by InfoCardSection in the eip SHEET's upper panel
-// (EipUpperPanel — flp/ancp/saved-card cdp/Dictionary), and by InfoCardPanelBody in the
+// (EipUpperPanel — flp/acp/saved-card cdp/Dictionary), and by InfoCardPanelBody in the
 // cdps' inline panels.
 //
 // Tower Tier 2 styling (2026-10-29), layout unchanged: the headword sits in a RAISED TILE
@@ -51,12 +51,12 @@ export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     // only: the dictionary cdp passes this; the Dictionary page's eip draws its Add key
     // in the trail row instead (EipAddKey). The flp's add-only "+" was removed 2026-10-29.
     learning?: LearningToggleState;
-    // Index into sortedSenseClusters(entry); drives the reading, the dd of a word without a
-    // sense list, and which item of the sense list is underlined. The list is DISPLAY-ONLY
-    // (owner's call 2026-10-29): the pick is made on the card face's SensePicker.
+    // Index into sortedSenseClusters(entry); drives the reading and the dd. Omitted → the
+    // persisted pick, else the default (resolveDisplayDefinition / resolveDisplayPronunciation).
+    // Display-only (owner's call 2026-10-29): the pick is made on the card face's SensePicker.
     selectedSenseIndex?: number;
-    // The eip SHEET: the gloss box takes the trail's boundaries, keycap edge → screen edge, so
-    // swiped text clips at the keycap and runs off the screen. At rest the text keeps insets:
+    // The eip SHEET: the gloss box takes the trail's boundaries, keycap edge → screen edge
+    // (the trail row above shares them). The text keeps insets:
     // GLOSS_KEYCAP_CLEARANCE off the keycap on the left, the gutter on the right.
     // Needs the header's own gap removed and its side padding at 0 (InfoCardSection does both).
     // Docs: docs/EIP_SHEET_GESTURES.md § Telescope.
@@ -81,7 +81,7 @@ const HEADWORD_TILE_PADDING = "0 10px 8px";
 const HEADWORD_CPCD_TOP_TRIM = 3;
 
 // The whitespace between the keycap and the gloss's first letter when the sheet's gloss is at
-// rest (`glossToScreenEdge`). It scrolls away with the text, which then clips at the keycap.
+// rest (`glossToScreenEdge`).
 const GLOSS_KEYCAP_CLEARANCE = 10;
 
 
@@ -105,23 +105,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const colors = useEipColors();
-    // A word with a real choice of sense (≥2 displayable clusters, the
-    // SensePicker's own gate) lists each sense's dd, in the picker's order, so index 0 is
-    // the starred default and `selectedSenseIndex` addresses the same item the card face's
-    // picker chose. The chosen sense is underlined; the default carries the star, drawn in
-    // the gloss's own colour (`inherit`) so it follows the dd colour and the night palette.
-    // Null for a single-sense / unclustered word, which keeps the plain dd.
-    // Every host shows this list, the Dictionary eip included (owner's call 2026-10-31).
-    // Memoized: SwipeableTwoLineText re-measures when its segments change.
-    const senseClusters = useMemo(() => (entry ? sortedSenseClusters(entry) : null), [entry]);
-    // No override → the persisted pick, exactly as the dd/pinyin resolvers fall back.
-    const underlinedSenseIndex = selectedSenseIndex ?? (entry ? resolveSelectedSenseIndex(entry) : 0);
-    // Shared with Memory Map's prompt (src/components/senseListSegments.tsx).
-    const senseSegments = useMemo<TwoLineSegment[] | null>(
-        () => (senseClusters ? buildSenseSegments(senseClusters, underlinedSenseIndex, "mobile-demo-eic-sense") : null),
-        [senseClusters, underlinedSenseIndex]
-    );
-    // The keycap's 1px outline: the app's border token by day, a faint white ring at night.
+    // The keycap's 1px outline: the app's border token on the light palette, a faint white ring on the dark one.
     const tileRing = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     // A tap on the keycap's PADDING (outside the cpcd row) still copies: forward it as a
     // click on the row, so CPCDRow's tap-to-copy — and its characters ⇄ pinyin alternation
@@ -277,11 +261,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                     </Box>
                 )}
             </Box>
-            {/* `.eid` — the gloss, centered in the space beside the headword.
-                Two forms: the per-sense list (every sense's dd, dot-separated, the chosen one
-                underlined and the default starred — the same senses, order and star the
-                card face's SensePicker offers, so the panel names the pick without being
-                a second place to make it); or, for a single-sense word, the plain dd. */}
+            {/* `.eid` — the gloss, centered in the space beside the headword: one dd. */}
             {entry && (
                 <Box
                     className="mobile-demo-eic-header-english-row"
@@ -294,33 +274,6 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         marginRight: glossToScreenEdge ? `-${EIP_PANEL_GUTTER}px` : 0,
                     }}
                 >
-                {senseSegments !== null ? (
-                    <SwipeableTwoLineText
-                        className="mobile-demo-eic-header-english mobile-demo-eic-header-english--senses"
-                        segments={senseSegments}
-                        separator={DEFINITION_LIST_SEPARATOR}
-                        // Vertical drags on the header belong to the sheet's resize gesture
-                        // (EipUpperPanel), so only the sideways pan is the text's — as for the
-                        // word trail.
-                        touchAction="pan-x"
-                        // Centered while it fits, start-first once it overflows.
-                        align="center"
-                        insetStart={glossInsetStart}
-                        insetEnd={glossInsetEnd}
-                        sx={{
-                            ...glossSx,
-                            // The chosen sense: underlined in the palette's muted ink, quieter
-                            // than the gloss itself (owner's pick 2026-10-29). The offset clears
-                            // descenders; it stays inside the line box, which the scroller clips.
-                            "& .mobile-demo-eic-sense--selected": {
-                                textDecorationLine: "underline",
-                                textDecorationColor: colors.muted,
-                                textDecorationThickness: "1.5px",
-                                textUnderlineOffset: "2px",
-                            },
-                        }}
-                    />
-                ) : (
                 <Typography
                     className="mobile-demo-eic-header-english"
                     sx={{ ...glossSx, paddingLeft: `${glossInsetStart}px`, paddingRight: `${glossInsetEnd}px` }}
@@ -330,7 +283,6 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         definitions[0] fallback) instead of reading definitions[0] directly. */}
                     <GlossText text={resolveDisplayDefinition(entry, selectedSenseIndex)} />
                 </Typography>
-                )}
                 </Box>
             )}
         </InfoSheetEntryHeader>

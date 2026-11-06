@@ -4,19 +4,19 @@ import { ISO } from "./iso";
 
 /**
  * StarField — the night sky's stars: two tiled layers of different tile sizes (so the
- * repeat is hard to spot). One definition, so the Deck Tower's and the Add New Cards page's
+ * repeat is hard to spot). One definition, so the Deck Tower's and the Add Cards page's
  * stars cannot differ (docs/DECK_TOWER.md § "Sky → space",
  * docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
  *
  * Layer: feature component (feature module `src/features/deckTower`), also mounted by
- * features/discover/AddNewCardsPage.tsx. Fills its nearest positioned ancestor.
+ * features/discover/AddCardsPage.tsx. Fills its nearest positioned ancestor.
  *
  * On the tower, SpaceBackdrop writes opacity and parallax straight to the DOM through
  * `fieldRef` / `layerRefs`, because they change on every scroll frame. A page that does
  * not scroll just passes `opacity`.
  *
  * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx,
- * features/discover/AddNewCardsPage.tsx.
+ * features/discover/AddCardsPage.tsx.
  */
 
 /** Each layer drifts at its own fraction of the scroll: slow parallax, so space reads as far away. */

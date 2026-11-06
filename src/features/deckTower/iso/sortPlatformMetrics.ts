@@ -4,19 +4,19 @@
  * (DeckTowerPlatform → `sortBin`). Docs: docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform".
  */
 
-/** The slab's thickness. ancp's bins are 1.2 thick on a 6.4-wide slab; this keeps the ratio. */
+/** The slab's thickness. acp's bins are 1.2 thick on a 6.4-wide slab; this keeps the ratio. */
 export const SLAB_THICKNESS = 0.28;
 /** The light bevel round the slab's top (IsoPlatform's RIM_WIDTH at this scale). */
 export const MINI_RIM = 0.05;
-/** The dashed footprint's inset from the slab's edge — ancp's DECK sits 1 unit in on a 6.4 slab. */
+/** The dashed footprint's inset from the slab's edge — acp's DECK sits 1 unit in on a 6.4 slab. */
 export const FOOTPRINT_INSET = 0.2;
 /**
  * How far the dashed footprint is darkened from the deck colour (a `shadeHex` amount):
- * ancp's day `FOOTPRINT_SHADE` (sortTimeOfDay.ts). The tower's time-of-day wash already
+ * acp's day `FOOTPRINT_SHADE` (sortTimeOfDay.ts). The tower's time-of-day wash already
  * darkens slab and footprint together at night, so the day value serves every hour.
  */
 export const FOOTPRINT_SHADE = 0.18;
-/** The footprint's stroke and dash, in floor units (× `proj.unit` for px) — ancp's 1.8 / "6 5" at about this screen size. */
+/** The footprint's stroke and dash, in floor units (× `proj.unit` for px) — acp's 1.8 / "6 5" at about this screen size. */
 export const FOOTPRINT_STROKE = 0.06;
 export const FOOTPRINT_DASH = 0.15;
 export const FOOTPRINT_GAP = 0.125;

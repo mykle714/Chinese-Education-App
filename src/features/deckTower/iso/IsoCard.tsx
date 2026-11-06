@@ -57,7 +57,7 @@ interface IsoCardProps {
  * the band's top corners sit flush in the panel's. The flp mirrors it as
  * `FLP_CARD_PANEL_RADIUS_RATIO` (= PANEL_RADIUS / CARD_W) — retune both together.
  *
- * The ancp's "SORTED" head band (features/discover/AddNewCardsPage.tsx → `sortedBandSx`)
+ * The acp's "SORTED" head band (features/discover/AddCardsPage.tsx → `sortedBandSx`)
  * copies the head band's BAND_DEPTH and the label's size and tracking as ratios of CARD_W.
  * Retune it together with this band.
  */
@@ -99,7 +99,6 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                             fontWeight={WEIGHT.bold}
                             letterSpacing={0.055}
                             textAnchor="middle"
-                            dominantBaseline="central"
                         >
                             {label}
                         </IsoSpacedText>

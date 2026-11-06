@@ -82,7 +82,6 @@ export type {
 
 export {
   CARD_COLOR_VALUES,
-  CARD_NOTE_MAX_LENGTH,
   DICTIONARY_SEARCH_RANKINGS,
   ENTRY_LEVEL_VALIDATION_FIELDS,
   FLASHCARD_CATEGORY,
@@ -371,23 +370,17 @@ export interface VocabEntryUpdateData {
 export type Text = TextBase;
 
 /**
- * Text creation data. The validation* fields are set only by ValidationService when it
- * composes a validation document; ordinary document creation omits them.
+ * Text creation data. No title: TextService.createText derives it from the content
+ * (server/utils/documentTitle.ts).
  */
 export interface TextCreateData {
   userId: string;
-  title: string;
-  description?: string;
   content: string;
   language?: Language;
-  validationEntryId?: number | null;
-  validationLanguage?: Language | null;
-  validationField?: ValidationField | null;
 }
 
 export interface TextUpdateData {
   title?: string;
-  description?: string;
   content?: string;
   language?: Language;
 }

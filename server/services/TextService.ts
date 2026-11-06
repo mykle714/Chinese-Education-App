@@ -1,12 +1,22 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { Text, TextCreateData, TextUpdateData } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import { dbManager } from '../dal/base/DatabaseManager.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
+import { deriveDocumentTitle, documentTitleSource } from '../utils/documentTitle.js';
+import {
+  buildDictMap,
+  buildExcludeSet,
+  getAllSubstrings,
+  segmentWithDict,
+  splitHanRuns,
+  SEGMENTATION_MAX_TOKEN_CHARS,
+} from '../dal/shared/segmentString.js';
 
 /**
  * Ceiling on user-authored documents per account. A bound on volume, not a product
- * limit — see `createText`. System/validation documents are excluded from the count.
+ * limit — see `createText`. System documents are excluded from the count.
  */
 const MAX_DOCUMENTS_PER_USER = 500;
 
@@ -16,11 +26,14 @@ const MAX_DOCUMENTS_PER_USER = 500;
  */
 export class TextService {
   constructor(
-    private userDAL: IUserDAL
+    private userDAL: IUserDAL,
+    private dictionaryDAL: IDictionaryDAL
   ) {}
 
   /**
-   * Create a new user document with validation
+   * Create a new user document. There is no title input: the Reader creates a
+   * document on the first Save of a blank draft, and the title is derived from the
+   * content (deriveTitle). Renaming afterwards goes through updateText.
    */
   async createText(userId: string, textData: Omit<TextCreateData, 'userId'>): Promise<Text> {
     // Business validation
@@ -33,7 +46,7 @@ export class TextService {
     }
 
     // A CEILING ON DOCUMENTS PER ACCOUNT. Each field was already bounded (title 200,
-    // description 500, content 50 000) but the NUMBER of documents was not, so the
+    // content 50 000) but the NUMBER of documents was not, so the
     // only limit on how much a single account could store was how fast it could POST.
     // Set far above any plausible reading library — this exists to stop a loop, not
     // to ration documents, and the message says which one it is so a real user who
@@ -51,25 +64,18 @@ export class TextService {
     // Use user's selected language or default to Chinese
     const language = textData.language || user.selectedLanguage || 'zh';
 
-    // Defense-in-depth: neutralize control chars / HTML in the stored body + description.
+    // Defense-in-depth: neutralize control chars / HTML in the stored body.
     const safeContent = sanitizeDocumentContent(textData.content);
-    const safeDescription = sanitizeDocumentContent(textData.description || '').trim();
+    // Derived from the sanitized body, so the title can't carry what the body can't.
+    const title = await this.deriveTitle(safeContent, language);
 
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
-    // The validation* columns are set only when ValidationService composes a
-    // validation document; ordinary creation passes null for all three.
     const result = await dbManager.executeQuery<Text>(async (client) => {
       return await client.query(
-        `INSERT INTO texts ("userId", title, description, content, language, "characterCount", "isUserCreated",
-                            "validationEntryId", "validationLanguage", "validationField")
-         VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9)
+        `INSERT INTO texts ("userId", title, content, language, "characterCount", "isUserCreated")
+         VALUES ($1, $2, $3, $4, $5, true)
          RETURNING *`,
-        [
-          userId, textData.title.trim(), safeDescription, safeContent, language, characterCount,
-          textData.validationEntryId ?? null,
-          textData.validationLanguage ?? null,
-          textData.validationField ?? null,
-        ]
+        [userId, title, safeContent, language, characterCount]
       );
     });
 
@@ -80,7 +86,7 @@ export class TextService {
     console.log(`[TEXT-SERVICE] ✅ Created new user document:`, {
       userId: `${userId.substring(0, 8)}...`,
       textId: result.recordset[0].id,
-      title: textData.title,
+      title,
       language,
       characterCount
     });
@@ -126,11 +132,6 @@ export class TextService {
       values.push(updateData.title.trim());
     }
     
-    if (updateData.description !== undefined) {
-      updates.push(`description = $${paramIndex++}`);
-      values.push(sanitizeDocumentContent(updateData.description).trim());
-    }
-
     if (updateData.content !== undefined) {
       // Defense-in-depth: neutralize control chars / HTML before storing.
       updates.push(`content = $${paramIndex++}`);
@@ -291,8 +292,7 @@ export class TextService {
 
   /**
    * How many documents this user has authored. Counts only `isUserCreated` rows, so
-   * the system/validation documents the app composes on their behalf never eat into
-   * the allowance.
+   * system documents never eat into the allowance.
    */
   private async countUserCreatedTexts(userId: string): Promise<number> {
     const result = await dbManager.executeQuery<{ count: string }>(async (client) => {
@@ -307,21 +307,31 @@ export class TextService {
   // Private helper methods
 
   /**
+   * The title for a new document: as many whole words of its first line as fit in
+   * 20 characters (server/utils/documentTitle.ts). Chinese runs are split with the
+   * gsa against det, so the lookup is one findMultipleByWord1 over the substrings of
+   * just the title window — not the whole document. Other languages split on
+   * whitespace and need no lookup.
+   */
+  private async deriveTitle(content: string, language: string): Promise<string> {
+    const source = documentTitleSource(content);
+    const hanRuns = splitHanRuns(source).filter((run) => run.type === 'han').map((run) => run.value);
+    if (hanRuns.length === 0) return deriveDocumentTitle(content, (run) => [run]);
+
+    const candidates = [...new Set(hanRuns.flatMap((run) => getAllSubstrings(run)))];
+    // Same over-length filter as DictionaryDAL's run segmenter: the gsa never matches
+    // tokens longer than 4, but buildExcludeSet would still absorb their exceptions.
+    const entries = (await this.dictionaryDAL.findMultipleByWord1(candidates, language))
+      .filter((entry) => [...entry.word1].length <= SEGMENTATION_MAX_TOKEN_CHARS);
+    const dictMap = buildDictMap(entries);
+    const excludeSet = buildExcludeSet(entries);
+    return deriveDocumentTitle(content, (run) => segmentWithDict(run, dictMap, excludeSet));
+  }
+
+  /**
    * Validate text data for creation
    */
   private validateTextData(data: Omit<TextCreateData, 'userId'>): void {
-    if (!data.title || data.title.trim().length === 0) {
-      throw new ValidationError('Title is required');
-    }
-    
-    if (data.title.trim().length > 200) {
-      throw new ValidationError('Title is too long (maximum 200 characters)');
-    }
-    
-    if (data.description && data.description.length > 500) {
-      throw new ValidationError('Description is too long (maximum 500 characters)');
-    }
-    
     if (data.content !== undefined && data.content.length > 50000) {
       throw new ValidationError('Content is too long (maximum 50,000 characters)');
     }
@@ -345,10 +355,6 @@ export class TextService {
       if (data.title.trim().length > 200) {
         throw new ValidationError('Title is too long (maximum 200 characters)');
       }
-    }
-    
-    if (data.description !== undefined && data.description.length > 500) {
-      throw new ValidationError('Description is too long (maximum 500 characters)');
     }
     
     if (data.content !== undefined && data.content.length > 50000) {

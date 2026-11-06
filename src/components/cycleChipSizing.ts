@@ -12,7 +12,7 @@
  */
 
 /** The chip's full label size, in px. Small already — it is a header control. */
-export const CYCLE_CHIP_FONT_PX = 10;
+export const CYCLE_CHIP_FONT_PX = 11.5;
 
 /**
  * How many characters a label may run to before the chip starts shrinking its type.
@@ -27,7 +27,7 @@ export const CYCLE_CHIP_FONT_PX = 10;
 const CYCLE_CHIP_COMFORTABLE_LABEL_CH = 5;
 
 /** How small a long label may get. Below this the saving stops being worth the strain. */
-const CYCLE_CHIP_MIN_FONT_PX = 8;
+const CYCLE_CHIP_MIN_FONT_PX = 9;
 
 /**
  * The size ONE label renders at: full size if it fits the comfortable width, else

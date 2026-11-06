@@ -60,7 +60,7 @@ export const PLATE_WALL_PX = 5;
  * plates on game surfaces keep `TOWER_PLATE_PRINT`'s. The face ships one weight: anything
  * heavier is browser-synthesised bold.
  *
- * Used by: FlashcardsLearnPage.tsx, CardOpsRail.tsx (via prop), PageHeader.tsx → HeaderActionChip.
+ * Used by: FlashcardsLearnPage.tsx, PageHeader.tsx → HeaderActionChip.
  * Documented in: docs/DECK_TOWER.md § "Studying the tower" → "The lettering".
  */
 export const TOWER_STUDY_FONT = FONTS.cjk;
@@ -127,20 +127,21 @@ export function towerPlateSx(tones: PlateTones, baseTransform = "") {
 }
 
 /**
- * The tower session's word-tools rail (`Write it` · `Compare`) at a smaller size than
+ * The tower session's word-tools rail (`Write it` · `Compare` · `Customize`) at a smaller size than
  * WORD_TOOL_PILL_SX's 11px-padded, 12.5px pill: over the tower the plates sit between
  * the study header and the card, and full-size pills (plus the plate's 5 px wall) read
  * as heavier than the card they caption. Layered after `towerPlateSx` in
  * FlashcardsLearnPage.tsx → `towerPlatePillSx`; NOT applied to `MoreInfoPill`.
  *
- * The glyph is resized through `.ms` because both pills pass a fixed `size` to Icon;
+ * The glyph is resized through `.ms` because every pill passes a fixed `size` to Icon;
  * the two-class selector outranks Icon's own `fontSize`. Icon clamps `opsz` to ≥ 20,
  * so the smaller glyph keeps the same optical size it had at 17 px.
  *
  * Width: a fixed `TOWER_RAIL_PILL_WIDTH` each instead of WORD_TOOL_PILL_SX's `flex: 1`
- * (which stretches the pair across the card), so the two sit as a centred pair and
- * stay the same width as each other. `Write it` is wrapped in a star Badge whose root is
- * the rail's flex child, so the rail must pin that root too — `TOWER_RAIL_SX`.
+ * (which stretches them across the card), so the pills sit as a centred group and stay the
+ * same width as each other. Three of them (3 × 104 px + gaps = 326 px) are wider than the
+ * card, so TOWER_RAIL_SX also lifts the rail's card-width cap. `Write it` is wrapped in a star
+ * Badge whose root is the rail's flex child, so the rail must pin that root too.
  */
 export const TOWER_RAIL_PILL_WIDTH = 104;
 
@@ -154,9 +155,12 @@ export const TOWER_RAIL_PILL_SIZE_SX = {
 
 /**
  * The rail container's half of the tower sizing: pins `Write it`'s Badge root (the
- * rail's own sx stretches it with `flex: 1`) to the same width as `Compare`.
+ * rail's own sx stretches it with `flex: 1`) to the same fixed width as the other pills,
+ * and lifts WordToolsRail's `CARD_BASE_WIDTH` cap — three fixed pills are wider than the
+ * card, and a capped rail would overflow them off-centre.
  * Merged into WordToolsRail `sx` by FlashcardsLearnPage.tsx while in the tower.
  */
 export const TOWER_RAIL_SX = {
+    maxWidth: "none",
     "& .MuiBadge-root": { flex: `0 0 ${TOWER_RAIL_PILL_WIDTH}px` },
 } as const;

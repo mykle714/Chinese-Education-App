@@ -28,7 +28,7 @@ export class DictionaryController {
    *
    * `language` is OPTIONAL and falls back to the user's selectedLanguage, so every
    * pre-existing caller is unchanged. It exists because some surfaces show a language
-   * that is not the account's current selection — ancp (`/discover/sort/:language`) takes
+   * that is not the account's current selection — acp (`/discover/sort/:language`) takes
    * its language from the route, so a Chinese-selected account sorting Spanish would
    * otherwise have every eip lookup resolved against `dictionaryentries_zh` and 404.
    */

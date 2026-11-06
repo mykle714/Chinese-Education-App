@@ -37,7 +37,7 @@ supersedes its single artboard in the file above:
 |---|---|---|
 | `Arena Flow - Shelf System.html` | all of `/arena`, 15 artboards + a state map | entry **9a** (2026-09-21) |
 | `Challenge Flow - Shelf System.html` | View Challenge | [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) |
-| `Sort Flow - Shelf System.html` | the add-new-cards page | entry 3 |
+| `Sort Flow - Shelf System.html` | the add-cards page | entry 3 |
 | `Extra Info Panel - Shelf System.html` | the eip | entries 19–25 |
 | `Flashcard Learn Page - Shelf System.html` | the flp | entries 19–25 |
 
@@ -257,7 +257,7 @@ real ramp entry to build from.
   twelve material plates — was withdrawn on the user's ruling rather than minting ~30
   hexes outside the ramp. Every rung is the same neutral grey pending a decision. See
   entry 9 and DEFERRED_WORK.md; this is the **largest open visual gap** in the redesign.
-- **Add New Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
+- **Add Cards' drop buckets render at `opacity: 0.23` when inactive.** A pastel at
   23% may now be too faint even with the ring. Flagged in the file; needs a device.
 - **Unverified, and wanting eyes on a real screen rather than a typecheck:** the
   mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
@@ -538,7 +538,7 @@ and the decisions taken are recorded at the end of this sub-entry.
   `EXTRA_GAP` 12 → **16**, so `CLEARANCE` 108 → **90** — which is exactly the
   design's `.clear` spacer. The ~8 downstream call sites
   (at the time: the decks page's `SHEET_CLOSED_HEIGHT` / `STUDY_AREA_BOTTOM_PAD`,
-  `AddNewCardsPage`, the decks panel body, `CompareWorkspace`) all compose
+  `AddCardsPage`, the decks panel body, `CompareWorkspace`) all compose
   the named constants, so they re-derived themselves with no edit.
 - `src/components/FooterPresenter.tsx` — `HIDDEN_OFFSET` is now just
   `FOOTER_HEIGHT`. The old `INSET + HEIGHT + 16` added a pill inset and a
@@ -766,7 +766,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
 
 **Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
 `VocabCardDetailPage`, `DictionaryCardDetailPage`,
-`UserProfilePage` and `AddNewCardsPage` header slots. They should
+`UserProfilePage` and `AddCardsPage` header slots. They should
 become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 
 **Code:** `src/components/PageHeader.tsx` → `PageHeader`, `Header`, `BackGroup`,
@@ -1669,42 +1669,42 @@ The `.duebar` was dropped 2026-09-05 (DEFERRED_WORK.md § "Recently closed").
 ## 3 · Discover — `/discover` — **Size: TBD**
 
 **Status: PAGE DELETED (2026-10-17).** `DiscoverPage` and the `/discover` route are
-gone; with its last other tile folded into ancp it was a one-tile hub, so Add New Cards
+gone; with its last other tile folded into acp it was a one-tile hub, so Add Cards
 became a drill-in (today reached from the Deck Tower's sort platform, back → `/`; see
 [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). The outstanding pins/shelf items below no longer
 have a screen to live on — any "waiting to be sorted" count would now belong on the
-tower's sort platform or inside ancp. Everything below is the entry's history.
+tower's sort platform or inside acp. Everything below is the entry's history.
 
 **Earlier status: DONE (2026-08-21) — the MENU only.** Converted at the user's explicit
-instruction, overriding the D11 block. Add New Cards is the `hero`, Quick Mark and
+instruction, overriding the D11 block. Add Cards is the `hero`, Quick Mark and
 Skipped Cards are base tiles; hues and glyphs are artboard 3's. (Both tiles have since
-been removed — Skipped Cards 2026-10-12, Quick Mark 2026-10-17, each folded into ancp — so
-the hub now carries only the Add New Cards hero; see DISCOVER_FLOW.md.)
+been removed — Skipped Cards 2026-10-12, Quick Mark 2026-10-17, each folded into acp — so
+the hub now carries only the Add Cards hero; see DISCOVER_FLOW.md.)
 
 **⚠️ Two pieces of artboard 3 are NOT built, because the data does not exist
 client-side:**
 
-1. **The tile pins** — `184 waiting` on Add New Cards, `31` on Skipped Cards.
+1. **The tile pins** — `184 waiting` on Add Cards, `31` on Skipped Cards.
 2. **The "Waiting to be sorted" shelf** beneath the grid — four spines whose heights
    encode the unsorted queue by band.
 
 Nothing exposes a count of unsorted or skipped cards; `useCategoryCounts` counts the
 user's LIBRARY by band, which is a different number. Both want one endpoint returning
 the unsorted queue counted by band. **This is the outstanding item for entry 3** —
-the bento itself is complete. The sort flow (ancp) remains separate and out of scope,
+the bento itself is complete. The sort flow (acp) remains separate and out of scope,
 though the design project now has a `Sort Flow - Shelf System.html` not yet read.
 
 **Superseded note:** this entry previously read "BLOCKED — awaiting a new artboard".
 The user is redoing the Discover
 design (D11). Artboard 3 as it stands is **superseded**; do not build from it.
-The sort flow (`/discover/sort/:language`, ancp) is explicitly left as an
+The sort flow (`/discover/sort/:language`, acp) is explicitly left as an
 **outstanding item** and is not in scope for this pass.
 
 **Today.** `DiscoverPage` is 62 lines: a `HubMenu` of exactly three equal rows —
-Add New Cards, Quick Mark, Skipped Cards — with a `TipBox` header. Paths come from
+Add Cards, Quick Mark, Skipped Cards — with a `TipBox` header. Paths come from
 `useDiscoverNavigation`.
 
-**Design.** Add New Cards becomes the hero tile with a "184 waiting" pin; Quick Mark
+**Design.** Add Cards becomes the hero tile with a "184 waiting" pin; Quick Mark
 and Skipped Cards are normal tiles (Skipped carries its own count). **Below the
 bento, a new shelf** breaks the unsorted queue down by progress bucket —
 Unfamiliar / Target / Comfortable / Mastered — with spine heights encoding counts.
@@ -1831,12 +1831,18 @@ leaving it would have put the spines 22px left of the header above them.
 > the default. The rule to carry forward is that the gutter belongs to whichever of
 > the two is the page-level element, and exactly one of them may own it.
 >
-> The same host forced a second change: four spines at their natural 74px plus three
-> 10px gaps need 326px, which the panel does not have on a phone, and `ShelfRow`
-> wraps — dropping the fourth band below the board, standing on nothing.
-> `DeckBuckets` now measures its container (`useFittedSpineWidth`, a `ResizeObserver`)
-> and passes every spine an explicit `width`, capped at the natural 74 and floored at
-> 46. This does **not** contradict `Spine`'s `flex-shrink: 0`: the spine still never
+> The same host forced a second change: four spines plus three 10px gaps do not
+> always fit the panel on a phone, and `ShelfRow` wraps — dropping the fourth band
+> below the board, standing on nothing. `DeckBuckets` makes its shelf an
+> `inline-size` query container and passes every spine a CSS-length `width`
+> (`fittedSpineWidth`): `min(74px, (100cqw − 31px) / 4)` — capped at the design's
+> spine, otherwise exactly filling the row with 10px gaps (the extra 1px absorbs
+> sub-pixel rounding). The spine renders border-box, so that width is its whole
+> footprint. `Spine` accepts a length string and scales its interior as
+> `calc(<width> × n/74)`, so nothing is measured in JS and there is **no floor**: the
+> row always fits, the spine just gets uniformly smaller. (The ResizeObserver version
+> this replaced read `clientWidth`, which rounds to a whole pixel, so a panel 0.4px
+> narrower than it reported wrapped Mastered underneath.) This does **not** contradict `Spine`'s `flex-shrink: 0`: the spine still never
 > shrinks itself, and the banding survives because the information is carried by
 > HEIGHT and all four spines are given the same width. It is only valid for a row of
 > uniform spines — a mixed-width row cannot be scaled this way.
@@ -1894,31 +1900,34 @@ cleanup for whoever touches A3 or A5 next; it is listed in
 
 **Today.** `ReaderPage` is a `NodePage` with a fixed non-scrolling shell;
 `TextSidebar` owns the list and renders **one flat MUI `List`** of every `Text`,
-with edit/delete icon buttons per row and a `drawerWidth` prop left over from the
-retired drawer layout.
+with no per-row buttons (rows swipe left to uncover Delete — `SwipeToDeleteRow`,
+2026-11-05) and a `drawerWidth` prop left over from the retired drawer layout.
 
-**Design.** Three shelves of `.sp.vol` volumes — your documents (ending in an
-add-spine), the shared library, and validation downloads (dashed border) — over a
-`.shnote` explaining tap-to-read / long-press-to-edit.
+**Design.** Shelves of `.sp.vol` volumes — your documents (ending in an
+add-spine) and the shared library — over a `.shnote` explaining tap-to-read /
+long-press-to-edit. (The design also had a third, dashed-border shelf for
+validation downloads; that queue was removed 2026-11-05, migration 183, so the
+shelf is dropped.) The add-spine opens `/reader/new`, a blank draft in edit mode —
+there is no create dialog.
 
 **Good news: the grouping needs no server change.** `TextBase`
 (`server/contracts/wire.ts`) already carries `isUserCreated` (yours vs library),
-`validationEntryId` (to-validate), `characterCount` and `createdAt` — exactly the
-three groups and the caption the design wants.
+`characterCount` and `createdAt` — the groups and the caption the design wants.
+⚠️ But `GET /api/texts` (`TextService.getUserTexts`) only returns the user's OWN
+rows, so the library shelf would be empty until that read also returns system texts.
 
 **Watch out.** Reader is the one place the shelf's **height rule is switched off**:
 every volume is the same height and character count is a caption. That is
 deliberate — a document's length is not its importance. Keep it.
 
-Also: per-row edit/delete buttons become a long-press, which is a real interaction
-change on a page whose shell doesn't scroll. Check the touch rules before wiring it.
+Also: the per-row edit/delete buttons are already gone — rows swipe left to delete,
+and editing lives in the open document (2026-11-05). The design's long-press-to-edit
+`.shnote` copy no longer matches; carry the swipe over to the volumes instead.
 
 **Code:** `src/features/reader/ReaderPage.tsx`;
-`src/features/reader/TextSidebar.tsx`; `src/features/reader/validationApi.ts` →
-`downloadValidationDoc`; `server/contracts/wire.ts` → `TextBase`;
+`src/features/reader/TextSidebar.tsx`; `server/contracts/wire.ts` → `TextBase`;
 `src/types.ts` → `Text`.
-**Docs:** `docs/USER_DOCUMENT_FEATURE_SUMMARY.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
-`docs/LEAF_NODE_PAGES.md`.
+**Docs:** `docs/USER_DOCUMENT_FEATURE_SUMMARY.md`, `docs/LEAF_NODE_PAGES.md`.
 
 ## 7 · Dictionary — `/dictionary` — **Size: S**
 
@@ -1992,9 +2001,11 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   2026-10-29 flat-`definitions` list). The search row and the Dictionary eip header show the same
   list as every other eip: each sense's dd (`ddt`, the first gloss of each displayable cluster), in
   `sortedSenseClusters` order, or the plain dd for a word with fewer than two displayable clusters.
-  - **The eip header** goes through `EipEntryHeader` → `senseSegments`, with no Dictionary-specific
-    mode; it underlines the chosen sense, stars the default and shows that sense's reading. A hit
-    through a non-default sense opens on it (`DictionaryPage` → `handleEntryClick`).
+  - **The eip header** shows ONE dd since 2026-11-05 (as every eip, see below): the chosen
+    sense's, else the default's, with that sense's reading. The list moved to the top of the
+    Definition tab (`EipSenseList`). A hit through a non-default sense opens on it
+    (`DictionaryPage` → `handleEntryClick` stamps it as `selectedSense`), so that sense is the
+    header's dd and the underlined cell in the list.
   - **The search row** goes through `src/utils/definitionUtils.ts` → `resolveSearchRowView`, then
     `joinDefinitionList`. A `matchedSense` moves that sense's dd to the front and supplies the
     pinyin. Compare slot B shares the row; `CommunitySearchBar` prints the list's first item.
@@ -2003,21 +2014,27 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
     searched word: "pretty" finds 漂亮, whose row reads "beautiful".
   - **The full glosses are not on screen in the Dictionary.** The 2026-10-31 analysis found
     first-gloss lists drop real meanings on common words (看 "to read"/"to watch", 我 "me"/"my").
-  - The definition tab is unchanged. Its long definition and facts follow the tab's
+  - The definition tab opens with the sense list (2026-11-05). Its long definition and facts follow the tab's
     `selectedSenseIndex` (a word with a saved card opens on its saved sense); the pick is made on
     the card face, so it cannot be changed from this eip.
-- **Every eip lists the senses** (owner's call 2026-10-29; the Dictionary eip joined on 2026-10-31). For a word with ≥2
-  displayable clusters (the SensePicker's gate, `sortedSenseClusters`) the header gloss is
-  each sense's dd (`ddt`), in the picker's order, through the same `SwipeableTwoLineText`
-  layout. The chosen sense (`selectedSenseIndex`, falling back to the persisted pick) is
-  **underlined** in the palette's `muted` ink; the default (index 0) carries the picker's
-  **star** (13px, in FRONT of the gloss — 2026-10-30 — in the gloss's own colour via `inherit` — as in the picker). The list is **display-only** — the
-  eip's sense chip is gone, and a pick is made on the card face's `SensePicker`, which the
-  open eip follows via `useEipTabs.syncEntry`. A drilled-in word (no card face) therefore
-  shows its saved/default sense. A single-sense word keeps the plain dd. Decorations ride on
-  `SwipeableTwoLineText`'s `TwoLineSegment` (`className` + `leading`/`leadingWidth`, the
-  star's width added to every measurement so it never pushes a line over). Code:
-  `EipEntryHeader` → `senseSegments`; `src/components/SwipeableTwoLineText.tsx` → `TwoLineSegment`.
+- **Every eip lists the senses in its Definition tab** (owner's call 2026-11-05, first for
+  the Dictionary eip, then for every eip). The entry header shows ONE dd — the chosen sense's,
+  else the persisted pick's, else the default's (`resolveDisplayDefinition`), with that
+  sense's reading. For a word with ≥2 displayable clusters (the SensePicker's gate,
+  `sortedSenseClusters`) the Definition tab opens with a single-column list of every sense's dd
+  (`ddt`), in the picker's order, one per row with the default first, ruled off from the
+  paragraph below. The chosen sense (`selectedSenseIndex`) is **underlined** in the shelf's
+  secondary ink — only when the host passes a pick (`EipSheet` passes one only for a
+  persisted `selectedSense`, so a det entry shows no underline). The picker's **star** (13px,
+  in front of the gloss, in the gloss's own colour) marks the default (index 0) and every
+  commonality-4–5 sense (`isStarredSense`). The list is **display-only**: a pick is made on
+  the card face's `SensePicker`, which the open eip follows via `useEipTabs.syncEntry`. A
+  single-sense word shows no grid.
+  History: 2026-10-29 → 2026-11-05 the header itself carried the list, dot-separated, through
+  `SwipeableTwoLineText` (now used only by Memory Map's prompt).
+  **Code:** `src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`,
+  `InfoCardTabContent.tsx` (tab 0 → `senseList`), `EipEntryHeader.tsx` (the one dd),
+  `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseSelectedUnderlineSx`.
 
 **The duplicate page title is gone.** `NodePage`'s back-arrow header said "Dictionary"
 and an `h1` a few millimetres below said it again; the artboard has only the header. This
@@ -2106,7 +2123,7 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   at the page root and passed down as `look`:
   - **Day** tints only the GROUND and its sunken WELL (the no-results panel) — the
     design's `--g` / `--well` / `--wellSh`, the same `--g` family as the eip's upper
-    panel (ancp's ground is the tower's sky instead, `sortTimeOfDay.ts`). Surfaces, ink
+    panel (acp's ground is the tower's sky instead, `sortTimeOfDay.ts`). Surfaces, ink
     and the slab footer are the app's day colours. (Dawn and sunset tints were cut
     2026-11-04 — [TOWER_WEATHER_SKY.md](./TOWER_WEATHER_SKY.md) § 1.)
   - **Night** turns the page slate: #1E2735 ground, #2A3446 field / slabs / keycaps on a
@@ -2116,7 +2133,8 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   - **`CpcdPopup`** (`src/components/CpcdPopup.tsx`, the copy toast and definition popup)
     reads the `tier2Var` surface / ink / outline, so it turns #2A3446 at night too.
   - Grounds **blend** across the hour-long day ↔ night twilights; surfaces and ink **flip** together
-    once night holds the larger share (`dark`), as the eip's ink does.
+    once night holds the larger share (`dark`). (The eip no longer follows the clock — it
+    follows the Settings theme since 2026-11-05, EIP_SHEET_GESTURES.md § "Light / dark theme".)
   - **Outside the framework** on purpose, like the tower's skies: the phase grounds and
     every night value are the design's hexes (`tier2Look.ts` header).
   - **Chrome outside the page** (the slab footer, the beginner keyboard) reads the look
@@ -2893,8 +2911,8 @@ Hydra's pinyin display genuinely is a live toggle.
 Deck tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the dictionary cdp),
 and a hero card printed on the tower's **card stock** (`card/cardStock.ts` →
 `cardStockVars`, `VocabCardDetailPage` → `HERO_CARD_STOCK_VARS`) —
-[TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock". `CardOpsRail` letters its
-cells in `TOWER_STUDY_FONT` on every host.
+[TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock". (The hero card's `•••`
+rail, `CardOpsRail`, was deleted 2026-11-05; Customize is on the word-tools rail.)
 
 **Preserved, as the entry required:** the whole card-icon editor overlay
 (`useCardIconEditor` / `CardIconCanvas` / `CardEditToolbar`) is untouched — the peek
@@ -2939,6 +2957,13 @@ place (the eip definition tab's `InfoCardActionBar`):
 | **CARD operations** — customize, write a note on it (filing into a deck left with Decks, 2026-11-04) | belong to the card object, so they live ON the card, behind its `•••` (`CardOpsRail`, `.crail`) |
 | **WORD tools** — practise writing, load into Compare | would still make sense if the card did not exist, so they live on the PAGE above it (`WordToolsRail`, `.wtl.top`) |
 
+> **Superseded 2026-11-05 (owner's decision).** The card-note feature was removed (vet
+> `note` dropped by migration 184), which left the `•••` rail holding only customize. A
+> one-item menu is not worth a hidden affordance, so `CardOpsRail` was deleted and
+> **`Customize` joined `Write it` and `Compare` on `WordToolsRail`**. The card itself now
+> carries no operations; every action lives on the page rail. Any rail button pressed on
+> the flp's question face flips the card first (CARD_ICON_LAYOUT.md § "Entry point").
+
 Everything else follows: the eip becomes information-only, `InfoCardActionBar` is
 deleted, and the header sheds its `edit` toggle (it decorates one card, so it went to
 that card's rail).
@@ -2965,7 +2990,7 @@ that card's rail).
   `useWorkingLoop.dropCurrentCard` — no mark, no undo snapshot, no fly-out.
 
   **Superseded 2026-08-28**: the third cell is now **`note`** (the learner's own note on
-  the card — [CARD_NOTES.md](./CARD_NOTES.md)), and delete is gone from the flp entirely.
+  the card — `CARD_NOTES.md`, deleted 2026-11-05), and delete is gone from the flp entirely.
   Deleting is rare, so it belongs on a surface the learner navigated TO (the cdp header —
   since 2026-10-09 a non-destructive demotion to `'provisional'`, see PROVISIONAL_CARDS.md) rather than
   one tap from the card they are drilling. `useWorkingLoop.dropCurrentCard`, which existed
@@ -2978,6 +3003,11 @@ that card's rail).
 
   **2026-11-04**: the `add to deck` cell left with the Decks feature (`AddToDeckMenu`
   deleted), so the rail is **customize + note** on both hosts.
+
+  **2026-11-05: rail deleted.** The note feature was removed (migration 184 drops vet
+  `note`; `CardNote` and `PATCH /api/vocabEntries/:id/note` are gone) and `customize`
+  moved to `WordToolsRail` as `Customize`. `CardOpsRail`, `cardOpsCell.ts`, the
+  `topRail`/`noteSlot` face slots and the `--card-chrome-inset` var went with it.
 - **22 · swipe coaching.** Already shipped (`SwipeHintLabel`); untouched.
 - **23 · sense sheet.** `SensePicker` gets its two designed states: RESTING `.ssel` (a
   `1/9` counter and a triangle in a small pill) and OPEN `.ssheet` (every sense at once,
@@ -3012,10 +3042,8 @@ that card's rail).
 - A word DRILLED INTO inside the panel lost its Compare (and Add-to-Deck, before Decks
   was deleted) — deliberate, and tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 11.
 - `CardFaceSide` gained a `topRail` slot (outer face box, last in DOM so it paints over
-  the icon layer without a z-index war). It is threaded page → `FlashCardSection` →
-  `CardFace` → face exactly as `editCanvas` already is, as a NODE rather than three
-  callbacks, so the four surfaces that share `CardFace` never learn what a card operation
-  is.
+  the icon layer without a z-index war), threaded page → `FlashCardSection` → `CardFace`
+  → face as a node. **Removed 2026-11-05** with `CardOpsRail`, its only filler.
 - `PracticeWritingButton` grew one more `appearance` rather than being forked: it owns
   real behaviour (star fetch + popup + Writing mark) that every host wants behind a
   differently-shaped trigger. (`AddToDeckMenu` did the same until it was deleted with
@@ -3024,8 +3052,8 @@ that card's rail).
 
 **Code (new):** `src/components/WordToolsRail.tsx`, `src/components/wordToolPill.ts`,
 `src/components/SheetPill.tsx` (replaced the short-lived `InfoPeek.tsx`),
-`src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx`,
-`src/features/flashcards/cardOpsCell.ts`,
+`src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx` and
+`src/features/flashcards/cardOpsCell.ts` (both deleted 2026-11-05),
 `src/features/flashcards/DefinitionFacts.tsx`,
 `src/features/flashcards/BreakdownRow.tsx`,
 `src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx`.
@@ -3034,14 +3062,14 @@ that card's rail).
 `EipTabStrip.tsx`, `styled.ts`, `useWorkingLoop.ts`, `ExampleSentenceList.tsx`,
 `VocabCardDetailBody.tsx`,
 `src/components/handwriting/PracticeWritingButton.tsx`,
-`src/features/discover/AddNewCardsPage.tsx` (drops the removed `onOpenCompare`).
+`src/features/discover/AddCardsPage.tsx` (drops the removed `onOpenCompare`).
 **Deleted:** `FlashcardsLearnPage/InfoCardActionBar.tsx`,
 `FlashcardsLearnPage/InfoCardBlockButton.tsx`.
 **Docs:** `docs/DEFINITION_CLUSTERS.md`, `docs/DATA_VALIDATION_SYSTEM.md`,
 `docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md`, `docs/EXAMPLE_SENTENCES.md`,
 `docs/CARD_ICON_LAYOUT.md`, `docs/PRACTICE_WRITING.md`,
 `docs/HANDWRITING_RECOGNITION.md`, `docs/WORD_COMPARE_FEATURE.md`,
-`docs/CARD_NOTES.md`, `docs/DEFERRED_WORK.md` §§ 10–11.
+`docs/CARD_NOTES.md` (deleted 2026-11-05), `docs/DEFERRED_WORK.md` §§ 10–11.
 
 ## Not designed
 
@@ -3057,10 +3085,10 @@ this list is the inventory.
 - ~~**flp** (`/flashcards/learn`)~~ — **REMOVED from this list 2026-08-24.** It has an
   entry (19–25) and it is built. It was never undesigned; this bullet predated the
   artboards.
-- **Add New Cards, Quick Mark, Skipped Cards, the Reader document page, Login/Register and the Study Challenge pages**: extrapolated
+- **Add Cards, Quick Mark, Skipped Cards, the Reader document page, Login/Register and the Study Challenge pages**: extrapolated
   per D10. (The Mastery Centers and Collection View were also on this list until they
   were deleted, 2026-11-04.)
-- **The sort flow** (ancp, `/discover/sort/:language`) is an explicit **outstanding
+- **The sort flow** (acp, `/discover/sort/:language`) is an explicit **outstanding
   item** (D11) — out of scope for this pass even though D10 would otherwise cover it.
   ⚠️ The project now also holds `Sort Flow - Shelf System.html`, so a design exists;
   it is a sibling file rather than part of the spec artboard set.
@@ -3397,16 +3425,16 @@ reads as dirt under the card. Pick by what the thing is: `rest` · `raised` · `
 `float` · `lifted` · `menu` · `popover` · `board` · `spine`/`spineSwatch`, plus the three
 upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`). One
 app-authored role has no artboard source: `recessed`, an inset shadow for an empty well
-pressed into a surface (the sort page's card crater, `AddNewCardsPage.tsx` → `CardCrater`).
+pressed into a surface (the sort page's card crater, `AddCardsPage.tsx` → `CardCrater`).
 
 **Where it is wired.** The light theme's `flashcard.cardShadow` / `.cardShadowSubtle` /
 `.sheetShadow` now resolve to `SHADOW.lifted` / `.raised` / `.panelUp`, so every call site
 already reading the theme moved for free. Dark / Ocean / Nature keep their own and are not
 re-derived (D4).
 
-**Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the ancp's
+**Converted directly:** `MiniVocabCard`, `QuickMarkCard`, `ChallengeWordCard`, the acp's
 `CardShell` + bucket tile + platform, `CommunityCardView`, `Shelf`,
-`Spine`, `SensePicker`, `CardOpsRail`, `Bento`, `MinimizablePopup`, `HydraLendNotice`
+`Spine`, `SensePicker`, `CardOpsRail` (deleted 2026-11-05), `Bento`, `MinimizablePopup`, `HydraLendNotice`
 (deleted 2026-09-05),
 `ProvisionalCardsNotice`, `CommunityDesignZoom`, `CardIconOrderList`,
 `PracticeWritingPopup`.
@@ -3439,7 +3467,7 @@ into the open rather than a new decision:
    Ocean / Nature keep their own faces and are not re-derived (D4).
 2. **Four surfaces were not reading the theme at all** and had to be converted, or they would
    have stayed grey while the flashcard went cream: `MiniVocabCard`, `QuickMarkCard`,
-   `ChallengeWordCard` and the ancp's `CardShell` (since folded into the shared `MiniCard`). All four are card faces; all four hard-coded
+   `ChallengeWordCard` and the acp's `CardShell` (since folded into the shared `MiniCard`). All four are card faces; all four hard-coded
    `COLORS.card`. They looked correct only because the light theme's face happened to be that
    same token — which also meant a mini card silently ignored Dark / Ocean / Nature.
 3. **The fie's `auto` and `grey` swatches are now actually different.** `cardColor.ts` has
@@ -3454,7 +3482,7 @@ migration: `null` means "follow the theme", and the theme is what moved.
 
 ### D11 · Discover is being redesigned — artboard 3 is superseded
 The user is producing a new Discover design. Entry 3 is **blocked** on it; do not
-build from the existing artboard. The **sort flow** (ancp, `/discover/sort/:language`)
+build from the existing artboard. The **sort flow** (acp, `/discover/sort/:language`)
 is deliberately left as an **outstanding item** and is out of scope for this pass —
 which also parks the open question about per-bucket queue counts, since the new
 design decides whether that shelf exists at all.
@@ -3469,7 +3497,7 @@ Nothing blocking. Two things to confirm *while building*, not before:
   queue split by progress bucket. Parked under D11 until the new Discover design
   lands; worth answering before that design is finalized so it isn't drawn around
   data that doesn't exist. *(The Discover hub was deleted 2026-10-17 — see entry 3 — so this
-  now applies only to a count on the decks rail's Sort tile or inside ancp.)*
+  now applies only to a count on the decks rail's Sort tile or inside acp.)*
 - **The D10 primitive assignments** — each is a starting read, not a ruling.
 
 # Suggested order

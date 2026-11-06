@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
-import FireCount, { FIRE_GLYPH_SIZE_PX, INK_BOTTOM_PCT, INK_TOP_PCT } from "./FireCount";
+import FireCount, { HEADER_FIRE_COUNT_FONT_SIZE, HEADER_FIRE_GLYPH_PX, INK_BOTTOM_PCT, INK_TOP_PCT } from "./FireCount";
 import { useMinutePoints } from "./useMinutePoints";
 import { useAuth } from "../AuthContext";
 import { useMinutePointsPaused } from "./minutePointsPause";
@@ -21,7 +21,7 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * The minute-points flame — the app's single earning indicator, in every header.
  *
  * The VISUAL is `FireCount` — the design's `.hd .fire` / `.lhd .fire` treatment: a
- * Material Symbols Rounded `local_fire_department` glyph beside a mono count at `FIRE_COUNT_FONT_SIZE` (14px; the design's 11px until 2026-10-26)
+ * Material Symbols Rounded `local_fire_department` glyph beside a mono count at `HEADER_FIRE_COUNT_FONT_SIZE` (18px since 2026-11-05 — 16px in the header scale-up, then bumped once more; 14px from 2026-10-26; the design's 11px before)
  * in `FIRE_COUNT_INK` (medium),
  * both in `COLORS.fireActive` (#E65100 — the design writes the same hex), with a 4px
  * gap. Nothing else: no MUI `Badge` bubble, no bordered counter chip, no drop-shadow
@@ -168,7 +168,8 @@ const MinutePointsFireBadge: React.FC = () => {
                 <FireCount
                     value={banking.displayCount}
                     tone={COLORS.fireActive}
-                    glyphSize={FIRE_GLYPH_SIZE_PX}
+                    glyphSize={HEADER_FIRE_GLYPH_PX}
+                    countFontSize={HEADER_FIRE_COUNT_FONT_SIZE}
                     fillPct={bankingFillPct}
                     title={`${banking.displayCount} minute points`}
                 />
@@ -198,7 +199,8 @@ const MinutePointsFireBadge: React.FC = () => {
             <FireCount
                 value={minutePoints.currentPoints}
                 tone={tone}
-                glyphSize={FIRE_GLYPH_SIZE_PX}
+                glyphSize={HEADER_FIRE_GLYPH_PX}
+                    countFontSize={HEADER_FIRE_COUNT_FONT_SIZE}
                 // Off-study there is no level to show — see OFF-STUDY MODE above.
                 // `undefined` is what tells `FireCount` to draw one flat solid flame.
                 fillPct={isStudySurface ? fillHeightPct : undefined}

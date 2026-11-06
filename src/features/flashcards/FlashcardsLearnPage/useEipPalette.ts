@@ -1,33 +1,31 @@
-import { createContext, useContext, useMemo } from "react";
-import { useTestingFeatures } from "../../../hooks/useTestingFeatures";
-import { useDayClock } from "../../../timeOfDay/useDayClock";
-import { EIP_DAY_PALETTE, eipPaletteAt, type EipPalette } from "./eipPalette";
+import { createContext, useContext } from "react";
+import { useTheme as useAppTheme } from "../../../contexts/ThemeContext";
+import { EIP_LIGHT_PALETTE, eipPaletteFor, type EipPalette } from "./eipPalette";
 
 /**
- * useEipPalette.ts — the eip's time-of-day palette as React state (eipPalette.ts is the
- * pure half; EipPaletteContext.tsx is the provider that publishes it).
+ * useEipPalette.ts — the eip's theme palette as React state (eipPalette.ts is the pure
+ * half; EipPaletteContext.tsx is the provider that publishes it).
  *
  * Layer: feature hooks (src/features/flashcards).
  *
- *   - `useEipPalette()` — the clock-driven palette. Samples the SHARED day clock
- *     (src/timeOfDay/useDayClock), honouring the feature-tester override exactly as the
- *     Deck Tower does, so an eip open over the tower is always at the tower's hour.
- *   - `useEipColors()` — read the palette published by `EipPaletteProvider`; the day
- *     palette outside one (the cdps' inline panels, which have no sheet and stay day).
+ *   - `useEipPalette()` — the palette for the app's colour theme (Settings → Theme,
+ *     `ThemeMode` in src/contexts/ThemeContext.tsx): dark for Dark, light for the rest.
+ *     Not the time of day — the eip stopped following the clock on 2026-11-05.
+ *   - `useEipColors()` — read the palette published by `EipPaletteProvider`; the light
+ *     palette outside one.
  *
- * Depends on: eipPalette.ts, src/timeOfDay/useDayClock.ts, AuthContext. Depended on by:
- * EipPaletteContext.tsx, InfoCardSection, and every eip piece that paints with the palette.
- * Docs: docs/EIP_SHEET_GESTURES.md § Time of day.
+ * Depends on: eipPalette.ts, contexts/ThemeContext.tsx. Depended on by:
+ * EipPaletteContext.tsx, InfoCardSection, DictionaryCardDetailPage, and every eip piece
+ * that paints with the palette.
+ * Docs: docs/EIP_SHEET_GESTURES.md § "Light / dark theme".
  */
 
-export const EipPaletteCtx = createContext<EipPalette>(EIP_DAY_PALETTE);
+export const EipPaletteCtx = createContext<EipPalette>(EIP_LIGHT_PALETTE);
 
-/** The published eip palette (day outside a provider). */
+/** The published eip palette (light outside a provider). */
 export const useEipColors = (): EipPalette => useContext(EipPaletteCtx);
 
-/** The eip palette for the learner's time of day right now. */
+/** The eip palette for the app's current colour theme. Stable per theme (module constants). */
 export function useEipPalette(): EipPalette {
-    // Tester time-of-day pin only while testing features are on (useTestingFeatures).
-    const { time } = useDayClock(useTestingFeatures());
-    return useMemo(() => eipPaletteAt(time), [time]);
+    return eipPaletteFor(useAppTheme().themeMode);
 }

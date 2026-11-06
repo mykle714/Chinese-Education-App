@@ -27,24 +27,24 @@ export interface SoftIntroSpec {
 
 export const SOFT_INTROS = {
     /**
-     * ancp's level pill ("Auto" / "HSK 3", AddNewCardsPage toolbar). Intro: a small
+     * acp's level pill ("Auto" / "HSK 3", AddCardsPage toolbar). Intro: a small
      * "Difficulty" caption under it, so the learner learns what the pill picks. Graduated:
      * the pill alone, as the Tower Tier 2 design draws it.
      */
     sortDifficultyCaption: {
         minVisits: 7,
         minDays: 7,
-        description: 'ancp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
+        description: 'acp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
     },
     /**
      * td main world's mini sort platform (DeckTowerPlatform `sortBin`). Intro: "SORT /
      * CARDS" printed into the floor under it, so the learner learns the white slab is the
-     * Add New Cards button. Graduated: the slab alone.
+     * Add Cards button. Graduated: the slab alone.
      */
     towerSortLabel: {
         minVisits: 70,
         minDays: 14,
-        description: 'td sort platform: "Add new cards" floor print under it (intro) → slab alone (graduated)',
+        description: 'td sort platform: "Add cards" floor print under it (intro) → slab alone (graduated)',
     },
     /**
      * td writing world's notebook paper stack (DeckTowerPlatform `notebook`). Intro:

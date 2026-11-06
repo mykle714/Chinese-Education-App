@@ -1,35 +1,39 @@
-import { Box, Typography, List, ListItem, ListItemButton, Alert, Chip, IconButton, Button, Tooltip } from "@mui/material";
+import { useState } from "react";
+import { Box, Typography, List, ListItem, ListItemButton, Alert, Button } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import { Article as ArticleIcon, Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Person as PersonIcon } from "@mui/icons-material";
+import { Article as ArticleIcon, Add as AddIcon, Person as PersonIcon } from "@mui/icons-material";
+import SwipeToDeleteRow from "./SwipeToDeleteRow";
 import type { Text } from "../../types";
 import { SIZE , WEIGHT} from "../../theme/scale";
 import { COLORS } from "../../theme/colors";
 
 interface TextSidebarProps {
     texts: Text[];
-    selectedText: Text | null;
     loading: boolean;
     error: string | null;
+    // A failed swipe-delete, shown above the list (the list itself stays).
+    actionError: string | null;
+    onDismissActionError: () => void;
     onTextSelect: (text: Text) => void;
     onCreateNew: () => void;
-    onEdit: (text: Text) => void;
+    // Swipe-left → Delete. Deletes immediately (iPhone style, no confirmation).
     onDelete: (text: Text) => void;
-    formatDate: (dateString: string) => string;
     drawerWidth: number;
 }
 
 function TextSidebar({
     texts,
-    selectedText,
     loading,
     error,
+    actionError,
+    onDismissActionError,
     onTextSelect,
     onCreateNew,
-    onEdit,
     onDelete,
-    formatDate,
     drawerWidth
 }: TextSidebarProps) {
+    // At most one row is swiped open at a time; opening another closes this one.
+    const [openRowId, setOpenRowId] = useState<string | null>(null);
     return (
         <Box
             className="reader-page-sidebar-content"
@@ -89,153 +93,72 @@ function TextSidebar({
                 </Box>
             )}
 
-            {/* Texts list */}
+            {/* Delete failure (the row is restored by ReaderPage). */}
+            {actionError && (
+                <Box className="reader-page-sidebar-action-error" sx={{ px: 2, pt: 2 }}>
+                    <Alert className="reader-page-sidebar-action-error-alert" severity="error" onClose={onDismissActionError}>
+                        {actionError}
+                    </Alert>
+                </Box>
+            )}
+
+            {/* Texts list — each user document is a SwipeToDeleteRow (swipe left →
+            Delete). No per-row edit: content is edited inside the open document. */}
             {!loading && !error && (
                 <List
                     className="reader-page-sidebar-texts-list"
                     sx={{ flexGrow: 1, overflow: 'auto', p: 1 }}
                 >
-                    {texts.map((text) => (
-                        <ListItem
-                            className="reader-page-sidebar-text-item"
-                            key={text.id}
-                            disablePadding
-                            sx={{ mb: 1 }}
-                            secondaryAction={
-                                text.isUserCreated && (
-                                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                        {/* Validation docs (docs/DATA_VALIDATION_SYSTEM.md) are read-only —
-                                        no Edit, only the doc page's Approve/Flag + this row's Delete
-                                        (to abandon a downloaded entry without acting on it). */}
-                                        {!text.validationField && (
-                                            <Tooltip title="Edit">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onEdit(text);
-                                                    }}
-                                                    sx={{
-                                                        color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
-                                                        '&:hover': {
-                                                            backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
-                                                        }
-                                                    }}
-                                                >
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        )}
-                                        <Tooltip title="Delete">
-                                            <IconButton
-                                                size="small"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onDelete(text);
-                                                }}
-                                                sx={{
-                                                    color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
-                                                    '&:hover': {
-                                                        backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
-                                                    }
-                                                }}
-                                            >
-                                                <DeleteIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                )
-                            }
-                        >
+                    {texts.map((text) => {
+                        const rowButton = (
                             <ListItemButton
                                 className="reader-page-sidebar-text-button"
                                 onClick={() => onTextSelect(text)}
-                                selected={selectedText?.id === text.id}
                                 sx={{
                                     borderRadius: 2,
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-start',
                                     p: 2,
-                                    pr: text.isUserCreated ? 7 : 2, // Extra padding for action buttons
-                                    // Shelf System v2: a selected ROW is a MID-tier fill with
-                                    // ink on it (the old MUI-blue ground + white text is off
-                                    // the palette, and white never sits on a ramp colour).
-                                    '&.Mui-selected': {
-                                        backgroundColor: COLORS.bluM,
-                                        color: COLORS.onSurface,
-                                        '&:hover': {
-                                            backgroundColor: COLORS.bluM,
-                                        },
-                                    },
-                                    '&:hover': {
-                                        backgroundColor: 'action.hover',
-                                    },
+                                    '&:hover': { backgroundColor: 'action.hover' },
                                 }}
                             >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5, width: '100%' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }}>
                                     {text.isUserCreated && (
-                                        <Tooltip title="Your Document">
-                                            <PersonIcon
-                                                sx={{
-                                                    fontSize: SIZE.bodyLg,
-                                                    color: COLORS.iconColor
-                                                }}
-                                            />
-                                        </Tooltip>
+                                        <PersonIcon
+                                            className="reader-page-sidebar-text-owner-icon"
+                                            sx={{ fontSize: SIZE.bodyLg, color: COLORS.iconColor }}
+                                        />
                                     )}
                                     <Typography
                                         className="reader-page-sidebar-text-title"
                                         variant="subtitle2"
-                                        sx={{
-                                            fontWeight: WEIGHT.bold,
-                                            color: selectedText?.id === text.id ? COLORS.onSurface : 'text.primary',
-                                            flex: 1
-                                        }}
+                                        sx={{ fontWeight: WEIGHT.bold, color: 'text.primary', flex: 1 }}
                                     >
                                         {text.title}
                                     </Typography>
                                 </Box>
-                                <Typography
-                                    className="reader-page-sidebar-text-description"
-                                    variant="body2"
-                                    sx={{
-                                        mb: 1,
-                                        color: selectedText?.id === text.id ? COLORS.textSecondary : 'text.secondary',
-                                        fontSize: SIZE.body
-                                    }}
-                                >
-                                    {text.description}
-                                </Typography>
-                                <Box
-                                    className="reader-page-sidebar-text-metadata"
-                                    sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}
-                                >
-                                    <Chip
-                                        className="reader-page-sidebar-text-char-count"
-                                        label={`${text.characterCount} chars`}
-                                        size="small"
-                                        variant={selectedText?.id === text.id ? "filled" : "outlined"}
-                                        sx={{
-                                            fontSize: SIZE.caption,
-                                            height: 20,
-                                            color: selectedText?.id === text.id ? COLORS.onSurface : 'text.secondary',
-                                            borderColor: selectedText?.id === text.id ? COLORS.border : undefined,
-                                            backgroundColor: selectedText?.id === text.id ? COLORS.rowHoverBg : undefined
-                                        }}
-                                    />
-                                    <Typography
-                                        className="reader-page-sidebar-text-date"
-                                        variant="caption"
-                                        sx={{
-                                            color: selectedText?.id === text.id ? COLORS.textSecondary : 'text.secondary'
+                            </ListItemButton>
+                        );
+                        return (
+                            <ListItem
+                                className="reader-page-sidebar-text-item"
+                                key={text.id}
+                                disablePadding
+                                sx={{ mb: 1, display: 'block' }}
+                            >
+                                {text.isUserCreated ? (
+                                    <SwipeToDeleteRow
+                                        open={openRowId === text.id}
+                                        onOpenChange={(isOpen) => setOpenRowId(isOpen ? text.id : null)}
+                                        onDelete={() => {
+                                            setOpenRowId(null);
+                                            onDelete(text);
                                         }}
                                     >
-                                        {formatDate(text.createdAt)}
-                                    </Typography>
-                                </Box>
-                            </ListItemButton>
-                        </ListItem>
-                    ))}
+                                        {rowButton}
+                                    </SwipeToDeleteRow>
+                                ) : rowButton}
+                            </ListItem>
+                        );
+                    })}
                 </List>
             )}
         </Box>

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Box, ButtonBase, InputBase } from "@mui/material";
 import SpeakerButton from "../../components/SpeakerButton";
 import SwipeableTwoLineText, { type TwoLineSegment } from "../../components/SwipeableTwoLineText";
-import { buildSenseSegments } from "../../components/senseListSegments";
+import { buildSenseSegments, senseSelectedUnderlineSx } from "../../components/senseListSegments";
 import {
     DEFINITION_LIST_SEPARATOR,
     resolveSelectedSenseIndex,
@@ -330,14 +330,9 @@ const MemoryMapPrompt: React.FC<MemoryMapPromptProps> = ({
                         fontWeight: WEIGHT.bold,
                         lineHeight: GLOSS_LINE_HEIGHT,
                         color: COLORS.onSurface,
-                        // The learner's chosen sense — underlined like the eip header's, in
-                        // the muted ink so the mark stays quieter than the gloss itself.
-                        "& .memory-map-prompt__sense--selected": {
-                            textDecorationLine: "underline",
-                            textDecorationColor: COLORS.textSecondary,
-                            textDecorationThickness: "1.5px",
-                            textUnderlineOffset: "2px",
-                        },
+                        // The learner's chosen sense — underlined like the eip's sense list
+                        // (shared helper), in the muted ink so the mark stays quieter than the gloss.
+                        "& .memory-map-prompt__sense--selected": senseSelectedUnderlineSx(COLORS.textSecondary),
                     }}
                 />
             )}

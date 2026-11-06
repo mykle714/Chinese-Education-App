@@ -17,7 +17,9 @@ import { WEIGHT } from "../../../theme/scale";
  * (no light offset).
  *
  * Lines read along world x (the floor plate's direction) and stack along world +y, centred
- * as a block on `at`. Letter-spaced through IsoSpacedText, so the block sits on the same
+ * as a block on `at`. Within the block each line is centred (`align="center"`, default) or
+ * set flush to the block's right edge (`align="right"` — `textAnchor="end"`, so a short
+ * line like "ADD" ends where the widest one does). Letter-spaced through IsoSpacedText, so the block sits on the same
  * centre in WebKit and Chrome.
  *
  * `maxX` keeps the block off something on its right (the platform's rim): the lines are
@@ -49,6 +51,8 @@ interface IsoFloorPrintProps {
     color?: string;
     /** The rightmost world x the block may reach; it slides left to stay inside. Default: none. */
     maxX?: number;
+    /** How each line sits within the block: centred (default) or flush right. */
+    align?: "center" | "right";
 }
 
 const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
@@ -61,6 +65,7 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
     opacity = 1,
     color,
     maxX,
+    align = "center",
 }) => {
     const proj = useIsoProjector();
     // Default: two steps down from the floor, like IsoCardImprint's print (imprint tone → print tone).
@@ -73,7 +78,8 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
     const measureKey = `${lines.join("|")}|${fontSize}|${letterSpacing}|${fontEpoch}`;
     const [measured, setMeasured] = useState<{ key: string; width: number } | null>(null);
     useLayoutEffect(() => {
-        if (maxX === undefined || measured?.key === measureKey || !ref.current) return;
+        // Measured when clamping (`maxX`) or right-aligning — both need the widest line.
+        if ((maxX === undefined && align !== "right") || measured?.key === measureKey || !ref.current) return;
         let width = 0;
         try {
             for (const t of Array.from(ref.current.querySelectorAll("text"))) {
@@ -87,11 +93,15 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
             // Not laid out (detached / no layout engine): stay centred.
         }
         setMeasured({ key: measureKey, width });
-    }, [maxX, measured, measureKey, letterSpacing]);
+    }, [maxX, align, measured, measureKey, letterSpacing]);
     // How far left the block slides so its widest line ends at `maxX` (0 when it fits).
     const width = measured?.key === measureKey ? measured.width : 0;
     const shiftX = maxX === undefined ? 0 : Math.min(0, maxX - (at.x + width / 2));
-    const lineX = at.x + shiftX;
+    const blockCentreX = at.x + shiftX;
+    // Right-aligned lines all end on the block's right edge (half the widest line right of
+    // its centre). Before the first measurement `width` is 0, so they end on the centre
+    // for that one frame — layout effects run before paint, so it is not seen.
+    const lineX = align === "right" ? blockCentreX + width / 2 : blockCentreX;
     // The first line's centre, so the whole block is centred on `at` (in y).
     const firstY = at.y - ((lines.length - 1) * pitch) / 2;
     return (
@@ -114,8 +124,8 @@ const IsoFloorPrint: React.FC<IsoFloorPrintProps> = ({
                     fontSize={fontSize}
                     fontWeight={WEIGHT.bold}
                     letterSpacing={letterSpacing}
-                    textAnchor="middle"
-                    dominantBaseline="central"
+                    textAnchor={align === "right" ? "end" : "middle"}
+                    // No dominantBaseline: IsoSpacedText centres the caps on `y` itself.
                 >
                     {line}
                 </IsoSpacedText>

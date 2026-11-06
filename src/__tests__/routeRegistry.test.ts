@@ -148,7 +148,7 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
       ? ([["/community", "menu"]] as Array<[string, string | undefined]>)
       : []),
     ["/reader", "menu"],
-    // Prefix-matched node pages. Add New Cards and the card detail page are drill-ins
+    // Prefix-matched node pages. Add Cards and the card detail page are drill-ins
     // from the Deck Tower, so they light the Deck tab.
     ["/discover/sort/zh", "deck"],
     ["/flashcards/card/7", "deck"],

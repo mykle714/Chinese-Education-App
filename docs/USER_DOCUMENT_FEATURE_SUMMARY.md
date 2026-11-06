@@ -1,222 +1,155 @@
-# User-Specific Document Feature Implementation Summary
+# Reader Documents (user documents)
 
-## Overview
-Successfully implemented a complete user-specific blank document creation feature for the Reader page, allowing users to create, edit, and delete their own documents while maintaining access to system texts.
+The Reader (`/reader`, reached from the hp Menu) is a list of the learner's own
+documents; opening one (`/reader/:id`) shows it as a tappable reading surface with
+an inline content editor. This doc covers the document model, the CRUD API, and the
+create/edit/delete flows.
 
 > **Word segmentation & tap navigation**: how the Reader splits an open document
 > into tappable dictionary words (client-side gsa) and steps the selection
 > through them → [READER_SEGMENTATION.md](./READER_SEGMENTATION.md).
+> **Page archetypes** (Node list page + footerless document drill-in, header
+> actions, edit toolbar) → [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Reader.
 
-## Database Changes
+## Data model — `texts`
 
-### Migration File: `database/migrations/08-add-userid-to-texts.sql`
-- Added `userId` column (UUID, nullable) to texts table with foreign key to users table
-- Added `isUserCreated` boolean flag to distinguish user documents from system texts
-- Created indexes for efficient querying:
-  - `idx_texts_userid` on userId
-  - `idx_texts_userid_language` composite index
-- Existing system texts marked with `isUserCreated = false` and `userId = NULL`
+Code: `database/init/01-init-schema.sql` / `database/deploy/01-schema.sql` (texts);
+`server/contracts/wire.ts` → `TextBase` (re-exported as `Text` by `server/types/index.ts`
+and `src/types.ts`).
 
-## Backend Implementation (DAL Architecture)
+| Column | Notes |
+|---|---|
+| `id` | uuid, `uuid_generate_v4()` |
+| `userId` | owner; `ON DELETE CASCADE` |
+| `title` | **derived from the content on create** (see below); renamable later |
+| `content` | the document body, sanitized on write (`sanitizeDocumentContent`) |
+| `language` | `zh` / `es`; set on create, immutable afterwards |
+| `characterCount` | `content.length`, recomputed on every content update |
+| `isUserCreated` | `true` for every row the API creates |
+| `createdAt` | `now()` |
 
-### New Files Created:
+Removed columns: `description` and the validation-doc linkage
+(`validationEntryId` / `validationLanguage` / `validationField`) were dropped by
+**migration 183** (2026-11-05), along with the Reader validation-document queue that
+used them — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 
-1. **`server/services/TextService.ts`**
-   - Complete business logic for text CRUD operations
-   - User authorization checks (users can only edit/delete their own documents)
-   - System text protection (cannot be modified or deleted)
-   - Validates text data (title, description, content length limits)
-   - Language validation (zh, ja, ko, vi)
+## Backend (layers)
 
-2. **`server/controllers/TextController.ts`**
-   - HTTP request handlers following DAL pattern
-   - Endpoints: create, update, delete, getAll, getById, getStats
-   - Proper error handling with appropriate status codes
-   - Authorization integration with JWT tokens
+| Layer | File | Role |
+|---|---|---|
+| Route | `server/routes/textRoutes.ts` | registration only |
+| Controller | `server/controllers/TextController.ts` | request parsing, status codes |
+| Service | `server/services/TextService.ts` | ownership checks, limits, sanitizing, title derivation |
+| Utility | `server/utils/documentTitle.ts` | pure title rule (`deriveDocumentTitle`) |
 
-3. **Updated `server/dal/setup.ts`**
-   - Initialized TextService and TextController instances
-   - Proper dependency injection following existing pattern
+> ⚠️ Layering: `TextService` issues its `texts` SQL directly rather than through a
+> DAL — an exception to "a service does not write SQL"
+> ([BACKEND_LAYERING.md](./BACKEND_LAYERING.md)). Title derivation does go through
+> `IDictionaryDAL.findMultipleByWord1`.
 
-### API Endpoints (now in `server/routes/textRoutes.ts`):
+### Endpoints
 
-- `GET /api/texts` - Get all texts for user (user-created + system texts in their language)
-- `GET /api/texts/stats` - Get text statistics
-- `GET /api/texts/:id` - Get specific text by ID
-- `POST /api/texts` - Create new document
-- `PUT /api/texts/:id` - Update document
-- `DELETE /api/texts/:id` - Delete document
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| GET | `/api/texts` | — | the user's documents in their `selectedLanguage`, newest first (`getUserTexts`) |
+| GET | `/api/texts/stats` | — | counts / total characters |
+| GET | `/api/texts/:id` | — | one document |
+| POST | `/api/texts` | `{ content, language? }` | **no title** — the server derives it |
+| PUT | `/api/texts/:id` | `{ title?, content? }` | owner only; `language` is rejected |
+| DELETE | `/api/texts/:id` | — | owner only |
 
-## Frontend Implementation
+### Title derivation
 
-### Type Updates:
+Code: `server/utils/documentTitle.ts` → `deriveDocumentTitle`, `documentTitleSource`;
+`server/services/TextService.ts` → `deriveTitle`; tests
+`server/__tests__/documentTitle.test.ts`.
 
-**`src/types.ts` and `server/types/index.ts`**
-- Updated Text interface to include:
-  - `userId?: string | null`
-  - `language: Language`
-  - `isUserCreated: boolean`
-- Added `TextCreateData` and `TextUpdateData` types
+On create, the title is **as many whole words of the first non-empty line as fit in
+20 characters** (`DOCUMENT_TITLE_MAX_CHARS`, counted in code points). A "word" is a gsa
+segment inside a Chinese run (`splitHanRuns` → `segmentWithDict` against det, looked
+up only for the substrings of the first 64 characters) and a whitespace-delimited
+token elsewhere, so a title never cuts 图书馆 or "library" in half. If the first word
+alone is longer than 20 characters it is hard-cut; an empty body gives `Untitled`.
+The title is derived **once**: later content edits do not retitle the document.
 
-### New Components Created:
+### Limits
 
-1. **`src/features/reader/CreateDocumentDialog.tsx`**
-   - Modal dialog for creating new blank documents
-   - Fields: title, description, language selection
-   - Starts with empty content
-   - Form validation and error handling
+Code: `TextService.validateTextData` / `validateUpdateData` / `createText`.
+Title ≤ 200 characters (PUT), content ≤ 50 000. Per account, `createText` caps
+user-authored documents at `MAX_DOCUMENTS_PER_USER` (500), counting `isUserCreated`
+rows — see [API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1c.
 
-2. **`src/features/reader/EditDocumentDialog.tsx`**
-   - Modal dialog for editing existing user documents
-   - Editable fields: title, description, content, language
-   - Pre-populates with current document data
-   - Content field with multi-line text area
+## Frontend
 
-3. **`src/features/reader/DeleteDocumentDialog.tsx`**
-   - Confirmation dialog for document deletion
-   - Shows document title in confirmation message
-   - Cannot be undone warning
+All under `src/features/reader/`.
 
-### Updated Components:
+| File | Role |
+|---|---|
+| `ReaderPage.tsx` | `/reader` list (Node page); optimistic swipe-delete (`handleDelete`) |
+| `TextSidebar.tsx` | the list itself (one title per row) + the **New Document** button |
+| `SwipeToDeleteRow.tsx` | iPhone-style swipe-left row that uncovers **Delete** |
+| `ReaderDocumentPage.tsx` | `/reader/:id` document page, including the `/reader/new` draft |
+| `readerPaths.ts` | `NEW_DOCUMENT_ID` / `NEW_DOCUMENT_PATH` |
+| `TextHeader.tsx` | title + vocab-processing status chips |
+| `TextArea.tsx` | reading textarea ⇄ editable textarea |
+| `ReaderEditToolbar.tsx` + `useReaderContentEditor.ts` | undo/redo/cancel/save for inline edit |
+| `DeleteDocumentDialog.tsx` | delete confirmation for the document header's trash icon |
 
-1. **`src/features/reader/TextSidebar.tsx`**
-   - Added "New Document" button at top of sidebar
-   - Added edit/delete icon buttons for user-created documents only
-   - Added person icon to visually identify user documents
-   - Updated props to include dialog handlers
-   - Extra padding for documents with action buttons
+### Creating a document
 
-2. **`src/features/reader/ReaderPage.tsx`**
-   - Integrated all three dialog components
-   - Added dialog state management (open/close, selected text)
-   - Added handlers for create, edit, delete actions
-   - Auto-refresh text list after CRUD operations
-   - Clears selection if deleted text was currently selected
+Code: `TextSidebar.tsx` (New Document) → `ReaderPage.tsx` → `handleCreateNew`;
+`ReaderDocumentPage.tsx` → `blankDraft`, `saveNewDraft`, `handleCancelEdit`.
 
-## Key Features
+There is no create dialog. **New Document** navigates to `/reader/new`, which
+`ReaderDocumentPage` opens as an in-memory blank draft, **already in edit mode**
+(the editable textarea focuses itself, raising the keyboard). Nothing exists
+server-side yet:
 
-### User Experience:
-- ✅ Users can create blank documents with custom titles
-- ✅ Users can edit their own documents (title, description, content, language)
-- ✅ Users can delete their own documents
-- ✅ System texts are read-only and cannot be modified
-- ✅ Visual distinction between user documents (person icon) and system texts
-- ✅ Filtered by user's selected language
-- ✅ User documents appear at the top of the list
+- **Save** is disabled while the draft is blank. The first Save `POST`s
+  `{ content, language }`, processes the new document's vocabulary, leaves edit
+  mode and `replace`-navigates to `/reader/<new id>`, so Back returns to the list
+  rather than to an empty draft. `justCreatedIdRef` stops the fetch effect from
+  reloading the document it already holds after the URL change.
+- **Cancel** (or the back arrow) on a draft just returns to `/reader`. No server
+  record exists, so there is nothing to clean up and no empty documents pile up.
 
-### Security & Authorization:
-- ✅ User authentication required for all operations
-- ✅ Users can only edit/delete their own documents
-- ✅ System texts protected from modification
-- ✅ Proper authorization checks in backend
-- ✅ JWT token validation
+### Editing
 
-### Data Management:
-- ✅ User documents private to each user
-- ✅ System texts visible to all users
-- ✅ Documents filtered by user's language preference
-- ✅ Character count automatically calculated
-- ✅ Timestamps tracked (createdAt)
+Editing happens only inside the open document: the header's Edit toggles the inline
+editor (content only). List rows have no Edit. The title is set once, on create
+(§ Title derivation), and **there is currently no rename UI** — `PUT /api/texts/:id`
+still accepts `title`, but no client sends it.
 
-## Technical Details
+Neither the list nor the open document shows the character count or the creation
+date (removed 2026-11-05); `characterCount` and `createdAt` are still on the wire.
 
-### Validation Rules:
-- **Title**: Required, max 200 characters
-- **Description**: Optional, max 500 characters
-- **Content**: Optional, max 50,000 characters
-- **Language**: Must be one of: zh, ja, ko, vi
+### Deleting a document
 
-### Database Schema:
-```sql
-texts (
-    id VARCHAR(50) PRIMARY KEY,
-    userId UUID REFERENCES users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    description TEXT,
-    content TEXT NOT NULL,
-    language VARCHAR(10) NOT NULL DEFAULT 'zh',
-    characterCount INTEGER NOT NULL,
-    isUserCreated BOOLEAN NOT NULL DEFAULT false,
-    -- Validation-doc linkage (migration 104/106; NULL ⇒ ordinary user document).
-    -- See docs/DATA_VALIDATION_SYSTEM.md.
-    validationEntryId UUID,
-    validationLanguage VARCHAR(10),
-    validationField VARCHAR(50),
-    createdAt TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
-)
-```
+Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx` →
+`handleDelete`; `DeleteDocumentDialog.tsx`.
 
-> **Validation documents** reuse this table: `ValidationService` composes a
-> read-only "Validate - <word1>" document with the three `validation*` columns
-> set, and the Reader shows Approve/Flag actions for it. See
-> [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
+- **List (`/reader`)** — iPhone style. Drag a row left to slide it aside and uncover
+  a **Delete** button (80px, `DELETE_BUTTON_WIDTH_PX`) behind its right edge. Releasing
+  past half that width leaves the row open; otherwise it springs shut. Only one row is
+  open at a time, and tapping an open row closes it rather than opening the document.
+  The row uses `touchAction: pan-y` and locks to an axis after 8px, so vertical drags
+  still scroll the list. Tapping **Delete** deletes immediately, with no confirmation:
+  the row leaves the list at once, and if `DELETE /api/texts/:id` fails it is put back
+  and an error alert shows above the list. Only `isUserCreated` rows can be swiped.
+- **Open document** — the header's trash icon opens `DeleteDocumentDialog`
+  (a confirmation), then returns to the list.
 
-## Limits
+#### Keyboard lift
 
-Per-document field caps live in `TextService.validateTextData`: title 200, description
-500, content 50 000 characters. Per **account**, `createText` caps user-authored
-documents at `MAX_DOCUMENTS_PER_USER` (500) — counting only `isUserCreated` rows, so
-the validation documents the app composes on a validator's behalf never eat into the
-allowance. The count existed unbounded until 2026-08-24; see
-[API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1c.
+Code: `ReaderDocumentPage.tsx` → the KEYBOARD LIFT comment, `keyboardLifted`,
+`.reader-document-lead`; `src/features/beginnerKeyboard` → `useKeyboardInset`,
+`transitionForInset`, `BEGINNER_KEYBOARD_SLIDE_MS`, `BEGINNER_KEYBOARD_EASING`.
 
-## Next Steps
-
-### To Deploy:
-1. Run the database migration:
-   ```bash
-   cd /home/cow
-   docker exec -it cow-db-local psql -U postgres -d cow_db -f /docker-entrypoint-initdb.d/migrations/08-add-userid-to-texts.sql
-   ```
-
-2. Restart the Docker containers to pick up the new code:
-   ```bash
-   docker-compose restart
-   ```
-
-### To Test:
-1. Navigate to Reader page
-2. Click "New Document" button
-3. Fill in title and optionally description
-4. Select language
-5. Click "Create"
-6. Click edit icon on user document to modify
-7. Click delete icon to remove document
-
-## Files Modified/Created
-
-### Database:
-- ✅ `database/migrations/08-add-userid-to-texts.sql` (new)
-
-### Backend:
-- ✅ `server/services/TextService.ts` (new)
-- ✅ `server/controllers/TextController.ts` (new)
-- ✅ `server/types/index.ts` (updated)
-- ✅ `server/dal/setup.ts` (updated)
-- ✅ `server/routes/textRoutes.ts` (route split, 2026-07)
-
-### Frontend:
-- ✅ `src/types.ts` (updated)
-- ✅ `src/features/reader/CreateDocumentDialog.tsx` (new)
-- ✅ `src/features/reader/EditDocumentDialog.tsx` (new)
-- ✅ `src/features/reader/DeleteDocumentDialog.tsx` (new)
-- ✅ `src/features/reader/TextSidebar.tsx` (updated)
-- ✅ `src/features/reader/ReaderPage.tsx` (updated)
-
-## Architecture Highlights
-
-- Follows existing DAL (Data Access Layer) pattern
-- Proper separation of concerns (Service, Controller, Component layers)
-- Type-safe TypeScript implementation
-- Material-UI components for consistent design
-- React hooks for state management
-- Proper error handling and validation
-- RESTful API design
-
-## Notes
-
-- Documents are language-specific (users see texts in their selected language)
-- System texts (isUserCreated = false) remain accessible to all users
-- User documents are sorted before system texts in the sidebar
-- Character count updates automatically based on content length
-- Delete operation includes confirmation dialog for safety
+While editing with a keyboard up (the handwriting keyboard or the OS keyboard,
+whichever `useKeyboardInset` reports), the title block and the vocab card fold away
+(a `Collapse`), so the text box rises to sit directly under the edit toolbar, and the
+content area adds the keyboard's height to its bottom padding, so the box ends at the
+keyboard's top edge. Both use the keyboard's own slide durations and curves: the box
+goes up as the keyboard rises and comes back down as it leaves. The trigger is the
+inset, not edit mode, so dismissing the keyboard mid-edit brings the header back with
+the editor still open. Reduced motion snaps both.

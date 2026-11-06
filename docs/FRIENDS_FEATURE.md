@@ -26,7 +26,8 @@ Every action page navigates via `useSlideNavigate` so the drill-in animates.
 
 **Every person row on all four screens opens that person's profile** — tapping the
 avatar/name half of a `FriendPersonRow` navigates to `/users/:userId`
-([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)). The `actions` slot stays outside the
+([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)). The one exception is the viewer's own
+leaderboard row, which is inert (§ 1a). The `actions` slot stays outside the
 tappable area, so tapping Remove or Decline can never be read as a tap on the person.
 
 `FriendPersonRow` supports **two tap models**, and a screen uses exactly one:
@@ -157,6 +158,9 @@ heading: it starts directly under the friend ID card (`src/features/friends/Frie
   equal. This was a 2px blue ring until the shelf redesign's entry 8; it changed because
   `BoardRow.highlighted` (the arena board) already used the org fill for the same idea,
   and the app was answering "which row is me" two different ways on its two leaderboards.
+* **The viewer's own row is not tappable.** `FriendsBody` omits `onPersonPress` when
+  `isCurrentUser`, so `FriendPersonRow` renders the avatar/name half inert (no pointer
+  cursor, no navigation). Every friend row still opens `/users/:userId`.
 * Ranks 1–3 get podium-tinted chips (org / blu / red from `RAMP`), everyone else grey.
   Every chip carries the `markOutline` inset ring — mandatory at 28px, and load-bearing
   for rank 1, whose org chip would otherwise dissolve into a rank-1 viewer's org row.

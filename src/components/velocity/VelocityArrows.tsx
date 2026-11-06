@@ -16,7 +16,7 @@ import { FONTS } from "../../theme/fonts";
  * ── THE ARROWS ARE PLACED FROM MEASURED SPINES, NOT FROM THE DESIGN'S NUMBERS ──
  * The artboard hard-codes x positions for 74px spines 10px apart. Neither holds in the
  * app: the band row is `distribute`d (wider phones spread the gaps), and the profile's
- * language panel narrows the spines (`useFittedSpineWidth` in DeckBuckets). So the SVG
+ * language panel narrows the spines (`fittedSpineWidth` in DeckBuckets, a `cqw` width). So the SVG
  * finds the four spines in the shelf it is paired with (`spineRowRef`), measures their
  * horizontal centres against its own left edge, and draws from those. The pairing is
  * guaranteed by `LibraryShelfWithVelocity`, which renders both halves — nothing else
@@ -104,8 +104,8 @@ const sameCenters = (a: number[] | null, b: number[]): boolean =>
  * The horizontal centres of the shelf's spines, in the SVG's own x coordinates.
  *
  * Re-measures whenever the SVG, the spine row or any spine changes size. Observing each
- * spine matters: `useFittedSpineWidth` narrows the spines AFTER their first render
- * without resizing the row, and on a distributed row that moves every centre.
+ * spine matters: the spines' `cqw` width (`fittedSpineWidth` in DeckBuckets) changes
+ * them with the container, and on a distributed row that moves every centre.
  *
  * `getBoundingClientRect` is safe during the spines' pop-in animation because it scales
  * about `center bottom`, which leaves the horizontal centre where it is.

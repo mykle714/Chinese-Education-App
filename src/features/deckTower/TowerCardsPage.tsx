@@ -41,11 +41,11 @@ import type { VocabEntry } from "../../types";
  *     same rule as its tower: the filter keys' figures and every card's mastery strip answer that
  *     world's question. The host keys this component by world, so a world swipe mounts the
  *     next world's page (search and filter are per visit, not carried across).
- *   • THE CARDS are ancp's mini cards: MiniCard printed on the Deck Tower's card stock
- *     (`sortCardStock` — cream rim, beige panel, 2px iso wall, flat cast shadow on the
- *     ground) WITH the mastery strip, and WITHOUT ancp's levitation bob (hundreds of
+ *   • THE CARDS are acp's mini cards: MiniCard printed on the Deck Tower's card stock
+ *     drawn as a THICK PANEL (`sortCardStock` → `sortCardStockSx` — cream rim, beige
+ *     panel, an outlined 4px wall, a cast shadow on the ground) WITH the mastery strip, and WITHOUT acp's levitation bob (hundreds of
  *     bobbing cards is motion for its own sake, and a cost per card). The ground is the
- *     world's sky, so the cast shadow is the iso shadow rule's tone for that sky
+ *     world's sky, so the shadow is the iso shadow rule's tone for that sky
  *     (`shadowTone`), passed down as the `--tower-cards-ground-shadow` CSS variable so a
  *     sky that changes every frame (a world pan's blend) never re-renders a card.
  *   • NO SHEET CHROME. It scrolls in td's own scroller, so no handle, no drag-to-resize,
@@ -82,23 +82,16 @@ const STRIP_PANEL_CLEARANCE_PX = 5;
 const STRIP_SIDE_INSET_PX = Math.round(MINI_CARD_DIMENSIONS.regular.width * FLP_CARD_STOCK_INSET_RATIO + STRIP_PANEL_CLEARANCE_PX);
 
 /**
- * The cards' 1px outer outline — stronger than the stock's default `MINI_CARD_RING`
- * (`COLORS.border`, 16% ink), which all but vanished on the cream rim against the sky
- * (decided 2026-11-04). ⚠️ Framework divergence: the line tokens stop at `border` (`wood`,
- * 22%, is the shelf's alone), so this borrows the faint TEXT grey, `COLORS.textFaint`.
- */
-const TOWER_CARD_RING = `inset 0 0 0 1px ${COLORS.textFaint}`;
-
-/**
- * The stock every card is printed on. Module-level so its identity never changes — every
- * memoized card receives it. Its `&:hover` keeps the stock's shadow: the flat face's hover
- * elevation (a soft blur) would replace the wall and cast shadow on a desktop hover.
+ * The stock every card is printed on — acp's thick panel (sortCardStock
+ * `sortCardStockSx`: outlined 4px wall + cast shadow). Module-level so its identity never changes — every memoized card receives
+ * it. Its `&:hover` keeps the panel's shadow: the flat face's hover elevation would
+ * replace the wall and shadow on a desktop hover.
  */
 const TOWER_CARD_STOCK = {
     rim: COLORS.cardFace,
     sx: {
-        ...sortCardStockSx("regular", false, GROUND_SHADOW_VAR, TOWER_CARD_RING),
-        "&:hover": { boxShadow: cardStockShadow(false, GROUND_SHADOW_VAR, 0, TOWER_CARD_RING) },
+        ...sortCardStockSx("regular", false, GROUND_SHADOW_VAR),
+        "&:hover": { boxShadow: cardStockShadow(false, GROUND_SHADOW_VAR) },
         // The mastery strip squeezed in off the cream rim: MiniCard spans it 8px in from
         // the card's sides, which on this stock is only ~1.5px inside the beige panel
         // (inset `width × FLP_CARD_STOCK_INSET_RATIO`, ≈6.5px), so its ends touched the rim.

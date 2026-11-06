@@ -16,11 +16,11 @@ import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
 /**
- * SkippedCardsSheet — ancp's HIDDEN skipped-cards panel (docs/SORT_CARDS_REQUIREMENTS.md
- * §5.1a). Opened only by holding the Skip button (AddNewCardsPage); nothing on screen hints
+ * SkippedCardsSheet — acp's HIDDEN skipped-cards panel (docs/SORT_CARDS_REQUIREMENTS.md
+ * §5.1a). Opened only by holding the Skip button (AddCardsPage); nothing on screen hints
  * that it exists, and it is the ONLY way to reach skipped cards (the old Skipped Cards
  * page and its Discover tile were removed 2026-10-12). It sits over the sort flow, so a
- * learner can pull a skipped word back without leaving ancp:
+ * learner can pull a skipped word back without leaving acp:
  *
  *   - tap a card        → the eip for that word (the host's `onOpenInfo`, the same opener
  *                         the on-deck cards' info button uses; it stacks above this sheet)
@@ -52,9 +52,9 @@ const CARD_EXIT_MS = 220;
 const MINI_CARD_RADIUS_PX = parseFloat(MINI_CARD_RADIUS);
 const cardExit = keyframes({ to: { opacity: 0, transform: "scale(0.85)" } });
 
-// The cards wear ancp's on-deck stock (sortCardStock): cream rim + beige panel, 2px iso
-// wall, flat cast shadow. The sheet is white, so the shadow is the iso shadow rule's tone
-// for a white ground (shadowTone) rather than ancp's time-of-day `look.groundShadow`.
+// The cards wear acp's on-deck stock (sortCardStock): cream rim + beige panel, one
+// thick panel (outlined 4px wall, cast shadow). The sheet is white, so the shadow is the iso shadow rule's tone
+// for a white ground (shadowTone) rather than acp's time-of-day `look.groundShadow`.
 const SHEET_GROUND_SHADOW = shadowTone(COLORS.white);
 const SKIPPED_CARD_STOCK_SX = sortCardStockSx("regular", false, SHEET_GROUND_SHADOW);
 
@@ -152,7 +152,7 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
                             className="skipped-cards-sheet__hold-instructions"
                             sx={{ fontSize: SIZE.micro, lineHeight: LEADING.normal, color: COLORS.textSecondary, minWidth: 0 }}
                         >
-                            Press and hold to recycle back into Add New Cards.
+                            Press and hold to recycle back into Add Cards.
                         </Typography>
                         <Button
                             className="skipped-cards-sheet__recycle-all"
@@ -185,7 +185,7 @@ export default function SkippedCardsSheet({ language, onOpenInfo, onClose }: Ski
                             display: "flex",
                             flexWrap: "wrap",
                             justifyContent: "center",
-                            // ancp's compact dock gap; leaves room for each card's ≈ 5px
+                            // acp's compact dock gap; leaves room for each card's ≈ 5px
                             // wall + cast shadow to the right.
                             columnGap: "14px",
                             // Row gap leaves room for a card's "recycling…" label, which sits
@@ -277,7 +277,7 @@ function RecyclableSkippedCard({ card, levitatePhaseMs, leaving, onOpenInfo, onR
                 pronunciation={card.pronunciation}
                 definition={stripParentheses(card.definition ?? "")}
                 iconId={card.iconId}
-                // ancp's on-deck card: the tower stock's cream rim (the panel is the
+                // acp's on-deck card: the tower stock's cream rim (the panel is the
                 // stock's ::before), floating with the same levitation bob. The bob stops
                 // while held so the recycle ring traces a still outline.
                 background={COLORS.cardFace}

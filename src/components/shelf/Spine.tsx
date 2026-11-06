@@ -53,11 +53,17 @@ export interface SpineProps {
      */
     color: string;
     /**
-     * Width/height overrides in px, for the two places the design overrides them
-     * (the decks sheet squats the spine to 74 tall). Interior sizes follow `width`
-     * automatically — that is what `containerType` below is for.
+     * Width/height overrides, for the places the design overrides them. Interior
+     * sizes (padding, type, glyph) follow `width` proportionally.
+     *
+     * `width` is either px (a number) or a CSS LENGTH string. The string form exists
+     * so a row can size its spines from its OWN width in pure CSS — e.g. DeckBuckets
+     * passes a `calc(min(…, 100cqw …))` against the row, which it marks as the
+     * query container. The interior then scales as `calc(<width> * n/natural)`, so
+     * nothing is measured in JS. (The spine still cannot be its own container — see
+     * the ⚠️ on `SPINE_SIZES`; the container must be an ANCESTOR.)
      */
-    width?: number;
+    width?: number | string;
     height?: number;
     /** `.pin` — a mono badge on a translucent white chip, top-right. */
     pin?: ReactNode;
@@ -144,11 +150,19 @@ const Spine: React.FC<SpineProps> = ({
 }) => {
     const spec = SPINE_VARIANTS[variant];
     const renderedWidth = width ?? spec.width;
-    // Interior sizes are authored at the VARIANT'S natural width, not a global one,
-    // and are scaled here in JS rather than in `cqw` — see the note on SPINE_SIZES for
-    // why container units cannot do this job.
-    const scale = spineScale(renderedWidth, spec.width);
-    const px = (n: number) => n * scale;
+    // Interior sizes are authored at the VARIANT'S natural width, not a global one.
+    // A numeric width scales them by plain arithmetic; a CSS-length width scales them
+    // in CSS (`calc(<width> * ratio)`), so they track a container-sized spine without
+    // the component ever knowing its pixel width.
+    const px = (n: number): number | string =>
+        typeof renderedWidth === "number"
+            ? n * spineScale(renderedWidth, spec.width)
+            : `calc(${renderedWidth} * ${n / spec.width})`;
+    // `px()` for use inside a shorthand string, where a bare number needs its unit.
+    const len = (n: number) => {
+        const value = px(n);
+        return typeof value === "number" ? `${value}px` : value;
+    };
     const isVol = variant === "vol";
 
     return (
@@ -162,7 +176,7 @@ const Spine: React.FC<SpineProps> = ({
                 height: height ?? spec.height,
                 // `.sp.vol` has no padding of its own — its contents are absolutely
                 // positioned plates rather than a flow column.
-                padding: isVol ? 0 : `${px(SPINE_SIZES.padY)}px ${px(SPINE_SIZES.padX)}px`,
+                padding: isVol ? 0 : `${len(SPINE_SIZES.padY)} ${len(SPINE_SIZES.padX)}`,
                 ...(animationDelay !== undefined && { animationDelay: `${animationDelay}ms` }),
             }}
         >
@@ -179,7 +193,7 @@ const Spine: React.FC<SpineProps> = ({
                             top: px(SPINE_SIZES.volBandTop),
                             background: "rgba(255, 255, 255, 0.66)",
                             borderRadius: px(7),
-                            padding: `${px(SPINE_SIZES.volBandPadY)}px ${px(SPINE_SIZES.volBandPadX)}px`,
+                            padding: `${len(SPINE_SIZES.volBandPadY)} ${len(SPINE_SIZES.volBandPadX)}`,
                             zIndex: 1,
                         }}
                     >
@@ -332,7 +346,7 @@ const Spine: React.FC<SpineProps> = ({
                         color: COLORS.onSurface,
                         background: COLORS.frost,
                         borderRadius: px(6),
-                        padding: `${px(2)}px ${px(5)}px`,
+                        padding: `${len(2)} ${len(5)}`,
                         zIndex: 1,
                     }}
                 >

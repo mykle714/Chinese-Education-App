@@ -39,7 +39,6 @@ import { useTestingFeatures } from "../../hooks/useTestingFeatures";
 import { useTTS } from "../../hooks/useTTS";
 import AudioModeChip from "../../components/AudioModeChip";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
-import SoftIntroToggle from "../../softIntro/SoftIntroToggle";
 import { COLORS } from "../../theme/colors";
 import ShootingStars from "../deckTower/ShootingStars";
 import StarField from "../deckTower/StarField";
@@ -203,7 +202,7 @@ const keycapSx = (look: SortLook) => {
         ...press,
         // Skip's hold: useLongPress may swallow :active, so the hold sets this class to
         // keep the key sunk for the whole press.
-        "&.add-new-cards__keycap--pressed": press["&:active"],
+        "&.add-cards__keycap--pressed": press["&:active"],
     };
 };
 
@@ -226,7 +225,7 @@ const OnDeckSection = styled(Box)({
     paddingTop: 8,
     // The row's action targets sit ON_DECK_FOOTER_GAP_PX from the slab footer's top edge.
     paddingBottom: `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${ON_DECK_FOOTER_GAP_PX}px)`,
-    // Hands back the ScrollArea's bottom reservation. ancp is a SLAB route, so that is the
+    // Hands back the ScrollArea's bottom reservation. acp is a SLAB route, so that is the
     // slab's clearance (MobileTabScreen → footerClearance), not the bar's: handing back
     // the bar's FOOTER_TOTAL_CLEARANCE (as this did until 2026-10-29) left ~22px of
     // phantom space under the row on a device with no bottom safe area.
@@ -237,30 +236,52 @@ const OnDeckSection = styled(Box)({
     justifyContent: "center",
 });
 
-// Holds the up-to-4 cards side by side; wraps only if even the compact face can't fit.
-// `compact` (a pack laid out on compact MiniCards — see `dockCardSize`) also tightens the
-// gap between slots, since a 4-card row is what needs the room. The artboard's 24 / 14.
+// Holds the up-to-4 cards side by side on ONE line — it never wraps. `compact` (a pack
+// laid out on compact MiniCards — see `dockCardSize`) also tightens the gap between slots,
+// since a 4-card row is what needs the room. The artboard's 24 / 14.
+//
+// Every slot is pinned to its card's face width (`& .add-cards__card-slot`), so the
+// row's true width is exactly what `dockCardSize` computes. The tier label and action row
+// may be wider than a compact face; they overflow their slot symmetrically (the slot
+// centres them) instead of widening it. Before this pin the compact slot was really the
+// 84px action row (36 + 12 + 36), not the 78px card, so a 4-card pack measured as fitting
+// but needed 394px — and wrapped its 4th card onto a second line on a 393px iPhone.
+//
+// Safety net for a row that still doesn't fit (a screen under ~370px even at compact):
+// `nowrap` + horizontal `clip` cuts the outer slots off at the screen edges rather than
+// wrapping. `overflow-x: clip` (not `hidden`) leaves the y axis `visible`, so a dragged
+// card can still travel up to the bins.
 const CARDS_ROW_GAP: Record<MiniCardSize, number> = { regular: 24, compact: 14 };
 const CARDS_ROW_INLINE_PADDING = 8;
+// Gap between a slot's two action glyphs (CardActionRow). Compact tightens it so the row
+// (36 + 6 + 36 = 78) matches the compact face instead of spilling 3px past each side.
+const CARD_ACTIONS_GAP: Record<MiniCardSize, number> = { regular: 12, compact: 6 };
 const CardsRow = styled(Box, {
     shouldForwardProp: (prop) => prop !== "compact",
-})<{ compact?: boolean }>(({ compact }) => ({
-    width: "100%",
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: CARDS_ROW_GAP[compact ? "compact" : "regular"],
-    paddingInline: CARDS_ROW_INLINE_PADDING,
-}));
+})<{ compact?: boolean }>(({ compact }) => {
+    const size: MiniCardSize = compact ? "compact" : "regular";
+    return {
+        width: "100%",
+        display: "flex",
+        flexDirection: "row",
+        flexWrap: "nowrap",
+        overflowX: "clip",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: CARDS_ROW_GAP[size],
+        paddingInline: CARDS_ROW_INLINE_PADDING,
+        "& .add-cards__card-slot": { width: MINI_CARD_DIMENSIONS[size].width },
+        "& .add-cards__card-actions": { gap: `${CARD_ACTIONS_GAP[size]}px` },
+    };
+});
 
 /**
  * The face size a pack of `cardCount` cards is laid out on, given the row's width
  * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"). Fit-to-width, not a per-count
  * rule: the pack stays on regular 92px cards whenever the whole row fits across at that
  * size, and drops to the compact 78px face only when it doesn't — in practice a 4-card
- * pack on a phone. A 1–3-card pack always fits, so never shrinks.
+ * pack on a phone. A 1–3-card pack always fits, so never shrinks. Exact because CardsRow
+ * pins every slot to its face width; a row that doesn't fit even at compact clips (never wraps).
  * An unmeasured row (`dockWidth` null — the first commit only) reads as regular.
  */
 function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize {
@@ -270,9 +291,9 @@ function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize
 }
 
 // One on-deck slot: a vertical column holding the card's tier tag stacked above the
-// draggable card, with the card's action icons below it. The slot — not the card — owns
-// the width budget; its width is the card's fixed face (regular or compact, CardWell) or
-// the tier tag, whichever is wider.
+// draggable card, with the card's action icons below it. Its width is pinned to the
+// card's face (regular or compact) by CardsRow, so the tier tag / action row never widen
+// it — they overflow centred instead, keeping `dockCardSize`'s arithmetic exact.
 const CardSlot = styled(Box)({
     flex: "0 0 auto",
     minWidth: 0,
@@ -281,8 +302,8 @@ const CardSlot = styled(Box)({
     alignItems: "center",
 });
 
-// Spacing inside a slot. Below the card it is just enough to clear the card's 2px wall
-// and its ≈ 7px cast shadow (sortCardStock → CARD_WALL_Y + cardCastShadow) at the top of the levitation;
+// Spacing inside a slot. Below the card it clears the card's 4px wall (sortCardStock →
+// PANEL_WALL_PX); its cast shadow (8px past the face) runs under the action row's gap;
 // the glyphs' own 4px inset in their 36px targets adds the rest (tightened from 24,
 // user request 2026-10-29).
 const SLOT_HEADER_GAP_PX = 12;
@@ -301,7 +322,7 @@ const SLOT_ACTIONS_GAP_PX = 12;
 type SlotEntrance = "dock" | "rise" | "return";
 
 // Per-slot stagger step for the "dock" entrance. The pack's slots get the delays
-// 0, STEP, 2·STEP, … (one per card) in slot order, leftmost first (see `dockDelays` in AddNewCardsPage).
+// 0, STEP, 2·STEP, … (one per card) in slot order, leftmost first (see `dockDelays` in AddCardsPage).
 const DOCK_STAGGER_STEP_MS = 60;
 
 // Silence between consecutive words in the pack autoplay (docs/AUDIO_PLAYBACK.md
@@ -319,12 +340,39 @@ const dockInKeyframes = keyframes`
     from { transform: translateX(100vw); }
     to   { transform: translateX(0); }
 `;
+// The mirror image for the platforms: in from past the LEFT edge. They live inside the
+// bins' SVG, where a CSS px is a scaled user unit, so the 100vw is converted back to
+// screen space with SortBins' `--sort-bins-units-per-px` — each platform then travels
+// exactly one screen width on screen, at a card's speed.
+const binInFromLeftKeyframes = keyframes`
+    from { transform: translateX(calc(-100vw * var(--sort-bins-units-per-px, 1))); }
+    to   { transform: translateX(0); }
+`;
+// The conveyor's slide-in as one `animation` value — shared by the on-deck cards' wells
+// (EnteringCardSlot "dock") and the page's static chrome (each platform and the toolbar,
+// which ride in once on mount), so every element enters with the same motion: same
+// screen distance (100vw), duration and easing. `frames` picks the direction.
+const dockSlideIn = (delayMs: number, frames: ReturnType<typeof keyframes> = dockInKeyframes) =>
+    `${frames} ${DOCK_SLIDE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms backwards`;
+// The page chrome's own entrance (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Chrome entrance"):
+// each platform slides in separately from the LEFT — the right one leads (it has the
+// farthest to go, the mirror of the cards' leftmost-first), the left one a stagger step
+// behind — while the toolbar comes from the right one step behind the first card.
+// Plays once per mount of the sort view — packs that land later do not replay it.
+const REDUCED_MOTION_OFF = { "@media (prefers-reduced-motion: reduce)": { animation: "none" } } as const;
+const CHROME_ENTRANCE_SX = {
+    bins: {
+        "& .sort-bins__bin-slot--1": { animation: dockSlideIn(0, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+        "& .sort-bins__bin-slot--0": { animation: dockSlideIn(DOCK_STAGGER_STEP_MS, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+    },
+    toolbar: { animation: dockSlideIn(DOCK_STAGGER_STEP_MS), ...REDUCED_MOTION_OFF },
+} as const;
 const labelFadeInKeyframes = keyframes`
     from { opacity: 0; }
     to   { opacity: 1; }
 `;
 /** The info labels of a slot: the tier tag row above the card and the action row below. */
-const SLOT_LABELS = "& .add-new-cards__card-deck-header, & .add-new-cards__card-actions";
+const SLOT_LABELS = "& .add-cards__card-deck-header, & .add-cards__card-actions";
 const riseInKeyframes = keyframes`
     from { transform: translateY(24px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
@@ -355,8 +403,8 @@ function EnteringCardSlot({ entrance, delayMs, children }: {
 }) {
     const motion = entrance === "dock"
         ? {
-            "& .add-new-cards__card-well": {
-                animation: `${dockInKeyframes} ${DOCK_SLIDE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms backwards`,
+            "& .add-cards__card-well": {
+                animation: dockSlideIn(delayMs),
             },
             [SLOT_LABELS]: {
                 animation: `${labelFadeInKeyframes} ${LABEL_FADE_MS}ms ease-out ${delayMs + DOCK_SLIDE_MS * 0.7}ms backwards`,
@@ -365,7 +413,7 @@ function EnteringCardSlot({ entrance, delayMs, children }: {
         : entrance === "return"
         ? {
             // The exit's ease-in, mirrored: the cards come in fast and settle.
-            "& .add-new-cards__card-well": {
+            "& .add-cards__card-well": {
                 animation: `${packReturnKeyframes} ${PACK_EXIT_MS}ms cubic-bezier(0.2, 0.75, 0.45, 1) ${delayMs}ms backwards`,
             },
             [SLOT_LABELS]: {
@@ -376,7 +424,7 @@ function EnteringCardSlot({ entrance, delayMs, children }: {
 
     return (
         <CardSlot
-            className="add-new-cards__card-slot"
+            className="add-cards__card-slot"
             sx={{
                 ...motion,
                 "@media (prefers-reduced-motion: reduce)": { animation: "none", "& *": { animation: "none" } },
@@ -395,7 +443,7 @@ const CardActionRow = styled(Box)({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    // gap: set per face size by CardsRow (CARD_ACTIONS_GAP).
 });
 
 // One action glyph's hit target: 36px round, the glyph centred, no chrome.
@@ -604,7 +652,7 @@ const HOVER_RAISE_MS = 180;
  * drag.
  */
 // memo is load-bearing, not just a perf tweak: while a card is being dragged, the
-// parent AddNewCardsPage re-renders on unrelated state — most notably `tts.speakingKey`
+// parent AddCardsPage re-renders on unrelated state — most notably `tts.speakingKey`
 // flipping on every autoplay narration start/stop (read for the speaker button's
 // isLoading), and `highlightedBucket` on every drag-move. Re-rendering a card mid-drag
 // interrupts its live use-gesture gesture: the handler fires the release path with the
@@ -738,7 +786,7 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
     return (
         <AnimatedMiniCard
             ref={cardElRef}
-            className={hovered ? "add-new-cards__flash-card add-new-cards__flash-card--hovered" : "add-new-cards__flash-card"}
+            className={hovered ? "add-cards__flash-card add-cards__flash-card--hovered" : "add-cards__flash-card"}
             onPointerEnter={handlePointerEnter}
             onPointerLeave={handlePointerLeave}
             // Sorted cards bind too, only to catch a drag attempt and shake.
@@ -790,7 +838,7 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
             }}
         >
             {sorted && (
-                <Box className="add-new-cards__sorted-band" sx={sortedBandSx(size)}>
+                <Box className="add-cards__sorted-band" sx={sortedBandSx(size)}>
                     SORTED
                 </Box>
             )}
@@ -798,7 +846,7 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
     );
 });
 
-const AddNewCardsPage: React.FC = () => {
+const AddCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
@@ -824,7 +872,7 @@ const AddNewCardsPage: React.FC = () => {
     }, [searchParams]);
     const tts = useTTS();
     // The eip renders pinyin per the SAME saved preference the flp uses, so a learner who
-    // turned pinyin off there doesn't get it back here. ancp deliberately exposes no toggle
+    // turned pinyin off there doesn't get it back here. acp deliberately exposes no toggle
     // of its own — the panel is a read-only detour, not a second settings surface.
     // `useTTS` returns a NEW object identity every time its internal `speakingKey` state
     // flips — which happens on every autoplay narration start/stop. Depending on `tts`
@@ -927,7 +975,7 @@ const AddNewCardsPage: React.FC = () => {
     // The same sheet the flp opens, mounted here so a learner can inspect a card
     // BEFORE deciding which bucket it belongs in (docs/SORT_CARDS_REQUIREMENTS.md §4.7).
     // useEipTabs owns tab state + the drill-in lookups; `language` is the ROUTE's
-    // language, not the account's, because ancp can show either.
+    // language, not the account's, because acp can show either.
     const eip = useEipTabs({ language });
     const [eipOpen, setEipOpen] = useState(false);
     // entryKey whose lookup is in flight, so only the tapped card's info button
@@ -963,7 +1011,7 @@ const AddNewCardsPage: React.FC = () => {
 
     // ---- Time of day (docs/SORT_CARDS_REQUIREMENTS.md § 4.9) ---------------
     // The app's shared day clock — the one the Deck Tower and the eip read, with the
-    // feature-tester pin set from the tower's TimeOfDayToggle — so ancp always shows the
+    // feature-tester pin set from the tower's TimeOfDayToggle — so acp always shows the
     // hour the tower does.
     // Tester overrides (time-of-day pin, weather) only while testing features are on.
     const testingFeatures = useTestingFeatures();
@@ -1587,14 +1635,14 @@ const AddNewCardsPage: React.FC = () => {
         backdrop: nightSky,
         headerTitleColor: look.ink,
         scrollable: false,
-        wrapHeader: (header: ReactNode) => <Box className="add-new-cards__header-layer" sx={TOWER_TYPE_SX}>{header}</Box>,
+        wrapHeader: (header: ReactNode) => <Box className="add-cards__header-layer" sx={TOWER_TYPE_SX}>{header}</Box>,
     } as const;
 
     if (loading) {
         return (
-            <NodePage title="Add New Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
-                <Box className="add-new-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-                    <DelayedCircularProgress className="add-new-cards__spinner" />
+            <NodePage title="Add Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
+                <Box className="add-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
+                    <DelayedCircularProgress className="add-cards__spinner" />
                 </Box>
             </NodePage>
         );
@@ -1604,8 +1652,8 @@ const AddNewCardsPage: React.FC = () => {
     // the completion popup rather than falling through to the spinner branch below.
     if (setModeDone) {
         return (
-            <NodePage title="Add New Cards" onBack={exitToOrigin} {...groundChrome}>
-                <ContentArea className="add-new-cards__content add-new-cards__content--set-complete">
+            <NodePage title="Add Cards" onBack={exitToOrigin} {...groundChrome}>
+                <ContentArea className="add-cards__content add-cards__content--set-complete">
                     <ProvisionalSortDonePopup
                         sortedCount={resolvedCount}
                         originLabel={originLabelFor(originPath)}
@@ -1619,12 +1667,12 @@ const AddNewCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Add New Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
-                <ContentArea className="add-new-cards__content">
-                    <Box className="add-new-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
+            <NodePage title="Add Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
+                <ContentArea className="add-cards__content">
+                    <Box className="add-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
-                            ? <Typography className="add-new-cards__no-cards-error-text" sx={{ color: look.ink }}>Error: no cards found</Typography>
-                            : <DelayedCircularProgress className="add-new-cards__spinner" />}
+                            ? <Typography className="add-cards__no-cards-error-text" sx={{ color: look.ink }}>Error: no cards found</Typography>
+                            : <DelayedCircularProgress className="add-cards__spinner" />}
                     </Box>
                 </ContentArea>
             </NodePage>
@@ -1656,14 +1704,14 @@ const AddNewCardsPage: React.FC = () => {
                     speech). NOT a register scale — that was the pre-migration-122
                     `vernacularScore` meaning; see docs/DEFINITION_MAPPING.md. Lives on the
                     ground, not the card, so it stays put while the card is dragged. */}
-                <CardDeckHeader className="add-new-cards__card-deck-header" sx={{ mb: `${SLOT_HEADER_GAP_PX}px` }}>
+                <CardDeckHeader className="add-cards__card-deck-header" sx={{ mb: `${SLOT_HEADER_GAP_PX}px` }}>
                     {card.frequencyScore != null && (
                         <>
-                            <CommonalityTierLabel className="add-new-cards__commonality-tier-label" sx={{ color: look.inkSoft }}>
+                            <CommonalityTierLabel className="add-cards__commonality-tier-label" sx={{ color: look.inkSoft }}>
                                 {COMMONALITY_TIER_LABELS[card.frequencyScore] ?? ""}
                             </CommonalityTierLabel>
                             <FrequencyScoreDots
-                                className="add-new-cards__card-frequency-dots"
+                                className="add-cards__card-frequency-dots"
                                 score={card.frequencyScore}
                                 dotSize={8}
                                 gap={4}
@@ -1673,7 +1721,7 @@ const AddNewCardsPage: React.FC = () => {
                         </>
                     )}
                 </CardDeckHeader>
-                <CardWell className="add-new-cards__card-well" cardSize={cardSize}>
+                <CardWell className="add-cards__card-well" cardSize={cardSize}>
                     {!resolvedHere && (
                         <DraggableCard
                             card={card}
@@ -1694,21 +1742,21 @@ const AddNewCardsPage: React.FC = () => {
                 {/* Per-card actions below the card: play audio (docs §4.5) and open the
                     eip (docs §4.7). They stay live under an emptied well, so a word that
                     was just sorted can still be heard / looked up until its pack leaves. */}
-                <CardActionRow className="add-new-cards__card-actions" sx={{ mt: `${SLOT_ACTIONS_GAP_PX}px` }}>
+                <CardActionRow className="add-cards__card-actions" sx={{ mt: `${SLOT_ACTIONS_GAP_PX}px` }}>
                     <CardActionButton
-                        className="add-new-cards__card-audio-button"
+                        className="add-cards__card-audio-button"
                         aria-label={`Play ${card.entryKey}`}
                         onClick={() => handlePlayCardAudio(card)}
                     >
                         {!leaving && tts.speakingKey === card.entryKey ? (
                             // Plain (not Delayed): tap feedback must appear at once.
-                            <CircularProgress className="add-new-cards__card-audio-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
+                            <CircularProgress className="add-cards__card-audio-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
                         ) : (
                             <Icon name="volume_up" size={28} color={look.inkSoft} />
                         )}
                     </CardActionButton>
                     <CardActionButton
-                        className="add-new-cards__card-info-button"
+                        className="add-cards__card-info-button"
                         aria-label={`More info about ${card.entryKey}`}
                         onClick={() => handleOpenCardInfo(card)}
                         disabled={!leaving && eipLoadingKey !== null}
@@ -1716,7 +1764,7 @@ const AddNewCardsPage: React.FC = () => {
                         {infoLoading ? (
                             // Sized inside the 36px target so the row never changes height
                             // mid-lookup. Plain (not Delayed): tap feedback.
-                            <CircularProgress className="add-new-cards__card-info-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
+                            <CircularProgress className="add-cards__card-info-spinner" size={20} thickness={4} sx={{ color: look.inkSoft }} />
                         ) : (
                             <Icon name="info" size={28} color={look.inkSoft} />
                         )}
@@ -1728,30 +1776,31 @@ const AddNewCardsPage: React.FC = () => {
 
     return (
         <NodePage
-            title="Add New Cards"
+            title="Add Cards"
             onBack={leave}
             exitCircleTo={circleBackTo}
             backOnFooterTab={backOnFooterTab}
             {...groundChrome}
             headerExtraActions={
                 <>
-                    {/* Feature testers only: flip every si (the Difficulty caption here)
-                        between its two styles (docs/SOFT_INTRODUCTION.md § 5). */}
-                    <SoftIntroToggle />
                     {/* The APP-WIDE narration audio mode, not a page-local pref. One
                         tap cycles off → passthrough → media; the same setting has its
                         explained three-option form on /settings. Drawn in the Deck Tower
                         study header's `outlined` skin, in the ground's ink. */}
-                    <AudioModeChip className="add-new-cards__audio-chip" ink={look.ink} />
+                    <AudioModeChip className="add-cards__audio-chip" ink={look.ink} />
                 </>
             }
         >
-            <ContentArea className="add-new-cards__content">
+            <ContentArea className="add-cards__content">
                 {/* The two bins: iso decks on floating platforms, growing one layer per
                     card sorted into them this session (SortBins). */}
-                <BinsArea className="add-new-cards__bins-area">
+                <BinsArea
+                    className="add-cards__bins-area"
+                    // Each platform slides in separately from the left (CHROME_ENTRANCE_SX).
+                    sx={CHROME_ENTRANCE_SX.bins}
+                >
                     <SortBins
-                        className="add-new-cards__bins"
+                        className="add-cards__bins"
                         bins={bins}
                         counts={sessionCounts}
                         activeBinId={activeBinId}
@@ -1762,10 +1811,13 @@ const AddNewCardsPage: React.FC = () => {
                     {/* Level pill · undo · skip — top-right over the bins (the artboard's
                         `.tb`). Skip is de-emphasized (§5.1): a small keycap, not a drag
                         bin; it defers every remaining unsorted card of the pack on deck. */}
-                    <SortToolbar className="add-new-cards__toolbar">
-                        <Box className="add-new-cards__level-control" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <SortToolbar
+                        className="add-cards__toolbar"
+                        sx={CHROME_ENTRANCE_SX.toolbar}
+                    >
+                        <Box className="add-cards__level-control" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                             <ButtonBase
-                                className="add-new-cards__level-dropdown"
+                                className="add-cards__level-dropdown"
                                 onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
                                 aria-haspopup="menu"
                                 aria-expanded={Boolean(levelMenuAnchor)}
@@ -1777,13 +1829,13 @@ const AddNewCardsPage: React.FC = () => {
                             {/* si `sortDifficultyCaption`: names the pill for a learner's
                                 first 7 visits over 7 days, then retires. */}
                             {difficultyCaption === "intro" && (
-                                <LevelCaption className="add-new-cards__level-caption" sx={{ color: look.inkSoft }}>
+                                <LevelCaption className="add-cards__level-caption" sx={{ color: look.inkSoft }}>
                                     Difficulty
                                 </LevelCaption>
                             )}
                         </Box>
                         <ButtonBase
-                            className="add-new-cards__undo-button"
+                            className="add-cards__undo-button"
                             onClick={handleUndo}
                             disabled={undoStack.length === 0}
                             aria-label="Undo"
@@ -1795,7 +1847,7 @@ const AddNewCardsPage: React.FC = () => {
                             // Tap = skip the pack; hold = the hidden skipped-cards sheet.
                             {...skipPress.handlers}
                             // Stays sunk for the whole hold, not just while :active holds.
-                            className={`add-new-cards__skip-button${skipPress.pressing ? " add-new-cards__keycap--pressed" : ""}`}
+                            className={`add-cards__skip-button${skipPress.pressing ? " add-cards__keycap--pressed" : ""}`}
                             sx={{ ...keycapSx(look), borderRadius: `${SKIP_BUTTON_RADIUS_PX}px`, height: TOOLBAR_KEY_HEIGHT_PX, px: "12px", position: "relative" }}
                         >
                             skip
@@ -1803,7 +1855,7 @@ const AddNewCardsPage: React.FC = () => {
                                 Mounted per press so each press starts from zero. */}
                             {skipPress.pressing && (
                                 <HoldProgressRing
-                                    className="add-new-cards__skip-hold-ring"
+                                    className="add-cards__skip-hold-ring"
                                     durationMs={SKIP_HOLD_MS}
                                     radius={SKIP_BUTTON_RADIUS_PX}
                                     strokeWidth={2}
@@ -1812,13 +1864,13 @@ const AddNewCardsPage: React.FC = () => {
                         </ButtonBase>
                     </SortToolbar>
                     <Menu
-                        className="add-new-cards__level-menu"
+                        className="add-cards__level-menu"
                         anchorEl={levelMenuAnchor}
                         open={Boolean(levelMenuAnchor)}
                         onClose={() => setLevelMenuAnchor(null)}
                     >
                         <MenuItem
-                            className="add-new-cards__level-menu-item"
+                            className="add-cards__level-menu-item"
                             selected={selectedLevel == null}
                             onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
                         >
@@ -1826,7 +1878,7 @@ const AddNewCardsPage: React.FC = () => {
                         </MenuItem>
                         {DIFFICULTY_LEVELS.map((lvl) => (
                             <MenuItem
-                                className="add-new-cards__level-menu-item"
+                                className="add-cards__level-menu-item"
                                 key={lvl}
                                 selected={selectedLevel === lvl}
                                 onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
@@ -1840,10 +1892,10 @@ const AddNewCardsPage: React.FC = () => {
                 {/* On-deck: up to 4 levitating cards (compact faces when 4 won't fit). A
                     card the user resolved this session leaves an empty well in its slot so
                     the other cards don't reposition. */}
-                <OnDeckSection ref={onDeckSectionRef} className="add-new-cards__on-deck">
+                <OnDeckSection ref={onDeckSectionRef} className="add-cards__on-deck">
                     <CardsRow
                         ref={cardsRowRef}
-                        className="add-new-cards__cards-row"
+                        className="add-cards__cards-row"
                         compact={dockCardSize(currentPack.cards.length, dockWidth) === "compact"}
                     >
                         {currentPack.cards.map((card, slotIndex) => (
@@ -1864,10 +1916,10 @@ const AddNewCardsPage: React.FC = () => {
                         Undo's un-dock, back out to the right) and are clipped at the
                         section's edge; the next pack slides in after. */}
                     {leavingPack && (
-                        <PackExitClip className="add-new-cards__pack-exit-clip" aria-hidden>
+                        <PackExitClip className="add-cards__pack-exit-clip" aria-hidden>
                             <CardsRow
                                 key={leavingPack.exitId}
-                                className="add-new-cards__cards-row add-new-cards__cards-row--leaving"
+                                className="add-cards__cards-row add-cards__cards-row--leaving"
                                 compact={dockCardSize(leavingPack.pack.cards.length, dockWidth) === "compact"}
                                 sx={{
                                     position: "absolute",
@@ -1877,7 +1929,7 @@ const AddNewCardsPage: React.FC = () => {
                                     // then (ease-out, EnteringCardSlot) decelerate into place.
                                     // The "right" un-dock's wells animate per slot (below).
                                     ...(leavingPack.direction === "left" && {
-                                        "& .add-new-cards__card-well": {
+                                        "& .add-cards__card-well": {
                                             animation: `${packExitKeyframes} ${PACK_EXIT_MS}ms cubic-bezier(0.55, 0, 0.8, 0.25) forwards`,
                                         },
                                     }),
@@ -1889,11 +1941,11 @@ const AddNewCardsPage: React.FC = () => {
                                 {leavingPack.pack.cards.map((card, slotIndex) => (
                                     <CardSlot
                                         key={card.id}
-                                        className="add-new-cards__card-slot add-new-cards__card-slot--leaving"
+                                        className="add-cards__card-slot add-cards__card-slot--leaving"
                                         // Un-dock: the dock-in backwards — the dock's ease-out
                                         // curve mirrored into an ease-in, rightmost card first.
                                         sx={leavingPack.direction === "right" ? {
-                                            "& .add-new-cards__card-well": {
+                                            "& .add-cards__card-well": {
                                                 animation: `${packUnDockKeyframes} ${DOCK_SLIDE_MS}ms cubic-bezier(0.64, 0, 0.78, 0) ${(leavingPack.pack.cards.length - 1 - slotIndex) * DOCK_STAGGER_STEP_MS}ms both`,
                                             },
                                         } : undefined}
@@ -1938,4 +1990,4 @@ const AddNewCardsPage: React.FC = () => {
     );
 };
 
-export default AddNewCardsPage;
+export default AddCardsPage;

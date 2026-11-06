@@ -13,14 +13,14 @@ import { WEIGHT } from "../theme/scale";
 
 /** The lateral back arrow's Material Symbols glyph and size. */
 export const BACK_ARROW_ICON = "arrow_back";
-export const BACK_ARROW_PX = 21;
+export const BACK_ARROW_PX = 24;
 
 /** The `dense` header's top and side padding, px: the size the flp study headers use. */
 export const DENSE_HEADER_PAD_TOP_PX = 23;
 export const DENSE_HEADER_PAD_X_PX = 22;
 
 /** The `dense` header's title size and tracking, shared with `GameFrame`'s exit title. */
-export const DENSE_HEADER_TITLE_PX = 18;
+export const DENSE_HEADER_TITLE_PX = 21;
 export const DENSE_HEADER_TITLE_TRACKING = "-0.018em";
 
 /**
@@ -33,21 +33,21 @@ export const DENSE_HEADER_TITLE_TRACKING = "-0.018em";
  */
 export const HUB_HEADER_PAD_TOP_PX = 23;
 export const HUB_HEADER_PAD_X_PX = 22;
-export const HUB_HEADER_TITLE_PX = 24;
+export const HUB_HEADER_TITLE_PX = 28;
 export const HUB_HEADER_TITLE_TRACKING = "-0.025em";
 
 /** The gap between the back arrow and the title it is grouped with, px. */
 export const BACK_GROUP_GAP_PX = 9;
 
 /** The outlined audio chip's glyph and vertical padding, px (`AudioModeChip`). */
-export const OUTLINED_CHIP_ICON_PX = 15;
-export const OUTLINED_CHIP_PAD_Y_PX = 4;
+export const OUTLINED_CHIP_ICON_PX = 17;
+export const OUTLINED_CHIP_PAD_Y_PX = 5;
 
 /**
- * The outlined chip's label type, px — a step up from the filled header chip's 10 px now
+ * The outlined chip's label type, px — a step up from the filled header chip's 11.5 px now
  * that there is no fill to carry it.
  */
-export const OUTLINED_CHIP_TEXT_PX = 12;
+export const OUTLINED_CHIP_TEXT_PX = 14;
 
 /**
  * The outlined chip's pill: a 1px outline in the chip's own `ink` (not `COLORS.border` —
@@ -60,7 +60,7 @@ export const outlinedChipSx = (ink: string) =>
         // 975 Maru SC — the app's Chinese face (`FONTS.cjk` → `--cjk-font`, set by
         // useChineseFont; its slices cover Latin), the same lettering as the Deck Tower's
         // study buttons (towerPlate.ts → TOWER_STUDY_FONT). Pinned at 400, the face's ONLY
-        // cut, so nothing renders browser-synthesised bold: the ancp's header layer sets
+        // cut, so nothing renders browser-synthesised bold: the acp's header layer sets
         // bold on everything under it (TOWER_TYPE_SX via `wrapHeader`).
         fontFamily: FONTS.cjk,
         fontWeight: WEIGHT.regular,
@@ -72,7 +72,7 @@ export const outlinedChipSx = (ink: string) =>
 
 /**
  * The tower study header's row height. Its tallest child is the outlined audio chip (glyph +
- * padding + a 1px outline each way), which beats the flame (22.5) and the title (21.6). The
+ * padding + a 1px outline each way), which beats the flame (26) and the title (25.2). The
  * row centres the arrow, so a taller chip would move the header's arrow: this derivation is
  * what keeps a game break's arrow on top of it.
  */

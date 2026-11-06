@@ -16,7 +16,7 @@ import { COLORS, SIZE, WEIGHT } from "../theme";
  * popup gates the exit the same way flp's offer does. Every route out of set mode goes
  * through one of these two buttons.
  *
- * Referenced by: src/features/discover/AddNewCardsPage.tsx. See docs/PROVISIONAL_CARDS.md § 7.
+ * Referenced by: src/features/discover/AddCardsPage.tsx. See docs/PROVISIONAL_CARDS.md § 7.
  */
 export interface ProvisionalSortDonePopupProps {
     /** How many cards the learner resolved in this pass — drives the summary line. */

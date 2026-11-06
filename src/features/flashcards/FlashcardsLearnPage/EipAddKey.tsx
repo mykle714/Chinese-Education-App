@@ -56,7 +56,7 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
     const colors = useEipColors();
     if (!available || inLibrary === undefined) return null;
 
-    // The outline ring: the app's border token by day, a faint white ring on night slate.
+    // The outline ring: the app's border token on the light palette, a faint white ring on the dark slate.
     const ring = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     const lip = inLibrary ? LIP_ADDED : LIP_ADD;
 

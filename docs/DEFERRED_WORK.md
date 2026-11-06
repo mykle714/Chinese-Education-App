@@ -113,7 +113,7 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/ancp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
+| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/acp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
 | **Why deferred** | (a) is small but touches five components; (b) is not. Hydra's tier ladder and its two color buffers are keyed on the mastery bands of the track it pools by, so a reading run re-bands the entire board — and a sparsely-marked reading track puts nearly every card in drain, which is the side that grows the board. Whether the § 3.1 spawn table still terminates under that mix is an open question (O5) that has to be answered before the conversion can ship |
 | **Cost of leaving it** | A learner who switches Bubble Match to Reading loses pinyin in Hydra and Match Speed without asking, and Hydra keeps writing `recognition` marks for a board it is drawing as a reading board — the mark no longer describes what the player did. Match Speed is display-only, so it is merely surprising there |
 | **Trigger** | Ship (a) whenever a game's settings are next touched — it stands alone and fixes the leak. (b) waits on O5 |
@@ -165,7 +165,7 @@ carries `suppressed: true`, and **no client reads it today**.
 > `InfoCardPanelBody`/`InfoCardSection` and its four call sites. Compare is once again reachable
 > only from `WordToolsRail` above the card: a drilled-into word must be opened as its own
 > page before it can be compared. (The Add-to-Deck half is moot: Decks were deleted
-> 2026-11-04, and `CardOpsRail` is now customize + note only.) See
+> 2026-11-04, and the card's `•••` rail, `CardOpsRail`, was deleted 2026-11-05 — Customize is on `WordToolsRail` too.) See
 > [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md).
 
 | | |
@@ -174,7 +174,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | **Why deferred** | It is a deliberate consequence of the design's own rule ("card operations have left the panel entirely"), not an oversight, and there IS a path: the breakdown rows are tappable and open that word's own page, where both actions live. But it is one more navigation than before for a real thing learners do |
 | **Cost of leaving it** | Comparing a component character costs a drill-in instead of a tap. Nothing is unreachable |
 | **Trigger** | If it comes up in use. The fix is NOT to put the action bar back — it is to let the word trail's active pill carry a small ops affordance, so the actions stay attached to "the word you are looking at" rather than to a tab body |
-| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 19–25; `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` (the comment at tab 0), `src/components/WordToolsRail.tsx`, `src/features/flashcards/FlashcardsLearnPage/CardOpsRail.tsx` |
+| **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 19–25; `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx` (the comment at tab 0), `src/components/WordToolsRail.tsx` |
 
 ---
 
@@ -406,10 +406,10 @@ any accessibility pass.
 
 | | |
 |---|---|
-| **What** | The Tower Tier 2 re-skin of ancp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with ancp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a td fixture) and restore the hosting from git at `09f607e` |
+| **What** | The Tower Tier 2 re-skin of acp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with acp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a td fixture) and restore the hosting from git at `09f607e` |
 | **Why deferred** | Removing the button was a design decision; deleting a whole feature's code was not asked for |
 | **Cost of leaving it** | Dead code that still type-checks and drifts silently; a reader of QUICK_MARK.md assumes a live feature |
-| **Trigger** | The next Quick Mark or ancp toolbar change, or a dead-code sweep |
+| **Trigger** | The next Quick Mark or acp toolbar change, or a dead-code sweep |
 | **References** | `src/features/discover/QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts` |
 
 ### 28. Move the iso kit to `src/components/iso/`
@@ -418,7 +418,7 @@ any accessibility pass.
 
 | | |
 |---|---|
-| **What** | ancp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
+| **What** | acp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
 | **Why deferred** | A wide `git mv` across files other sessions were editing on the same day; the cross-feature import works meanwhile |
 | **Cost of leaving it** | A layering violation (features/ importing another feature's internals) that the next importer will copy |
 | **Trigger** | The next quiet day on `src/features/deckTower/`, or a third importer |

@@ -72,7 +72,7 @@ const eipPillIn = keyframes({
 });
 
 // One word in the trail (design `.trail b`): CJK 15px, the showing word in ink, the rest
-// muted. Colours come from the eip palette (night inverts them), passed in by EipTabStrip.
+// muted. Colours come from the eip palette (the dark palette inverts them), passed in by EipTabStrip.
 //
 // `toneColor` survives on the tab MODEL (useEipTabs) because nothing else assigns tab
 // identity yet; it is not painted (tone colour means one thing in this app, D2b).
@@ -361,9 +361,7 @@ export const DraggableCardContainer = styled(Box, {
  * The hint labels sit IN the card's top corners, centred in its top band
  * (`--card-hint-band`, set on the card frame by FlashCardSection: the Deck Tower stock's
  * cream rim, or a fixed row on the plain flp), and in from the side by the card's corner
- * radius (`--card-radius`) so they start where the straight edge does. The card's own top
- * chrome (CardOpsRail's `•••`, the CardNote strip) sits below the band
- * (`--card-chrome-inset`), leaving the corners to these labels.
+ * radius (`--card-radius`) so they start where the straight edge does.
  * Fallbacks are only for a frame that sets neither.
  */
 const HINT_BAND_CSS = "var(--card-hint-band, 32px)";

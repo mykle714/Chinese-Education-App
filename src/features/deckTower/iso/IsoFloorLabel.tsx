@@ -142,7 +142,6 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                         fontWeight={WEIGHT.bold}
                         letterSpacing={0.06}
                         textAnchor="middle"
-                        dominantBaseline="central"
                         fill={shaded ? shadowTone(palette.ink) : palette.ink}
                     >
                         {text}

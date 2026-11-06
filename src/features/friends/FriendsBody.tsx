@@ -353,7 +353,13 @@ function FriendsBody() {
                                 highlighted={entry.isCurrentUser}
                                 secondary={netMinutesLabel(entry.netMinutes, entry.language)}
                                 leading={<RankBadge rank={entry.rank} />}
-                                onPersonPress={() => slideNavigate(`/users/${entry.userId}`)}
+                                // The viewer's own row is inert: opening your own profile
+                                // from a ranking of your friends is a dead-end detour, and
+                                // FriendPersonRow drops the cursor/press affordance when
+                                // `onPersonPress` is omitted (docs/FRIENDS_FEATURE.md § 1a).
+                                onPersonPress={entry.isCurrentUser
+                                    ? undefined
+                                    : () => slideNavigate(`/users/${entry.userId}`)}
                                 // The board is read-only: the row's only right-hand
                                 // element is the score it is ranked on. Unfriending
                                 // moved to /friends/remove.

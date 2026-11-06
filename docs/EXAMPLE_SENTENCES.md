@@ -277,7 +277,7 @@ parity bugs — headword underline, English-gloss underline, and the per-sentenc
 speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
-  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, ancp, the saved-card
+  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, acp, the saved-card
   cdp (which since 2026-08-24 raises the eip in a sheet, `VocabCardDetailPage` →
   `InfoCardSection`) and the read-only dictionary cdp (which since 2026-10-10 mounts the
   panel inline, `features/dictionary/DictionaryCardDetailPage.tsx`; its old
@@ -294,8 +294,8 @@ which underlines the `translatedVocab` substring.
 
 **One renderer, one chrome.** Every surface reaches the est through the eip's Examples
 tab (`InfoCardTabContent`), which renders `ExampleSentenceList` with **no caption row** —
-the active sense is named only by the header's sense list directly above (the chosen
-sense underlined — `EipEntryHeader`). (The
+the active sense is named only by the header's dd directly above (`EipEntryHeader`, one
+dd since 2026-11-05; the full sense list opens the Definition tab — `EipSenseList`). (The
 `.shelfhd` "sense N · <sense>" / "N examples" caption was removed 2026-10-10. The cdp used
 to pass `compact` and omit `showSegmentSpaces`, and the dictionary cdp used to wrap the
 list in its own "EXAMPLE SENTENCES" section; all gone.)
@@ -367,7 +367,7 @@ tapped segment's headword.
 - **Wiring.** New prop `onSegmentOpen?(segment)` on `SegmentedSentenceDisplay`. It is threaded
   through the est call site only (`InfoCardPanelBody.tsx` Examples tab, prop
   `onExampleSegmentClick`) → `InfoCardSection` → the two consumers
-  (`FlashcardsLearnPage.tsx`, `AddNewCardsPage.tsx`), each passing
+  (`FlashcardsLearnPage.tsx`, `AddCardsPage.tsx`), each passing
   `(segment) => eip.openForEntryKey(segment)`. The expansion-tab `SegmentedSentenceDisplay`
   omits `onSegmentOpen`, so that popup stays a passive tooltip.
 - **Tap absorption.** The popup renders through a Popper portal but is still a **React child

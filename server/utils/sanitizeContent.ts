@@ -28,7 +28,6 @@
  * It does NOT trim or enforce length — callers keep their existing length caps.
  *
  * Depended on by: server/services/TextService.ts (validate/create/update),
- * server/services/ValidationService.ts (submitValidation content),
  * server/dal/implementations/DictionaryDAL.ts (isSentenceHumanApproved /
  * isDefinitionsHumanApproved — compare current det data against stored approval
  * content, so they must mirror this sanitizer exactly; this function IS idempotent,

@@ -274,7 +274,7 @@ browse-shaped route under `/dictionary` would silently make it earn.
 This is also how the **compare sheet** earns. Compare has no route since 2026-09-04
 ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — it is a panel raised over the page
 you are already on — so it cannot appear in any of these lists. It accrues because every
-surface that can open it does: the flp, the ancp and both cdps. **Keep the two in step:** a
+surface that can open it does: the flp, the acp and both cdps. **Keep the two in step:** a
 future host that raises the compare sheet from a non-earning page would silently make
 Compare stop earning there, and nothing would report it.
 

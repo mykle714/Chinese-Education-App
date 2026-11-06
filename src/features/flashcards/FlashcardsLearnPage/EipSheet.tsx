@@ -18,10 +18,10 @@ import type { Language, VocabEntry } from "../../../types";
  * sheet's open animation replays on every reopen (the flp's rule). SheetPanel portals its
  * own scrim and sheet to the frame, so no positioning host is needed.
  *
- * Closing keeps the tab trail (the ancp rule): reopening on the same root word resumes the
+ * Closing keeps the tab trail (the acp rule): reopening on the same root word resumes the
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
- * Hosts: ancp (`AddNewCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold)
+ * Hosts: acp (`AddCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold)
  * and the Dictionary page
  * (`features/dictionary/DictionaryPage`, the only host that turns on
  * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
@@ -51,7 +51,7 @@ interface EipSheetProps {
     // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page only. A
     // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
-    // Stack depth handed to SheetPanel (0 = root). ancp passes 1 while its hidden
+    // Stack depth handed to SheetPanel (0 = root). acp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
     // Open height (and the stop a downward drag/fling clips back to) as a fraction of the
@@ -93,7 +93,11 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
                     learning={showLearning ? learning : undefined}
-                    selectedSenseIndex={entryTab ? entryTab.selectedSenseIndex : 0}
+                    // Only a PERSISTED pick is passed. A word with none (every det entry on the
+                    // Dictionary page) passes undefined, so the sense list underlines nothing and
+                    // the dd/reading resolvers fall back to the default — the same sense 0
+                    // this used to pass explicitly.
+                    selectedSenseIndex={entryTab?.entry.selectedSense ? entryTab.selectedSenseIndex : undefined}
                     compareTab={compareTab}
                     onSetCompareSlot={eip.setCompareSlot}
                     onCompareResult={eip.setCompareResult}

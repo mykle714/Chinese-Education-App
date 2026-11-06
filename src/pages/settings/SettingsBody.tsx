@@ -13,6 +13,8 @@ import { useTTS } from '../../hooks/useTTS';
 import { useFlashcardLearnSettings } from '../../hooks/useFlashcardLearnSettings';
 import { useWeatherEffectsSetting, type WeatherEnableError } from '../../hooks/useWeatherEffectsSetting';
 import { useTestingFeaturesSwitch } from '../../hooks/useTestingFeatures';
+import { useSoftIntroOverride } from '../../softIntro/useSoftIntro';
+import type { SoftIntroOverride } from '../../softIntro/softIntroStorage';
 import { COLORS } from '../../theme/colors';
 import { FONTS } from '../../theme/fonts';
 
@@ -47,6 +49,13 @@ const AUDIO_MODE_COPY: Record<AudioMode, { title: string; subtitle: string }> = 
 
 // Order comes from AUDIO_MODE_ORDER, the same constant the header chip cycles
 // through — so the list here and the tap sequence there can never disagree.
+/** The Soft introductions section's three choices (docs/SOFT_INTRODUCTION.md § 5). */
+const SOFT_INTRO_OVERRIDE_OPTIONS: { value: SoftIntroOverride; title: string; subtitle: string }[] = [
+    { value: 'auto', title: 'Auto', subtitle: 'Your real progress on this device decides each one.' },
+    { value: 'intro', title: 'Force intro', subtitle: 'Every one shows its first-time style (labels, captions).' },
+    { value: 'graduated', title: 'Force graduated', subtitle: 'Every one shows its quiet, learned style.' },
+];
+
 const AUDIO_MODE_OPTIONS = AUDIO_MODE_ORDER.map((value) => ({ value, ...AUDIO_MODE_COPY[value] }));
 
 // The voice picker. Two options because there are two voices per language, not three — see
@@ -154,6 +163,8 @@ function SettingsBody() {
     // default, and every tester surface reads it through `useTestingFeatures()`.
     const [testingFeaturesOn, setTestingFeaturesOn] = useTestingFeaturesSwitch();
     const isFeatureTester = user?.isFeatureTester === true;
+    // The soft-introduction override (docs/SOFT_INTRODUCTION.md § 5) — app-wide, device-local.
+    const [softIntroOverride, setSoftIntroOverride] = useSoftIntroOverride();
 
     const activeTheme = availableThemes.find((t) => t.value === themeMode);
 
@@ -245,7 +256,7 @@ function SettingsBody() {
                         <SwitchRow
                             className="settings-page__testing-features-row"
                             title="Enable testing features"
-                            subtitle="Shows tester-only controls such as the Deck Tower chips, the Tester Dashboard and Allow anytime for challenges. Saved on this device only."
+                            subtitle="Shows tester-only controls such as the Deck Tower chips, the Tester Dashboard, Allow anytime for challenges and the Soft introductions setting. Saved on this device only."
                             control={
                                 <Switch
                                     checked={testingFeaturesOn}
@@ -254,6 +265,34 @@ function SettingsBody() {
                                 />
                             }
                         />
+                    </SettingsSection>
+                )}
+
+                {/* ── Soft introductions (testers, while testing features are on) ────
+                    Its own card rather than a radio group inside Testing: the page's
+                    one-control-per-card rule (see Voice below). Shown only while the
+                    switch above is on, because `useSoftIntro` ignores the override
+                    otherwise — a visible-but-inert control would mislead. Replaced the
+                    tester-only header toggles on td and acp (2026-11-05). */}
+                {isFeatureTester && testingFeaturesOn && (
+                    <SettingsSection
+                        className="settings-page__soft-intro-section"
+                        icon="school"
+                        title="Soft introductions"
+                        description="Force every soft introduction into one style. Saved on this device only."
+                    >
+                        {SOFT_INTRO_OVERRIDE_OPTIONS.map((option) => (
+                            <OptionRow
+                                key={option.value}
+                                className={`settings-page__soft-intro-option settings-page__soft-intro-option--${option.value}`}
+                                name="soft-intro-override"
+                                value={option.value}
+                                checked={softIntroOverride === option.value}
+                                onChange={(value) => setSoftIntroOverride(value as SoftIntroOverride)}
+                                title={option.title}
+                                subtitle={option.subtitle}
+                            />
+                        ))}
                     </SettingsSection>
                 )}
 

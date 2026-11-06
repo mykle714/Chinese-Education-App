@@ -158,11 +158,3 @@ export const TAB_SWIPE_EDGE_RUBBER_MAX_PX = 40;
 // "maximized" panel gets to the page header above it.
 export const EIC_FULL_RATIO = 0.9;
 
-/**
- * How far the card's own top-edge chrome (CardOpsRail's `•••`, the CardNote strip) sits in
- * from the card's edge, as a custom property the flp's card frame sets — below the card's
- * top band, where the flp's hint labels sit in the corners (FlashCardSection
- * `TOWER_TOP_BAND_VARS` / `PLAIN_TOP_BAND_VARS`). Unset elsewhere (the cdp): each reader
- * falls back to its own px.
- */
-export const cardChromeInsetCss = (fallbackPx: number): string => `var(--card-chrome-inset, ${fallbackPx}px)`;

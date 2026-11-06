@@ -2,13 +2,20 @@
 
 Human-in-the-loop review of AI-enriched dictionary fields. Trusted "validator"
 users review **one field of one discoverable entry** and **Approve** or **Flag**
-it, via either of two paths: a **read-only Reader document** downloaded from a
-queue (`ValidationService.composeValidationDoc`/`submitValidation`), or **inline
-Approve/Flag buttons** rendered directly on the est/definition UI wherever the
-entry is already displayed (`ValidationService.submitEntryValidation`) — see
-"Inline Approve/Flag" below. Neither path supports editing: Approve always
-composes/copies the CURRENT data server-side (never trusts client content); Flag
-records only the flag itself, no content. Outcomes go to a dedicated `validations`
+it via **inline Approve/Flag buttons** rendered directly on the est/definition/meta-chip
+UI wherever the entry is already displayed (`ValidationService.submitEntryValidation`)
+— see "Inline Approve/Flag" below. There is no editing: Approve always composes the
+CURRENT data server-side (never trusts client content); Flag records only the flag
+itself, no content.
+
+> **Removed 2026-11-05 — the Reader document queue.** Validators used to also
+> download a composed, read-only "Validate - <word1>" Reader document and
+> Approve/Flag it (`POST /api/validation/download`, `POST /api/validation/:textId/submit`,
+> `ValidationService.composeValidationDoc` / `submitValidation`). That path, its
+> client (`src/features/reader/validationApi.ts`, the list page's download button,
+> the document page's Approve/Flag) and its `texts."validation*"` linkage columns
+> are gone — **migration 183** deleted the unsubmitted validation docs and dropped
+> the columns. The `validations` rows it wrote are kept and read like any other. Outcomes go to a dedicated `validations`
 table so future backfills never clobber human-reviewed fields.
 
 Introduced by **migration 104** (`database/migrations/104-add-validation-system.sql`),
@@ -21,7 +28,8 @@ simplified by **migration 106** (`database/migrations/106-simplify-validator-con
 given **per-sense granularity** by **migration 139**
 (`database/migrations/139-add-sense-label-to-validations.sql` — a `senseLabel`
 discriminator + the `senseFrequencyScore` field, so the Commonality chip's per-cluster
-score is reviewable one sense at a time).
+score is reviewable one sense at a time). **Migration 183** removed the Reader
+document queue's `texts` linkage columns.
 
 > **Why a separate table (not a det column):** `dictionaryentries_{zh,es}` are
 > `TRUNCATE`+restored wholesale on every PPE data deploy
@@ -35,27 +43,25 @@ score is reviewable one sense at a time).
 ## Field model
 
 A validation targets exactly one **field** of an entry — and, since migration 139, at
-most one **sense** of that field. Eight fields exist; the last four are **inline-only**
-(never handed out by the Reader-document queue — they are single-line values, better
-reviewed on the card's meta strip than as a document):
+most one **sense** of that field. Eight fields exist, all reviewed inline (the first
+four were also handed out by the removed Reader-document queue, so older `validations`
+rows for them may carry a doc-queue origin — they are indistinguishable and read the same):
 
-| `validationField` | Label | Source column(s) | Body (`validationBodyFormat.ts`) | Paths |
-|---|---|---|---|---|
-| `definitions` | "Definitions" | `definitions[]` + `longDefinition` | `composeDefinitionsBody` | doc + inline |
-| `exampleSentence0/1/2` | "Example Sentence 1/2/3" | `exampleSentences[N]` (`foreignText` + `english`) | `composeExampleSentenceBody` | doc + inline |
-| `partsOfSpeech` | "Parts of Speech" | `partsOfSpeech` | `composePartsOfSpeechBody` | inline only |
-| `difficulty` | "Difficulty" | `difficulty` | `composeDifficultyBody` | inline only |
-| `frequencyScore` | "Commonality" | `frequencyScore` | `composeFrequencyScoreBody` | inline only |
-| `senseFrequencyScore` | "Commonality" | `definitionClusters[i].frequencyScore` | `composeSenseFrequencyScoreBody` | inline only, **per sense** |
+| `validationField` | Source column(s) | Body (`validationBodyFormat.ts`) | Notes |
+|---|---|---|---|
+| `definitions` | `definitions[]` + `longDefinition` | `composeDefinitionsBody` | |
+| `exampleSentence0/1/2` | `exampleSentences[N]` (`foreignText` + `english`) | `composeExampleSentenceBody` | |
+| `partsOfSpeech` | `partsOfSpeech` | `composePartsOfSpeechBody` | |
+| `difficulty` | `difficulty` | `composeDifficultyBody` | |
+| `frequencyScore` | `frequencyScore` | `composeFrequencyScoreBody` | |
+| `senseFrequencyScore` | `definitionClusters[i].frequencyScore` | `composeSenseFrequencyScoreBody` | **per sense** |
 
 Only **populated** fields are eligible: `definitions` requires both its columns,
 `exampleSentenceN` requires `exampleSentences` to have index `N`, and each of the
 three single-column fields requires a non-null value, and `senseFrequencyScore` requires
 its `senseLabel` to still resolve to a cluster that carries a score (a stale label — the
-entry was re-clustered since the client rendered it — is rejected, never recorded). The doc-queue check is the
-`CROSS JOIN LATERAL (VALUES …)` in `ValidationService.composeValidationDoc`; the
-inline check is `ValidationService.isFieldPopulated`, which is the ONLY check the
-three inline-only fields ever pass through. The `ValidationField` union is declared
+entry was re-clustered since the client rendered it — is rejected, never recorded). The
+check is `ValidationService.isFieldPopulated`. The `ValidationField` union is declared
 in both `server/types/index.ts` and `src/types.ts`, and the inline endpoints'
 allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
 
@@ -88,11 +94,8 @@ allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
 Granularity is **per (entry, field, senseLabel)**: a user may validate an entry's example
 sentence and, separately, its definitions bundle — and, for a per-sense field, each sense
 independently. Each (user, entry, field) has at
-most one CURRENT record — but on the **inline path only** (see "Inline
-Approve/Flag" below), a validator may switch it (approve ↔ flag) or clear it
-entirely; the Reader-document path (`submitValidation`) still rejects a repeat
-submit for the same (user, entry, field), since the underlying document is
-auto-deleted after the first action.
+most one CURRENT record, which a validator may switch (approve ↔ flag) or clear
+entirely (see "Inline Approve/Flag" below).
 
 ### Adding another validatable field
 
@@ -102,15 +105,14 @@ which case it also needs a discriminator in the uniqueness key (migration 139 ad
 `senseLabel` for exactly that; a per-sense field must additionally be listed in
 `PER_SENSE_VALIDATION_FIELDS`, which is what makes the controller require a `senseLabel`
 and the service compose a per-sense body). It does need, in order: the `ValidationField` union in both
-type files; `VALID_FIELDS` (controller); `FIELD_LABEL`, `DET_FIELD_COLUMNS`,
+type files; `VALID_FIELDS` (controller); `DET_FIELD_COLUMNS`,
 `DetFieldRow`, `composeBody`, `isFieldPopulated` (`ValidationService`); a formatter
 in `validationBodyFormat.ts`; `ENTRY_LEVEL_VALIDATION_FIELDS` + `EntryApprovalFlags`
 (`server/types/index.ts`) and the matching branch in
 `DictionaryDAL.enrichFieldApprovalsBatch` if the client needs a read-path flag; a
 client mount point for `ValidateFlagButtons`; and a `validatedClause` guard in every
 backfill that writes the column (plus its `validationFields` entry in
-`requiredScripts.js`). Add it to the doc-queue `VALUES` list only if a downloaded
-document is the right review surface for it.
+`requiredScripts.js`).
 
 ---
 
@@ -129,8 +131,7 @@ document is the right review surface for it.
   as a feature tester, so granting `isValidator` no longer grants the ability to bypass
   the challenge week. The remaining `isValidator` readers are all data curation: this
   system's endpoints and buttons (`server/services/ValidationService.ts`,
-  `src/components/ValidateFlagButtons.tsx`, the Reader validate-download button in
-  `src/features/reader/ReaderPage.tsx`) and lazy AI enrichment spend
+  `src/components/ValidateFlagButtons.tsx`) and lazy AI enrichment spend
   (`server/services/LazyEnrichmentService.ts`, `server/controllers/DictionaryController.ts`).
   Do not gate a new testing tool on it — use `isFeatureTester`. Surfaced to the client
   through the `user` object (login + `/api/auth/me`);
@@ -158,48 +159,32 @@ document is the right review surface for it.
   column is never JOINed to `users` — it is a scalar identity only (the unique
   constraint + the "did I already validate this?" filters), and display uses the
   denormalized `validatorName` — so the FK bought nothing on reads. Now consistent
-  with `entryId` / `texts.validationEntryId`, which are deliberately unconstrained
-  ids. Trade-off: deleting a user no longer cascades away their validation rows;
+  with `entryId`, which is a deliberately unconstrained id. Trade-off: deleting a user no longer cascades away their validation rows;
   they survive as (harmless, still-displayable) orphans.
-  `content` is the data version approved, copied verbatim from the document the
-  validator read — `NULL` for a flag (flag is just a signal; it carries no
-  suggested edit). The unique constraint keys the Reader-document path's
-  "can never re-validate" rule (`ON CONFLICT DO NOTHING`) AND the inline path's
-  switch/clear (`ON CONFLICT DO UPDATE` / `DELETE`) — see "Inline Approve/Flag"
-  below. There is no history of a superseded vote: switching or clearing
+  `content` is the data version approved, composed server-side from the det row
+  (`composeBody`) — `NULL` for a flag (flag is just a signal; it carries no
+  suggested edit). The unique constraint keys the inline path's switch/clear
+  (`ON CONFLICT DO UPDATE` / `DELETE`) — see "Inline Approve/Flag" below. There is no history of a superseded vote: switching or clearing
   overwrites/deletes the row in place. `(entryId, language)` is indexed for the
   compose check + backfill guard.
-- `texts` validation-linkage columns (nullable; NULL ⇒ ordinary user document):
-  `validationEntryId INTEGER` (det id — SERIAL, **not** uuid),
-  `validationLanguage VARCHAR(10)`, `validationField VARCHAR(50)`. (Migration 104
-  also added `validationOriginalContent`, used for client-side edit-diffing and
-  Revert; migration 106 dropped it once editing was removed.)
+- `texts` validation-linkage columns — **dropped**. Migration 104 added
+  `validationEntryId` / `validationLanguage` / `validationField` /
+  `validationOriginalContent` for the Reader document queue; 106 dropped
+  `validationOriginalContent` when editing was removed, and **183** dropped the
+  other three with the queue itself.
 
 The consolidated schema files (`database/init/01-init-schema.sql`,
-`database/deploy/01-schema.sql`) mirror the `users` + `texts` + `validations`
+`database/deploy/01-schema.sql`) mirror the `users` + `validations`
 additions. `validations` was intentionally **absent** from the old dev → PPE deploy allowlist.
 (It *is* carried by `/data-ppe-to-dev`, which is safe: that direction overwrites dev
 from the authoritative PPE copy.)
 
 ---
 
-## Flow
+## Review body format
 
-### Download (compose)
-`POST /api/validation/download` `{ language }` →
-`ValidationController.downloadValidationDoc` → `ValidationService.composeValidationDoc`
-(`server/services/ValidationService.ts`):
-1. Assert `user.isValidator`.
-2. Pick one eligible (entry, field) in `dictionaryentries_<language>` — discoverable,
-   field populated, and NOT already validated by this user for that field — ordering
-   by fewest existing validations of that field (random tiebreak). A `CROSS JOIN
-   LATERAL (VALUES …)` expands each entry into its four candidate fields.
-3. Compose a **pretty-printed, read-only** body (`composeBody`), `title = "Validate - <word1> - <pronunciation>"`
-   (pinyin appended when present), `description = <field label>`.
-4. Create the doc via `TextService.createText`, which persists the three
-   `validation*` columns. Returns the `Text`.
-
-Body format — plain human-readable prose, **not** JSON — built by the shared
+Approve stores, as `validations.content`, the field's current data pretty-printed by
+`ValidationService.composeBody`. Body format — plain human-readable prose, **not** JSON — built by the shared
 formatters in `server/utils/validationBodyFormat.ts`:
 - **`composeDefinitionsBody`** — `Parts of Speech: <comma list>`, then
   `Definitions:` as a numbered list, then `Long Definition:` followed by the prose.
@@ -219,69 +204,9 @@ formatters in `server/utils/validationBodyFormat.ts`:
 These formatters are shared with `DictionaryDAL`'s approval-freshness check (see
 below) so the two always agree on what a given det row's text looks like.
 
-### Approve / Flag
-`POST /api/validation/:textId/submit` `{ action }` →
-`ValidationService.submitValidation`:
-1. Assert validator + ownership + that the text is a validation doc.
-   **Validator status is authoritative here**: `userId` comes from the verified JWT
-   (`authenticateToken` → `req.user.userId`), and `isValidator` is read fresh from
-   the DB via `userDAL.findById` — never from the request body — so it cannot be
-   forged, and it fails closed if the column is absent. Ownership (`text.userId ===
-   userId`) is also enforced, so an attacker can neither submit as a validator they
-   aren't nor act on another user's doc.
-2. `content = action === 'approve' ? text.content : null` — Approve copies the
-   document's content **verbatim, server-side**; nothing is taken from the request
-   body, so there is nothing to re-parse or format-guard (the doc was never
-   editable, so `text.content` is always exactly what `composeValidationDoc` wrote).
-   Flag stores `null`.
-3. `INSERT` a `validations` row. `ON CONFLICT ON CONSTRAINT
-   validations_unique_per_user DO NOTHING` — a zero-row result means this
-   (user, entry, field) was already recorded, and the request is rejected. This is
-   the "after receiving, can never re-approve/flag" rule and is race-safe.
-4. **On any accepted submit (both `approve` and `flag`)**, the throwaway validation
-   document is auto-deleted from the validator's account
-   (`TextService.deleteText(userId, textId)`): the review is done, the (entry, field)
-   can never be handed to this user again, so the doc has no further purpose. The
-   persisted `validations` row is unaffected — it is not FK-linked to `texts`.
+## Inline Approve/Flag
 
----
-
-## Frontend (Reader document queue)
-
-- **Download button**: a `FactCheck` `IconButton`
-  (`reader-page-validate-download-button`) in the header `rightContent` of the
-  reader **list** page ONLY (`ReaderPage.tsx`), shown only when
-  `useAuth().user?.isValidator`. It calls the shared
-  `downloadValidationDoc(token, language)` (`src/features/reader/validationApi.ts`)
-  then refreshes the list — it does **not** auto-open the new doc; the validator
-  picks it from the list when ready (a snackbar confirms it was added). The
-  open-document page (`ReaderDocumentPage.tsx`) deliberately does **not** carry this
-  button — you download from the list, then open a doc to act on it.
-- **Approve / Flag**: two icon buttons in the **document page header**
-  (`ReaderDocumentPage.tsx` `docHeaderRightContent`, alongside Delete — see
-  docs/LEAF_NODE_PAGES.md § Reader), rendered only when the open doc's
-  `validationEntryId` is set: a green **check** (`CheckCircle`,
-  `reader-page-text-header-approve-button`) and a yellow **flag** (`Flag`,
-  `reader-page-text-header-flag-button`), always both shown side by side — there is
-  no diffing, so which one is "active" is never ambiguous. `handleApprove`/
-  `handleFlag` (thin wrappers over `submitValidation`) POST `{ action }` with no
-  body content. Feedback shows in `reader-page-validation-snackbar`. After either
-  action, the server auto-deletes the doc and the client navigates back to
-  `/reader` (the entry can't be re-validated).
-- **Read-only, no Edit**: validation docs have **no Edit affordance** anywhere —
-  not the doc page header (`isValidationDoc` hides the Edit icon; only Delete stays,
-  to abandon a downloaded entry without acting on it) and not the list row
-  (`TextSidebar.tsx` hides its Edit icon when `text.validationField` is set, keeps
-  Delete). `EditDocumentDialog.tsx` has no validation-specific logic anymore — it's
-  purely the generic reader-document editor and is never opened for a validation
-  doc. `TextHeader.tsx` renders no validation actions — it is purely the
-  title/description/meta block.
-
----
-
-## Inline Approve/Flag (no document)
-
-A validator doesn't have to go through the Reader queue at all: small Approve/Flag
+Small Approve/Flag
 icon buttons render directly on the est (example sentences) and long-definition
 surfaces, wherever a validator is already looking at an entry — flashcard eip tabs,
 the cdp, the dictionary card detail. Hidden entirely for non-validators.
@@ -379,21 +304,18 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   before, since `ValidateFlagButtons` renders `null` for them. It is a MODULE-level
   component on purpose — declaring it inside a parent's render body would make it a
   new component type every render, remounting the buttons and re-firing their status
-  fetch. These three fields have **no** Reader-document path — this is their only
-  review surface.
+  fetch.
 - **`ValidationService.submitEntryValidation`** (server) — the method behind
   `POST /api/validation/entrySubmit`: looks up the det row fresh by `(word1,
   language, discoverable=TRUE)` (the client never knows/sends the det surrogate
   id; shared helper `getDetFieldRowByWord1`), checks the field is populated
-  (`isFieldPopulated`, mirrors `composeValidationDoc`'s SQL eligibility check),
+  (`isFieldPopulated`),
   then `UPSERT`s into `validations` (`ON CONFLICT ... DO UPDATE SET action,
   content, validatorName`), writing the `senseLabel` normalized by
   `normalizeSenseLabel` — the trimmed label for a per-sense field, `''` for every
   entry-level one, so a stray label on `difficulty` can never fork that field's record
-  into two rows past the unique constraint — same `content = approve ? composeBody(...) : null`
-  as `submitValidation`, but a repeat call from the same validator overwrites
-  their prior vote instead of being rejected. No `texts` row is created or
-  touched by this path at all.
+  into two rows past the unique constraint — with `content = approve ? composeBody(...) : null`.
+  A repeat call from the same validator overwrites their prior vote.
 - **`ValidationService.clearEntryValidation`** — the method behind `DELETE
   /api/validation/entrySubmit`: resolves the det row the same way, then deletes
   only the calling validator's `validations` row for (entry, field). A no-op
@@ -557,10 +479,8 @@ card-detail pages.
 chars (keeps `\n`/`\t`) and normalizes line endings. It deliberately does **not**
 HTML-escape — the content is only rendered as React text nodes (escaped at render),
 so escaping at rest would double-encode (e.g. `&` → `&amp;` shown literally). Wired
-into `TextService.createText`/`updateText` (all document saves — this is what
-sanitizes a validation doc's composed body before it's stored as `text.content`;
-`ValidationService.submitValidation` does not sanitize again, since Approve copies
-`text.content` verbatim).
+into `TextService.createText`/`updateText` (all Reader document saves), and mirrored
+by `DictionaryDAL`'s approval-freshness comparisons (see `sanitizeContent.ts`).
 
 ---
 
@@ -646,7 +566,8 @@ regeneration loop and a validator's work — treat it as load-bearing.
   `database/migrations/106-simplify-validator-content.sql`,
   `database/migrations/120-drop-validations-validator-fk.sql`,
   `database/migrations/132-split-parts-of-speech-validation-field.sql`,
-  `database/migrations/139-add-sense-label-to-validations.sql`
+  `database/migrations/139-add-sense-label-to-validations.sql`,
+  `database/migrations/183-drop-texts-description-and-validation-docs.sql` (queue removal)
 - Service/controller/routes: `server/services/ValidationService.ts`,
   `server/controllers/ValidationController.ts`, `server/routes/validationRoutes.ts`
   (mounted in `server/server.ts`; wired in `server/dal/setup.ts`)
@@ -660,12 +581,8 @@ regeneration loop and a validator's work — treat it as load-bearing.
 - Types: `server/contracts/wire.ts` (`ValidationField`, `ENTRY_LEVEL_VALIDATION_FIELDS`,
   `PER_SENSE_VALIDATION_FIELDS`/`isPerSenseValidationField`,
   `EntryApprovalFlags`/`NO_APPROVALS`), re-exported by `server/types/index.ts`
-  (which also declares `ValidationRecord`, `Text.validation*`, `User.isValidator`)
-  and by `src/types.ts` (`ValidationField`,
-  `Text.validation*`, `User.isValidator`), `src/AuthContext.tsx`
-- Reader UI: `src/features/reader/ReaderPage.tsx`, `src/features/reader/ReaderDocumentPage.tsx`,
-  `src/features/reader/TextHeader.tsx`, `src/features/reader/TextSidebar.tsx`,
-  `src/features/reader/validationApi.ts`
+  (which also declares `ValidationRecord`, `User.isValidator`)
+  and by `src/types.ts` (`ValidationField`, `User.isValidator`), `src/AuthContext.tsx`
 - Inline Approve/Flag UI: `src/components/ValidateFlagButtonsView.tsx` (shared
   presentation) + `src/components/ValidateFlagButtons.tsx` (det-field wrapper),
   `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`

@@ -36,7 +36,7 @@ pages don't re-implement (or drift from) them.
    see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)). `MobileTabScreen` still reserves
    the clearance; the footer resolves its own active tab from the route. A route
    whose `routeMeta` row sets `footerStyle: "slab"` (td, `/dictionary`, both cdps,
-   ancp) gets the floating **slab** footer instead of the bar (`MobileFooter`
+   acp) gets the floating **slab** footer instead of the bar (`MobileFooter`
    `variant`, `SLAB_FOOTER_TOTAL_HEIGHT`).
 
    > It was a detached rounded **pill** (64px tall, inset 16px on every side, drop
@@ -82,7 +82,7 @@ ScreenRoot            position: relative
   value worth passing is `"dense"` — see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § Header sizes.
 - `backdrop` (also on `NodePage`) is non-interactive decoration painted over `surfaceColor`
-  and behind the header and content; ancp's night sky is the only user. Passing it makes the
+  and behind the header and content; acp's night sky is the only user. Passing it makes the
   scroll area `position: relative`, which is why it is opt-in rather than always on.
 - `surfaceColor` paints `ScreenRoot` behind everything (header + content + the
   footer-clearance padding) so short pages have no color seams.
@@ -94,7 +94,7 @@ ScreenRoot            position: relative
   > visible colour step across the bottom 74px of the frame. If a page needs to feel
   > tinted, tint an INNER surface — a card, a sheet, a section — not the page ground.
   > The rule binds bar-footer pages only: the pages that set a ground today (the Deck
-  > Tower, ancp, the Dictionary and both card pages, on the Tier 2 look) all wear the
+  > Tower, acp, the Dictionary and both card pages, on the Tier 2 look) all wear the
   > floating slab, which casts onto that ground instead of meeting it edge to edge.
 - `contentSx` styles only the content column (padding, `alignItems`, nested
   selectors). The header is intentionally excluded so it always stays flush and

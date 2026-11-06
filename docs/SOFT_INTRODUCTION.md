@@ -22,8 +22,8 @@ Client-only. There is no server, API, or database component.
 |---|---|---|
 | Registry | `src/softIntro/softIntroRegistry.ts` → `SOFT_INTROS`, `VISIT_DEDUPE_MS` | Every si id and its thresholds |
 | Storage + pure logic | `src/softIntro/softIntroStorage.ts` → `recordVisit`, `hasMetThresholds`, `resolveSoftIntroState`, `recordSoftIntroVisit`, override read/write/subscribe | localStorage records, graduation rule, feature-tester override |
-| Hook | `src/softIntro/useSoftIntro.ts` → `useSoftIntro` | What a component calls: returns `"intro"` or `"graduated"` |
-| Feature-tester UI | `src/softIntro/SoftIntroToggle.tsx` | Header button: Auto → Intro → Graduated |
+| Hook | `src/softIntro/useSoftIntro.ts` → `useSoftIntro`, `useSoftIntroOverride` | What a component calls: returns `"intro"` or `"graduated"`; the override as React state |
+| Feature-tester UI | `src/pages/settings/SettingsBody.tsx` → `SOFT_INTRO_OVERRIDE_OPTIONS` | Settings → "Soft introductions": Auto / Force intro / Force graduated |
 | Tests | `src/__tests__/softIntro.test.ts` | Dedupe window and both-thresholds rule |
 
 `src/softIntro/` is a subsystem directory (like `src/minutePoints/`), not a feature
@@ -45,7 +45,7 @@ folder: any feature may consume it.
 
 | Id | Where | Intro | Graduated | Thresholds |
 |---|---|---|---|---|
-| `sortDifficultyCaption` | ancp toolbar level pill — `AddNewCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
+| `sortDifficultyCaption` | acp toolbar level pill — `AddCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
 | `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD / NEW / CARDS" printed in white on the floor in front of it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
 | `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" printed into the floor in front of it | the stack alone | 70 visits + 14 days |
 
@@ -71,32 +71,38 @@ Writes re-read the map first, so two si mounting together cannot clobber each ot
   `enabled: sortBin !== undefined` / `notebook !== undefined`, so a visit counts only on the
   world, and with the Learning deck, where that fixture stands.
 
-## 5. Feature-tester viewing toggle
+## 5. Feature-tester viewing override (Settings)
 
-`SoftIntroToggle` renders only for `users.isFeatureTester` (migration 178; it rode
-`isValidator` before that flag was split into data validation vs feature testing) while its device's Settings → "Enable testing features" switch is on ([FEATURE_TESTING.md](./FEATURE_TESTING.md), `useTestingFeatures`). Each tap cycles one app-wide
-override:
+One setting controls every si: the **"Soft introductions"** section in Settings
+(`src/pages/settings/SettingsBody.tsx`, its own `SettingsSection` directly under
+"Testing"). It shows only for `users.isFeatureTester` (migration 178) **while** that
+device's "Enable testing features" switch is on ([FEATURE_TESTING.md](./FEATURE_TESTING.md),
+`useTestingFeatures`), because `useSoftIntro` ignores the override otherwise. Three
+radio rows (`OptionRow`) pick one app-wide override, read and written through
+`useSoftIntroOverride`:
 
-| Override | Icon | Effect |
+| Override | Row | Effect |
 |---|---|---|
-| `auto` | `hdr_auto` | Every si shows this device's real state |
-| `intro` | `school` | Every si is forced to its intro style |
-| `graduated` | `workspace_premium` | Every si is forced to its graduated style |
+| `auto` | Auto | Every si shows this device's real state |
+| `intro` | Force intro | Every si is forced to its intro style |
+| `graduated` | Force graduated | Every si is forced to its graduated style |
+
+Until 2026-11-05 this was a tester-only header button (`SoftIntroToggle`) that cycled
+the three states on td and acp. It was removed so that no page header carries tester
+controls.
 
 - The override is **live**: `useSyncExternalStore` on a window event, plus `storage` for
   other tabs. It re-renders immediately so the two styles can be compared in place.
 - It **never touches the visit records**.
 - `useSoftIntro` ignores it for non-testers, so a stale key on a shared device cannot
   change a learner's experience.
-- It belongs in the header of any page hosting an si. Today that is
-  ancp (`src/features/discover/AddNewCardsPage.tsx`, `headerExtraActions`, left of the
-  audio chip) and td (`src/features/deckTower/DeckTowerPage.tsx`, `headerExtraActions`,
-  left of the avatar, drawn in the sky ink via the toggle's `color` prop).
+- Turning testing features off leaves the stored override in place but inert, so turning
+  them back on restores the tester's last choice.
 
 ## 6. Adding a soft introduction
 
 1. Add an entry to `SOFT_INTROS` with thresholds and a one-line description.
 2. In the component, `const state = useSoftIntro("<id>")` and render either style. If
    the swap changes layout that something measures, re-measure on the state.
-3. Make sure `SoftIntroToggle` is in that page's header.
-4. Add a row to the table in § 2.
+3. Add a row to the table in § 2. (Nothing per-page is needed for the tester override:
+   the Settings section covers every si.)

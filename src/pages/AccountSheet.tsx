@@ -144,6 +144,10 @@ function AccountSheet({ onClose }: AccountSheetProps) {
             bodyKey={`account-${selected}`}
             telescopeRef={telescopeRef}
             surface={COLORS.background}
+            // Opens at 80% of the frame (SheetPanel's default is 60%) — the same open
+            // height as the Dictionary page's eip. This is also the sheet's dismiss floor:
+            // a release below 80% closes it (docs/EIP_SHEET_GESTURES.md § snap stops).
+            defaultHeightRatio={0.8}
             showClose={false}
             showGrabber={false}
             edgePadding={false}

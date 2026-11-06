@@ -245,7 +245,7 @@ The card is the **ordinary flp card** — `FlashCardSection`'s stack, flip, fly-
 More Info pill below it, laid out as on the core flp — with only its CONTENT changed:
 `FlashCardSection.writingFace` hands both faces of every card to
 `useWritingFlashcard.renderFace`, which draws `WritingCardFace` into the face's full-card
-`CardFaceSide.fill` slot (no icons, note or card-ops rail). The card never follows a drag;
+`CardFaceSide.fill` slot (no icons). The card never follows a drag;
 the hook flips the card (`setIsFlipped(true)`) and dismisses it (`handleCardDismiss`). In
 place of useCardDrag's handlers it passes `useWritingFlashcard.swipeHandlers`: a press that
 travels ≥ `SWIPE_ATTEMPT_PX` (10 px) is read as the tap on the face showing — on the front

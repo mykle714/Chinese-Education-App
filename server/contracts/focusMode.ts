@@ -25,7 +25,7 @@ export const FOCUS_DAILY_CARDS = 25;
  * Counted over ALL four bands because that is what the learner sees as "assigned to
  * them" — the figure the feature exists to keep from feeling overwhelming.
  */
-export const FOCUS_LEVER_THRESHOLD = 100;
+export const FOCUS_LEVER_THRESHOLD = 80;
 
 /**
  * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 25, i.e.

@@ -7,7 +7,7 @@ import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx } from "../scrollE
  * Styled surfaces for `SheetPanel` — the app's modal/persistent bottom sheet.
  *
  * These moved out of `features/flashcards/FlashcardsLearnPage/styled.ts` when SheetPanel
- * itself became shared (the flp eip, the ancp, both cdps, the AccountSheet and the
+ * itself became shared (the flp eip, the acp, both cdps, the AccountSheet and the
  * compare sheet all mount one). Per docs/FRONTEND_LAYERING.md, a file a second feature
  * imports moves to a shared home rather than being reached across the feature boundary.
  * The `Eic`/`InfoSheet` names are kept verbatim: they are the eip's originals, they

@@ -21,7 +21,7 @@ export interface FlashcardLearnSettings {
     //     Account page. See docs/EXAMPLE_SENTENCES.md.
     //   • narration autoplay → the unified narration setting (useTTSSettings, the
     //     3-state Off/Passthrough/Media control), because it applies to the games and
-    //     the ancp as much as to the flp. See docs/AUDIO_PLAYBACK.md.
+    //     the acp as much as to the flp. See docs/AUDIO_PLAYBACK.md.
     //   • progress category on the card back → DELETED with the chip it drove.
 }
 

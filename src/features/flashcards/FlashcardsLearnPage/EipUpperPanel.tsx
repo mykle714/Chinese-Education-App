@@ -81,11 +81,44 @@ interface EipUpperPanelProps {
 //                  panel's top edge and the trail (the sheet itself has no top padding,
 //                  `edgePadding={false}`); at max it adds to the title row's own 8px.
 //   HEADER_GAP     trail row → entry header.
+//   HEADER_BOTTOM_PAD  entry header → the shelf's lip (owned here since 2026-11-05; it was
+//                  the `padding-bottom` InfoCardSection passed to EipEntryHeader).
 const TRAIL_TOP_PAD = 10;
 const HEADER_GAP = 6;
+const HEADER_BOTTOM_PAD = 17;
+// OVERSTRETCH (SheetPanel `squeezeOnOverstretch`, 2026-11-05). Pulled past max, the panel
+// gives up EVERY vertical gap below the title row (`squeezable` = the three above, plus
+// the trail row's slack around its 30px buttons, TRAIL_ROW_SLACK above and below). No
+// component changes height, and the TITLE ROW ("More Info" + flame, and the pinned caret)
+// is not affected at all: it stays put while the rows below it close up toward the shelf.
+// The keycap's 4px bottom margin is NOT spacing — it holds the keycap's lip — so it stays.
+// The squeeze is a fraction `--sheet-squeeze` (0 → 1, rubber-banded) of `squeezable`.
+//
+// Applied as a relative `top` offset, not padding, so the content's layout height (which
+// SheetPanel measures) never changes; and not a transform, which would make the trail row
+// a containing block for any `position: fixed` popup inside it. In frame coordinates the
+// shrinking frame lifts the bottom-anchored content by the whole squeeze
+// S = squeezable·f, so each row is pushed back DOWN by the gaps BELOW it:
+//   title  +S              → does not move
+//   trail  +(below+bottom)·f → its buttons close up on the title (TRAIL_TOP_PAD + top slack)
+//   header +bottom·f        → closes up on the trail (bottom slack + HEADER_GAP), and the
+//                             shelf closes up on it (HEADER_BOTTOM_PAD)
+// The trail row keeps its 36px box: shifting the BOX by less than the shelf moves its
+// buttons, so its slack closes without the row (or anything in it) changing height.
+// On Compare there is no entry header, so both header gaps drop out. With an Add key the
+// row's bottom slack stays: the key's lip hangs into it (the same reason the headword
+// keycap keeps its 4px margin).
+const squeezeShift = (px: number) => ({
+    position: "relative" as const,
+    top: `calc(${px}px * var(--sheet-squeeze, 0))`,
+    transition: "top var(--sheet-telescope-transition, 0ms) ease-out",
+});
 // The trail row is as tall as the design's 36px round buttons, so the caret and the Add
 // key sit on one line whatever the trail holds.
 const TRAIL_ROW_HEIGHT = 36;
+// The empty band above and below the row's tallest buttons (the 30px speaker and Add key;
+// the crumbs are shorter), which the overstretch also closes.
+const TRAIL_ROW_SLACK = (TRAIL_ROW_HEIGHT - SPEAKER_BUTTON_SIZE) / 2;
 // The pinned caret. Its glyph's top sits this far below the frame's top: centred on the
 // trail row at the open height, and on PageHeader's leaf `padTop` (27) at max.
 const CARET_GLYPH_PX = 22;
@@ -109,6 +142,18 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
     ref,
 ) {
     const colors = useEipColors();
+    // Overstretch spacing (see the OVERSTRETCH note above): the gap above the entry
+    // header only exists when there is one.
+    // The three closable spans, top to bottom:
+    //   above  title → the trail's buttons
+    //   below  the trail's buttons → the entry header (or the shelf, on Compare)
+    //   bottom the entry header → the shelf
+    const squeezeAbove = TRAIL_TOP_PAD + TRAIL_ROW_SLACK;
+    const squeezeBelow = (addKey ? 0 : TRAIL_ROW_SLACK) + (header ? HEADER_GAP : 0);
+    const squeezeBottom = header ? HEADER_BOTTOM_PAD : 0;
+    const squeezable = squeezeAbove + squeezeBelow + squeezeBottom;
+    const squeezableRef = useRef(squeezable);
+    squeezableRef.current = squeezable;
     const frameRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const extraRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +161,7 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
         get frame() { return frameRef.current; },
         get content() { return contentRef.current; },
         get extra() { return extraRef.current; },
+        get squeezable() { return squeezableRef.current; },
     }), []);
 
     return (
@@ -178,6 +224,8 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                     sx={{
                         margin: `0 -${PANEL_GUTTER}px`,
                         "& .page-header__back-icon": { visibility: "hidden" },
+                        // The title row is untouched by the overstretch: held in place (see squeezeShift).
+                        ...squeezeShift(squeezable),
                     }}
                 >
                     <PageHeader
@@ -205,6 +253,8 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                         marginRight: `-${PANEL_GUTTER}px`,
                         "& .eip-add-key": { marginRight: `${PANEL_GUTTER}px` },
                         "& .eip-entry-tab-list": { paddingRight: addKey ? 0 : `${PANEL_GUTTER}px` },
+                        // Overstretch: its own top gap closes (see squeezeShift).
+                        ...squeezeShift(squeezeBelow + squeezeBottom),
                     }}
                 >
                     {/* The cluster's width places the trail; its margin slides both left
@@ -240,7 +290,15 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                 </Box>
 
                 {header && (
-                    <Box className="eip-upper__header" sx={{ paddingTop: `${HEADER_GAP}px` }}>
+                    <Box
+                        className="eip-upper__header"
+                        sx={{
+                            paddingTop: `${HEADER_GAP}px`,
+                            paddingBottom: `${HEADER_BOTTOM_PAD}px`,
+                            // Overstretch: the gaps above and below it close (see squeezeShift).
+                            ...squeezeShift(squeezeBottom),
+                        }}
+                    >
                         {header}
                     </Box>
                 )}

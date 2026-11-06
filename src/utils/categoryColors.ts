@@ -99,7 +99,7 @@ export const BAND_COLORS: Record<string, { main: string; accent: string }> = {
 /**
  * "Learning" — the cards still being learned. A COLLECTION, not a band, drawn as a
  * SURFACE card (artboard 2: "Surface: … Learning") — today the Deck Tower's Learning
- * filter key and floor plate, the ancp's Learning bin and Quick Mark's left swipe.
+ * filter key and floor plate, the acp's Learning bin and Quick Mark's left swipe.
  *
  * Gold `--yel`, Study Mix's colour too — Study Mix draws from exactly this set of
  * cards, so the two share a colour on purpose (2026-09-01).
@@ -119,7 +119,7 @@ export const LEARNING_COLORS = { main: RAMP[LEARNING_HUE].surface, accent: RAMP[
 
 /**
  * The hue of each mastery bar's Mastered collection (migration 143) — td's Mastered
- * filter key and floor plate, the ancp's Mastered bin. Each bar carries its own hue so three DIFFERENT sets do not look
+ * filter key and floor plate, the acp's Mastered bin. Each bar carries its own hue so three DIFFERENT sets do not look
  * interchangeable.
  *
  * `reading` and `writing` are single-mark-type bars and take their SKILL's hue —

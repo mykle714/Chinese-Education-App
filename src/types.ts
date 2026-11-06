@@ -86,7 +86,6 @@ export type { ChallengeGameSpec, ProvisionMode } from "../server/contracts/wire"
 
 export {
   CARD_COLOR_VALUES,
-  CARD_NOTE_MAX_LENGTH,
   CHALLENGE_GAMES,
   challengeGamesForLanguages,
   CHALLENGE_ROUND_COUNT,

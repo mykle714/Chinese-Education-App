@@ -145,17 +145,6 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     selectedSense: string | null
   ): Promise<VocabEntry | null>;
-  /**
-   * Persist (or clear) the learner's own note on one vet row (migration 155).
-   * `note` arrives already trimmed and length-capped by the service; `null` clears it.
-   * Returns the updated row, or null when no row matches. See docs/CARD_NOTES.md.
-   */
-  updateNote(
-    userId: string,
-    id: string | number,
-    language: string,
-    note: string | null
-  ): Promise<VocabEntry | null>;
   findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null>;
   /**

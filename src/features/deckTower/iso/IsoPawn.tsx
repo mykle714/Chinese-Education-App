@@ -58,8 +58,11 @@ interface IsoPawnProps {
     at: { x: number; y: number };
     /** The surface it stands on. */
     surface: IsoSurface;
-    /** Plays the startle reaction each time this turns true. */
-    startled?: boolean;
+    /**
+     * Plays the startle reaction each time this turns true. null = not known yet (the
+     * tower's count is loading): the first known value after it is a baseline, not a rise.
+     */
+    startled?: boolean | null;
     /** Where it may wander. Without it the pawn stands still. */
     roam?: PawnRoam;
     /** What startles it: it leaps away from this footprint and looks up at it. */

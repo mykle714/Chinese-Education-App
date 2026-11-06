@@ -4,7 +4,7 @@
  * browsers/WebViews but not on iOS Safari or desktop, where this silently does nothing.
  * (The app has no native haptics plugin; if one is added, route it through here.)
  *
- * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a (AddNewCardsPage's Skip-button hold).
+ * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a (AddCardsPage's Skip-button hold).
  */
 export function quietHaptic(): void {
     try {

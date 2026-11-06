@@ -23,15 +23,10 @@ import {
  *   --card-stock-inset   the cream rim's width
  *   --card-panel-radius  the beige panel's corner
  *   --card-hint-band     the card's top band (the rim) — the flp's swipe/flip hint labels
- *   --card-chrome-inset  where the card's own top chrome sits: CardOpsRail's `•••`, the
- *                        CardNote strip — just under the rim
  *
  * Layer: feature presentation helper (src/features/flashcards/card).
  * Depended on by: FlashcardsLearnPage/FlashCardSection.tsx, VocabCardDetailPage.tsx.
  */
-
-/** Gap between the rim and the card's own top chrome, px. */
-const CARD_CHROME_GAP_PX = 6;
 
 export function cardStockVars(widthCss: string) {
     return {
@@ -39,6 +34,5 @@ export function cardStockVars(widthCss: string) {
         "--card-stock-inset": `calc(${widthCss} * ${FLP_CARD_STOCK_INSET_RATIO})`,
         "--card-panel-radius": `calc(${widthCss} * ${FLP_CARD_PANEL_RADIUS_RATIO})`,
         "--card-hint-band": "var(--card-stock-inset)",
-        "--card-chrome-inset": `calc(var(--card-stock-inset) + ${CARD_CHROME_GAP_PX}px)`,
     } as const;
 }

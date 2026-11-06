@@ -37,7 +37,7 @@ The central fact: **A and E are ours; B, C and D belong to the browser.** Any ru
 The app uses React Router 7's component `<BrowserRouter>`. The facts that matter:
 
 - **`location.key`** is unique per history entry, and the *same* key comes back when that entry is returned to with Back. This is the identity per-entry restore should key on (§ 1.5).
-- **`window.history.state.idx`** is the entry's index in this tab's stack, and `0` means the page is the first entry. On a deep link or reload, `navigate(-1)` from `idx === 0` **leaves the app**. Two places check this today: `AddNewCardsPage` → `exitToOrigin` and `VocabCardDetailPage` → `handleDelete`.
+- **`window.history.state.idx`** is the entry's index in this tab's stack, and `0` means the page is the first entry. On a deep link or reload, `navigate(-1)` from `idx === 0` **leaves the app**. Two places check this today: `AddCardsPage` → `exitToOrigin` and `VocabCardDetailPage` → `handleDelete`.
 - **`useNavigationType()`** returns `"PUSH"`, `"REPLACE"` or `"POP"`. Every B/C/D trigger, the arrow's `navigate(-1)`, and the initial page load are all `POP`.
 - **`location.state`** is stored per entry and survives Back, so it can carry "where did I come from" (`ChallengeDetailPage` reads `state.from`).
 - **`navigate(path)`** pushes a *new* entry even when `path` is the logical parent. Tapping an arrow wired this way leaves the old entries on the stack. The next browser Back returns to the page you just "backed out of".
@@ -98,7 +98,7 @@ The arrow should land exactly where browser Back (B/C/D) would land. That keeps 
   - that parent is a tab root or hub where a duplicate history entry is harmless.
 - **Never** `slideNavigate(...)` from a back handler. It is a forward navigation with forward motion (§ 1.4).
 
-> **Recommended helper — not built yet.** Today the idx-guarded pattern exists once, inline, in `AddNewCardsPage` → `exitToOrigin`. A shared hook would make it the one-line default:
+> **Recommended helper — not built yet.** Today the idx-guarded pattern exists once, inline, in `AddCardsPage` → `exitToOrigin`. A shared hook would make it the one-line default:
 > `useBack(fallbackPath)` → `() => (history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate(fallbackPath, { replace: true })`.
 
 ### 2.2 Rule 2: A consumed entry is replaced, not left behind
@@ -145,7 +145,7 @@ Arrow-only **interceptors** follow the same rule, e.g. flp's `ProvisionalSortOff
 
 When a page has several possible parents, record the origin on the forward navigation and read it on the way back. Do not guess it from global state.
 - Per-entry: `navigate(to, { state: { from } })`; read `location.state.from`. It survives Back and dies with the entry. Example: `ChallengeHistoryPage` → `ChallengeDetailPage`.
-- Shareable or reload-proof: a `?from=` query param. Example: `ProvisionalSortOffer` → `AddNewCardsPage`.
+- Shareable or reload-proof: a `?from=` query param. Example: `ProvisionalSortOffer` → `AddCardsPage`.
 
 This is also the fallback source for Rule 1's first-entry case.
 
@@ -185,7 +185,7 @@ This is also the fallback source for Rule 1's first-entry case.
 | Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ⚠️ cards page not restored | — |
 | User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Night Market visit | `NightMarketVisitPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
-| Add New Cards | `AddNewCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, circle back onto the sort platform), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
+| Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, circle back onto the sort platform), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | flp (inside td, no route) | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` → `tower.onExit` (the camera climbs back out) | — | — | provisional sort offer (arrow-only) ✅ |
 | Friends hub | `FriendsPage.tsx` | `navigate("/menu")` | ✅ hub | — | — |
 | Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `slideNavigate("/friends")` | ⚠️ forward slide on Back | — | — |
@@ -229,13 +229,13 @@ The dictionary's singleton also restores on a *forward* re-entry within the spac
 
 | Section | Code |
 |---|---|
-| § 1.2 History model | React Router `useLocation` (`key`, `state`), `useNavigationType`; `AddNewCardsPage.tsx` → `exitToOrigin`, `VocabCardDetailPage.tsx` → `handleDelete` (`history.state.idx`) |
+| § 1.2 History model | React Router `useLocation` (`key`, `state`), `useNavigationType`; `AddCardsPage.tsx` → `exitToOrigin`, `VocabCardDetailPage.tsx` → `handleDelete` (`history.state.idx`) |
 | § 1.3 Arrow mechanics | `src/hooks/usePageSlide.ts` (`exit`, `armSkipNextEnter`, `clearSkipNextEnter`); `src/components/LeafPage.tsx`, `NodePage.tsx` (`handleBack`); `src/components/PageHeader.tsx` (default `onBack`); `src/components/Layout.tsx` (latch clear) |
 | § 1.4 Motion | `src/hooks/useSlideNavigate.ts`; `src/utils/pageTransition.ts` (`routeSlideDir`); `usePageSlide.ts` (`POP` start-in-place) |
 | § 1.5 / Rule 3 State | `src/features/dictionary/dictionaryBrowseState.ts` |
 | § 1.6 Platform | `src/hooks/useBlockEdgeSwipe.ts` |
 | Rule 2 | `src/games/runtime/ChallengeRoundScoreboard.tsx`; access bounces in `TemplateEditorPage`, `TemplateSandboxPage`, `IWSceneEditorPage`, `TesterDashboardPage`; `BubbleMatchPage`, `WordSearchPage` launch guards |
 | Rule 4 | `src/games/runtime/useGameBack.ts`; `useChallengeRound.ts` (unmount / `pagehide` finalise); `IWSceneEditorPage.tsx` → `handleBack`; `FlashcardsLearnPage.tsx` → `handleBack` + `ProvisionalSortOffer` |
-| § 3.1 ancp / flp rows | `AddNewCardsPage.tsx` → `leave`, `circleBackTo`; `DeckTowerPage.tsx` → `SORT_EXIT`; `FlashcardsLearnPage.tsx` → `leaveSession` (`tower.onExit`) |
-| Rule 6 | `ChallengeHistoryPage.tsx` (`state.from`) → `ChallengeDetailPage.tsx` (`backTo`); `ProvisionalSortOffer` → `AddNewCardsPage.tsx` (`?from=`, `originLabelFor`) |
+| § 3.1 acp / flp rows | `AddCardsPage.tsx` → `leave`, `circleBackTo`; `DeckTowerPage.tsx` → `SORT_EXIT`; `FlashcardsLearnPage.tsx` → `leaveSession` (`tower.onExit`) |
+| Rule 6 | `ChallengeHistoryPage.tsx` (`state.from`) → `ChallengeDetailPage.tsx` (`backTo`); `ProvisionalSortOffer` → `AddCardsPage.tsx` (`?from=`, `originLabelFor`) |
 | § 3.1 Inventory | every `onBack=` in `src/` (`grep -rn "onBack={" src`) |

@@ -39,7 +39,7 @@
   `src/cardIcons/cardIconApi.ts` — the `/api/icons8/defaultResults` body no longer carries
   `pos`. **Old clients that still send it are fine** (the field is ignored), so there is no
   client/server version coupling to sequence.
-- `src/components/PosBadge.tsx` + `.css` — **deleted**; usages removed from `AddNewCardsPage`
+- `src/components/PosBadge.tsx` + `.css` — **deleted**; usages removed from `AddCardsPage`
   and `InfoCardPanelBody`.
 - `src/utils/definitionUtils.ts` — new `senseGrammarTag`; `FlashCardSection.tsx` renders a
   flat sense list with that tag when clusters carry no `reading` (es).

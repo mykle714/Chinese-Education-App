@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Avatar, Box, Button, IconButton, Typography } from "@mui/material";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
-import PersonRemoveIcon from "@mui/icons-material/PersonRemove";
-import CheckIcon from "@mui/icons-material/Check";
-import UndoIcon from "@mui/icons-material/Undo";
+import { Avatar, Box, Button, Typography } from "@mui/material";
 import StorefrontIcon from "@mui/icons-material/Storefront";
-import BlockIcon from "@mui/icons-material/Block";
-import DoNotDisturbOnIcon from "@mui/icons-material/DoNotDisturbOn";
 import NodePage from "../../components/NodePage";
+import { HeaderIconButton } from "../../components/PageHeader";
 import { FooterSpacer } from "../../components/MobileFooter";
 import ProfileStatsCard from "./ProfileStatsCard";
 import ProfileDesignGrid from "./ProfileDesignGrid";
@@ -32,7 +27,7 @@ import { API_BASE_URL } from "../../constants";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { profileCardSx, profileErrorSx, profileHeaderIconSx, profileMutedSx } from "./profileStyles";
+import { profileCardSx, profileErrorSx, profileMutedSx } from "./profileStyles";
 
 /**
  * The three ways this page names a language, from ONE lookup: the flag emoji, the
@@ -166,67 +161,63 @@ function UserProfilePage() {
         switch (profile.relationship) {
             case "none":
                 return (
-                    <IconButton
+                    <HeaderIconButton
                         className="user-profile-page__add-friend"
-                        aria-label="Add friend"
+                        icon="person_add"
+                        label="Add friend"
                         title="Add friend"
+                        color={COLORS.successInk}
                         disabled={busy}
                         onClick={() => runAction(
                             () => sendFriendRequest(profile.identity.userId),
                             "Could not send that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.successInk)}
-                    >
-                        <PersonAddIcon />
-                    </IconButton>
+                    />
                 );
             case "request_sent":
                 return (
-                    <IconButton
+                    <HeaderIconButton
                         className="user-profile-page__revoke-request"
-                        aria-label="Revoke friend request"
+                        icon="undo"
+                        label="Revoke friend request"
                         title="Friend request sent — tap to revoke"
+                        color={COLORS.infoInk}
                         disabled={busy || !profile.requestId}
                         onClick={() => runAction(
                             () => deleteFriendRequest(profile.requestId!),
                             "Could not revoke that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.infoInk)}
-                    >
-                        <UndoIcon />
-                    </IconButton>
+                    />
                 );
             case "request_received":
                 return (
-                    <IconButton
+                    <HeaderIconButton
                         className="user-profile-page__accept-request"
-                        aria-label="Accept friend request"
+                        icon="check"
+                        label="Accept friend request"
                         title="Accept friend request"
+                        color={COLORS.successInk}
                         disabled={busy || !profile.requestId}
                         onClick={() => runAction(
                             () => acceptFriendRequest(profile.requestId!),
                             "Could not accept that request",
                         )}
-                        sx={profileHeaderIconSx(COLORS.successInk)}
-                    >
-                        <CheckIcon />
-                    </IconButton>
+                    />
                 );
             case "friends":
                 return (
-                    <IconButton
+                    <HeaderIconButton
                         className="user-profile-page__remove-friend"
-                        aria-label="Remove friend"
+                        icon="person_remove"
+                        label="Remove friend"
                         title="Remove friend"
+                        color={COLORS.dangerInk}
                         disabled={busy}
                         onClick={() => runAction(
                             () => removeFriend(profile.identity.userId),
                             "Could not remove that friend",
                         )}
-                        sx={profileHeaderIconSx(COLORS.dangerInk)}
-                    >
-                        <PersonRemoveIcon />
-                    </IconButton>
+                    />
                 );
             case "self":
             default:
@@ -258,10 +249,13 @@ function UserProfilePage() {
         if (!profile?.challengeBlock) return null;
         const blocked = profile.challengeBlock.viewerBlocked;
         return (
-            <IconButton
+            <HeaderIconButton
                 className="user-profile-page__challenge-block-button"
-                aria-label={blocked ? "Unblock study challenges" : "Block study challenges"}
-                aria-pressed={blocked}
+                // Filled when blocked, outlined when not — the state must not rest on colour alone.
+                icon={blocked ? "do_not_disturb_on" : "block"}
+                fill={blocked ? 1 : 0}
+                label={blocked ? "Unblock study challenges" : "Block study challenges"}
+                pressed={blocked}
                 title={
                     blocked
                         ? `Study challenges with ${displayName} are blocked, in both directions — tap to allow them`
@@ -269,10 +263,8 @@ function UserProfilePage() {
                 }
                 disabled={busy}
                 onClick={() => toggleBlock(!blocked)}
-                sx={profileHeaderIconSx(blocked ? COLORS.dangerInk : COLORS.textSecondary)}
-            >
-                {blocked ? <DoNotDisturbOnIcon /> : <BlockIcon />}
-            </IconButton>
+                color={blocked ? COLORS.dangerInk : COLORS.textSecondary}
+            />
         );
     };
 
@@ -282,10 +274,12 @@ function UserProfilePage() {
             onBack={() => navigate(-1)}
             contentClassName="user-profile-page__content"
             headerExtraActions={
-                <Box className="user-profile-page__header-actions" sx={{ display: "flex", alignItems: "center" }}>
+                // A fragment, not a wrapping Box, so the header's own right-slot gap spaces
+                // these like every other header's icons.
+                <>
                     {renderFriendAction()}
                     {renderBlockToggle()}
-                </Box>
+                </>
             }
         >
             <Box className="user-profile-page" sx={{ display: "flex", flexDirection: "column", gap: 1.5, px: 2, py: 1 }}>

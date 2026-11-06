@@ -1340,7 +1340,7 @@ export class OnDeckVocabService {
 
   /**
    * Count library cards per category for the requested categories. Used by the
-   * decks page (per-bucket counts), the Account page's deck buckets and the ancp
+   * decks page (per-bucket counts), the Account page's deck buckets and the acp
    * tally.
    *
    * CORE BAR ONLY (migration 143). "How many Comfortable cards do I have" is a

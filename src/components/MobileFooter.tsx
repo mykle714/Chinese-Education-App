@@ -50,7 +50,7 @@ export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTO
 // ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
 // Worn only by routes whose registry row says `footerStyle: "slab"` (today: the Deck Tower at `/`,
 // and since 2026-10-29 the Dictionary tab — /dictionary and /dictionary/card/:word — and
-// ancp, /discover/sort/:language).
+// acp, /discover/sort/:language).
 // Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
 // off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
 // casting an iso shadow onto whatever is painted behind it (the tower's sky).
@@ -288,7 +288,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
     ];
     const TABS: FooterTabRow[] = baseTabs.map((t) => ({
         ...t,
-        // The page on screen may take over a tab's tap (footerTabOverride.ts — ancp opened
+        // The page on screen may take over a tab's tap (footerTabOverride.ts — acp opened
         // from the Deck Tower plays its circle Back on the Deck tab); otherwise navigate.
         onClick: () => {
             if (!runFooterTabOverride(t.tab)) t.onClick();

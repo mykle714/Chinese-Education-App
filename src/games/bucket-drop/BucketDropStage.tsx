@@ -191,7 +191,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
             // NO CARD-COUNT GATE: the server has already lent cards up to the baseline
             // (docs/PROVISIONAL_CARDS.md). Only an empty pool cannot be played.
             if (!data.cards.length) {
-                setBlockMessage("No cards are playable right now. Sort a few words in Add New Cards and try again.");
+                setBlockMessage("No cards are playable right now. Sort a few words in Add Cards and try again.");
                 setPhase("blocked");
                 return null;
             }

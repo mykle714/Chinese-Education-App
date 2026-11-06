@@ -248,7 +248,7 @@ Every game but Bubble Match and Memory Map keeps a per-mode **personal best**
 **Exits.** A routed game's Back (`useGameBack`) and its "Back to …" buttons lead to the
 Games hub (`GAMES_HUB_EXIT`), or, for a challenge round, back to the challenge. No game
 launch carries `state.exitTo` any more; `readExit` is still read by the Writing Notebook
-and ancp, whose launches from the Deck Tower carry one
+and acp, whose launches from the Deck Tower carry one
 ([DECK_TOWER.md](./DECK_TOWER.md)). The "no level / no mode" bounces (a stray URL) go to
 `/games`, because only the hub can pick a level or mode.
 
@@ -396,7 +396,7 @@ Rules of thumb:
   (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it). Since 2026-10-29 it is
   an alias of the app-wide invalid-operation shake, `src/theme/invalidShake.ts` →
   `INVALID_SHAKE_KEYFRAMES` / `INVALID_SHAKE_ANIMATION` (keyframes `invalidShake`). That
-  shake moved to theme/ so features/ can use it too: ancp shakes a dragged sorted card.
+  shake moved to theme/ so features/ can use it too: acp shakes a dragged sorted card.
 - **The first game whose pool fetch goes through `src/api/http.ts`** (`apiGet`), as
   [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) requires. ⚠️ Bubble Match, Match Speed,
   Hydra Bubbles and Speed Reading still call `fetch(API_BASE_URL + "/api/onDeck/gamePool?…")`
@@ -1290,7 +1290,7 @@ Sharing it leaks in two directions, and both are real today:
   pinyin — also strips pinyin from Hydra Bubbles and Match Speed, neither of which the
   learner touched, and neither of which changes track to match.
 * **Between a drill and its reference material.** The flp owns
-  `flashcard.learn-settings`, and the cdp, the ancp and the dictionary cdp read it as a
+  `flashcard.learn-settings`, and the cdp, the acp and the dictionary cdp read it as a
   *reading* preference. A game that writes that key is editing the learner's flashcard
   display from inside a game.
 
@@ -1298,7 +1298,7 @@ The rule, and how much of it already holds:
 
 | Surface | Where its pinyin preference lives |
 |---|---|
-| flp (+ cdp, ancp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
+| flp (+ cdp, acp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
 | **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
 | **Memory Map** | ✅ already per-game — never draws pinyin at all (since 2026-10-06 it renders bare measured characters, not `ForeignText`); it is a reading map |
 | **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |

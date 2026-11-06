@@ -187,9 +187,9 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         replacing the terms-joined-by-a-middle-dot line. Not tappable, so
                         the ring is the eip palette's `line` (its card-outline token, the
                         same ring BreakdownRow / ExampleSentenceList use), not the button
-                        outline. NOT `edge`: that is the raised keys' drop lip, which at
-                        night is a near-black #121822 that vanishes on the slate shelf;
-                        `line` flips to a light hairline with the rest of the night ink. */}
+                        outline. NOT `edge`: that is the raised keys' drop lip, which on
+                        the dark palette is a near-black #121822 that vanishes on the slate
+                        shelf; `line` flips to a light hairline with the rest of the dark ink. */}
                     <Box
                         className={`${classPrefix}__definition-facts-pos-list`}
                         sx={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "7px" }}

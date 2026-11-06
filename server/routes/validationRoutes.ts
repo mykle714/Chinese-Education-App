@@ -11,14 +11,9 @@ import { handle } from './asyncHandler.js';
  */
 const router = Router();
 
-// Download (compose) a new validation document for the authenticated validator.
-router.post('/api/validation/download', authenticateToken, handle(validationController.downloadValidationDoc, validationController));
-
-// Submit an approval or flag for a validation document.
-router.post('/api/validation/:textId/submit', authenticateToken, handle(validationController.submitValidation, validationController));
-
 // Submit an approval or flag directly against a dictionary entry's field — the
-// inline Approve/Flag buttons on the est/definition UI, no document involved.
+// inline Approve/Flag buttons on the est/definition/meta-chip UI. (The Reader
+// document queue — /download and /:textId/submit — was removed 2026-11-05.)
 // A repeat call from the same validator overwrites their prior vote in place.
 router.post('/api/validation/entrySubmit', authenticateToken, handle(validationController.submitEntryValidation, validationController));
 

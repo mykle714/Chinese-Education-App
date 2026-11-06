@@ -27,7 +27,7 @@ a plain day ↔ night blend. Their weather is a later design.
   `DayPhase`, `DAY_PHASES`, `timeOfDayAt`), and every reader dropped its dawn/sunset looks:
   the tower sky (`features/deckTower/timeOfDay.ts` → `NIGHT_SKY`, `PHASE_STARS`; the
   per-world `TowerWorld.skyRecipes` overrides went too), the wash (`src/timeOfDay/wash.ts` →
-  `PHASE_LIGHT`), the eip palette (`eipPalette.ts` → `PHASE_PALETTE`), ancp
+  `PHASE_LIGHT`), the eip palette (`eipPalette.ts` → `PHASE_PALETTE`), acp
   (`sortTimeOfDay.ts` → `PHASE_LOOK`), tier-2 looks (`tier2Look.ts` → `PHASE_GROUND`, which
   the beginner keyboard's colours read) and the tester chips (`TimeOfDayToggle` → Auto ·
   Day · Night). Each twilight is now one hour-long linear day ↔ night blend centred on the
@@ -93,7 +93,7 @@ Notes on the data:
 
 Built: `src/features/deckTower/weatherSky.ts` (`weatherDaySky`, `worldsUnderWeather`), read by
 `DeckTowerPage.tsx` (the `skyWorlds` map feeding `light.skyOf`, `useWorldPan` and `litWorld`).
-The Add New Cards page honours the same sky without the particles: `AddNewCardsPage.tsx` passes
+The Add Cards page honours the same sky without the particles: `AddCardsPage.tsx` passes
 `weatherDaySky(...)` to `sortTimeOfDay.ts` → `sortLookAt`, whose day ground IS the weather sky and whose night ground is the weather sky turned to night
 (docs/SORT_CARDS_REQUIREMENTS.md § 4.9). Main's static day sky (`TOWER_WORLDS.core.sky`)
 is `COLORS.bluMk`, the clear colour; `bluSky` was deleted 2026-11-04.

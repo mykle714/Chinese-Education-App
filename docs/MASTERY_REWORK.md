@@ -182,7 +182,7 @@ see
 > 1. **Pinyin becomes a per-game setting.** Today Bubble Match, Hydra and Match Speed
 >    share the flp's one `showPinyin` boolean, so switching Bubble Match to Reading
 >    strips pinyin from the other two — neither of which changes track to match — and
->    a game writing that key also edits the cdp/ancp/dictionary display. Each game gets
+>    a game writing that key also edits the cdp/acp/dictionary display. Each game gets
 >    its own persisted preference; the flp keeps `flashcard.learn-settings` and becomes
 >    its only writer. Word Search, Memory Map and Speed Reading are already per-game.
 >    Full rule: [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).

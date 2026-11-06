@@ -44,7 +44,7 @@ export type EipTab = EntryEipTab | CompareEipTab;
 
 interface UseEipTabsOptions {
     // Language every drill-in lookup is scoped to. Optional: omitted, the server falls
-    // back to the account's selectedLanguage (the flp's behavior, unchanged). ancp passes
+    // back to the account's selectedLanguage (the flp's behavior, unchanged). acp passes
     // its route language explicitly because the page can show a language the account is
     // not currently set to — see DictionaryController.lookupTerm.
     language?: string;
@@ -143,7 +143,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // to look at the card, and opens it again gets the same three pills and the same word
     // showing. So this is a no-op when the root tab is already this entry, and only a
     // DIFFERENT root starts a fresh trail (which is also what ends the old one: the flp's
-    // next card, or another card's info button on ancp).
+    // next card, or another card's info button on acp).
     const openForRoot = useCallback((entry: VocabEntry) => {
         const root = tabs[0];
         if (root?.kind === "entry" && root.id === entry.entryKey) return;

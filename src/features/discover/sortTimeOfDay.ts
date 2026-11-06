@@ -1,10 +1,10 @@
 /**
- * sortTimeOfDay.ts — the Add New Cards page's colours at the learner's time of day
+ * sortTimeOfDay.ts — the Add Cards page's colours at the learner's time of day
  * (docs/SORT_CARDS_REQUIREMENTS.md § 4.9 "Tier-2 ground").
  *
  * Layer: page logic (feature module `src/features/discover`). Pure; no React.
  *
- * ancp is a "tier 2" page under the Deck Tower: it follows the same clock
+ * acp is a "tier 2" page under the Deck Tower: it follows the same clock
  * (`src/timeOfDay/useDayClock`, docs/DECK_TOWER.md § "Time of day"). The ground IS the main
  * world's sky (its weather sky by day, that sky turned to night), derived from the tower's
  * own recipe so the two cannot drift. Only the ground, the shadows cast on it, and the ink drawn straight on it
@@ -12,7 +12,7 @@
  * undo, skip) go slate. The cards themselves never change — they are the same cream stock
  * in every phase.
  *
- * Weather: ancp honours the weather's HUE but draws none of its effects (no rain, snow,
+ * Weather: acp honours the weather's HUE but draws none of its effects (no rain, snow,
  * fog or lightning). The caller passes main's weather day sky (`weatherDaySky`,
  * deckTower/weatherSky.ts); the day ground IS that sky and the night ground is that sky
  * turned to night — the same colours the tower shows. (Dawn's and sunset's fixed pale
@@ -27,7 +27,7 @@
  *
  * Depends on: src/timeOfDay/dayPhase.ts (`DayPhase`, `TimeOfDay`), deckTower/iso (`mixHex`,
  * `shadowTone`), deckTower/weatherSky.ts (the caller's day sky), deckTower/timeOfDay.ts (`phaseSky`, `towerLight`), deckTower/towerWorlds.ts
- * (`TOWER_WORLDS`). Depended on by: AddNewCardsPage.tsx, SortBins.tsx.
+ * (`TOWER_WORLDS`). Depended on by: AddCardsPage.tsx, SortBins.tsx.
  */
 import { mixHex, shadowTone } from "../deckTower/iso";
 import { phaseSky, towerLight } from "../deckTower/timeOfDay";
@@ -35,7 +35,7 @@ import { TOWER_WORLDS } from "../deckTower/towerWorlds";
 import type { DayPhase, TimeOfDay } from "../../timeOfDay/dayPhase";
 import { COLORS } from "../../theme/colors";
 
-/** Everything ancp paints with for one time of day. */
+/** Everything acp paints with for one time of day. */
 export interface SortLook {
     /** The page ground (the frame's surface colour, and the iso scene's shadow receiver). */
     ground: string;
@@ -88,7 +88,7 @@ const PHASE_LOOK: Record<DayPhase, PhaseLook> = {
     // replaced by the weather's day sky in `lookFor`.
     day: { ground: TOWER_WORLDS.core.sky, platform: COLORS.white, ...SKY_INK, ...DAY_KEYS },
     // The tower's main-world night sky, so the page reads as the same sky; light ink, slate
-    // keycaps. ancp has no world of its own, so reading/writing's night skies do not apply.
+    // keycaps. acp has no world of its own, so reading/writing's night skies do not apply.
     night: {
         ground: phaseSky(TOWER_WORLDS.core, "night"), // overridden by the weather's night sky
         platform: "#E4E5E9",
@@ -109,7 +109,7 @@ function lookFor(phase: DayPhase, mainDaySky: string): PhaseLook {
 }
 
 /**
- * ancp's look at `time` — the two bracketing phases blended by `t`, like the tower's sky
+ * acp's look at `time` — the two bracketing phases blended by `t`, like the tower's sky
  * (`towerLight` → `skyOf`). A blend into night therefore fades every colour, ink
  * included, rather than flipping at a threshold. `mainDaySky` is main's weather day sky
  * (`weatherDaySky`); it defaults to the static `TOWER_WORLDS.core.sky` (bluMk, clear).

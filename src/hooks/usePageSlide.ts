@@ -45,6 +45,85 @@ export function clearSkipNextEnter() {
     skipNextEnter = false;
 }
 
+/**
+ * Freeze the departing clone on the frame the live page was showing (animations and canvases).
+ *
+ * `cloneNode` copies the DOM, not its running animations: every CSS animation inside
+ * the clone starts over from 0% the moment it is inserted. Without this, the exit
+ * replays the leaving page's entrance (acp's card dock stagger and label fades, the
+ * cards' levitate bob from the top of its cycle) inside the shrinking circle / sliding
+ * page, so the transition is no longer the only thing moving.
+ *
+ * Each clone animation is matched to the live element at the same tree position (the
+ * clone is structurally identical, so `querySelectorAll("*")` order pairs them) by
+ * `animationName` + pseudo-element, jumped to that animation's `currentTime` and
+ * paused. A clone animation with no live counterpart had already finished on the page
+ * (fill none — no longer listed by `getAnimations`), so it is finished too; an infinite
+ * one cannot finish and is just paused. Must run AFTER the clone is in the document
+ * (its animations only exist once styles resolve on it).
+ *
+ * Also copies each live <canvas> bitmap onto its blank copy (see below).
+ *
+ * Used by: `exit` below (both the slide and the circle). Docs: docs/LEAF_NODE_PAGES.md.
+ */
+function freezeClone(original: HTMLElement, clone: HTMLElement): void {
+    const originals: Element[] = [original, ...Array.from(original.querySelectorAll("*"))];
+    const cloneByIndex: Element[] = [clone, ...Array.from(clone.querySelectorAll("*"))];
+    const cloneIndex = new Map<Element, number>();
+    cloneByIndex.forEach((el, i) => cloneIndex.set(el, i));
+
+    // `cloneNode` also copies a <canvas> blank (its bitmap is not part of the DOM), so
+    // drawn content (the Writing Notebook's cell editor ink, the writing-grid game) would
+    // vanish for the whole exit. Paint each live canvas onto its copy.
+    originals.forEach((liveEl, i) => {
+        if (!(liveEl instanceof HTMLCanvasElement)) return;
+        const copy = cloneByIndex[i];
+        if (!(copy instanceof HTMLCanvasElement) || liveEl.width === 0 || liveEl.height === 0) return;
+        try {
+            copy.getContext("2d")?.drawImage(liveEl, 0, 0);
+        } catch {
+            // A tainted or lost context: the copy just stays blank.
+        }
+    });
+
+    if (typeof clone.getAnimations !== "function") return;
+
+    // The live page's animations, by element.
+    const liveByElement = new Map<Element, Animation[]>();
+    for (const a of original.getAnimations({ subtree: true })) {
+        const target = (a.effect as KeyframeEffect | null)?.target;
+        if (!target) continue;
+        const list = liveByElement.get(target) ?? [];
+        list.push(a);
+        liveByElement.set(target, list);
+    }
+
+    const nameOf = (a: Animation) => (a as Partial<CSSAnimation>).animationName;
+    const pseudoOf = (a: Animation) => (a.effect as KeyframeEffect | null)?.pseudoElement ?? null;
+
+    for (const a of clone.getAnimations({ subtree: true })) {
+        try {
+            const target = (a.effect as KeyframeEffect | null)?.target;
+            const i = target ? cloneIndex.get(target) : undefined;
+            const liveEl = i != null ? originals[i] : undefined;
+            const live = liveEl
+                ? liveByElement.get(liveEl)?.find((l) => nameOf(l) === nameOf(a) && pseudoOf(l) === pseudoOf(a))
+                : undefined;
+            if (live && live.currentTime != null) {
+                a.currentTime = live.currentTime;
+                a.pause();
+            } else if (a.effect?.getComputedTiming().iterations === Infinity) {
+                a.pause();
+            } else {
+                a.finish();
+            }
+        } catch {
+            // A single stubborn animation must never break the exit.
+            a.pause();
+        }
+    }
+}
+
 interface UsePageSlideOptions {
     axis: "x" | "y";
 }
@@ -117,6 +196,8 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
                 zIndex: "50",
             } satisfies Partial<CSSStyleDeclaration>);
             frame?.appendChild(clone);
+            // Hold the clone still: only the exit itself (slide / circle) may move.
+            freezeClone(el, clone);
 
             if (circleTo) {
                 // The circle exit: the clone stays put and is clipped to a circle closing

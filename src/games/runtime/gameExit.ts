@@ -7,13 +7,13 @@
  * it (src/games has no back-edge into src/features — docs/FRONTEND_LAYERING.md).
  *
  * Producers today are the Deck Tower's world props (DeckTowerPage → `NOTEBOOK_EXIT`,
- * `SORT_EXIT`), read back by WritingNotebookPage and AddNewCardsPage. No launch of a
+ * `SORT_EXIT`), read back by WritingNotebookPage and AddCardsPage. No launch of a
  * GAME carries `exitTo` any more: its only producers were the Reading / Writing Center
  * carousels (deleted 2026-11-04), so the routed games' exits all lead to the Games hub
  * (`GAMES_HUB_EXIT`) — or, for a challenge round, to the challenge (`useGameBack`).
  *
  * Referenced by: useGameBack, BubbleMatchPage, WordSearchPage, BucketDropPage,
- * WritingNotebookPage, AddNewCardsPage, DeckTowerPage.
+ * WritingNotebookPage, AddCardsPage, DeckTowerPage.
  * Referenced by docs: GAMES_FEATURE.md, DECK_TOWER.md.
  */
 export interface GameExit {

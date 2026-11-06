@@ -109,7 +109,7 @@ emptied would point at an answer.
 
 ## 4. Look
 
-- **Bucket** (`DropBucket`): the sort flow's bucket (`AddNewCardsPage` → `Bucket`) — inset
+- **Bucket** (`DropBucket`): the sort flow's bucket (`AddCardsPage` → `Bucket`) — inset
   `SHADOW.recessedDeep`, `1px COLORS.border` — with two asked-for departures: fill
   `COLORS.grey` (no hue), and a keycap corner (`BUCKET_RADIUS` 16; a `%` radius goes
   elliptical on a rectangle). Gloss in `FONTS.sans`, **fitted to the hole** (`DropBucket` →

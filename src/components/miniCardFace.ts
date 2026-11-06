@@ -39,9 +39,9 @@ export const MINI_CARD_HEIGHT = 132;
  * re-lays its contents for it with smaller type — rather than a CSS `scale()` of the
  * regular face, so the text stays crisp and legible at the smaller size.
  *
- * Only the ancp dock uses it, and only when the pack will not fit across at the regular
- * size (a 4-card sort pack on a phone narrower than ~430px — see AddNewCardsPage's
- * `dockFitsRegular`). Every other surface stays on `regular`; a new caller should
+ * Only the acp dock uses it, and only when the pack will not fit across at the regular
+ * size (a 4-card sort pack on a phone narrower than ~456px — see AddCardsPage's
+ * `dockCardSize`). Every other surface stays on `regular`; a new caller should
  * only reach for `compact` when a row genuinely cannot fit, never as a style choice.
  *
  * Referenced by docs/SORT_CARDS_REQUIREMENTS.md § 4.5 ("Compact dock").

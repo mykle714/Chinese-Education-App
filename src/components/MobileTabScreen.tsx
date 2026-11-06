@@ -183,16 +183,16 @@ interface MobileTabScreenProps {
     // Rendered to the RIGHT of the minute-points flame (PageHeader `trailingContent`).
     // The Deck Tower's profile picture (DeckTowerAvatar) is its only user.
     headerTrailingActions?: ReactNode;
-    // Header title ink, forwarded to PageHeader's `titleColor`. The Deck Tower, and ancp (via NodePage).
+    // Header title ink, forwarded to PageHeader's `titleColor`. The Deck Tower, and acp (via NodePage).
     headerTitleColor?: string;
     // Title scale override, forwarded to PageHeader. Pass "dense" when
-    // `headerExtraActions` carries three or more controls — the title drops to 18px
+    // `headerExtraActions` carries three or more controls — the title drops to 21px (dense)
     // so it stops colliding with them. See PageHeader's SIZE_SPEC.
     headerSize?: PageHeaderSize;
     // Painted behind the whole scroll surface (header + content + the padding
     // that clears the floating footer), so short pages have no color seams.
     surfaceColor?: string;
-    // Decoration painted over `surfaceColor` and BEHIND the header and content (ancp's night
+    // Decoration painted over `surfaceColor` and BEHIND the header and content (acp's night
     // sky). Non-interactive and fills the screen. Passing it makes the scroll area a
     // positioned box, so it paints over this layer — and so becomes the containing block
     // for any absolutely-positioned content that had none nearer.

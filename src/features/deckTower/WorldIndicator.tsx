@@ -12,7 +12,9 @@ import { FLOAT_MS, floatPhaseDelay } from "./skyCueFloat";
  * WorldIndicator — the floating arrow in the Deck Tower's bottom-left or bottom-right
  * corner that says another world lies that way, with the world's name beside it on the
  * inner side ("‹ Reading", "Writing ›") (docs/DECK_TOWER.md § "Worlds"). It sits just
- * above the footer bar, out of the tower's way.
+ * above the footer bar, out of the tower's way — positioned in the scroller's tower
+ * section, NOT on the screen, so it scrolls with the platform (`bottom` is measured from
+ * that section's bottom edge, which rests on the screen's bottom at the platform line).
  *
  * Layer: page-private component (feature module `src/features/deckTower`). The swipe is
  * the main way across; the arrow is the hint, and a tap on it does the same (the desktop

@@ -1,6 +1,6 @@
-# Add New Cards (Discover) — Feature Requirements
+# Add Cards (Discover) — Feature Requirements
 
-This document defines **what** the Add New Cards flow must do and **why**. It is a
+This document defines **what** the Add Cards flow must do and **why**. It is a
 requirements document, not a design — it intentionally avoids prescribing *how* the
 behavior is achieved (data structures, leveling mechanics, etc. are solution choices
 made elsewhere). For where the flow lives in navigation, see
@@ -10,7 +10,7 @@ made elsewhere). For where the flow lives in navigation, see
 
 ## 1. Purpose
 
-Add New Cards lets a user **build their library by triaging dictionary cards one at a
+Add Cards lets a user **build their library by triaging dictionary cards one at a
 time**. The user is shown a single word card and decides what to do with it. Over a
 session they pull the cards they want to learn into their library and set aside the
 rest.
@@ -80,9 +80,32 @@ This asymmetry drives the core requirement:
   Undo plays the conveyor backwards (see "Undo across packs" below). The slot's transform is cleared to `none` at
   rest (fill mode `backwards`) so it doesn't form a stacking context that would trap a dragged card's
   z-index under its neighbours.
-  *Code:* `src/features/discover/AddNewCardsPage.tsx` → `EnteringCardSlot`,
+  *Code:* `src/features/discover/AddCardsPage.tsx` → `EnteringCardSlot`,
   `SlotEntrance`, `dockInKeyframes`, `labelFadeInKeyframes`, `SLOT_LABELS`,
   `DOCK_STAGGER_STEP_MS`, `dockDelays`, `undoRestore`.
+- **Chrome entrance.** When the sort view mounts, the page's static chrome slides in
+  with the cards' motion — the same 100vw screen distance, `DOCK_SLIDE_MS` and easing
+  (one `dockSlideIn(delayMs, frames)` value shared with the card wells):
+  - **Each platform separately, from the left** (`binInFromLeftKeyframes`): the right
+    platform leads at 0 ms (it has the farthest to go, the mirror of the cards'
+    leftmost-first), the left one 60 ms behind. The platforms live inside the bins' SVG,
+    where a CSS px is a scaled user unit, so SortBins publishes
+    `--sort-bins-units-per-px` (`useUnitsPerScreenPx`, from `getScreenCTM`, kept current
+    by a ResizeObserver) and the keyframes multiply 100vw by it — each platform travels
+    exactly one screen width on screen. The animated element is a dedicated
+    `.sort-bins__bin-slot--<index>` group: a CSS transform on the outer group would
+    replace its `transform` attribute, and the bin's own group owns the active-scale
+    transform.
+  - **The toolbar** (level pill · undo · skip) from the right (`dockInKeyframes`), 60 ms
+    behind the first card.
+
+  It plays once per mount; packs that land later don't replay it. Off under
+  `prefers-reduced-motion`. Same `backwards` fill as the cards, so no transform lingers
+  at rest. Bin drop rects are snapshotted at drag start (`snapshotBucketRects`), so a
+  drag can't pick up a mid-slide rect unless it starts within the first ~0.6 s.
+  *Code:* `src/features/discover/AddCardsPage.tsx` → `dockSlideIn`,
+  `binInFromLeftKeyframes`, `CHROME_ENTRANCE_SX`, `BinsArea` / `SortToolbar` sx;
+  `src/features/discover/SortBins.tsx` → `useUnitsPerScreenPx`, `.sort-bins__bin-slot`.
 - **Pack exit.** When a pack advances, its cards (empty wells, any locked "sorted!"
   cards) **slide off to the left** (`translateX(-100vw)`, ease-in — the belt runs right
   → left) while its info labels (tier tags, action rows) **fade out in place**. The
@@ -99,7 +122,7 @@ This asymmetry drives the core requirement:
   empty buffer the page shows its spinner instead, and a deferred exit would play
   late. Undo clears a pack that is still leaving. Under `prefers-reduced-motion` there
   is no exit and no entrance.
-  *Code:* `AddNewCardsPage.tsx` → `leavingPack`, `advancePack`, `PackExitClip`,
+  *Code:* `AddCardsPage.tsx` → `leavingPack`, `advancePack`, `PackExitClip`,
   `packExitKeyframes`, `labelFadeOutKeyframes`, `PACK_EXIT_MS`, `cardsRowRef`.
 - **Undo across packs.** When Undo reaches back into the PREVIOUS pack, the conveyor runs
   **backwards** (since 2026-10-29). First the on-deck pack **un-docks**, which is its
@@ -112,7 +135,7 @@ This asymmetry drives the core requirement:
   length). The undone card is back in its slot as the pack returns, while its bin plays
   the stack animation backwards (§5.3). The un-docked pack stays buffered right behind
   the returned one. Under reduced motion, the packs simply swap.
-  *Code:* `AddNewCardsPage.tsx` → `handleUndo`, `undoRestore`, `undoExitMs`,
+  *Code:* `AddCardsPage.tsx` → `handleUndo`, `undoRestore`, `undoExitMs`,
   `packUnDockKeyframes`, `packReturnKeyframes`, `EnteringCardSlot`.
 
 ### 4.2 The on-deck card is immutable
@@ -172,7 +195,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
   shake would play only once. Its audio/info buttons are outside the card and never shake.
   Being sorted (`sorted`) is a separate prop from being undraggable (`locked`),
   so live cards sliding out in the leaving overlay keep their normal look.
-  *Code:* `AddNewCardsPage.tsx` → `DraggableCard`, `sortedBandSx`; `sortCardStock.ts` →
+  *Code:* `AddCardsPage.tsx` → `DraggableCard`, `sortedBandSx`; `sortCardStock.ts` →
   `SORTED_STOCK`, `SORTED_PRINT_OPACITY`, `cardStockShadow`. A pack in which
   **every** card is already sorted is **never served** — the system skips over it.
 - **Previously-skipped cards reappear draggable inside authored packs.** If a card the
@@ -196,23 +219,23 @@ A **sort pack** is a small group of vocabulary cards shown together:
       (docs/TOWER_STYLE_SHIFT.md § "Card stock"): a cream rim (`COLORS.cardFace`) around
       an inset beige printed panel (`COLORS.cardBeige`, `FLP_CARD_STOCK_INSET_RATIO` in
       from each edge, corners `FLP_CARD_PANEL_RADIUS_RATIO` — a `::before` under the
-      icon and text). In place of MiniCard's soft raised shadow it wears the
-      hairline ring (CLAUDE.md "Buttons & cards" — the tower's stock has none), a solid **wall** in the card stock's
-      wall colour (`COLORS.cardWall`, the tower's card walls) showing **below and to the
-      right** of the face, as thick as a Deck Tower card (`CARD_THICKNESS` ≈ 2px at the
-      tower's scale) — extruded 2px right × 2px down, drawn as `CARD_WALL_STEPS` stepped
-      box-shadows along that vector (`cardWall`) — and a flat **cast shadow** down-right on
-      the ground in the look's `groundShadow` (the iso shadow rule the platforms use),
-      **proportional to the wall on both axes**: `CARD_SHADOW_PER_WALL` (14/6, the
-      artboard's shadow-drop-to-lip ratio) × the 2px wall ≈ 4.7px right and 4.7px down
-      (`cardCastShadow`). `SHADOW.lifted` (the tower's held-card shadow) was
-      tried and dropped: a soft 12%-ink blur, invisible on the tinted grounds.  A
-      sorted (locked) card wears the same stock in greys (`SORTED_STOCK`, § 4.5 "Already-sorted
-      cards are locked"), with no cast shadow.
-      *Code:* `src/features/discover/sortCardStock.ts` → `sortCardStockSx`, `cardWall`
-      (shared with the skipped-cards sheet, §5.1a).
-      ⚠️ The artboard draws only a bottom lip, `0 6px 0 #EBD5BE`; the right wall was added
-      by user request (2026-10-29), and the framework's `cardWall` (`#EDDAC4`) is used.
+      icon and text). In place of MiniCard's soft raised shadow it is drawn as **one
+      thick panel** (user request 2026-11-05 — the same stock as td's cards page): a
+      solid **wall** in `COLORS.cardWall` showing **below and to the right** of the face,
+      4px deep (`PANEL_WALL_PX`, one stepped box-shadow per px along the (1, 1) vector);
+      **one outline** around the whole extruded silhouette in `PANEL_OUTLINE`
+      (`COLORS.textFaint` — ⚠️ a text grey, since the line tokens stop at `border`), with
+      **no line on the face's own edge**, so face and wall read as one object (CLAUDE.md
+      "Buttons & cards" is met by the panel's outline); and a near-solid **cast shadow**
+      down-right on the ground past the wall, in the look's `groundShadow` (the iso shadow
+      rule's tone, only 10% darker than the ground — a wide blur made it vanish, so it
+      keeps a 2px edge blur), whose reach and blur grow `HELD_SHADOW_GROWTH`× at full drag lift. It replaced a
+      thin stock (2px unoutlined wall, inset ring on the face, flat hard-edged cast
+      shadow) that read as a stack of cards. A sorted (locked) card wears the same panel
+      in greys (`SORTED_STOCK`, § 4.5 "Already-sorted cards are locked"), with no shadow.
+      *Code:* `src/features/discover/sortCardStock.ts` → `sortCardStockSx`,
+      `cardStockShadow`, `PANEL_OUTLINE` (shared with the skipped-cards sheet, §5.1a,
+      and td's cards page).
     - **Levitation.** Resting cards rise and fall 3px over 4.2s (`sortCardStock.ts` →
       `cardLevitateKeyframes`),
       each slot at a different phase (`LEVITATE_PHASES_MS`) so the pack never moves in
@@ -226,7 +249,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       and the bob restarts from rest. A missed drop settles back to the hover lift if the
       mouse is still over the card. The raise is mouse only (`pointerType === "mouse"`), so
       touch never hovers, and sorted or locked cards never raise. *Code:* `DraggableCard`
-      → `handlePointerEnter` / `handlePointerLeave`, `.add-new-cards__flash-card--hovered`.
+      → `handlePointerEnter` / `handlePointerLeave`, `.add-cards__flash-card--hovered`.
     - **Tier tag** (`CardDeckHeader`). Each card carries its **own tier label**
       (`CommonalityTierLabel`, text from `COMMONALITY_TIER_LABELS`, `SIZE.body`) over the
       **five-dot frequency meter** (`FrequencyScoreDots`, 8px dots — the word's
@@ -243,16 +266,16 @@ A **sort pack** is a small group of vocabulary cards shown together:
       the per-card face of the register ordering the supply uses (§6.4). The tag sits on
       the ground (a sibling above the card, not inside it), so it stays put while the card
       is dragged. *(The eip + cdp meters still use the "Commonality" caption + x/5 form.)*
-      Code: `src/features/discover/AddNewCardsPage.tsx` → `CardDeckHeader`,
+      Code: `src/features/discover/AddCardsPage.tsx` → `CardDeckHeader`,
       `COMMONALITY_TIER_LABELS`, `CommonalityTierLabel`; `src/components/FrequencyScoreDots.tsx`.
     - **Play-audio action.** A bare 28px `volume_up` glyph **below the card**
-      (`.add-new-cards__card-audio-button`, a 36px round hit target, no keycap) that narrates
+      (`.add-cards__card-audio-button`, a 36px round hit target, no keycap) that narrates
       just that card's word on tap (`handlePlayCardAudio` → `tts.speakSentence`); it
       becomes a spinner while that card is speaking (`tts.speakingKey === entryKey`). A tap
       **ends** any pack autoplay still in progress (`stopPackAutoplay`) so the next
       autoplay word can't cut the replay off; the eip's speaker buttons do the same
       (`handleEipSpeak`, `handleEipSpeakSentence`). See AUDIO_PLAYBACK.md § 4.
-    - **Info action.** An `info` glyph beside it (`.add-new-cards__card-info-button`, same
+    - **Info action.** An `info` glyph beside it (`.add-cards__card-info-button`, same
       size) that opens the **eip** for that card — see §4.7.
     - **Empty well.** The card sits in a fixed well the size of its face (`CardWell`,
       92×132 or 78×112 compact). While the card is dragged, and after it is sorted or
@@ -261,12 +284,12 @@ A **sort pack** is a small group of vocabulary cards shown together:
       its tag and action row (the actions stay live), so neighbours don't reposition. The
       pack exit (§4.1) then carries the whole slot off. Undo re-showing a card in a slot
       that is still on deck pops it back into its well (`DraggableCard` → `settleIn`).
-      *Code:* `AddNewCardsPage.tsx` → `CardWell`, `renderSlotBody`.
+      *Code:* `AddCardsPage.tsx` → `CardWell`, `renderSlotBody`.
 - **Compact dock (4-card packs on narrow screens).** A pack is laid out on regular
   92×132 MiniCards whenever the whole row fits across the on-deck row at that size, and on
   the **compact 78×112 face** only when it does not — **fit-to-width**, not a rule keyed
   on the card count (`dockCardSize`). In practice only a 4-card pack on a phone narrower
-  than ~430px goes compact; a 1–3-card pack always fits and never shrinks. The decision
+  than ~456px (4 × 92 + 3 × 24 + 16 padding) goes compact; a 1–3-card pack always fits and never shrinks. The decision
   is made **per pack** from the row's measured width (`onDeckSectionRef`, a
   ResizeObserver), so a leaving 4-card pack keeps its compact face through its exit while
   a 3-card replacement rises in at regular size.
@@ -281,11 +304,20 @@ A **sort pack** is a small group of vocabulary cards shown together:
     - The **held card lifts relative to its own face** (compact × `HELD_CARD_SCALE`), and
       the fall ghost is drawn at the dropped card's size (`FallingCard.size`).
     - The **tier tag and action row do not shrink** — the tier label, dot meter and
-      action glyphs keep their sizes; only the gap between slots tightens (24 → 14px,
-      `CARDS_ROW_GAP`).
+      action glyphs keep their sizes; the gap between slots tightens (24 → 14px,
+      `CARDS_ROW_GAP`) and so does the gap between the two action glyphs (12 → 6px,
+      `CARD_ACTIONS_GAP`, so the 36+6+36 row matches the 78px face).
+    - **Every slot is pinned to its face width** (`CardsRow` → `& .add-cards__card-slot`);
+      a wider tier label or action row overflows the slot centred rather than widening it,
+      so `dockCardSize`'s `n × face + (n−1) × gap` is the row's real width. (Unpinned, the
+      compact slot was the 84px action row, so a 4-card pack "fit" at 393px but needed 394
+      and wrapped.)
+    - **The row never wraps.** On a screen too narrow even for the compact row (under
+      ~370px), `CardsRow` is `nowrap` + `overflow-x: clip`: the outer slots are cut off at
+      the screen edges. `clip`, not `hidden`, so the y axis stays visible for dragging.
   *Code:* `src/components/miniCardFace.ts` → `MINI_CARD_DIMENSIONS`, `MiniCardSize`;
-  `src/components/MiniCard.tsx` → `CONTENT_LAYOUT`; `src/features/discover/AddNewCardsPage.tsx`
-  → `dockCardSize`, `CARDS_ROW_GAP`, `CardsRow`, `CardWell`, `onDeckSectionRef`.
+  `src/components/MiniCard.tsx` → `CONTENT_LAYOUT`; `src/features/discover/AddCardsPage.tsx`
+  → `dockCardSize`, `CARDS_ROW_GAP`, `CARD_ACTIONS_GAP`, `CardsRow`, `CardWell`, `onDeckSectionRef`.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
@@ -297,7 +329,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
   single card outcome: a card sorted into a destination, **or** a card skipped. A Skip
   press skips every remaining unsorted card in the pack, so it enqueues **one undoable
   action per card skipped** (both sorts and skips are undoable by the same mechanism).
-- The **4** most recent card actions are undoable — exactly one full pack (a pack holds at most 4 cards; `UNDO_DEPTH = MAX_CARDS_PER_PACK` in `AddNewCardsPage.tsx`).
+- The **4** most recent card actions are undoable — exactly one full pack (a pack holds at most 4 cards; `UNDO_DEPTH = MAX_CARDS_PER_PACK` in `AddCardsPage.tsx`).
 - Undo reverses exactly one action: it removes that card's library/skip record and
   **re-shows the card draggable**. If reversing it requires a pack that has already
   advanced off-deck (e.g. undoing a Skip), that pack is brought back on deck; if the
@@ -318,13 +350,13 @@ A learner should not have to guess from a two-line gloss which bucket a word bel
 in. The **info button** in each card's action row (§4.5) opens the **same eip bottom
 sheet the flp uses** — not a reduced copy of it.
 
-*Code: `src/features/discover/AddNewCardsPage.tsx` (`handleOpenCardInfo`, `handleCloseEip`,
+*Code: `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`, `handleCloseEip`,
 the `<EipSheet>` mount); `src/api/dictionary.ts` (`lookupVocabEntry`);
 `src/features/flashcards/FlashcardsLearnPage/{EipSheet,InfoCardSection,EipTabStrip,useEipTabs}`
-— `EipSheet` is the shared host block ancp, iw and the dictionary page all mount.
+— `EipSheet` is the shared host block acp, iw and the dictionary page all mount.
 Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md).*
 
-- **Same components, no fork.** ancp mounts `InfoCardSection` + `EipTabStrip` and drives
+- **Same components, no fork.** acp mounts `InfoCardSection` + `EipTabStrip` and drives
   them with `useEipTabs`, exactly as `FlashcardsLearnPage` does. Definition / example
   sentences / breakdown (or "used in") sub-tabs, drag-to-resize, drill-in tabs and
   Compare therefore all behave identically to the flp. This is the **first non-flp
@@ -339,7 +371,7 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   while that request is in flight, and every info button is disabled meanwhile — one
   lookup at a time. A failed lookup logs and does nothing else: this is an optional
   detour, not a step the sort flow depends on.
-- **`?language` is required here, unlike the flp.** ancp's language comes from the route
+- **`?language` is required here, unlike the flp.** acp's language comes from the route
   (`/discover/sort/:language`), which can differ from the account's `selectedLanguage`.
   `DictionaryController.lookupTerm` used to read *only* `selectedLanguage`, so a
   Chinese-selected account sorting Spanish would have resolved every lookup against
@@ -354,7 +386,7 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   the learner was reading. What starts a clean trail is opening the panel on a
   **different** card — `openForRoot` reseeds whenever the root word changes — and leaving
   the page, which unmounts `useEipTabs` and drops everything.
-- **No "+ Add to Learning" button in the panel.** On ancp, adding to Learning *is* the
+- **No "+ Add to Learning" button in the panel.** On acp, adding to Learning *is* the
   drag gesture the whole page is built around. (Since 2026-10-29 no eip outside the
   Dictionary flow offers one at all — the flp's add-only "+" and its `onAddToLibrary`
   prop were removed.)
@@ -364,7 +396,7 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   (see [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) § "Mount sites"). That is what
   lets the sheet reach full height and merge into the page header — hosted inside
   `ContentArea` it was clipped below that header and could never have covered it.
-  `EipHost` was **deleted on 2026-10-03** when ancp moved onto the shared `EipSheet`;
+  `EipHost` was **deleted on 2026-10-03** when acp moved onto the shared `EipSheet`;
   both of its load-bearing tricks had already become vestigial **for the sheet**:
   - the `bottom: -FOOTER_CLEARANCE` stretch, which stopped the sheet floating 90px above
     the screen edge (`MobileTabScreen`'s ScrollArea reserves that band for the footer
@@ -385,30 +417,30 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   [LEAF_NODE_PAGES.md § Transient suppression](./LEAF_NODE_PAGES.md).
 - **Pinyin display follows the flp's saved preference** (`useFlashcardLearnSettings`'s
   `showPinyin` / `showPinyinColor`) — and that stays true: this key is the **flp's**,
-  read by the reference surfaces (ancp, cdp, dictionary cdp). Games are moving OFF it
+  read by the reference surfaces (acp, cdp, dictionary cdp). Games are moving OFF it
   onto their own per-game settings, which is what stops a game from editing this panel
   ([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md)).
-  ancp exposes no toggle of its own — the panel is a
+  acp exposes no toggle of its own — the panel is a
   read-only detour, not a second settings surface.
 
 ### 4.8 Expanding the platform into the Quick Mark grid — ENTRY REMOVED 2026-10-29
 
 > **Status: unreachable.** The Tower Tier 2 re-skin (§4.9) removed the ⊞ expand button
-> and all of ancp's hosting code for the panel (the `quickMark` state, the preload, the
+> and all of acp's hosting code for the panel (the `quickMark` state, the preload, the
 > pinned-card sort/undo bridges, `getPlatformRect` / `getSlotRect`). Quick Mark had no
 > other entry point, so **the grid cannot be opened anywhere in the app**. The panel and
 > its hooks are still in the tree, unimported: `src/features/discover/QuickMarkPanel.tsx`,
 > `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts`. Whether to delete them or give Quick
 > Mark a new entry is an open decision ([DEFERRED_WORK.md](./DEFERRED_WORK.md)). The rest
 > of this section describes the hosting as it worked before the removal (recover it from
-> git history at `09f607e`); it no longer matches `AddNewCardsPage.tsx`.
+> git history at `09f607e`); it no longer matches `AddCardsPage.tsx`.
 
 The on-deck platform could be **maximized** into Quick Mark, the bulk-triage grid
-([QUICK_MARK.md](./QUICK_MARK.md) owns the grid; this section owns how ancp hosted it).
+([QUICK_MARK.md](./QUICK_MARK.md) owns the grid; this section owns how acp hosted it).
 Quick Mark has no page or hub tile of its own any more (deleted 2026-10-17): this was the
 only way in.
 
-- **Open — the ⊞ button** (`add-new-cards__expand-button`, Material Symbol `apps`) sits
+- **Open — the ⊞ button** (`add-cards__expand-button`, Material Symbol `apps`) sits
   beside "skip" in `OnDeckToolbar`, the same 24px height and quiet ink. Only a press
   opens it. A drag-up handle was considered and dropped. Hidden in set mode (§5.2.1):
   a fixed set is not an open-ended supply to bulk-triage.
@@ -420,7 +452,7 @@ only way in.
   (`COLORS.background`, MobileTabScreen's default `surfaceColor`) with square corners,
   so it reads as a page, not a sheet. Like a maximized `SheetPanel` it ends **headed**: a
   real `PageHeader` titled "Quick Mark" (no back chevron) with the close cluster — the
-  minute-points flame (ancp's own is covered) and the ✕ — in its right slot, and
+  minute-points flame (acp's own is covered) and the ✕ — in its right slot, and
   `SAFE_TOP` padding on the panel surface.
   It runs down under the floating footer pill, exactly as the platform does.
 - **Contents.** The full Quick Mark supply at one level, with the on-deck pack's
@@ -444,7 +476,7 @@ only way in.
   its ghosts unmount on the same frame, uncovering the real cards beneath. Reduced
   motion skips all of it.
 - **Preload** (`src/features/discover/useQuickMarkPreload.ts` → `useQuickMarkPreload`).
-  While the panel is closed and a pack is on deck, ancp keeps the grid's FIRST supply
+  While the panel is closed and a pack is on deck, acp keeps the grid's FIRST supply
   page fetched in the background for the level the panel would open at (the dropdown's
   pin, else the on-deck pack's level), 800ms after the last trigger so it never competes
   with a pack's own fetch and entrance. One page per level, not one per pack: words the
@@ -459,17 +491,17 @@ only way in.
 - **A pinned card is still a pack card.** Its swipe goes through `handleSortCard` (via
   `handleSortPinned`), so it leaves a crater, feeds the pack's §6.2 signal, credits the
   tally, joins the §4.6 Undo stack and, when it is the pack's last card, completes the
-  pack. Its grid toast-undo is the ancp Undo (`handleUndoPinned`, which only acts when
+  pack. Its grid toast-undo is the acp Undo (`handleUndoPinned`, which only acts when
   that card is the stack's top). Swiping a supply card writes `sortCard({ packId: null })`
   inside the grid and only moves the tally (`handleSupplySorted` /
-  `handleSupplyUnsorted`). Supply swipes are **not** on the ancp Undo stack: after
+  `handleSupplyUnsorted`). Supply swipes are **not** on the acp Undo stack: after
   closing, only pinned-card sorts can be undone from the header.
 - **What runs while it is open.** A pack that completes in the grid advances
   normally underneath, with no pack-exit overlay (`advancePack` checks
   `quickMarkOpenRef`). Autoplay narration stops on open (`handleOpenQuickMark`); a pack
   that lands while the panel is open is narrated when it closes
   (`deferredNarrationKeyRef` → `narrationEpoch`).
-- **Level change in the panel** also pins ancp's dropdown (`onPickLevel` = `setSelectedLevel`):
+- **Level change in the panel** also pins acp's dropdown (`onPickLevel` = `setSelectedLevel`):
   a normal §6.6 level switch, so the on-deck pack is replaced. The grid reloads at that
   level **unpinned**. The panel stays mounted through the refetch's spinner branch
   because every branch passes it as the same NodePage `overlay`.
@@ -484,7 +516,7 @@ only way in.
   z 1100: above the page header and the on-deck cards' 1000, and below the eip (1200+), which a card tap opens
   over it. It stays inside the Surface's stacking context, so the frame-level footer
   still floats above it.
-- Client implementation: `src/features/discover/AddNewCardsPage.tsx` → `quickMark`
+- Client implementation: `src/features/discover/AddCardsPage.tsx` → `quickMark`
   state, `useQuickMarkPreload` (`takeQuickMarkPreload` / `invalidateQuickMarkPreload`), `isResolvedAnywhere`, `handleOpenQuickMark`, `handleSortPinned`, `handleUndoPinned`,
   `handleSupplySorted`, `handleSupplyUnsorted`, `handleCollapseQuickMark`,
   `getPlatformRect`, `getSlotRect`; `src/features/discover/QuickMarkPanel.tsx` →
@@ -494,13 +526,13 @@ only way in.
 
 ### 4.9 Tower Tier 2 layout and time of day
 
-Since 2026-10-29 ancp is drawn as a **tier-2 page under the Deck Tower** (Claude Design
+Since 2026-10-29 acp is drawn as a **tier-2 page under the Deck Tower** (Claude Design
 project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on the earlier
 "Tower Style Design" sort frames). Top to bottom:
 
 | Zone | What | Code |
 |---|---|---|
-| Header | NodePage header: back + "Add New Cards" in the look's `ink` (white by day, like the tower's sky ink) and the tower's header type (`TOWER_TYPE_SX`, `src/features/deckTower/towerType.ts`, via `wrapHeader`); `SoftIntroToggle` (feature testers), `AudioModeChip` (the app-wide outlined skin: pill outline + label) in the same ink, the flame | `AddNewCardsPage` → `groundChrome` (incl. `wrapHeader`), `headerExtraActions` |
+| Header | NodePage header: back + "Add Cards" in the look's `ink` (white by day, like the tower's sky ink) and the tower's header type (`TOWER_TYPE_SX`, `src/features/deckTower/towerType.ts`, via `wrapHeader`); `AudioModeChip` (the app-wide outlined skin: pill outline + label) in the same ink, the flame | `AddCardsPage` → `groundChrome` (incl. `wrapHeader`), `headerExtraActions` |
 | Bins | The two drop targets as iso decks on floating platforms (§5.3), in the spare height and **pinned to its bottom** (`preserveAspectRatio="xMidYMax meet"`), then lowered a further `BINS_LOWER_PX` (9 viewBox px ≈ screen px) past that bottom edge (the scene is `overflow: visible`), so the platforms sit close above the cards and any extra height opens up under the toolbar | `BinsArea`, `SortBins.tsx` |
 | Toolbar | Level pill · undo · skip, keycaps in a row at the top-right over the bins (Undo moved here from the header) | `SortToolbar`, `keycapSx` |
 | On deck | The pack's levitating cards (§4.5), their action glyphs sitting right on the slab footer (`ON_DECK_FOOTER_GAP_PX` 0 — the glyphs are inset 4px in their 36px targets; the section's negative margin hands back the ScrollArea's **slab** reservation, `SLAB_FOOTER_TOTAL_CLEARANCE`), `SLOT_ACTIONS_GAP_PX` (12px) below the card | `OnDeckSection` |
@@ -513,27 +545,27 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
   the app's hairline outline. **They press like the app's other raised buttons**
   (the shared `src/theme/keycapPress.ts` → `keycapPressSx`): on press the face snaps down the lip's 3px
   and the cast shadow tightens by the same amount, snapping back on release (no
-  transition — the app's keys snap); skip stays sunk for the whole hold (`add-new-cards__keycap--pressed`
+  transition — the app's keys snap); skip stays sunk for the whole hold (`add-cards__keycap--pressed`
   while `useLongPress` reports `pressing`). A disabled undo does not press.
   *Code:* `keycapSx`, `keycapShadow`, `KEYCAP_LIP_PX`.
 - **Time of day.** The page reads the app's shared day clock
   (`src/timeOfDay/useDayClock.ts` → `useDayClock`, the same clock and feature-tester pin as
-  the Deck Tower and the eip — docs/DECK_TOWER.md § "Time of day") and turns it into a
+  the Deck Tower — docs/DECK_TOWER.md § "Time of day") and turns it into a
   `SortLook` (`src/features/discover/sortTimeOfDay.ts` → `sortLookAt`), blending the two
   bracketing phases (day and night) like the tower's sky. Only the **ground**, the
   **shadows cast on it** and the **ink drawn on it** change between them; night also turns
   the platforms grey and the keycaps slate. The **cards never change** — cream stock in
   every phase.
-- **Weather: hue, no effects.** ancp reads the same observation and tester pin as the tower
+- **Weather: hue, no effects.** acp reads the same observation and tester pin as the tower
   (`useTowerWeather`) and passes main's weather day sky (`weatherDaySky`,
   `src/features/deckTower/weatherSky.ts`) to `sortLookAt`. The day ground IS that sky (the
   pale tint `#E4F2FC` until 2026-11-04), and the night ground is that sky turned to night
   (`lookFor`). No rain, snow, fog or lightning is drawn. (Dawn's and sunset's fixed pale
   tints were cut 2026-11-04 with those phases — docs/TOWER_WEATHER_SKY.md § 1.) *Code:* `sortTimeOfDay.ts` → `sortLookAt`, `lookFor`;
-  `AddNewCardsPage` (`mainDaySky`).
+  `AddCardsPage` (`mainDaySky`).
 - **Night sky.** At night the ground is the Deck Tower's own night sky, not a tint of it:
   `lookFor("night", …)` is `phaseSky` of main's weather day sky, so the colour follows
-  the tower's recipe rather than copying a hex. ancp has no world, so it is always the main
+  the tower's recipe rather than copying a hex. acp has no world, so it is always the main
   world's sky. The stars and meteors are the tower's components (`StarField`,
   `ShootingStars`) in the same `ISO.star` white, at the tower's own from-the-ground opacity
   and on the same rule (`SortLook.stars` and `.shootingStars`, both read from `towerLight`).
@@ -624,14 +656,14 @@ Learned on the right.
   break one word per line ("To / Learn", "Already / Learned") so the pair matches (user
   request 2026-11-04; "To Learn" used to stay on one line). The name is ≈ 12px (`NAME_SIZE` 0.8 world units, line pitch `NAME_LINE` 0.93; 13px until 2026-11-04). A divergence from the artboard, which draws no label. The group's
   `aria-label` reads "To Learn: 3". *Code:* `SortBins.tsx` → `COUNT_AT`,
-  `COUNT_NAME_GAP`, `BinPrint`; `AddNewCardsPage.tsx` → `bins`.
+  `COUNT_NAME_GAP`, `BinPrint`; `AddCardsPage.tsx` → `bins`.
 - **The deck is the count.** Each bin starts as an empty **dashed footprint** on its
   platform (the bin colour darkened by the look's `footprintShade`: 0.18 by day, 0.45 at
   night, where the grey night platform washes out the pale yellow) and gains one card layer per card sorted into it this visit (alternating
   shaded layers under a top card in the bin's colour). The count is printed flat on the
   top card (or on the platform, greyed, at 0). The deck stops growing at `MAX_LAYERS`
   (20) so it never reaches the toolbar; the printed count stays exact. Undo takes a
-  layer back off. A skip touches neither bin. *Code:* `AddNewCardsPage.tsx` →
+  layer back off. A skip touches neither bin. *Code:* `AddCardsPage.tsx` →
   `sessionCounts`, `adjustTally`; `SortBins.tsx` → `SortBin`.
 - **Session counts, not library totals (changed 2026-10-29).** The bins used to sit under
   a level-bar tally of the account's whole library (Learning = U+T+C, Mastered), fetched
@@ -652,7 +684,7 @@ Learned on the right.
   back to 0 on a miss). The lift and shadow are
   driven by the card's spring, never React state, because the card must not re-render
   mid-drag.
-  *Code:* `AddNewCardsPage.tsx` → `DraggableCard`, `activeBinId`; `SortBins.tsx` →
+  *Code:* `AddCardsPage.tsx` → `DraggableCard`, `activeBinId`; `SortBins.tsx` →
   `ACTIVE_SCALE`, `.sort-bins__bin--active`.
 - **Hit test.** Each bin's whole SVG group (platform and deck, including its shadow) is
   the drop target, registered by `SortBins` (`registerBin`) and snapshotted at drag start
@@ -671,23 +703,23 @@ Learned on the right.
   plays it **backwards**: the old top card, still carrying the old number, lifts off and fades
   out over the deck as it now stands (`.sort-bins__lifted`, `liftingFrom`). Any other
   fall in the count (more than one at once) just redraws.
-  *Code:* `AddNewCardsPage.tsx` → `DraggableCard`, `handleSortCard`, `adjustTally`;
+  *Code:* `AddCardsPage.tsx` → `DraggableCard`, `handleSortCard`, `adjustTally`;
   `SortBins.tsx` → `PLACE_DROP_PX`, `PLACE_MS`, `PLACE_DELAY_MS`, `.sort-bins__placed`, `SortBin` (`placingFrom`), `BinPrint`.
 
 ### 5.3a Learning supply glow — REMOVED 2026-10-29
 
 The Learning tally pill's yellow "you arrived short of cards" halo went with the tally
-(§5.3). The "short of cards" signal now lives on ancp's entry point instead: td's sort bin hops
+(§5.3). The "short of cards" signal now lives on acp's entry point instead: td's sort bin hops
 while core Learning is under `LEARN_NOW_LOW_THRESHOLD` (`DeckTowerPage` → `learningLow`;
 [DECK_TOWER.md](./DECK_TOWER.md) § The sort platform). The glow recipe
-(`src/theme/lowSupplyGlow.ts`) survives as `LearningToggle`'s add nudge. ancp no longer
+(`src/theme/lowSupplyGlow.ts`) survives as `LearningToggle`'s add nudge. acp no longer
 signals when a short learner has sorted enough.
 
 ### 5.1 Skip is a de-emphasized action, not a drag target
 - Skip is a small lowercase **"skip" keycap at the right end of the toolbar** (level pill ·
   undo · skip, top-right over the bins — §4.9) — not a drag bin. The intent is to
   **de-emphasize** skipping as an option.
-- Client implementation: `src/features/discover/AddNewCardsPage.tsx` → `SortToolbar`,
+- Client implementation: `src/features/discover/AddCardsPage.tsx` → `SortToolbar`,
   `handleSkipPack`.
 - Pressing Skip **defers all remaining unsorted cards in the current pack** at once,
   then advances to the next pack. (Already-sorted/locked cards in the pack are
@@ -711,8 +743,8 @@ signals when a short learner has sorted enough.
   abandoned hold and does **nothing**. A hold that completes opens the sheet and never
   also skips (the click that follows it is swallowed).
 - Inside the sheet:
-  - **The cards look like ancp's on-deck cards**: the same tower card stock (cream rim,
-    beige panel, 2px wall, flat cast shadow — `sortCardStockSx`) and the same staggered
+  - **The cards look like acp's on-deck cards**: the same tower card stock (cream rim,
+    beige panel, one thick outlined panel with a cast shadow — `sortCardStockSx`) and the same staggered
     levitation, so a skipped word reads as the card it was on deck. The sheet is white, so
     the cast shadow is the iso shadow tone of white (`shadowTone(COLORS.white)`), not the
     time-of-day `look.groundShadow`. No desktop hover raise, and the bob stops while a card
@@ -728,7 +760,7 @@ signals when a short learner has sorted enough.
   - **Recycle all** → every skipped card back to the supply
     (`POST /api/starterPacks/:language/recycleSkips`).
   - **Header row** (shown only while the list is non-empty): a one-line instruction,
-    *"Press and hold to recycle back into Add New Cards."*, sits on the left
+    *"Press and hold to recycle back into Add Cards."*, sits on the left
     in-line with **Recycle all** on the right (`SkippedCardsSheet.tsx` →
     `skipped-cards-sheet__hold-instructions`). It is the only on-screen mention of the
     card-level hold; the sheet itself stays hidden.
@@ -736,7 +768,7 @@ signals when a short learner has sorted enough.
   server supply and arrive through later `fetchNextPack` calls.
 - The sheet re-fetches the list each time it opens (it is mounted only while open). A
   failed recycle re-fetches instead of guessing where to restore the card.
-- Code: `src/features/discover/AddNewCardsPage.tsx` → `skipPress`, `SKIP_HOLD_MS`;
+- Code: `src/features/discover/AddCardsPage.tsx` → `skipPress`, `SKIP_HOLD_MS`;
   `src/features/discover/SkippedCardsSheet.tsx` → `SkippedCardsSheet`,
   `RecyclableSkippedCard`, `SKIPPED_CARD_STOCK_SX`; `src/features/discover/sortCardStock.ts`
   → `sortCardStockSx`, `cardLevitateKeyframes`, `LEVITATE_PHASES_MS`; `src/hooks/useLongPress.ts` → `useLongPress` (tap vs. hold,
@@ -750,7 +782,7 @@ Skipped cards do **not** re-enter the sort flow automatically (this **replaces**
 earlier "recycle once in-level cards run out" rule). A skipped card returns only when
 the user **chooses** to bring it back, in one of three ways:
 
-- **Recycle all** — a button in ancp's hidden skipped-cards sheet (§5.1a) clears the
+- **Recycle all** — a button in acp's hidden skipped-cards sheet (§5.1a) clears the
   user's skips for the language, returning all of them to the normal supply as fresh
   single-card fallback packs.
 - **Recycle one** — holding a card in the hidden skipped-cards sheet (§5.1a) clears just
@@ -844,9 +876,9 @@ the user **chooses** to bring it back, in one of three ways:
 
 - The level indicator is a **dropdown**, not a static readout: the first entry is
   **Auto**, and one further entry per difficulty level.
-- The trigger (`add-new-cards__level-dropdown`) is the first keycap of the toolbar (§4.9):
+- The trigger (`add-cards__level-dropdown`) is the first keycap of the toolbar (§4.9):
   a fully rounded pill (`keycapSx`, bold) with a trailing `keyboard_arrow_down` glyph.
-- A **"DIFFICULTY"** caption under the pill (`add-new-cards__level-caption`,
+- A **"DIFFICULTY"** caption under the pill (`add-cards__level-caption`,
   `LevelCaption`) is a **soft introduction** (si `sortDifficultyCaption`,
   docs/SOFT_INTRODUCTION.md): shown for a learner's first visits, gone once they have
   made **7 visits over at least 7 days** — the artboard draws the pill alone.
@@ -864,10 +896,10 @@ the user **chooses** to bring it back, in one of three ways:
   on-deck pack with one matching the newly-selected level.
 - The level list itself is `src/features/discover/difficultyLevels.ts` →
   `DIFFICULTY_LEVELS` (shared with the panel); the dropdown adds Auto on top.
-- Client implementation: `src/features/discover/AddNewCardsPage.tsx` — `autoLevelRef` (running
+- Client implementation: `src/features/discover/AddCardsPage.tsx` — `autoLevelRef` (running
   target) and `packBucketsRef` (per-pack bucket outcomes this session, from which
   `applyPackSignal` derives the pack's one ±1 signal — there is no streak/threshold
-  state), plus the `add-new-cards__level-dropdown` / `add-new-cards__level-menu`
+  state), plus the `add-cards__level-dropdown` / `add-cards__level-menu`
   dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
   to center supply on — client's tracked target, or its dropdown pin) and `manual`
   (whether to drift on exhaustion) parameters, threaded through
@@ -880,11 +912,11 @@ the user **chooses** to bring it back, in one of three ways:
 
 ## 6.7 Client API module — `src/features/discover/starterPacksApi.ts`
 
-ancp (`AddNewCardsPage.tsx`), its Quick Mark grid (`useQuickMarkGrid.ts`) and its
+acp (`AddCardsPage.tsx`), its Quick Mark grid (`useQuickMarkGrid.ts`) and its
 `SkippedCardsSheet.tsx` reach the server through this one module. It exports
 `fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` / `undoSort` /
 `fetchSkippedCards` / `recycleSkips` / `recycleSkip` / `fetchQuickMarkPage`.
-(`recycleSkip` is used only by `SkippedCardsSheet.tsx`, ancp's hidden sheet — §5.1a.)
+(`recycleSkip` is used only by `SkippedCardsSheet.tsx`, acp's hidden sheet — §5.1a.)
 
 Two rules it exists to enforce:
 
@@ -905,7 +937,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
 
 ## 7. Skipped cards (no page — the hidden sheet only)
 
-- Skipped cards are reached **only** through ancp's hidden skipped-cards sheet (§5.1a):
+- Skipped cards are reached **only** through acp's hidden skipped-cards sheet (§5.1a):
   hold the Skip button for 2 s. There is **no Discover tile and no route** for them.
   The `/discover/skipped/:language` page (`SkippedCardsPage`) and its Discover bento
   tile were removed 2026-10-12, when the sheet became the sole entry point.
@@ -968,7 +1000,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     lands, Undo takes one back off, and a skip changes neither.
 18. **Undo/level interaction (known simplification):** undoing a card action does not
     reverse any level-target change that action's completing pack already triggered —
-    the target it moved to stays in effect. See `AddNewCardsPage.tsx`'s
+    the target it moved to stays in effect. See `AddCardsPage.tsx`'s
     `applyPackSignal`.
 19. **Hidden skipped sheet:** holding Skip for 2 s opens the skipped-cards sheet without
     skipping the pack, its outline tracing over the hold; nothing at rest advertises the

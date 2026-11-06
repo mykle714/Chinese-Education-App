@@ -43,7 +43,6 @@ export { SpeakerButton };
 // See docs/ARCHITECTURE_REVIEW.md finding 9.
 export { ChineseBlock, EnglishBlock, CardFaceSide } from "../card/CardFace";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
-import CardNote from "../card/CardNote";
 import BreakCardLayer from "./gameBreak/BreakCardLayer";
 import { cardThrowSteps } from "./cardThrow";
 
@@ -114,24 +113,10 @@ interface FlashCardSectionProps {
     // Lets the page measure the slot (useCardSlotPadding / useToolbarInset both need its
     // height, and neither can reach it from ContentArea once the word-tools rail is above it).
     slotRef?: React.Ref<HTMLDivElement>;
-    // The card-operations rail (`CardOpsRail`, artboard 21), composed by the page and
-    // mounted on the ACTIVE FRONT card's answer face. A node rather than three callbacks
-    // so this component — which the cdp and three other surfaces also render through —
-    // never learns what a card operation is.
-    topRail?: React.ReactNode;
-    // ── Card note (vet.note, migration 155) ──────────────────────────────────
-    // The note itself is read straight off the entry and rendered on the ANSWER face by
-    // this component (every card that has one shows it, on every surface). These three
-    // props are only about EDITING it in place, which is the flp's business: the page owns
-    // "which card's note is open" so the same state can gate the drag handlers.
-    // See docs/CARD_NOTES.md.
-    noteEditing?: boolean;
-    onSaveNote?: (note: string | null) => void;
-    onCancelNote?: () => void;
     // ── Writing flp (`?world=writing`, docs/WRITING_PRACTICE_REWORK.md § 3) ──────────
     // Same card, same stack, same flip and fly-out — only the CONTENT differs. When set,
-    // both faces of every card are drawn by this callback (no word blocks, icons, note
-    // or card-ops rail). `role` tells the host which card it is drawing: the active
+    // both faces of every card are drawn by this callback (no word blocks or
+    // icons). `role` tells the host which card it is drawing: the active
     // FRONT card, the PEEKing card behind it, or the card FLYING out.
     //
     // A writing card is never swiped: the host passes inert drag handlers, flips the
@@ -267,27 +252,13 @@ const CardFace: React.FC<{
     // cluster's `sense` label (or null for the default/starred sense). Absent when there's no
     // user context to save into (e.g. the read-only dictionary cdp uses local-only state).
     onPersistSense?: (entry: VocabEntry, sense: string | null) => void;
-    // The card-operations rail (`CardOpsRail`, artboard 21). Rendered on the ANSWER face
-    // only, and only for the active front card — the host decides both, the same way it
-    // decides `editCanvas`. Threaded as a node rather than as three callbacks so this
-    // shared component stays ignorant of what a card operation is.
-    topRail?: React.ReactNode;
-    // ── Card note (vet.note, migration 155) ──────────────────────────────────
-    // The note itself is read straight off the entry and rendered on the ANSWER face by
-    // this component (every card that has one shows it, on every surface). These three
-    // props are only about EDITING it in place, which is the flp's business: the page owns
-    // "which card's note is open" so the same state can gate the drag handlers.
-    // See docs/CARD_NOTES.md.
-    noteEditing?: boolean;
-    onSaveNote?: (note: string | null) => void;
-    onCancelNote?: () => void;
     // Blank this card's content (both faces) while keeping its surface. Set on the peeking
     // BACK card while the front card is mid-flip — see `flipInProgress` in FlashCardSection.
     contentHidden?: boolean;
     // The writing flp's face content for this card (FlashCardSectionProps.writingFace),
     // already bound to the card's role. Absent on every other bar.
     writingFace?: (side: "front" | "back") => React.ReactNode;
-}> = ({ entry, isFlipped, isAnimating, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, topRail, noteEditing, onSaveNote, onCancelNote, contentHidden, writingFace }) => {
+}> = ({ entry, isFlipped, isAnimating, showPinyinColor, readingMode = false, sideOneLanguage, dragPosition, dismissThreshold, isProminent, onSpeak, speakingKey, editCanvas, onPersistSense, contentHidden, writingFace }) => {
     // Every card is one of the Deck Tower's cards: no drop shadow (it lies flush on the
     // deck, as the tower's own top card does), and the tower's slow flip.
     const cardShadow = "none";
@@ -468,21 +439,6 @@ const CardFace: React.FC<{
                     english: <EnglishBlock entry={entry} selectedSenseIndex={selectedSenseIndex} onSelectSense={handleSelectSense} />,
                 }}
                 editCanvas={editCanvas}
-                topRail={topRail}
-                // The learner's note, pinned to the top edge of the ANSWER face only
-                // (a note is commentary on the answer — on the question face it would be
-                // an unasked-for hint). CardNote renders nothing when there is no note
-                // and no edit is open, which is the common case. While the fie canvas owns
-                // the face, the note is suppressed: the canvas is a design surface and the
-                // note is not part of the design it edits.
-                noteSlot={editCanvas ? undefined : (
-                    <CardNote
-                        entry={entry}
-                        editing={noteEditing}
-                        onSave={onSaveNote}
-                        onCancel={onCancelNote}
-                    />
-                )}
                 // Side 2 faces away when the card is showing its front.
                 inert={!isFlipped}
                 contentHidden={contentHidden}
@@ -534,10 +490,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     toolbarInset,
     pad,
     slotRef,
-    topRail,
-    noteEditing,
-    onSaveNote,
-    onCancelNote,
     writingFace,
     onCardClick,
     gameBreak = null,
@@ -725,12 +677,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     <Box
                                         key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
-                                        // Handlers are detached while the note editor is open for the
-                                        // same reason they are during a fie edit: the card must not flip
-                                        // or swipe away under a gesture aimed at the editor. CardNote also
-                                        // stops its own events — this covers the ones that START on the
-                                        // note and travel off it.
-                                        {...(isFront && !editMode && !noteEditing ? {
+                                        // Handlers are detached during a fie edit: the card must not flip
+                                        // or swipe away under a gesture aimed at the editor.
+                                        {...(isFront && !editMode ? {
                                             onTouchStart: handlers.onTouchStart,
                                             onTouchEnd: handlers.onTouchEnd,
                                             onMouseDown: handlers.onMouseDown,
@@ -814,20 +763,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 editCanvas={isFront ? editCanvas : undefined}
                                                 // Only the active front card is interactive, so only it persists picks.
                                                 onPersistSense={isFront ? onPersistSense : undefined}
-                                                // Card operations belong to the card the learner is
-                                                // looking at; the peeking back card has none.
-                                                topRail={isFront ? topRail : undefined}
                                                 // The back card is exposed while the front
                                                 // card passes edge-on through the flip — blank
                                                 // its content for that window.
                                                 contentHidden={!isFront && flipInProgress}
-                                                // Only the active front card's note is
-                                                // editable; the peeking back card still
-                                                // RENDERS its note (read-only) so it doesn't
-                                                // pop in when the card is promoted.
-                                                noteEditing={isFront ? noteEditing : false}
-                                                onSaveNote={isFront ? onSaveNote : undefined}
-                                                onCancelNote={isFront ? onCancelNote : undefined}
                                                 writingFace={writingFace ? (side) => writingFace(entry, side, writingRole) : undefined}
                                             />
                                         )}
@@ -871,7 +810,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                         lineHeight: 1.5,
                                     }}
                                 >
-                                    {emptyMessage ?? 'No cards in Learning yet. Add some from Add New Cards!'}
+                                    {emptyMessage ?? 'No cards in Learning yet. Add some from Add Cards!'}
                                 </Typography>
                             </CardContent>
                         </Card>

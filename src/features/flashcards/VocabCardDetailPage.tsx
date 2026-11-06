@@ -3,7 +3,7 @@ import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveD
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
 import {
-    Box, IconButton, Alert,
+    Box, Alert,
     Slide, Snackbar, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -20,8 +20,6 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 import { useTTS } from "../../hooks/useTTS";
 import { COLORS } from "../../theme/colors";
 import { CARD_SURFACE } from "../../theme/surfaces";
-import CardNote from "./card/CardNote";
-import CardOpsRail from "./FlashcardsLearnPage/CardOpsRail";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/FlashCardSection";
 import { measureDefaultTextCenters } from "../../cardIcons/cardTextLayout";
 import { useToolbarInset } from "../../cardIcons/editor/useToolbarInset";
@@ -37,7 +35,7 @@ import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryWindow from "../../components/mastery/MasteryWindow";
 import WordToolsRail from "../../components/WordToolsRail";
 import { useCompareSheet } from "../../components/CompareSheet";
-import Icon from "../../components/Icon";
+import { HeaderIconButton } from "../../components/PageHeader";
 import SheetPill from "../../components/SheetPill";
 import InfoCardSection from "./FlashcardsLearnPage/InfoCardSection";
 import { apiGet } from '../../api/http';
@@ -227,7 +225,6 @@ const VocabCardDetailPage: React.FC = () => {
         handleSaveLayout,
         handleResetConfirmed,
         persistSelectedSense,
-        persistNote,
         undoAdv,
         redoAdv,
         pushAdvHistory,
@@ -242,27 +239,13 @@ const VocabCardDetailPage: React.FC = () => {
         persistSelectedSense(entry, senseLabelForIndex(entry, index));
     }, [entry, persistSelectedSense]);
 
-    // ── The card's own note (vet.note, migration 155) ─────────────────────────────
-    // The cdp shows and edits the SAME note as the flp, through the same components:
-    // `CardNote` in the hero face's `noteSlot` slot, opened from the `note` cell of the
-    // card's `•••` rail (`CardOpsRail`) in the face's top-right corner. Only "is the editor
-    // open" lives here — the draft text is CardNote's own, so a keystroke does not re-render
-    // the page. See docs/CARD_NOTES.md.
-    //
-    // Unlike the flp there is nothing to detach: the hero card does not flip or drag, so the
-    // open editor's own event-stopping is the whole guard.
-    const [noteEditing, setNoteEditing] = useState(false);
-    // Close an open editor if the card underneath changes (a drill-in navigates this same
-    // page to another word), so the next card is never handed an editor seeded from the
-    // previous one's note.
-    useEffect(() => { setNoteEditing(false); }, [entry?.id]);
-    const handleSaveNote = useCallback((note: string | null) => {
-        setNoteEditing(false);
-        if (!entry) return;
-        // Optimistic + background PATCH with rollback + the existing save-error toast —
-        // the same machinery the sense pick uses (useCardIconEditor.persistNote).
-        persistNote(entry, note);
-    }, [entry, persistNote]);
+    // `Customize` on the word-tools rail — opens the fie on the hero card. The hero IS the
+    // answer face, so unlike the flp there is no flip to wait for. A no-op while the editor
+    // is already open (its toolbar owns the card).
+    const handleCustomize = useCallback(() => {
+        if (editMode) return;
+        enterEdit(() => heroCardRef.current ? measureDefaultTextCenters(heroCardRef.current) : null);
+    }, [editMode, enterEdit]);
 
     // Outside-tap deselect: a tap on the page outside the canvas/toolbar (and
     // outside a portaled toolbar dropdown) clears the active icon/text selection.
@@ -389,7 +372,7 @@ const VocabCardDetailPage: React.FC = () => {
                         disabled={editMode}
                     />
                     {infoOpen && (
-                        /* THE eip — the exact component the flp and ancp raise
+                        /* THE eip — the exact component the flp and acp raise
                            (InfoCardSection → SheetPanel + InfoCardPanelBody), not a
                            cdp-shaped copy of its content. The panel brings the entry
                            header, the underline tab strip, swipe-between-tabs and the
@@ -442,32 +425,32 @@ const VocabCardDetailPage: React.FC = () => {
                 </>
             )}
             headerExtraActions={entry && (
-                <Box sx={{ display: "flex", alignItems: "center" }}>
-                    {/* DELETE ONLY. `add to deck` and `customize` used to sit here as well,
-                        and they now live on the hero card's own `•••` rail (CardOpsRail) —
-                        the rule artboard 21 states: a CARD operation lives ON the card. Two
-                        doors to the same room is worse than one, and the flp already has
-                        exactly one.
+                <>
+                    {/* DELETE ONLY. `add to deck` left with the Decks feature, and
+                        `customize` is on the word-tools rail above the hero card, the same
+                        place the flp has it. Two doors to the same room is worse than one.
 
                         Delete stays here, and deliberately never joins the rail: it is rare and
                         takes the card out of every deck, so it belongs on a surface the learner
                         has navigated TO. (It is NOT destructive — it demotes the card to
                         'provisional', keeping its history; see handleDelete.) See
-                        docs/CARD_NOTES.md and docs/SHELF_REDESIGN.md (artboard 21).
+                        docs/SHELF_REDESIGN.md (artboard 21).
 
-                        The glyph is a Material Symbol via `Icon` (D3), not an
+                        The glyph is a Material Symbol (D3), not an
                         `@mui/icons-material` component: the artboard's header names
                         `delete`, and the ligature face is where every other converted
-                        surface takes its icons from. */}
-                    <IconButton
+                        surface takes its icons from. It is a HeaderIconButton (the shared
+                        header primitive, not an MUI IconButton) so it sizes with every other
+                        header action. */}
+                    <HeaderIconButton
                         className="vocab-card-detail__delete-button"
-                        aria-label="Delete card"
+                        icon="delete"
+                        label="Delete card"
+                        color={COLORS.dangerInk}
                         disabled={actionLoading}
                         onClick={handleDelete}
-                    >
-                        <Icon name="delete" size={20} color={COLORS.dangerInk} />
-                    </IconButton>
-                </Box>
+                    />
+                </>
             )}
         >
                 <ContentArea
@@ -569,14 +552,14 @@ const VocabCardDetailPage: React.FC = () => {
                                 </Box>
                             </Slide>
 
-                            {/* WORD TOOLS — `Write it` and `Compare`, on their own rail
-                                above the card and outside its boundary. They act on the
-                                WORD, not on this card, which is why they are not in the
-                                header row above (delete — a card operation) — see WordToolsRail. */}
+                            {/* WORD TOOLS — `Write it`, `Compare` and `Customize`, on their
+                                own rail above the card and outside its boundary — the same
+                                rail the flp has (see WordToolsRail). */}
                             <WordToolsRail
                                 className="vocab-card-detail__word-tools"
                                 entry={entry}
                                 onCompare={openCompare}
+                                onCustomize={handleCustomize}
                             />
 
                             {/* Hero card — the same size/style as the flp (learn page)
@@ -651,32 +634,6 @@ const VocabCardDetailPage: React.FC = () => {
                                             />
                                         ),
                                     }}
-                                    // CARD OPERATIONS — the SAME `•••` rail the flp mounts on
-                                    // its answer face (artboard 21), in the face's top-right
-                                    // corner. It is the only affordance that opens the note
-                                    // editor (read-mode notes are inert by design), so the note
-                                    // cannot ship to this page without it. Suppressed while the
-                                    // fie is open: that toolbar already owns the card.
-                                    topRail={(
-                                        <CardOpsRail
-                                            onCustomize={() => enterEdit(() => heroCardRef.current ? measureDefaultTextCenters(heroCardRef.current) : null)}
-                                            onEditNote={() => setNoteEditing(true)}
-                                            disabled={editMode}
-                                        />
-                                    )}
-                                    // The learner's note, pinned to the top edge — the same
-                                    // component, slot and rules as the flp's answer face. The
-                                    // hero IS the answer face, so the face gate is satisfied.
-                                    // Suppressed while the fie canvas owns the face: the canvas
-                                    // edits a DESIGN, and the note is not part of that design.
-                                    noteSlot={editMode && advMode ? undefined : (
-                                        <CardNote
-                                            entry={editingCurrentEntry!}
-                                            editing={noteEditing}
-                                            onSave={handleSaveNote}
-                                            onCancel={() => setNoteEditing(false)}
-                                        />
-                                    )}
                                     // Gesture canvas only in advanced mode; basic mode renders the
                                     // draft through the static icon layer (via editingCurrentEntry).
                                     editCanvas={editMode && advMode ? (

@@ -143,7 +143,7 @@ function LanguagePanel({
                 component as the Account page, so a profile and your own account show
                 progress the same way. `gutter={false}`: the panel already pads itself,
                 and the shelf's own 22px gutter would push the spines out of line with
-                the panel heading (the spines also narrow to fit — `useFittedSpineWidth`
+                the panel heading (the spines also narrow to fit — `fittedSpineWidth`
                 in components/DeckBuckets; the arrows follow them). `mx: 0` cancels
                 SectionCard's page gutter for the same reason. */}
             <LibraryShelfWithVelocity

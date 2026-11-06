@@ -21,7 +21,7 @@ import { TOWER_WORLDS, type TowerWorld, type TowerWorldId } from "./towerWorlds"
  * here because nothing else uses them.
  *
  * Depends on: src/api/weather.ts (types), towerWorlds.ts.
- * Depended on by: DeckTowerPage.tsx, discover/AddNewCardsPage.tsx (hue only, no particles). Docs: docs/TOWER_WEATHER_SKY.md, docs/DECK_TOWER.md § "Weather".
+ * Depended on by: DeckTowerPage.tsx, discover/AddCardsPage.tsx (hue only, no particles). Docs: docs/TOWER_WEATHER_SKY.md, docs/DECK_TOWER.md § "Weather".
  */
 
 /** The sky kinds, in hue order. Finer than `WeatherKind`: partly cloudy and freezing

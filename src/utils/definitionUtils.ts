@@ -213,6 +213,32 @@ export function sortedSenseClusters(
 }
 
 /**
+ * The commonality a sense needs to earn a star on its own: its cluster `frequencyScore`
+ * (1–5, docs/DEFINITION_CLUSTERS.md) at or above this. Owner's call 2026-11-05.
+ */
+export const STARRED_SENSE_MIN_COMMONALITY = 4;
+
+/**
+ * Whether a sense in a sense list wears the star. Two reasons, either one is enough:
+ *   - it is the DEFAULT (index 0 of `sortedSenseClusters`), which is always starred even
+ *     when it scores below the threshold, so the list still names the fallback sense;
+ *   - it is COMMON: `frequencyScore >= STARRED_SENSE_MIN_COMMONALITY` (4 or 5).
+ * So the star means "default or very common". An unscored cluster (null) is never starred
+ * for commonality.
+ *
+ * `index` must address `sortedSenseClusters(entry)`. Shared by every star surface so they
+ * cannot drift: `src/components/senseListSegments.tsx` (`buildSenseSegments` → the eip's
+ * Definition-tab sense list, Memory Map prompt) and `src/features/flashcards/card/SensePicker.tsx` (`renderSenseItem`).
+ * Docs: docs/DEFINITION_CLUSTERS.md (sense-picker row).
+ */
+export function isStarredSense(
+  cluster: Pick<DefinitionCluster, 'frequencyScore'>,
+  index: number,
+): boolean {
+  return index === 0 || (cluster.frequencyScore ?? 0) >= STARRED_SENSE_MIN_COMMONALITY;
+}
+
+/**
  * Resolve an entry's persisted `selectedSense` (a cluster `sense` LABEL, migration 99) to an
  * index into `sortedSenseClusters`. A label is stored instead of an index because it's stable
  * across re-clustering/re-scoring; if the label no longer matches any cluster (the entry was
@@ -240,7 +266,7 @@ export function resolveSelectedSenseIndex(
  * any future re-scoring of which sense is the most common one.
  *
  * Shared by every sense picker host — the flp card face (FlashCardSection), the cdp
- * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / AddNewCardsPage) — so the
+ * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / AddCardsPage) — so the
  * index→label conversion can't drift between them. See docs/DEFINITION_CLUSTERS.md.
  */
 export function senseLabelForIndex(
@@ -412,7 +438,7 @@ export function resolveDefaultPronunciation(
  * **What a dictionary SEARCH row shows** — its pinyin and its sense list, honouring the sense
  * the search term hit.
  *
- * The list is the one the eip header shows (`EipEntryHeader` → `senseSegments`): each sense's
+ * The list is the one the eip's Definition tab opens with (`EipSenseList`): each sense's
  * dd, in `sortedSenseClusters` order, or the plain dd for a word with no choice of sense
  * (owner's call 2026-10-31). The flat `definitions` no longer reach the screen here, but they
  * still drive the search itself, so a hit on a later gloss ("pretty" → 漂亮) can show a row

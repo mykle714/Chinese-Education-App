@@ -5,11 +5,11 @@ import { useAuth } from "../AuthContext";
 const DEFAULT_DISCOVER_LANGUAGE = "zh";
 
 /**
- * The path of Add New Cards (ancp), `/discover/sort/{language}`, keyed by the user's
+ * The path of Add Cards (acp), `/discover/sort/{language}`, keyed by the user's
  * selected language.
  *
- * The Discover hub (`/discover`) that used to sit above ancp was deleted 2026-10-17; the
- * `/discover/` URL prefix survives only as ancp's path. ancp is reached from the Deck
+ * The Discover hub (`/discover`) that used to sit above acp was deleted 2026-10-17; the
+ * `/discover/` URL prefix survives only as acp's path. acp is reached from the Deck
  * Tower's mini sort platform, which navigates with `state.exitTo` (DeckTowerPage →
  * `SORT_EXIT`) so its back arrow returns to the tower's main world.
  *

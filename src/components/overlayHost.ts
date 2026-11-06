@@ -52,7 +52,7 @@
  * The footer then stays exactly where it is and is dimmed with everything else; a dim
  * takes NO `useHideFooter` hold. (Until 2026-10-06 the convention was the reverse —
  * host inside the page surface and slide the footer away — which left headers lit above
- * game popups and the footer lit above ancp's completion popup.)
+ * game popups and the footer lit above acp's completion popup.)
  *
  * One deliberate exception: the Writing Notebook's cell canvas (NotebookCellEditor) dims
  * ONLY the scrollable sheet and leaves the header + word slot lit, by user decision

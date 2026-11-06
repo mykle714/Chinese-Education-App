@@ -312,7 +312,7 @@ Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
 `FlashcardsPage.tsx` (×2), `useCardLibrary.ts` (the card-library load; its former
 hosts `FlashcardsDecksPage.tsx` and `CollectionViewPage.tsx` are deleted),
 `VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
-`EntryDetailPage.tsx`, `EditEntryPage.tsx`, `AddNewCardsPage.tsx`,
+`EntryDetailPage.tsx`, `EditEntryPage.tsx`, `AddCardsPage.tsx`,
 `DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
 `authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`

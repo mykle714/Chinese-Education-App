@@ -20,7 +20,7 @@ feature consumes it):
 
 | Surface | Hosts | Entry points | Where the state lives | Slot A on open |
 |---|---|---|---|---|
-| **eip Compare tab** | flp, ancp and the Dictionary page's eip (`EipSheet` `showWordTools`, 2026-10-10) — the hosts with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
+| **eip Compare tab** | flp, acp and the Dictionary page's eip (`EipSheet` `showWordTools`, 2026-10-10) — the hosts with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
 | **compare sheet** (`src/components/CompareSheet.tsx`) | both cdps — `VocabCardDetailPage`, `DictionaryCardDetailPage`, neither of which has a strip | the same two: the rail's `Compare` pill, and the eip header button on the fc cdp | `useState` inside `CompareSheet`, **discarded on close** | the calling word |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
@@ -51,14 +51,14 @@ Three consequences worth knowing:
 |---|---|
 | **Cold open is gone** | With the hub tile removed there is no way to open Compare with *both* slots empty; every entry point starts from a word. The empty-slot-B search is unchanged, so comparing an arbitrary pair still works — it just starts from one of the two words. |
 | **State resets on every open** | Decided 2026-09-04. `useCompareSheet` keys the mounted sheet on a session id, so each open mounts a fresh component and the seed does the resetting — there is no clear-on-close effect. Re-comparing a pair costs no extra AI call: `word_comparison_cache` serves it. |
-| **The eip tab was NOT replaced** | flp and ancp keep the Compare TAB (decided 2026-09-04). Where a tab strip exists, a tab keeps the comparison *beside* the word trail it came from instead of on top of it — and the sheet would have to stack on the eip that is already up. So there are two Compare hosts by design, but only one Compare body. |
+| **The eip tab was NOT replaced** | flp and acp keep the Compare TAB (decided 2026-09-04). Where a tab strip exists, a tab keeps the comparison *beside* the word trail it came from instead of on top of it — and the sheet would have to stack on the eip that is already up. So there are two Compare hosts by design, but only one Compare body. |
 
 ### Compare earns minute points
 
 Both hosts of the compare sheet — the saved-card cdp and the dictionary cdp (the latter as
 part of the whole `/dictionary` prefix, search page included) — became **study surfaces** on
 2026-09-04 (`MINUTE_POINTS_ELIGIBLE_PAGES`, `src/constants.ts`), and the eip tab's hosts
-(flp, ancp) already were. Since the sheet has no route of its own, that
+(flp, acp) already were. Since the sheet has no route of its own, that
 host eligibility IS how Compare accrues: the learner reading a comparison is on an earning
 page for as long as they keep interacting (the 15-second activity window still applies).
 ⚠️ A future surface that raises the compare sheet from a non-earning page would silently
@@ -96,7 +96,7 @@ height. **Every `SheetPanel` behaves this way now** and the prop is gone (2026-0
 `src/components/sheet/sheetStyled.ts`. It had to: a shared `CompareSheet` consumed by the
 dictionary feature may not reach into the flashcards feature's folder
 ([FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) — "a feature folder owns what only it uses").
-Its consumers are now the flp eip, the ancp (and its skipped-cards sheet), the saved cdp, the
+Its consumers are now the flp eip, the acp (and its skipped-cards sheet), the saved cdp, the
 compare sheet, the AccountSheet and the Writing Notebook's word picker.
 The `Eic`/`InfoSheet` names were kept verbatim — renaming them is a separate pass from moving
 them.
@@ -112,8 +112,10 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
   on the PAGE above the card and outside its boundary (`src/components/WordToolsRail.tsx`,
   artboards 18–25). Comparing is something you do with the WORD, not an operation on the
   card, which is the whole split that rail encodes. Two kinds of host, two destinations:
-  - **flp / ancp / Dictionary page eip** — have a tab strip, so the pill opens Compare as an
-    eip TAB beside the word (`eip.openCompareTab(entry)`; the flp first `openEicSheet()`).
+  - **flp / acp / Dictionary page eip** — have a tab strip, so the pill opens Compare as an
+    eip TAB beside the word (`eip.openCompareTab(entry)`; the flp first `openEicSheet()`,
+    and on the question face first flips the card — `WordToolsRail` `onToolPress` →
+    `FlashcardsLearnPage` → `revealAnswer`).
     On the Dictionary page the rail lives at the bottom of the eip's definition tab.
   - **cdp — both of them** (the saved-card `VocabCardDetailPage` and the read-only
     `DictionaryCardDetailPage`) — neither has a strip, so each raises the compare SHEET
@@ -159,7 +161,7 @@ The eip has a single wrapper — the bottom-sheet `InfoCardSection` (`SheetPanel
 `InfoCardPanelBody`). The centered `InfoCardPopup` variant that used to sit alongside
 it was deleted (commit `70dc441`), so there is one code path to keep Compare working
 in. `InfoCardSection` is mounted by `FlashcardsLearnPage.tsx` (flp) and
-`AddNewCardsPage.tsx` (ancp); both get Compare for free since they share the tab system
+`AddCardsPage.tsx` (acp); both get Compare for free since they share the tab system
 and panel body.
 
 ---
@@ -393,7 +395,7 @@ English-query space. Cache hits are always free and don't consume a slot.
 13. **Compare is a sheet, not a destination** — `/compare`, `ComparePage.tsx` and the Home hub
     tile are deleted; both cdps raise `CompareSheet` instead. Maximizing is SheetPanel's
     existing drag-to-full-height merge chrome, so no new UI was built for it.
-14. **The flp/ancp keep the eip TAB** — a strip-bearing host puts Compare beside the word trail.
+14. **The flp/acp keep the eip TAB** — a strip-bearing host puts Compare beside the word trail.
 15. **State resets on every open** — keyed remount in `useCompareSheet`, no cross-navigation
     persistence, no clear-on-close effect.
 16. **The eip header gets a Compare button** — so a drilled-into word can be compared without

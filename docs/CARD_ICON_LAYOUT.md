@@ -40,6 +40,21 @@ on the card renders that arrangement instead of the single default icon.
 The arrangement is **per user, per word** because it is stored on the vet row
 (identity `(userId, entryKey, language)`), not on the shared det icon.
 
+### Entry point: the `Customize` pill
+
+The editor is opened from the **`Customize`** pill on the word-tools rail above the card
+(`src/components/WordToolsRail.tsx` → `onCustomize`, beside `Write it` and `Compare`), on both
+card surfaces:
+
+| Surface | Handler | Behaviour |
+|---|---|---|
+| flp (Deck Tower study session) | `FlashcardsLearnPage` → `handleCustomizeCard` | If the question face is up, the rail's capture-phase `onToolPress` (`revealAnswer`) flips the card first and the editor opens once the flip lands (`TOWER_CARD_FLIP_MS`), because `enterEdit` measures the answer face's text blocks and a mid-flip card measures edge-on. Ignored mid-animation; the delayed open is dropped if the front card changes during the wait. The rail is hidden while the editor is open and on the writing flp. |
+| cdp (`VocabCardDetailPage`) | `handleCustomize` | The hero card IS the answer face — opens immediately. A no-op while the editor is already open. |
+| dictionary cdp | — | No pill (no vet row to save into). |
+
+It used to sit behind a `•••` on the card's own top edge (`CardOpsRail`), which was deleted
+2026-11-05 together with the card-note feature that shared it.
+
 ## Where icons render (face-gating rule)
 
 A face renders icons when it shows the English block: **Side 1 only when it is English**
@@ -79,17 +94,9 @@ rim width comes from the frame's `cardStockVars` (`src/features/flashcards/card/
 front face's horizontal padding is `--card-stock-inset`. The canvas's text layer is **not**
 narrowed, because the selected block's outline and handle sit outside its box; there the
 panel is enforced by the release clamp (`clampTextRelease` measuring
-`card-icon-canvas__text-bounds`). `topRail` and `noteSlot` sit outside the inner box and keep
-inside the panel through `--card-chrome-inset`. The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
+`card-icon-canvas__text-bounds`). The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
 canvas, icons and text paint over it, and `contentHidden` spares it (it is surface).
 See [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower" → "The card stock".
-
-Two other things ride in that **outer** box for the same reason — they must paint over the
-icon layer and position against the face's own edge: `topRail` (the card-operations rail,
-[SHELF_REDESIGN.md](./SHELF_REDESIGN.md) artboard 21) and `noteSlot` (the learner's card
-note, [CARD_NOTES.md](./CARD_NOTES.md)). The note is deliberately **not** part of the
-movable-text system below — it is chrome, not card design, so the fie can neither move it
-nor see it (the canvas suppresses it while an edit is open).
 
 **3D-flip hit-testing:** CSS backface culling does not reliably exclude the rotated
 -away face from *hit-testing*, so the away-facing `CardFaceSide` is made `inert`
@@ -102,7 +109,7 @@ the whole card, so at the halfway point the front card is edge-on (zero projecte
 and the flp's peeking **back** card — the second slot, which holds the next entry so no
 content flashes in on dismiss — is briefly shown in full, leaking the next word.
 `CardFaceSide` therefore takes a `contentHidden` prop that hides the face's **direct
-children** (inner clip box, edit canvas, `topRail`, `noteSlot`) while leaving the outer
+children** (inner clip box, edit canvas) while leaving the outer
 box's background fill and rounded corners painted, so the stack keeps its shape and only
 its content goes blank. `FlashCardSection` opens that window (`flipInProgress`, held for
 `CARD_FLIP_MS`) on a `false -> true` flip and passes `contentHidden` to the back slot's

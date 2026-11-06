@@ -3,7 +3,7 @@
 > ↑ Part of [DISCOVER_FLOW.md](./DISCOVER_FLOW.md).
 
 This doc describes how we **export** the exact sequence of cards a brand-new user
-sees in Add New Cards (ancp), so we can **hand-curate** a deliberate beginner experience.
+sees in Add Cards (acp), so we can **hand-curate** a deliberate beginner experience.
 
 > **Direction update.** The original plan here was a `discoverOrder` integer column
 > that re-sorted individual cards. That has been **superseded** by **authored sort
@@ -180,7 +180,7 @@ pack's level is derived from them).
 
 ## 6. Doc-reference note
 
-`StarterPacksService.ts` / `AddNewCardsPage.tsx` previously referenced a non-existent
+`StarterPacksService.ts` / `AddCardsPage.tsx` previously referenced a non-existent
 `docs/SORT_CARDS_DESIGN.md`; those comments have been **repointed** to
 [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) (the real requirements doc;
 navigation lives in [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)).

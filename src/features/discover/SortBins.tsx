@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState } from "react";
+import React, { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     IsoPlatform,
     IsoScene,
@@ -20,7 +20,7 @@ import type { SortLook } from "./sortTimeOfDay";
 import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
 
 /**
- * SortBins — ancp's two drop targets drawn as iso decks on floating platforms
+ * SortBins — acp's two drop targets drawn as iso decks on floating platforms
  * (docs/SORT_CARDS_REQUIREMENTS.md § 4.5 "Bins"; Claude Design "Tower Tier 2 - Time of
  * Day", the "Sort ·" artboards → `sbins` / `sdeck`).
  *
@@ -39,7 +39,11 @@ import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
  *
  * The page hit-tests drops against each bin's group (`registerBin`), which rides the bob.
  *
- * Depends on: deckTower/iso, sortTimeOfDay.ts. Depended on by: AddNewCardsPage.tsx.
+ * Each bin sits in a `.sort-bins__bin-slot--<index>` group the page animates for its
+ * per-platform entrance; `--sort-bins-units-per-px` (useUnitsPerScreenPx) lets that
+ * animation cover a true screen distance inside the scaled SVG.
+ *
+ * Depends on: deckTower/iso, sortTimeOfDay.ts. Depended on by: AddCardsPage.tsx.
  */
 
 export interface SortBinSpec {
@@ -355,23 +359,60 @@ const SortBin: React.FC<SortBinProps> = ({ spec, count, active, look, registerBi
     );
 };
 
-const SortBins: React.FC<SortBinsProps> = ({ bins, counts, activeBinId, look, registerBin, className }) => (
-    // Pinned to the BOTTOM of its box ("xMidYMax"), so the platforms sit just above the
-    // on-deck cards however tall the screen; the spare height goes above, under the toolbar.
-    <IsoScene proj={proj} viewBox={VIEW_BOX} preserveAspectRatio="xMidYMax meet" className={className} style={{ width: "100%", height: "100%", overflow: "visible" }}>
-        <style>{BIN_CSS}</style>
-        {bins.map((spec, i) => (
-            <g key={spec.id} transform={`translate(${BIN_ORIGIN_X[i]} ${BINS_LOWER_PX})`}>
-                <SortBin
-                    spec={spec}
-                    count={counts[spec.id] ?? 0}
-                    active={activeBinId === spec.id}
-                    look={look}
-                    registerBin={registerBin}
-                />
+/**
+ * Publishes the scene's scale as the CSS custom property `--sort-bins-units-per-px` on
+ * `el`: how many SVG user units one SCREEN px is. Inside the SVG a CSS `px` is a user
+ * unit, so a transform that must cover a screen distance (the page's per-bin entrance
+ * slides one full screen width, `100vw`, like a card) multiplies by this. Set before
+ * first paint and kept current as the scene resizes.
+ */
+function useUnitsPerScreenPx(ref: React.RefObject<SVGGElement | null>) {
+    useLayoutEffect(() => {
+        const el = ref.current;
+        const svg = el?.ownerSVGElement;
+        if (!el || !svg) return;
+        const publish = () => {
+            // getScreenCTM().a = screen px per user unit (no rotation or skew here).
+            const scale = el.getScreenCTM()?.a;
+            if (scale && scale > 0) el.style.setProperty("--sort-bins-units-per-px", String(1 / scale));
+        };
+        publish();
+        const observer = new ResizeObserver(publish);
+        observer.observe(svg);
+        return () => observer.disconnect();
+    }, [ref]);
+}
+
+const SortBins: React.FC<SortBinsProps> = ({ bins, counts, activeBinId, look, registerBin, className }) => {
+    const sceneRef = useRef<SVGGElement>(null);
+    useUnitsPerScreenPx(sceneRef);
+    return (
+        // Pinned to the BOTTOM of its box ("xMidYMax"), so the platforms sit just above the
+        // on-deck cards however tall the screen; the spare height goes above, under the toolbar.
+        <IsoScene proj={proj} viewBox={VIEW_BOX} preserveAspectRatio="xMidYMax meet" className={className} style={{ width: "100%", height: "100%", overflow: "visible" }}>
+            <style>{BIN_CSS}</style>
+            <g ref={sceneRef} className="sort-bins__scene">
+                {bins.map((spec, i) => (
+                    <g key={spec.id} transform={`translate(${BIN_ORIGIN_X[i]} ${BINS_LOWER_PX})`}>
+                        {/* The entrance hook: the page animates this group per bin
+                            (`.sort-bins__bin-slot--<index>`). Its own element because a CSS
+                            transform on the outer <g> would replace its `transform`
+                            attribute, and the bin's <g> below owns the active-scale
+                            transform. */}
+                        <g className={`sort-bins__bin-slot sort-bins__bin-slot--${i}`}>
+                            <SortBin
+                                spec={spec}
+                                count={counts[spec.id] ?? 0}
+                                active={activeBinId === spec.id}
+                                look={look}
+                                registerBin={registerBin}
+                            />
+                        </g>
+                    </g>
+                ))}
             </g>
-        ))}
-    </IsoScene>
-);
+        </IsoScene>
+    );
+};
 
 export default memo(SortBins);

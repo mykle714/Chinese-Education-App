@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import { styled } from "@mui/material/styles";
 import { Shelf, ShelfRow, Spine, spineHeight, SPINE_VARIANTS } from "./shelf";
 import { BAND_COLORS } from "../utils/categoryColors";
@@ -16,24 +15,10 @@ import { BAND_COLORS } from "../utils/categoryColors";
 // rendered its own shelf, so this file carries one display-only variant.
 
 /**
- * `Shelf`'s own page gutter, in px (components/shelf/Shelf.tsx). Restated here
- * because this file has to SUBTRACT it when measuring how much room the spines
- * actually have — see `useFittedSpineWidth`.
- */
-const SHELF_GUTTER = 22;
-
-/**
  * The row's minimum gap between spines, in px — `Spines` in components/shelf/Shelf.tsx.
  * A minimum rather than the spacing because this row is `distribute`d.
  */
 const SPINE_GAP = 10;
-
-/**
- * How narrow a spine may get before the row stops shrinking and simply overflows.
- * Below roughly this width "Comfort-able" no longer fits on two lines at the scaled
- * type size, so shrinking further trades one broken layout for another.
- */
-const MIN_SPINE_WIDTH = 46;
 
 const BucketsContainer = styled(Shelf, {
     shouldForwardProp: (prop) => prop !== "gutter",
@@ -46,57 +31,39 @@ const BucketsContainer = styled(Shelf, {
     // — passes `gutter={false}`, because inside that card the shelf's gutter is a
     // SECOND indent and the spines no longer line up with the card's own heading.
     ...(gutter ? null : { padding: 0 }),
+    // The query container the spines size themselves against (`fittedSpineWidth`).
+    // `cqw` resolves against the CONTENT box, so the gutter above is already excluded
+    // — no px bookkeeping for it.
+    containerType: "inline-size",
 }));
 
 /**
- * The width to render each spine at so all four fit the container on one line.
+ * The CSS width every spine renders at, so all four ALWAYS fit on one line, in pure
+ * CSS — nothing is measured in JS.
  *
- * ── WHY THIS IS MEASURED RATHER THAN FIXED ────────────────────────────────────
- * A spine is `flex-shrink: 0` at its natural 74px, and `ShelfRow` WRAPS when a row
- * runs out of width — which for this row means the fourth band drops underneath the
- * board and stands on nothing. Four spines need 4x74 + 3x10 = 326px, and inside the
- * profile page's language panel (page gutter + card padding + the shelf's own gutter)
- * there is closer to 290px on a phone. So the row must be told a width; it cannot
- * discover one.
+ *   width = min(74px, (100cqw − gaps) / count)
  *
- * Shrinking uniformly is safe for this particular shelf because the information here
- * is carried by HEIGHT (the count band) and the four spines keep whatever width they
- * are all given — the reader is still comparing like with like. Do not generalise it
- * to a row whose spines have different widths.
+ * On a wide container the cap holds (the design's spine, not a stretched one) and
+ * `distribute` spreads the slack between the spines. On a narrow one the spines
+ * exactly fill the row and the gaps stay at `SPINE_GAP`. There is deliberately no
+ * minimum (user, 2026-11-05: the row must always fit); every interior size scales
+ * with the width (`Spine`'s `px`), so a narrower spine is a uniformly smaller one.
  *
- * Returns `undefined` until the first measurement so the spines render at their
- * natural width rather than flashing at a guessed one.
+ * The spine's padding is INSIDE `width` (it renders border-box — the 56px of label
+ * room `BUCKET_LABELS` is written against is 74 − 2×9), so width IS the footprint.
+ *
+ * `ROUNDING_CUSHION` keeps sub-pixel layout rounding from tipping the row a hair over
+ * and wrapping — the original bug: the old ResizeObserver read `clientWidth`, which
+ * rounds to a whole pixel, and a row 0.4px too wide wrapped Mastered underneath.
+ *
+ * Shrinking uniformly is safe for this particular shelf because the information is
+ * carried by HEIGHT (the count band) and all four spines share one width. Do not
+ * generalise it to a row whose spines have different widths.
  */
-function useFittedSpineWidth(ref: React.RefObject<HTMLElement | null>, gutter: boolean, count: number) {
-    const [width, setWidth] = useState<number | undefined>(undefined);
-
-    useEffect(() => {
-        const element = ref.current;
-        if (!element || typeof ResizeObserver === "undefined") return;
-
-        const measure = () => {
-            // `clientWidth` includes the shelf's own padding, which the spines cannot
-            // use — subtract it rather than measuring the inner row, which `ShelfRow`
-            // does not expose a ref for.
-            const available = element.clientWidth - (gutter ? SHELF_GUTTER * 2 : 0);
-            if (available <= 0) return;
-            const natural = SPINE_VARIANTS.base.width;
-            // `SPINE_GAP` is the row's MINIMUM gap (the row is `distribute`d, so any
-            // slack beyond this lands between the spines rather than at the end).
-            // Reserving it here is what guarantees the fitted width never wraps.
-            const fitted = (available - SPINE_GAP * (count - 1)) / count;
-            // Never grow past the natural width — a wide container gets the design's
-            // spine, not a stretched one.
-            setWidth(Math.max(MIN_SPINE_WIDTH, Math.min(natural, Math.floor(fitted))));
-        };
-
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, [ref, gutter, count]);
-
-    return width;
+const ROUNDING_CUSHION = 1;
+function fittedSpineWidth(count: number): string {
+    const gaps = SPINE_GAP * (count - 1) + ROUNDING_CUSHION;
+    return `min(${SPINE_VARIANTS.base.width}px, (100cqw - ${gaps}px) / ${count})`;
 }
 
 /**
@@ -185,11 +152,10 @@ interface DeckBucketsProps {
  * that is a navigation surface rather than a report, drop the numeral.
  */
 const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
-    const containerRef = useRef<HTMLDivElement | null>(null);
-    const spineWidth = useFittedSpineWidth(containerRef, gutter, BUCKETS.length);
+    const spineWidth = fittedSpineWidth(BUCKETS.length);
 
     return (
-        <BucketsContainer className="decks-buckets-container" gutter={gutter} ref={containerRef}>
+        <BucketsContainer className="decks-buckets-container" gutter={gutter}>
             {/* `distribute`: the four bands are a FIXED row that always fits, so they
                 spread across the board rather than packing left and leaving dead
                 board on the right — which would read as a row cut off mid-shelf. */}
@@ -206,8 +172,8 @@ const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
                         glyph={BUCKET_GLYPHS[category]}
                         variant={spineHeight(counts[category] ?? 0)}
                         color={BAND_COLORS[category].main}
-                        // Narrowed to fit a small container; `undefined` on a container
-                        // wide enough for the design's natural 74px.
+                        // A CSS length against the row (`fittedSpineWidth`): the natural
+                        // 74px when there is room, narrower when there is not.
                         width={spineWidth}
                         // Stagger so the four cascade left-to-right instead of firing at once.
                         animationDelay={index * 70}

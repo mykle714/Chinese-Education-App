@@ -96,7 +96,7 @@ export interface RouteMeta {
   /**
    * How the footer bar is drawn here. Omit for the app-wide flat `bar`; `slab` is the
    * floating flashcard slab (Tower Style design), worn by the Deck Tower (`/`), the Dictionary tab, both
-   * card detail pages and ancp.
+   * card detail pages and acp.
    * Meaningless without `footerTab`. See MobileFooter / docs/DECK_TOWER.md § Footer.
    */
   footerStyle?: FooterStyle;
@@ -189,7 +189,7 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
   { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary", footerStyle: "slab" },
 
-  // Add New Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so ancp is a
+  // Add Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so acp is a
   // drill-in from the Deck Tower (the main world's sort platform) and lights the Deck tab. The
   // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
   // Wears the floating `slab` footer since its Tower Tier 2 re-skin (2026-10-29): the page

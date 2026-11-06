@@ -80,8 +80,10 @@ Code: `src/features/profile/UserProfilePage.tsx` → `renderFriendAction`, `rend
 
 ## Every relationship control lives in the top bar
 
-Add friend / Accept / Revoke / Remove **and** the challenge block are icon buttons in the
-page's grey top bar (`NodePage`'s `headerExtraActions` slot — the same slot the card
+Add friend / Accept / Revoke / Remove **and** the challenge block are `HeaderIconButton`s
+(the shared header icon primitive, `src/components/PageHeader.tsx`, so they size and space
+like every other header action; raw MUI `IconButton`s until 2026-11-05) in the page's
+top bar (`NodePage`'s `headerExtraActions` slot — the same slot the card
 detail and collection pages put their per-subject actions in), not in the page body.
 
 Two reasons. They are all answers to one question — *what is this person to me* — so
@@ -93,13 +95,14 @@ The identity card below is therefore identity only: avatar, name, email, and the
 "studying / friends since" line.
 
 The block is a **toggle, not a command**, so it renders its own state the way a favourite
-star does — filled `DoNotDisturbOn` in red when blocked, outline `Block` in muted grey
-when not. The fill change matters: colour alone would not survive a colourblind viewer.
-`aria-pressed` carries the same fact to assistive tech, which no icon can, and the
-tooltip carries the symmetry wording an icon has no room for.
+star does — filled `do_not_disturb_on` in red when blocked, outlined `block` in muted grey
+when not (`HeaderIconButton`'s `fill`). The fill change matters: colour alone would not survive a colourblind viewer.
+`aria-pressed` (`HeaderIconButton`'s `pressed`) carries the same fact to assistive tech, which no icon can, and the
+tooltip (`HeaderIconButton`'s `title`) carries the symmetry wording an icon has no room for.
 
 Code: `src/features/profile/UserProfilePage.tsx` → `renderFriendAction`,
-`renderBlockToggle`; `src/features/profile/profileStyles.ts` → `profileHeaderIconSx`.
+`renderBlockToggle`; `src/components/PageHeader.tsx` → `HeaderIconButton`. A disabled
+button dims to the header's shared 0.4 opacity (it used to turn `COLORS.rowBorder`).
 
 ## The challenge-block toggle
 
@@ -240,14 +243,14 @@ profile and your own account present progress identically. The panel is a **padd
 card**, though, and the Account page is a page with no padding of its own — so this
 host passes `gutter={false}` to suppress `Shelf`'s own 22px page gutter (which would
 otherwise indent the spines past the panel's "Progress" heading), and `DeckBuckets`
-measures the panel and narrows all four spines to fit one line. Without that the
+sizes all four spines against the panel in CSS (`cqw`) so they always fit one line. Without that the
 fourth band wraps below the shelf's board. See docs/SHELF_REDESIGN.md § "5 · Account"
 for why the gutter is opt-in rather than always-off.
 
 Code: `server/services/UserProfileService.ts` → `getProfile`;
 `server/types/userProfile.ts` → `ProfileLanguageStats`, `ProfileStats`;
 `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
-`src/components/DeckBuckets.tsx` → `useFittedSpineWidth`, `BucketsContainer`.
+`src/components/DeckBuckets.tsx` → `fittedSpineWidth`, `BucketsContainer`.
 
 ## Card designs
 

@@ -40,16 +40,3 @@ export const profileSectionTitleSx = {
     color: COLORS.onSurface,
 } as const;
 
-/**
- * A control in the page's grey top bar (docs/USER_PROFILE_PAGE.md § header).
- *
- * The bar is a tight, icon-only strip shared with the back arrow and the title, so
- * these are `IconButton`s and the only thing they vary is COLOUR — which carries the
- * action's valence exactly as the friend screens already do: green adds a person, red
- * removes one or means "blocked", muted for everything neutral. A button that
- * unfriends must not look like the button that befriends.
- */
-export const profileHeaderIconSx = (color: string) => ({
-    color,
-    "&.Mui-disabled": { color: COLORS.rowBorder },
-}) as const;

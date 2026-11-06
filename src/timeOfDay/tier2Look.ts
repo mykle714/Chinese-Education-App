@@ -24,10 +24,11 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "./dayPhase";
  * The ground and well BLEND across the tower's hour-long twilights, so this page and the
  * tower always agree on the hour. Surfaces and ink cannot blend — half-way white on
  * half-way slate under half-way ink is unreadable — so they FLIP together once night is
- * the larger share (`dark`), the same rule as the eip's ink (eipPalette.ts).
+ * the larger share (`dark`).
  *
  * The ground values are the eip's upper-panel `--g` family (eipPalette.ts carries the same
- * hexes for its own panel); the Add New Cards page uses the design's separate `--gr` ground by day and
+ * hexes for its own panel — the eip's LIGHT palette, which follows the Settings theme rather
+ * than this clock since 2026-11-05); the Add Cards page uses the design's separate `--gr` ground by day and
  * the tower's night sky at night (features/discover/sortTimeOfDay.ts). Keep them apart.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (like the tower's `PHASE_SKY`): the
@@ -133,9 +134,9 @@ export function tier2LookAt(time: TimeOfDay): Tier2Look {
  * fine here: the day ↔ night blend runs through the twilight the tower's sky is also
  * crossing.
  *
- * ⚠️ DUPLICATE of features/deckTower/iso/palette.ts → `mixHex` (and a private copy in
- * eipPalette.ts). Kept local because a shared module must not import from a feature; the
- * three should collapse into one shared colour util (flagged 2026-10-29).
+ * ⚠️ DUPLICATE of theme/shadeHex.ts → `mixHex` (which eipPalette.ts and wash.ts already
+ * use) and features/deckTower/iso/palette.ts → `mixHex`. theme/ is shared, so this copy
+ * could import theme/shadeHex instead (flagged 2026-10-29; still open).
  */
 function mixHex(a: string, b: string, t: number): string {
     if (t <= 0 || a === b) return a;

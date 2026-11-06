@@ -9,12 +9,12 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Deck** (`/`, the Deck Tower), **Menu** (`/menu`, the hub bento), **Arena** (`/arena`, only while the `arena` flag is on), **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Add New Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Deck** (`/`, the Deck Tower), **Menu** (`/menu`, the hub bento), **Arena** (`/arena`, only while the `arena` flag is on), **Dictionary** — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`). Add Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
 | **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Menu, Arena, Dictionary, Games hub use it scrolling; td (`/`) mounts it with `scrollable={false}`. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
-| **Add New Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (ancp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
-| **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers cycle Auto → Intro → Graduated from a header toggle. |
+| **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
+| **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers pick Auto / Force intro / Force graduated in Settings → "Soft introductions" (under "Enable testing features"). |
 | **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Deck tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
 | **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, carpet, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
@@ -92,7 +92,7 @@ should not grow a *second* Pixi host if it needs one; borrow the night market's
 > 1. Binding `drag` and `pinch` together requires `drag: { pointer: { touch: true } }`.
 >    Otherwise the pointer-event stream is cancelled on touch devices once the browser
 >    arbitrates between the two gestures, and the pan **works with a mouse and does
->    nothing on a phone**. A plain `useDrag` with nothing competing (AddNewCardsPage) does
+>    nothing on a phone**. A plain `useDrag` with nothing competing (AddCardsPage) does
 >    not need it — it is the combination that breaks.
 > 2. If you need `eventOptions: { passive: false }` (to preventDefault the browser's own
 >    pinch-zoom), you **must** bind with the `target` option and must **not** spread
@@ -458,7 +458,7 @@ So on mobile (below MUI's `md`) `body` takes the claimed ground from `--surface-
 which matches the tint to the ground and hides the fade over flat colour only. Before any
 claim, it is paper. On desktop `body` is the backdrop around the phone card, so it stays
 the palette's default and never follows a claim. **Any surface that paints its own ground to the top of
-the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `AddNewCardsPage`,
+the screen must claim it**: games (`GameSurface`), `DeckTowerPage`, `AddCardsPage`,
 `useTier2Look`, `DivisionBanner`, and `SheetPanel` while fully merged
 (`writeMergeChrome` → `claimThemeColor`).
 Other projects report the overlay on `black-translucent` home-screen apps since iOS 26.1,
@@ -479,7 +479,7 @@ compute exactly the design's original geometry.
 | Footer bar | Grows by `SAFE_BOTTOM` and pads its labels off the home indicator | `MobileFooter` → `FOOTER_TOTAL_HEIGHT` |
 | Footer hide travel | Translates by the bar's **total** height, or the inset's worth of bar peeks back | `FooterPresenter` |
 | Scroll clearance + bottom edge-fade | Reserve and fade against the bar's total height | `MobileTabScreen`, `FOOTER_TOTAL_CLEARANCE` |
-| Sheet pills, the ancp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddNewCardsPage` |
+| Sheet pills, the acp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddCardsPage` |
 | flp merge sheet | Its own top padding ramps to `SAFE_TOP` as the sheet merges into a full-screen page, so its header passes `safeAreaTop={false}` and does not add the inset twice | `SheetPanel` → `writeMergeChrome` |
 
 **The header, not the frame, carries the top inset.** Padding the frame would stop the
@@ -500,7 +500,7 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Popup family | Behaviour while a keyboard is up | Where |
 |---|---|---|
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
-| Every `SheetPanel` (eip, compare sheet, ancp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
+| Every `SheetPanel` (eip, compare sheet, acp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
 **Sheets with a dictionary search maximize on focus.** Focusing a field inside an element
 marked `data-sheet-maximize-on-focus` animates its `SheetPanel` to full height (the same
@@ -552,7 +552,7 @@ hold.
 | Dim | Host / z-index | Where |
 |---|---|---|
 | Every MUI `Dialog` | mounted in the frame by `MuiDialog.defaultProps.container` (`dialogContainer`); root re-pinned `absolute` inside the frame; backdrop `absolute`, `COLORS.modalScrim`; z 1300 | `src/contexts/ThemeContext.tsx` → `MuiDialog` |
-| `SheetPanel` (modal: eip, ancp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
+| `SheetPanel` (modal: eip, acp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
 | `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
 | Immersive World intro card + interaction popup | frame; 200 | `src/features/immersiveworld/play/IWSceneIntroCard.tsx`, `IWPlayPage.tsx` |
@@ -566,7 +566,7 @@ hold.
 - **Countdown veils** (Match Speed, Writing Grid — the 3·2·1 over the board) dim only the
   game panel (`GameFrame`, `position: relative`). They are pointer-transparent and the
   header's back arrow stays usable during the count (decided 2026-10-06).
-- Tile-level washes (a drop bucket's hover, a bubble's dim, ancp's held-card-over-target
+- Tile-level washes (a drop bucket's hover, a bubble's dim, acp's held-card-over-target
   cue) are not background dims.
 
 **Cost:** a frame-hosted overlay is outside the page surface, so the page-slide exit
@@ -576,7 +576,7 @@ sliding it off with the page.
 **History:** until 2026-10-06 overlays hosted at `nearestOverlayHost` (inside a
 transformed page Surface) and slid the footer away with `useHideFooter`. That left the
 leaf header lit above five games' end popups (their scrim was pinned to a `relative`
-content box below the header), the footer lit — and tappable — above ancp's set-complete
+content box below the header), the footer lit — and tappable — above acp's set-complete
 popup, and MUI dialogs dimming the whole desktop browser window in MUI's own black.
 
 ---

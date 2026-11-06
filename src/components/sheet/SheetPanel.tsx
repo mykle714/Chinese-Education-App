@@ -48,6 +48,11 @@ export interface SheetTelescopeHandle {
     frame: HTMLElement | null;
     content: HTMLElement | null;
     extra: HTMLElement | null;
+    // px of vertical SPACING inside the content that an overstretch may close
+    // (`squeezeOnOverstretch`). Rows never shrink — only the gaps between them do — so
+    // the host declares how much gap there is, and applies the squeeze itself from the
+    // `--sheet-squeeze` fraction SheetPanel writes on the frame. 0/absent = no squeeze.
+    squeezable?: number;
 }
 
 // Imperative handle exposed by SheetPanel so the parent can read the panel's
@@ -133,7 +138,7 @@ interface SheetPanelProps {
     // collapses a sheet to its floor is not a close.
     showClose?: boolean;
     // Draw the minute-points flame to the LEFT of the ✕. Passed by the STUDY SURFACES
-    // eip sheets (flp, ancp, cdp — the minute-eligible pages of src/constants.ts) and
+    // eip sheets (flp, acp, cdp — the minute-eligible pages of src/constants.ts) and
     // NEVER by pull-up dictionary flows (CompareSheet, NotebookWordPickerSheet), because a sheet
     // covers its page's header and takes the page's own flame with it: without this the
     // one indicator that says "your time is counting" disappears exactly while the
@@ -180,6 +185,14 @@ interface SheetPanelProps {
     // the sheet (and telescopes from there), and its white shelf runs to the bottom edge.
     // At full merge the top still gets the status-bar inset either way.
     edgePadding?: boolean;
+    // Let a resize drag carry on PAST max (default false). The sheet itself cannot grow
+    // (it is already the whole screen), so the extra travel squeezes the telescope's upper
+    // panel instead: the frame shrinks by a rubber-banded amount (asymptotic to the
+    // handle's `squeezable` spacing), the host closes its gaps to match, and the lower
+    // panel (flex: 1) rides up into the freed space. Release springs back to max. Needs `telescopeRef`;
+    // the eip turns it on (2026-11-05). See writeTelescope and "Overstretch" in
+    // docs/EIP_SHEET_GESTURES.md.
+    squeezeOnOverstretch?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +231,7 @@ const CLOSE_CLUSTER_RIGHT_PX = 16;
 
 // Base stacking for the portaled scrim + sheet. Both are hosted at FRAME level now
 // (see the portal note), so they no longer compete with their page's content area —
-// they compete with the page's top-level layers, and those go high: the ancp lifts its
+// they compete with the page's top-level layers, and those go high: the acp lifts its
 // draggable cards to 1000 and its eip host to 1100. Chosen below MUI's modal layer
 // (1300) so a real Dialog still covers the sheet.
 const SCRIM_BASE_Z_INDEX = 1200;
@@ -274,6 +287,27 @@ const AT_MAX_EPSILON_PX = 1;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+// ---- Overstretch (squeezeOnOverstretch) ------------------------------------
+// The squeeze's asymptote is the telescope's `squeezable` spacing: the gaps approach
+// closed but never reach it. Rubber-band stiffness (the classic iOS scroll-view coefficient): how quickly the
+// squeeze approaches its limit as the finger keeps pulling. Lower = stiffer.
+const OVERSTRETCH_RESISTANCE = 0.55;
+
+// Finger travel past max (`raw`, px) → visible squeeze (px), approaching `limit`
+// asymptotically: 1:1-ish at first, then ever stiffer, never reaching the limit.
+function rubberBand(raw: number, limit: number): number {
+    if (raw <= 0 || limit <= 0) return 0;
+    return limit * (1 - 1 / ((raw * OVERSTRETCH_RESISTANCE) / limit + 1));
+}
+
+// Inverse of rubberBand: the raw travel that produces a visible squeeze. Used to take
+// over a spring-back mid-flight from exactly what is on screen (freezeHeight).
+function inverseRubberBand(visible: number, limit: number): number {
+    if (visible <= 0 || limit <= 0) return 0;
+    const r = Math.min(visible / limit, 0.999);
+    return (limit / OVERSTRETCH_RESISTANCE) * (1 / (1 - r) - 1);
+}
+
 // Shared snap rule used by every release path (grabber drag, touch release,
 // momentum decay): below default → dismiss (0); at or above it → the lower
 // stop if the sheet sits below `collapseRatio` of the way up to the max,
@@ -325,6 +359,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     surface,
     showGrabber = true,
     edgePadding = true,
+    squeezeOnOverstretch = false,
 }, ref) => {
     const sheetContainerRef = useRef<HTMLDivElement | null>(null);
     const scrimRef = useRef<HTMLDivElement | null>(null);
@@ -373,10 +408,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // ---- Where the SHEET mounts (2026-08-30) -------------------------------
     // The sheet is portaled to the SAME host as the scrim, and that is what lets it
     // reach full height. Rendered in place it is `absolute; bottom: 0` against the host
-    // PAGE's content box — which starts BELOW the page header (flp's ContentArea, ancp's
+    // PAGE's content box — which starts BELOW the page header (flp's ContentArea, acp's
     // ContentArea) and is clipped by MobileTabScreen's ScrollArea — so `parentElement.
     // clientHeight` could never include the header and growing past it would just be
-    // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (ancp no
+    // cut off. Hosted at frame level, `bottom: 0` is the real bottom edge (acp no
     // longer needs its negative-bottom FOOTER_CLEARANCE trick for this) and
     // `parentHeight` is the whole screen, so MAX_HEIGHT_RATIO = 1 covers everything.
     //
@@ -415,6 +450,12 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // springing back up.
     const defaultHeightRef = useRef(0);
     const momentumRafRef = useRef<number | null>(null);
+    // Raw finger travel (px) PAST max, when `squeezeOnOverstretch` is on. Not a height:
+    // the sheet stays at max while this is > 0, and writeTelescope turns it into a
+    // rubber-banded squeeze of the upper panel. 0 whenever the sheet is below max.
+    const overstretchRef = useRef(0);
+    const squeezeOnOverstretchRef = useRef(squeezeOnOverstretch);
+    squeezeOnOverstretchRef.current = squeezeOnOverstretch;
     const dismissTimerRef = useRef<number | null>(null);
     // True from the moment a dismiss animation starts; makes dismiss idempotent
     // and lets input handlers ignore events while the sheet is on its way out.
@@ -511,9 +552,22 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const openH = defaultHeightRef.current;
         const maxH = parentHeightRef.current * MAX_HEIGHT_RATIO;
         const reveal = h <= openH ? 0 : (maxH > openH ? clamp((h - openH) / (maxH - openH), 0, 1) : 1);
-        const frameH = h <= openH
+        let frameH = h <= openH
             ? (openH > 0 ? rest * (h / openH) : 0)
             : rest + extra * reveal;
+        // OVERSTRETCH: travel past max shrinks the frame by a rubber-banded amount of the
+        // host's `squeezable` spacing, and hands the host the fraction closed
+        // (`--sheet-squeeze`, 0 → 1) so it can close its gaps by exactly that much. Rows
+        // keep their size. The host closes gaps with TRANSFORMS, not layout, so the
+        // content's measured height (measureTelescope) never sees the squeeze, and they
+        // ride `--sheet-telescope-transition`, so a spring-back reopens the gaps in
+        // lockstep with the frame.
+        const squeezable = telescopeRef?.current?.squeezable ?? 0;
+        if (squeezeOnOverstretchRef.current && squeezable > 0) {
+            const squeeze = rubberBand(overstretchRef.current, squeezable);
+            frameH -= squeeze;
+            frame.style.setProperty("--sheet-squeeze", String(squeeze / squeezable));
+        }
         frame.style.transition = animate ? `height ${SNAP_DURATION_MS}ms ease-out` : "none";
         frame.style.height = `${frameH}px`;
         frame.style.setProperty("--sheet-telescope-t", String(reveal));
@@ -568,6 +622,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         // A write during the open slide takes over from it (see "Entry slide").
         endEntrySlide(true);
         heightRef.current = h;
+        // Overstretch only exists AT max; any write below it ends one.
+        if (h < parentHeightRef.current * MAX_HEIGHT_RATIO - AT_MAX_EPSILON_PX) overstretchRef.current = 0;
         const el = sheetContainerRef.current;
         if (!el) return;
         writeTelescope(h, animate);
@@ -606,10 +662,22 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const el = sheetContainerRef.current;
         // Minus any open slide's offset: mid-slide, part of the laid-out sheet is still
         // below the frame (the rect's height does not see a transform's travel).
-        const h = el ? el.getBoundingClientRect().height - entrySlideOffset() : heightRef.current;
+        let h = el ? el.getBoundingClientRect().height - entrySlideOffset() : heightRef.current;
+        const maxH = parentHeightRef.current * MAX_HEIGHT_RATIO;
+        // A maxed sheet may be mid spring-back from an overstretch: recover the raw
+        // overstretch from the frame's on-screen squeeze, so the new gesture takes over
+        // from what is visible instead of jumping to the un-squeezed panel.
+        const frame = telescopeRef?.current?.frame;
+        if (squeezeOnOverstretchRef.current && h >= maxH - AT_MAX_EPSILON_PX && frame) {
+            h = maxH;
+            if (telescopeFullRef.current < 0) measureTelescope();
+            const full = telescopeFullRef.current;
+            const squeeze = Math.max(0, full - frame.getBoundingClientRect().height);
+            overstretchRef.current = inverseRubberBand(squeeze, telescopeRef?.current?.squeezable ?? 0);
+        }
         writeHeight(h);
         return h;
-    }, [writeHeight, entrySlideOffset]);
+    }, [writeHeight, entrySlideOffset, telescopeRef, measureTelescope]);
 
     const stopMomentum = useCallback(() => {
         if (momentumRafRef.current !== null) {
@@ -710,23 +778,41 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             dismiss();
             return;
         }
-        if (target !== heightRef.current) writeHeight(target, true);
+        // An overstretch always springs back: the sheet is already at its target (max),
+        // but the squeezed upper panel still has to animate home.
+        const overstretched = overstretchRef.current > 0;
+        overstretchRef.current = 0;
+        if (target !== heightRef.current || overstretched) writeHeight(target, true);
     }, [dismiss, maxHeight, writeHeight]);
+
+    // Write a "virtual" height that may run past max: the part within [minH, max] is the
+    // sheet's real height, and the part above max (when `allowOverstretch` and the panel
+    // opted in) becomes the overstretch that squeezes the upper panel. Returns the virtual
+    // height actually applied, so callers can tell when a boundary absorbed the delta.
+    const writeVirtualHeight = useCallback((v: number, minH: number, allowOverstretch: boolean): number => {
+        const maxH = maxHeight();
+        const canOverstretch = allowOverstretch && squeezeOnOverstretchRef.current;
+        const h = clamp(v, minH, maxH);
+        // Set BEFORE writeHeight, which places the telescope from it.
+        overstretchRef.current = canOverstretch ? Math.max(0, v - maxH) : 0;
+        writeHeight(h);
+        return h + overstretchRef.current;
+    }, [maxHeight, writeHeight]);
 
     // Grow/shrink by a raw gesture delta (positive = grow). `minH` is the floor
     // for THIS caller: a live finger may drag all the way to 0 (that's how you
     // dismiss), while momentum floors at the default height so a fling can
     // never close the panel on its own. Returns false when the delta was fully
     // absorbed by a boundary, which every caller treats as a hard stop.
-    const applyResize = useCallback((rawDy: number, minH: number): boolean => {
+    //
+    // `overstretch`: a LIVE finger only (never momentum or the wheel) may carry on past
+    // max when `squeezeOnOverstretch` is on — see writeVirtualHeight.
+    const applyResize = useCallback((rawDy: number, minH: number, overstretch = false): boolean => {
         // Mid open-slide, take over at the VISIBLE height (heightRef is still the target).
         endEntrySlide(true);
-        const h = heightRef.current;
-        const next = clamp(h + rawDy * RESIZE_SENSITIVITY, minH, maxHeight());
-        if (next === h) return false;
-        writeHeight(next);
-        return true;
-    }, [maxHeight, writeHeight, endEntrySlide]);
+        const virtual = heightRef.current + overstretchRef.current;
+        return writeVirtualHeight(virtual + rawDy * RESIZE_SENSITIVITY, minH, overstretch) !== virtual;
+    }, [writeVirtualHeight, endEntrySlide]);
 
     // Play the open animation from 0 → target height on first render. The
     // panel's own open height is a fixed fraction of the parent (screen) height
@@ -812,11 +898,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             if (dragStartHeightRef.current === null) {
                 // Nothing has moved yet — leave any open/snap animation alone.
                 if (my === 0) return;
-                dragStartHeightRef.current = freezeHeight();
+                // Start from the VIRTUAL height, so grabbing a panel that is still
+                // springing back from an overstretch continues from its squeeze.
+                dragStartHeightRef.current = freezeHeight() + overstretchRef.current;
             }
             // Absolute tracking from the gesture's start height (useDrag gives
-            // cumulative movement), so the sheet can't drift over a long drag.
-            writeHeight(clamp(dragStartHeightRef.current - my * RESIZE_SENSITIVITY, minHeightRef.current, maxHeight()));
+            // cumulative movement), so the sheet can't drift over a long drag. Past
+            // max it overstretches (squeezeOnOverstretch).
+            writeVirtualHeight(dragStartHeightRef.current - my * RESIZE_SENSITIVITY, minHeightRef.current, true);
             if (last) {
                 dragStartHeightRef.current = null;
                 settle();
@@ -914,7 +1003,19 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 // Take over from the height that is actually on screen — the
                 // sheet may still be mid open/snap animation.
                 const h = freezeHeight();
-                if (dy > 0) gestureMode = h < maxHeight() - AT_MAX_EPSILON_PX ? "resize" : "scroll";
+                // An overstretched panel (caught mid spring-back) is always a resize:
+                // locking it to "scroll" would leave the squeeze stranded, since a
+                // scroll gesture never settles.
+                if (overstretchRef.current > 0) gestureMode = "resize";
+                else if (dy > 0) {
+                    // At max, an upward pull scrolls the content while it has somewhere
+                    // to go. Once it cannot (short content, or already at its bottom) and
+                    // the panel overstretches, the pull squeezes instead (2026-11-05):
+                    // "resize" is the path that carries travel past max.
+                    const atMax = h >= maxHeight() - AT_MAX_EPSILON_PX;
+                    const canScrollFurther = scrollEl.scrollTop < scrollEl.scrollHeight - scrollEl.clientHeight - AT_MAX_EPSILON_PX;
+                    gestureMode = !atMax || (squeezeOnOverstretchRef.current && !canScrollFurther) ? "resize" : "scroll";
+                }
                 else gestureMode = scrollEl.scrollTop > 0 ? "scroll" : "resize";
             }
             if (gestureMode === "scroll") {
@@ -936,7 +1037,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 // modal panel (that is the dismiss gesture), the resting height
                 // for a persistent one. Hitting a boundary swallows the delta
                 // rather than spilling over into a content scroll.
-                applyResize(dy, minHeightRef.current);
+                // `true`: a live finger may pull on past max (squeezeOnOverstretch).
+                applyResize(dy, minHeightRef.current, true);
             }
             e.preventDefault();
         };
@@ -961,7 +1063,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             // A "scroll" gesture is the browser's now, fling included — running our
             // own rAF momentum on top of a native fling would double-scroll.
             if (mode === "scroll") return;
-            if (Math.abs(velocity) < FLING_MIN_VELOCITY) {
+            // Released while overstretched: spring back to max, never fling.
+            if (Math.abs(velocity) < FLING_MIN_VELOCITY || overstretchRef.current > 0) {
                 settle();
                 return;
             }

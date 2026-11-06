@@ -56,6 +56,12 @@ export const SPINE_VARIANTS: Record<SpineVariant, VariantSpec> = {
  *      did not know its own width, which is what container units are for. A spine is
  *      `flex-shrink: 0` and is always given an explicit width, so the component knows
  *      the scale at render time and plain arithmetic is exact.
+ *
+ * The one place `cqw` IS used is one level up: a ROW may make itself the query
+ * container and pass each spine a CSS-length `width` derived from `100cqw`
+ * (DeckBuckets → `fittedSpineWidth`). `Spine` then scales these sizes as
+ * `calc(<width> × n/natural)`. That works because the container is an ANCESTOR of
+ * the spine, which is exactly what reason 1 says self-querying was not.
  */
 export const SPINE_SIZES = {
     /** `.sp` padding. */

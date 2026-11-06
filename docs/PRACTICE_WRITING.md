@@ -50,7 +50,10 @@ There is exactly **one** entry point per page, the `Write it` pill on `WordTools
 (`src/components/WordToolsRail.tsx`, `rail` appearance) — a rail **above** the card and
 outside its boundary, because the drill acts on the WORD, not on the card. Hosts:
 
-- **flp** — `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`
+- **flp** — `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`. A press
+  while the question face is up flips the card first (`revealAnswer`, wired as
+  `WordToolsRail` `onToolPress` in the capture phase so it runs before the button's own
+  handler), so the popup never opens over an unrevealed answer.
 - **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
 - **Dictionary page eip** — `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx`
   (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`) — and the

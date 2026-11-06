@@ -16,7 +16,7 @@ et = expansion tab (in the extra info card)
 mdp = mobile demo page
 flp = the flashcard study session (`FlashcardsLearnPage`), run in place inside the Deck Tower — no route of its own since 2026-11-04
 gsa = greedy segmentation algorithm
-ancp = add new cards page (formerly scp, renamed 2026-11-04) — the drag-to-sort page at `/discover/sort/:language` (reached from the Deck Tower's sort platform; Back returns to `/`, main world — the `/discover` hub was deleted 2026-10-17)
+acp = add cards page (formerly ancp "add new cards page" → renamed 2026-11-05; before that scp, renamed 2026-11-04) — the drag-to-sort page at `/discover/sort/:language` (reached from the Deck Tower's sort platform; Back returns to `/`, main world — the `/discover` hub was deleted 2026-10-17)
 hp = hub menu page — the Menu bento at `/menu` (`src/pages/MenuPage.tsx`; Games, Reader, Friends, Night Market, Tester Dashboard, …); footer Menu tab. `/` (footer Deck tab) is the Deck Tower (td)
 tdp = tester dashboard page — `/tester-dashboard` (former landing content: study time, streak, calendar, leaderboard)
 cdp = card detail page
@@ -215,7 +215,7 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 → See [docs/USER_DOCUMENT_FEATURE_SUMMARY.md](./docs/USER_DOCUMENT_FEATURE_SUMMARY.md)
 
 ### Data Validation System
-→ See [docs/DATA_VALIDATION_SYSTEM.md](./docs/DATA_VALIDATION_SYSTEM.md) — validator accounts (`users.isValidator`, migration 104) download an auto-composed Reader doc for one field of one discoverable det entry (`Validate - <word1>`) and Approve or Flag-with-suggestion; outcomes go to the dedicated `validations` table (per entry+field, keyed by det id — survives det data deploys) with the reviewed `content` stored for both actions, a shared content sanitizer guards document bodies, and backfills skip human-reviewed fields via `validatedClause`.
+→ See [docs/DATA_VALIDATION_SYSTEM.md](./docs/DATA_VALIDATION_SYSTEM.md) — validator accounts (`users.isValidator`, migration 104) Approve or Flag one field of one discoverable det entry via inline buttons on the est/definition/meta-chip UI (the Reader document queue was removed by migration 183); outcomes go to the dedicated `validations` table (per entry+field, keyed by det id — survives det data deploys) with the server-composed `content` stored on approve, and backfills skip human-reviewed fields via `validatedClause`.
 
 ### Night Market
 → See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)

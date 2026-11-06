@@ -1,19 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Collapse, useTheme, IconButton, Snackbar, Alert } from "@mui/material";
-import {
-    TouchApp as TouchAppIcon,
-    Edit as EditIcon,
-    Delete as DeleteIcon,
-    CheckCircle as CheckCircleIcon,
-    Flag as FlagIcon,
-} from "@mui/icons-material";
+import { Box, Collapse, useTheme, useMediaQuery, Snackbar, Alert } from "@mui/material";
+import { TouchApp as TouchAppIcon } from "@mui/icons-material";
+import { HeaderIconButton } from "../../components/PageHeader";
+import { COLORS } from "../../theme/colors";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
 import { API_BASE_URL } from "../../constants";
 import { apiPost, apiPut, ApiError } from "../../api/http";
+import { NEW_DOCUMENT_ID } from "./readerPaths";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../../utils/tokenUtils";
@@ -32,6 +29,12 @@ import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useLockBodyScroll } from "../../hooks/useLockBodyScroll";
 import { SAFE_TOP } from "../../theme/safeArea";
+import {
+    useKeyboardInset,
+    transitionForInset,
+    BEGINNER_KEYBOARD_SLIDE_MS,
+    BEGINNER_KEYBOARD_EASING,
+} from "../beginnerKeyboard";
 
 // Drop-in/collapse timing for ReaderEditToolbar, matching the fie toolbar's
 // CARD_EDIT_ANIM_MS/EASING (CardEditToolbar.tsx) so both editors' toolbars
@@ -52,6 +55,12 @@ const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 // drill-in from the `/reader` list (docs/LEAF_NODE_PAGES.md § Reader). Fetches its
 // own Text by id (cdp-style: same pattern as VocabCardDetailPage), so it is
 // deep-linkable/refreshable and supports the browser back button.
+//
+// `/reader/new` (NEW_DOCUMENT_ID) is a BLANK DRAFT: no fetch, opened straight in
+// edit mode, and nothing exists server-side until the first Save — which POSTs the
+// document (the server derives its title from the content), then swaps the URL for
+// the real id. Cancel/back on a draft simply leaves; there is nothing to clean up.
+// Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Creating a document".
 function ReaderDocumentPage() {
     usePageTitle("Reader");
     const { id } = useParams<{ id: string }>();
@@ -59,8 +68,25 @@ function ReaderDocumentPage() {
     const theme = useTheme();
     const customTheme = useCustomTheme();
     const { token, user } = useAuth();
+    const isNewDraft = id === NEW_DOCUMENT_ID;
+    // Set on a draft's first Save, just before the URL is replaced with the new id —
+    // so the fetch effect below, which re-runs on the id change, knows the page
+    // already holds this document (and its processed vocab) and skips a reload.
+    const justCreatedIdRef = useRef<string | null>(null);
     const vocabularyUpdate = useVocabularyUpdate();
     useLockBodyScroll();
+
+    // KEYBOARD LIFT (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing). While editing
+    // with a keyboard up — ours or the OS's, `useKeyboardInset` is the union — the
+    // title block and vocab card fold away so the text box rises to sit just under
+    // the edit toolbar, and the content area reserves the keyboard's height at the
+    // bottom so the box ends at the keyboard's top edge instead of behind it. Both
+    // ride the keyboard's own slide curve, so the box goes up WITH the keyboard and
+    // comes back down with it (the provider zeroes the inset as the exit starts).
+    // Keyed on the inset, not just on edit mode: dismissing the keyboard mid-edit
+    // brings the header back while the editor stays open.
+    const keyboardInset = useKeyboardInset();
+    const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
     const [text, setText] = useState<Text | null>(null);
     const [loading, setLoading] = useState(true);
@@ -69,14 +95,6 @@ function ReaderDocumentPage() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
     const [tapHintOpen, setTapHintOpen] = useState(false);
-    const [validationMsg, setValidationMsg] = useState<string | null>(null);
-    // Snackbar severity for validation feedback — a failed submit must show as an
-    // error, not green success.
-    const [validationSeverity, setValidationSeverity] = useState<'success' | 'error'>('success');
-    const notifyValidation = useCallback((msg: string, severity: 'success' | 'error' = 'success') => {
-        setValidationMsg(msg);
-        setValidationSeverity(severity);
-    }, []);
     const [savingEdit, setSavingEdit] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
@@ -88,6 +106,18 @@ function ReaderDocumentPage() {
     // on `token` (a silent access-token refresh must not re-fetch and reset the
     // reading position — see CLAUDE.md "Never reload on token refresh").
     useEffect(() => {
+        // The draft that was just saved: already in state, nothing to reload.
+        if (id && id === justCreatedIdRef.current) {
+            justCreatedIdRef.current = null;
+            return;
+        }
+        if (isNewDraft) {
+            setNotFound(false);
+            setText(blankDraft(user?.selectedLanguage));
+            contentEditor.enterEditMode('');
+            setLoading(false);
+            return;
+        }
         let cancelled = false;
         const fetchText = async () => {
             try {
@@ -221,16 +251,20 @@ function ReaderDocumentPage() {
     // Focus the reading box once the document loads, auto-highlighting the first
     // word. Keyed on the document id only — must NOT re-run (and reset the caret)
     // on every auto-select toggle.
+    // Not for a new draft: it opens in edit mode, whose textarea focuses itself
+    // (TextArea), and the reading box does not exist yet.
     const focusTextArea = textSelection.focusTextArea;
     useEffect(() => {
-        if (text) focusTextArea(false);
+        if (text && text.id !== NEW_DOCUMENT_ID) focusTextArea(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [text?.id]);
 
-    // Tap-to-navigate hint toast, once per document open.
+    // Tap-to-navigate hint toast, once per document open. A draft has nothing to
+    // navigate yet; the hint shows once it is saved (its id changes then).
+    const openTextId = text?.id;
     useEffect(() => {
-        setTapHintOpen(!!text);
-    }, [text?.id]);
+        setTapHintOpen(!!openTextId && openTextId !== NEW_DOCUMENT_ID);
+    }, [openTextId]);
 
     // Return focus + re-highlight when a dialog closes (see original rationale in
     // docs/READER_SEGMENTATION.md / useTextSelection). Inline edit mode is treated
@@ -245,34 +279,45 @@ function ReaderDocumentPage() {
         prevAnyDialogOpenRef.current = anyDialogOpen;
     }, [anyDialogOpen, text, focusTextArea]);
 
-    const formatDate = useCallback((dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    }, []);
-
     const handleBack = useCallback(() => {
         navigate("/reader");
     }, [navigate]);
 
     // Edit is a toggle: pressing it opens the inline content editor (auto-select
     // off, plain editable textarea, drop-down ReaderEditToolbar) seeded with the
-    // current content. Title/description editing has been dropped from this page
-    // for now (still available from the list row's Edit dialog in ReaderPage.tsx).
-    // Not offered for validation docs at all (docs/DATA_VALIDATION_SYSTEM.md) — they
-    // are read-only, reviewed via Approve/Flag only.
+    // current content. Only the content is editable; the title is set once, on
+    // create (server/utils/documentTitle.ts), and there is currently no rename UI.
     const handleEdit = useCallback(() => {
         if (!text) return;
         setEditSaveError(null);
         contentEditor.enterEditMode(text.content);
     }, [text, contentEditor]);
 
+    // Cancelling a never-saved draft leaves the page: there is no reading view of
+    // an empty, nonexistent document to fall back to.
     const handleCancelEdit = useCallback(() => {
         setEditSaveError(null);
+        if (isNewDraft) {
+            navigate("/reader");
+            return;
+        }
         contentEditor.exitEditMode();
-    }, [contentEditor]);
+    }, [contentEditor, isNewDraft, navigate]);
+
+    // First Save of a draft = create. The server derives the title from the
+    // content; the URL is then replaced (not pushed) so Back returns to the list,
+    // not to an empty draft.
+    const saveNewDraft = useCallback(async () => {
+        const created = await apiPost<Text>('/api/texts', {
+            content: contentEditor.draft,
+            language: user?.selectedLanguage || 'zh',
+        });
+        await vocabularyProcessing.processDocumentVocabulary(created);
+        setText(created);
+        contentEditor.exitEditMode();
+        justCreatedIdRef.current = created.id;
+        navigate(`/reader/${created.id}`, { replace: true });
+    }, [contentEditor, user?.selectedLanguage, vocabularyProcessing, navigate]);
 
     const handleSaveEdit = useCallback(async () => {
         if (!text) return;
@@ -280,6 +325,10 @@ function ReaderDocumentPage() {
         setSavingEdit(true);
         setEditSaveError(null);
         try {
+            if (isNewDraft) {
+                await saveNewDraft();
+                return;
+            }
             const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft });
             await vocabularyProcessing.processDocumentVocabularyIncremental(text, updated);
             setText(updated);
@@ -292,8 +341,8 @@ function ReaderDocumentPage() {
         } finally {
             setSavingEdit(false);
         }
-        // No `token` dep: apiPut reads the header at call time (CLAUDE.md ⛔ rule).
-    }, [text, contentEditor, vocabularyProcessing]);
+        // No `token` dep: apiPut/apiPost read the header at call time (CLAUDE.md ⛔ rule).
+    }, [text, isNewDraft, saveNewDraft, contentEditor, vocabularyProcessing]);
 
     const handleDelete = useCallback(() => {
         setDeleteDialogOpen(true);
@@ -303,92 +352,48 @@ function ReaderDocumentPage() {
         navigate("/reader");
     }, [navigate]);
 
-    // ── Data-validation actions (validators only; docs/DATA_VALIDATION_SYSTEM.md) ──
-    // Note: the "download a new entry to validate" action lives ONLY on the reader
-    // list page (ReaderPage.tsx) — not here. This page only Approves/Flags the
-    // already-open validation document. Validation docs are read-only (no Edit), so
-    // Approve always copies exactly what's displayed — the server does the copying,
-    // no content is sent from the client — and Flag sends no content at all.
-    const submitValidation = useCallback(async (action: 'approve' | 'flag') => {
-        if (!text?.validationEntryId) return;
-        try {
-            await apiPost(`/api/validation/${text.id}/submit`, { action });
-            notifyValidation(action === 'flag' ? 'Flagged — thank you!' : 'Approved — thank you!', 'success');
-            navigate("/reader"); // the entry can't be re-validated; return to the list
-        } catch (err) {
-            console.error('Error submitting validation:', err);
-            notifyValidation(
-                err instanceof ApiError ? err.message : 'Failed to submit validation',
-                'error'
-            );
-        }
-        // No `token` dep: apiPost reads the header at call time (CLAUDE.md ⛔ rule).
-    }, [text, navigate, notifyValidation]);
-
-    const handleApprove = useCallback(() => submitValidation('approve'), [submitValidation]);
-    const handleFlag = useCallback(() => submitValidation('flag'), [submitValidation]);
-
-    // Validation docs (migration 104) are read-only — no Edit/Delete-by-editing, just
-    // Approve/Flag in the page header alongside the generic Delete (to abandon a
-    // downloaded entry without acting on it).
-    const isValidationDoc = !!text?.validationEntryId;
+    // See KEYBOARD LIFT above. Reading mode suppresses both keyboards, so the inset
+    // is only ever non-zero here while editing; the editMode gate just makes that
+    // explicit.
+    const editKeyboardInset = contentEditor.editMode ? keyboardInset : 0;
+    const keyboardLifted = editKeyboardInset > 0;
+    // The fold is a Collapse whose `in` is "NOT lifted", so its EXIT is the
+    // keyboard arriving and its ENTER the keyboard leaving — hence the swap.
+    const liftTimeout = prefersReducedMotion
+        ? 0
+        : { enter: BEGINNER_KEYBOARD_SLIDE_MS.exit, exit: BEGINNER_KEYBOARD_SLIDE_MS.enter };
+    const liftEasing = { enter: BEGINNER_KEYBOARD_EASING.exit, exit: BEGINNER_KEYBOARD_EASING.enter };
 
     // Edit/Delete icon buttons live in the header's right slot (next to the back
     // arrow) rather than in TextHeader's toolbar, like every other node page's
     // header-level actions (docs/LEAF_NODE_PAGES.md). While the inline content
     // editor is open, Save/Cancel in ReaderEditToolbar are the only way to leave
-    // edit mode — Edit/Delete/validation actions are hidden to avoid a destructive
-    // action (delete) or a state change (validation submit) racing an unsaved draft.
+    // edit mode — Edit/Delete are hidden so a delete cannot race an unsaved draft.
+    // (A new draft is always in edit mode, so it never shows them.)
     const docHeaderRightContent = text ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {!contentEditor.editMode && isValidationDoc && (
-                <>
-                    <IconButton
-                        className="reader-page-text-header-flag-button"
-                        onClick={handleFlag}
-                        size="small"
-                        color="warning"
-                        aria-label="Flag"
-                        title="Flag"
-                    >
-                        <FlagIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                        className="reader-page-text-header-approve-button"
-                        onClick={handleApprove}
-                        size="small"
-                        color="success"
-                        aria-label="Approve"
-                        title="Approve"
-                    >
-                        <CheckCircleIcon fontSize="small" />
-                    </IconButton>
-                </>
-            )}
-            {!contentEditor.editMode && !isValidationDoc && (
-                <IconButton
+        // A fragment, not a wrapping Box, so the header's own right-slot gap spaces these.
+        // HeaderIconButton (not MUI IconButton) so they size like every other header action.
+        <>
+            {!contentEditor.editMode && (
+                <HeaderIconButton
                     className="reader-page-text-header-edit-button"
-                    onClick={handleEdit}
-                    size="small"
-                    aria-label="Edit document"
+                    icon="edit"
+                    label="Edit document"
                     title="Edit document"
-                >
-                    <EditIcon fontSize="small" />
-                </IconButton>
+                    onClick={handleEdit}
+                />
             )}
             {!contentEditor.editMode && (
-                <IconButton
+                <HeaderIconButton
                     className="reader-page-text-header-delete-button"
-                    onClick={handleDelete}
-                    size="small"
-                    color="error"
-                    aria-label="Delete document"
+                    icon="delete"
+                    label="Delete document"
                     title="Delete document"
-                >
-                    <DeleteIcon fontSize="small" />
-                </IconButton>
+                    color={COLORS.dangerInk}
+                    onClick={handleDelete}
+                />
             )}
-        </Box>
+        </>
     ) : undefined;
 
     return (
@@ -409,6 +414,7 @@ function ReaderDocumentPage() {
                     onCancel={handleCancelEdit}
                     onSave={handleSaveEdit}
                     saving={savingEdit}
+                    saveDisabled={isNewDraft && !contentEditor.draft.trim()}
                 />
             </Collapse>
 
@@ -432,20 +438,34 @@ function ReaderDocumentPage() {
                     pt: { xs: 1, sm: 2 },
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    // Keyboard clearance (KEYBOARD LIFT): the base gutter (the `p`
+                    // above: 16px / 24px) plus the keyboard's height, travelling on
+                    // its slide curve.
+                    paddingBottom: { xs: `${16 + editKeyboardInset}px`, sm: `${24 + editKeyboardInset}px` },
+                    transition: transitionForInset(editKeyboardInset),
                 }}>
-                    <TextHeader
-                        selectedText={text}
-                        processingVocab={vocabularyProcessing.processingVocab}
-                        vocabError={vocabularyProcessing.vocabError}
-                        formatDate={formatDate}
-                    />
-
-                    <Box className="reader-page-mobile-vocab-card-wrapper">
-                        <VocabDisplayCard
-                            dictionaryEntry={textSelection.selectedDictionaryCard}
+                    {/* Folds away while a keyboard is up in edit mode, lifting the
+                    text box to the top of the page (KEYBOARD LIFT). */}
+                    <Collapse
+                        className="reader-document-lead"
+                        in={!keyboardLifted}
+                        timeout={liftTimeout}
+                        easing={liftEasing}
+                        sx={{ flexShrink: 0 }}
+                    >
+                        <TextHeader
+                            selectedText={text}
+                            processingVocab={vocabularyProcessing.processingVocab}
+                            vocabError={vocabularyProcessing.vocabError}
                         />
-                    </Box>
+
+                        <Box className="reader-page-mobile-vocab-card-wrapper">
+                            <VocabDisplayCard
+                                dictionaryEntry={textSelection.selectedDictionaryCard}
+                            />
+                        </Box>
+                    </Collapse>
 
                     <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 3 }}>
                         <TextArea
@@ -493,26 +513,6 @@ function ReaderDocumentPage() {
             </Snackbar>
 
             <Snackbar
-                className="reader-page-validation-snackbar"
-                open={!!validationMsg}
-                // Errors (e.g. the format-changed rejection) stay up longer so the
-                // validator can read the "Revert and start over" instruction.
-                autoHideDuration={validationSeverity === 'error' ? 8000 : 4000}
-                onClose={() => setValidationMsg(null)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                sx={{ top: SNACKBAR_TOP }}
-            >
-                <Alert
-                    className="reader-page-validation-alert"
-                    severity={validationSeverity}
-                    variant="filled"
-                    onClose={() => setValidationMsg(null)}
-                >
-                    {validationMsg}
-                </Alert>
-            </Snackbar>
-
-            <Snackbar
                 className="reader-page-edit-save-error-snackbar"
                 open={!!editSaveError}
                 autoHideDuration={4000}
@@ -531,6 +531,23 @@ function ReaderDocumentPage() {
             </Snackbar>
         </ReaderDocumentSurface>
     );
+}
+
+/**
+ * The in-memory stand-in for `/reader/new` until its first Save. Only the fields
+ * the page renders matter (TextHeader: the title); the id is the
+ * NEW_DOCUMENT_ID sentinel the page checks for.
+ */
+function blankDraft(language: Text['language'] | undefined): Text {
+    return {
+        id: NEW_DOCUMENT_ID,
+        title: 'New Document',
+        content: '',
+        language: language || 'zh',
+        characterCount: 0,
+        isUserCreated: true,
+        createdAt: new Date().toISOString(),
+    };
 }
 
 export default ReaderDocumentPage;

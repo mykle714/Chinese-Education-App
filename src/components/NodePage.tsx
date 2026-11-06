@@ -40,13 +40,13 @@ interface NodePageProps {
      * Close Back with the circle transition onto this viewport point instead of the slide
      * to the right — for a page opened WITH the circle (useSlideNavigate `circleFrom`),
      * the same as LeafPage's prop (docs/LEAF_NODE_PAGES.md § The circle transition).
-     * Today: ancp opened from the Deck Tower's mini sort platform. Undefined: the slide.
+     * Today: acp opened from the Deck Tower's mini sort platform. Undefined: the slide.
      */
     exitCircleTo?: ScreenPoint;
     /**
      * A footer tab whose tap plays this page's Back (the back arrow's exit, circle
      * included) instead of the footer's plain jump — for a page whose Back leads where that
-     * tab does (footerTabOverride.ts). Today: ancp opened from the Deck Tower, on "deck".
+     * tab does (footerTabOverride.ts). Today: acp opened from the Deck Tower, on "deck".
      * Undefined: the footer navigates as usual.
      */
     backOnFooterTab?: FooterTab;
@@ -56,7 +56,7 @@ interface NodePageProps {
     headerSize?: PageHeaderSize;
     // Header title + back-arrow ink, forwarded to MobileTabScreen → PageHeader
     // `titleColor`. Only for a node page whose ground the default ink cannot read on —
-    // today ancp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
+    // today acp at night (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
     headerTitleColor?: string;
     surfaceColor?: string;
     // Decoration behind the header and content. See MobileTabScreen.backdrop.

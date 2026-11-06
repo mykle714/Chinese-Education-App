@@ -49,7 +49,7 @@ export function bandMaterial(band: string): Material {
 
 /**
  * A card UNDER the top one in a short coloured deck: the card colour stepped down,
- * alternating by layer index `k` so the seams between layers read. Shared by ancp's bins
+ * alternating by layer index `k` so the seams between layers read. Shared by acp's bins
  * (SortBins.tsx → `SortBin`) and the Deck Tower's mini sort platform (IsoSortPlatform).
  * Docs: docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform", docs/SORT_CARDS_REQUIREMENTS.md § 5.3.
  */

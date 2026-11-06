@@ -20,7 +20,7 @@ import { COLORS } from "../theme/colors";
  * not tracked; a hold is ~2s and none of today's hosts change size during one.
  *
  * Layer: shared presentational (src/components).
- * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a — AddNewCardsPage's Skip button and
+ * Referenced by: docs/SORT_CARDS_REQUIREMENTS.md §5.1a — AddCardsPage's Skip button and
  * SkippedCardsSheet's `RecyclableSkippedCard`.
  */
 

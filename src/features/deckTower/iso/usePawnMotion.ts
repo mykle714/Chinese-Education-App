@@ -532,7 +532,8 @@ export interface PawnEntranceCue {
 export function usePawnMotion(opts: {
     proj: Projector;
     at: Pt2;
-    startled: boolean;
+    /** null = not known yet (the tower's count is loading): the first known value is a baseline, never a startle. */
+    startled: boolean | null;
     roam?: PawnRoam;
     startledBy?: WorldRect;
     onDepthRankChange?: (rank: number) => void;
@@ -782,9 +783,16 @@ export function usePawnMotion(opts: {
     // Seeded with the MOUNT value: a pawn that mounts beside an already-tall tower (the
     // Deck Tower remounts its pawn on arriving in another world) has nothing to be
     // startled by — only a change it watches happen (the build-up crossing the threshold)
-    // counts.
-    const wasStartled = useRef(startled);
+    // counts. `null` (the tower's count still loading) leaves the edge detector unseeded,
+    // and the first KNOWN value seeds it instead of firing: a tower that loads in already
+    // past the threshold has not grown in front of the pawn, it just appeared.
+    const wasStartled = useRef<boolean | null>(startled);
     useEffect(() => {
+        if (startled === null) return;
+        if (wasStartled.current === null) {
+            wasStartled.current = startled;
+            return;
+        }
         const rose = startled && !wasStartled.current;
         wasStartled.current = startled;
         if (!rose || reduced) return;

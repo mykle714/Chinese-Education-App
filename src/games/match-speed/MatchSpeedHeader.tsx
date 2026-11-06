@@ -23,7 +23,7 @@ interface MatchSpeedHeaderProps {
  * BOTH CAME BACK on 2026-08-28 and the dialog and its cog were deleted, because
  * neither setting is Match Speed's any more:
  *   • audio is the app-wide narration setting (`AudioModeChip`, self-contained and
- *     identical on the flp, ancp, Bubble Match, Hydra and here);
+ *     identical on the flp, acp, Bubble Match, Hydra and here);
  *   • tone coloring moved to /settings → Display, which is where EVERY surface now
  *     edits it — it applies to every reading the app renders.
  * That left the sheet holding one row, and holding NOTHING at all for a

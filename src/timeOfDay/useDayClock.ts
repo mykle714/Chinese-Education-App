@@ -5,7 +5,8 @@ import { DAY_PHASES, timeOfDayAt, type DayPhase, type TimeOfDay } from "./dayPha
 /**
  * useDayClock — samples the learner's time of day on a clock (docs/DECK_TOWER.md
  * § "Time of day"). Returns the blend `{ from, to, t }`, never a look: the Deck Tower turns
- * it into a sky (useTimeOfDay), the eip into a tint (useEipPalette).
+ * it into a sky (useTimeOfDay), a Tier 2 page into a look (useTier2Look). (The eip read it
+ * too until 2026-11-05; it follows the Settings theme now.)
  *
  * Layer: shared hook (`src/timeOfDay/`). Moved out of features/deckTower/useTimeOfDay.ts
  * on 2026-10-29 when the eip became the second reader.
@@ -18,12 +19,11 @@ import { DAY_PHASES, timeOfDayAt, type DayPhase, type TimeOfDay } from "./dayPha
  *     Tower's TimeOfDayToggle pins one phase. Stored per device in localStorage, like the
  *     app's other tester switches; honoured only when `allowOverride`, so a stale key on a
  *     shared device never changes a learner's sky. It is a module-level STORE, not hook
- *     state, so every reader agrees the moment the toggle is tapped — the tower and an eip
- *     open over it must never show two different hours.
+ *     state, so every reader agrees the moment the toggle is tapped — the tower and a Tier 2
+ *     page must never show two different hours.
  *
  * Depends on: dayPhase.ts, sunTimes.ts. Depended on by: features/deckTower/useTimeOfDay.ts,
- * useTier2Look.ts,
- * features/flashcards/FlashcardsLearnPage/useEipPalette.ts.
+ * useTier2Look.ts.
  */
 
 /** How often the clock is re-sampled. */

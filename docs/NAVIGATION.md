@@ -10,7 +10,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    shelf redesign's A2a/D5, [SHELF_REDESIGN.md](./SHELF_REDESIGN.md)) and the floating
    **slab** (with Material Symbols icons), chosen per route by `routeMeta`'s
    `footerStyle` (`routeFooterStyle`). The slab is worn by `/`, `/dictionary`, both cdps
-   and ancp; every Menu-reached page keeps the bar.
+   and acp; every Menu-reached page keeps the bar.
 
    | Tab        | `FooterTab`   | Route         | Page                                                         |
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
@@ -19,7 +19,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | Arena      | `arena`       | `/arena`      | the weekly arena (`ArenaPage` — [ARENA_FEATURE.md](./ARENA_FEATURE.md)); drawn only while the `arena` flag is on (`MobileFooter.tsx` → `ARENA_TAB_ON`) |
    | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
 
-   Add New Cards (ancp, `/discover/sort/:language` — the `/discover/` prefix is kept so
+   Add Cards (acp, `/discover/sort/:language` — the `/discover/` prefix is kept so
    existing links work) is a **Deck drill-in**: reached from the main world's sort
    platform on td (`DeckTowerPage` → `sortPath` with `state.exitTo` = `SORT_EXIT`), it
    lights the Deck tab and its Back returns to `/` (main world)
@@ -61,9 +61,6 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    Deck Tower ([DECK_TOWER.md](./DECK_TOWER.md)), in a non-scrolling `MobileTabScreen`
    whose title names the world on screen. Its header carries, around the minute-points
    flame:
-   - left of the flame: the feature-tester-only `SoftIntroToggle` (`headerExtraActions`;
-     `users.isFeatureTester`, migration 178, plus the Settings testing switch —
-     `useTestingFeatures`; renders null for everyone else);
    - right of the flame (`headerTrailingActions`): the learner's **profile picture**
      (`src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar`, over
      `src/components/HeaderAvatarButton.tsx`) → raises the **AccountSheet**
@@ -97,7 +94,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the
      Template Editor / Sandbox and leaving the Scene Editor (leaf).
    - Deck (td) drill-ins → back to `/`: Card Detail (`/flashcards/card/:id`, the
-     saved-card cdp, opened from td's cards page), Add New Cards
+     saved-card cdp, opened from td's cards page), Add Cards
      (`/discover/sort/:language`, node; set mode exits to its origin instead —
      [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)) and the Writing Notebook (leaf, back to the
      writing world). The flp has no route: it runs inside td. The cdp's
@@ -168,5 +165,5 @@ OTHER accounts' data, so it has a real server-side gate as well — see
 ## Related
 
 - [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) — hub layout shell
-- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Add New Cards (ancp), a Deck drill-in
+- [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — Add Cards (acp), a Deck drill-in
 - [GAMES_FEATURE.md](./GAMES_FEATURE.md) — Games hub + registry

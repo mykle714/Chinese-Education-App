@@ -8,8 +8,8 @@ shadows. Code: `src/features/deckTower/iso/`. Import from its barrel,
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). Its main
 user is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
 (`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`.
-The ancp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
-`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddNewCardsPage.tsx` → `shadeHex`).
+The acp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
+`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`).
 **`IsoCarpet` currently has no user** (the Deck Tower dropped its carpet on 2026-10-17); it is
 kept as part of the kit.
 
@@ -62,7 +62,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 
 ## Geometry
 
-`geometry.ts` uses a dimetric projection tilted `VIEW_PITCH` (55°) from straight down. It was the Night Market's 2:1 grid (60°) until 2026-10-31; the tilt makes the floor 15% deeper on screen and heights 5% shorter at the same width. Every scene draws through it, so the Deck Tower and the ancp's bins change together. The floor and heights no longer share a scale: `Projector.unit` (and `scaleAt`) is the floor's and `Projector.heightUnit` is height's.
+`geometry.ts` uses a dimetric projection tilted `VIEW_PITCH` (55°) from straight down. It was the Night Market's 2:1 grid (60°) until 2026-10-31; the tilt makes the floor 15% deeper on screen and heights 5% shorter at the same width. Every scene draws through it, so the Deck Tower and the acp's bins change together. The floor and heights no longer share a scale: `Projector.unit` (and `scaleAt`) is the floor's and `Projector.heightUnit` is height's.
 World +x runs down-right, +y down-left and +z up. Screen coordinates are
 `sx = (x − y)·unit` and `sy = (x + y)·unit/2 − z·unit`.
 
@@ -401,13 +401,13 @@ the Deck Tower's notebook stack (DECK_TOWER.md
 
 `src/features/deckTower/iso/IsoSortPlatform.tsx` → `IsoSortPlatform`;
 `sortPlatformMetrics.ts` → `sortPlatformTopZ`, `SORT_PLATFORM_JUMP`, `HOP_PERIOD_MS`,
-`FOOTPRINT_SHADE`; ancp's empty-bin footprint is `SortBins.tsx` → `SortBin` (`sort-bins__footprint`).
+`FOOTPRINT_SHADE`; acp's empty-bin footprint is `SortBins.tsx` → `SortBin` (`sort-bins__footprint`).
 
-`{ rect, surface, deckColor, slabColor, progress?, hopping?, paused? }`. ancp's EMPTY bin in
+`{ rect, surface, deckColor, slabColor, progress?, hopping?, paused? }`. acp's EMPTY bin in
 miniature: a thin slab (0.28 units) lying flat on `surface` — standing up from it like any
 object on a floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's
 light rim bevel at this scale, and on its top the dashed outline where a deck would stand,
-in `deckColor` darkened by `FOOTPRINT_SHADE` (ancp's day value). Dash and stroke are floor
+in `deckColor` darkened by `FOOTPRINT_SHADE` (acp's day value). Dash and stroke are floor
 units × `proj.unit`. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
 `iso-sort-platform__shadow`. It is drawn in world z, never by a screen-y translate, so it
 stays right under a moving camera. `progress` (0 → 1) grows the slab up out of the surface.
@@ -436,13 +436,15 @@ used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`).
 
 ### IsoFloorPrint
 
-`{ at, lines, surface, fontSize?, lineHeight?, letterSpacing?, opacity?, color?, maxX? }`.
+`{ at, lines, surface, fontSize?, lineHeight?, letterSpacing?, opacity?, color?, maxX?, align? }`.
 A few short lines of text printed flat into a floor, with no plate: in `color` (the
 caller washes it) or by default the floor's tone two shadow steps down (`shadowTone` twice
 — `IsoCardImprint`'s print ink), bold, letter-spaced via `IsoSpacedText`. Lines read along
 world x and stack along +y, the block centred on `at`. `maxX` slides the block left so its
 widest line (measured with `getBBox` after layout, once per text/size and per web-font
-load — `useFontLoadEpoch`, shared with IsoSpacedText) ends there.
+load — `useFontLoadEpoch`, shared with IsoSpacedText) ends there. `align` sets each line
+within the block: `"center"` (default) or `"right"` (`textAnchor="end"` on the block's
+right edge, so shorter lines end flush with the widest).
 Not raised, not a shadow, `aria-hidden` and `pointer-events: none` (it labels something;
 it is not the button). No wrapping: the caller keeps lines short. Code: `IsoFloorPrint.tsx`
 → `IsoFloorPrint`; used by `DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`decals`, the
@@ -540,6 +542,13 @@ plate), while Chrome centres it.
 - **Fonts.** The epoch bumps on `document.fonts.ready` and on every `loadingdone`, so a measurement taken against a
   fallback face is retaken when Noto Sans SC (or a `--cjk-font` override) arrives.
 - **No layout** (measure is 0 or throws, e.g. jsdom): falls back to plain `letterSpacing`.
+- **Vertical centring.** `y` is the line's visual centre; callers pass no `dominantBaseline` (the prop is omitted from
+  the type). `dominant-baseline="central"` centres the em box, and WebKit derives that box from Noto Sans SC's tall CJK
+  ascent/descent, so Latin caps land ~0.55 em lower than in Chrome (the iPhone "LEARNING" band text sat toward the
+  band's front edge). The text keeps the alphabetic baseline, which every engine agrees on, and shifts down by
+  `CAP_CENTRE_DY` (0.38 em ≈ half the cap height), so the capitals' ink centres on `y` in both engines.
+  Other iso `<text>` that still uses `central` (`IsoCard`'s figure + caption, `IsoCardImprint`, `IsoFloorPrint`,
+  `IsoPawn`) carries the same WebKit offset.
 
 ### IsoHatch
 

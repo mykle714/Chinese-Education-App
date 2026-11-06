@@ -95,7 +95,8 @@ export function recordSoftIntroVisit(id: SoftIntroId, now: number = Date.now()):
 // ── Feature-tester override ──────────────────────────────────────────────────
 
 /**
- * The feature-tester viewing override, app-wide (every si at once). `auto` = each si shows
+ * The feature-tester viewing override, app-wide (every si at once), set from Settings →
+ * "Soft introductions" (SettingsBody, via `useSoftIntroOverride`). `auto` = each si shows
  * the learner's real state. It is honoured only for `users.isFeatureTester` accounts (migration 178) (the
  * hook checks), so a stale key on a shared device cannot change a learner's experience.
  * Forcing a state NEVER touches the records above.

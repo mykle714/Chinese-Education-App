@@ -245,7 +245,7 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
      * `useTTS.speak` takes a `VocabEntry` so it can run `resolveDisplayPronunciation`.
      * A `MemoryMapWord` is not one — the server already resolved the sense when it built
      * the placement, so `word.pronunciation` IS the reading on screen, and the
-     * arbitrary-text entry point is the one that accepts it (AddNewCardsPage does the
+     * arbitrary-text entry point is the one that accepts it (AddCardsPage does the
      * same for the same reason).
      *
      * Fire-and-forget with a `.catch`: narration failing must never break an answer, and

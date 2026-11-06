@@ -11,7 +11,7 @@ import { ROUTED_GAMES } from "../games/registry";
  * renames the button too. Non-game origins are the handful of pages that can open the
  * flow; anything unrecognised returns null and the caller falls back to a generic label.
  *
- * Referenced by: src/features/discover/AddNewCardsPage.tsx.
+ * Referenced by: src/features/discover/AddCardsPage.tsx.
  */
 const PAGE_LABELS: Record<string, string> = {
     // The Deck Tower (`/`) — its in-place flp session is where a study-time offer opens.

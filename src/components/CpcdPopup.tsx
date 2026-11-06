@@ -7,9 +7,10 @@ import { COLORS } from "../theme/colors";
 import { tier2Var } from "../timeOfDay/tier2Chrome";
 
 /**
- * The colours a night-themed surface lends the popup. Null (the default) leaves it on the
- * Tier 2 variables below; EipPaletteProvider publishes tones at night because an eip can
- * open over a page with no Tier 2 claim (the Deck Tower), where those variables are unset.
+ * The colours a dark surface lends the popup. Null (the default) leaves it on the Tier 2
+ * variables below; EipPaletteProvider publishes tones for the eip's dark (Dark-theme)
+ * palette, because the eip no longer follows the Tier 2 clock and can open over a page
+ * with no Tier 2 claim (the Deck Tower), where those variables are unset.
  */
 export interface CpcdPopupTones {
     surface: string;
@@ -23,7 +24,8 @@ export const CpcdPopupTonesCtx = createContext<CpcdPopupTones | null>(null);
 
 /**
  * The small caption card that floats above a cpcd run: white, or the lighter night slate
- * (#2A3446) on a night-themed surface. Docs: docs/EIP_SHEET_GESTURES.md § Time of day,
+ * (#2A3446) on a night-themed Tier 2 page or the dark eip. Docs: docs/EIP_SHEET_GESTURES.md
+ * § "Light / dark theme",
  * docs/SHELF_REDESIGN.md § 7b "Time of day".
  *
  * Extracted from SegmentedSentenceDisplay (where it is the est's tapped-segment

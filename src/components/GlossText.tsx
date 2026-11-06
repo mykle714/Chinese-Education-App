@@ -14,8 +14,8 @@ import { splitClassifierLabel } from "../utils/definitionUtils";
  * `splitClassifierLabel`), so gloss content can never inject elements.
  *
  * Used by: the flp/cdp card face (`CardFace` → EnglishBlock), the sense picker
- * (`SensePicker`), the eip header (`EipEntryHeader`, both the sense list and the plain
- * dd), the writing card face (`WritingCardFace`) and `MiniCard`. Game surfaces draw dd
+ * (`SensePicker`), the eip header's dd (`EipEntryHeader`), the eip's sense list
+ * (`EipSenseList`, via `buildSenseSegments`), the writing card face (`WritingCardFace`) and `MiniCard`. Game surfaces draw dd
  * as plain strings (canvas measurement, bubble radius) and do not use it.
  * See docs/DEFINITION_CLUSTERS.md § "Classifier senses".
  */

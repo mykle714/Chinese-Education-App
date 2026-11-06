@@ -97,7 +97,7 @@ export interface InfoCardPanelBodyHandle {
  * Shared inner content of the EIP: entry header (CPCD + English + sense picker +
  * speaker), underline tab strip, and the scrollable tab body (definition / examples /
  * breakdown-or-used-in). Hosted by InfoCardSection (the bottom-sheet wrapper on the
- * flp/ancp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
+ * flp/acp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
  * that changes here shows up on every host.
  *
  * The forwarded ref exposes both the gesture-root wrapper and the inner

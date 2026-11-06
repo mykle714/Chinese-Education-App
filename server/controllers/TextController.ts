@@ -25,15 +25,8 @@ export class TextController {
         return;
       }
 
-      const { title, description, content, language } = req.body;
-
-      if (!title) {
-        res.status(400).json({
-          error: 'Title is required',
-          code: 'ERR_MISSING_FIELDS'
-        });
-        return;
-      }
+      // No title in the request: TextService derives it from the content.
+      const { content, language } = req.body;
 
       // Content can be empty string for new documents, but must be present
       if (content === undefined || content === null) {
@@ -45,8 +38,6 @@ export class TextController {
       }
 
       const textData: Omit<TextCreateData, 'userId'> = {
-        title,
-        description: description || '',
         content,
         language
       };
@@ -98,11 +89,10 @@ export class TextController {
       }
 
       const { id } = req.params;
-      const { title, description, content, language } = req.body;
+      const { title, content, language } = req.body;
 
       const updateData: TextUpdateData = {};
       if (title !== undefined) updateData.title = title;
-      if (description !== undefined) updateData.description = description;
       if (content !== undefined) updateData.content = content;
       if (language !== undefined) updateData.language = language;
 

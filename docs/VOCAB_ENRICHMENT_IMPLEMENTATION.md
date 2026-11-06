@@ -210,14 +210,14 @@ one renderer, shared by all surfaces:
 | **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab + both cdps (docs/EXAMPLE_SENTENCES.md) |
 | **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab + both cdps (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
 
-The flp and ancp deliberately do **not** pass `showSynonymsRelated`: on those surfaces the
+The flp and acp deliberately do **not** pass `showSynonymsRelated`: on those surfaces the
 panel is the reading view for a word mid-drill, while the cdp is the reference page those
 two lists belong to.
 
 Because the extra section is what pushes the definition tab past one screen, that tab gets
 the same bottom run-out the examples tab has (`PANE_SCROLL_SPACER_PX` /
 `PaneScrollSpacer` in `InfoCardTabContent`) — but only when the section is actually
-rendered, so the flp/ancp definition tab is not made scrollable for nothing.
+rendered, so the flp/acp definition tab is not made scrollable for nothing.
 
 ## Testing
 

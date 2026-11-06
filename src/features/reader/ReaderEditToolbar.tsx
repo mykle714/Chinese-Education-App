@@ -18,7 +18,10 @@ const ReaderEditToolbar: React.FC<{
     onCancel: () => void;
     onSave: () => void;
     saving: boolean;
-}> = ({ canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving }) => {
+    // Save is disabled with nothing to save, e.g. a still-blank new document
+    // (ReaderDocumentPage) — creating an empty document would be pointless.
+    saveDisabled?: boolean;
+}> = ({ canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false }) => {
     const smallBtnSx = {
         minWidth: "unset",
         px: 0.5,
@@ -89,14 +92,16 @@ const ReaderEditToolbar: React.FC<{
                 size="small"
                 variant="contained"
                 onClick={onSave}
-                disabled={saving}
+                disabled={saving || saveDisabled}
                 sx={{
                     ...smallBtnSx,
                     fontWeight: WEIGHT.semibold,
                     backgroundColor: COLORS.infoInk,
                     color: COLORS.white,
                     "&:hover": { backgroundColor: COLORS.infoInk },
-                    "&.Mui-disabled": { color: COLORS.white, opacity: 0.5 },
+                    // Keep the ink fill when disabled (MUI would swap in its grey
+                    // disabled background) so a blank draft's Save reads as "not yet".
+                    "&.Mui-disabled": { color: COLORS.white, backgroundColor: COLORS.infoInk, opacity: 0.5 },
                 }}
             >
                 {saving ? (

@@ -3,7 +3,7 @@
  * (docs/ISO_ART_FRAMEWORK.md). Import from here, not from the individual files.
  *
  * Lives under features/deckTower/ because the Deck Tower was its only user. Since
- * 2026-10-29 ancp's bins (features/discover/SortBins.tsx) import it too, so per
+ * 2026-10-29 acp's bins (features/discover/SortBins.tsx) import it too, so per
  * docs/FRONTEND_LAYERING.md § 1 it is due to move to src/components/iso/
  * (docs/DEFERRED_WORK.md #28).
  */

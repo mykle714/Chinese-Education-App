@@ -10,7 +10,7 @@ import { RAMP } from "./colors";
  *     the dictionary cdp), lit whenever it shows (only for a word not yet in Learning) —
  *     GREEN (`LOW_SUPPLY_GLOW_NUDGE`): an inviting "add this", not a warning.
  *
- * (The old Home page's Add New Cards tile wore the same green halo under
+ * (The old Home page's Add Cards tile wore the same green halo under
  * LEARN_NOW_LOW_THRESHOLD until 2026-11-04; the Deck Tower's equivalent nudge is its
  * sort platform's hop — DeckTowerPage → `learningLow`.)
  *

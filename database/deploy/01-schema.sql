@@ -75,16 +75,10 @@ CREATE TABLE IF NOT EXISTS texts (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     "userId"        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title           VARCHAR(255) NOT NULL,
-    description     TEXT DEFAULT '',
     content         TEXT NOT NULL,
     language        VARCHAR(10) DEFAULT 'zh',
     "characterCount" INTEGER DEFAULT 0,
     "isUserCreated" BOOLEAN DEFAULT TRUE,
-    -- Validation-doc linkage (migration 104). NULL ⇒ ordinary user document.
-    -- validationEntryId is the SERIAL integer id of the reviewed det row.
-    "validationEntryId"         INTEGER,
-    "validationLanguage"        VARCHAR(10),
-    "validationField"           VARCHAR(50),
     "createdAt"     TIMESTAMP DEFAULT NOW()
 );
 

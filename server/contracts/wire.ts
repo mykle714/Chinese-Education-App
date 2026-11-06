@@ -439,8 +439,8 @@ export interface ExampleSentenceDefinitionPronunciationOverride {
  *                      This is the number the eip/cdp Commonality chip shows on a
  *                      CLUSTERED word, because a polyseme's entry-level score is a
  *                      lie (干 "to do" = 5, 干 "shield" = 1).
- * The last four are INLINE-ONLY: never handed out by the Reader-document queue
- * (composeValidationDoc), only by the chip-level Approve/Flag buttons.
+ * All are reviewed through the inline Approve/Flag buttons (ValidateFlagButtons);
+ * the Reader-document queue that also handed out the first four was removed 2026-11-05.
  */
 export type ValidationField =
   | 'definitions'
@@ -1070,17 +1070,17 @@ export const WORD_SEARCH_BOARDS = {
 export type WordSearchBoardId = keyof typeof WORD_SEARCH_BOARDS;
 
 /**
- * Learning supply thresholds — when the app nudges a learner toward Add New Cards.
+ * Learning supply thresholds — when the app nudges a learner toward Add Cards.
  * Both are read against the CORE Learning count (Unfamiliar + Target + Comfortable,
  * `builtinCollectionCount` → `learn-now`), the same figure td's cards-page Learning
  * key shows.
  *
  *   LOW    — below this the Deck Tower's mini sort platform hops (DeckTowerPage →
- *            `learningLow`), nudging the learner to Add New Cards. Tied to the flp baseline
+ *            `learningLow`), nudging the learner to Add Cards. Tied to the flp baseline
  *            because that is the point where a Study Mix session starts being topped up
  *            with lent cards (docs/PROVISIONAL_CARDS.md).
  *   ENOUGH — LOW + one sort session's worth (10 cards): the sort page's "you have
- *            enough" mark. ⚠️ Nothing reads it today (the ancp's tally glow that did was
+ *            enough" mark. ⚠️ Nothing reads it today (the acp's tally glow that did was
  *            removed before 2026-11-04); the name is kept because it is a wire contract.
  *
  * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 5.3a, docs/DECK_TOWER.md § "The sort platform".
@@ -1564,15 +1564,6 @@ export interface RelatedWord {
 }
 
 /**
- * Hard cap on a card note (`VocabEntryBase.note`, vet column, migration 155), in
- * characters. Shared so the on-card editor's counter and the server's truncation agree
- * on one number — a client that lets the learner type past the cap would silently lose
- * the tail on save. Enforced in code, not as a `varchar(n)`, so raising it is a code
- * deploy rather than a table rewrite. See docs/CARD_NOTES.md.
- */
-export const CARD_NOTE_MAX_LENGTH = 100;
-
-/**
  * Vocab entry (flashcard), as shipped to the client.
  *
  * Identity fields (`userId`, `language`, `starterPackBucket`) are optional HERE and
@@ -1621,12 +1612,6 @@ export interface VocabEntryBase {
   definitionClusters?: DefinitionCluster[] | null;
   /** Per-card chosen cluster `sense` label (vet column, migration 99). NULL = default. */
   selectedSense?: string | null;
-  /**
-   * The learner's own free-text note about this card (vet column, migration 155).
-   * At most CARD_NOTE_MAX_LENGTH characters; NULL/absent = no note. Rendered at the
-   * bottom of the card's answer face only. See docs/CARD_NOTES.md.
-   */
-  note?: string | null;
 
   /** Per-type mark streams (migration 101); see docs/MASTERY_REWORK.md. */
   typedMarkHistory?: TypedMarkHistory;
@@ -1735,7 +1720,7 @@ export interface VocabEntryBase {
 // Discover / sort flow (docs/SORT_CARDS_REQUIREMENTS.md)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Discover Card — a curated dictionary entry shaped for the add-new-cards UI. */
+/** Discover Card — a curated dictionary entry shaped for the add-cards UI. */
 export interface DiscoverCard {
   /** dictionaryEntry.id — sent in the sort POST. */
   id: number;
@@ -1827,21 +1812,13 @@ export interface TextBase {
   id: string;
   /** uniqueidentifier in SQL, nullable for system texts. */
   userId?: string | null;
+  /** Derived from the content on create (server/utils/documentTitle.ts); renamable. */
   title: string;
-  description: string;
   content: string;
   language: Language;
   characterCount: number;
   /** Distinguishes user-created from system texts. */
   isUserCreated: boolean;
-  /**
-   * Validation-doc linkage (migration 104). NULL/undefined ⇒ ordinary user document.
-   * When set, this text reviews dictionaryentries_<validationLanguage>.id =
-   * validationEntryId (det id is a SERIAL integer).
-   */
-  validationEntryId?: number | null;
-  validationLanguage?: Language | null;
-  validationField?: ValidationField | null;
   createdAt: string;
 }
 

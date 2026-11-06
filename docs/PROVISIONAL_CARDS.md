@@ -674,12 +674,12 @@ promoted into the real deck.
 
 ### Set mode
 
-`/discover/sort/:language?set=provisional&words=a,b,c` hands `AddNewCardsPage` a **fixed
+`/discover/sort/:language?set=provisional&words=a,b,c` hands `AddCardsPage` a **fixed
 set** instead of the open-ended level-based supply. Each card becomes its own pack-of-1,
 so all the existing pack machinery (drag, undo, resolved markers) works unchanged.
 
 Two differences: the queue is **never replenished**, and the page **ends itself** as
-soon as the queue empties. The ending is an effect on `queue.length` (AddNewCardsPage's
+soon as the queue empties. The ending is an effect on `queue.length` (AddCardsPage's
 set-mode exit effect), not a call inside the sorting handler, so *every* way of
 emptying the set is covered: the last card sorted, the last card skipped, a failed sort
 POST, or a set that came back already empty because the cards were sorted in another tab.

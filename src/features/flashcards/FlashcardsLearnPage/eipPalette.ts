@@ -1,13 +1,22 @@
 import { COLORS } from "../../../theme/colors";
-import { phaseShare, type DayPhase, type TimeOfDay } from "../../../timeOfDay/dayPhase";
+import { mixHex } from "../../../theme/shadeHex";
+import type { ThemeMode } from "../../../contexts/ThemeContext";
 
 /**
- * eipPalette.ts — the eip's colours for the learner's time of day (the Tower Tier 2
- * design, "Tower Tier 2 - Time of Day": artboards Day / Night–inverted; its Dawn and Sunset
- * artboards were cut 2026-11-04 with those phases, docs/TOWER_WEATHER_SKY.md § 1).
+ * eipPalette.ts — the eip's colours for the app's colour THEME (Settings → Theme, the
+ * `ThemeMode` in src/contexts/ThemeContext.tsx). Two palettes:
+ *   LIGHT — every theme but Dark (Light, Ocean, Nature). The Tower Tier 2 design's Day
+ *           artboard: a pale-sky upper panel over the app's day keys, shelf and ink.
+ *   DARK  — the Dark theme. The design's "Night–inverted" artboard: slate panels, light ink.
  *
- * Layer: feature logic (src/features/flashcards). Pure — `useEipPalette` samples the shared
- * clock (src/timeOfDay/useDayClock) and hands the result to `EipPaletteProvider`.
+ * Until 2026-11-05 these were the DAY and NIGHT palettes and the eip followed the learner's
+ * time of day (the Deck Tower's clock, src/timeOfDay/useDayClock), blending across each
+ * twilight. That read as the eip dimming in daylight, and the eip is a reading surface, so
+ * the clock was dropped: the eip now changes only when the learner changes the theme. The
+ * Deck Tower, the Dictionary page and acp still follow the clock.
+ *
+ * Layer: feature logic (src/features/flashcards). Pure — `useEipPalette` reads the theme
+ * mode and hands the result to `EipPaletteProvider`.
  *
  * ── The two panels ────────────────────────────────────────────────────────────
  * The eip is two stacked panels (docs/EIP_SHEET_GESTURES.md § Telescope):
@@ -17,22 +26,21 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "../../../timeOfDay/da
  *   LOWER — the `shelf`: the content tabs (a sunken `tabWell` with a `tabOn` chip) and the
  *           tab body, whose example / breakdown cards are `card`.
  *
- * ── What a phase changes ──────────────────────────────────────────────────────
- *   DAY tints only the UPPER panel's ground and wells — a pale tint of the tower's sky.
- *   Keys, the shelf and the ink are the app's day colours.
- *   NIGHT inverts the whole panel (the design's "Night–inverted", chosen 2026-10-29):
- *   slate panels, light ink, inner cards a lifted slate.
- * Phases BLEND across the tower's hour-long twilights (`eipPaletteAt`), so the eip and the
- * tower always agree on the hour. The INK cannot blend — a half-way grey on a half-way
- * slate is unreadable — so it flips to night's light ink once night is the larger share.
+ * ── What the theme changes ────────────────────────────────────────────────────
+ *   LIGHT tints only the UPPER panel's ground and wells — a pale tint of the tower's sky.
+ *   Keys, the shelf and the ink are the app's light colours.
+ *   DARK inverts the whole panel: slate panels, light ink, inner cards a lifted slate.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (the same divergence as the tower's
- * `NIGHT_SKY`): the framework has no night tier (nor a pale-sky ground), so the phase grounds are
- * the design's own values. Day-time keys, ink and lines DO come from COLORS; each
- * substitution of a design value by its nearest token is noted beside it.
+ * `NIGHT_SKY`): the framework has no dark tier (nor a pale-sky ground), so the light
+ * grounds and the whole dark palette are the design's own values. Light keys, ink and lines
+ * DO come from COLORS; each substitution of a design value by its nearest token is noted
+ * beside it. Nor is the dark palette derived from ThemeContext's own 'dark' theme, which is
+ * still underived (docs/SHELF_REDESIGN.md decision D4).
  *
- * Depends on: src/timeOfDay/dayPhase.ts, theme/colors.ts. Depended on by: useEipPalette.ts,
- * EipPaletteContext.tsx. Docs: docs/EIP_SHEET_GESTURES.md § Time of day.
+ * Depends on: theme/colors.ts, theme/shadeHex.ts (`mixHex`), contexts/ThemeContext.tsx (`ThemeMode`, type only).
+ * Depended on by: useEipPalette.ts, EipPaletteContext.tsx.
+ * Docs: docs/EIP_SHEET_GESTURES.md § "Light / dark theme".
  */
 
 export interface EipPalette {
@@ -63,11 +71,11 @@ export interface EipPalette {
     muted: string;
     /** Hairlines and card outlines. */
     line: string;
-    /** True when the ink is light — hosts swap the flashcard theme palette on this. */
+    /** True for the dark palette (light ink) — hosts swap the flashcard theme palette on this. */
     dark: boolean;
 }
 
-// ── Day-time keys, shelf and ink ──────────────────────────────────────────────────
+// ── Light keys, shelf and ink ──────────────────────────────────────────────────
 const LIGHT_BASE = {
     face: COLORS.white,
     // Design `--edge` #E2E2E6 → COLORS.grey #E7E7EA (nearest token; 2% lighter).
@@ -92,72 +100,39 @@ const tabTrack = (well: string, wellShadow: string) => ({
     tabWellShadow: mixHex(COLORS.white, wellShadow, 0.45),
 });
 
-const PHASE_PALETTE: Record<DayPhase, EipPalette> = {
+const LIGHT_PALETTE: EipPalette = {
     // `.t2a` — pale sky. Authored oklch, shipped as the clamped hex (colors.ts rule).
-    day: {
-        ...LIGHT_BASE,
-        ground: "#E0F3FF", // oklch(95.5% 0.028 238)
-        well: "#D1EAFC", // oklch(92.5% 0.036 238)
-        wellShadow: "#BDDDF2", // oklch(88% 0.045 238)
-        ...tabTrack("#D1EAFC", "#BDDDF2"),
-    },
-    // `.t2n.t2ni` — Night–inverted: everything slate, light ink.
-    night: {
-        ground: "#2A3446",
-        well: "#1E2735",
-        wellShadow: "#141A24",
-        face: "#1E2735",
-        edge: "#121822",
-        shelf: "#1E2735",
-        shelfGrab: "#56627A",
-        tabWell: "#141A24",
-        tabWellShadow: "#0E131B",
-        tabOn: "#2A3446",
-        card: "#2A3446",
-        ink: "#EEF0F6",
-        ink2: "#C3C8D6",
-        muted: "#8F97AA",
-        line: "rgba(255, 255, 255, 0.1)",
-        dark: true,
-    },
+    ...LIGHT_BASE,
+    ground: "#E0F3FF", // oklch(95.5% 0.028 238)
+    well: "#D1EAFC", // oklch(92.5% 0.036 238)
+    wellShadow: "#BDDDF2", // oklch(88% 0.045 238)
+    ...tabTrack("#D1EAFC", "#BDDDF2"),
 };
 
-const COLOR_KEYS = [
-    "ground", "well", "wellShadow", "face", "edge", "shelf", "shelfGrab",
-    "tabWell", "tabWellShadow", "tabOn", "card",
-] as const;
-const INK_KEYS = ["ink", "ink2", "muted", "line", "dark"] as const;
+// `.t2n.t2ni` — the design's Night–inverted artboard: everything slate, light ink.
+const DARK_PALETTE: EipPalette = {
+    ground: "#2A3446",
+    well: "#1E2735",
+    wellShadow: "#141A24",
+    face: "#1E2735",
+    edge: "#121822",
+    shelf: "#1E2735",
+    shelfGrab: "#56627A",
+    tabWell: "#141A24",
+    tabWellShadow: "#0E131B",
+    tabOn: "#2A3446",
+    card: "#2A3446",
+    ink: "#EEF0F6",
+    ink2: "#C3C8D6",
+    muted: "#8F97AA",
+    line: "rgba(255, 255, 255, 0.1)",
+    dark: true,
+};
 
-/**
- * The eip's palette at one time of day: the two phases' fills mixed `t` of the way, and
- * the ink of whichever phase the blend is mostly in (night's once night is ≥ half).
- */
-export function eipPaletteAt(time: TimeOfDay): EipPalette {
-    const a = PHASE_PALETTE[time.from];
-    const b = PHASE_PALETTE[time.to];
-    if (time.from === time.to || time.t <= 0) return a;
-    const out = {} as Record<keyof EipPalette, string | boolean>;
-    for (const k of COLOR_KEYS) out[k] = mixHex(a[k], b[k], time.t);
-    const inkFrom = phaseShare(time, "night") >= 0.5 ? PHASE_PALETTE.night : PHASE_PALETTE.day;
-    for (const k of INK_KEYS) out[k] = inkFrom[k];
-    return out as unknown as EipPalette;
-}
+/** The palette the light (non-Dark) themes use — also the default outside a provider. */
+export const EIP_LIGHT_PALETTE = LIGHT_PALETTE;
 
-/** The fixed day palette — for hosts with no clock (tests, the inline cdp panels). */
-export const EIP_DAY_PALETTE = PHASE_PALETTE.day;
-
-/**
- * Linear sRGB-space mix of two `#RRGGBB` colours. Plain gamma-space lerp on purpose: the
- * phase grounds are near-white tints a few % apart, where the difference from an OKLCH mix
- * is invisible, and it keeps this module free of the Deck Tower's iso colour maths.
- */
-function mixHex(a: string, b: string, t: number): string {
-    const pa = parseInt(a.slice(1), 16);
-    const pb = parseInt(b.slice(1), 16);
-    const ch = (shift: number) => {
-        const x = (pa >> shift) & 255;
-        const y = (pb >> shift) & 255;
-        return Math.round(x + (y - x) * t).toString(16).padStart(2, "0");
-    };
-    return `#${ch(16)}${ch(8)}${ch(0)}`;
+/** The eip's palette for a theme: the dark palette for Dark, the light one for every other. */
+export function eipPaletteFor(mode: ThemeMode): EipPalette {
+    return mode === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
 }

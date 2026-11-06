@@ -23,22 +23,22 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  *
  * Reads `useTTSSettings`, NOT `useTTS`. The chip never plays anything, and `useTTS`
  * is the playback hook — mounting a playback instance here once let the chip's
- * StrictMode remount cancel the ancp's first autoplay word (docs/AUDIO_PLAYBACK.md
+ * StrictMode remount cancel the acp's first autoplay word (docs/AUDIO_PLAYBACK.md
  * § "Only the speaker stops on unmount").
  *
  * ONE skin everywhere (since 2026-11-04): the bare glyph + label in `ink`, bundled by a
  * thin pill outline in that same ink (pageHeaderSizing.ts → `outlinedChipSx`, shared with
  * HeaderActionChip), the label in 975 Maru SC (`FONTS.cjk`) at its one regular weight. It floats as plain text
  * rather than drawing the eye as a filled chip. Before 2026-11-04 only the Deck Tower and
- * the ancp used this skin and every other surface had a filled blue mono chip; the label
+ * the acp used this skin and every other surface had a filled blue mono chip; the label
  * now carries the state on every surface (there is no fill to light up when audio is on).
  *
  * `ink` is the one per-surface choice: it defaults to `COLORS.iconColor` (--ink2, the
- * header's icon ink) for paper grounds; the tower passes white for the sky and the ancp
+ * header's icon ink) for paper grounds; the tower passes white for the sky and the acp
  * its ground look's ink. On a game's accent ground `gameSurfaceSx` re-inks it to full ink
  * like the header's other icons.
  *
- * Used by: TowerStudyHeader (the flp), AddNewCardsPage (ancp), BubbleMatchHeader
+ * Used by: TowerStudyHeader (the flp), AddCardsPage (acp), BubbleMatchHeader
  * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage,
  * IWPlayPage (Immersive World).
  * Documented in: docs/AUDIO_PLAYBACK.md.

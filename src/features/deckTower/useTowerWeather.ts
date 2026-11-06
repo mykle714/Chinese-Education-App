@@ -23,7 +23,7 @@ import { pinnedWeather, type WeatherOverride } from "./towerWeather";
  *     every effect without granting location.
  *
  * Depends on: src/api/weather.ts, src/hooks/useWeatherEffectsSetting.ts, towerWeather.ts.
- * Depended on by: DeckTowerPage.tsx, discover/AddNewCardsPage.tsx (the observation only — ancp draws no particles).
+ * Depended on by: DeckTowerPage.tsx, discover/AddCardsPage.tsx (the observation only — acp draws no particles).
  */
 
 /** How often a mounted tower re-asks (the server caches per cell for 30 min). */

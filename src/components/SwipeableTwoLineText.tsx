@@ -4,8 +4,8 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
 
 /**
  * SwipeableTwoLineText — a list of segments (a word's glosses) shown on AT MOST TWO lines,
- * swiped sideways only when two lines are not enough (owner's spec 2026-10-29, the
- * Dictionary eip's header gloss). The two-line sibling of SwipeableTextLine.
+ * swiped sideways only when two lines are not enough (owner's spec 2026-10-29, for the eip
+ * header's sense list — which moved to the Definition tab on 2026-11-05). The two-line sibling of SwipeableTextLine.
  *
  * ── The three layouts, chosen by measuring ────────────────────────────────────
  *   1. ONE LINE   — everything fits on one line.
@@ -52,10 +52,9 @@ import useEdgeRubberBand from '../hooks/useEdgeRubberBand';
  * the text fits, centers and finishes scrolling inside the insets.
  *
  * Layer: shared component (`src/components/`). Used by:
- * features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx (the per-sense list with its
- * underlined pick + starred default).
- * Docs: docs/SHELF_REDESIGN.md § 7b ("The Dictionary lists senses, as the flp eip does");
- * docs/DEFINITION_CLUSTERS.md (eip header sense list).
+ * games/memory-map/MemoryMapPrompt.tsx (the prompt's sense list) — its only user since the
+ * eip header switched to one dd (2026-11-05).
+ * Docs: docs/MEMORY_MAP_GAME.md § 3.1; docs/SHELF_REDESIGN.md § 7b.
  */
 
 /** A segment with its own span class and/or a node drawn right after its text. */

@@ -11,6 +11,7 @@ import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
 import { hasSynonymsOrRelated } from "../../../utils/definitionUtils";
 import SynonymsRelatedSection, { EipSectionLabel } from "../SynonymsRelatedSection";
+import EipSenseList from "./EipSenseList";
 
 // Empty run-out at the bottom of a tab pane, so its last row can be scrolled up off the
 // pane's bottom edge instead of ending flush against it — that edge is exactly where a
@@ -79,7 +80,7 @@ export interface InfoCardTabContentProps {
      * tab is a promise of content and most entries have neither list — an empty tab in
      * the strip on every card is a worse trade than a section that simply is not there.
      *
-     * The flp and ancp leave it undefined: on those surfaces the panel is the reading
+     * The flp and acp leave it undefined: on those surfaces the panel is the reading
      * view for a word in a drill, and the lists are reference material the cdp is for.
      */
     showSynonymsRelated?: boolean;
@@ -127,8 +128,8 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
             // Practice Writing) used to ride at the end of this tab and is DELETED:
             // artboards 20 and 20b make the panel information-only, and its three
             // actions moved to where they belong. Practice Writing and Compare are word
-            // tools, so they are on `WordToolsRail` above the card; Add to Deck is a card
-            // operation, so it is on `CardOpsRail` behind the card's `•••`.
+            // tools, so they are on `WordToolsRail` above the card; Add to Deck left with
+            // the Decks feature (2026-11-04).
             //
             // One consequence, accepted rather than overlooked: those rails act on the
             // CARD's word, not on a word the learner has DRILLED INTO from the breakdown
@@ -199,8 +200,17 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                 </Box>
             ) : null;
 
+            // The word's sense list (every sense's dd, starred, the pick underlined) as two
+            // columns at the TOP of the tab, on every eip host — the entry header shows one
+            // dd (owner's call 2026-11-05). EipSenseList renders nothing for a
+            // single-sense word, so the tab then starts on the paragraph as before.
+            const senseList = currentEntry ? (
+                <EipSenseList entry={currentEntry} selectedSenseIndex={selectedSenseIndex} />
+            ) : null;
+
             return definitionTabHasContent && currentEntry ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
+                    {senseList}
                     {/* The paragraph plus the three measured facts — one shared component
                         with the cdp (DefinitionFacts / `.dfx`). This used to be ~90 lines
                         of centred chips duplicated verbatim in VocabCardDetailBody. */}
@@ -222,6 +232,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                 // cdp swallowing them behind an empty-state would lose content the page used
                 // to show. Show the message AND whatever the section has.
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
+                    {senseList}
                     <Box className="mobile-demo-tab-empty" sx={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 2 }}>
                         <Typography sx={{ fontSize: SIZE.body, color: fc.textSecondary, textAlign: "center", fontFamily: FC_FONT }}>
                             No definition available for this card

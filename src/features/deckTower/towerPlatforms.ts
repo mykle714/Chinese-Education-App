@@ -76,7 +76,7 @@ const NOTEBOOK: WorldRect = { x: 9.35, y: 0.6, w: 1.2, d: 1.55, r: 0.1 };
 /**
  * The mini sort platform (IsoSortPlatform, docs/DECK_TOWER.md § "The sort platform") —
  * main world only: the same right corner the notebook takes on the writing world. Its
- * proportions are ancp's bin slab's (6.4 × 8, SortBins.tsx → PLATFORM) scaled down; its
+ * proportions are acp's bin slab's (6.4 × 8, SortBins.tsx → PLATFORM) scaled down; its
  * left edge stands 1.4 units off the tower's right face (CARD x + w = 7.9) — the pawn needs
  * 1.2 (2 × PAWN_FOOT_RADIUS + 2 × OBSTACLE_CLEARANCE) to walk between them.
  */
@@ -89,26 +89,29 @@ const SORT_BIN: WorldRect = { x: 9.3, y: 0.45, w: 1.36, d: 1.7, r: 0.22 };
  * front of the tower), centred on its x: `FIXTURE_LABEL_GAP` off the face, plus half the
  * block's depth (`fixtureLabelDepth`). The +x side is no use: it is the platform's rim.
  *
- * The line counts are restated here (`SORT_BIN_LABEL_LINES`, `NOTEBOOK_LABEL_LINES`)
- * rather than read off DeckTowerPlatform's `FIXTURE_PRINT`, because DeckTowerPlatform
+ * The line counts and sizes are restated here (`SORT_BIN_LABEL_LINES`/`SORT_BIN_PRINT_FONT_SIZE`,
+ * `NOTEBOOK_LABEL_LINES`/`NOTEBOOK_PRINT_FONT_SIZE`) rather than read off DeckTowerPlatform's
+ * `FIXTURE_PRINT`, because DeckTowerPlatform
  * imports this file — keep the two in step when a print's copy changes.
  */
 const FIXTURE_LABEL_GAP = 0.28;
-/** DeckTowerPlatform `FIXTURE_PRINT.fontSize`, and IsoFloorPrint's default `lineHeight` (1.25). */
-const FIXTURE_PRINT_FONT_SIZE = 0.4;
-const FIXTURE_PRINT_LINE_PITCH = FIXTURE_PRINT_FONT_SIZE * 1.25;
+/** DeckTowerPlatform `FIXTURE_PRINT.<fixture>.fontSize` per print. */
+const SORT_BIN_PRINT_FONT_SIZE = 0.6;
+const NOTEBOOK_PRINT_FONT_SIZE = 0.4;
+/** IsoFloorPrint's default `lineHeight`: a line's pitch as a multiple of its font size. */
+const FIXTURE_PRINT_LINE_HEIGHT = 1.25;
 /** "ADD / NEW / CARDS" (FIXTURE_PRINT.sortBin). */
 const SORT_BIN_LABEL_LINES = 3;
 /** "WRITING / NOTEBOOK" (FIXTURE_PRINT.notebook). */
 const NOTEBOOK_LABEL_LINES = 2;
-/** A print's depth on the floor: one glyph height plus a pitch per extra line (2 lines → 0.9). */
-function fixtureLabelDepth(lineCount: number): number {
-    return FIXTURE_PRINT_FONT_SIZE + (lineCount - 1) * FIXTURE_PRINT_LINE_PITCH;
+/** A print's depth on the floor: one glyph height plus a pitch per extra line (2 lines at 0.4 → 0.9). */
+function fixtureLabelDepth(lineCount: number, fontSize: number): number {
+    return fontSize + (lineCount - 1) * fontSize * FIXTURE_PRINT_LINE_HEIGHT;
 }
 /** The print's right limit: the rim's inner edge, less a hair so no glyph touches it. */
 const FIXTURE_LABEL_MAX_X = PLATFORM.x + PLATFORM.w - RIM_WIDTH - 0.15;
-function labelUnder(fixture: WorldRect, lineCount: number): { x: number; y: number } {
-    return { x: fixture.x + fixture.w / 2, y: fixture.y + fixture.d + FIXTURE_LABEL_GAP + fixtureLabelDepth(lineCount) / 2 };
+function labelUnder(fixture: WorldRect, lineCount: number, fontSize: number): { x: number; y: number } {
+    return { x: fixture.x + fixture.w / 2, y: fixture.y + fixture.d + FIXTURE_LABEL_GAP + fixtureLabelDepth(lineCount, fontSize) / 2 };
 }
 
 /** `roam` with one corner fixture appended as obstacle 2 (DeckTowerPlatform's layer slots follow this index). */
@@ -162,10 +165,10 @@ export const TOWER_LAYOUT: TowerPlatformLayout = {
     // front-left face), so it draws after the stack.
     roam: { area: insetRect(PLATFORM, RIM_WIDTH), obstacles: [CARD, leverFootprint(LEVER_AT)] },
     notebook: NOTEBOOK,
-    notebookLabelAt: labelUnder(NOTEBOOK, NOTEBOOK_LABEL_LINES),
+    notebookLabelAt: labelUnder(NOTEBOOK, NOTEBOOK_LABEL_LINES, NOTEBOOK_PRINT_FONT_SIZE),
     notebookRoam: roamWithCornerFixture(NOTEBOOK),
     sortBin: SORT_BIN,
-    sortBinLabelAt: labelUnder(SORT_BIN, SORT_BIN_LABEL_LINES),
+    sortBinLabelAt: labelUnder(SORT_BIN, SORT_BIN_LABEL_LINES, SORT_BIN_PRINT_FONT_SIZE),
     fixtureLabelMaxX: FIXTURE_LABEL_MAX_X,
     sortBinRoam: roamWithCornerFixture(SORT_BIN),
 };

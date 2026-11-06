@@ -96,7 +96,7 @@ dd uses `FONTS.cjk`, so an English gloss is set in the face's Latin glyphs and r
 as the same text wherever it appears:
 
 - flp card face — `src/features/flashcards/card/CardFace.tsx` (`FC_FONT_CJK`)
-- eip header dd + sense list — `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (`glossSx`)
+- eip header dd — `src/features/flashcards/FlashcardsLearnPage/EipEntryHeader.tsx` (`glossSx`); eip sense list — `EipSenseList.tsx`
   (`mobile-demo-eic-header-english`, `FC_FONT_CJK`)
 - sense menu labels (each is a candidate dd) — `src/features/flashcards/card/SensePicker.tsx`
   → `renderSenseItem` (`FONTS.cjk`)
@@ -104,7 +104,7 @@ as the same text wherever it appears:
 - the mini preview card — `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`):
   the WHOLE card is set in `FONTS.cjk` (root `fontFamily`, inherited by wrapper overlays;
   restated on the dd `Typography` and the frequency badge). Reaches every wrapper at once:
-  the ancp's `DraggableCard`, `SkippedCardsSheet`, `MiniVocabCard`, `QuickMarkCard`,
+  the acp's `DraggableCard`, `SkippedCardsSheet`, `MiniVocabCard`, `QuickMarkCard`,
   `ChallengeWordCard`.
 
 The rest of the sense menu (pinyin reading headings, counter chip, grammar tag) stays on

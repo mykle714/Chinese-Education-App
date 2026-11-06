@@ -18,9 +18,9 @@ compare sheet, `src/components/CompareSheet.tsx`), and the own bodies of `Accoun
 `SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
-**Mount sites.** The eip sheet is not flp-private: the sort cards page (ancp), the
+**Mount sites.** The eip sheet is not flp-private: the sort cards page (acp), the
 saved-card cdp and the immersive-world play page all mount the same `InfoCardSection`, and
-ancp brings the `EipTabStrip` + `useEipTabs` trio with it from each on-deck card's info button
+acp brings the `EipTabStrip` + `useEipTabs` trio with it from each on-deck card's info button
 ([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). `IWPlayPage` mounts the
 same trio from a tapped word in a speech bubble, and is the only host that takes a **hold on
 the page behind it** for the sheet's lifetime — a scene keeps running otherwise, and would
@@ -50,11 +50,11 @@ clipped by `MobileTabScreen`'s `ScrollArea`, so it could never have covered the 
 matter what ratio it was given.
 
 Two host obligations disappeared with it: stretching the host down through
-`FOOTER_CLEARANCE` (ancp's old `EipHost` negative bottom — the wrapper was deleted 2026-10-03), and
+`FOOTER_CLEARANCE` (acp's old `EipHost` negative bottom — the wrapper was deleted 2026-10-03), and
 giving the host a z-index above anything the page lifts. What replaces the latter is
 `SCRIM_BASE_Z_INDEX` / `SHEET_BASE_Z_INDEX` (**1200 / 1201**, `+ depth·2` per stack
 level): the two layers now sort against the page's *top-level* layers, and those go high
-— ancp lifts its draggable cards to 1000 and its eip host to 1100. 1200 sits below MUI's
+— acp lifts its draggable cards to 1000 and its eip host to 1100. 1200 sits below MUI's
 modal layer (1300), so a real `Dialog` still covers the sheet.
 
 Because the sheet is portaled, nothing of `SheetPanel` is left in the page's DOM to walk
@@ -118,7 +118,7 @@ strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
 | Stop | Value | Meaning |
 |---|---|---|
 | `0` | — | dismissed (panel unmounts after the shrink animation) |
-| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` passes **0.8**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
+| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` and `src/pages/AccountSheet.tsx` → `AccountSheet` pass **0.8**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
@@ -130,7 +130,7 @@ sheet passes `min > 0`, which suppresses the dismiss stop (see above).
 `collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
 **0.5**, which is exactly the plain "nearest stop wins" midpoint rule. **The eip itself
 passes 0.25** (`InfoCardSection.tsx` → `EIP_COLLAPSE_THRESHOLD_RATIO`, every eip host: flp/td,
-cdp, Dictionary, ancp, IW), so a short upward pull from the open height
+cdp, Dictionary, acp, IW), so a short upward pull from the open height
 maximizes — at the default 0.6 open height the flip point is 0.7 of the screen. A smaller value
 moves the collapse point **down**, so the sheet springs back open from heights that
 used to close it — a partial pull-down no longer counts as "close it". Note this only decides between the two upper stops; a
@@ -228,7 +228,7 @@ not".
 
 **Why study surfaces get the flame.** A panel covers its page's header, flame included,
 and it does that precisely while the learner is reading a definition — which *is* study
-time. So the eip panels on flp, ancp and the cdp pass `showMinutePoints`, and the
+time. So the eip panels on flp, acp and the cdp pass `showMinutePoints`, and the
 indicator survives at every panel height. **Pull-up dictionary flows never show it**
 (2026-10-06): `CompareSheet` and the Writing Notebook's `NotebookWordPickerSheet` omit the
 prop. That changes only the indicator, not earning — the host page's own `PageHeader`
@@ -294,13 +294,8 @@ Three rules, all changed on **2026-09-06**:
   trail does not rubber-band the sheet), and desktop drags it with the shared
   `useDragScroll` mouse-drag hook — the same gesture the card shelves use. No scrollbar is
   drawn; the pill cut off at the edge IS the affordance.
-  The trail is no longer the upper panel's only sideways scroller: for a word with a sense
-  list the header gloss is a `SwipeableTwoLineText`
-  (`src/components/SwipeableTwoLineText.tsx`), also `touch-action: pan-x` so vertical drags
-  stay with the sheet's resize, with its own rubber band at the ends
-  (`src/hooks/useEdgeRubberBand.ts`). See docs/SHELF_REDESIGN.md § 7b. When a list breaks
-  between two entries, line 1 ends in the list's dot and line 2 starts with one, so a new entry reads differently from a
-  single entry that wrapped (that wrap has no dots).
+  The trail is the upper panel's only sideways scroller: the header gloss is one dd that
+  wraps (2026-11-05; it used to be a swipeable sense list — docs/SHELF_REDESIGN.md § 7b).
 - **It is capped by COUNT, not by width** — `MAX_EIP_TABS` (50) in `useEipTabs`. It used to
   be a width gate (`fitsNewTab`, which measured a candidate pill off-DOM and refused any
   word that would not fit the row entirely) because a half-pill reads as "scroll for more"
@@ -323,7 +318,7 @@ Three rules, all changed on **2026-09-06**:
 belongs to the CARD, so reopening the sheet on the same card resumes the same drill-in
 chain on the same word. It is dropped when the ROOT changes: the flp's next card (the
 `currentIndex` reset effect, plus `openForRoot` reseeding), another card's info button on
-ancp, or the page unmounting. (The cdp is unaffected — it has no entry-tab
+acp, or the page unmounting. (The cdp is unaffected — it has no entry-tab
 strip at all; it drills in by NAVIGATING to the tapped word's own card detail, and its
 content sub-tab already survives a close for the page's life.)
 
@@ -333,7 +328,7 @@ The eip is two stacked panels (design file "Tower Tier 2 - Time of Day", EIP art
 
 | Panel | Rows | Component |
 |---|---|---|
-| **Upper** — the tinted `ground` | TITLE ("More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (speaker · words · Add key) · HEADER (headword tile, gloss — a multi-sense word lists every sense, chosen one underlined) | `EipUpperPanel` |
+| **Upper** — the tinted `ground` | TITLE ("More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (speaker · words · Add key) · HEADER (headword tile, gloss — ONE dd, the chosen sense's else the default's; a multi-sense word's full list sits at the top of the Definition tab, `EipSenseList`) | `EipUpperPanel` |
 | **Lower** — the white SHELF | its own small grabber · content tabs (sunken segmented track) · tab body | `InfoCardSection` (`.eip-shelf`) + `InfoCardPanelBody` (`hideEntryHeader`) |
 
 The shelf has a 24px top radius and a solid 3px `edge` lip above it; the sheet's `surface`
@@ -390,9 +385,10 @@ the caret's ink and the first crumb's ink. Toward max the cluster slides left by
   headword keycap (`HEADWORD_TILE_MIN`), as if the keycap's edge ran up through the row. The
   crumb list then runs off the screen's right edge, unless the Add key ends it at the gutter.
 - The gloss shares those boundaries (`EipEntryHeader` → `glossToScreenEdge`): its box runs
-  from the keycap's right edge to the screen edge, so swiped text clips at both. At rest the
-  text stays inside the box: its left inset (`GLOSS_KEYCAP_CLEARANCE`) keeps it off the
-  keycap and scrolls away with the text, and its right inset is `EIP_PANEL_GUTTER`. A multi-character keycap pushes the gloss right; the
+  from the keycap's right edge to the screen edge. The text stays inside it: its left inset
+  (`GLOSS_KEYCAP_CLEARANCE`) keeps it off the keycap, and its right inset is
+  `EIP_PANEL_GUTTER`. (The box ran edge to edge so a swiped sense list clipped at the screen;
+  the gloss has been one wrapping dd since 2026-11-05, so nothing swipes in it now.) A multi-character keycap pushes the gloss right; the
   trail does not move. The cdps' inline panels keep the header's normal gap and padding.
 - The cluster keeps its width on Compare, which has no speaker, so the trail does not jump
   when the learner moves between a word and a Compare crumb.
@@ -442,7 +438,7 @@ indistinguishable from a drill-in page once maximized. `AccountSheet` is its one
   raised off the ground as they do on a page.
 
 The panel also has three tabs (Account · Friends · Settings) on the eip's selector,
-`SheetSegmentedTabs`. The eip passes its time-of-day colours; the account panel takes the
+`SheetSegmentedTabs`. The eip passes its theme palette's colours; the account panel takes the
 defaults, which are framework tokens for a paper ground. As in the eip each pane is its own
 scroller and `selected` is folded into `bodyKey`, so SheetPanel re-binds to the shown pane.
 The strip is a resize handle too. Panes change by tap only: the eip's swipe pager is not used
@@ -452,29 +448,36 @@ Code: `src/components/sheet/SheetPageHeader.tsx` → `SheetPageHeader`;
 `src/components/sheet/SheetSegmentedTabs.tsx` → `SheetSegmentedTabs`;
 `src/pages/AccountSheet.tsx` → `AccountSheet`, `AccountSheetPanes`.
 
-### Time of day — the eip's palette (2026-10-29)
+### Light / dark theme — the eip's palette
 
-The eip follows the learner's time of day, at the same hour as the Deck Tower. The shared
-CLOCK is `src/timeOfDay/useDayClock.ts` → `useDayClock` (moved out of `features/deckTower`;
-it also carries the feature-tester override, now a module store so every reader agrees).
-`eipPalette.ts` → `eipPaletteAt(time)` turns it into an `EipPalette`; `useEipPalette.ts` →
-`useEipPalette` samples it; `EipPaletteContext.tsx` → `EipPaletteProvider` (mounted by
-`InfoCardSection`) publishes it, and pieces read it with `useEipColors()` (the DAY palette
-outside a provider — the cdps' inline panels).
+The eip follows the app's colour **theme** (Settings → Theme, `ThemeMode` in
+`src/contexts/ThemeContext.tsx`), **not** the time of day. `eipPalette.ts` →
+`eipPaletteFor(mode)` returns one of two fixed palettes; `useEipPalette.ts` → `useEipPalette`
+reads the theme mode; `EipPaletteContext.tsx` → `EipPaletteProvider` publishes it, and pieces
+read it with `useEipColors()` (the LIGHT palette outside a provider). Both eip hosts mount
+the provider: the sheet (`InfoCardSection`) and the Dictionary cdp's inline panel
+(`src/features/dictionary/DictionaryCardDetailPage.tsx`).
 
-- **Day** tints only the upper panel's ground and wells (pale sky). Keys, shelf, cards
-  and ink are the app's day colours. (Dawn's rose and sunset's peach tints were cut
-  2026-11-04 with those phases — [TOWER_WEATHER_SKY.md](./TOWER_WEATHER_SKY.md) § 1.)
-- **Night** is the design's *Night–inverted*: slate panels (#2A3446 upper, #1E2735 shelf),
-  light ink, cards a lifted slate. The provider also **re-themes the subtree** — the
-  flashcard palette's ink/border tokens are swapped — so everything that reads
-  `theme.palette.flashcard.*` (cpcd, dd, synonyms, compare) follows without knowing.
+- **Light** — every theme but Dark (Light, Ocean, Nature). The design's Day artboard: a
+  pale-sky tint on the upper panel's ground and wells; keys, shelf, cards and ink are the
+  app's light colours.
+- **Dark** — the Dark theme. The design's *Night–inverted* artboard: slate panels (#2A3446
+  upper, #1E2735 shelf), light ink, cards a lifted slate. The provider also **re-themes the
+  subtree** — the flashcard palette's ink/border tokens are swapped — so everything that
+  reads `theme.palette.flashcard.*` (cpcd, dd, synonyms, compare) follows without knowing.
+  It is the design's own palette, NOT derived from ThemeContext's 'dark' MUI theme (still
+  underived — [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) decision D4).
 - **Popups:** `src/components/CpcdPopup.tsx` (the copy toast and the est's definition popup)
-  turns #2A3446 at night. Portalled, but the provider's `CpcdPopupTonesCtx` still reaches it.
-- Day and night **blend** across the hour-long twilights (`eipPaletteAt` mixes the fills). Ink cannot
-  blend; it flips to night's once night is the larger share (`phaseShare`).
+  turns #2A3446 on the dark palette. Portalled, but the provider's `CpcdPopupTonesCtx` still reaches it.
+- **History.** Until 2026-11-05 these were the DAY and NIGHT palettes, driven by the shared
+  day clock (`src/timeOfDay/useDayClock.ts`) and blended across each twilight. The blend read
+  as the eip dimming in daylight (fills sliding to slate under still-dark ink), so the clock
+  was dropped for the eip. The Deck Tower, the Dictionary page / dictionary cdp ground
+  (`tier2Look.ts`) and acp still follow the clock — so in the Light theme at night the
+  Dictionary cdp shows a slate page ground around a light inline eip, and in the Dark theme
+  by day a pale ground around a dark one.
 
-**Does not follow night:** anything reading `COLORS.*` directly — notably `SheetCloseX` (fixed `textFaint`). (The SensePicker's
+**Does not follow the dark palette:** anything reading `COLORS.*` directly — notably `SheetCloseX` (fixed `textFaint`). (The SensePicker's
 white menu used to be listed here; the eip header no longer mounts the picker.)
 
 **⚠️ Outside the colour framework** (like the tower's `NIGHT_SKY`): the phase grounds and
@@ -493,13 +496,13 @@ at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses
 optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
 never disabled waiting on the network (LEAF_NODE_PAGES.md § "Read-only dictionary cdp"). **No glow** —
 the dictionary cdp keeps its glowing `LearningToggle` under the header speaker. Adding a word
-is a Dictionary-flow action only: no other eip host (flp, ancp, saved-card cdp, iw) offers one —
+is a Dictionary-flow action only: no other eip host (flp, acp, saved-card cdp, iw) offers one —
 the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
 
 **Both eip keycaps press the same way** — the Add key and the headword tile use the app's
 raised-key press, `src/theme/keycapPress.ts` → `keycapPressSx`: they SNAP down onto the lip
 and back up with no transition. Since 2026-10-29 (by request) that is EVERY raised keycap in
-the app — the tower plates (`towerPlate.ts` → `towerPlatePressSx`), the ancp toolbar, the
+the app — the tower plates (`towerPlate.ts` → `towerPlatePressSx`), the acp toolbar, the
 Dictionary page's keycaps and the beginner keyboard all spread the same helper. It used to
 animate (the scene plate's 80 ms ease-out sink and 220 ms overshoot pop).
 
@@ -521,7 +524,7 @@ drag, a scroll) or a `pointercancel` lets it up at once. Disabled keys (`:disabl
 `aria-disabled="true"`) are skipped, presses are per pointer, and a `MutationObserver` puts
 the class back if React rewrites a held key's `className` (the Add key flips to Added! on
 the tap itself). No consumer wires anything: the tower plates (Write it, Compare, More
-Info), these two eip keys, the ancp toolbar, the Dictionary page's keycaps and the beginner
+Info), these two eip keys, the acp toolbar, the Dictionary page's keycaps and the beginner
 keyboard all get it by spreading `keycapPressSx`.
 
 ### Height is imperative, not React state
@@ -573,7 +576,9 @@ rest of the gesture *and* for its release momentum. Modes never cross over: a re
 that reaches a boundary is a hard stop, and the user must lift and start a fresh
 gesture to begin scrolling (or vice versa).
 
-- swipe **up** (`dy > 0`) → `resize` while there is room to grow, else `scroll`
+- swipe **up** (`dy > 0`) → `resize` while there is room to grow, else `scroll`. With
+  `squeezeOnOverstretch`, a maxed sheet whose content cannot scroll further down also
+  takes `resize`, which then overstretches (see "Overstretch")
 - swipe **down** (`dy < 0`) → `scroll` while the content is off its top, else `resize`
 
 ### Only `resize` is driven by JS; `scroll` is native
@@ -645,6 +650,54 @@ janky frame can't teleport the sheet or wipe out the fling through the
 The live-finger path uses floor `0` (that's the dismiss gesture); only momentum uses
 the default-height floor. That's the whole difference, expressed as the `minH`
 argument to `applyResize`.
+
+### Overstretch — pulling past max squeezes the upper panel (2026-11-05)
+
+Opt-in via SheetPanel's **`squeezeOnOverstretch`** prop (requires a telescope); the eip
+(`InfoCardSection`) turns it on, AccountSheet does not. A **live** resize drag that reaches
+max keeps going: the sheet cannot grow (it is the whole screen), so the extra travel goes
+into `overstretchRef` (raw px past max) and squeezes the upper, colored panel's **spacing**.
+No row changes size:
+
+- the telescope handle declares `squeezable`, the px of gap it can give up. The eip gives
+  up **every vertical gap below the title row**: `TRAIL_TOP_PAD` (10, title → trail),
+  the trail row's slack around its 30px buttons (`TRAIL_ROW_SLACK`, 3 above and 3 below:
+  the row is 36px), `HEADER_GAP` (6, trail → entry header) and `HEADER_BOTTOM_PAD` (17,
+  entry header → shelf), 39px in all. Compare has no entry header, so it gives up 16px.
+  Lips are not spacing and stay: the headword keycap's 4px bottom margin, and, when the
+  Add key is present, the trail row's bottom slack, which its lip hangs into;
+- `writeTelescope` shrinks the frame by `S = rubberBand(raw, squeezable)` (the iOS
+  rubber-band curve, `OVERSTRETCH_RESISTANCE` 0.55, asymptotic to `squeezable`) and writes
+  `--sheet-squeeze` = `S / squeezable` (0 → 1) on the frame;
+- `EipUpperPanel` (`squeezeShift`) closes its gaps from that fraction. **No component
+  changes height, and the title row ("More Info" + flame) is not affected at all.** It and
+  the pinned caret stay put while the trail row and entry header close up toward the
+  shelf. The rows are offset with `position: relative; top`. That is not a layout change,
+  so `measureTelescope` never sees the squeeze. It is also not a transform, which would
+  make the trail row a containing block for fixed-position popups;
+- the white shelf (`flex: 1`) rides up into the freed space.
+
+Release always springs back: `settle()` zeroes the overstretch and re-writes max
+**animated**, so the frame height and the row offsets (which ride
+`--sheet-telescope-transition`) return together on the snap transition.
+A release while overstretched never flings. The sheet height itself never leaves max, so
+the merge chrome is untouched.
+
+Who can overstretch: the touch `resize` path (`applyResize(dy, minH, true)`) and the
+header/pill drag (`bindHeaderDrag`), both through `writeVirtualHeight` (a "virtual height"
+= real height + overstretch). Momentum and the wheel cannot. A fresh upward swipe on the
+**body** at max scrolls natively while the content can still scroll down. When it
+cannot (the content is short, or already at its bottom), the swipe locks to `resize` and
+squeezes. The lock is taken on the first move, so a native scroll that reaches the bottom
+mid-gesture does not squeeze; lift and pull again. A gesture caught mid spring-back is
+always `resize`, so the squeeze is never stranded. `freezeHeight`
+recovers the raw overstretch from the frame's on-screen height (`inverseRubberBand`), so
+grabbing a panel mid spring-back continues from what is visible.
+
+Code: `src/components/sheet/SheetPanel.tsx` → `squeezeOnOverstretch`, `overstretchRef`,
+`rubberBand`, `inverseRubberBand`, `writeVirtualHeight`, `writeTelescope`, `settle`,
+`freezeHeight`, `SheetTelescopeHandle.squeezable`; `EipUpperPanel.tsx` → `squeezeShift`,
+`squeezable`; `InfoCardSection.tsx` (opts in).
 
 ### Wheel (desktop)
 
@@ -746,7 +799,7 @@ page archetype that transforms its surface inherits the fix automatically.
 - **The footer is hidden for every modal sheet, by the sheet itself** (2026-08-30).
   `SheetPanel` calls `useHideFooter(minHeight <= 0)`, so the hold covers its whole
   lifetime on every host and is released on unmount. It used to be each page's job —
-  `useHideFooter(eipOpen)` in `AddNewCardsPage`, `useHideFooter(infoOpen)` in
+  `useHideFooter(eipOpen)` in `AddCardsPage`, `useHideFooter(infoOpen)` in
   `VocabCardDetailPage`, **both now deleted** — which left other hosts' modal sheets
   without one. A **persistent** sheet keeps the footer: it is page furniture whose
   resting height is chosen to clear the bar, not a modal that takes over the screen.
@@ -835,7 +888,7 @@ Now:
    matched to `TAB_SWIPE_TRANSITION`) on a wrapper around the body whenever the active
    tab's **id** changes; the direction is the sign of the `activeIndex` delta, so a pushed
    word enters from the right and a pop (Escape, or tapping an earlier crumb) enters from the
-   left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and ancp do; the
+   left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and acp do; the
    cdp has no trail and passes neither, disabling the animation).
    - It is **enter-only** — the outgoing word's DOM is already gone — which is why the
      travel is a fraction of the panel width rather than a full page.
@@ -920,11 +973,10 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   telescope's frame
 - `src/features/flashcards/FlashcardsLearnPage/EipAddKey.tsx` — the Dictionary eip's
   Add ⇄ Added! key
-- `src/features/flashcards/FlashcardsLearnPage/eipPalette.ts` (`eipPaletteAt`,
-  `EIP_DAY_PALETTE`), `useEipPalette.ts` (`useEipPalette`, `useEipColors`),
-  `EipPaletteContext.tsx` (`EipPaletteProvider`) — the time-of-day palette
-- `src/timeOfDay/dayPhase.ts` (`timeOfDayAt`, `phaseShare`) and `src/timeOfDay/useDayClock.ts`
-  (`useDayClock`) — the shared clock
+- `src/features/flashcards/FlashcardsLearnPage/eipPalette.ts` (`eipPaletteFor`,
+  `EIP_LIGHT_PALETTE`), `useEipPalette.ts` (`useEipPalette`, `useEipColors`),
+  `EipPaletteContext.tsx` (`EipPaletteProvider`) — the light / dark theme palette
+- `src/contexts/ThemeContext.tsx` (`ThemeMode`, `useTheme`) — the theme the palette follows
 - `src/components/sheet/SheetCloseX.tsx` — the shared ✕ (every sheet but the eip), also worn by the challenge
   sheet (`src/features/studyChallenge/ChallengeSheet.tsx`, docs/STUDY_CHALLENGE.md § 3.2)
 - `src/components/PageHeader.tsx` — `rightContent`, which is how the panel header carries
@@ -958,10 +1010,10 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   det-lookup-and-adapt every eip host goes through
 - `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` — the shared non-flp mount
   (`InfoCardSection` + `EipTabStrip` + `TooManyTabsSnackbar`), used by
-  `src/features/discover/AddNewCardsPage.tsx` (`handleOpenCardInfo`),
+  `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`),
   `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`) and
   `src/features/dictionary/DictionaryPage.tsx` (`handleEntryClick` — the only host that
   passes `showSynonymsRelated`, `showWordTools` and `showLearning`). `depth` (default 0) is
-  forwarded to SheetPanel; ancp passes 1 while its hidden skipped-cards sheet
+  forwarded to SheetPanel; acp passes 1 while its hidden skipped-cards sheet
   (`SkippedCardsSheet`, docs/SORT_CARDS_REQUIREMENTS.md §5.1a) is open, so an eip opened
   from a card in that sheet stacks above it

@@ -22,7 +22,7 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/
  * asks for next, drifting to adjacent levels when that level's supply runs out (unless
  * the request is a manual dropdown pin, which never drifts). The client tracks its own
  * running target level and moves it ±1 per completed SortPack — see
- * `AddNewCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
+ * `AddCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
  * it completes, not on the next server round-trip.
  *
  * Card source is the per-language dictionaryentries table, gated by _supplyGate:
@@ -418,7 +418,7 @@ export class StarterPacksService {
   }
 
   /**
-   * QUICK MARK (docs/QUICK_MARK.md) — bulk-triage supply. Unlike the Add New Cards pack
+   * QUICK MARK (docs/QUICK_MARK.md) — bulk-triage supply. Unlike the Add Cards pack
    * supply, this returns a full PAGE of not-yet-sorted discoverable words at ONE EXACT
    * level, ordered by vernacular score (most colloquial first), paginated by offset.
    *
@@ -517,7 +517,7 @@ export class StarterPacksService {
    * its on-screen mark in one request — this is NOT append-only, because Quick Mark
    * leaves saved cards on-page and re-savable, so cycling a card back to empty must
    * DELETE the vet row an earlier Save created.
-   *   - 'library' / 'already-learned' → `sortCard` (same bucket effects as Add New Cards).
+   *   - 'library' / 'already-learned' → `sortCard` (same bucket effects as Add Cards).
    *     Passing opts={packId:null} takes sortCard's lightweight pack-mode return path:
    *     it writes the vet row and clears any skip WITHOUT computing a replacement card.
    *   - 'empty' → `undoSort` (non-skip branch) deletes any vet row for the card; a
@@ -1217,7 +1217,7 @@ export class StarterPacksService {
 
   /**
    * All words the user has currently skipped in a language, newest-first, as
-   * DiscoverCards for ancp's skipped-cards sheet. (No example-sentence enrichment — the grid
+   * DiscoverCards for acp's skipped-cards sheet. (No example-sentence enrichment — the grid
    * only needs the card face.)
    */
   async listSkipped(userId: string, language: string): Promise<DiscoverCard[]> {
@@ -1243,7 +1243,7 @@ export class StarterPacksService {
 
   /**
    * Recycle ONE skipped card back into the normal supply — the hold-to-recycle gesture
-   * on a card in ancp's hidden skipped-cards sheet (docs/SORT_CARDS_REQUIREMENTS.md
+   * on a card in acp's hidden skipped-cards sheet (docs/SORT_CARDS_REQUIREMENTS.md
    * §5.1a). A no-op when the card is not (or no longer) skipped. Reuses `_clearSkip`,
    * the same delete a pack-less sort performs.
    */

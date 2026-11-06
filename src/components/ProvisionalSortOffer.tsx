@@ -15,7 +15,7 @@ import type { Language } from "../types";
  * offer rather than a silent cleanup: the player just spent a whole round with those
  * words, which is the best possible moment to ask whether they want to keep them.
  * Accepting opens the sort flow in SET MODE, seeded with exactly the words this round
- * used (`?set=provisional` in AddNewCardsPage), which ends on its own completion popup
+ * used (`?set=provisional` in AddCardsPage), which ends on its own completion popup
  * (ProvisionalSortDonePopup) once the last card of the set is resolved.
  *
  * SHAPE

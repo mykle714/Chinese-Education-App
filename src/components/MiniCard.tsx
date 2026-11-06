@@ -14,19 +14,19 @@ import { miniCardFaceSx, type MiniCardSize } from "./miniCardFace";
 
 /**
  * THE mini preview card — the one 92×132 "here is a word" tile every surface draws
- * (plus a 78×112 `compact` face the ancp dock alone falls back to — see `size`).
+ * (plus a 78×112 `compact` face the acp dock alone falls back to — see `size`).
  *
  * Rendered by `MiniVocabCard` (td's cards page, provisional-card previews — driven by a saved
  * `VocabEntry`), `QuickMarkCard` (Quick Mark triage — a `DiscoverCard`),
- * `ChallengeWordCard` (the challenge word set — a `ChallengeReviewWord`) and the ancp's
- * `DraggableCard` (`AddNewCardsPage.tsx` — a `DiscoverCard`). Those wrappers differ only
+ * `ChallengeWordCard` (the challenge word set — a `ChallengeReviewWord`) and the acp's
+ * `DraggableCard` (`AddCardsPage.tsx` — a `DiscoverCard`). Those wrappers differ only
  * in their data source, the overlays they add (`children`), and what a tap or drag does.
  * The tile AND its contents — icon slot, word, definition, mastery strip — live here, so
  * a change reaches all four at once.
  *
  * History: the face was first written three times and drifted (only one copy kept the
  * hairline ring); `miniCardFace.ts` then unified the TILE, but each card still
- * re-declared its contents, and the ancp card had never adopted either — it was a 102×150
+ * re-declared its contents, and the acp card had never adopted either — it was a 102×150
  * flex-column card with a 44px icon. This component is the second half of that fix.
  *
  * Layering: presentation only (src/components). It takes plain display values, never a
@@ -69,7 +69,7 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
     masteryBar?: MasteryBar | null;
     /**
      * The face's footprint — `regular` (92×132, every surface) or `compact` (78×112,
-     * only the ancp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
+     * only the acp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
      * in miniCardFace.ts; the contents re-lay per size via CONTENT_LAYOUT below.
      */
     size?: MiniCardSize;
@@ -208,7 +208,7 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
 };
 
 /**
- * forwardRef so the ancp can wrap it in react-spring's `animated()` (which drives the
+ * forwardRef so the acp can wrap it in react-spring's `animated()` (which drives the
  * drag transform through a ref to the DOM node) and so drag handlers / ButtonBase props
  * spread through `...rest` onto the root.
  */

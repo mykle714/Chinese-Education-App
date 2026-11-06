@@ -5,7 +5,7 @@ import Icon from "../../../components/Icon";
 import { Label } from "../../../components/primitives";
 import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
-import { ddt, senseGrammarTag, sortedSenseClusters } from "../../../utils/definitionUtils";
+import { ddt, isStarredSense, senseGrammarTag, sortedSenseClusters } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
 import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
@@ -38,9 +38,10 @@ import { SHADOW } from "../../../theme/shadows";
  * The trigger + menu (reading sections, star, per-sense commonality meter, grammar
  * tags, the card-flip stop-propagation) is ~120 lines of behavior that lives on the
  * flashcard face (`CardFace.EnglishBlock` — flp + saved-card cdp). (The eip header
- * used to mount it too; since 2026-10-29 it shows every sense as a dot-separated list instead — EipEntryHeader —
- * built from the same `sortedSenseClusters` order and `ddt` labels, with the same star
- * on index 0, so the two still name the senses identically.)
+ * used to mount it too; it now shows one dd, and since 2026-11-05 the eip lists every sense
+ * as a list at the top of its Definition tab instead — EipSenseList — built from the
+ * same `sortedSenseClusters` order, `ddt` labels and `isStarredSense` stars, so the two still
+ * name the senses identically.)
  *
  * The host owns `selectedSenseIndex` (an index into `sortedSenseClusters(entry)`)
  * and decides what a pick MEANS — the card faces persist it to the vet row's
@@ -174,11 +175,13 @@ const SensePicker: React.FC<SensePickerProps> = ({
                     {/* `pos` narrows the italic label to this sense alone (GlossText). */}
                     <GlossText text={ddt(cluster)} pos={cluster.pos} />
                 </Typography>
-                {/* The starred DEFAULT — the sense the card falls back to when the
-                    learner has never picked one. Marked on the sense itself, not in a
-                    gutter, so it costs no column. Text-coloured (`inherit`, the row's
-                    ink) rather than gold, matching the eip header's sense list. */}
-                {index === 0 && (
+                {/* The star: the DEFAULT (the sense the card falls back to when the
+                    learner has never picked one) plus every sense of commonality 4–5 —
+                    `isStarredSense`, shared with the eip's sense list so the two
+                    star the same senses. Marked on the sense itself, not in a gutter, so
+                    it costs no column. Text-coloured (`inherit`, the row's ink) rather
+                    than gold, matching the eip's sense list. */}
+                {isStarredSense(cluster, index) && (
                     <Icon name="star" size={13} fill={1} color="inherit" className={`${classPrefix}-sense-star`} />
                 )}
                 {/* Per-sense commonality (the cluster's own 1–5 conversation-frequency

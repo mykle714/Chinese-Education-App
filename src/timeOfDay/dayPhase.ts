@@ -7,9 +7,9 @@ import { sunDay, type GeoPoint } from "./sunTimes";
  *
  * Layer: shared module (`src/timeOfDay/`). Pure. It says only WHEN; each consumer decides
  * what a phase looks like — the Deck Tower's sky and wash (features/deckTower/timeOfDay.ts),
- * the eip's tint (features/flashcards/FlashcardsLearnPage/eipPalette.ts), the tier-2 look
- * (tier2Look.ts) and the Add New Cards page (features/discover/sortTimeOfDay.ts). Moved out of
- * features/deckTower/timeOfDay.ts on 2026-10-29 when the eip became the second reader.
+ * the tier-2 look (tier2Look.ts) and the Add Cards page (features/discover/sortTimeOfDay.ts).
+ * Moved out of features/deckTower/timeOfDay.ts on 2026-10-29 when the eip became the second
+ * reader; the eip stopped reading it on 2026-11-05 (it follows the Settings theme now).
  *
  * ── The day's keyframes ────────────────────────────────────────────────────────
  * Around each sunrise and sunset (sunTimes.ts), TWILIGHT_MS either side:
@@ -27,8 +27,7 @@ import { sunDay, type GeoPoint } from "./sunTimes";
  * blend is now the only twilight.
  *
  * Depends on: sunTimes.ts. Depended on by: useDayClock.ts, wash.ts, tier2Look.ts,
- * features/deckTower/timeOfDay.ts, features/flashcards/FlashcardsLearnPage/eipPalette.ts,
- * features/discover/sortTimeOfDay.ts.
+ * features/deckTower/timeOfDay.ts, features/discover/sortTimeOfDay.ts.
  */
 
 export type DayPhase = "day" | "night";

@@ -12,13 +12,13 @@ import type { Language, DiscoverCard } from "../../types";
 
 // QUICK MARK GRID STATE (docs/QUICK_MARK.md) — the bulk-triage grid's supply, paging,
 // swipe commit and undo toast. Lifted out of the deleted standalone QuickMarkPage when
-// Quick Mark moved INSIDE Add New Cards as the expanded on-deck panel (QuickMarkPanel.tsx,
+// Quick Mark moved INSIDE Add Cards as the expanded on-deck panel (QuickMarkPanel.tsx,
 // docs/SORT_CARDS_REQUIREMENTS.md § 4.8).
 //
 // PINNED CARDS. The panel opens from an on-deck pack, and that pack's still-unsorted
 // cards are the grid's first cards ("pinned"). A pinned card is NOT sorted here: its
 // swipe and its undo are handed to the host (`onSortPinned` / `onUndoPinned`), which runs
-// them through Add New Cards' own pack machinery — crater, adaptive-leveling signal, tally,
+// them through Add Cards' own pack machinery — crater, adaptive-leveling signal, tally,
 // Undo stack — so a pack card resolved in the grid is indistinguishable from one dragged
 // into a bucket. Every other card is the plain Quick Mark supply, sorted here with a bare
 // `sortCard({ packId: null })`, and reported to the host (`onSupplySorted` /
@@ -303,7 +303,7 @@ export function useQuickMarkGrid({
 
     // Undo the last swipe: put the card back immediately, then reverse the write. A
     // pinned card's reversal is the host's (its Undo stack). A supply card's is
-    // `undoSort` — the same reversal Add New Cards uses; if the sort itself failed there is
+    // `undoSort` — the same reversal Add Cards uses; if the sort itself failed there is
     // nothing to delete (and the card is already back).
     const handleUndo = useCallback(async () => {
         if (toast?.kind !== "undo" || !language) return;

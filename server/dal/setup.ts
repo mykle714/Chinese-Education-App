@@ -163,9 +163,9 @@ const flashcardMarkService = new FlashcardMarkService(vocabEntryDAL, categoryPro
 const lazyEnrichmentService = new LazyEnrichmentService(userDAL);
 // Created before onDeckVocabService because Word Search borrows its level estimate.
 const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL, lazyEnrichmentService);
-const textService = new TextService(userDAL);
-// Validation reuses TextService to persist composed documents (with validation* columns).
-const validationService = new ValidationService(userDAL, textService);
+// dictionaryDAL: createText segments the first line (gsa) to derive the title.
+const textService = new TextService(userDAL, dictionaryDAL);
+const validationService = new ValidationService(userDAL);
 const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
 // Validator-authored template CATALOG (definitions), separate from the unlock economy. The
 // sandbox DAL is injected so deleting a template also removes every author's sandbox placement

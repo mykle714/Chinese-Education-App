@@ -443,8 +443,8 @@ still scores as frequent when the compounds carrying that meaning are common —
 heard daily via 自己/自由/自动. Only genuine rarity (兮, 翌日) scores low.
 
 **Surfaced to users as "Commonality"** — a 5-dot meter (`src/components/FrequencyScoreDots.tsx`)
-on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), ancp
-(`AddNewCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
+on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), acp
+(`AddCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
 (`QuickMarkCard.tsx`).
 
 **Deployed.** Migration 122 (the rename) is on PPE; its temporary deploy runbook has
@@ -502,8 +502,8 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-s
 | Surface | Form used |
 |---|---|
 | Flashcard face, bubble-match, eip header, cdp, mini cards (td's cards page), related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
-| Discover sort cards (ancp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
-| Memory Map prompt | the eip header's form: every sense's dd (`sortedSenseClusters` order, chosen underlined, default starred, `buildSenseSegments`), or the plain dd (#3) for a single-sense word — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 3.1 |
+| Discover sort cards (acp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
+| Memory Map prompt | the eip header's form: every sense's dd (`sortedSenseClusters` order, chosen underlined, default and commonality-4–5 senses starred (`isStarredSense`), `buildSenseSegments`), or the plain dd (#3) for a single-sense word — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 3.1 |
 | Dictionary row | each sense's dd in `sortedSenseClusters` order, plain dd (#3) with no choice of sense (`resolveSearchRowView`, `src/utils/definitionUtils.ts`) |
 | Vocab card | `definitions` array (#1), `shortDefinition` (#4) |
 | eip / card detail expanded view | header dd (#3); the CURRENT sense's `longDefinition`/`longDefinitionParts` (#5, resolved by `resolveLongDefinitionForSense`), `synonyms`/`breakdown` (#7-segment) |

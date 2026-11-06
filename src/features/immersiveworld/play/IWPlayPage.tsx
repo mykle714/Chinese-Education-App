@@ -74,7 +74,7 @@ export default function IWPlayPage() {
   const runtime = useIWSceneRuntime(scene, npcs, authoredSegments);
 
   /**
-   * § 5.3c — the eip over a scene. The FOURTH host of the same panel (flp, ancp, cdp, here),
+   * § 5.3c — the eip over a scene. The FOURTH host of the same panel (flp, acp, cdp, here),
    * mounted whole rather than reduced: § 5.3b's rule is that iw does not own a lookup UI, and
    * a cut-down eip would be exactly that. `language` is the SCENE's, not the account's — a
    * scene can be played in a language the account is not currently set to.
@@ -86,7 +86,7 @@ export default function IWPlayPage() {
 
   const setPaused = runtime.setPaused;
   /**
-   * Tapping a word in a bubble. The lookup runs BEFORE the sheet opens (the same order ancp
+   * Tapping a word in a bubble. The lookup runs BEFORE the sheet opens (the same order acp
    * uses) so a word with no det row leaves the scene alone instead of opening an empty sheet.
    *
    * ⚠️ The world is held for as long as the sheet is up — see `IWSceneRuntime.setPaused`.
@@ -102,7 +102,7 @@ export default function IWPlayPage() {
       eip.openForRoot(entry);
       setEipOpen(true);
     } catch (error) {
-      // Silent, like ancp's card-info tap: a lookup that misses is an optional detour that
+      // Silent, like acp's card-info tap: a lookup that misses is an optional detour that
       // did not pan out, and a dialog over a scene is a heavier interruption than the miss.
       console.error(`Failed to open the info panel for "${segment}":`, error);
       setPaused(false);
@@ -111,7 +111,7 @@ export default function IWPlayPage() {
     }
   }, [eip, scene?.language, setPaused]);
 
-  // Closing KEEPS the trail (same rule as ancp): reopening on the same word resumes the
+  // Closing KEEPS the trail (same rule as acp): reopening on the same word resumes the
   // drill-in chain. Leaving the scene unmounts the hook, which drops everything.
   const handleCloseEip = useCallback(() => {
     setEipOpen(false);
@@ -250,7 +250,7 @@ export default function IWPlayPage() {
             </Typography>
           )}
           {/*
-            Narration audio mode — the SAME self-contained app-wide control the flp, ancp and
+            Narration audio mode — the SAME self-contained app-wide control the flp, acp and
             every game header render (docs/AUDIO_PLAYBACK.md). A scene speaks NPC lines aloud
             through `useTTS`, so muting on entering a quiet room is as time-sensitive here as
             it is on the flp, and it should not cost a trip to /settings.
@@ -352,7 +352,7 @@ export default function IWPlayPage() {
 
       {/* § 5.3c's eip. SheetPanel portals its own scrim and sheet to the frame — the scrim is
           also what stops a tap reaching the stage, so reading about a word and playing the
-          scene stay separate modes (as sorting and reading do on ancp). Closing lifts the hold. */}
+          scene stay separate modes (as sorting and reading do on acp). Closing lifts the hold. */}
       <EipSheet
         eip={eip}
         open={eipOpen}

@@ -17,7 +17,7 @@ import type { LastMarkUndoSnapshot } from "../types";
  *
  * Its AUDIO CHIP is the shared AudioModeChip's `outlined` skin in white: no fill, its glyph
  * and label in plain white, the same in every audio mode — the label carries the state —
- * held together by a thin white pill outline so they read as one button. The ancp uses the
+ * held together by a thin white pill outline so they read as one button. The acp uses the
  * same skin in its ground's ink. The box is sized to the longest label, so it does not
  * resize as it cycles. Its label face (975 Maru, like the session's other lettering) comes
  * from the shared outlined skin (`outlinedChipSx`), not from this header.

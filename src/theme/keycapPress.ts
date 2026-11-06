@@ -11,8 +11,8 @@
 // which is how the delegate finds keys). Nothing else to wire.
 //
 // Consumers: towerPlate.ts → `towerPlatePressSx` (the flp's tower plates), the eip's
-// keycaps — EipEntryHeader (the headword tile) and EipAddKey — ancp's toolbar keycaps
-// (features/discover/AddNewCardsPage.tsx → `keycapSx`), td's cards-page filter keys
+// keycaps — EipEntryHeader (the headword tile) and EipAddKey — acp's toolbar keycaps
+// (features/discover/AddCardsPage.tsx → `keycapSx`), td's cards-page filter keys
 // (features/deckTower/TowerFilterKeys.tsx), the Dictionary page's keycaps
 // (features/dictionary/DictionaryPageParts.tsx → `Keycap`), the beginner keyboard's
 // keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`) and Match Speed's
@@ -49,7 +49,7 @@ export const KEYCAP_MIN_HELD_MS = 100;
 /**
  * The tower plate's overshoot timing (usePlatePress `POP_MS` 220, ease-out-back). NO
  * LONGER a key press — keys snap. Kept for non-press motion that wants the plate's
- * springy feel: today the ancp's drop-target bin grow (features/discover/SortBins.tsx).
+ * springy feel: today the acp's drop-target bin grow (features/discover/SortBins.tsx).
  */
 export const KEYCAP_POP_TRANSITION = "220ms cubic-bezier(0.34, 1.56, 0.64, 1)";
 
@@ -78,7 +78,7 @@ export function keycapPressSx({ restShadow, pressedShadow, pressedY, restY = 0, 
         transform: at(pressedY),
         boxShadow: pressedShadow,
     };
-    // Two keys rather than one combined selector: callers (AddNewCardsPage) read the
+    // Two keys rather than one combined selector: callers (AddCardsPage) read the
     // `"&:active"` entry by name to reuse the pressed look under their own class.
     return {
         transform: at(restY),

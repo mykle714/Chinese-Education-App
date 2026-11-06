@@ -1008,7 +1008,13 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   wiped too, `useWritingFlashcard` → `resetAttempt`) — a visit never opens flipped. The lent words reviewed stay on the
   offer's list across visits. A session whose deal is older than `PARKED_LOOP_FRESH_MS`
   (5 min, from mount or its last climb-out) is RE-DEALT on its next tap: its layer is
-  re-keyed, so it remounts and fetches afresh while the tap waits in `preparing`.
+  re-keyed, so it remounts and fetches afresh while the tap waits in `preparing`. A
+  session whose deal came back **empty** is re-dealt the same way on any tap that finds the
+  tower counting cards for that world (`start` → `emptyButCounted`), however young the
+  deal: `useWorkingLoop` never re-fetches on its own, so a deal made while nothing was
+  playable — e.g. while the day's focus set was exhausted, before the learner switched focus
+  off (docs/FOCUS_MODE.md) — would otherwise open on "no cards" until the 5 minutes ran out.
+  A deal holding cards is never discarded by this rule.
 - **Preparing.** The world's parked session is un-parked — still invisible
   (`sessionOpacity` 0, no pointer events) — and its card's box measured at once (it is
   already laid out); the camera must know where it is flying to. If the session's deal is

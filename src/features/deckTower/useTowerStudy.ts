@@ -55,7 +55,9 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  * it, so panning back and forth fetches nothing, and a tap dives at once onto a session
  * that is already laid out. A visit's climb-out parks it again with its working loop kept;
  * a session parked longer than PARKED_LOOP_FRESH_MS is re-dealt (remounted) on its next
- * tap instead, since cards come off cooldown meanwhile. `sessions` lists them for the page.
+ * tap instead, since cards come off cooldown meanwhile. A session parked with an EMPTY deal is
+ * re-dealt on any tap the tower counts cards for, however young (`start` → `emptyButCounted`).
+ * `sessions` lists them for the page.
  *
  * The platform fades (docs/DECK_TOWER.md § "Studying the tower" → "The platform fades"):
  * the page fades the whole platform out ON THE DIVE and back in on the climb
@@ -265,12 +267,19 @@ export function useTowerStudy(opts: {
             sceneRef.current = { svg, box: viewBox };
             const now = Date.now();
             const mounted = freshAt.current.has(w);
+            // A parked deal that came back EMPTY while the tower now counts cards for this
+            // world is stale, however young it is: it was dealt when nothing was playable
+            // (e.g. while the day's focus set was exhausted, then focus was switched off)
+            // and `useWorkingLoop` never re-fetches on its own. Re-deal it rather than dive
+            // into "no cards". A deal holding cards is never thrown away by this rule.
+            const parked = loops.current.get(w);
+            const emptyButCounted = parked !== undefined && !parked.loading && !parked.hasCard && n > 0;
             if (!mounted) {
                 // Tapped before the visit effect mounted it: mount it now.
                 freshAt.current.set(w, now);
                 setMountedWorlds((ws) => (ws.includes(w) ? ws : [...ws, w]));
-            } else if (now - (freshAt.current.get(w) ?? now) > PARKED_LOOP_FRESH_MS) {
-                // Parked too long: re-deal. The remounted session fetches its own loop.
+            } else if (emptyButCounted || now - (freshAt.current.get(w) ?? now) > PARKED_LOOP_FRESH_MS) {
+                // Parked too long, or parked empty: re-deal. The remounted session fetches its own loop.
                 loops.current.delete(w);
                 freshAt.current.set(w, now);
                 setDealKeys((k) => ({ ...k, [w]: (k[w] ?? 0) + 1 }));

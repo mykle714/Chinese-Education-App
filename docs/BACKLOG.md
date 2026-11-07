@@ -83,13 +83,13 @@ has its own tower (that bar's flp), cards page and game breaks. DEFERRED_WORK.md
 
 ---
 
-### 4. Breakdown explanation — finish it
+### 4. Breakdown explanation — ✅ BUILT 2026-11-07
 
-**What.** Render the "How the parts make the word" paragraph under the bt breakdown rows.
-The det tables already carry `breakdownElaboration`, and the backfill that fills it exists
-(`server/scripts/backfill/chinese/backfill-breakdown-elaboration.js`), but the column is
-**not on `server/contracts/wire.ts`** and no read path selects it, so `BreakdownRow` renders
-the per-character rows and stops.
+**What.** The "How the parts make the word" paragraph under the bt breakdown rows. **Done:**
+the rubric was rewritten (backfill v2, literal-translation notes) and the column is on the
+wire and rendered by `InfoCardTabContent` — see BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c and
+its Frontend Integration section. Rows still show their v1 note until the oracle backfill
+re-runs them under v2 (shown as stored, by decision).
 
 **Why.** The breakdown tab answers "what is this made of" but not "why does that add up to
 this meaning", which is the more interesting half — and the half a learner cannot derive.
@@ -100,8 +100,10 @@ cheapest item on the page: one column on the read path + the wire type + a parag
 the component. **If nothing else here gets picked up, pick this one.**
 
 **Open questions.**
-- Is the existing backfill's output good enough to ship, or does the rubric need another
-  pass first? (A rubric change is a `SCRIPT_VERSION` bump, not a runbook — CLAUDE.md.)
+- ~~Is the existing backfill's output good enough to ship?~~ **Answered 2026-11-07: no.**
+  The rubric was rewritten (v2, literal-translation notes — 住手 → “Stop hand”: …); see
+  BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c. The manifest bump re-runs the corpus through
+  the normal oracle backfill.
 - Single-character words have no `breakdown` at all (they have `components`) — do they get
   an elaboration of their visual parts instead, or nothing? See item 6.
 

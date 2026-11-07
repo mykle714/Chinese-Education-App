@@ -116,8 +116,11 @@ export const COLORS = {
     //    surface and a mark: 83% L is lighter than the main world's clear sky (bluMk, 77%),
     //    and 0.15 chroma is softer than grnMk (0.21), so it reads as a fresh spring green
     //    rather than a highlighter.
-    //  - pnk (2026-10-19, asked for as #FFCFFF) is a SURFACE (pur's own 92% / 0.085), on
-    //    hue 326 between pur and red.
+    //  - pnk (2026-10-19, asked for as #FFCFFF) is the reading world's platform, on hue
+    //    326 between pur and red. It started as a SURFACE (pur's own 92% / 0.085, #FFD1FF),
+    //    but that sat outside sRGB (red and blue both clipped to 255) and read as a harsh,
+    //    electric magenta. On 2026-11-07 it was eased to 90% / 0.060 on the same hue, a
+    //    soft orchid inside the gamut.
     //  - pnkSky (2026-11-04, "cherry blossom") is the writing world's sky. It replaced
     //    the 2026-10-24 "powder pink" (#F7C6D0, oklch 87% 0.057 5), which replaced the
     //    red sky (redMk) and read as dingy: a dusty, greyish pink at a middling lightness.
@@ -133,7 +136,7 @@ export const COLORS = {
     //    plate still reads on it — ⚠️ don't lift it much further, or the plate blurs into it.
     bluCorn: "#A5C5FC",  // oklch(82%   0.085  261) — a very pale CSS cornflowerblue
     grnSky: "#78E292",   // oklch(83%   0.15   150)
-    pnk: "#FFD1FF",      // oklch(92%   0.085  326) clipped
+    pnk: "#F4D1F4",      // oklch(90%   0.060  326) — soft orchid, in gamut (was #FFD1FF, 2026-11-07)
     pnkSky: "#FFD8EA",   // oklch(92%   0.049  349) clipped
 
     // ── `--gld`, the action metal ─────────────────────────────────
@@ -237,8 +240,6 @@ export const COLORS = {
     // --tea. Claimed by the SIXTH game's hub row (Hydra Bubbles): the five accents above
     // were each already taken by a game (`GameDef.hue` is a persistent per-game colour).
     tealAccent: "#EAFBFA",                  // --teaTint
-    // "The blue surface", referenced rather than repeated so a repaint carries it.
-    hskChip: BLU_SURFACE,                   // --blu (carries MARK_OUTLINE)
 
     /**
      * The inset ring every pastel-filled mark must carry, from the design's

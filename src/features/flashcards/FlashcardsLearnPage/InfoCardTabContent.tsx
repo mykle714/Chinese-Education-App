@@ -10,8 +10,10 @@ import { SIZE } from "../../../theme/scale";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 import type { TabAvailability } from "./infoCardTabAvailability";
 import { hasSynonymsOrRelated } from "../../../utils/definitionUtils";
-import SynonymsRelatedSection, { EipSectionLabel } from "../SynonymsRelatedSection";
+import SynonymsRelatedSection from "../SynonymsRelatedSection";
+import EipSectionLabel from "../EipSectionLabel";
 import EipSenseList from "./EipSenseList";
+import { useEipColors } from "./useEipPalette";
 
 // Empty run-out at the bottom of a tab pane, so its last row can be scrolled up off the
 // pane's bottom edge instead of ending flush against it — that edge is exactly where a
@@ -110,6 +112,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
+    const eipColors = useEipColors();
     // Commonality moved into DefinitionFacts, which resolves it per SENSE from the
     // `selectedSenseIndex` threaded below — see that component and
     // docs/DEFINITION_CLUSTERS.md.
@@ -151,6 +154,8 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         showPinyinColor={showPinyinColor}
                         onSegmentOpen={onExampleSegmentClick}
                         aiGenerated={!grouped && !currentEntry?.definitionsApproved}
+                        // The est's AI card look (ExampleSentenceList), on the eip palette.
+                        aiCard={{ face: eipColors.card, ink: eipColors.ink }}
                         word1={currentEntry?.entryKey}
                         language={currentEntry?.language}
                         sx={{
@@ -184,7 +189,7 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                         classPrefix="mobile-demo"
                         renderLabel={(text, extra) => (
                             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                <EipSectionLabel>{text}</EipSectionLabel>
+                                <EipSectionLabel className="mobile-demo-synonyms-label">{text}</EipSectionLabel>
                                 {extra}
                             </Box>
                         )}
@@ -200,8 +205,8 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                 </Box>
             ) : null;
 
-            // The word's sense list (every sense's dd, starred, the pick underlined) as two
-            // columns at the TOP of the tab, on every eip host — the entry header shows one
+            // The word's "Other Translations" sense list (every sense's dd, numbered, starred,
+            // the pick underlined; two columns from 5 senses) at the TOP of the tab, on every eip host — the entry header shows one
             // dd (owner's call 2026-11-05). EipSenseList renders nothing for a
             // single-sense word, so the tab then starts on the paragraph as before.
             const senseList = currentEntry ? (
@@ -292,21 +297,44 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
                     // One `.bkr` row per component character, in the word's own order
                     // (BreakdownRow). This was a wrapping grid of 1:1 block buttons; see
                     // that component's header for why the shape changed.
-                    <Box className="mobile-demo-breakdown-list">
-                        {breakdownItems.map((item, index) => (
-                            <BreakdownRow
-                                key={index}
-                                className="mobile-demo-breakdown-row-button"
-                                character={item.character}
-                                pinyin={item.pinyin}
-                                definition={item.definition}
-                                language={currentEntry?.language}
-                                showPinyin
-                                showPinyinColor={showPinyinColor}
-                                onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
-                            />
-                        ))}
-                    </Box>
+                    <>
+                        <Box className="mobile-demo-breakdown-list">
+                            {breakdownItems.map((item, index) => (
+                                <BreakdownRow
+                                    key={index}
+                                    className="mobile-demo-breakdown-row-button"
+                                    character={item.character}
+                                    pinyin={item.pinyin}
+                                    definition={item.definition}
+                                    language={currentEntry?.language}
+                                    showPinyin
+                                    showPinyinColor={showPinyinColor}
+                                    onClick={onBreakdownItemClick ? () => onBreakdownItemClick(item) : undefined}
+                                />
+                            ))}
+                        </Box>
+                        {/* Artboard 25's "How the parts make the word": the note explaining
+                            how the characters get to the meaning, usually via the literal
+                            translation (“Stop hand”: …). Written by
+                            backfill-breakdown-elaboration.js; NULL is a decided "no note",
+                            so absent means render nothing (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c). */}
+                        {currentEntry?.breakdownElaboration ? (
+                            <Box
+                                className="mobile-demo-breakdown-elaboration"
+                                sx={{ display: "flex", flexDirection: "column", gap: 0.75, marginTop: 2.5 }}
+                            >
+                                <EipSectionLabel className="mobile-demo-breakdown-elaboration-label">
+                                    How the parts make the word
+                                </EipSectionLabel>
+                                <Typography
+                                    className="mobile-demo-breakdown-elaboration-text"
+                                    sx={{ fontSize: SIZE.body, color: fc.onSurface, fontFamily: FC_FONT, lineHeight: 1.6 }}
+                                >
+                                    {currentEntry.breakdownElaboration}
+                                </Typography>
+                            </Box>
+                        ) : null}
+                    </>
                 )}
             </Box>
         ) : (

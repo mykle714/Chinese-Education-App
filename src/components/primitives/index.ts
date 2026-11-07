@@ -5,8 +5,8 @@
 //   * buttons / chips / inputs / segmented controls live in the MUI theme's
 //     `components` overrides (src/contexts/ThemeContext.tsx), so 157 existing call
 //     sites inherit the new skin without an import change;
-//   * `.tip` is `src/components/TipBox.tsx` and `.dots` is
-//     `src/components/FrequencyScoreDots.tsx`, both of which predate this pass.
+//   * `.tip` is `src/components/TipBox.tsx`, which predates this pass; `.dots` became
+//     the glyph meters in `src/components/ScoreMeters.tsx` (2026-11-07).
 export { Label, SectionRule, SectionHeader } from "./Label";
 export type { LabelProps, SectionRuleProps, SectionHeaderProps } from "./Label";
 export { Row, RowList } from "./Row";

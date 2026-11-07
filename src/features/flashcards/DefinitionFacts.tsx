@@ -1,11 +1,9 @@
-import { alpha } from "@mui/material/styles";
 import { Box, Typography, useTheme } from "@mui/material";
-import FrequencyScoreDots from "../../components/FrequencyScoreDots";
+import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
-import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
+import { aiGeneratedCardSx, aiGeneratedSurfaceSx, aiGeneratedTagPositionSx } from "../../theme/aiGeneratedStyling";
 import MetaChipLabel from "./MetaChipLabel";
 import { resolveCommonality } from "../../utils/definitionUtils";
-import { COLORS } from "../../theme/colors";
 import { WEIGHT } from "../../theme/scale";
 import type { VocabEntry } from "../../types";
 import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
@@ -42,8 +40,9 @@ import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
  * renderings, and which one applies is a rule rather than a prop:
  *
  *   • ALL of them unapproved (and, when the host says so, the paragraph too) → ONE
- *     grouped AI block: a single orange hairline, a single 8% tint, a single sparkle
- *     badge (artboard 20b). Four separate orange boxes stacked inside one panel is
+ *     grouped AI block in the est's AI-card look (ExampleSentenceList, since
+ *     2026-11-07): the eip card fill in a single 1px orange ring, no tint, and a single
+ *     "AI" tag hanging off its bottom-right edge (artboard 20b's grouping). Four separate orange boxes stacked inside one panel is
  *     noise that stops meaning anything.
  *   • ANY of them human-approved → the per-field boxes, so the approved value is
  *     visibly NOT flagged. Losing that distinction is the one thing the grouped
@@ -107,9 +106,10 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
     // alone does not carry the narrowing across the JSX boundary.
     const commonalityScore = commonality.score;
     const hasCommonality = commonalityScore != null;
-    // Difficulty's LABEL is language-neutral; only the value names the scale, reading
-    // "HSK N" for zh (whose 1–6 integers ARE HSK levels) and a bare N elsewhere.
-    const hasDifficulty = entry.difficulty != null;
+    // Difficulty renders as a bare 6-unit meter in every language — no "HSK N" naming.
+    // Held as a local for the same narrowing reason as `commonalityScore`.
+    const difficultyScore = entry.difficulty;
+    const hasDifficulty = difficultyScore != null;
     if (!hasPos && !hasCommonality && !hasDifficulty && !paragraph) return null;
 
 
@@ -129,9 +129,10 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
     const fieldSx = (approved: boolean | undefined) =>
         grouped || approved ? {} : { ...aiGeneratedSurfaceSx, borderRadius: "8px", padding: "4px 8px" };
 
-    // Rules INSIDE the grouped box take the AI hue; a neutral hairline would cut the
-    // orange tint in half.
-    const rule = grouped ? `1px solid ${alpha(COLORS.aiGenerated, 0.35)}` : `1px solid ${fc.border}`;
+    // One neutral hairline in both renderings. (The grouped box's rules used to take the
+    // AI hue so they wouldn't cut its orange tint in half; the est-style card it became on
+    // 2026-11-07 has no tint, so the plain border reads cleanest.)
+    const rule = `1px solid ${fc.border}`;
     // The ungrouped block is separated from whatever is above it by a hairline on its
     // FIRST FACT rather than on the container, so a paragraph handed in sits above that
     // line (artboard 20) instead of inside the fenced region (artboard 20b\'s box).
@@ -142,16 +143,19 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
             className={`${classPrefix}__definition-facts${grouped ? ` ${classPrefix}__definition-facts--ai-generated` : ""} ${className ?? ""}`}
             sx={{
                 marginTop: "13px",
-                ...(grouped
-                    ? { ...aiGeneratedSurfaceSx, borderRadius: "12px", padding: "12px 14px 10px" }
-                    : {}),
+                // Grouped → the est's AI card (ExampleSentenceList): the eip card fill in a
+                // 1px AI-orange ring, no tint, with the corner tag below (2026-11-07).
+                ...(grouped ? aiGeneratedCardSx(colors.card) : {}),
             }}
         >
             {grouped && (
                 <AiGeneratedBadge
-                    label="AI GENERATED"
+                    label="AI"
                     className={`${classPrefix}__definition-facts-badge`}
-                    sx={{ marginBottom: "9px" }}
+                    variant="tag"
+                    face={colors.card}
+                    ink={colors.ink}
+                    sx={aiGeneratedTagPositionSx}
                 />
             )}
 
@@ -251,18 +255,17 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                                 classPrefix={classPrefix}
                             />
                             <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
-                                {/* `.dots`: filled and empty dots both ringed in ink2. */}
-                                <FrequencyScoreDots
+                                {/* Filled and empty circles both in ink2 (the old `.dots` look);
+                                    icons only, no "n/5" readout (2026-11-07). */}
+                                <CommonalityMeter
+                                    className={`${classPrefix}__commonality-meter`}
+                                    // 12px (≈10px shapes): a notch above the 10px default, since
+                                    // this is the meters' primary surface and no number rides beside them.
+                                    unitSize={12}
                                     score={commonalityScore}
                                     filledColor={colors.ink2}
-                                    emptyBorderColor={colors.ink2}
+                                    emptyColor={colors.ink2}
                                 />
-                                <Typography
-                                    component="em"
-                                    sx={{ fontStyle: "normal", fontSize: 12.5, fontWeight: WEIGHT.semibold, color: fc.onSurface, letterSpacing: "-0.01em" }}
-                                >
-                                    {commonalityScore}/5
-                                </Typography>
                             </Box>
                         </Box>
                     )}
@@ -287,13 +290,16 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                                 classPrefix={classPrefix}
                             />
                             <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
-                                <Typography
-                                    component="em"
-                                    // `.meters em`: the level reads as a figure — 15px bold.
-                                    sx={{ fontStyle: "normal", fontSize: 15, fontWeight: WEIGHT.bold, color: fc.onSurface, letterSpacing: "-0.01em" }}
-                                >
-                                    {entry.language === "zh" ? `HSK ${entry.difficulty}` : entry.difficulty}
-                                </Typography>
+                                {/* Six triangles, same ink as the commonality meter beside it.
+                                    No "HSK n" label: the level is an AI estimate, not an
+                                    HSK-list lookup (removed 2026-11-07). */}
+                                <DifficultyMeter
+                                    className={`${classPrefix}__difficulty-meter`}
+                                    unitSize={12}
+                                    score={difficultyScore}
+                                    filledColor={colors.ink2}
+                                    emptyColor={colors.ink2}
+                                />
                             </Box>
                         </Box>
                     )}

@@ -23,7 +23,7 @@ function prepareTextPart(text: string): string {
 }
 import type { LongDefinitionPart, Language } from "../types";
 import SegmentedSentenceDisplay from "./SegmentedSentenceDisplay";
-import { aiGeneratedSurfaceSx } from "../theme/aiGeneratedStyling";
+import { aiGeneratedCardSx, aiGeneratedSurfaceSx, aiGeneratedTagPositionSx } from "../theme/aiGeneratedStyling";
 import { AiGeneratedBadge } from "./AiGeneratedBadge";
 import ValidateFlagButtons from "./ValidateFlagButtons";
 
@@ -46,10 +46,15 @@ interface LongDefinitionDisplayProps {
   // so this stays presentation-agnostic.
   sx?: SxProps<Theme>;
   // TRUE when the caller's entry.definitionsApproved is falsy — renders the shared
-  // AI-generated treatment (orange border/tint + "AI GENERATED" badge, matching the
-  // est's unapproved-sentence styling) around the definition text. See
+  // AI-generated treatment (orange border/tint + "AI" badge; with `aiCard`, the
+  // est's unapproved-sentence card) around the definition text. See
   // docs/DATA_VALIDATION_SYSTEM.md.
   aiGenerated?: boolean;
+  // Opt-in to the est-style AI CARD (aiGeneratedCardSx + the hanging 'tag' badge) instead
+  // of the tinted surface + inline badge: the host palette's card fill and ink. Only read
+  // when aiGenerated. The eip Definition tab passes it (useEipColors().card / .ink);
+  // CompareWorkspace doesn't, so its comparison paragraph keeps the tinted surface.
+  aiCard?: { face: string; ink: string };
   // Entry identity for the inline validator Approve/Flag buttons (field is always
   // 'definitions' here — see docs/DATA_VALIDATION_SYSTEM.md). Both must be provided
   // to show the buttons; omit for surfaces with no single backing det entry (e.g.
@@ -77,6 +82,7 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   onSegmentOpen,
   sx,
   aiGenerated = false,
+  aiCard,
   word1,
   language,
 }) => {
@@ -98,7 +104,7 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   // applies (i.e. existing callers that pass neither aiGenerated nor word1/language
   // keep rendering exactly as before).
   const finalize = (content: React.ReactNode): React.ReactElement => {
-    if (aiGenerated) return wrapAiGenerated(content, validateButtonsNode);
+    if (aiGenerated) return wrapAiGenerated(content, validateButtonsNode, aiCard);
     if (validateButtonsNode) {
       return (
         <Box className="long-definition-display--validatable" sx={{ position: "relative" }}>
@@ -198,18 +204,43 @@ const LongDefinitionDisplay: React.FC<LongDefinitionDisplayProps> = ({
   return finalize(parts);
 };
 
-// Wraps the rendered definition in the shared AI-generated surface (orange
-// border/tint) plus badge, and (when given) the absolutely-positioned inline
-// validator buttons — needs position:relative to host those. A dedicated helper
-// (rather than inlining twice) so the two render branches above stay visually
-// identical when unapproved.
-function wrapAiGenerated(content: React.ReactNode, validateButtonsNode?: React.ReactNode): React.ReactElement {
+// Wraps the rendered definition in the AI-generated treatment plus badge, and (when
+// given) the absolutely-positioned inline validator buttons — needs position:relative to
+// host those. Two looks: with `aiCard`, the est-style card (1px orange ring on the host's
+// card fill, the 'tag' badge hanging off the bottom-right edge — matches
+// ExampleSentenceList); without it, the shared tinted surface with an inline badge on top.
+// A dedicated helper (rather than inlining twice) so the two render branches above stay
+// visually identical when unapproved.
+function wrapAiGenerated(
+  content: React.ReactNode,
+  validateButtonsNode?: React.ReactNode,
+  aiCard?: { face: string; ink: string },
+): React.ReactElement {
+  if (aiCard) {
+    return (
+      <Box
+        className="long-definition-display--ai-generated long-definition-display--ai-card"
+        sx={aiGeneratedCardSx(aiCard.face)}
+      >
+        <AiGeneratedBadge
+          className="long-definition-ai-badge"
+          label="AI"
+          variant="tag"
+          face={aiCard.face}
+          ink={aiCard.ink}
+          sx={aiGeneratedTagPositionSx}
+        />
+        {validateButtonsNode}
+        {content}
+      </Box>
+    );
+  }
   return (
     <Box
       className="long-definition-display--ai-generated"
       sx={{ ...aiGeneratedSurfaceSx, borderRadius: "10px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "6px", position: "relative" }}
     >
-      <AiGeneratedBadge className="long-definition-ai-badge" label="AI GENERATED" />
+      <AiGeneratedBadge className="long-definition-ai-badge" label="AI" />
       {validateButtonsNode}
       {content}
     </Box>

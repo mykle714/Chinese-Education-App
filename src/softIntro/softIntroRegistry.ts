@@ -27,7 +27,7 @@ export interface SoftIntroSpec {
 
 export const SOFT_INTROS = {
     /**
-     * acp's level pill ("Auto" / "HSK 3", AddCardsPage toolbar). Intro: a small
+     * acp's level pill ("Auto" / the six-triangle difficulty meter, AddCardsPage toolbar). Intro: a small
      * "Difficulty" caption under it, so the learner learns what the pill picks. Graduated:
      * the pill alone, as the Tower Tier 2 design draws it.
      */

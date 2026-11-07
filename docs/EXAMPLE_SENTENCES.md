@@ -338,7 +338,7 @@ Since 2026-10-29 (Tower Tier 2) every sentence is an outlined CARD — the eip p
 `card` fill in a 1.5px `line` ring, 14px radius, with the speaker floating in the card's
 top-right action cluster beside the validator buttons (the design's left speaker gutter was not
 taken) (`src/features/flashcards/ExampleSentenceList.tsx`). A sentence without a valid approval swaps
-the ring for a 1px orange `COLORS.aiGenerated` one and carries the "AI GENERATED" tag pinned
+the ring for a 1px orange `COLORS.aiGenerated` one and carries the "AI" tag pinned
 over its bottom-right edge (`AiGeneratedBadge` `variant="tag"`). There is no orange tint any
 more; this list no longer uses the shared `aiGeneratedSurfaceSx`. Both rings are inset
 shadows of no layout width, so the list never reflows as sentences get approved. Because the flag is computed at read time, a data deploy or backfill

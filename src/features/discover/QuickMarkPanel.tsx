@@ -18,7 +18,9 @@ import { stripParentheses } from "../../utils/definitionUtils";
 import type { SwipeDirection } from "../../hooks/useSwipeCommit";
 import { useQuickMarkGrid, QUICK_MARK_UNDO_TOAST_MS } from "./useQuickMarkGrid";
 import type { QuickMarkSupplySeed } from "./useQuickMarkPreload";
-import { DIFFICULTY_LEVELS, difficultyLabel } from "./difficultyLevels";
+import { DIFFICULTY_LEVELS } from "./difficultyLevels";
+import { DifficultyMeter } from "../../components/ScoreMeters";
+import { difficultyAriaLabel } from "../../components/scoreMeterScale";
 import type { Language, DiscoverCard, VocabEntry } from "../../types";
 import { COLORS } from "../../theme/colors";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
@@ -454,7 +456,9 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                         className="add-cards-quick-mark__level-chip"
                         label={
                             <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                                {difficultyLabel(language, level)}
+                                {/* The level as the six-triangle meter, white on the infoInk
+                                    chip (was an "HSK 3" text label until 2026-11-07). */}
+                                <DifficultyMeter className="add-cards-quick-mark__level-meter" score={level} filledColor={COLORS.white} emptyColor={COLORS.white} />
                                 <KeyboardArrowDownIcon sx={{ fontSize: "1rem" }} />
                             </Box>
                         }
@@ -480,8 +484,9 @@ const QuickMarkPanel: React.FC<QuickMarkPanelProps> = ({
                                     setLevelMenuAnchor(null);
                                     if (lvl !== level) onPickLevel(lvl);
                                 }}
+                                aria-label={difficultyAriaLabel(lvl)}
                             >
-                                {difficultyLabel(language, lvl)}
+                                <DifficultyMeter className="add-cards-quick-mark__level-menu-meter" score={lvl} filledColor={COLORS.onSurface} emptyColor={COLORS.onSurface} />
                             </MenuItem>
                         ))}
                     </Menu>

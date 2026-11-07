@@ -442,10 +442,10 @@ invariant".
 still scores as frequent when the compounds carrying that meaning are common — 自 is
 heard daily via 自己/自由/自动. Only genuine rarity (兮, 翌日) scores low.
 
-**Surfaced to users as "Commonality"** — a 5-dot meter (`src/components/FrequencyScoreDots.tsx`)
-on the cdp (`VocabCardDetailBody.tsx`), the eip (`InfoCardPanelBody.tsx`), acp
-(`AddCardsPage.tsx`), and as the top-left badge on Quick Mark mini cards
-(`QuickMarkCard.tsx`).
+**Surfaced to users as "Commonality"** — the five-circle `CommonalityMeter` (`src/components/ScoreMeters.tsx`; Material Symbols `circle` glyphs, filled for the score, outlined for the rest), icons only, on the
+eip Definition tab (`DefinitionFacts.tsx`, via `InfoCardTabContent.tsx`), the acp card
+header (`AddCardsPage.tsx`), and per sense in the card-face `SensePicker`. Its sibling
+`DifficultyMeter` draws `difficulty` as six upward triangles (`change_history` glyphs; hexagons until 2026-11-07).
 
 **Deployed.** Migration 122 (the rename) is on PPE; its temporary deploy runbook has
 been deleted. The one ordering fact worth keeping: **122 must precede 123**, since 123

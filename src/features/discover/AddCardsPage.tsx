@@ -10,7 +10,8 @@ import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
 import { SLAB_FOOTER_TOTAL_CLEARANCE, SLAB_FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
 import { setFooterCastShadow } from "../../components/footerCastShadow";
-import FrequencyScoreDots from "../../components/FrequencyScoreDots";
+import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters";
+import { difficultyAriaLabel } from "../../components/scoreMeterScale";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
 import SortBins, { type SortBinSpec } from "./SortBins";
@@ -19,7 +20,7 @@ import { useTowerWeather } from "../deckTower/useTowerWeather";
 import { weatherDaySky } from "../deckTower/weatherSky";
 import { TOWER_TYPE_SX } from "../deckTower/towerType";
 import { useDayClock } from "../../timeOfDay/useDayClock";
-import { DIFFICULTY_LEVELS, MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL, difficultyLabel as levelLabelFor } from "./difficultyLevels";
+import { DIFFICULTY_LEVELS, MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL } from "./difficultyLevels";
 import Icon from "../../components/Icon";
 import { useLongPress } from "../../hooks/useLongPress";
 import { useThemeColor } from "../../hooks/useThemeColor";
@@ -1124,12 +1125,13 @@ const AddCardsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
 
-    // Difficulty label for a bare level number ("HSK 3" for zh, "Level 3" otherwise).
-    const difficultyLabel = useCallback((lvl: number) => levelLabelFor(language, lvl), [language]);
-    // The chip shows the bare label once the user has pinned a specific difficulty via
-    // the dropdown, or just "Auto" — the adaptive target moves per-pack and fluctuates
-    // too much to show live (docs §6), so it is never rendered as a number.
-    const levelLabel = selectedLevel != null ? difficultyLabel(selectedLevel) : "Auto";
+    // The pill shows the six-triangle difficulty meter once the user has pinned a level
+    // via the dropdown, or the word "Auto" — the adaptive target moves per-pack and
+    // fluctuates too much to show live (docs §6), so it is never rendered as a meter.
+    // (Was an "HSK 3" text label until 2026-11-07.)
+    const levelPillContent = selectedLevel != null
+        ? <DifficultyMeter className="add-cards__level-meter" score={selectedLevel} filledColor={look.keyInk} emptyColor={look.keyInk} />
+        : "Auto";
 
     // Apply one card's effect on its bin's session count. `direction` is +1 for a sort,
     // -1 for an undo. A skip touches neither bin (it never creates a vet row).
@@ -1698,7 +1700,7 @@ const AddCardsPage: React.FC = () => {
         const infoLoading = !leaving && eipLoadingKey === card.entryKey;
         return (
             <>
-                {/* Tier tag: this card's tier label over the 5-dot frequency meter
+                {/* Tier tag: this card's tier label over the 5-circle commonality meter
                     (frequencyScore, 1 = almost never spoken … 5 = constant in daily
                     speech). NOT a register scale — that was the pre-migration-122
                     `vernacularScore` meaning; see docs/DEFINITION_MAPPING.md. Lives on the
@@ -1709,13 +1711,11 @@ const AddCardsPage: React.FC = () => {
                             <CommonalityTierLabel className="add-cards__commonality-tier-label" sx={{ color: look.inkSoft }}>
                                 {COMMONALITY_TIER_LABELS[card.frequencyScore] ?? ""}
                             </CommonalityTierLabel>
-                            <FrequencyScoreDots
-                                className="add-cards__card-frequency-dots"
+                            <CommonalityMeter
+                                className="add-cards__card-commonality-meter"
                                 score={card.frequencyScore}
-                                dotSize={8}
-                                gap={4}
                                 filledColor={look.inkSoft}
-                                emptyBorderColor={look.inkSoft}
+                                emptyColor={look.inkSoft}
                             />
                         </>
                     )}
@@ -1822,7 +1822,7 @@ const AddCardsPage: React.FC = () => {
                                 aria-expanded={Boolean(levelMenuAnchor)}
                                 sx={{ ...keycapSx(look), fontWeight: WEIGHT.bold, borderRadius: 999, height: TOOLBAR_KEY_HEIGHT_PX, pl: "10px", pr: "4px", gap: "1px" }}
                             >
-                                {levelLabel}
+                                {levelPillContent}
                                 <Icon name="keyboard_arrow_down" size={18} color={look.keyInk} />
                             </ButtonBase>
                             {/* si `sortDifficultyCaption`: names the pill for a learner's
@@ -1881,8 +1881,9 @@ const AddCardsPage: React.FC = () => {
                                 key={lvl}
                                 selected={selectedLevel === lvl}
                                 onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
+                                aria-label={difficultyAriaLabel(lvl)}
                             >
-                                {difficultyLabel(lvl)}
+                                <DifficultyMeter className="add-cards__level-menu-meter" score={lvl} filledColor={COLORS.onSurface} emptyColor={COLORS.onSurface} />
                             </MenuItem>
                         ))}
                     </Menu>

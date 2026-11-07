@@ -928,6 +928,13 @@ export interface DictionaryEntryBase {
 
   // ── AI-enriched content ──
   breakdown?: BreakdownMap | null;
+  /**
+   * zh only: the note under the breakdown rows explaining how the characters get to the
+   * meaning, usually by explaining the literal translation (“Stop hand”: …). NULL when no
+   * note is needed — a decided answer, not "missing". Rendered by the eip breakdown tab
+   * (InfoCardTabContent). docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c.
+   */
+  breakdownElaboration?: string | null;
   synonyms?: string[] | null;
   exampleSentences?: ExampleSentence[] | null;
   /** Multi-char tokens to suppress during GSA segmentation. */
@@ -1667,6 +1674,8 @@ export interface VocabEntryBase {
   starterPackBucket?: StarterPackBucket | null;
 
   breakdown?: BreakdownMap | null;
+  /** zh only — see DictionaryEntryBase.breakdownElaboration. Joined from det (dictJoin). */
+  breakdownElaboration?: string | null;
   synonyms?: string[] | null;
   /** Computed at runtime by batch-reading from the det table. */
   synonymsMetadata?: Record<string, { definition: string; pronunciation: string }> | null;

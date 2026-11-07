@@ -64,7 +64,7 @@ import { FLP_MARK_SURFACE } from '../contracts/wire.js';
  *
  * SILENT ACCELERATION (`marksToWrite`, docs/MASTERY_REWORK.md § 6): one CALL is still
  * one review, but a correct recognition/production/reading review whose track already
- * ends in 3 correct marks is written as TWO identical marks (same timestamp). Undo
+ * ends in ACCELERATION_STREAK (2) correct marks is written as TWO identical marks (same timestamp). Undo
  * treats every trailing mark carrying the undo timestamp as one review.
  *
  * Referenced by: docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md,
@@ -284,7 +284,7 @@ export class FlashcardMarkService {
         : [];
 
       // SILENT ACCELERATION: 1 mark normally, 2 when this correct review extends a
-      // streak of 3 correct marks on this track (`marksToWrite`). Both copies share
+      // streak of ACCELERATION_STREAK (2) correct marks on this track (`marksToWrite`). Both copies share
       // one timestamp, which is what lets undo take the pair back as one review.
       const markCount = marksToWrite(existingTrack, isCorrect);
 

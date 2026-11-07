@@ -17,7 +17,7 @@ import { useEipColors } from "./useEipPalette";
 
 // The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
 // dictionary eip's "+ to Learning") and the gloss — ONE dd: the selected sense's, else the
-// default's. A multi-sense word's full sense list is NOT drawn here: it sits as a single-column
+// default's. A multi-sense word's full sense list is NOT drawn here: it sits as a numbered two-column
 // list at the top of the Definition tab (EipSenseList, owner's call 2026-11-05; it replaced the
 // header's swipeable dot-separated list, 2026-10-29 → 2026-11-05).
 //

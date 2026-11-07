@@ -40,8 +40,8 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/
  *     (1 = HSK1 .. 6 = HSK6); migration 79 dropped the old 'HSK' prefix only.
  *   - Spanish (dictionaryentries_es): '1'..'6' learner-acquisition difficulty.
  * The encoding is centralized in _levelConfig so the level math stays
- * language-agnostic. For Chinese the value is surfaced as an "HSK 3" badge (the UI
- * re-adds the HSK label for zh); for Spanish it is a plain acquisition score.
+ * language-agnostic. The UI draws the value as a six-hexagon meter in every language
+ * (src/components/ScoreMeters.tsx → DifficultyMeter) and never names HSK.
  */
 export class StarterPacksService {
   /**

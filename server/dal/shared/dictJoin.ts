@@ -12,7 +12,7 @@
 export const DICT_COLS =
   `de.script, de.pronunciation, de.tone, de."difficulty", de."maxCharStrokeCount", de."partsOfSpeech", ` +
   `de."frequencyScore", ` +
-  `de.breakdown, de.synonyms, de."exampleSentences", ` +
+  `de.breakdown, de."breakdownElaboration", de.synonyms, de."exampleSentences", ` +
   `de."longDefinition", de."longDefinitionCitations", ` +
   `de."iconId", ` +
   `de."definitionClusters", ` +
@@ -32,7 +32,8 @@ export const DICT_COLS =
 // mean?" is now answered ONE LAYER UP by their `selectedSense` label, exactly as it
 // already was for Chinese heteronyms.
 //
-// TWO columns diverge again. Migration 126's `longDefinitionCitations` (translations for
+// THREE columns diverge again. (The third, migration 133's `breakdownElaboration` — the
+// note under the breakdown rows — is zh-only like the others below.) Migration 126's `longDefinitionCitations` (translations for
 // the Chinese runs cited inside a long definition) is a zh-only enrichment — Spanish long
 // definitions contain no Han runs — and so is migration 179's `maxCharStrokeCount` (the
 // writing queue's ease key, cardQueueRanking.rankCardQueue). The es branch substitutes a
@@ -42,7 +43,11 @@ const dictLateralSelect = (language: 'zh' | 'es'): string =>
   (language === 'zh'
     ? `       "maxCharStrokeCount",`
     : `       NULL::smallint AS "maxCharStrokeCount",`) +
-  `       breakdown, synonyms,` +
+  `       breakdown,` +
+  (language === 'zh'
+    ? `       "breakdownElaboration",`
+    : `       NULL::text AS "breakdownElaboration",`) +
+  `       synonyms,` +
   `       "exampleSentences", "longDefinition",` +
   (language === 'zh'
     ? `       "longDefinitionCitations",`

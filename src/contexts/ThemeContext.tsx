@@ -37,7 +37,6 @@ export interface FlashcardPalette {
     grabber: string;            // drag handle pill on the EIC sheet
     tabUnderline: string;       // active tab ink underline
     imagePlaceholder: string;   // image placeholder box background
-    hskPill: string;            // HSK level badge background
     cardShadow: string;         // prominent (front + flying) card box-shadow
     cardShadowSubtle: string;   // back-slot card box-shadow
     sheetShadow: string;        // EIC sheet box-shadow (upward)
@@ -383,7 +382,6 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         grabber:            'rgba(255,255,255,0.2)',
                         tabUnderline:       '#eeeeee',
                         imagePlaceholder:   '#3a3a3a',
-                        hskPill:            '#5B8DEF',
                         cardShadow:         '2px 4px 12px rgba(0,0,0,0.6)',
                         cardShadowSubtle:   '1px 2px 6px rgba(0,0,0,0.5)',
                         sheetShadow:        '0 -8px 32px rgba(0,0,0,0.6)',
@@ -440,7 +438,6 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         grabber:            'rgba(29,27,32,0.18)',
                         tabUnderline:       '#C8D9EF',   // old light-blue surface, now the accent
                         imagePlaceholder:   '#ffffff',
-                        hskPill:            '#BACFE6',   // old light-blue card color, now the accent
                         cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
                         cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
                         sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',
@@ -497,7 +494,6 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         grabber:            'rgba(29,27,32,0.18)',
                         tabUnderline:       '#BDD9B5',   // old light-green surface, now the accent
                         imagePlaceholder:   '#ffffff',
-                        hskPill:            '#AECBA4',   // old light-green card color, now the accent
                         cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
                         cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
                         sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',
@@ -559,7 +555,6 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         grabber:            'rgba(29,27,32,0.18)',
                         tabUnderline:       COLORS.onSurface,
                         imagePlaceholder:   '#ffffff',
-                        hskPill:            COLORS.hskChip,
                         // Elevation comes from the design's shadow system (theme/shadows.ts,
                         // docs/SHELF_REDESIGN.md § D13) — ink-tinted, straight down, wide
                         // and faint. The old values here were pure black, cast diagonally

@@ -149,10 +149,11 @@ export const REQUIRED_SCRIPTS_ZH = [
   // `driftProbe` is the third staleness axis that catches it; see DRIFT_PROBES below.
   { id: 'chinese/backfill-breakdown-senses',          when: 'multiChar', version: 1,
     driftProbe: 'breakdownSenseOrphan' },
-  // Judges the sense-tagged glosses, so it MUST follow the tagger. Writes NULL for the
-  // majority ("breakdown is straightforward") and stamps every row it decides, so its
-  // done-state lives in this stamp — never in `breakdownElaboration IS NULL`.
-  { id: 'chinese/backfill-breakdown-elaboration',     when: 'multiChar', version: 1 },
+  // Reads the sense-tagged glosses (its note opens with the literal translation), so it
+  // MUST follow the tagger. Writes NULL when no note is needed and stamps every row it
+  // decides, so its done-state lives in this stamp — never in `breakdownElaboration IS NULL`.
+  // v2 (2026-11-07): literal-translation rubric; the bump re-plans every multi-char row.
+  { id: 'chinese/backfill-breakdown-elaboration',     when: 'multiChar', version: 2 },
   // Superposition's AI-authored tile groups (migration 180). Applies to EVERY word: the
   // groups are stored on the word's CHARACTERS' own rows, and the word row is stamped once
   // all of them are. Reads only word1 + glyph data, so it has no ordering constraint; it

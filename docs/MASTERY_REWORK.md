@@ -742,10 +742,10 @@ passed. Consequences:
 > tracks; 2026-09-05 → 2026-09-25 each track cooled on its OWN clock under its own
 > per-type band ("either category"). The know merge replaced both: one clock, core band.
 
-### Silent acceleration — a streak of 3 doubles the next correct mark
+### Silent acceleration — a streak of 2 doubles the next correct mark
 
 > STATUS: **IMPLEMENTED 2026-10-06**, no migration. Code: `server/contracts/mastery.ts`
-> → `marksToWrite`, `ACCELERATION_STREAK` (3), `ACCELERATED_MARK_COUNT` (2);
+> → `marksToWrite`, `ACCELERATION_STREAK` (2; was 3 until 2026-11-07), `ACCELERATED_MARK_COUNT` (2);
 > `server/services/FlashcardMarkService.ts` → `applyMark` (writes the pair) and
 > `undoMark` (takes it back); `server/routes/flashcardRoutes.ts` (`displacedMarks` on
 > the mark response and undo body); `src/api/flashcards.ts`,
@@ -753,13 +753,14 @@ passed. Consequences:
 > Tests: `server/__tests__/flashcardMark.test.ts` ("silent acceleration" block).
 
 A learner who already knows a word should not need one cooldown window per mark to
-reach its real band. So when the **newest 3 marks on the track being marked are all
+reach its real band. So when the **newest 2 marks on the track being marked are both
 correct**, the next **correct** mark on that track is written **twice**.
 
 - **Per track.** The streak is read from the marked track only — a recognition streak
   never doubles a production mark, even though the two share a clock.
-- **Literal window.** A doubled pair counts as two marks, so after a miss, ✗ ✓ ✓✓ means
-  the next ✓ is already doubled. The pair is not tagged; the two marks are identical
+- **Literal window.** A doubled pair counts as two marks, so the pair alone keeps the
+  streak alive (every correct review after the second is doubled until a miss), and
+  after a miss, ✗ ✓ ✓ means the next ✓ is doubled. The pair is not tagged; the two marks are identical
   (same `timestamp`, same `isCorrect`).
 - **Correct only.** A miss after a streak writes a single ✗.
 - **Not writing.** `applyWritingResult` never calls `marksToWrite` — writing already

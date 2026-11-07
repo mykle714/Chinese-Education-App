@@ -405,13 +405,18 @@ uses to compose the doc, so they always agree byte-for-byte.
 `src/theme/aiGeneratedStyling.ts` (`aiGeneratedSurfaceSx`: orange
 `COLORS.aiGenerated` border + ~8% tint) and `src/components/AiGeneratedBadge.tsx`
 (sparkle + label badge) — the same treatment as the dictionary AI-fallback card
-(`AiDictionaryEntryCard`, docs/DICTIONARY_AI_FALLBACK_SEARCH.md). Three consumers:
+(`AiDictionaryEntryCard`, docs/DICTIONARY_AI_FALLBACK_SEARCH.md). The same file also
+holds the **est-style AI card** (`aiGeneratedCardSx(face)` + `aiGeneratedTagPositionSx`):
+the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, with
+`AiGeneratedBadge` `variant="tag"` hanging off the bottom-right edge. Consumers:
 - `ExampleSentenceList.tsx` (the single est UI component) renders any sentence with
-  falsy `humanApproved` in the full treatment (border/tint + "AI GENERATED" badge);
-  approved sentences keep the quiet `flashcard.subtleBg` background.
+  falsy `humanApproved` as the AI card; approved sentences get a 1.5px `line` ring.
 - `LongDefinitionDisplay.tsx` takes an `aiGenerated` prop; when true (i.e. the
-  caller passes `!entry.definitionsApproved`) it wraps the rendered long definition
-  in the full treatment (border/tint + badge).
+  caller passes `!entry.definitionsApproved`) it wraps the rendered long definition.
+  With the `aiCard` prop (`{ face, ink }` — the eip Definition tab passes
+  `useEipColors().card/.ink`) it draws the AI card; without it (CompareWorkspace) the
+  tinted surface + inline badge.
+- `DefinitionFacts.tsx`'s grouped all-unapproved block draws the AI card (below).
 - The **three meta-strip chips** in `VocabCardDetailBody.tsx` and
   `InfoCardPanelBody.tsx` each get **only** `aiGeneratedSurfaceSx` (border/tint, no
   badge) when their OWN flag is falsy — a lighter mark since a chip is a small,
@@ -421,13 +426,14 @@ uses to compose the doc, so they always agree byte-for-byte.
 
   | Chip label | Value | Field | Flag |
   |---|---|---|---|
-  | **Difficulty** | `HSK N` for zh, bare `N` otherwise | `difficulty` | `difficultyApproved` |
+  | **Difficulty** | six-triangle `DifficultyMeter` (every language) | `difficulty` | `difficultyApproved` |
   | **Parts of Speech** | `partsOfSpeech.join(', ')` | `partsOfSpeech` | `partsOfSpeechApproved` |
-  | **Commonality** | 5-dot meter + `N/5` | `frequencyScore` | `frequencyScoreApproved` |
+  | **Commonality** | five-circle `CommonalityMeter`, no number | `frequencyScore` | `frequencyScoreApproved` |
 
-  The labels were previously "HSK"/"Level", "Type" and "Commonality". Only the zh
-  *value* still names HSK — the label is language-neutral, and the eip mirror renders
-  the Difficulty chip for zh only.
+  The labels were previously "HSK"/"Level", "Type" and "Commonality". Since
+  2026-11-07 no value names HSK either: both measures are glyph meters
+  (`src/components/ScoreMeters.tsx`), because `difficulty` is an AI estimate rather
+  than an HSK-list lookup.
 
   **Strip layout (both twins).** The strip is a two-row column, not one flex line:
   row 1 (`*-definition-meta-row`) holds **Difficulty + Commonality**, centered; row 2
@@ -459,8 +465,9 @@ card-detail pages.
 > orange box, so a fully-unapproved definition tab showed four of them stacked. Now:
 >
 > - **every** provenance-bearing value present in the block unapproved (the paragraph
->   included, when the host hands it in) → **ONE** grouped AI block: one border, one
->   tint, one badge. That is artboard 20b.
+>   included, when the host hands it in) → **ONE** grouped AI block: one ring, one
+>   badge — the est-style AI card (`aiGeneratedCardSx` + the hanging tag) since
+>   2026-11-07; it was a tinted box with an inline badge before. That is artboard 20b.
 > - **any** value human-approved → back to the per-field boxes, so the approved one is
 >   visibly NOT flagged.
 >

@@ -62,7 +62,7 @@ const DICTIONARY_COLUMNS = `
   "partsOfSpeech", "difficulty",
   definitions, "longDefinition", "longDefinitionCitations",
   "definitionClusters",
-  breakdown, synonyms,
+  breakdown, "breakdownElaboration", synonyms,
   "exampleSentences",
   "matchException",
   "exampleSentenceDefinitionPronunciationOverride",
@@ -83,8 +83,10 @@ function dictionaryColumns(language: string | null | undefined): string {
   if (language === 'es') {
     // `longDefinitionCitations` (migration 126) is zh-only: es long definitions carry no
     // Han runs, so the parts splitter never produces a `foreign` part to attach one to.
+    // `breakdownElaboration` (migration 133) is zh-only too: the breakdown note.
     return DICTIONARY_COLUMNS
-      .replace('"longDefinitionCitations",', 'NULL::jsonb AS "longDefinitionCitations",');
+      .replace('"longDefinitionCitations",', 'NULL::jsonb AS "longDefinitionCitations",')
+      .replace('"breakdownElaboration",', 'NULL::text AS "breakdownElaboration",');
   }
   return DICTIONARY_COLUMNS;
 }
@@ -459,6 +461,8 @@ export class DictionaryDAL implements IDictionaryDAL {
       longDefinitionCitations: row.longDefinitionCitations ?? null,
       definitionClusters: row.definitionClusters ?? null,
       breakdown: row.breakdown ?? null,
+      // The breakdown note (zh, migration 133) — NULL is a decided "no note".
+      breakdownElaboration: row.breakdownElaboration ?? null,
       synonyms: row.synonyms ?? null,
       exampleSentences: row.exampleSentences ?? null, // Enriched on-the-fly via enrichExampleSentencesMetadataBatch
       matchException: row.matchException ?? [],

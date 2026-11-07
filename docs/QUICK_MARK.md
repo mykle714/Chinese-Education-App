@@ -44,7 +44,7 @@ doc owns the grid itself.
 ```
 ┌──────────────────────────────────────────────────────────────────┐  ← frame top (acp's
 │  Quick Mark                                               🔥  ✕  │    header covered;
-│                          [ HSK 3 ▾ ]                             │    page ground,
+│                         [ ⬢⬢⬢⬡⬡⬡ ▾ ]                            │    page ground,
 │                ← ● Learning     ● Mastered →                    │    square corners)
 ├──────────────────────────────────────────────────────────────────┤
                        ┌────┐  ┌────┐  ┌────┐
@@ -70,10 +70,12 @@ doc owns the grid itself.
 - **Level row** (`QuickMarkPanel.tsx` → `PanelLevelRow`): the level chip, centred, under
   the header. There is nothing to Save or
   Clear, because each swipe commits on its own (§6).
-- **Level chip**: an HSK/difficulty `Chip`+`Menu` **without an `Auto` item** — Quick Mark is
-  always a concrete level. Levels and labels come from
-  `src/features/discover/difficultyLevels.ts` (`DIFFICULTY_LEVELS`, `difficultyLabel` —
-  shared with Add Cards' own dropdown). Picking a level **also pins Add Cards'
+- **Level chip**: a difficulty `Chip`+`Menu` **without an `Auto` item** — Quick Mark is
+  always a concrete level. Each level renders as the six-triangle `DifficultyMeter`
+  (`src/components/ScoreMeters.tsx`; white on the chip, ink in the menu, aria-label from
+  `difficultyAriaLabel`), never as text. Levels come from
+  `src/features/discover/difficultyLevels.ts` (`DIFFICULTY_LEVELS` — shared with Add
+  Cards' own dropdown). Picking a level **also pins Add Cards'
   dropdown to it** (SORT_CARDS_REQUIREMENTS § 4.8).
 - **Legend** (`QuickMarkPanel.tsx` → `LegendItem`): the two swipe directions, each with a
   dot in its destination colour (§3).
@@ -311,7 +313,8 @@ scroll clear of the pill.
 - `src/features/discover/useQuickMarkGrid.ts` → `useQuickMarkGrid` — grid state (supply, keyset infinite scroll, per-swipe save, undo, pinned-card delegation, seeded first page)
 - `src/features/discover/useQuickMarkPreload.ts` → `useQuickMarkPreload` — the host's background page-1 preload (`take`, `invalidate`)
 - `src/features/discover/AddCardsPage.tsx` → `handleOpenQuickMark`, `handleSortPinned`, `handleUndoPinned`, `handleSupplySorted`, `handleCollapseQuickMark` — the host
-- `src/features/discover/difficultyLevels.ts` — `DIFFICULTY_LEVELS`, `difficultyLabel` (shared with Add Cards)
+- `src/features/discover/difficultyLevels.ts` — `DIFFICULTY_LEVELS` (shared with Add Cards)
+- `src/components/ScoreMeters.tsx` — `DifficultyMeter` (the level chip + menu items)
 - `src/components/QuickMarkCard.tsx` + `src/components/quickMarkSwipe.ts` — the swipeable card + the direction → bucket/colour/label tables and the imperative drag painter
 - `src/hooks/useSwipeCommit.ts` — the shared swipe gesture (axis lock, flick, tap slop)
 - `src/components/MiniVocabCardGrid.tsx` — the shared grid; `renderCard` + `footer` + `staggerReveal` props added for Quick Mark. `staggerReveal` renders all cards at once and fans the first 15 in by a per-card animation-delay (instead of the paced batch reveal, which stepped as "3, then a batch, then the rest").

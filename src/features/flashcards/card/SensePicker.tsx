@@ -8,7 +8,7 @@ import { FONTS } from "../../../theme/fonts";
 import { ddt, isStarredSense, senseGrammarTag, sortedSenseClusters } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
-import FrequencyScoreDots from "../../../components/FrequencyScoreDots";
+import { CommonalityMeter } from "../../../components/ScoreMeters";
 import GlossText from "../../../components/GlossText";
 import { SIZE, WEIGHT } from "../../../theme/scale";
 import type { VocabEntry } from "../types";
@@ -193,13 +193,15 @@ const SensePicker: React.FC<SensePickerProps> = ({
                     than shown as five hollow dots) when scoring failed / never ran. */}
                 {cluster.frequencyScore != null && (
                     <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                        <FrequencyScoreDots
+                        <CommonalityMeter
                             className={`${classPrefix}-sense-commonality`}
                             score={cluster.frequencyScore}
-                            dotSize={6}
-                            gap={2.5}
+                            // 8px glyphs ≈ the old 6px dots. Gap tightened from 2.5 to 1
+                            // because the glyph carries its own side bearing.
+                            unitSize={8}
+                            gap={1}
                             filledColor={COLORS.onSurface}
-                            emptyBorderColor={COLORS.border}
+                            emptyColor={COLORS.border}
                         />
                     </Box>
                 )}

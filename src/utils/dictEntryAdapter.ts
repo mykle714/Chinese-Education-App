@@ -55,6 +55,9 @@ export function dictionaryEntryToVocabEntry(dict: DictionaryEntry): VocabEntry {
                 Object.entries(anyDict.breakdown).map(([k, v]) => [k, { definition: v.definition }])
             )
             : null,
+        // The note under the breakdown rows (zh) — carried so every eip path, including
+        // breakdown drill-ins and the acp's lookup, renders it (InfoCardTabContent).
+        breakdownElaboration: dict.breakdownElaboration ?? null,
         exampleSentences: anyDict.exampleSentences ?? undefined,
         usedIn: anyDict.usedIn ?? null,
         // Carry discoverability so the dictionary EIP can hide the "+ to Learn

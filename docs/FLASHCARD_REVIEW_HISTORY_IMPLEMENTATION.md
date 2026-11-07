@@ -155,7 +155,7 @@ POST /api/flashcards/mark
    the call returns `suppressed: true` (logged as `[MarkSuppressed]`)
 4. Creates the new review mark: `{ timestamp: new Date().toISOString(), isCorrect }`.
    **Silent acceleration** (`marksToWrite`, [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 6):
-   a correct non-writing mark on a track whose newest 3 marks are correct is written
+   a correct non-writing mark on a track whose newest 2 marks (`ACCELERATION_STREAK`) are correct is written
    **twice**, both copies sharing the timestamp
 5. Appends it to **that type's** track, keeping the newest `MARK_WINDOW_SIZE` (8) —
    `appendTypedMark`. Every mark pushed out of a full window (up to 2) is returned as

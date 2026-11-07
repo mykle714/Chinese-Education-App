@@ -121,7 +121,7 @@ export interface MarkFlashcardResponse {
     markType: MarkType;
     /**
      * Every mark this review pushed out of the 8-slot window, oldest first, so undo can
-     * restore them. Up to two: a silently ACCELERATED review (3 correct in a row on the
+     * restore them. Up to two: a silently ACCELERATED review (2 correct in a row on the
      * track, then another correct) writes two marks — docs/MASTERY_REWORK.md § 6.
      */
     displacedMarks: ReviewMark[];

@@ -480,8 +480,9 @@ export function appendTypedMark(
  * Rules, all deliberate:
  *   - PER TRACK: the streak is read from the track being marked only (a recognition
  *     streak never speeds up a production mark, even though they share a clock).
- *   - LITERAL WINDOW: a previous accelerated pair counts as two marks, so after a miss
- *     ✗ ✓ ✓✓ the next ✓ is already accelerated. No per-mark tag is needed.
+ *   - LITERAL WINDOW: a previous accelerated pair counts as two marks, so the pair alone
+ *     satisfies the streak (✗ ✓✓ → the next ✓ is accelerated again), and after a miss
+ *     ✗ ✓ ✓ the next ✓ is accelerated. No per-mark tag is needed.
  *   - CORRECT MARKS ONLY: a miss after a streak writes one ✗, never two.
  *   - NOT WRITING: writing has its own model (per-character mastery, the anti-farming
  *     level gate, clock-only word marks); `FlashcardMarkService.applyWritingResult`
@@ -489,7 +490,8 @@ export function appendTypedMark(
  *
  * Consumer: `server/services/FlashcardMarkService.ts` → `applyMark`.
  */
-export const ACCELERATION_STREAK = 3;
+// Lowered 3 → 2 on 2026-11-07.
+export const ACCELERATION_STREAK = 2;
 export const ACCELERATED_MARK_COUNT = 2;
 
 /** How many marks a review of `isCorrect` on a track holding `track` should write. */

@@ -5,7 +5,7 @@ import { aiGeneratedSurfaceSx } from "../../theme/aiGeneratedStyling";
 import { stripParentheses } from "../../utils/definitionUtils";
 // `hasSynonymsOrRelated` — the gate both hosts use — lives in definitionUtils, not here:
 // they call it before deciding whether to draw a container at all.
-import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
+import { SIZE } from "../../theme/scale";
 import { FC_FONT } from "./constants";
 import type { VocabEntry } from "../../types";
 
@@ -58,7 +58,7 @@ export const SynonymsRelatedSection: React.FC<SynonymsRelatedSectionProps> = ({
                 <>
                     {renderLabel(
                         "Synonyms",
-                        <AiGeneratedBadge className={`${classPrefix}__synonyms-ai-badge`} label="AI GENERATED" />
+                        <AiGeneratedBadge className={`${classPrefix}__synonyms-ai-badge`} label="AI" />
                     )}
                     <Box className={`${classPrefix}__synonyms-list`} sx={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                         {entry.synonyms!.map((syn) => {
@@ -129,30 +129,6 @@ export const SynonymsRelatedSection: React.FC<SynonymsRelatedSectionProps> = ({
                 </>
             )}
         </>
-    );
-};
-
-/**
- * The section's own heading style INSIDE the eip definition tab. The eip has no
- * `SectionLabel` of its own (its tabs are titled by the strip), so this mirrors the
- * `.shelfhd` caption weight (`Label`) rather than inventing a third label treatment.
- */
-export const EipSectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const theme = useTheme();
-    return (
-        <Typography
-            className="mobile-demo-synonyms-label"
-            sx={{
-                fontSize: SIZE.micro,
-                fontWeight: WEIGHT.bold,
-                color: theme.palette.flashcard.textSecondary,
-                letterSpacing: TRACKING.caps,
-                textTransform: "uppercase",
-                fontFamily: FC_FONT,
-            }}
-        >
-            {children}
-        </Typography>
     );
 };
 

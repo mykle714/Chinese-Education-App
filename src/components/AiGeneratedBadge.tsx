@@ -10,7 +10,7 @@ import { FONTS } from '../theme/fonts';
 // file for the full treatment + consumer list.
 
 interface AiGeneratedBadgeProps {
-    // Badge text; "AI SUGGESTION" fits synthesized entries, "AI GENERATED" plain AI content.
+    // Badge text: "AI" for plain AI content (shortened from "AI GENERATED", owner's call 2026-11-07); "AI SUGGESTION" for synthesized entries.
     label: string;
     className?: string;
     // Layout-only additions (margins etc.); the badge owns its color/typography.

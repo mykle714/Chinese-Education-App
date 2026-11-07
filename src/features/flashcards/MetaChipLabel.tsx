@@ -1,7 +1,6 @@
-import { Box, Typography, useTheme } from "@mui/material";
+import { Box } from "@mui/material";
 import ValidateFlagButtons from "../../components/ValidateFlagButtons";
-import { WEIGHT } from "../../theme/scale";
-import { FONTS } from "../../theme/fonts";
+import EipSectionLabel from "./EipSectionLabel";
 import type { Language, ValidationField } from "../../types";
 
 interface MetaChipLabelProps {
@@ -29,7 +28,7 @@ interface MetaChipLabelProps {
 }
 
 /**
- * Caption for one definition meta-strip chip: the uppercase label, plus — for
+ * Caption for one definition meta-strip chip: the uppercase label (EipSectionLabel), plus — for
  * validator accounts only — that chip's Approve/Flag pair
  * (docs/DATA_VALIDATION_SYSTEM.md). `ValidateFlagButtons` renders nothing for
  * everyone else, so non-validators see exactly the caption they always saw.
@@ -51,24 +50,12 @@ interface MetaChipLabelProps {
  * status fetch each time.
  */
 export default function MetaChipLabel({ label, field, word1, language, senseLabel, approved, classPrefix }: MetaChipLabelProps) {
-    const theme = useTheme();
     return (
         <>
-            <Typography
-                className={`${classPrefix}__meta-chip-label`}
-                // Tower Tier 2 `.lab` (2026-10-29): the info-type face (FONTS.label) at
-                // 10.5px bold, .08em tracking — was the UI face at SIZE.micro.
-                sx={{
-                    fontSize: 10.5,
-                    fontWeight: WEIGHT.bold,
-                    color: theme.palette.flashcard.textSecondary,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    fontFamily: FONTS.label,
-                }}
-            >
-                {label}
-            </Typography>
+            {/* The panels' one section-title style (EipSectionLabel, 2026-11-07), shared with
+                "Other Translations" and Synonyms / Related Words. Was its own Tower Tier 2
+                `.lab` treatment (FONTS.label, 10.5px, .08em), which drifted from those. */}
+            <EipSectionLabel className={`${classPrefix}__meta-chip-label`}>{label}</EipSectionLabel>
             {language && (
                 <Box
                     className={`${classPrefix}__validate-${field}`}

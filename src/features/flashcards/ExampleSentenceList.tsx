@@ -8,6 +8,7 @@ import { FC_FONT } from "./constants";
 import { COLORS } from "../../theme/colors";
 import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
+import { aiGeneratedTagPositionSx } from "../../theme/aiGeneratedStyling";
 import { useAuth } from "../../AuthContext";
 import type { VocabEntry, Language, ValidationField } from "../../types";
 
@@ -109,11 +110,11 @@ const ExampleSentenceList: React.FC<ExampleSentenceListProps> = ({
           {!isHumanApproved && (
             <AiGeneratedBadge
               className="example-sentence-ai-badge"
-              label="AI GENERATED"
+              label="AI"
               variant="tag"
               face={colors.card}
               ink={colors.ink}
-              sx={{ position: "absolute", right: "10px", bottom: "-9px", zIndex: 2 }}
+              sx={aiGeneratedTagPositionSx}
             />
           )}
              {/* Top-right action cluster — the validator Approve/Flag pair and the

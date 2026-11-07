@@ -29,10 +29,9 @@ import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
  * Rendered only by the eip's breakdown tab (InfoCardTabContent); both cdps reach it
  * through the eip panel.
  *
- * ⚠️ Artboard 25 also draws a titled paragraph under the rows, "How the parts make the
- * word". The det tables have a `breakdownElaboration` column for exactly that, but it is
- * NOT on the wire contract and no endpoint returns it, so the paragraph is omitted
- * rather than faked. Tracked in docs/DEFERRED_WORK.md.
+ * Artboard 25's titled paragraph under the rows ("How the parts make the word", the
+ * `breakdownElaboration` note) is rendered by InfoCardTabContent below the list, not by
+ * this row component.
  *
  * Referenced by docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md and docs/SHELF_REDESIGN.md
  * (artboard 25).

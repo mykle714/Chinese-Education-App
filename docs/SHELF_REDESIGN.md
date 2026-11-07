@@ -201,7 +201,7 @@ hardcoded pastel is still a valid colour:
 so this moved every error message in the app; contrast improved (38% on white ≈ 9:1).
 
 Three literal copies that had gone stale with the drift are now DERIVED and cannot drift
-again: `COLORS.hskChip` (was a copy of `--blu`), `CATEGORY_COLORS` / `BAND_COLORS` in
+again: `COLORS.hskChip` (was a copy of `--blu`; deleted 2026-11-07 with the HSK badge it painted), `CATEGORY_COLORS` / `BAND_COLORS` in
 `utils/categoryColors.ts` (now read `RAMP` via a new `BAND_HUES` map), and `BoardZone`'s
 two zone rules (now `alpha()` of their own caption ink).
 
@@ -1102,7 +1102,7 @@ this control?*
 |---|---|---|
 | **New primitives** — `src/components/primitives/` | `.lab`, `.sec2`, `.shelfhd`, `.rw` + `.rows`, `.card` | No MUI analogue worth bending. `ListItem` is a full-bleed strip with a divider; `.rw` is a discrete outlined card. |
 | **MUI theme overrides** — `src/contexts/ThemeContext.tsx` | `.btn2`, `.btn3`, `.chip`/`.chip.on`, `.field`, `.mode` | ~157 `<Button>`s, 35 `<TextField>`s, 14 `<Chip>`s already exist. A theme override re-skins all of them with no call-site edits. |
-| **Already existed** | `.tip`, `.dots` | `TipBox.tsx` was restyled during A4. `FrequencyScoreDots.tsx` already matched `.dots` exactly (8px, 1.5px border, 4px gap) — verified, not touched. |
+| **Already existed** | `.tip`, `.dots` | `TipBox.tsx` was restyled during A4. `.dots` was the CSS-dot `FrequencyScoreDots.tsx`; replaced 2026-11-07 by the glyph meters in `src/components/ScoreMeters.tsx` (`CommonalityMeter` circles, `DifficultyMeter` triangles). |
 
 Not built, deliberately: `.modal`, `.sheet`, `.scrim`. Each has a live bespoke
 implementation (`HydraLendNotice` — since deleted, see § 17 — the decks panel from
@@ -1268,8 +1268,8 @@ used on exactly one screen, so it stayed a page component rather than becoming a
 A7 widget.
 
 **Code:** `src/components/primitives/*`; `src/contexts/ThemeContext.tsx`;
-`src/features/friends/FriendPersonRow.tsx`. Verified unchanged: `src/components/TipBox.tsx`,
-`src/components/FrequencyScoreDots.tsx`.
+`src/features/friends/FriendPersonRow.tsx`. Verified unchanged: `src/components/TipBox.tsx` (`.dots` is now
+`src/components/ScoreMeters.tsx`).
 **Size: M.**
 
 ## A6 · Game surface chrome
@@ -2021,13 +2021,19 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   the Dictionary eip, then for every eip). The entry header shows ONE dd — the chosen sense's,
   else the persisted pick's, else the default's (`resolveDisplayDefinition`), with that
   sense's reading. For a word with ≥2 displayable clusters (the SensePicker's gate,
-  `sortedSenseClusters`) the Definition tab opens with a single-column list of every sense's dd
-  (`ddt`), in the picker's order, one per row with the default first, ruled off from the
-  paragraph below. The chosen sense (`selectedSenseIndex`) is **underlined** in the shelf's
+  `sortedSenseClusters`) the Definition tab opens with an **"Other Translations"** section — titled in the eip's
+  shared section-label style (`EipSectionLabel`, the Synonyms + Related labels' caps caption, set in the page-header title face `FONTS.sans`) —
+  holding a **numbered list** of every sense's dd
+  (`ddt`), in the picker's order, numbered 1…n and filled **column-major** (down the left
+  column, then the right — the left takes the odd one out) once there are **5+ senses**
+  (`TWO_COLUMN_MIN_SENSES`; 2–4 senses stay one numbered column), so the default and the most common
+  senses share the left column (owner's call 2026-11-07; one per row 2026-11-05 → 11-07). The
+  numbers are muted (`textSecondary`, tabular digits, one fixed width) and hang, so a wrapped
+  gloss aligns under its own text. Ruled off from the paragraph below. The chosen sense (`selectedSenseIndex`) is **underlined** in the shelf's
   secondary ink — only when the host passes a pick (`EipSheet` passes one only for a
   persisted `selectedSense`, so a det entry shows no underline). The picker's **star** (13px,
-  in front of the gloss, in the gloss's own colour) marks the default (index 0) and every
-  commonality-4–5 sense (`isStarredSense`). The list is **display-only**: a pick is made on
+  in the gloss's own colour) marks the default (index 0) and every
+  commonality-4–5 sense (`isStarredSense`); in this list it trails the gloss (2026-11-07), where the card face and Memory Map lead with it. The list is **display-only**: a pick is made on
   the card face's `SensePicker`, which the open eip follows via `useEipTabs.syncEntry`. A
   single-sense word shows no grid.
   History: 2026-10-29 → 2026-11-05 the header itself carried the list, dot-separated, through
@@ -2035,6 +2041,18 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   **Code:** `src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`,
   `InfoCardTabContent.tsx` (tab 0 → `senseList`), `EipEntryHeader.tsx` (the one dd),
   `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseSelectedUnderlineSx`.
+- **One section-title style in the word panels** (owner's call 2026-11-07). Every title in
+  the eip Definition tab and the cdp body — "Other Translations", the facts strip's "Parts of
+  Speech" / "Commonality" / "Difficulty", and "Synonyms" / "Related Words" — is drawn by
+  `EipSectionLabel`: `FONTS.sans` (the page-header title face), `SIZE.micro`, bold, uppercase,
+  `TRACKING.caps`, `palette.flashcard.textSecondary`. The facts captions used to be their own
+  Tower Tier 2 `.lab` (`FONTS.label` at 10.5px, .08em) and drifted from the rest.
+  ⚠️ This departs from `src/theme/fonts.ts`, which names `FONTS.label` (Public Sans) for
+  section labels. The AI-provenance badge beside these sections reads just **"AI"** (was
+  "AI GENERATED").
+  **Code:** `src/features/flashcards/EipSectionLabel.tsx`; `MetaChipLabel.tsx` (facts captions);
+  `FlashcardsLearnPage/EipSenseList.tsx`; `FlashcardsLearnPage/InfoCardTabContent.tsx`
+  (`renderLabel`); `src/components/AiGeneratedBadge.tsx` (callers pass `label="AI"`).
 
 **The duplicate page title is gone.** `NodePage`'s back-arrow header said "Dictionary"
 and an `h1` a few millimetres below said it again; the artboard has only the header. This
@@ -3031,6 +3049,9 @@ that card's rail).
   buttons — a square sized to the character clips the GLOSS, which is the part being
   read, and a grid destroys the word's own order the moment it wraps. Rendered by the
   eip breakdown tab, which both cdps now mount; `InfoCardBlockButton` is deleted.
+  The artboard's titled paragraph under the rows, **"How the parts make the word"**, was
+  built 2026-11-07 from `breakdownElaboration` (`InfoCardTabContent`,
+  `.mobile-demo-breakdown-elaboration`; BREAKDOWN_FEATURE_IMPLEMENTATION.md § 5c).
 - **The word trail (`.wtrail`).** (⚠️ Superseded 2026-10-29: the Tower Tier 2 trail is a bare breadcrumb, always shown — EIP_SHEET_GESTURES.md § The trail scrolls.) The eip tab strip becomes filled pills — and **loses its
   tone colours**. Tone colour means ONE thing in this app (D2b); a pill tinted by a hue
   picked at random from the tone palette was borrowing that vocabulary to say "tab 3", on

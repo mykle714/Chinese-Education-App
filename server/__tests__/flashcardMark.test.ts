@@ -315,7 +315,7 @@ describe('FlashcardMarkService.applyMark', () => {
 
 describe('FlashcardMarkService.applyMark — silent acceleration', () => {
     // docs/MASTERY_REWORK.md § 6 "Silent acceleration": a correct review on a track
-    // whose newest 3 marks are correct is written twice.
+    // whose newest ACCELERATION_STREAK (2) marks are correct is written twice.
 
     it('writes TWO identical marks when the track ends in 3 correct marks', async () => {
         const { service, vet, promotions } = makeService({
@@ -333,10 +333,17 @@ describe('FlashcardMarkService.applyMark — silent acceleration', () => {
         expect(promotions.recorded).toHaveLength(0);
     });
 
-    it('writes ONE mark when the streak is shorter than 3 or broken', async () => {
+    it('writes TWO marks once the track ends in exactly 2 correct marks', async () => {
+        const reading = [mark('2020-02-01T00:00:00.000Z', false), ...oldCorrectMarks(2)];
+        const { service, vet } = makeService({ language: 'zh', typedMarkHistory: { reading }, masteredAt: null });
+        await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
+        expect(vet.writes[0].history.reading).toHaveLength(reading.length + 2);
+    });
+
+    it('writes ONE mark when the streak is shorter than 2 or broken', async () => {
         for (const reading of [
-            oldCorrectMarks(2),
-            [...oldCorrectMarks(4), mark('2020-02-01T00:00:00.000Z', false), ...oldCorrectMarks(2)],
+            oldCorrectMarks(1),
+            [...oldCorrectMarks(4), mark('2020-02-01T00:00:00.000Z', false), ...oldCorrectMarks(1)],
         ]) {
             const { service, vet } = makeService({ language: 'zh', typedMarkHistory: { reading }, masteredAt: null });
             await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'reading' });
@@ -354,10 +361,10 @@ describe('FlashcardMarkService.applyMark — silent acceleration', () => {
 
     it('reads the streak per TRACK — a recognition streak does not double a production mark', async () => {
         const { service, vet } = makeService({
-            language: 'zh', typedMarkHistory: { recognition: oldCorrectMarks(3) }, masteredAt: null,
+            language: 'zh', typedMarkHistory: { recognition: oldCorrectMarks(2), production: oldCorrectMarks(1) }, masteredAt: null,
         });
         await service.applyMark({ userId: USER, cardId: CARD, isCorrect: true, markType: 'production', surface: 'flp' });
-        expect(vet.writes[0].history.production).toHaveLength(1);
+        expect(vet.writes[0].history.production).toHaveLength(2);
     });
 
     it('returns BOTH displaced marks when a full window takes a doubled review', async () => {

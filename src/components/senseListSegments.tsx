@@ -22,7 +22,8 @@ import type { DefinitionCluster } from "../types";
  * whenever its segments change identity.
  *
  * Used by: src/games/memory-map/MemoryMapPrompt.tsx (the prompt gloss) and
- * src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx (the eip's sense list —
+ * src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx (the eip's sense list, which
+ * draws `leading` AFTER the gloss and flips its gap —
  * reads `leading`, `content` and `className` only). Docs:
  * docs/DEFINITION_CLUSTERS.md (picker order), docs/MEMORY_MAP_GAME.md § 3.1.
  */

@@ -154,54 +154,77 @@ Referenced code: `backfill-breakdown-senses.js` (`RECONCILE`),
 `isComplete`), `oracle-plan.js` (`runDriftProbes`),
 `server/__tests__/driftProbes.test.ts`.
 
-**5c. Elaborate the non-obvious breakdowns (AI)** —
-`server/scripts/backfill/chinese/backfill-breakdown-elaboration.js`
+**5c. Explain the literal translation (AI)** —
+`server/scripts/backfill/chinese/backfill-breakdown-elaboration.js` (`SCRIPT_VERSION` 2)
 (column added by `database/migrations/133-add-breakdown-elaboration-to-zh.sql` —
 authored as 130, renumbered to 133 in merge `ef7b964` when origin's per-language
 minute-points migration claimed 130)
-- After 5a+5b the breakdown is CORRECT, but for a minority of words it is still
-  MISLEADING when read bare: the component glosses do not add up to the word.
-  东西 reads "east + west" but means "thing"; 马虎 reads "horse + tiger" but means
-  "careless"; 沙发 reads "sand + emit" and is really a transcription of "sofa".
-  This pass asks the model to make exactly one call per word — *does this breakdown
-  need explaining?* — and to write a single sentence only when the answer is yes.
-- **Writes** `dictionaryentries_zh."breakdownElaboration"` (text, nullable).
-- ⚠️ **NULL is a real answer, not "not yet computed."** "Straightforward, nothing to
-  add" is the expected majority verdict (~70% of a random 20-entry calibration
-  sample), so the column
-  cannot double as a done-gate. Evaluated-ness lives in the per-entry
-  `enrichmentLog` stamp (migration 68) under `chinese/backfill-breakdown-elaboration`,
-  written for every decided row **including the NULL ones**; the script's default
-  WHERE gate reads that stamp, never `breakdownElaboration IS NULL`. Any future
-  consumer asking "which rows still need judging?" must do the same.
-- **Elaboration criteria** (deliberately narrow — see the system prompt): elaborate
-  only for idiomatic / figurative / fossilized / abbreviated / phonetically-transcribed
-  words, or where one character has drifted far from its shown gloss. Compositional
-  words (会议, 火车, 老师) and mild metaphor a learner follows unaided stay NULL. If
-  the origin is unknown or disputed, the model is told to prefer NULL over inventing
-  folk etymology.
-- **Length budget**: `50 chars × char_length(word1)` (2-char word → 100, 4-char
-  chengyu → 200) as a HARD CEILING, plus a soft target at half that which the model is
-  told to aim for. The soft target exists because stating only the ceiling turns it
-  into a target — the first calibration run returned 93/100, 99/100 and 199/200
-  characters with two answers over the cap. Enforcement is in the script, not a CHECK
-  constraint: an over-budget answer is retried ONCE with the overage quoted back, and
-  a second over-budget answer is left **unwritten and unstamped** (⚠ review line) so a
-  later run retries it — prose is never truncated mid-sentence. The retry is told a
-  limit of HALF the real ceiling, because a model asked for "at most 100" reliably
-  returns 101–102 and those near-misses were being discarded outright; aiming it low
-  means even a sizeable overshoot still clears the true cap.
+- The breakdown rows say WHAT a word is made of; this note says WHY the parts add up.
+  The preferred note explains the **literal translation**: the characters read in order
+  as a blunt English phrase, opened in curly quotes, then what that phrase pictures and
+  how the picture becomes the meaning — naming the symbol when a concrete thing stands
+  for something abstract (hand → deliberate action, heart → mind/feelings, mouth →
+  speech, eyes → attention/envy):
+  - 住手 → *“Stop hand”: stop moving your hand. The hand stands for whatever you're doing.*
+  - 火车 → *“Fire vehicle”: named in the steam age when trains ran on burning coal.*
+- The model labels each answer with a **kind**, used only to validate the note's shape
+  (`shapeProblem`) and **not stored**:
+
+  | Kind | When | Shape |
+  |---|---|---|
+  | `image` | the literal translation pictures something that bridges to the meaning — the common case; **mild images count** (火车, 开心, 东正教's calque of "orthodox") | opens with “translation”: |
+  | `origin` | only makes sense through a story/allusion/fossilized phrase (矛盾, 吃醋) | opens with “translation”: |
+  | `sound` | transliteration (沙发, 波兰斯基) | NO translation — "Chosen for sound, to spell out “sofa”. …" |
+  | `null` | literal translation IS the definition (学生, 会议, 学堂), function words (然而), suffix-only compounds, disputed origins (东西, 马虎) | column written NULL |
+
+  The picture must come FROM THE WORD (a real sense, real history, a real calque): a note
+  that needs an invented simile ("like a dot on a map") is `null`. The word "Literally"
+  is never written — the quotes alone mark the translation.
+- **History.** v1 (to 2026-11-07) asked "is this breakdown OPAQUE?" and called mild
+  metaphor "straightforward", so it dropped exactly the 住手 / 动手 / 放心 family, and
+  drifted into "Here 等 means 'equal'" sense corrections its prompt forbade (11,108 of
+  27,595 dev rows held a note vs a ~30% design). v2 inverts the question. The manifest
+  bump to 2 re-plans every multi-char row, and a re-judge CLEARS v1 notes whose v2
+  verdict is `null` (the script always writes the column).
+- **Writes** `dictionaryentries_zh."breakdownElaboration"` (text, nullable). The literal
+  translation lives inside the note; there is deliberately **no separate column** for it.
+- ⚠️ **NULL is a real answer, not "not yet computed."** Evaluated-ness lives in the
+  per-entry `enrichmentLog` stamp (migration 68) under `chinese/backfill-breakdown-elaboration`,
+  written for every decided row **including the NULL ones**; the script's default WHERE
+  gate reads that stamp, never `breakdownElaboration IS NULL`. Any future consumer asking
+  "which rows still need judging?" must do the same.
+- **Length cap**: 100 characters for a 2-character word, 150 for 3+ (`capFor`) — a CAP,
+  not a target; the prompt says so, because a stated length becomes the length. An
+  over-cap answer is retried ONCE with the overage quoted back and a limit of
+  `RETRY_FRACTION` (0.8) of the cap (models told "at most 100" land at 101–104); a second
+  over-cap answer is left **unwritten and unstamped** (⚠ review line). Prose is never
+  truncated.
+- **Parsing** (`parseVerdict`, `normalizeQuotes`): the note is full of quotation marks,
+  and Sonnet 4.6 rewrites the prompt's curly “…” as straight "…" — unescaped inside the
+  JSON string, which breaks `JSON.parse`. The parser falls back to a tolerant extraction
+  (explanation = everything up to the last quote before the closing brace), and every
+  stored note has its straight double quotes normalized to curly ones, so the display is
+  uniform whichever model or oracle answerer wrote it.
 - Human-review lines use the marker `⚠ BREAKDOWN ELABORATION REVIEW` (same stdout
-  convention as the clusterer and 5b).
-- **Depends on** 5a (breakdown must exist) and, for a trustworthy judgment, 5b (the
-  glosses judged must be the in-context senses, not the global lead glosses).
-- Flags: `--words=东西,马虎`, `--all`, `--force` (re-decide stamped rows; a verdict that
-  flips back to straightforward CLEARS the stale elaboration), `--stale` (re-decide
-  rows stamped below `SCRIPT_VERSION`), `--limit=N`, `--spot-check` (5 random entries,
-  NO writes, verbose).
+  convention as the clusterer and 5b); an unparseable line quotes the raw response.
+- **Depends on** 5a (breakdown must exist) and, for a trustworthy literal translation,
+  5b (in-context senses). The prompt also tells the model to silently use the right sense
+  when a shown gloss is plainly wrong, and never to comment on the correction.
+- **Model**: `MODEL` = `claude-sonnet-4-6` for direct API runs. The PPE cron runs this
+  step in oracle mode (`run-log.js` → ORACLE MODE), where the prompt, not `MODEL`, decides
+  quality. The prompt was tuned on `claude-opus-5-5` (effort `low`); on Sonnet 4.6 it is
+  weaker at declining disputed origins (wrote the 东西 market folk etymology) and
+  occasionally self-revises mid-answer (unparseable → flagged, unstamped).
+- Flags: `--words=住手,马虎`, `--all`, `--force` (re-decide stamped rows; a verdict that
+  flips to `null` CLEARS the stale note), `--limit=N`, `--spot-check` (5 random entries
+  or the `--words` set, NO writes, verbose). `--stale` is accepted but is a no-op: the
+  default gate is `staleClause()` (never stamped OR stamped below `SCRIPT_VERSION`) —
+  the same "pending" definition as `oracle-plan.js`, which hands scripts a bare
+  `--words=` list. A gate of "never stamped" alone would leave every row stamped at an
+  older version re-planned and skipped forever after a version bump.
 - Usage: `docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-breakdown-elaboration.js`
-- **No consumer yet** — nothing in the det read path or the bt UI reads this column as
-  of migration 133; it is populated ahead of the display work.
+- **Consumer**: the eip breakdown tab renders it as "How the parts make the word" under
+  the rows — see Frontend Integration below.
 
 ## Data Flow
 
@@ -285,10 +308,26 @@ text line above the gloss) → the gloss (`SIZE.body`) → a chevron. Tapping on
 character's own entry; inside the eip the **word trail** at the top of the panel is how you
 come back.
 
-⚠️ Artboard 25 also draws a titled paragraph under the rows, *"How the parts make the
-word"*. The det tables carry `breakdownElaboration` for exactly that, but it is **not on
-`server/contracts/wire.ts`** and no read path selects it, so the paragraph is omitted
-rather than faked. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) § 10.
+**The breakdown note** (Artboard 25's titled paragraph, *"How the parts make the word"*,
+built 2026-11-07) renders under the rows when the entry carries a `breakdownElaboration`
+(§ 5c): an `EipSectionLabel` heading over a body paragraph styled like the definition tab's
+long definition (`SIZE.body`, `fc.onSurface`, `FC_FONT`, line-height 1.6). No note → nothing
+renders. Shown as stored, so a row still on a v1 note shows that note until the backfill
+re-runs it (owner's call).
+
+How it reaches the tab — one column on each read path, no new prop (the tab reads
+`currentEntry.breakdownElaboration`):
+- **Saved-card reads**: `server/dal/shared/dictJoin.ts` → `DICT_COLS` / `dictLateralSelect`
+  (the es branch selects `NULL::text`) → `VocabEntryBase.breakdownElaboration`.
+- **Det reads / every drill-in / the acp's info lookup**:
+  `server/dal/implementations/DictionaryDAL.ts` → `DICTIONARY_COLUMNS` (es gets
+  `NULL::text` via `dictionaryColumns`) and `mapRowToEntity` →
+  `DictionaryEntryBase.breakdownElaboration` → `src/utils/dictEntryAdapter.ts` →
+  `dictionaryEntryToVocabEntry`.
+- **Render**: `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx`
+  (`.mobile-demo-breakdown-elaboration`).
+`DiscoverCard` (acp sort cards) does NOT carry it: the acp opens the eip through the
+dictionary lookup, not from the card.
 
 **Single-character words have no breakdown at all** and get a "Used In" list instead
 (`UsedInPaginatedList`) — the same slot, a different question.

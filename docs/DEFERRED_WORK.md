@@ -149,10 +149,10 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, and `LibraryDuo` now renders no sub-caption at all (label + figure only). **(b)** Artboard 25's breakdown tab ends in a titled paragraph, **"How the parts make the word"**; the det tables carry `breakdownElaboration` for exactly this, but it is not on `server/contracts/wire.ts` and no read path selects it, so `BreakdownRow` renders the rows and stops. |
-| **Why deferred** | (a) and (b) are each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. |
-| **Cost of leaving it** | (a) the sheet's Mastered tile shows a total with no sense of movement, which was the tile's whole argument for existing beside Learning. (b) the breakdown tab answers "what is this made of" but not "why does that add up to this meaning", which is the more interesting half |
-| **Trigger** | (b) is the cheaper and more valuable one: add `breakdownElaboration` to the det read path and the wire `VocabEntry`, then render it under the rows. (a) when a velocity/streak pass is next touching `masteredAt` |
+| **What** | Artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, and `LibraryDuo` now renders no sub-caption at all (label + figure only). ~~**(b)** Artboard 25's "How the parts make the word" paragraph~~ — **built 2026-11-07**: `breakdownElaboration` is on the wire and rendered under the breakdown rows (BREAKDOWN_FEATURE_IMPLEMENTATION.md, Frontend Integration). Only (a) remains. |
+| **Why deferred** | (a) and (b) were each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. |
+| **Cost of leaving it** | (a) the sheet's Mastered tile shows a total with no sense of movement, which was the tile's whole argument for existing beside Learning. (b) resolved. |
+| **Trigger** | (a) when a velocity/streak pass is next touching `masteredAt` |
 | **References** | [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entries 2 and 19–25; `src/features/flashcards/LibraryDuo.tsx`, `src/features/flashcards/BreakdownRow.tsx`; [BREAKDOWN_FEATURE_IMPLEMENTATION.md](./BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
 
 ---

@@ -251,7 +251,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       → `handlePointerEnter` / `handlePointerLeave`, `.add-cards__flash-card--hovered`.
     - **Tier tag** (`CardDeckHeader`). Each card carries its **own tier label**
       (`CommonalityTierLabel`, text from `COMMONALITY_TIER_LABELS`, `SIZE.body`) over the
-      **five-dot frequency meter** (`FrequencyScoreDots`, 8px dots — the word's
+      **five-circle commonality meter** (`CommonalityMeter`, ~8px circles — the word's
       `frequencyScore`), both in the look's soft ink (`inkSoft`) straight on the ground —
       no keycap. The "x/5" readout was dropped with the redesign. Rendered only when the
       entry has a score. Tier labels: 5 *Used all the time*, 4 *Common*, 3 *Used
@@ -261,12 +261,12 @@ A **sort pack** is a small group of vocabulary cards shown together:
       scoring prompt and are too long for a card slot. **Sentence case** (tracked caps
       would overflow). Every multi-word label is split onto **two lines** by an embedded
       `\n` (`white-space: pre`); the box always reserves two lines and bottom-aligns the
-      text, so every card's dots, and so every card face, stay on one baseline. This is
+      text, so every card's meter, and so every card face, stay on one baseline. This is
       the per-card face of the register ordering the supply uses (§6.4). The tag sits on
       the ground (a sibling above the card, not inside it), so it stays put while the card
-      is dragged. *(The eip + cdp meters still use the "Commonality" caption + x/5 form.)*
+      is dragged. *(The eip meter keeps its "Commonality" caption; its x/5 readout was dropped 2026-11-07.)*
       Code: `src/features/discover/AddCardsPage.tsx` → `CardDeckHeader`,
-      `COMMONALITY_TIER_LABELS`, `CommonalityTierLabel`; `src/components/FrequencyScoreDots.tsx`.
+      `COMMONALITY_TIER_LABELS`, `CommonalityTierLabel`; `src/components/ScoreMeters.tsx`.
     - **Play-audio action.** A bare 28px `volume_up` glyph **below the card**
       (`.add-cards__card-audio-button`, a 36px round hit target, no keycap) that narrates
       just that card's word on tap (`handlePlayCardAudio` → `tts.speakSentence`); it
@@ -877,6 +877,11 @@ the user **chooses** to bring it back, in one of three ways:
   **Auto**, and one further entry per difficulty level.
 - The trigger (`add-cards__level-dropdown`) is the first keycap of the toolbar (§4.9):
   a fully rounded pill (`keycapSx`, bold) with a trailing `keyboard_arrow_down` glyph.
+- A pinned level renders as the six-triangle **`DifficultyMeter`**
+  (`src/components/ScoreMeters.tsx`) in the pill (`look.keyInk`) and in each menu item
+  (`COLORS.onSurface`, aria-label from `difficultyAriaLabel`), never as text. The
+  "HSK 3" / "Level 3" label was removed 2026-11-07 because `difficulty` is an AI
+  estimate, not an HSK-list lookup.
 - A **"DIFFICULTY"** caption under the pill (`add-cards__level-caption`,
   `LevelCaption`) is a **soft introduction** (si `sortDifficultyCaption`,
   docs/SOFT_INTRODUCTION.md): shown for a learner's first visits, gone once they have

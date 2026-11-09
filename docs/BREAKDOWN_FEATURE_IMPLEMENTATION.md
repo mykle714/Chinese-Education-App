@@ -205,8 +205,39 @@ minute-points migration claimed 130)
   (explanation = everything up to the last quote before the closing brace), and every
   stored note has its straight double quotes normalized to curly ones, so the display is
   uniform whichever model or oracle answerer wrote it.
+- **Quality validation** (`validateNote` → `repairNote` → one re-check, orchestrated by
+  `decide`; same multi-agent pattern as `chinese/backfill-example-sentences.js` →
+  `validateAndRepairSentences`). The shape checks only see form, so every drafted
+  **note** (never a `null` verdict, which cannot mislead) is reviewed for content:
+  1. **Validator** (`VALIDATOR_MODEL` = `claude-sonnet-4-6`, `VALIDATOR_SYSTEM`) judges
+     the note against the `NOTE_MISTAKES_TEXT` catalogue: `wrong_literal_translation`,
+     `invented_imagery`, `folk_etymology`, `factual_error`, `restates_definition`,
+     `sense_correction`, `wrong_kind`. It reviews content only; style and length are
+     out of scope.
+  2. **Repair** (`REPAIR_MODEL` = `claude-opus-4-8`, no `temperature`) rewrites a
+     rejected note under the same `SYSTEM` rubric with the violated codes and the
+     critique quoted back. `{"kind": null}` is an allowed repair and is written as NULL.
+     The repair goes through the same `interpretVerdict` parse + `shapeProblem` + cap
+     checks as a first draft.
+  3. A repaired note is **re-validated once**. If it is still flagged it is **kept anyway**
+     and gets a ⚠ line saying it needs human review (the example-sentences policy).
+
+  Failure policy:
+  - The validator **fails open**: an unparseable or errored review keeps the draft, with
+    a ⚠ line.
+  - An **unusable repair** (malformed, bad shape, over cap) leaves the row unwritten and
+    **unstamped**, so a note the validator rejected is never written.
+
+  In oracle mode, each agent call is one more link in the row's prompt chain (judge →
+  [shorten] → validate → [repair → re-check]). Every catch rethrows `err.oracleExport`,
+  and the row loop counts captures separately (`Oracle captured:`) rather than as
+  failures. The summary prints Validator accepted / Repaired by Opus / still flagged /
+  Unreviewed.
 - Human-review lines use the marker `⚠ BREAKDOWN ELABORATION REVIEW` (same stdout
   convention as the clusterer and 5b); an unparseable line quotes the raw response.
+  Each line names its agent (`judge` / `validator` / `repair`). Validator rejections
+  print `validator flagged [codes] — critique | draft: …`, and a kept-but-still-flagged
+  repair prints `repair still flagged [codes] — kept, needs human review: …`.
 - **Depends on** 5a (breakdown must exist) and, for a trustworthy literal translation,
   5b (in-context senses). The prompt also tells the model to silently use the right sense
   when a shown gloss is plainly wrong, and never to comment on the correction.

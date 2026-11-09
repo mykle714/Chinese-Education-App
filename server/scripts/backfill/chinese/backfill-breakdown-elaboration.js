@@ -50,6 +50,30 @@
  *   unwritten and unstamped (⚠ review line) so a later run retries it rather than
  *   silently truncating prose mid-thought.
  *
+ * QUALITY VALIDATION  (validator agent → Opus repair → one re-check)
+ *   The shape checks above only see FORM. Content errors — a quoted translation that
+ *   skips a character or uses the wrong sense, an invented simile, a folk etymology
+ *   stated as fact, a "Here X means Y" sense correction — pass them untouched. So every
+ *   NOTE (never a null verdict: "no note" cannot mislead a learner) goes through the same
+ *   multi-agent pattern as backfill-example-sentences.js:
+ *     1. Validator agent (VALIDATOR_MODEL, Sonnet) judges the note against the
+ *        NOTE_MISTAKES_TEXT catalogue → {accept} or {violatedRules, critique}.
+ *     2. Repair agent (REPAIR_MODEL, Opus) rewrites a rejected note under the SAME rubric
+ *        (SYSTEM), with the critique quoted back. It may answer {"kind": null} — "no
+ *        honest note exists" is a legitimate repair, written as NULL.
+ *     3. A repaired note is re-validated ONCE. It is kept even if still flagged (the
+ *        repair is almost always better than the original, as in example sentences), but
+ *        flagged with a ⚠ review line so the run report surfaces it for a human.
+ *   Failure policy: the validator FAILS OPEN (unparseable/errored review → keep the note,
+ *   ⚠ line), so a flaky reviewer never blocks a good note. An UNUSABLE repair (malformed,
+ *   bad shape, over cap) leaves the row unwritten and unstamped — the same "a later run
+ *   retries it" convention as every other unusable answer here — rather than writing a
+ *   note the validator rejected.
+ *   Oracle mode: each agent call is one more link in the row's prompt chain (judge →
+ *   [shorten] → validate → [repair → re-check]); run-log.js captures each new link during
+ *   apply and the round converges as usual. OracleExportSignal must never be swallowed —
+ *   every catch below rethrows `err.oracleExport`.
+ *
  * FLAGS
  *   --words=住手,马虎   scope to specific headwords
  *   --all               include non-discoverable entries
@@ -86,6 +110,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const { stampEntries, staleClause } = initRunLog({ script: SCRIPT_ID, version: SCRIPT_VERSION, anthropic });
 
 const MODEL = 'claude-sonnet-4-6';
+// Quality validation (see QUALITY VALIDATION above). Same model split as
+// backfill-example-sentences.js: Sonnet reviews, Opus repairs what Sonnet rejects.
+const VALIDATOR_MODEL = 'claude-sonnet-4-6';
+const REPAIR_MODEL = 'claude-opus-4-8'; // deprecates `temperature` — never pass it
 
 // Hard caps on the note, in characters the reader sees (see LENGTH CAP above).
 const CAP_TWO_CHAR = 100;
@@ -243,24 +271,25 @@ Respond with ONLY a JSON object, one of:
 /**
  * The shape rules a note must satisfy beyond the length cap. Returns a reason string
  * when the note is malformed, else null. image/origin notes must OPEN with the quoted
- * literal translation (that is the whole point of the rubric); sound notes must not
- * carry one. The model was told not to write "Literally" — the quotes alone mark it.
+ * literal translation (that is the whole point of the rubric); sound notes must NOT
+ * open with one (SYSTEM: "a literal translation would only mislead. Do NOT give one").
+ * The model was told not to write "Literally" — the quotes alone mark it.
  */
 function shapeProblem(kind, note) {
   if (/^literally\b/i.test(note)) return 'opens with "Literally" (the quotes alone should mark the translation)';
   if ((kind === 'image' || kind === 'origin') && !note.startsWith('“')) return `${kind} note does not open with the quoted literal translation`;
+  if (kind === 'sound' && /^“[^”]*”\s*:/.test(note)) return 'sound note opens with a literal translation';
   return null;
 }
 
 /**
- * Ask the model for one word's note.
- * @returns {{kind: string|null, note: string|null}|null} null = unusable response
+ * The user turn shared by the drafting call and the repair call: the word, its
+ * definition and its breakdown exactly as the learner sees them, plus the cap. `extra`
+ * appends call-specific instructions (the over-cap retry, or the reviewer's critique).
  */
-async function callJudge(word, entry, retryNote, capOverride) {
-  const cap = capOverride ?? capFor(word);
+function buildNoteUserText(word, entry, cap, extra) {
   const defs = Array.isArray(entry.definitions) ? entry.definitions.filter((d) => typeof d === 'string') : [];
-
-  const userText = [
+  return [
     `Word: ${word}`,
     entry.pronunciation ? `Pronunciation: ${entry.pronunciation}` : null,
     `Definition: ${defs.length ? defs.join('; ') : '(none)'}`,
@@ -269,9 +298,54 @@ async function callJudge(word, entry, retryNote, capOverride) {
     breakdownLines(word, entry.breakdown),
     '',
     `Note length: hard cap ${cap} characters (a cap, not a target).`,
-    retryNote ?? null,
+    extra ?? null,
   ].filter((l) => l !== null).join('\n');
+}
 
+/**
+ * Turn a raw {kind, explanation} response into a usable verdict — the ONE path both the
+ * drafting call and the Opus repair go through, so a repaired note is held to exactly
+ * the same parse + kind + shape rules as a first draft.
+ * Every unusable-response path flags itself: an undecided row is skipped AND left
+ * unstamped, so a silent one would look identical to a "no note" one in the summary
+ * while quietly costing a call on every future run.
+ * @param {string} label  'judge' | 'repair' — names the agent in the review line
+ * @returns {{kind: string|null, note: string|null}|null} null = unusable response
+ */
+function interpretVerdict(word, text, label) {
+  const parsed = parseVerdict(text);
+  if (!parsed || !('kind' in parsed) || (parsed.kind !== null && !NOTE_KINDS.has(parsed.kind))) {
+    // Quote the raw text (truncated) so a systematic format failure is diagnosable from
+    // stdout alone, without re-running.
+    const raw = text.replace(/\s+/g, ' ').slice(0, 200);
+    console.log(`${REVIEW_MARKER} ${word}: unparseable ${label} verdict — not stamped, will retry. Raw: ${raw}`);
+    return null;
+  }
+  if (parsed.kind === null) return { kind: null, note: null };
+
+  const note = typeof parsed.explanation === 'string' ? normalizeQuotes(parsed.explanation.trim()) : '';
+  if (!note) {
+    // A kind with nothing to say is not a usable verdict.
+    console.log(`${REVIEW_MARKER} ${word}: ${label} gave kind "${parsed.kind}" but no explanation text`);
+    return null;
+  }
+  const problem = shapeProblem(parsed.kind, note);
+  if (problem) {
+    console.log(`${REVIEW_MARKER} ${word}: ${label} ${problem} — not stamped, will retry: ${note}`);
+    return null;
+  }
+  return { kind: parsed.kind, note };
+}
+
+/** First TEXT block, not content[0]: a thinking-enabled model puts a thinking block first. */
+const responseText = (response) => response.content.find((b) => b.type === 'text')?.text ?? '';
+
+/**
+ * Ask the drafting model (MODEL) for one word's note.
+ * @returns {{kind: string|null, note: string|null}|null} null = unusable response
+ */
+async function callJudge(word, entry, retryNote, capOverride) {
+  const cap = capOverride ?? capFor(word);
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
@@ -280,76 +354,197 @@ async function callJudge(word, entry, retryNote, capOverride) {
       // NOTE: the system text varies with the cap (2-char vs 3+), so the prompt cache
       // splits into two prefixes. 2-char words dominate, so most calls share one.
       system: cachedSystem(SYSTEM.replaceAll('{{CAP}}', String(cap))),
-      messages: [{ role: 'user', content: userText }],
+      messages: [{ role: 'user', content: buildNoteUserText(word, entry, cap, retryNote) }],
     });
-    // First TEXT block, not content[0]: a thinking-enabled model puts a thinking block
-    // first, so content[0].text would be undefined there.
-    const text = response.content.find((b) => b.type === 'text')?.text ?? '';
-    const parsed = parseVerdict(text);
-    // Every unusable-response path flags itself: an undecided row is skipped AND left
-    // unstamped, so a silent one would look identical to a "no note" one in the
-    // summary while quietly costing a call on every future run.
-    if (!parsed || !('kind' in parsed) || (parsed.kind !== null && !NOTE_KINDS.has(parsed.kind))) {
-      // Quote the raw text (truncated) so a systematic format failure is diagnosable
-      // from stdout alone, without re-running.
-      const raw = text.replace(/\s+/g, ' ').slice(0, 200);
-      console.log(`${REVIEW_MARKER} ${word}: unparseable verdict — not stamped, will retry. Raw: ${raw}`);
-      return null;
-    }
-    if (parsed.kind === null) return { kind: null, note: null };
-
-    const note = typeof parsed.explanation === 'string' ? normalizeQuotes(parsed.explanation.trim()) : '';
-    if (!note) {
-      // A kind with nothing to say is not a usable verdict.
-      console.log(`${REVIEW_MARKER} ${word}: kind "${parsed.kind}" but no explanation text`);
-      return null;
-    }
-    const problem = shapeProblem(parsed.kind, note);
-    if (problem) {
-      console.log(`${REVIEW_MARKER} ${word}: ${problem} — not stamped, will retry: ${note}`);
-      return null;
-    }
-    return { kind: parsed.kind, note };
+    return interpretVerdict(word, responseText(response), 'judge');
   } catch (e) {
+    if (e?.oracleExport) throw e; // oracle capture is control flow, not a failure
     console.log(`${REVIEW_MARKER} ${word}: judge call failed (${e.message})`);
     return null;
   }
 }
 
 /**
- * Full per-word decision including the one over-cap retry.
- * @returns {{elaboration: string|null, kind: string|null}|null} null = undecided (caller
- *          must NOT stamp, so a later run retries the row rather than freezing a bad/absent
- *          answer in).
+ * Draft a note: the judge call plus the one over-cap retry (see LENGTH CAP above).
+ * @returns {{kind: string|null, note: string|null}|null} null = undecided
  */
-async function decide(word, entry) {
+async function draftNote(word, entry) {
   const cap = capFor(word);
 
-  let verdict = await callJudge(word, entry, null);
-  if (!verdict) return null;
-  if (!verdict.note) return { elaboration: null, kind: null };
+  const verdict = await callJudge(word, entry, null);
+  if (!verdict || !verdict.note || charLen(verdict.note) <= cap) return verdict;
 
-  if (charLen(verdict.note) > cap) {
-    // Retry once with the overage quoted back. Truncating prose would cut a sentence
-    // mid-thought, so the model gets one chance to say the same thing shorter — told a
-    // TIGHTER limit than the real one so a near-miss still clears the actual cap.
-    const over = charLen(verdict.note);
-    const retryCap = Math.round(cap * RETRY_FRACTION);
-    verdict = await callJudge(
-      word,
-      entry,
-      `Your previous note was ${over} characters — over the cap. Rewrite it in at most ${retryCap} characters: keep the quoted translation and the bridge to the meaning, cut everything else. If it cannot be said that briefly, answer {"kind": null}.`,
-      retryCap
-    );
-    if (!verdict) return null;
-    if (!verdict.note) return { elaboration: null, kind: null };
-    if (charLen(verdict.note) > cap) {
-      console.log(`${REVIEW_MARKER} ${word}: still ${charLen(verdict.note)}/${cap} chars after retry — left unwritten`);
+  // Retry once with the overage quoted back. Truncating prose would cut a sentence
+  // mid-thought, so the model gets one chance to say the same thing shorter — told a
+  // TIGHTER limit than the real one so a near-miss still clears the actual cap.
+  const over = charLen(verdict.note);
+  const retryCap = Math.round(cap * RETRY_FRACTION);
+  const retried = await callJudge(
+    word,
+    entry,
+    `Your previous note was ${over} characters — over the cap. Rewrite it in at most ${retryCap} characters: keep the quoted translation and the bridge to the meaning, cut everything else. If it cannot be said that briefly, answer {"kind": null}.`,
+    retryCap
+  );
+  if (retried?.note && charLen(retried.note) > cap) {
+    console.log(`${REVIEW_MARKER} ${word}: still ${charLen(retried.note)}/${cap} chars after retry — left unwritten`);
+    return null;
+  }
+  return retried;
+}
+
+// ── quality validation ──────────────────────────────────────────────────────
+// Violation catalogue the validator judges against (cf. COMMON_MISTAKES_TEXT in
+// backfill-example-sentences.js). Each code names a CONTENT error the shape checks
+// cannot see. Keep the codes stable: they are printed in review lines and grepped by
+// the run report. Every rule here restates a rule of SYSTEM from the reviewer's side,
+// so a repair told "you broke X" can find X in its own instructions.
+const NOTE_MISTAKES_TEXT = `- wrong_literal_translation: the quoted translation is not the characters IN ORDER, skips or adds a character, or reads a character in a sense it does not carry in THIS word (e.g. 学 as "science" in 学生). For a "sound" note, this code means the note gives a literal translation at all.
+- invented_imagery: the picture is a simile or image the writer made up ("like a dot on a map", "as if standing it upright") rather than a real sense of a character, real history, a real calque or allusion.
+- folk_etymology: an origin story, allusion or history that is invented, legendary or disputed, stated as fact.
+- factual_error: any other false claim — about history, culture, a character's meaning, or the word itself (including calling a native word a phonetic loan, or vice versa).
+- restates_definition: the note only says the definition again in more words, or the literal translation simply IS the definition, so the note adds nothing; the honest answer was no note.
+- sense_correction: the note comments on a gloss or corrects it ("here X means Y, not Z") instead of silently using the right sense.
+- wrong_kind: the note uses the wrong mechanism — explains a sound-borrowing (咖啡, 沙发) as a picture, or a native compound as a sound-borrowing, or tells a story where the characters already make the picture plain.`;
+
+const VALIDATOR_SYSTEM = `You are a strict reviewer of the short notes shown under a Chinese word's character breakdown, for English-speaking learners. Each note explains how the characters get to the word's meaning, usually by opening with a blunt literal translation in curly quotes (“Stop hand”: …) and explaining the picture.
+
+You are checking CONTENT ONLY. Do not reject a note for its style, wording, length, or because you would have phrased it differently — formatting and length are checked elsewhere. Reject only when a learner would be misled or taught nothing.
+
+Violation codes:
+${NOTE_MISTAKES_TEXT}
+
+When the note is accurate and adds something real, accept it, even if it is not how you would write it. When you are unsure whether a claimed history is real, prefer folk_etymology: a confident false story is worse than no note.
+
+Respond only with valid JSON:
+{"accept": true}
+or
+{"accept": false, "violatedRules": ["<code>", ...], "critique": "<one or two sentences: exactly what is wrong and what the honest note would say instead, or that no note is warranted>"}`;
+
+/**
+ * Validator agent: review one drafted note.
+ * Fails OPEN — an unparseable or errored review returns null and the caller keeps the
+ * draft (with a ⚠ line), so a flaky reviewer never discards a good note.
+ * @returns {{accept: boolean, violatedRules: string[], critique: string}|null}
+ */
+async function validateNote(word, entry, draft) {
+  const defs = Array.isArray(entry.definitions) ? entry.definitions.filter((d) => typeof d === 'string') : [];
+  const userText = [
+    `Word: ${word}`,
+    entry.pronunciation ? `Pronunciation: ${entry.pronunciation}` : null,
+    `Definition: ${defs.length ? defs.join('; ') : '(none)'}`,
+    '',
+    'Character breakdown (glosses may occasionally be the wrong sense for this word; judge the note against the TRUE in-word sense):',
+    breakdownLines(word, entry.breakdown),
+    '',
+    `Note kind: ${draft.kind}`,
+    `Note: ${draft.note}`,
+  ].filter((l) => l !== null).join('\n');
+
+  try {
+    const response = await anthropic.messages.create({
+      model: VALIDATOR_MODEL,
+      max_tokens: 400,
+      temperature: 0.1,
+      system: cachedSystem(VALIDATOR_SYSTEM),
+      messages: [{ role: 'user', content: userText }],
+    });
+    const text = responseText(response);
+    const parsed = parseJsonObject(text);
+    if (!parsed || typeof parsed.accept !== 'boolean') {
+      const raw = text.replace(/\s+/g, ' ').slice(0, 200);
+      console.log(`${REVIEW_MARKER} ${word}: unparseable validator review — note kept unreviewed. Raw: ${raw}`);
       return null;
     }
+    if (parsed.accept) return { accept: true, violatedRules: [], critique: '' };
+    return {
+      accept: false,
+      violatedRules: Array.isArray(parsed.violatedRules) ? parsed.violatedRules.filter((r) => typeof r === 'string') : [],
+      critique: typeof parsed.critique === 'string' ? parsed.critique.trim() : '',
+    };
+  } catch (e) {
+    if (e?.oracleExport) throw e; // oracle capture is control flow, not a failure
+    console.log(`${REVIEW_MARKER} ${word}: validator call failed (${e.message}) — note kept unreviewed`);
+    return null;
   }
+}
 
-  return { elaboration: verdict.note, kind: verdict.kind };
+/**
+ * Repair agent: Opus rewrites a note the validator rejected, under the SAME rubric
+ * (SYSTEM) and the same parse/shape rules (interpretVerdict). "No note" is an allowed
+ * answer — for restates_definition / invented_imagery it is often the right one.
+ * No `temperature`: REPAIR_MODEL deprecates it.
+ * @returns {{kind: string|null, note: string|null}|null} null = unusable repair
+ */
+async function repairNote(word, entry, draft, review) {
+  const cap = capFor(word);
+  const rejection = [
+    '',
+    'A reviewer rejected this note:',
+    `  [${draft.kind}] ${draft.note}`,
+    `Violated rules: ${review.violatedRules.length ? review.violatedRules.join(', ') : '(unspecified)'}`,
+    `Reviewer critique: ${review.critique || '(none given)'}`,
+    '',
+    'Write a corrected note under the same rules, fixing what the reviewer found. If no honest, useful note exists for this word, answer {"kind": null}.',
+  ].join('\n');
+
+  try {
+    const response = await anthropic.messages.create({
+      model: REPAIR_MODEL,
+      max_tokens: 600,
+      system: cachedSystem(SYSTEM.replaceAll('{{CAP}}', String(cap))),
+      messages: [{ role: 'user', content: buildNoteUserText(word, entry, cap, rejection) }],
+    });
+    const repaired = interpretVerdict(word, responseText(response), 'repair');
+    if (repaired?.note && charLen(repaired.note) > cap) {
+      console.log(`${REVIEW_MARKER} ${word}: repair is ${charLen(repaired.note)}/${cap} chars — left unwritten`);
+      return null;
+    }
+    return repaired;
+  } catch (e) {
+    if (e?.oracleExport) throw e; // oracle capture is control flow, not a failure
+    console.log(`${REVIEW_MARKER} ${word}: repair call failed (${e.message})`);
+    return null;
+  }
+}
+
+/**
+ * Full per-word decision: draft (+ over-cap retry) → validate → [Opus repair → one
+ * re-check]. See QUALITY VALIDATION above for the policy.
+ * @returns {{elaboration: string|null, kind: string|null,
+ *            quality: 'none'|'accepted'|'unreviewed'|'repaired'|'stillFlagged',
+ *            original?: string}|null}
+ *          null = undecided (caller must NOT stamp, so a later run retries the row
+ *          rather than freezing a bad/absent answer in). `original` is the rejected
+ *          draft, carried for the spot-check printout.
+ */
+async function decide(word, entry) {
+  const draft = await draftNote(word, entry);
+  if (!draft) return null;
+  // Null verdicts are not reviewed: "no note" cannot teach the learner anything false.
+  if (!draft.note) return { elaboration: null, kind: null, quality: 'none' };
+
+  const review = await validateNote(word, entry, draft);
+  if (!review) return { elaboration: draft.note, kind: draft.kind, quality: 'unreviewed' }; // fail open
+  if (review.accept) return { elaboration: draft.note, kind: draft.kind, quality: 'accepted' };
+
+  console.log(`${REVIEW_MARKER} ${word}: validator flagged [${review.violatedRules.join(', ') || 'unspecified'}] — ${review.critique} | draft: ${draft.note}`);
+
+  const repaired = await repairNote(word, entry, draft, review);
+  if (!repaired) {
+    // Never write a note the validator rejected; leave the row for a later run.
+    console.log(`${REVIEW_MARKER} ${word}: repair unusable — not stamped, will retry`);
+    return null;
+  }
+  if (!repaired.note) return { elaboration: null, kind: null, quality: 'repaired', original: draft.note };
+
+  // One re-check. The repair is kept either way (as in example sentences); a still-
+  // flagged one carries a ⚠ line so a human sees it in the run report.
+  const recheck = await validateNote(word, entry, repaired);
+  if (recheck && !recheck.accept) {
+    console.log(`${REVIEW_MARKER} ${word}: repair still flagged [${recheck.violatedRules.join(', ') || 'unspecified'}] — kept, needs human review: ${repaired.note} | ${recheck.critique}`);
+    return { elaboration: repaired.note, kind: repaired.kind, quality: 'stillFlagged', original: draft.note };
+  }
+  return { elaboration: repaired.note, kind: repaired.kind, quality: 'repaired', original: draft.note };
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -397,18 +592,25 @@ async function run() {
     console.log(`Found ${entries.length} entries to judge\n`);
     if (entries.length === 0) { console.log('No entries to process.'); return; }
 
-    let processed = 0, elaborated = 0, noNote = 0, undecided = 0, failed = 0;
+    let processed = 0, elaborated = 0, noNote = 0, undecided = 0, failed = 0, exported = 0;
+    // Quality-validation outcomes, keyed by decide()'s `quality` (see QUALITY VALIDATION).
+    const quality = { accepted: 0, unreviewed: 0, repaired: 0, stillFlagged: 0 };
     for (const entry of entries) {
       processed++;
       try {
         const decision = await decide(entry.word1, entry);
         if (!decision) { undecided++; continue; } // not stamped — a later run retries
+        if (decision.quality in quality) quality[decision.quality]++;
 
         if (SPOT_CHECK) {
+          // A repaired note prints its rejected draft too, so the validator's judgement
+          // can be eyeballed alongside the fix.
+          const tag = decision.quality === 'none' ? '' : ` {${decision.quality}}`;
+          if (decision.original) console.log(`  ✗ ${entry.word1} draft (rejected): ${decision.original}`);
           if (decision.elaboration) {
-            console.log(`✎ ${entry.word1} [${decision.kind}] (${charLen(decision.elaboration)}/${capFor(entry.word1)} chars): ${decision.elaboration}`);
+            console.log(`✎ ${entry.word1} [${decision.kind}]${tag} (${charLen(decision.elaboration)}/${capFor(entry.word1)} chars): ${decision.elaboration}`);
           } else {
-            console.log(`— ${entry.word1}: no note`);
+            console.log(`— ${entry.word1}: no note${tag}`);
           }
         } else {
           // Always write the column — a re-run whose verdict flipped to "no note" must
@@ -426,6 +628,9 @@ async function run() {
           console.log(`Progress: ${processed}/${entries.length} (${Math.round((processed / entries.length) * 100)}%)`);
         }
       } catch (e) {
+        // Oracle export phase: a prompt was captured and the row unwound before any
+        // write. Not a failure — count it apart, like shared/lib/runner.js does.
+        if (e?.oracleExport) { console.log('captured'); exported++; continue; }
         failed++;
         console.error(`Failed ID ${entry.id} "${entry.word1}": ${e.message}`);
       }
@@ -437,8 +642,14 @@ async function run() {
     console.log(`Processed:        ${processed}`);
     console.log(`Elaborated:       ${elaborated}${SPOT_CHECK ? ' (not written — spot-check)' : ''}`);
     console.log(`No note:          ${noNote} (written as NULL)`);
-    console.log(`Undecided:        ${undecided} (unusable/malformed/over-cap response — not stamped, will retry)`);
+    console.log(`Undecided:        ${undecided} (unusable/malformed/over-cap response or unusable repair — not stamped, will retry)`);
     console.log(`Failed:           ${failed}`);
+    if (exported) console.log(`Oracle captured:  ${exported} (prompt exported — row unwound, not stamped)`);
+    console.log('-'.repeat(60));
+    console.log(`Validator accepted:     ${quality.accepted}`);
+    console.log(`Repaired by Opus:       ${quality.repaired + quality.stillFlagged} (incl. repairs to "no note")`);
+    console.log(`  still flagged:        ${quality.stillFlagged} (repair kept — ⚠ needs human review)`);
+    console.log(`Unreviewed (fail-open): ${quality.unreviewed} (validator unparseable/errored — draft kept)`);
     console.log('='.repeat(60));
   } catch (e) {
     console.error('Fatal error during backfill:', e);
